@@ -75,6 +75,8 @@ public:
         uint16_t vsync : 1;      // Vertical sync
         uint16_t display : 1;    // Display enable (active during visible area)
         uint16_t cursor : 1;     // Cursor display at current position
+        uint16_t interlace : 1;  // Interlace sync and video mode active
+        uint16_t odd_field : 1;  // Odd field (0) or even field (1)
     };
 
     // Debug callback for cursor detection analysis
@@ -173,6 +175,8 @@ public:
         output.hsync = hsync_counter_ >= 0 ? 1 : 0;
         output.vsync = vsync_counter_ >= 0 ? 1 : 0;
         output.display = (h_display_ && v_display_) ? 1 : 0;
+        output.interlace = interlace_sync_and_video() ? 1 : 0;
+        output.odd_field = odd_field_ ? 1 : 0;
 
         // Cursor display
         output.cursor = 0;
@@ -233,6 +237,8 @@ public:
         if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
             v_display_ = false;
             ++frame_count_;
+            // Toggle field for interlace mode
+            odd_field_ = !odd_field_;
         }
 
         return output;
@@ -252,6 +258,13 @@ public:
     uint8_t max_scanline() const { return registers_[R9_MAX_SCANLINE] & 0x1F; }
     uint8_t hsync_width() const { return registers_[R3_SYNC_WIDTH] & 0x0F; }
     uint8_t vsync_width() const { return (registers_[R3_SYNC_WIDTH] >> 4) & 0x0F; }
+
+    // Interlace mode detection
+    // R8 bits 0-1: 00=normal, 01=interlace sync, 10=normal, 11=interlace sync and video
+    // Mode 7 uses interlace sync and video (0x03)
+    bool interlace_sync_and_video() const {
+        return (registers_[R8_INTERLACE] & 0x03) == 0x03;
+    }
 
     // Current position (for debugging)
     uint8_t column() const { return column_; }
@@ -281,6 +294,7 @@ public:
         in_vadj_ = false;
         had_vsync_this_row_ = false;
         frame_count_ = 0;
+        odd_field_ = true;
         prev_lightpen_ = false;
         fast_clock_ = false;
     }
@@ -298,7 +312,13 @@ private:
         }
 
         // Check for end of character row
-        bool at_max_raster = (raster_ == (registers_[R9_MAX_SCANLINE] & 0x1F));
+        bool at_max_raster;
+        if (interlace_sync_and_video()) {
+            // In interlace mode, compare halved values (per B2)
+            at_max_raster = (raster_ >> 1) == ((registers_[R9_MAX_SCANLINE] & 0x1F) >> 1);
+        } else {
+            at_max_raster = (raster_ == (registers_[R9_MAX_SCANLINE] & 0x1F));
+        }
 
         if (at_max_raster) {
             // Latch line address for next row
@@ -306,7 +326,11 @@ private:
         }
 
         // Increment raster
-        ++raster_;
+        if (interlace_sync_and_video()) {
+            raster_ += 2;
+        } else {
+            ++raster_;
+        }
         raster_ &= 0x1F;
 
         if (at_max_raster && !in_vadj_) {
@@ -337,13 +361,23 @@ private:
 
     void end_of_row() {
         ++row_;
-        raster_ = 0;
+        // In interlace mode, maintain field parity
+        if (interlace_sync_and_video()) {
+            raster_ = odd_field_ ? 0 : 1;
+        } else {
+            raster_ = 0;
+        }
         had_vsync_this_row_ = false;
     }
 
     void end_of_frame() {
         row_ = 0;
-        raster_ = 0;
+        // In interlace mode, start at raster 0 (odd field) or 1 (even field)
+        if (interlace_sync_and_video()) {
+            raster_ = odd_field_ ? 0 : 1;
+        } else {
+            raster_ = 0;
+        }
 
         // Reload start address
         line_addr_ = screen_start();
@@ -402,6 +436,9 @@ private:
 
     // Frame counting (for cursor blink)
     uint8_t frame_count_ = 0;
+
+    // Field tracking for interlace mode
+    bool odd_field_ = true;  // Odd field (first) or even field (second)
 
     // Light pen
     bool prev_lightpen_ = false;
