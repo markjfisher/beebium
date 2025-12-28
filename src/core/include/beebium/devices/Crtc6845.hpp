@@ -15,6 +15,8 @@
 #include "../ClockTypes.hpp"
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <optional>
 
 namespace beebium {
 
@@ -75,6 +77,25 @@ public:
         uint16_t cursor : 1;     // Cursor display at current position
     };
 
+    // Debug callback for cursor detection analysis
+    // Parameters: char_addr, cursor_pos, screen_start, row, raster, cursor_detected
+    using CursorDebugCallback = std::function<void(
+        uint16_t char_addr,
+        uint16_t cursor_pos,
+        uint16_t screen_start,
+        uint8_t row,
+        uint8_t raster,
+        bool cursor_detected
+    )>;
+
+    void set_cursor_debug_callback(CursorDebugCallback cb) {
+        cursor_debug_callback_ = std::move(cb);
+    }
+
+    void clear_cursor_debug_callback() {
+        cursor_debug_callback_.reset();
+    }
+
     // Read from CRTC register
     uint8_t read(uint16_t offset) const {
         if (offset & 1) {
@@ -120,8 +141,8 @@ public:
 
         // Check horizontal displayed
         if (column_ == registers_[R1_HDISPLAYED]) {
-            // Latch next line address at end of displayed area
-            next_line_addr_ = char_addr_;
+            // Latch next line address at end of displayed area (14-bit)
+            next_line_addr_ = char_addr_ & 0x3FFF;
             h_display_ = false;
         }
 
@@ -157,7 +178,23 @@ public:
         output.cursor = 0;
         if (output.display) {
             uint16_t cursor_pos = cursor_position();
-            if (char_addr_ == cursor_pos) {
+            uint16_t masked_char_addr = char_addr_ & 0x3FFF;
+            // Both addresses must be compared in 14-bit space (MA0-MA13)
+            bool address_match = (masked_char_addr == cursor_pos);
+
+            // Debug callback for cursor analysis
+            if (cursor_debug_callback_) {
+                (*cursor_debug_callback_)(
+                    masked_char_addr,
+                    cursor_pos,
+                    screen_start(),
+                    row_,
+                    raster_,
+                    address_match
+                );
+            }
+
+            if (address_match) {
                 uint8_t cursor_start = registers_[R10_CURSOR_START] & 0x1F;
                 uint8_t cursor_end = registers_[R11_CURSOR_END] & 0x1F;
                 uint8_t cursor_mode = (registers_[R10_CURSOR_START] >> 5) & 0x03;
@@ -180,8 +217,8 @@ public:
             }
         }
 
-        // Advance character address
-        ++char_addr_;
+        // Advance character address (wrap at 14-bit boundary)
+        char_addr_ = (char_addr_ + 1) & 0x3FFF;
 
         // Handle end of horizontal line
         if (column_ == registers_[R0_HTOTAL]) {
@@ -371,6 +408,9 @@ private:
 
     // Clock rate (set by video ULA)
     bool fast_clock_ = false;
+
+    // Debug callback for cursor analysis
+    std::optional<CursorDebugCallback> cursor_debug_callback_;
 };
 
 } // namespace beebium
