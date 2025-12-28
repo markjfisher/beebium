@@ -38,8 +38,11 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]]) {
 // Fragment shader: sample the emulator framebuffer texture
 fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                 texture2d<float> texture [[texture(0)]]) {
+    // Use nearest for magnification (sharp pixels when enlarged)
+    // Use linear for minification (blend when shrunk) to prevent thin features
+    // like the 2-scanline cursor from being skipped at certain window sizes
     constexpr sampler textureSampler(mag_filter::nearest,
-                                      min_filter::nearest,
+                                      min_filter::linear,
                                       address::clamp_to_edge);
     return texture.sample(textureSampler, in.texCoord);
 }
