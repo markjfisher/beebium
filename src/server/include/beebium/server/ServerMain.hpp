@@ -14,6 +14,7 @@
 #define BEEBIUM_SERVER_SERVER_MAIN_HPP
 
 #include "beebium/Machines.hpp"
+#include "beebium/PacingClock.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/RomPaths.hpp"
 
@@ -23,6 +24,7 @@
 #include <string>
 #include <map>
 #include <csignal>
+#include <cstdlib>
 #include <atomic>
 
 namespace beebium::server {
@@ -238,16 +240,38 @@ int server_main(int argc, char* argv[]) {
 
         std::cout << Memory::MACHINE_DISPLAY_NAME << " running. Press Ctrl+C to stop.\n";
 
+        // Check for BEEBIUM_NO_PACING environment variable for debugging
+        const char* no_pacing_env = std::getenv("BEEBIUM_NO_PACING");
+        bool use_pacing = (no_pacing_env == nullptr);
+
+        // Create and start pacing clock with machine-specific configuration
+        PacingClock pacing_clock(Memory::default_pacing_config());
+
+        if (use_pacing) {
+            pacing_clock.start();
+            std::cout << "Pacing: " << Memory::default_pacing_config().pacing_hz << " Hz, "
+                      << Memory::default_pacing_config().cycles_per_tick() << " cycles/tick\n";
+        } else {
+            std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
+        }
+
         // Main emulation loop
-        constexpr uint64_t cycles_per_frame = 40000;  // ~50Hz at 2MHz
+        constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
         while (g_running) {
             // Block if debugger has paused execution
             machine.wait_if_paused();
 
-            machine.run(cycles_per_frame);
+            // Run cycles
+            machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
 
-            // Process any frame rendering
-            // (FrameRenderer will be called by VideoService when needed)
+            // Wait for next tick (pacing clock handles timing)
+            if (use_pacing) {
+                pacing_clock.wait_for_tick();
+            }
+        }
+
+        if (use_pacing) {
+            pacing_clock.stop();
         }
 
         std::cout << "\nShutting down...\n";

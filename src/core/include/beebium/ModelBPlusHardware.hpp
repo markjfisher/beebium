@@ -14,7 +14,9 @@
 
 #include "AddressableLatch.hpp"
 #include "BankBinding.hpp"
+#include "ClockTypes.hpp"
 #include "IrqAggregator.hpp"
+#include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
 #include "OutputQueue.hpp"
@@ -84,6 +86,15 @@ public:
     static constexpr std::string_view DEFAULT_MOS_ROM = "acorn-mos_2_0.rom";
     static constexpr std::string_view DEFAULT_LANGUAGE_ROM = "bbc-basic_2.rom";
     static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;
+
+    // Default pacing configuration for this machine
+    static constexpr PacingConfig default_pacing_config() {
+        return {
+            .base_clock_hz = timing::CPU_HZ,  // 2 MHz
+            .pacing_hz = 200,                  // 200 Hz sync rate
+            .speed_multiplier = 1.0            // Real-time
+        };
+    }
 
     // Hardware devices (owned by this struct)
     Ram<32768> main_ram;           // Main RAM 0x0000-0x7FFF
