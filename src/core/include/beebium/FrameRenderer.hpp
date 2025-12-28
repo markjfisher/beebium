@@ -119,21 +119,28 @@ public:
         bool vsync = (flags & VIDEO_FLAG_VSYNC) != 0;
         bool hsync = (flags & VIDEO_FLAG_HSYNC) != 0;
         bool display = (flags & VIDEO_FLAG_DISPLAY) != 0;
+        bool interlace_odd = (flags & VIDEO_FLAG_INTERLACE) != 0;
+
+        // Track interlace mode from VIDEO_FLAG_INTERLACE
+        if (interlace_odd) {
+            in_interlace_mode_ = true;
+        }
 
         // Handle VSYNC
         if (vsync && !in_vsync_) {
-            // Rising edge of VSYNC - end of frame
-            frame_buffer_->swap();
-            y_ = 0;
-
-            // Handle interlace field offset
-            if (timing_.interlace_mode & 0x01) {
-                // Interlace mode enabled - alternate fields
-                field_offset_ = odd_field_ ? 0 : 1;
-                odd_field_ = !odd_field_;
+            // Rising edge of VSYNC - end of field
+            if (in_interlace_mode_) {
+                // In interlace mode, swap every other VSYNC
+                interlace_field_count_++;
+                if ((interlace_field_count_ & 1) == 0) {
+                    // Even field count (0, 2, 4...) - swap after completing a pair
+                    frame_buffer_->swap();
+                }
             } else {
-                field_offset_ = 0;
+                // Non-interlace mode - swap every VSYNC
+                frame_buffer_->swap();
             }
+            y_ = 0;
         }
         in_vsync_ = vsync;
 
@@ -155,7 +162,17 @@ public:
 
         // Apply offsets for proper display positioning
         int write_x = static_cast<int>(x_) + horizontal_offset_;
-        int write_y = static_cast<int>(y_) + vertical_offset_ + field_offset_;
+        int write_y;
+        if (in_interlace_mode_) {
+            // Interlace: interleave fields on alternating framebuffer lines
+            // Odd field count (1, 3, 5...) → even lines (0, 2, 4...)
+            // Even field count (0, 2, 4...) → odd lines (1, 3, 5...)
+            int field_offset = (interlace_field_count_ & 1);
+            write_y = static_cast<int>(y_) * 2 + field_offset;
+            write_y += vertical_offset_ * 2;  // Scale offset for interlace
+        } else {
+            write_y = static_cast<int>(y_) + vertical_offset_;
+        }
 
         // Convert PixelBatch pixels to BGRA32 and write to framebuffer
         // Check bounds including negative offset possibility
@@ -183,6 +200,8 @@ public:
         in_hsync_ = false;
         odd_field_ = false;
         field_offset_ = 0;
+        in_interlace_mode_ = false;
+        interlace_field_count_ = 0;
     }
 
 private:
@@ -206,6 +225,8 @@ private:
     int vertical_offset_;    // Scanlines from VSYNC end to display start
     bool odd_field_;         // For interlace: alternates each frame
     int field_offset_;       // 0 or 1 for interlace field positioning
+    bool in_interlace_mode_ = false;   // True when interlace mode detected
+    uint32_t interlace_field_count_ = 0; // Counts fields in interlace mode
 };
 
 } // namespace beebium
