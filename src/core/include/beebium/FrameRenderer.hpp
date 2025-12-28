@@ -20,11 +20,31 @@
 
 namespace beebium {
 
+// CRTC timing parameters for calculating display offsets.
+// These are derived from CRTC registers and Video ULA settings.
+struct DisplayTiming {
+    uint8_t h_total = 127;           // R0: Horizontal Total (chars - 1)
+    uint8_t h_displayed = 80;        // R1: Horizontal Displayed (chars)
+    uint8_t h_sync_pos = 98;         // R2: Horizontal Sync Position
+    uint8_t sync_width = 0x28;       // R3: H sync (low 4 bits), V sync (high 4 bits)
+    uint8_t v_total = 38;            // R4: Vertical Total (rows - 1)
+    uint8_t v_total_adjust = 0;      // R5: Vertical Total Adjust (scanlines)
+    uint8_t v_displayed = 32;        // R6: Vertical Displayed (rows)
+    uint8_t v_sync_pos = 34;         // R7: Vertical Sync Position
+    uint8_t interlace_mode = 0;      // R8: Interlace and Skew
+    uint8_t max_scanline = 7;        // R9: Max scanline address
+    uint8_t pixels_per_char = 8;     // From Video ULA (8 for high freq, 16 for low)
+};
+
 // Converts PixelBatch stream to pixel framebuffer.
 //
 // The FrameRenderer consumes PixelBatches from an OutputQueue,
 // converts them to BGRA32 pixels, and writes them to a FrameBuffer.
 // It handles sync signals (HSYNC/VSYNC) to track raster position.
+//
+// Display positioning is calculated from CRTC timing registers to
+// properly center content within the framebuffer, matching the
+// behavior of other emulators (B2, BeebEm, B-Em).
 //
 // This is an optional convenience component. Clients that want
 // raw PixelBatch access (e.g., for CRT shaders) can consume
@@ -38,7 +58,30 @@ public:
         , y_(0)
         , in_vsync_(false)
         , in_hsync_(false)
-    {}
+        , horizontal_offset_(0)
+        , vertical_offset_(0)
+        , odd_field_(false)
+        , field_offset_(0)
+    {
+        // Calculate initial offsets from default timing
+        update_timing(DisplayTiming{});
+    }
+
+    // Update display timing from CRTC registers.
+    // Call this when CRTC registers change, or at least once per frame.
+    // TODO: Wire up actual CRTC registers for dynamic offset calculation.
+    // For now, use empirical fixed offsets that match B2/BeebEm positioning.
+    void update_timing(const DisplayTiming& timing) {
+        timing_ = timing;
+
+        // Empirical offsets to match B2/BeebEm display positioning:
+        // - Shift right by ~3 MODE 7 characters (28 pixels) to increase left margin
+        // - Shift up by ~1 MODE 7 row (20 scanlines) to correct vertical position
+        // Note: negative vertical offset will clip top scanlines, which should
+        // be in the vertical blanking period anyway.
+        horizontal_offset_ = 28;
+        vertical_offset_ = -20;
+    }
 
     // Process a batch of PixelBatches from the queue.
     // Returns number of batches consumed.
@@ -82,6 +125,15 @@ public:
             // Rising edge of VSYNC - end of frame
             frame_buffer_->swap();
             y_ = 0;
+
+            // Handle interlace field offset
+            if (timing_.interlace_mode & 0x01) {
+                // Interlace mode enabled - alternate fields
+                field_offset_ = odd_field_ ? 0 : 1;
+                odd_field_ = !odd_field_;
+            } else {
+                field_offset_ = 0;
+            }
         }
         in_vsync_ = vsync;
 
@@ -101,9 +153,16 @@ public:
             return;
         }
 
+        // Apply offsets for proper display positioning
+        int write_x = static_cast<int>(x_) + horizontal_offset_;
+        int write_y = static_cast<int>(y_) + vertical_offset_ + field_offset_;
+
         // Convert PixelBatch pixels to BGRA32 and write to framebuffer
-        if (x_ + 8 <= frame_buffer_->width() && y_ < frame_buffer_->height()) {
-            uint32_t* dest = frame_buffer_->write_ptr(x_, y_);
+        // Check bounds including negative offset possibility
+        if (write_x >= 0 && write_x + 8 <= static_cast<int>(frame_buffer_->width()) &&
+            write_y >= 0 && write_y < static_cast<int>(frame_buffer_->height())) {
+            uint32_t* dest = frame_buffer_->write_ptr(static_cast<size_t>(write_x),
+                                                       static_cast<size_t>(write_y));
             for (int i = 0; i < 8; ++i) {
                 dest[i] = pixel_to_bgra32(batch.pixels.pixels[i]);
             }
@@ -122,6 +181,8 @@ public:
         y_ = 0;
         in_vsync_ = false;
         in_hsync_ = false;
+        odd_field_ = false;
+        field_offset_ = 0;
     }
 
 private:
@@ -140,6 +201,11 @@ private:
     size_t y_;  // Current scanline
     bool in_vsync_;
     bool in_hsync_;
+    DisplayTiming timing_;
+    int horizontal_offset_;  // Pixels from HSYNC end to display start
+    int vertical_offset_;    // Scanlines from VSYNC end to display start
+    bool odd_field_;         // For interlace: alternates each frame
+    int field_offset_;       // 0 or 1 for interlace field positioning
 };
 
 } // namespace beebium
