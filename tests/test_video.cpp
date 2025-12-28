@@ -689,16 +689,22 @@ TEST_CASE("Boot screenshot capture", "[video][boot][integration]") {
         fresh_renderer.process(machine.memory().video_output.value());
     }
 
-    // Run enough cycles for 2 full frames to ensure we capture a complete one
-    for (int i = 0; i < 80'000; ++i) {
+    // Run until we get at least 2 natural VSYNC-triggered frame swaps
+    // This ensures FrameRenderer's swap logic is working correctly
+    // A black screen regression would be caught here if swap() is never called
+    uint64_t initial_version = fresh_fb.version();
+    uint64_t target_version = initial_version + 2;  // Need 2 swaps for a complete frame in back buffer
+    constexpr int max_iterations = 200'000;  // ~100ms at 2MHz, enough for multiple frames
+
+    for (int i = 0; i < max_iterations && fresh_fb.version() < target_version; ++i) {
         machine.step();
         if (machine.memory().video_output.has_value()) {
             fresh_renderer.process(machine.memory().video_output.value());
         }
     }
 
-    // Force swap to ensure rendered frame is in read buffer
-    fresh_fb.swap();
+    // Verify that natural VSYNC swapping occurred - this catches black screen regressions
+    REQUIRE(fresh_fb.version() >= target_version);
 
     // Use the fresh framebuffer for the screenshot
     auto& fb_for_screenshot = fresh_fb;
