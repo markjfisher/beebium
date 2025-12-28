@@ -2,7 +2,7 @@ name: Beebium
 options:
   bundleIdPrefix: com.beebium
   deploymentTarget:
-    macOS: "12.0"
+    macOS: "13.0"
   xcodeVersion: "15.0"
   createIntermediateGroups: true
 

@@ -13,6 +13,15 @@
 import Foundation
 import Metal
 import MetalKit
+import simd
+
+/// Uniforms passed to the shader for aspect ratio correction
+struct Uniforms {
+    var drawableSize: SIMD2<Float>   // Size of the drawable in pixels
+    var textureSize: SIMD2<Float>    // Size of the texture (736x576)
+    var parScale: Float              // Pixel Aspect Ratio scale (0.96 for BBC)
+    var padding: Float = 0           // Padding for alignment
+}
 
 /// Renders emulator video frames using Metal
 final class MetalRenderer: NSObject {
@@ -23,6 +32,10 @@ final class MetalRenderer: NSObject {
     private var frameTexture: MTLTexture?
     private var textureWidth: Int = 0
     private var textureHeight: Int = 0
+    private var drawableSize: CGSize = .zero
+
+    /// Pixel Aspect Ratio scale - BBC pixels are 0.96 as wide as they are tall
+    private let parScale: Float = 0.96
 
     /// Initialize the Metal renderer
     /// - Parameter device: Metal device to use for rendering
@@ -111,7 +124,7 @@ final class MetalRenderer: NSObject {
 // MARK: - MTKViewDelegate
 extension MetalRenderer: MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        // Handle resize if needed
+        drawableSize = size
     }
 
     func draw(in view: MTKView) {
@@ -126,6 +139,14 @@ extension MetalRenderer: MTKViewDelegate {
 
         // Bind frame texture if available
         if let texture = frameTexture {
+            // Create uniforms for aspect ratio correction
+            var uniforms = Uniforms(
+                drawableSize: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
+                textureSize: SIMD2<Float>(Float(textureWidth), Float(textureHeight)),
+                parScale: parScale
+            )
+
+            renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)
             renderEncoder.setFragmentTexture(texture, index: 0)
             renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         }

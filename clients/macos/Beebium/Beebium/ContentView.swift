@@ -27,13 +27,7 @@ struct ContentView: View {
                 statusOverlay
             }
         }
-        .frame(
-            minWidth: 640,
-            idealWidth: CGFloat(videoClient.frameWidth),
-            minHeight: 480,
-            idealHeight: CGFloat(videoClient.frameHeight)
-        )
-        .aspectRatio(4.0/3.0, contentMode: .fit)
+        .frame(minWidth: 320, minHeight: 240)
         .onAppear {
             videoClient.connect()
         }

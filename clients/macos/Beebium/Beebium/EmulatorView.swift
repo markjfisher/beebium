@@ -32,7 +32,7 @@ struct EmulatorView: NSViewRepresentable {
 
         mtkView.device = device
         mtkView.colorPixelFormat = .bgra8Unorm
-        mtkView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        mtkView.clearColor = MTLClearColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
 
         // Create renderer and set as delegate
         if let renderer = MetalRenderer(device: device) {
