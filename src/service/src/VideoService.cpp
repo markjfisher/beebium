@@ -28,6 +28,11 @@ grpc::Status VideoServiceImpl::SubscribeFrames(
 
     uint64_t last_version = 0;
 
+    // Pre-allocate buffer for frame copies to avoid race condition between
+    // read_frame() returning a span and swap() changing the buffer.
+    // Using copy_frame() ensures the data is fully copied while the lock is held.
+    std::vector<uint32_t> pixel_buffer(frame_buffer_.pixel_count());
+
     while (!context->IsCancelled()) {
         uint64_t current_version = frame_buffer_.version();
 
@@ -38,9 +43,9 @@ grpc::Status VideoServiceImpl::SubscribeFrames(
             frame.set_width(frame_buffer_.width());
             frame.set_height(frame_buffer_.height());
 
-            // Copy frame data
-            auto pixels = frame_buffer_.read_frame();
-            frame.set_pixels(pixels.data(), pixels.size_bytes());
+            // Copy frame data safely (holds lock during entire copy)
+            frame_buffer_.copy_frame(pixel_buffer.data(), pixel_buffer.size());
+            frame.set_pixels(pixel_buffer.data(), pixel_buffer.size() * sizeof(uint32_t));
 
             if (!writer->Write(frame)) {
                 // Client disconnected
