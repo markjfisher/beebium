@@ -165,9 +165,10 @@ public:
         int write_y;
         if (in_interlace_mode_) {
             // Interlace: interleave fields on alternating framebuffer lines
-            // Odd field count (1, 3, 5...) → even lines (0, 2, 4...)
-            // Even field count (0, 2, 4...) → odd lines (1, 3, 5...)
-            int field_offset = (interlace_field_count_ & 1);
+            // First field (odd rasters 0,2,4...) → even lines (0, 2, 4...)
+            // Second field (even rasters 1,3,5...) → odd lines (1, 3, 5...)
+            // field_count is odd during first field, even during second
+            int field_offset = (interlace_field_count_ & 1) ? 0 : 1;
             write_y = static_cast<int>(y_) * 2 + field_offset;
             write_y += vertical_offset_ * 2;  // Scale offset for interlace
         } else {
