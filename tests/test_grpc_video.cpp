@@ -171,3 +171,165 @@ TEST_CASE("VideoService frame version increments on VSYNC", "[grpc][video]") {
     REQUIRE(received2);
     CHECK(frame2.frame_number() > frame1.frame_number());
 }
+
+// Count bright pixels in a frame (BGRA32 format)
+static size_t count_bright_pixels_grpc(const std::string& pixels) {
+    size_t count = 0;
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(pixels.data());
+    size_t num_pixels = pixels.size() / 4;
+
+    for (size_t i = 0; i < num_pixels; ++i) {
+        // BGRA format
+        uint8_t b = data[i * 4 + 0];
+        uint8_t g = data[i * 4 + 1];
+        uint8_t r = data[i * 4 + 2];
+
+        // Count as bright if luminance > 128
+        int luminance = (r + g + b) / 3;
+        if (luminance > 128) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+TEST_CASE("VideoService save streamed frames", "[grpc][video][cursor][.save]") {
+    // Save streamed frames to disk for visual inspection
+
+    VideoTestFixture fixture;
+
+    // Boot to BASIC prompt
+    for (uint64_t i = 0; i < 3'000'000; ++i) {
+        fixture.machine().step();
+        if (fixture.machine().read(0x7C28) == 'B' &&
+            fixture.machine().read(0x7C29) == 'B') {
+            break;
+        }
+    }
+
+    // Let display stabilize
+    fixture.run_cycles(500000);
+
+    grpc::ClientContext context;
+    beebium::SubscribeFramesRequest request;
+
+    auto reader = fixture.stub().SubscribeFrames(&context, request);
+
+    // Run emulation in background
+    std::atomic<bool> running{true};
+    std::thread emu_thread([&]() {
+        while (running) {
+            fixture.run_cycles(80000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
+    // Save 100 frames to disk
+    constexpr int NUM_FRAMES = 100;
+    for (int i = 0; i < NUM_FRAMES; ++i) {
+        beebium::Frame frame;
+        if (!reader->Read(&frame)) {
+            break;
+        }
+
+        // Save as PPM
+        std::string filename = "/tmp/grpc_frame_" + std::to_string(i) + ".ppm";
+        std::ofstream file(filename);
+        if (file) {
+            int width = frame.width();
+            int height = frame.height();
+            file << "P3\n" << width << " " << height << "\n255\n";
+
+            const uint8_t* data = reinterpret_cast<const uint8_t*>(frame.pixels().data());
+            for (int y = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    size_t idx = (y * width + x) * 4;
+                    int b = data[idx + 0];
+                    int g = data[idx + 1];
+                    int r = data[idx + 2];
+                    file << r << " " << g << " " << b << " ";
+                }
+                file << "\n";
+            }
+        }
+
+        // Report brightness
+        size_t bright = count_bright_pixels_grpc(frame.pixels());
+        if (i >= 50) {  // Only report stable frames
+            WARN("Frame " << i << ": bright=" << bright << " saved to " << filename);
+        }
+    }
+
+    running = false;
+    context.TryCancel();
+    emu_thread.join();
+}
+
+TEST_CASE("VideoService streams cursor blink pattern", "[grpc][video][cursor]") {
+    // Verify cursor blink is visible in streamed frames
+    // This tests the full pipeline: core -> framebuffer -> grpc -> client
+
+    VideoTestFixture fixture;
+
+    // Boot to BASIC prompt
+    for (uint64_t i = 0; i < 3'000'000; ++i) {
+        fixture.machine().step();
+        if (fixture.machine().read(0x7C28) == 'B' &&
+            fixture.machine().read(0x7C29) == 'B') {
+            break;
+        }
+    }
+
+    // Let display stabilize
+    fixture.run_cycles(200000);
+
+    grpc::ClientContext context;
+    beebium::SubscribeFramesRequest request;
+
+    auto reader = fixture.stub().SubscribeFrames(&context, request);
+
+    // Run emulation and collect frame brightness
+    std::atomic<bool> running{true};
+    std::vector<size_t> brightness_values;
+    std::mutex brightness_mutex;
+
+    std::thread emu_thread([&]() {
+        while (running) {
+            fixture.run_cycles(80000);  // One frame worth
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
+    // Receive 100 frames and measure brightness
+    constexpr int NUM_FRAMES = 100;
+    for (int i = 0; i < NUM_FRAMES; ++i) {
+        beebium::Frame frame;
+        if (!reader->Read(&frame)) {
+            break;
+        }
+        size_t bright = count_bright_pixels_grpc(frame.pixels());
+        std::lock_guard<std::mutex> lock(brightness_mutex);
+        brightness_values.push_back(bright);
+    }
+
+    // Stop emulation
+    running = false;
+    context.TryCancel();
+    emu_thread.join();
+
+    REQUIRE(brightness_values.size() >= 50);
+
+    // Analyze brightness for periodic pattern (cursor blink)
+    // Skip first 20 frames for boot/stabilization
+    std::vector<size_t> stable_values(brightness_values.begin() + 20, brightness_values.end());
+
+    size_t min_val = *std::min_element(stable_values.begin(), stable_values.end());
+    size_t max_val = *std::max_element(stable_values.begin(), stable_values.end());
+    size_t range = max_val - min_val;
+
+    INFO("Streamed frames: min=" << min_val << " max=" << max_val << " range=" << range);
+
+    // With cursor blinking, expect ~16 pixel variation
+    // If range is 0, cursor is not visible in streamed frames
+    CHECK(range >= 10);
+}
