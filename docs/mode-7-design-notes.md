@@ -169,6 +169,169 @@ If enhanced rendering quality is desired in the future:
 
 ---
 
+## Interlace Implementation
+
+Mode 7 uses CRTC interlace mode, which requires coordinated handling across the CRTC, VideoRenderer, and FrameRenderer. This section documents the implementation and the subtle timing issues involved.
+
+### Why Mode 7 Uses Interlace
+
+Mode 7 sets CRTC register R8 = 0x03, enabling "interlace sync and video" mode. In this mode:
+
+- The display outputs **50 fields per second** (PAL) instead of 25 frames per second
+- Each field contains half the scanlines: odd fields show rasters 0, 2, 4..., even fields show 1, 3, 5...
+- When both fields are displayed together on a CRT, they interleave to produce full vertical resolution
+
+This affects cursor timing because the CRTC's `frame_count_` (used for cursor blink) increments per field, not per frame.
+
+### CRTC Interlace Handling
+
+The `Crtc6845` class implements interlace with these key changes:
+
+#### 1. Detect Interlace Mode
+
+```cpp
+bool interlace_sync_and_video() const {
+    return (registers_[R8_INTERLACE] & 0x03) == 0x03;
+}
+```
+
+R8 bits 0-1 encode the interlace mode: 00/10 = normal, 01 = interlace sync only, 11 = interlace sync and video.
+
+#### 2. Increment Raster by 2
+
+```cpp
+if (interlace_sync_and_video()) {
+    raster_ += 2;
+} else {
+    ++raster_;
+}
+```
+
+Each field skips every other scanline. The odd field displays rasters 0, 2, 4, 6, 8; the even field displays 1, 3, 5, 7, 9.
+
+#### 3. Field-Based Raster Start
+
+```cpp
+// Track field parity - toggles at end of vertical displayed area
+if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
+    odd_field_ = !odd_field_;
+}
+
+// Start raster based on field
+void end_of_frame() {
+    raster_ = (interlace_sync_and_video() && !odd_field_) ? 1 : 0;
+}
+```
+
+Odd fields start at raster 0; even fields start at raster 1.
+
+#### 4. End-of-Row Detection
+
+```cpp
+if (interlace_sync_and_video()) {
+    at_max_raster = (raster_ >> 1) == ((registers_[R9_MAX_SCANLINE] & 0x1F) >> 1);
+} else {
+    at_max_raster = (raster_ == (registers_[R9_MAX_SCANLINE] & 0x1F));
+}
+```
+
+The halved comparison ensures correct end-of-row detection when raster increments by 2.
+
+### VideoRenderer Flag Propagation
+
+The `VideoRenderer` propagates interlace state to the `FrameRenderer` via the `VIDEO_FLAG_INTERLACE` flag:
+
+```cpp
+if (crtc_output.interlace && crtc_output.odd_field) flags |= VIDEO_FLAG_INTERLACE;
+```
+
+This flag is set during odd field display periods only. The FrameRenderer uses this to detect interlace mode and track field parity.
+
+### FrameRenderer Field Interleaving
+
+The `FrameRenderer` composites both fields into a single framebuffer:
+
+#### 1. Detect Interlace Mode
+
+```cpp
+if (interlace_odd) {
+    in_interlace_mode_ = true;
+}
+```
+
+Once VIDEO_FLAG_INTERLACE is seen, the renderer enters interlace mode.
+
+#### 2. Swap Every Other VSYNC
+
+```cpp
+if (in_interlace_mode_) {
+    interlace_field_count_++;
+    if ((interlace_field_count_ & 1) == 0) {
+        frame_buffer_->swap();  // Swap after completing both fields
+    }
+} else {
+    frame_buffer_->swap();  // Non-interlace: swap every VSYNC
+}
+```
+
+In interlace mode, a complete frame requires two fields, so we swap every other VSYNC.
+
+#### 3. Interleave Y Positions
+
+```cpp
+if (in_interlace_mode_) {
+    // First field → even lines (0, 2, 4...)
+    // Second field → odd lines (1, 3, 5...)
+    int field_offset = (interlace_field_count_ & 1) ? 0 : 1;
+    write_y = static_cast<int>(y_) * 2 + field_offset;
+    write_y += vertical_offset_ * 2;  // Scale offset for interlace
+} else {
+    write_y = static_cast<int>(y_) + vertical_offset_;
+}
+```
+
+Each field's scanlines are spread across alternating framebuffer lines. The first field (odd rasters from CRTC) writes to even framebuffer lines; the second field (even rasters) writes to odd framebuffer lines.
+
+### Timing Subtlety: When odd_field_ Toggles
+
+A critical implementation detail: the CRTC's `odd_field_` flag toggles at the **end of the vertical displayed area** (when `row_ == R6_VDISPLAYED`), which is **before VSYNC**. This means:
+
+- During VSYNC at the end of an odd field, `odd_field_` has already toggled to `false`
+- During VSYNC at the end of an even field, `odd_field_` has already toggled to `true`
+
+The FrameRenderer cannot rely on VIDEO_FLAG_INTERLACE at VSYNC time to determine which field just ended. Instead, it counts VSYNCs and uses the count's parity to determine field interleaving.
+
+### Effects on Cursor Display
+
+#### Cursor Blink Rate
+
+The cursor blink rate is derived from `frame_count_`, which increments at the end of each field. With proper interlace handling, `frame_count_` increments at 50 Hz (PAL), giving the correct blink timing. Without it, frames take twice as long, halving the blink rate.
+
+#### Cursor Thickness
+
+The cursor appears on specific raster lines within a character row (determined by R10/R11). With proper field interleaving:
+
+- Odd field shows cursor on even rasters (e.g., raster 18)
+- Even field shows cursor on odd rasters (e.g., raster 19)
+- Combined: cursor appears on two adjacent framebuffer lines = 2 pixels thick
+
+Without field interleaving, both fields overwrite the same framebuffer lines, resulting in a 1-pixel cursor.
+
+### Summary
+
+| Component | Responsibility |
+|-----------|---------------|
+| **Crtc6845** | Raster increment by 2, field-based start, end-of-row detection |
+| **VideoRenderer** | Propagate VIDEO_FLAG_INTERLACE during odd field |
+| **FrameRenderer** | Count fields, swap every 2nd VSYNC, interleave Y positions |
+
+The implementation correctly handles the BBC Micro's interlace mode, producing:
+- 50 Hz field rate for correct cursor blink timing
+- Proper field interleaving for 2-pixel cursor thickness
+- Full-height text (not half-height from field overwriting)
+
+---
+
 ## Character-Based Output Mode
 
 ### Motivation
