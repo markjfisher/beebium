@@ -16,8 +16,27 @@
 #include "FrameAllocator.hpp"
 #include <mutex>
 #include <atomic>
+#include <cassert>
 
 namespace beebium {
+
+// Per-frame metadata describing the logical frame dimensions.
+// The physical buffer may be larger (fixed allocation), but only
+// width × height pixels contain valid content for this frame.
+struct FrameMetadata {
+    uint32_t width = 640;          // Frame width in pixels (logical)
+    uint32_t height = 512;         // Frame height in scanlines (logical)
+    uint64_t frame_number = 0;     // Incrementing frame counter
+    bool interlaced = false;       // True for MODE 7 and custom interlace modes
+
+    // Border dimensions (blanking area around active content)
+    // These come from CRTC timing and allow clients to render
+    // with authentic CRT-style borders if desired.
+    uint32_t left_border = 0;      // Pixels from left edge to active area
+    uint32_t right_border = 0;     // Pixels from active area to right edge
+    uint32_t top_border = 0;       // Scanlines from top to active area
+    uint32_t bottom_border = 0;    // Scanlines from active area to bottom
+};
 
 // Double-buffered frame buffer for video output.
 //
@@ -34,10 +53,12 @@ namespace beebium {
 class FrameBuffer {
 public:
     explicit FrameBuffer(FrameAllocator* allocator = nullptr,
-                         size_t width = video_constants::FRAME_WIDTH,
-                         size_t height = video_constants::FRAME_HEIGHT)
-        : width_(width)
-        , height_(height)
+                         size_t max_width = video_constants::FRAME_WIDTH,
+                         size_t max_height = video_constants::FRAME_HEIGHT)
+        : capacity_width_(max_width)
+        , capacity_height_(max_height)
+        , width_(max_width)
+        , height_(max_height)
         , allocator_(allocator)
         , owns_allocator_(allocator == nullptr)
     {
@@ -46,7 +67,8 @@ public:
             allocator_ = default_allocator_.get();
         }
 
-        size_t pixel_count = width * height;
+        // Allocate once at maximum size - never reallocate
+        size_t pixel_count = max_width * max_height;
         front_ = allocator_->allocate(pixel_count);
         back_ = allocator_->allocate(pixel_count);
     }
@@ -71,22 +93,23 @@ public:
     // No lock needed - only core thread accesses front buffer.
     uint32_t* write_ptr() { return front_.data(); }
 
-    // Get write pointer at specific (x, y) position
+    // Get write pointer at specific (x, y) position.
+    // Uses capacity_width_ for stride (row spacing).
     uint32_t* write_ptr(size_t x, size_t y) {
-        return front_.data() + (y * width_ + x);
+        return front_.data() + (y * capacity_width_ + x);
     }
 
     // Write a single pixel
     void write_pixel(size_t x, size_t y, uint32_t color) {
-        if (x < width_ && y < height_) {
-            front_[y * width_ + x] = color;
+        if (x < capacity_width_ && y < capacity_height_) {
+            front_[y * capacity_width_ + x] = color;
         }
     }
 
     // Write a row of pixels
     void write_row(size_t y, const uint32_t* pixels, size_t count) {
-        if (y < height_ && count <= width_) {
-            std::copy(pixels, pixels + count, front_.data() + y * width_);
+        if (y < capacity_height_ && count <= capacity_width_) {
+            std::copy(pixels, pixels + count, front_.data() + y * capacity_width_);
         }
     }
 
@@ -132,13 +155,47 @@ public:
 
     // --- Query interface ---
 
+    // Logical dimensions (current frame content size)
     size_t width() const { return width_; }
     size_t height() const { return height_; }
-    size_t stride() const { return width_ * sizeof(uint32_t); }
+
+    // Physical capacity (maximum allocated size, never changes)
+    size_t capacity_width() const { return capacity_width_; }
+    size_t capacity_height() const { return capacity_height_; }
+
+    // Stride is based on physical capacity (row spacing in pixels)
+    size_t stride() const { return capacity_width_ * sizeof(uint32_t); }
+    size_t stride_pixels() const { return capacity_width_; }
+
+    // Total capacity (physical allocation)
+    size_t capacity_pixels() const { return capacity_width_ * capacity_height_; }
+    size_t capacity_bytes() const { return capacity_pixels() * sizeof(uint32_t); }
+
+    // Logical frame size (content only)
     size_t pixel_count() const { return width_ * height_; }
     size_t byte_size() const { return pixel_count() * sizeof(uint32_t); }
 
+    // --- Dimension management ---
+
+    // Set logical dimensions for current frame (must fit in capacity).
+    // Called at frame swap to record the actual frame size.
+    void set_dimensions(size_t width, size_t height) {
+        assert(width <= capacity_width_ && height <= capacity_height_);
+        width_ = width;
+        height_ = height;
+    }
+
+    // --- Metadata interface ---
+
+    void set_metadata(const FrameMetadata& meta) { metadata_ = meta; }
+    const FrameMetadata& metadata() const { return metadata_; }
+
 private:
+    // Physical allocation (fixed at construction, never changes)
+    size_t capacity_width_;
+    size_t capacity_height_;
+
+    // Logical dimensions (can change each frame)
     size_t width_;
     size_t height_;
     FrameAllocator* allocator_;
@@ -150,6 +207,8 @@ private:
 
     mutable std::mutex mutex_;   // Protects swap operations
     std::atomic<uint64_t> version_{0};  // Frame version counter
+
+    FrameMetadata metadata_;  // Per-frame metadata (updated at swap)
 };
 
 } // namespace beebium
