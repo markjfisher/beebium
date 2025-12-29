@@ -1160,6 +1160,96 @@ TEST_CASE("MODE 7 sixel graphics test card separated", "[mode7][testcard][graphi
     }
 }
 
+TEST_CASE("MODE 7 printable characters test card", "[mode7][testcard][characters][golden]") {
+    REQUIRE(roms_available());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    ModelB machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    for (uint64_t i = 0; i < 3'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (machine.read(0x7C28) == 'B') break;
+    }
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Fill all 25 rows × 40 columns with printable ASCII characters (32-126)
+    // Each row starts 40 characters ahead, wrapping within the 95-character range.
+    // Row 0: starts at 32 (space)
+    // Row 1: starts at 72 (H)
+    // Row 2: starts at 112 (p), wraps to 32 after 126
+    // etc.
+    //
+    // This exercises all 95 printable characters across the full display.
+
+    const int FIRST_PRINTABLE = 32;   // Space
+    const int LAST_PRINTABLE = 126;   // Tilde
+    const int NUM_PRINTABLE = LAST_PRINTABLE - FIRST_PRINTABLE + 1;  // 95
+
+    for (int row = 0; row < 25; ++row) {
+        uint16_t addr = 0x7C00 + row * 40;
+        for (int col = 0; col < 40; ++col) {
+            int char_index = (row * 40 + col) % NUM_PRINTABLE;
+            uint8_t ch = static_cast<uint8_t>(FIRST_PRINTABLE + char_index);
+            machine.write(addr + col, ch);
+        }
+    }
+
+    // Render
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    std::filesystem::create_directories(GOLDEN_DIR);
+
+    // Check for golden master
+    auto golden_filepath = GOLDEN_DIR / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_tolerant(frame.data(), golden.data(),
+                                               fb.width() * fb.height(), 16);
+        double diff_percent = 100.0 * diff / (fb.width() * fb.height());
+        INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
+        CHECK(diff_percent < 0.1);
+    } else {
+        auto output_filepath = GOLDEN_DIR / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
 TEST_CASE("MODE 7 cursor visibility at all positions", "[mode7][cursor][golden]") {
     REQUIRE(roms_available());
 
