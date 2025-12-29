@@ -69,7 +69,7 @@ public:
         if (crtc_output.hsync) flags |= VIDEO_FLAG_HSYNC;
         if (crtc_output.vsync) flags |= VIDEO_FLAG_VSYNC;
         if (crtc_output.display) flags |= VIDEO_FLAG_DISPLAY;
-        if (crtc_output.interlace && crtc_output.odd_field) flags |= VIDEO_FLAG_INTERLACE;
+        if (crtc_output.interlace) flags |= VIDEO_FLAG_INTERLACE;
         batch.set_flags(flags);
 
         // Push to output queue
@@ -136,7 +136,7 @@ private:
         if (crtc_output.hsync) flags |= VIDEO_FLAG_HSYNC;
         if (crtc_output.vsync) flags |= VIDEO_FLAG_VSYNC;
         if (crtc_output.display) flags |= VIDEO_FLAG_DISPLAY;
-        if (crtc_output.interlace && crtc_output.odd_field) flags |= VIDEO_FLAG_INTERLACE;
+        if (crtc_output.interlace) flags |= VIDEO_FLAG_INTERLACE;
         batch.set_flags(flags);
 
         hardware_.video_output->push(batch);

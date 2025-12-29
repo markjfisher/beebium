@@ -30,7 +30,7 @@ enum VideoDataFlag : uint8_t {
     VIDEO_FLAG_HSYNC = 0x01,      // Horizontal sync active
     VIDEO_FLAG_VSYNC = 0x02,      // Vertical sync active
     VIDEO_FLAG_DISPLAY = 0x04,    // Display enable (visible area)
-    VIDEO_FLAG_INTERLACE = 0x08,  // Odd field of interlaced frame
+    VIDEO_FLAG_INTERLACE = 0x08,  // Interlace mode active (frame is two fields)
 };
 
 // A single pixel with 4-bit RGB and 4-bit metadata
