@@ -217,6 +217,22 @@ public:
     // Set the current raster (scanline within character row) from CRTC
     // This should be called each tick with the CRTC's raster output
     void set_raster(uint8_t raster) {
+        // Detect character row completion: when raster wraps from high to low
+        // In interlace mode, raster goes 0,2,4...18 then wraps to 0 (or 1 for even field)
+        // Threshold of 10 detects the wrap reliably
+        if (m_raster >= 10 && raster < 10) {
+            // We've completed a character row - handle double-height transition
+            if (m_any_double_height) {
+                if (m_raster_offset == 0) {
+                    // Transition from top half to bottom half
+                    m_raster_offset = 20;
+                } else {
+                    // Transition from bottom half back to top
+                    m_raster_offset = 0;
+                    m_any_double_height = false;
+                }
+            }
+        }
         m_raster = raster;
     }
 
@@ -352,13 +368,10 @@ public:
         std::memset(m_output, 0, sizeof(m_output));
     }
 
-    // Called at end of each scanline (for double-height tracking)
-    // Raster is now provided by CRTC via set_raster(), not tracked internally
+    // Called at end of each scanline
     void end_of_line() {
         m_bg = 0;
-        // Double-height handling: when CRTC raster wraps (new character row),
-        // check if we need to show bottom half of double-height chars
-        // This is detected when set_raster() sees raster go from high to 0
+        // Double-height transition is handled in set_raster() when raster wraps
     }
 
     // Called at vertical sync
