@@ -1060,6 +1060,106 @@ TEST_CASE("MODE 7 sixel graphics test card contiguous", "[mode7][testcard][graph
     }
 }
 
+TEST_CASE("MODE 7 sixel graphics test card separated", "[mode7][testcard][graphics]") {
+    REQUIRE(roms_available());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    ModelB machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    for (uint64_t i = 0; i < 3'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (machine.read(0x7C28) == 'B') break;
+    }
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Create 5x13 table of all 64 separated sixel patterns
+    // Each cell is 6 characters: [alpha_ctrl, hex_hi, hex_lo, graphics_ctrl, sep_ctrl, sixel]
+    // Displays as " AB  S" where AB is the hex code and S is the separated sixel
+    // 5 columns × 6 chars = 30 chars per row (fits in 40)
+    // 13 rows starting at row 7 (rows 7-19) for 65 cells (64 sixels + 1 empty)
+    //
+    // Sixel character codes:
+    //   0x20-0x3F: sixels 0-31 (bit 6 = 0, bottom-right cell off)
+    //   0x60-0x7F: sixels 32-63 (bit 6 = 1, bottom-right cell on)
+
+    const char* hex_digits = "0123456789ABCDEF";
+
+    for (int table_row = 0; table_row < 13; ++table_row) {
+        int screen_row = 7 + table_row;
+        uint16_t addr = 0x7C00 + screen_row * 40;
+
+        for (int table_col = 0; table_col < 5; ++table_col) {
+            int sixel_idx = table_row * 5 + table_col;
+            if (sixel_idx >= 64) break;  // Only 64 sixels
+
+            uint8_t code = (sixel_idx < 32) ? (0x20 + sixel_idx) : (0x60 + (sixel_idx - 32));
+
+            // Cell format: [alpha_ctrl, hex_hi, hex_lo, graphics_ctrl, sep_ctrl, sixel]
+            machine.write(addr++, 0x87);  // Alpha white (displays as space)
+            machine.write(addr++, hex_digits[(code >> 4) & 0xF]);
+            machine.write(addr++, hex_digits[code & 0xF]);
+            machine.write(addr++, 0x97);  // Graphics white (displays as space)
+            machine.write(addr++, 0x1A);  // Separated graphics (displays as space)
+            machine.write(addr++, code);  // Sixel character
+        }
+    }
+
+    // Render
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    std::filesystem::create_directories(GOLDEN_DIR);
+
+    // Check for golden master
+    auto golden_filepath = GOLDEN_DIR / "testcard_sixels_separated.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_tolerant(frame.data(), golden.data(),
+                                               fb.width() * fb.height(), 16);
+        double diff_percent = 100.0 * diff / (fb.width() * fb.height());
+        INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
+        CHECK(diff_percent < 0.1);
+    } else {
+        auto output_filepath = GOLDEN_DIR / "testcard_sixels_separated_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
 TEST_CASE("MODE 7 cursor visibility at all positions", "[mode7][cursor][golden]") {
     REQUIRE(roms_available());
 

@@ -209,7 +209,7 @@ public:
         m_raster_shift = 0;
         m_raster_offset = 0;
         m_last_graphics_data = 0;
-        m_write_index = 4;
+        m_write_index = 0;  // No pipeline delay - output immediately
         m_read_index = 0;
         std::memset(m_output, 0, sizeof(m_output));
     }
@@ -364,7 +364,7 @@ public:
         m_raster_shift = 0;
 
         m_read_index = 0;
-        m_write_index = 4;
+        m_write_index = 0;  // No pipeline delay - output immediately
         std::memset(m_output, 0, sizeof(m_output));
     }
 
@@ -543,7 +543,7 @@ private:
 
     // Output delay buffer (4-slot delay for 2us LOSE-to-display)
     Output m_output[8] = {};
-    uint8_t m_write_index = 4;
+    uint8_t m_write_index = 0;  // No pipeline delay
     uint8_t m_read_index = 0;
 
     // Raster state

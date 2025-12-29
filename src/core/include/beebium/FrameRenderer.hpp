@@ -74,13 +74,10 @@ public:
     void update_timing(const DisplayTiming& timing) {
         timing_ = timing;
 
-        // Empirical offsets to match B2/BeebEm display positioning:
-        // - Shift right by ~3 MODE 7 characters (28 pixels) to increase left margin
-        // - Shift up by ~1 MODE 7 row (20 scanlines) to correct vertical position
-        // Note: negative vertical offset will clip top scanlines, which should
-        // be in the vertical blanking period anyway.
-        horizontal_offset_ = 28;
-        vertical_offset_ = -20;
+        // Small negative offset to compensate for blanking period before display
+        // TODO: Calculate proper offset from CRTC H-sync position register
+        horizontal_offset_ = 0;
+        vertical_offset_ = 0;
     }
 
     // Process a batch of PixelBatches from the queue.
