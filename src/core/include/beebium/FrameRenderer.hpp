@@ -117,27 +117,27 @@ public:
         bool vsync = (flags & VIDEO_FLAG_VSYNC) != 0;
         bool hsync = (flags & VIDEO_FLAG_HSYNC) != 0;
         bool display = (flags & VIDEO_FLAG_DISPLAY) != 0;
-        bool interlace_odd = (flags & VIDEO_FLAG_INTERLACE) != 0;
+        bool interlace = (flags & VIDEO_FLAG_INTERLACE) != 0;
 
         // Track interlace mode from VIDEO_FLAG_INTERLACE
-        if (interlace_odd) {
+        if (interlace) {
             in_interlace_mode_ = true;
         }
 
-        // Handle VSYNC rising edge - swap buffers, reset frame state
-        // NOTE: Do NOT reset y_ here. Y is reset when display enable goes high.
+        // Handle VSYNC rising edge - finalize frame and swap buffers
         if (vsync && !in_vsync_) {
             if (in_interlace_mode_) {
-                // In interlace mode, swap every other VSYNC
+                // In interlace mode, swap every other VSYNC (after completing both fields)
                 interlace_field_count_++;
                 if ((interlace_field_count_ & 1) == 0) {
-                    // Even field count (0, 2, 4...) - swap after completing a pair
-                    frame_buffer_->swap();
+                    // Even field count (0, 2, 4...) - finish frame after completing a pair
+                    finish_frame();
                 }
             } else {
-                // Non-interlace mode - swap every VSYNC
-                frame_buffer_->swap();
+                // Non-interlace mode - finish frame every VSYNC
+                finish_frame();
             }
+            y_ = 0;  // Reset vertical position for new frame
             was_displaying_ = false;  // New frame starting
         }
         in_vsync_ = vsync;
@@ -145,18 +145,21 @@ public:
         // Handle HSYNC rising edge - new scanline
         if (hsync && !in_hsync_) {
             ++y_;
+            x_ = 0;  // Reset horizontal position for new scanline
             was_displaying_line_ = false;  // New line starting
-            if (y_ >= frame_buffer_->height()) {
+            // Use capacity (physical allocation) for wrap check, not logical height
+            if (y_ >= frame_buffer_->capacity_height()) {
                 y_ = 0;  // Wrap around if we exceed buffer
             }
         }
         in_hsync_ = hsync;
 
         // Reset Y when first displayed scanline is reached (display enable rising edge)
-        // This positions content correctly regardless of CRTC VSYNC timing.
-        // NOTE: y_ represents the scanline number within the current field (0, 1, 2...),
-        // not the framebuffer line. The field_offset below handles interlace interleaving.
+        // This positions content correctly regardless of CRTC VSYNC timing variations.
+        // Capture the pre-reset y_ as the top border (scanlines before display).
         if (display && !was_displaying_) {
+            top_border_ = y_;  // Scanlines from VSYNC to first display line
+            left_border_ = x_;  // Pixels from HSYNC to first display pixel
             y_ = 0;  // First visible scanline in this field
             was_displaying_ = true;
         }
@@ -186,13 +189,18 @@ public:
         }
 
         // Convert PixelBatch pixels to BGRA32 and write to framebuffer
-        if (write_x >= 0 && write_x + 8 <= static_cast<int>(frame_buffer_->width()) &&
-            write_y >= 0 && write_y < static_cast<int>(frame_buffer_->height())) {
+        // Use capacity for bounds checking (physical allocation size)
+        if (write_x >= 0 && write_x + 8 <= static_cast<int>(frame_buffer_->capacity_width()) &&
+            write_y >= 0 && write_y < static_cast<int>(frame_buffer_->capacity_height())) {
             uint32_t* dest = frame_buffer_->write_ptr(static_cast<size_t>(write_x),
                                                        static_cast<size_t>(write_y));
             for (int i = 0; i < 8; ++i) {
                 dest[i] = pixel_to_bgra32(batch.pixels.pixels[i]);
             }
+
+            // Track frame bounds for logical dimensions
+            max_x_written_ = std::max(max_x_written_, static_cast<size_t>(write_x + 8));
+            max_y_written_ = std::max(max_y_written_, static_cast<size_t>(write_y + 1));
         }
 
         x_ += 8;  // Each batch is 8 pixels
@@ -214,9 +222,52 @@ public:
         interlace_field_count_ = 0;
         was_displaying_ = false;
         was_displaying_line_ = false;
+        max_x_written_ = 0;
+        max_y_written_ = 0;
+        top_border_ = 0;
+        left_border_ = 0;
     }
 
+    // Get tracked frame dimensions (for debugging/testing)
+    size_t max_x_written() const { return max_x_written_; }
+    size_t max_y_written() const { return max_y_written_; }
+
 private:
+    // Finalize frame at swap: set logical dimensions and metadata
+    void finish_frame() {
+        // Use tracked dimensions, but default to capacity if nothing was written
+        // (can happen on first frame or if display was never enabled)
+        size_t frame_width = max_x_written_ > 0 ? max_x_written_ : frame_buffer_->capacity_width();
+        size_t frame_height = max_y_written_ > 0 ? max_y_written_ : frame_buffer_->capacity_height();
+
+        // Set logical dimensions to match actual content
+        frame_buffer_->set_dimensions(frame_width, frame_height);
+
+        // Build and store metadata
+        FrameMetadata meta;
+        meta.width = static_cast<uint32_t>(frame_width);
+        meta.height = static_cast<uint32_t>(frame_height);
+        meta.frame_number = frame_buffer_->version() + 1;
+        meta.interlaced = in_interlace_mode_;
+        meta.left_border = static_cast<uint32_t>(left_border_);
+        meta.top_border = static_cast<uint32_t>(top_border_);
+        // right_border and bottom_border would require tracking display-disable edges
+        // which we don't currently do - leave as 0 for now
+        frame_buffer_->set_metadata(meta);
+
+        // Swap buffers (no reallocation - just pointer swap)
+        frame_buffer_->swap();
+
+        // Clear new write buffer to black for next frame
+        // (Gap scanlines in MODE 3/6 will remain black)
+        frame_buffer_->clear(0x00000000);
+
+        // Reset tracking for next frame
+        max_x_written_ = 0;
+        max_y_written_ = 0;
+    }
+
+
     // Convert a 4-bit-per-channel VideoDataPixel to BGRA32
     static uint32_t pixel_to_bgra32(VideoDataPixel pixel) {
         // VideoDataPixel: bits 0-3 blue, 4-7 green, 8-11 red
@@ -241,6 +292,14 @@ private:
     uint32_t interlace_field_count_ = 0; // Counts fields in interlace mode
     bool was_displaying_ = false;      // Frame-level: have we seen display=true this frame?
     bool was_displaying_line_ = false; // Line-level: have we seen display=true this line?
+
+    // Track frame dimensions from actual pixel writes
+    size_t max_x_written_ = 0;
+    size_t max_y_written_ = 0;
+
+    // Track border dimensions (blanking before active area)
+    size_t top_border_ = 0;     // Scanlines from VSYNC to first display
+    size_t left_border_ = 0;    // Pixels from HSYNC to first display
 };
 
 } // namespace beebium
