@@ -1000,9 +1000,9 @@ TEST_CASE("MODE 7 sixel graphics test card contiguous", "[mode7][testcard][graph
     // 8 columns × 5 chars = 40 chars (full row width)
     // 8 data rows with blank lines between = 15 rows total (rows 7-21)
     //
-    // Sixel character codes:
-    //   0x20-0x3F: sixels 0-31 (bit 6 = 0, bottom-right cell off)
-    //   0x60-0x7F: sixels 32-63 (bit 6 = 1, bottom-right cell on)
+    // Sixel character codes (BBC Micro convention with high bit set):
+    //   0xA0-0xBF: sixels 0-31 (bit 6 = 0, bottom-right cell off)
+    //   0xE0-0xFF: sixels 32-63 (bit 6 = 1, bottom-right cell on)
 
     const char* hex_digits = "0123456789ABCDEF";
 
@@ -1014,7 +1014,7 @@ TEST_CASE("MODE 7 sixel graphics test card contiguous", "[mode7][testcard][graph
 
         for (int table_col = 0; table_col < 8; ++table_col) {
             int sixel_idx = table_row * 8 + table_col;
-            uint8_t code = (sixel_idx < 32) ? (0x20 + sixel_idx) : (0x60 + (sixel_idx - 32));
+            uint8_t code = (sixel_idx < 32) ? (0xA0 + sixel_idx) : (0xE0 + (sixel_idx - 32));
 
             // Cell format: [alpha_ctrl, hex_hi, hex_lo, graphics_ctrl, sixel]
             machine.write(addr++, 0x87);  // Alpha white (displays as space)
@@ -1099,9 +1099,9 @@ TEST_CASE("MODE 7 sixel graphics test card separated", "[mode7][testcard][graphi
     // 5 columns × 6 chars = 30 chars per row (fits in 40)
     // 13 rows starting at row 7 (rows 7-19) for 65 cells (64 sixels + 1 empty)
     //
-    // Sixel character codes:
-    //   0x20-0x3F: sixels 0-31 (bit 6 = 0, bottom-right cell off)
-    //   0x60-0x7F: sixels 32-63 (bit 6 = 1, bottom-right cell on)
+    // Sixel character codes (BBC Micro convention with high bit set):
+    //   0xA0-0xBF: sixels 0-31 (bit 6 = 0, bottom-right cell off)
+    //   0xE0-0xFF: sixels 32-63 (bit 6 = 1, bottom-right cell on)
 
     const char* hex_digits = "0123456789ABCDEF";
 
@@ -1113,7 +1113,7 @@ TEST_CASE("MODE 7 sixel graphics test card separated", "[mode7][testcard][graphi
             int sixel_idx = table_row * 5 + table_col;
             if (sixel_idx >= 64) break;  // Only 64 sixels
 
-            uint8_t code = (sixel_idx < 32) ? (0x20 + sixel_idx) : (0x60 + (sixel_idx - 32));
+            uint8_t code = (sixel_idx < 32) ? (0xA0 + sixel_idx) : (0xE0 + (sixel_idx - 32));
 
             // Cell format: [alpha_ctrl, hex_hi, hex_lo, graphics_ctrl, sep_ctrl, sixel]
             machine.write(addr++, 0x87);  // Alpha white (displays as space)
