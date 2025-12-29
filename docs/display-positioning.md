@@ -1,35 +1,59 @@
 # Display Positioning
 
-This document describes the display positioning implementation in Beebium and potential future improvements.
+This document describes the display positioning implementation in Beebium.
 
 ## Current Implementation
 
-### Problem Statement
+### Display-Enable Based Positioning
 
-When comparing Beebium's display output to B2 and BeebEm, the "BBC Computer 32K" startup text appeared:
-- Approximately 2-3 MODE 7 characters too far left
-- Approximately 1 MODE 7 text row too low
+Rather than using fixed offsets derived from CRTC timing registers, Beebium uses the CRTC's **display enable** signal to determine where content appears in the framebuffer:
 
-### Solution
+**Vertical positioning:**
+- When display enable first goes high after VSYNC, reset Y to 0
+- This marks the start of the visible display area
+- Scanlines before display enable become the top border
 
-Added offset infrastructure to `FrameRenderer` that adjusts where pixels are written in the framebuffer:
+**Horizontal positioning:**
+- Count blanking batches from HSYNC until display enable goes high
+- When display enable goes high, reset X to 0 and record left border width
+- Blanking batches after display enable ends contribute to right border
 
-**Files modified:**
+**Files:**
 - `src/core/include/beebium/FrameRenderer.hpp`
 
-**Key additions:**
-1. `DisplayTiming` struct - holds CRTC register values for future dynamic offset calculation
-2. `update_timing()` method - calculates horizontal and vertical offsets
-3. Offset application in `process_unit()` - applies offsets when writing pixels
-4. Interlace field handling - alternates field offset for interlaced modes
-
-**Current empirical offsets:**
+**Key implementation:**
 ```cpp
-horizontal_offset_ = 28;   // Shift right ~3 MODE 7 characters
-vertical_offset_ = -20;    // Shift up ~1 MODE 7 row
+// Reset Y when first displayed scanline is reached
+if (display && !was_displaying_) {
+    top_border_ = y_;  // Scanlines from VSYNC to first display
+    y_ = 0;            // First visible scanline
+    was_displaying_ = true;
+}
+
+// Capture left border when display first goes high on a line
+if (display && !was_displaying_line_) {
+    left_border_ = blanking_count_ * 8;  // Convert batches to pixels
+    x_ = 0;
+    was_displaying_line_ = true;
+}
 ```
 
-These offsets produce positioning that closely matches B2 with "Correct aspect ratio" enabled.
+### Border Tracking
+
+The FrameRenderer tracks all four borders by counting pixel batches:
+
+| Border | Calculation |
+|--------|-------------|
+| `left_border` | Blanking batches × 8 pixels before display enable on each line |
+| `right_border` | Total line pixels − left border − displayed width |
+| `top_border` | Scanlines from VSYNC to first display enable |
+| `bottom_border` | Total frame scanlines − top border − displayed height |
+
+This approach:
+- Automatically adapts to different screen modes
+- Works with custom CRTC timings (games like Elite, Exile)
+- Provides accurate border dimensions for CRT-style rendering
+- Handles Mode 7's different timing (1 MHz character clock, SAA5050 pixel expansion)
 
 ## Comparative Analysis
 
@@ -63,56 +87,36 @@ B-Em uses a fixed 128-pixel left margin, adjusted by sync width:
 scrx = 128 - ((crtc[3] & 15) * 4);  // High frequency mode
 ```
 
-### Beebium's Approach: Empirical Fixed Offsets
-Currently uses simple fixed offsets tuned to match B2. This works for standard modes but won't adapt to custom CRTC timings.
+### Beebium's Approach: Display-Enable Positioning
+Uses the CRTC's display enable signal directly rather than calculating offsets from timing registers. This naturally adapts to any CRTC configuration since display enable already encodes when visible content starts and ends.
 
-## Remaining Differences
+## Advantages of Display-Enable Positioning
 
-Even with corrected positioning, some differences remain:
-
-1. **Vertical content density**: Beebium displays 25 MODE 7 rows in approximately the same vertical space where B2 displays 24. This results in:
-   - Slightly compressed vertical appearance
-   - Larger bottom margin in Beebium
-   - B2 may be applying slight overscan/cropping
-
-2. **Margin handling**: BeebEm has no visible top/bottom margins, suggesting different framebuffer sizing or overscan behavior.
-
-These differences are cosmetic and don't affect functionality.
+1. **Automatic adaptation**: Works with any CRTC register values without offset calculation
+2. **Accurate borders**: Blanking periods are measured directly, not inferred from registers
+3. **Mode independence**: Handles Mode 7's different character clock automatically
+4. **Custom timing support**: Games that reprogram the CRTC work without special cases
 
 ## Future Directions
 
-### 1. Wire CRTC to FrameRenderer
-Connect the actual CRTC register values to `update_timing()` so offsets adapt when:
-- Screen mode changes (MODE 0-7)
-- Games use custom CRTC timings (Elite, Exile, etc.)
+### 1. Border Color Configuration
+Currently borders are rendered in debug colors (red/green/blue/yellow). Options:
+- Black borders (authentic CRT appearance)
+- User-configurable border color
+- Per-border color from CRTC/ULA state (if BBC had border color control)
 
-**Implementation approach:**
-- Add observer pattern or callback from CRTC to FrameRenderer
-- Call `update_timing()` when relevant CRTC registers change
+### 2. Overscan/Cropping Options
+Add user-configurable display options:
+- **Full frame**: Show entire frame including borders (current behavior)
+- **Visible area only**: Crop to displayed content (like most emulators)
+- **TV safe area**: Crop to typical CRT overscan margins
+- **Custom**: User-defined cropping percentages
 
-### 2. CRTC-Derived Offset Calculation
-Replace empirical offsets with calculated values based on CRTC timing:
-```cpp
-// Back porch approach (needs refinement)
-int h_back_porch = (h_total + 1) - (h_sync_pos + h_sync_width);
-horizontal_offset_ = h_back_porch * pixels_per_char;
-```
-
-**Challenge:** The relationship between CRTC timing and framebuffer positioning is not straightforward. BeebEm's formula includes centering adjustments that cancel out the back porch for standard modes.
-
-### 3. Overscan/Border Configuration
-Add user-configurable overscan settings similar to B2:
-- Control how much border/blanking area is visible
-- Allow cropping edges for full-screen display
-- Match different emulator behaviors
-
-### 4. TV Timing State Machine
-For highest accuracy, implement B2-style explicit TV timing:
-- Model horizontal/vertical retrace periods
-- Apply back porch delays before scanout
-- Handle interlace field timing precisely
-
-This would be a larger refactor but would produce the most accurate positioning.
+### 3. CRT Shader Integration
+Border dimensions enable authentic CRT rendering:
+- Apply phosphor glow/bloom effects within visible area
+- Proper handling of blanking in scanline effects
+- Accurate aspect ratio including borders for PAL timing
 
 ## References
 

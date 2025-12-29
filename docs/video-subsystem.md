@@ -102,6 +102,20 @@ Lock-free SPSC circular buffer. Decouples core from consumers. Default capacity 
 
 Consumes queue, tracks raster position, writes BGRA32 pixels to framebuffer. Swaps buffers on VSYNC.
 
+**Key features:**
+
+- **Display-enable positioning**: Resets Y to 0 when display enable first goes high (start of visible area), resets X at line start. This positions content correctly regardless of CRTC sync timing variations.
+
+- **Border tracking**: Counts all pixel batches (including blanking) to calculate four border dimensions:
+  - `left_border`: Blanking pixels before display enable on each line
+  - `right_border`: Total line width minus left border minus displayed width
+  - `top_border`: Scanlines from VSYNC to first display enable
+  - `bottom_border`: Total frame height minus top border minus displayed height
+
+- **Interlace support**: Detects interlace mode via `VIDEO_FLAG_INTERLACE`, composites both fields into a single framebuffer (even field → even lines, odd field → odd lines), swaps buffers every other VSYNC.
+
+- **Dynamic dimensions**: Tracks maximum X/Y written to determine actual frame dimensions. Sets logical width/height in `FrameMetadata` at swap time.
+
 ### FrameBuffer
 
 Double-buffered with mutex-protected swap. Core writes to front buffer; clients read immutable back buffer. Version counter for change detection.
@@ -164,18 +178,19 @@ The SAA5050 requires specific timing signals derived from CRTC output:
 ## Current Status
 
 **Implemented:**
-- CRTC 6845 timing and address generation
+- CRTC 6845 timing and address generation (including interlace mode)
 - VideoULA mode detection and palette
-- SAA5050 basic alpha character rendering
-- Font data for all 96 printable characters
-- Output delay buffer (4-slot lag)
-- FrameBuffer double-buffering
-- Boot screenshot capture showing "BBC Computer 32K"
-
-**Pending (SAA5050 Phase 3-6):**
-- Color control codes (foreground/background)
-- Graphics characters (sixels)
-- Flash/steady animation
-- Double-height characters
-- Hold graphics mode
-- Conceal display
+- SAA5050 teletext character generator (complete):
+  - All 96 printable characters with pre-computed antialiased font
+  - Color control codes (foreground/background)
+  - Graphics characters (contiguous and separated sixels)
+  - Flash/steady animation
+  - Double-height characters
+  - Hold graphics mode
+  - Conceal display
+  - Gamma-corrected 6→8 pixel blending (B2-quality rendering)
+- FrameBuffer double-buffering with metadata
+- FrameRenderer with display-enable positioning and border tracking
+- Dynamic frame dimensions (adapts to mode changes)
+- Full border calculation (left, right, top, bottom)
+- Interlace field compositing for Mode 7

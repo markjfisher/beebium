@@ -134,38 +134,41 @@ This ensures perceptually correct color blending when expanding pixels.
 | `src/beeb/include/beeb/teletext.h` | SAA5050 class definition |
 | `src/beeb/src/TVOutput.cpp` | Gamma blending, pixel expansion |
 
-## Implementation Path for Beebium
+## Implementation Status
 
-If enhanced rendering quality is desired in the future:
+Beebium has implemented B2-quality Mode 7 rendering:
 
-### Phase 1: Pre-computed Antialiased Font
-1. Change font storage from `uint8_t[96][10]` to `uint16_t[2][3][96][20]`
-2. Implement `Get16WideRow()` - expand 6 bits to 12 bits
-3. Implement `GetAARow()` - edge smoothing algorithm
-4. Pre-compute AA and non-AA variants at startup
+### Completed Features
 
-### Phase 2: Metadata Output
-1. Add teletext type marker to PixelBatch
-2. Change `emit_pixels()` to output metadata:
-   - pixel[0] = background + type marker
-   - pixel[1] = foreground
-   - pixel[2-3] = font bitmap data
+1. **Pre-computed Antialiased Font** (`Saa5050.hpp`)
+   - Font storage: `uint16_t TELETEXT_EXPANDED_FONT[2][3][96][20]`
+   - `get_doubled_row()` - expands 6 bits to 12 bits (horizontal pixel doubling)
+   - `get_aa_row()` - B2's edge smoothing algorithm
+   - Both AA and non-AA variants pre-computed at startup via `TeletextFontInit`
 
-### Phase 3: TV Output Filter
-1. Create `TeletextRenderer` class or enhance `FrameRenderer`
-2. Detect teletext pixel batches by type marker
-3. Implement gamma-corrected blend table
-4. Expand font data to final pixels with blending
+2. **Gamma-Corrected Blending**
+   - `TELETEXT_BLEND_TABLE[16][16]` pre-computed with γ=2.2
+   - `emit_pixels()` expands 6→8 pixels using weighted blend pattern
+   - Pattern: `p0, blend(p0,p1), blend(p2,p1), p2, p3, blend(p3,p4), blend(p5,p4), p5`
 
-## Key Takeaways
+3. **Complete Control Code Support**
+   - Alpha/graphics colors (0x01-0x07, 0x11-0x17)
+   - Flash/steady (0x08, 0x09)
+   - Double height (0x0C, 0x0D)
+   - Contiguous/separated graphics (0x19, 0x1A)
+   - Black/new background (0x1C, 0x1D)
+   - Hold/release graphics (0x1E, 0x1F)
+   - Conceal display (0x18)
 
-1. **Architectural separation** - B2 separates emulation (SAA5050 outputs metadata) from presentation (TVOutput does gamma blending)
+### Architectural Notes
 
-2. **Pre-computed antialiasing** - Edge smoothing calculated once at startup, stored in expanded font table
+Unlike B2's two-stage approach (SAA5050 outputs metadata, TVOutput renders), Beebium renders final pixels directly in `emit_pixels()`. This is simpler and sufficient since Beebium's FrameRenderer doesn't apply additional CRT filtering. The quality is equivalent because:
 
-3. **Gamma-corrected blending** - Proper perceptual color mixing when expanding pixels to screen resolution
+- Same antialiasing algorithm as B2
+- Same gamma-corrected blend table
+- Same 6→8 pixel expansion pattern
 
-4. **Memory vs computation trade-off** - Pre-computed font table is ~15KB but eliminates per-frame antialiasing calculations
+If CRT shader effects are added in the future, the existing `PixelBatchType::Teletext` marker enables detecting Mode 7 content for special handling.
 
 ---
 
