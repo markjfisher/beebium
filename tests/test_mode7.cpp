@@ -1193,23 +1193,38 @@ TEST_CASE("MODE 7 printable characters test card", "[mode7][testcard][characters
         }
     }
 
-    // Fill all 25 rows × 40 columns with printable ASCII characters (32-126)
-    // Each row starts 40 characters ahead, wrapping within the 95-character range.
-    // Row 0: starts at 32 (space)
-    // Row 1: starts at 72 (H)
-    // Row 2: starts at 112 (p), wraps to 32 after 126
-    // etc.
-    //
-    // This exercises all 95 printable characters across the full display.
+    // Fill screen with rulers and printable ASCII characters:
+    // - Top row (row 0): "0123456789" repeated 4 times for column counting
+    // - First column (col 0): "0123456789" repeated 2.5 times for row counting
+    // - The '0' at (0,0) is shared between horizontal and vertical rulers
+    // - Remaining cells (rows 1-24, cols 1-39): printable chars 32-126 cycling
 
+    const char* digits = "0123456789";
+
+    // Fill top row with digit ruler
+    for (int col = 0; col < 40; ++col) {
+        uint8_t ch = static_cast<uint8_t>(digits[col % 10]);
+        machine.write(0x7C00 + col, ch);
+    }
+
+    // Fill first column with digit ruler (row 0 already has '0')
+    for (int row = 1; row < 25; ++row) {
+        uint8_t ch = static_cast<uint8_t>(digits[row % 10]);
+        machine.write(0x7C00 + row * 40, ch);
+    }
+
+    // Fill remaining cells with printable characters
     const int FIRST_PRINTABLE = 32;   // Space
     const int LAST_PRINTABLE = 126;   // Tilde
     const int NUM_PRINTABLE = LAST_PRINTABLE - FIRST_PRINTABLE + 1;  // 95
 
-    for (int row = 0; row < 25; ++row) {
+    for (int row = 1; row < 25; ++row) {
         uint16_t addr = 0x7C00 + row * 40;
-        for (int col = 0; col < 40; ++col) {
-            int char_index = (row * 40 + col) % NUM_PRINTABLE;
+        for (int col = 1; col < 40; ++col) {
+            // Calculate character index based on position in the 24x39 interior grid
+            int grid_row = row - 1;
+            int grid_col = col - 1;
+            int char_index = (grid_row * 39 + grid_col) % NUM_PRINTABLE;
             uint8_t ch = static_cast<uint8_t>(FIRST_PRINTABLE + char_index);
             machine.write(addr + col, ch);
         }

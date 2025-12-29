@@ -42,9 +42,10 @@ struct DisplayTiming {
 // converts them to BGRA32 pixels, and writes them to a FrameBuffer.
 // It handles sync signals (HSYNC/VSYNC) to track raster position.
 //
-// Display positioning is calculated from CRTC timing registers to
-// properly center content within the framebuffer, matching the
-// behavior of other emulators (B2, BeebEm, B-Em).
+// Display positioning uses the CRTC display enable signal: Y resets
+// to 0 when display enable goes high (first visible scanline), and
+// X resets to 0 at the start of each visible line. This provides
+// correct positioning based on actual CRTC timing, not hardcoded offsets.
 //
 // This is an optional convenience component. Clients that want
 // raw PixelBatch access (e.g., for CRT shaders) can consume
@@ -123,9 +124,9 @@ public:
             in_interlace_mode_ = true;
         }
 
-        // Handle VSYNC
+        // Handle VSYNC rising edge - swap buffers, reset frame state
+        // NOTE: Do NOT reset y_ here. Y is reset when display enable goes high.
         if (vsync && !in_vsync_) {
-            // Rising edge of VSYNC - end of field
             if (in_interlace_mode_) {
                 // In interlace mode, swap every other VSYNC
                 interlace_field_count_++;
@@ -137,43 +138,54 @@ public:
                 // Non-interlace mode - swap every VSYNC
                 frame_buffer_->swap();
             }
-            y_ = 0;
+            was_displaying_ = false;  // New frame starting
         }
         in_vsync_ = vsync;
 
-        // Handle HSYNC
+        // Handle HSYNC rising edge - new scanline
         if (hsync && !in_hsync_) {
-            // Rising edge of HSYNC - end of scanline
-            x_ = 0;
             ++y_;
+            was_displaying_line_ = false;  // New line starting
             if (y_ >= frame_buffer_->height()) {
                 y_ = 0;  // Wrap around if we exceed buffer
             }
         }
         in_hsync_ = hsync;
 
+        // Reset Y when first displayed scanline is reached (display enable rising edge)
+        // This positions content correctly regardless of CRTC VSYNC timing.
+        // NOTE: y_ represents the scanline number within the current field (0, 1, 2...),
+        // not the framebuffer line. The field_offset below handles interlace interleaving.
+        if (display && !was_displaying_) {
+            y_ = 0;  // First visible scanline in this field
+            was_displaying_ = true;
+        }
+
+        // Reset X when display starts on each line (for horizontal positioning)
+        if (display && !was_displaying_line_) {
+            x_ = 0;
+            was_displaying_line_ = true;
+        }
+
         // Only write pixels during display enable
         if (!display) {
             return;
         }
 
-        // Apply offsets for proper display positioning
-        int write_x = static_cast<int>(x_) + horizontal_offset_;
+        // Calculate write position (no offsets needed with display-enable reset)
+        int write_x = static_cast<int>(x_);
         int write_y;
         if (in_interlace_mode_) {
             // Interlace: interleave fields on alternating framebuffer lines
-            // First field (odd rasters 0,2,4...) → even lines (0, 2, 4...)
-            // Second field (even rasters 1,3,5...) → odd lines (1, 3, 5...)
-            // field_count is odd during first field, even during second
+            // y_ is already set to 0 or 1 at frame start based on field
+            // Each subsequent line increments y_ by 1, but we double it for interlacing
             int field_offset = (interlace_field_count_ & 1) ? 0 : 1;
             write_y = static_cast<int>(y_) * 2 + field_offset;
-            write_y += vertical_offset_ * 2;  // Scale offset for interlace
         } else {
-            write_y = static_cast<int>(y_) + vertical_offset_;
+            write_y = static_cast<int>(y_);
         }
 
         // Convert PixelBatch pixels to BGRA32 and write to framebuffer
-        // Check bounds including negative offset possibility
         if (write_x >= 0 && write_x + 8 <= static_cast<int>(frame_buffer_->width()) &&
             write_y >= 0 && write_y < static_cast<int>(frame_buffer_->height())) {
             uint32_t* dest = frame_buffer_->write_ptr(static_cast<size_t>(write_x),
@@ -200,6 +212,8 @@ public:
         field_offset_ = 0;
         in_interlace_mode_ = false;
         interlace_field_count_ = 0;
+        was_displaying_ = false;
+        was_displaying_line_ = false;
     }
 
 private:
@@ -225,6 +239,8 @@ private:
     int field_offset_;       // 0 or 1 for interlace field positioning
     bool in_interlace_mode_ = false;   // True when interlace mode detected
     uint32_t interlace_field_count_ = 0; // Counts fields in interlace mode
+    bool was_displaying_ = false;      // Frame-level: have we seen display=true this frame?
+    bool was_displaying_line_ = false; // Line-level: have we seen display=true this line?
 };
 
 } // namespace beebium
