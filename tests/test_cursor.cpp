@@ -137,33 +137,25 @@ TEST_CASE("Mode 7 cursor blinks", "[video][cursor][integration]") {
     // We'll capture 64 frames to ensure we see at least one full blink cycle
 
     constexpr int NUM_FRAMES = 64;
-    // Mode 7 uses 1MHz CRTC clock, so need more CPU cycles for full frame
-    constexpr int CYCLES_PER_FRAME = 80000;
+    constexpr uint64_t MAX_CYCLES_PER_FRAME = 200000;  // Safety limit
 
     std::vector<size_t> bright_counts;
     bright_counts.reserve(NUM_FRAMES);
 
     for (int frame_idx = 0; frame_idx < NUM_FRAMES; ++frame_idx) {
-        // Clear and reset renderer for fresh frame
-        fb.clear(0);
-        renderer.reset();
+        // Wait for next complete frame by watching version counter
+        uint64_t start_version = fb.version();
+        uint64_t cycles_this_frame = 0;
 
-        // Drain old queue data
-        if (machine.memory().video_output.has_value()) {
-            auto& queue = machine.memory().video_output.value();
-            queue.consume(queue.size());
-        }
-
-        // Run one frame worth of cycles
-        for (int i = 0; i < CYCLES_PER_FRAME; ++i) {
+        while (fb.version() == start_version && cycles_this_frame < MAX_CYCLES_PER_FRAME) {
             machine.step();
             if (machine.memory().video_output.has_value()) {
                 renderer.process(machine.memory().video_output.value());
             }
+            ++cycles_this_frame;
         }
 
-        // Force swap and count bright pixels
-        fb.swap();
+        // Count bright pixels in the completed frame
         auto frame = fb.read_frame();
         size_t bright = count_bright_pixels(frame);
         bright_counts.push_back(bright);
@@ -1290,20 +1282,14 @@ TEST_CASE("Cursor pixels in rendered frame per line", "[video][cursor][pixels]")
     machine.memory().crtc.write(0, 10);
     machine.memory().crtc.write(1, (r10 & 0x1F) | 0x20);  // No cursor
 
-    fb.clear(0);
-    renderer.reset();
-    if (machine.memory().video_output.has_value()) {
-        machine.memory().video_output.value().consume(
-            machine.memory().video_output.value().size());
-    }
-
-    for (int i = 0; i < 160000; ++i) {
+    // Wait for a complete frame using version counter
+    uint64_t start_version = fb.version();
+    while (fb.version() == start_version) {
         machine.step();
         if (machine.memory().video_output.has_value()) {
             renderer.process(machine.memory().video_output.value());
         }
     }
-    fb.swap();
     size_t baseline = count_total_brightness();
     WARN("Baseline brightness (no cursor): " << baseline);
 
@@ -1327,23 +1313,14 @@ TEST_CASE("Cursor pixels in rendered frame per line", "[video][cursor][pixels]")
         machine.memory().crtc.write(0, 15);
         machine.memory().crtc.write(1, cursor_addr & 0xFF);
 
-        // Clear framebuffer and render a frame with cursor
-        fb.clear(0);
-        renderer.reset();
-        if (machine.memory().video_output.has_value()) {
-            machine.memory().video_output.value().consume(
-                machine.memory().video_output.value().size());
-        }
-
-        // Render two complete frames (160000 cycles for Mode 7)
-        // This ensures we have at least one complete frame regardless of where we start
-        for (int i = 0; i < 160000; ++i) {
+        // Wait for a complete frame with cursor at new position
+        uint64_t start_version = fb.version();
+        while (fb.version() == start_version) {
             machine.step();
             if (machine.memory().video_output.has_value()) {
                 renderer.process(machine.memory().video_output.value());
             }
         }
-        fb.swap();
 
         // Verify cursor position wasn't overwritten by MOS
         machine.memory().crtc.write(0, 14);
@@ -1643,7 +1620,6 @@ TEST_CASE("Cursor blink at each line position", "[video][cursor][perline]") {
     };
     std::vector<LineResult> results;
 
-    constexpr int CYCLES_PER_FRAME = 80000;
     constexpr int FRAMES_PER_LINE = 64;  // Enough for at least one full blink cycle
 
     for (int line = 0; line < 25; ++line) {
@@ -1654,10 +1630,11 @@ TEST_CASE("Cursor blink at each line position", "[video][cursor][perline]") {
         machine.memory().crtc.write(0, 15);
         machine.memory().crtc.write(1, cursor_addr & 0xFF);
 
-        // Collect brightness for multiple frames
+        // Collect brightness for multiple frames using version-based detection
         std::vector<size_t> brightness;
         for (int frame = 0; frame < FRAMES_PER_LINE; ++frame) {
-            for (int i = 0; i < CYCLES_PER_FRAME; ++i) {
+            uint64_t start_version = fb.version();
+            while (fb.version() == start_version) {
                 machine.step();
                 if (machine.memory().video_output.has_value()) {
                     renderer.process(machine.memory().video_output.value());
@@ -1711,24 +1688,23 @@ TEST_CASE("Simple cursor blink detection", "[video][cursor][simple]") {
     FrameBuffer fb(&allocator, 640, 512);
     FrameRenderer renderer(&fb);
 
-    // Run and count pixels per frame
-    // Mode 7 at 1MHz CRTC = 80000 CPU cycles per frame (50 fps)
-    constexpr int CYCLES_PER_FRAME = 80000;
+    // Run and count pixels per frame using version-based frame detection
     constexpr int TOTAL_FRAMES = 150;  // 50 to discard + 100 to analyze
 
     std::vector<size_t> bright_counts;
     bright_counts.reserve(TOTAL_FRAMES);
 
     for (int frame = 0; frame < TOTAL_FRAMES; ++frame) {
-        // Run one frame worth of cycles
-        for (int i = 0; i < CYCLES_PER_FRAME; ++i) {
+        // Wait for next complete frame using version counter
+        uint64_t start_version = fb.version();
+        while (fb.version() == start_version) {
             machine.step();
             if (machine.memory().video_output.has_value()) {
                 renderer.process(machine.memory().video_output.value());
             }
         }
 
-        // Count bright pixels in current frame
+        // Count bright pixels in completed frame
         auto pixels = fb.read_frame();
         size_t bright = count_bright_pixels(pixels);
         bright_counts.push_back(bright);

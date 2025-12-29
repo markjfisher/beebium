@@ -146,33 +146,21 @@ TEST_CASE("SAA5050 renders space character", "[saa5050][render]") {
 TEST_CASE("SAA5050 renders alpha character A", "[saa5050][render]") {
     Saa5050 chip;
 
-    // Test at font row 1 where 'A' has pixels (row 0 is blank for most characters)
-    // Need raster=2 or 3 for font_row = raster/2 = 1
-    chip.set_raster(2);  // raster = 2 (font row 1)
+    // Test at font row 2 where 'A' has pixels (row 0 is blank for most characters)
+    // With m_raster_shift=0, glyph_raster = raster directly
+    chip.set_raster(2);  // raster = 2 (font row 2)
     chip.start_of_line();
 
-    // New format: each byte() writes 2 entries (left half, right half)
-    // byte('A') writes to indices 4 (left half) and 5 (right half)
-    chip.byte('A', 1);  // writes indices 4, 5
+    // Each byte() writes 2 entries (left half, right half)
+    // With no pipeline delay, byte('A') writes to indices 0 and 1
+    chip.byte('A', 1);  // writes indices 0, 1
 
-    // Fill remaining slots with spaces
-    chip.byte(0x20, 1);  // writes indices 6, 7
-    chip.byte(0x20, 1);  // writes indices 0, 1
-    chip.byte(0x20, 1);  // writes indices 2, 3
-
-    // Read through indices 0-3, then read indices 4 and 5 for 'A'
-    PixelBatch batch;
-    chip.emit_pixels(batch, bbc_colors::PALETTE);  // reads index 0
-    chip.emit_pixels(batch, bbc_colors::PALETTE);  // reads index 1
-    chip.emit_pixels(batch, bbc_colors::PALETTE);  // reads index 2
-    chip.emit_pixels(batch, bbc_colors::PALETTE);  // reads index 3
-
-    // Read both halves of 'A' and check for white pixels in either
-    // 'A' at row 1 = 0x08 (bit 3 set), doubled to bits 6-7 in 12-bit value
-    // This means the left half (bits 0-5) may be empty, right half (bits 6-11) has pixels
+    // Read both halves of 'A' and check for white pixels
+    // 'A' at row 2 has pixels that should appear as white (foreground color)
     bool has_white = false;
 
-    // Left half (index 4)
+    // Left half (index 0)
+    PixelBatch batch;
     chip.emit_pixels(batch, bbc_colors::PALETTE);
     for (int i = 0; i < 8; ++i) {
         if (batch.pixels.pixels[i].bits.r == 15 &&
@@ -182,7 +170,7 @@ TEST_CASE("SAA5050 renders alpha character A", "[saa5050][render]") {
         }
     }
 
-    // Right half (index 5)
+    // Right half (index 1)
     PixelBatch batch2;
     chip.emit_pixels(batch2, bbc_colors::PALETTE);
     for (int i = 0; i < 8; ++i) {
