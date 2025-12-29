@@ -126,6 +126,10 @@ public:
 
         // Handle VSYNC rising edge - finalize frame and swap buffers
         if (vsync && !in_vsync_) {
+            // Capture frame scanline count before reset
+            max_frame_scanlines_ = std::max(max_frame_scanlines_, frame_scanline_count_);
+            frame_scanline_count_ = 0;
+
             if (in_interlace_mode_) {
                 // In interlace mode, swap every other VSYNC (after completing both fields)
                 interlace_field_count_++;
@@ -144,6 +148,12 @@ public:
 
         // Handle HSYNC rising edge - new scanline
         if (hsync && !in_hsync_) {
+            // Capture line width before reset
+            max_line_pixels_ = std::max(max_line_pixels_, line_pixel_count_);
+            line_pixel_count_ = 0;
+            blanking_count_ = 0;
+            ++frame_scanline_count_;  // Count all scanlines including blanking
+
             ++y_;
             x_ = 0;  // Reset horizontal position for new scanline
             was_displaying_line_ = false;  // New line starting
@@ -154,25 +164,29 @@ public:
         }
         in_hsync_ = hsync;
 
+        // Count ALL batches for total line width (before early return)
+        line_pixel_count_ += 8;
+
         // Reset Y when first displayed scanline is reached (display enable rising edge)
         // This positions content correctly regardless of CRTC VSYNC timing variations.
         // Capture the pre-reset y_ as the top border (scanlines before display).
         if (display && !was_displaying_) {
             top_border_ = y_;  // Scanlines from VSYNC to first display line
-            left_border_ = x_;  // Pixels from HSYNC to first display pixel
             y_ = 0;  // First visible scanline in this field
             was_displaying_ = true;
         }
 
-        // Reset X when display starts on each line (for horizontal positioning)
-        if (display && !was_displaying_line_) {
-            x_ = 0;
-            was_displaying_line_ = true;
+        // Count blanking batches and return early (don't write pixels during blanking)
+        if (!display) {
+            ++blanking_count_;
+            return;
         }
 
-        // Only write pixels during display enable
-        if (!display) {
-            return;
+        // Capture left border when display first goes high on a line
+        if (display && !was_displaying_line_) {
+            left_border_ = blanking_count_ * 8;  // Convert batches to pixels
+            x_ = 0;
+            was_displaying_line_ = true;
         }
 
         // Calculate write position (no offsets needed with display-enable reset)
@@ -226,6 +240,11 @@ public:
         max_y_written_ = 0;
         top_border_ = 0;
         left_border_ = 0;
+        line_pixel_count_ = 0;
+        max_line_pixels_ = 0;
+        frame_scanline_count_ = 0;
+        max_frame_scanlines_ = 0;
+        blanking_count_ = 0;
     }
 
     // Get tracked frame dimensions (for debugging/testing)
@@ -235,6 +254,9 @@ public:
 private:
     // Finalize frame at swap: set logical dimensions and metadata
     void finish_frame() {
+        // Capture final line width
+        max_line_pixels_ = std::max(max_line_pixels_, line_pixel_count_);
+
         // Use tracked dimensions, but default to capacity if nothing was written
         // (can happen on first frame or if display was never enabled)
         size_t frame_width = max_x_written_ > 0 ? max_x_written_ : frame_buffer_->capacity_width();
@@ -249,10 +271,23 @@ private:
         meta.height = static_cast<uint32_t>(frame_height);
         meta.frame_number = frame_buffer_->version() + 1;
         meta.interlaced = in_interlace_mode_;
+
+        // Calculate borders from tracked values
         meta.left_border = static_cast<uint32_t>(left_border_);
         meta.top_border = static_cast<uint32_t>(top_border_);
-        // right_border and bottom_border would require tracking display-disable edges
-        // which we don't currently do - leave as 0 for now
+
+        // right_border = total_line_width - left_border - displayed_width
+        if (max_line_pixels_ > left_border_ + frame_width) {
+            meta.right_border = static_cast<uint32_t>(max_line_pixels_ - left_border_ - frame_width);
+        }
+
+        // bottom_border = total_scanlines - top_border - displayed_height
+        // In interlace mode, max_frame_scanlines_ is per-field, frame_height is composited
+        size_t displayed_scanlines = in_interlace_mode_ ? frame_height / 2 : frame_height;
+        if (max_frame_scanlines_ > top_border_ + displayed_scanlines) {
+            meta.bottom_border = static_cast<uint32_t>(max_frame_scanlines_ - top_border_ - displayed_scanlines);
+        }
+
         frame_buffer_->set_metadata(meta);
 
         // Swap buffers (no reallocation - just pointer swap)
@@ -265,6 +300,8 @@ private:
         // Reset tracking for next frame
         max_x_written_ = 0;
         max_y_written_ = 0;
+        max_line_pixels_ = 0;
+        max_frame_scanlines_ = 0;
     }
 
 
@@ -300,6 +337,15 @@ private:
     // Track border dimensions (blanking before active area)
     size_t top_border_ = 0;     // Scanlines from VSYNC to first display
     size_t left_border_ = 0;    // Pixels from HSYNC to first display
+
+    // Track total line/frame dimensions (including blanking)
+    size_t line_pixel_count_ = 0;      // All batches this line (reset at HSYNC)
+    size_t max_line_pixels_ = 0;       // Maximum line width seen this frame
+    size_t frame_scanline_count_ = 0;  // All scanlines this frame (reset at VSYNC)
+    size_t max_frame_scanlines_ = 0;   // Maximum frame height seen
+
+    // Blanking tracking for left border calculation
+    size_t blanking_count_ = 0;        // Blanking batches since HSYNC
 };
 
 } // namespace beebium
