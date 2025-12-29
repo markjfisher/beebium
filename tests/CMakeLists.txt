@@ -130,6 +130,15 @@ add_executable(test_keyboard_race test_keyboard_race.cpp)
 target_link_libraries(test_keyboard_race PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_keyboard_race)
 
+# MODE 7 teletext comprehensive tests
+add_executable(test_mode7 test_mode7.cpp)
+target_link_libraries(test_mode7 PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_mode7 PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden/mode7"
+)
+catch_discover_tests(test_mode7)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests
