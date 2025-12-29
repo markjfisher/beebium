@@ -15,12 +15,29 @@ message SubscribeFramesRequest {
     // Future: format preferences, scaling options
 }
 
+// Field ordering for interlaced frames.
+// Clients can split composited frames into fields for authentic 50Hz display.
+enum FieldOrder {
+    PROGRESSIVE = 0;    // Non-interlaced, single pass
+    EVEN_FIRST = 1;     // Even lines (0,2,4...) rendered first temporally
+    ODD_FIRST = 2;      // Odd lines (1,3,5...) rendered first temporally
+}
+
 message Frame {
     uint64 frame_number = 1;
     uint64 cycle_count = 2;
-    uint32 width = 3;
-    uint32 height = 4;
-    bytes pixels = 5;  // BGRA32 pixel data
+    uint32 width = 3;           // Active area width in pixels
+    uint32 height = 4;          // Active area height in pixels
+    bytes pixels = 5;           // BGRA32 pixel data, width * height * 4 bytes
+    FieldOrder field_order = 6; // For interlaced modes (e.g., MODE 7)
+
+    // Border dimensions (pixels/scanlines of blanking around active area)
+    // Clients can use these for authentic CRT-style display with borders.
+    // Add left_border + width + right_border for total horizontal extent.
+    uint32 left_border = 7;     // Pixels from left edge to active area
+    uint32 right_border = 8;    // Pixels from active area to right edge
+    uint32 top_border = 9;      // Scanlines from top edge to active area
+    uint32 bottom_border = 10;  // Scanlines from active area to bottom edge
 }
 
 message GetConfigRequest {}
