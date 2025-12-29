@@ -154,14 +154,18 @@ final class VideoClient: ObservableObject {
 
         // Debug: log every 50 frames (~1 second at 50Hz)
         if frameCount % 50 == 0 {
-            print("[VideoClient] Frame \(frameCount): \(frame.width)x\(frame.height), renderer=\(renderer != nil)")
+            print("[VideoClient] Frame \(frameCount): \(frame.width)x\(frame.height), borders: L=\(frame.leftBorder) R=\(frame.rightBorder) T=\(frame.topBorder) B=\(frame.bottomBorder), renderer=\(renderer != nil)")
         }
 
         // Update renderer directly to bypass SwiftUI update batching
         renderer?.updateFrame(
             data: frame.pixels,
             width: Int(frame.width),
-            height: Int(frame.height)
+            height: Int(frame.height),
+            leftBorder: Int(frame.leftBorder),
+            rightBorder: Int(frame.rightBorder),
+            topBorder: Int(frame.topBorder),
+            bottomBorder: Int(frame.bottomBorder)
         )
     }
 }

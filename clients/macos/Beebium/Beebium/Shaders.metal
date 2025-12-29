@@ -1,17 +1,26 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Uniforms passed from CPU
+// Uniforms passed from CPU - must match Swift Uniforms struct exactly
+// Note: float4 requires 16-byte alignment, so we add explicit padding
 struct Uniforms {
-    float2 drawableSize;    // Size of the drawable in pixels
-    float2 textureSize;     // Size of the texture (736x576)
-    float parScale;         // Pixel Aspect Ratio scale (0.96 for BBC)
+    float2 drawableSize;      // offset 0: Size of the drawable in pixels
+    float2 textureSize;       // offset 8: Size of the texture (content area)
+    float2 totalSize;         // offset 16: Total size including borders
+    float2 borderOffset;      // offset 24: Offset of content within total (left, top)
+    float parScale;           // offset 32: Pixel Aspect Ratio scale (0.96 for BBC)
+    float padding1;           // offset 36: Padding for alignment
+    float2 padding2;          // offset 40: Explicit padding for float4 alignment
+    float4 leftBorderColor;   // offset 48: RGBA color for left border
+    float4 rightBorderColor;  // offset 64: RGBA color for right border
+    float4 topBorderColor;    // offset 80: RGBA color for top border
+    float4 bottomBorderColor; // offset 96: RGBA color for bottom border
 };
 
 // Vertex data for a full-screen quad
 struct VertexOut {
     float4 position [[position]];
-    float2 texCoord;
+    float2 texCoord;          // Normalized coordinates in total area [0,1]
 };
 
 // Texture coordinates for the quad (Y flipped for Metal)
@@ -35,12 +44,14 @@ constant float2 unitQuad[] = {
 };
 
 // Vertex shader: compute aspect-ratio-correct quad with PAR and letterboxing
+// Uses totalSize (including borders) for aspect ratio calculation
 vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
                                constant Uniforms& uniforms [[buffer(0)]]) {
     // Calculate the display aspect ratio with PAR correction
     // BBC pixels are parScale (0.96) as wide as they are tall
-    float contentWidth = uniforms.textureSize.x * uniforms.parScale;
-    float contentHeight = uniforms.textureSize.y;
+    // Use total size (content + borders) for aspect ratio
+    float contentWidth = uniforms.totalSize.x * uniforms.parScale;
+    float contentHeight = uniforms.totalSize.y;
     float contentAspect = contentWidth / contentHeight;
 
     // Calculate drawable aspect ratio
@@ -62,14 +73,49 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
     return out;
 }
 
-// Fragment shader: sample the emulator framebuffer texture
+// Fragment shader: sample the emulator framebuffer texture with border rendering
 fragment float4 fragmentShader(VertexOut in [[stage_in]],
+                                constant Uniforms& uniforms [[buffer(0)]],
                                 texture2d<float> texture [[texture(0)]]) {
+    // Convert normalized coordinates to pixel coordinates in total area
+    float2 pixelCoord = in.texCoord * uniforms.totalSize;
+
+    // Calculate border boundaries
+    float leftEdge = uniforms.borderOffset.x;
+    float topEdge = uniforms.borderOffset.y;
+    float rightEdge = leftEdge + uniforms.textureSize.x;
+    float bottomEdge = topEdge + uniforms.textureSize.y;
+
+    // Determine which region we're in
+    bool inLeftBorder = pixelCoord.x < leftEdge;
+    bool inRightBorder = pixelCoord.x >= rightEdge;
+    bool inTopBorder = pixelCoord.y < topEdge;
+    bool inBottomBorder = pixelCoord.y >= bottomEdge;
+
+    // Render borders with distinct colors (corners use vertical border colors)
+    if (inTopBorder) {
+        return uniforms.topBorderColor;
+    }
+    if (inBottomBorder) {
+        return uniforms.bottomBorderColor;
+    }
+    if (inLeftBorder) {
+        return uniforms.leftBorderColor;
+    }
+    if (inRightBorder) {
+        return uniforms.rightBorderColor;
+    }
+
+    // Inside content area - sample texture
+    // Convert pixel coordinate to texture UV (relative to content area)
+    float2 contentCoord = pixelCoord - uniforms.borderOffset;
+    float2 texUV = contentCoord / uniforms.textureSize;
+
     // Use nearest for magnification (sharp pixels when enlarged)
     // Use linear for minification (blend when shrunk) to prevent thin features
     // like the 2-scanline cursor from being skipped at certain window sizes
     constexpr sampler textureSampler(mag_filter::nearest,
                                       min_filter::linear,
                                       address::clamp_to_edge);
-    return texture.sample(textureSampler, in.texCoord);
+    return texture.sample(textureSampler, texUV);
 }
