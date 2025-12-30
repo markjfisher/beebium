@@ -24,7 +24,7 @@ struct Uniforms {
     var totalSize: SIMD2<Float>      // offset 24: Total size including borders
     var borderOffset: SIMD2<Float>   // offset 32: Offset of content within total (left, top)
     var parScale: Float              // offset 40: Pixel Aspect Ratio scale (0.96 for BBC)
-    var padding1: Float = 0          // offset 44: Padding for alignment
+    var interlaced: UInt32 = 0       // offset 44: 1 if interlaced, 0 if progressive (line-doubled)
     var leftBorderColor: SIMD4<Float>    // offset 48: RGBA color for left border
     var rightBorderColor: SIMD4<Float>   // offset 64: RGBA color for right border
     var topBorderColor: SIMD4<Float>     // offset 80: RGBA color for top border
@@ -52,6 +52,9 @@ final class MetalRenderer: NSObject {
     private var rightBorder: Int = 0
     private var topBorder: Int = 0
     private var bottomBorder: Int = 0
+
+    // Interlace state (affects aspect ratio calculation via line-doubling)
+    private var isInterlaced: Bool = true  // Default to interlaced (MODE 7 boot)
 
     /// Pixel Aspect Ratio scale - BBC pixels are 0.96 as wide as they are tall
     private let parScale: Float = 0.96
@@ -108,15 +111,17 @@ final class MetalRenderer: NSObject {
     ///   - rightBorder: Right border width in pixels
     ///   - topBorder: Top border height in pixels
     ///   - bottomBorder: Bottom border height in pixels
+    ///   - interlaced: True if frame is interlaced (MODE 7), false for progressive (bitmap modes)
     func updateFrame(data: Data, width: Int, height: Int,
                      displayWidth: Int, displayHeight: Int,
                      leftBorder: Int, rightBorder: Int,
-                     topBorder: Int, bottomBorder: Int) {
+                     topBorder: Int, bottomBorder: Int,
+                     interlaced: Bool) {
         updateCount += 1
         if updateCount % 50 == 0 {
             let scaleX = displayWidth > 0 ? displayWidth / width : 1
-            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d -> %dx%d (scale %dx), borders: L=%d R=%d T=%d B=%d",
-                  updateCount, width, height, displayWidth, displayHeight, scaleX, leftBorder, rightBorder, topBorder, bottomBorder)
+            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d -> %dx%d (scale %dx), borders: L=%d R=%d T=%d B=%d, interlaced=%d",
+                  updateCount, width, height, displayWidth, displayHeight, scaleX, leftBorder, rightBorder, topBorder, bottomBorder, interlaced ? 1 : 0)
         }
 
         // Store display dimensions for scaling
@@ -128,6 +133,9 @@ final class MetalRenderer: NSObject {
         self.rightBorder = rightBorder
         self.topBorder = topBorder
         self.bottomBorder = bottomBorder
+
+        // Store interlace state (affects aspect ratio via line-doubling)
+        self.isInterlaced = interlaced
 
         // Create or recreate texture if dimensions changed
         if frameTexture == nil || textureWidth != width || textureHeight != height {
@@ -200,7 +208,7 @@ extension MetalRenderer: MTKViewDelegate {
                 totalSize: SIMD2<Float>(totalWidth, totalHeight),
                 borderOffset: SIMD2<Float>(Float(leftBorder), Float(topBorder)),
                 parScale: parScale,
-                padding1: 0,
+                interlaced: isInterlaced ? 1 : 0,
                 leftBorderColor: leftBorderColor,
                 rightBorderColor: rightBorderColor,
                 topBorderColor: topBorderColor,

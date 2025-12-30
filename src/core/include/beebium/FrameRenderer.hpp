@@ -120,9 +120,7 @@ public:
         bool interlace = (flags & VIDEO_FLAG_INTERLACE) != 0;
 
         // Track interlace mode from VIDEO_FLAG_INTERLACE
-        if (interlace) {
-            in_interlace_mode_ = true;
-        }
+        in_interlace_mode_ = interlace;
 
         // Handle VSYNC rising edge - finalize frame and swap buffers
         if (vsync && !in_vsync_) {

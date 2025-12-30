@@ -158,11 +158,15 @@ final class VideoClient: ObservableObject {
         displayHeight = Int(frame.displayHeight)
         currentFrame = frame.pixels
 
+        // Determine interlace state from field_order
+        // PROGRESSIVE = non-interlaced (bitmap modes), EVEN_FIRST/ODD_FIRST = interlaced (MODE 7)
+        let isInterlaced = frame.fieldOrder != .progressive
+
         // Debug: log every 50 frames (~1 second at 50Hz)
         if frameCount % 50 == 0 {
-            NSLog("[VideoClient] Frame %llu: %dx%d -> %dx%d, borders: L=%d R=%d T=%d B=%d",
+            NSLog("[VideoClient] Frame %llu: %dx%d -> %dx%d, borders: L=%d R=%d T=%d B=%d, interlaced=%d",
                   frameCount, frame.width, frame.height, frame.displayWidth, frame.displayHeight,
-                  frame.leftBorder, frame.rightBorder, frame.topBorder, frame.bottomBorder)
+                  frame.leftBorder, frame.rightBorder, frame.topBorder, frame.bottomBorder, isInterlaced ? 1 : 0)
         }
 
         // Update renderer directly to bypass SwiftUI update batching
@@ -175,7 +179,8 @@ final class VideoClient: ObservableObject {
             leftBorder: Int(frame.leftBorder),
             rightBorder: Int(frame.rightBorder),
             topBorder: Int(frame.topBorder),
-            bottomBorder: Int(frame.bottomBorder)
+            bottomBorder: Int(frame.bottomBorder),
+            interlaced: isInterlaced
         )
     }
 }

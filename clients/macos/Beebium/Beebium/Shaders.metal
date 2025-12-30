@@ -10,7 +10,7 @@ struct Uniforms {
     float2 totalSize;         // offset 24: Total size including borders
     float2 borderOffset;      // offset 32: Offset of content within total (left, top)
     float parScale;           // offset 40: Pixel Aspect Ratio scale (0.96 for BBC)
-    float padding1;           // offset 44: Padding for alignment
+    uint interlaced;          // offset 44: 1 if interlaced (MODE 7), 0 if progressive (line-doubled)
     float4 leftBorderColor;   // offset 48: RGBA color for left border
     float4 rightBorderColor;  // offset 64: RGBA color for right border
     float4 topBorderColor;    // offset 80: RGBA color for top border
@@ -45,13 +45,22 @@ constant float2 unitQuad[] = {
 
 // Vertex shader: compute aspect-ratio-correct quad with PAR and letterboxing
 // Uses totalSize (including borders) for aspect ratio calculation
+// Applies line-doubling for non-interlaced modes to match CRT behavior
 vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
                                constant Uniforms& uniforms [[buffer(0)]]) {
     // Calculate the display aspect ratio with PAR correction
     // BBC pixels are parScale (0.96) as wide as they are tall
     // Use total size (content + borders) for aspect ratio
     float contentWidth = uniforms.totalSize.x * uniforms.parScale;
+
+    // Line-doubling for non-interlaced modes:
+    // - Interlaced MODE 7: ~500 scanlines displayed as-is
+    // - Non-interlaced bitmap modes: 256 scanlines line-doubled to ~512
+    // This matches physical CRT behavior where both fill the same vertical space
     float contentHeight = uniforms.totalSize.y;
+    if (uniforms.interlaced == 0) {
+        contentHeight *= 2.0;  // Line-doubling for progressive modes
+    }
     float contentAspect = contentWidth / contentHeight;
 
     // Calculate drawable aspect ratio
