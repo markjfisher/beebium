@@ -26,8 +26,8 @@ enum FieldOrder {
 message Frame {
     uint64 frame_number = 1;
     uint64 cycle_count = 2;
-    uint32 width = 3;           // Active area width in pixels
-    uint32 height = 4;          // Active area height in pixels
+    uint32 width = 3;           // Logical width in pixels (varies by mode)
+    uint32 height = 4;          // Logical height in scanlines
     bytes pixels = 5;           // BGRA32 pixel data, width * height * 4 bytes
     FieldOrder field_order = 6; // For interlaced modes (e.g., MODE 7)
 
@@ -38,6 +38,16 @@ message Frame {
     uint32 right_border = 8;    // Pixels from active area to right edge
     uint32 top_border = 9;      // Scanlines from top edge to active area
     uint32 bottom_border = 10;  // Scanlines from active area to bottom edge
+
+    // Target display resolution for scaling.
+    // BBC Micro displays all modes at the same physical CRT size.
+    // Clients should scale: width -> display_width, height -> display_height
+    // Examples:
+    //   MODE 0: 640x256 logical = 640x256 display (1:1)
+    //   MODE 1: 320x256 logical = 640x256 display (2:1 horizontal)
+    //   MODE 2: 160x256 logical = 640x256 display (4:1 horizontal)
+    uint32 display_width = 11;  // Target display width (typically 640)
+    uint32 display_height = 12; // Target display height (typically 256)
 }
 
 message GetConfigRequest {}

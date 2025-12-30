@@ -51,7 +51,8 @@ public:
     // Render video output from CRTC state
     void render(const Crtc6845::Output& crtc_output) {
         // Read screen memory byte at CRTC address using peek_video() for shadow RAM support
-        uint16_t screen_addr = translate_screen_address(crtc_output.address);
+        // For bitmap modes, raster line is part of the address (8 bytes per character)
+        uint16_t screen_addr = translate_screen_address(crtc_output.address, crtc_output.raster);
         uint8_t screen_byte = crtc_output.display ? hardware_.peek_video(screen_addr) : 0;
 
         // Generate PixelBatch
@@ -84,29 +85,51 @@ public:
         teletext_column_ = 0;
     }
 
-    // Translate CRTC address to BBC memory address
-    uint16_t translate_screen_address(uint16_t crtc_addr) const {
-        // Screen base from addressable latch bits 4-5
-        uint8_t screen_base_bits = hardware_.addressable_latch.screen_base();
-
-        // Mode 7 uses different addressing
-        if (hardware_.video_ula.teletext_mode()) {
+    // Translate CRTC address and raster to BBC memory address
+    //
+    // The CRTC outputs:
+    // - MA0-MA13: 14-bit character address
+    // - RA0-RA4: 5-bit raster line within character (0-7 for 8-line chars)
+    //
+    // For bitmap modes, the screen memory is organized as 8 bytes per character
+    // (one byte per scanline). The full address is: (char_addr * 8) + raster
+    //
+    // For teletext (Mode 7), bit 13 of the CRTC address is set, and only
+    // the character address matters (raster is handled by the SAA5050).
+    //
+    // The screen_base bits in IC32 control wrap adjustment for large screens
+    // that would otherwise exceed the 14-bit address space.
+    //
+    uint16_t translate_screen_address(uint16_t crtc_addr, uint8_t raster) const {
+        // Check for teletext mode (CRTC address bit 13 set)
+        if (crtc_addr & 0x2000) {
             // Mode 7: Screen at 0x7C00-0x7FFF (1KB)
+            // Raster is handled by SAA5050, not used in address
             return 0x7C00 | (crtc_addr & 0x03FF);
         }
 
-        // Graphics modes: Screen base determines start address
-        // Bits 4-5 of latch: 00=0x3000, 01=0x4000, 10=0x5800, 11=0x6000
-        uint16_t base;
-        switch (screen_base_bits) {
-            case 0: base = 0x3000; break;
-            case 1: base = 0x4000; break;
-            case 2: base = 0x5800; break;
-            case 3: base = 0x6000; break;
-            default: base = 0x3000; break;
+        // Bitmap modes: address = (char_addr * 8) + raster
+        // But first handle wrap adjustment for large screens
+        uint16_t addr = crtc_addr;
+
+        if (addr & 0x1000) {
+            // Screen wrap adjustment based on screen_base bits
+            // These values match the BBC Micro hardware behavior
+            static constexpr uint16_t SCREEN_WRAP_ADJUSTMENTS[] = {
+                0x4000 >> 3,  // screen_base 0: 0x0800 (for 20KB modes 0,1,2)
+                0x2000 >> 3,  // screen_base 1: 0x0400 (for 16KB mode 3)
+                0x5000 >> 3,  // screen_base 2: 0x0A00 (for 10KB modes 4,5)
+                0x2800 >> 3,  // screen_base 3: 0x0500 (for 8KB mode 6)
+            };
+
+            uint8_t screen_base_bits = hardware_.addressable_latch.screen_base();
+            addr -= SCREEN_WRAP_ADJUSTMENTS[screen_base_bits & 0x03];
+            addr &= ~0x1000u;  // Clear bit 12
         }
 
-        return base + (crtc_addr & 0x3FFF);
+        // Combine: (char_addr * 8) + raster
+        // Raster is 0-7 for standard 8-line characters
+        return ((addr << 3) | (raster & 0x07)) & 0xFFFF;
     }
 
 private:

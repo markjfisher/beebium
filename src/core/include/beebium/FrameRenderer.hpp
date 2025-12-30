@@ -203,21 +203,24 @@ public:
         }
 
         // Convert PixelBatch pixels to BGRA32 and write to framebuffer
+        // Use pixel_count() for variable-width batches (mode-dependent)
+        uint8_t pixel_count = batch.pixel_count();
+
         // Use capacity for bounds checking (physical allocation size)
-        if (write_x >= 0 && write_x + 8 <= static_cast<int>(frame_buffer_->capacity_width()) &&
+        if (write_x >= 0 && write_x + pixel_count <= static_cast<int>(frame_buffer_->capacity_width()) &&
             write_y >= 0 && write_y < static_cast<int>(frame_buffer_->capacity_height())) {
             uint32_t* dest = frame_buffer_->write_ptr(static_cast<size_t>(write_x),
                                                        static_cast<size_t>(write_y));
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; i < pixel_count; ++i) {
                 dest[i] = pixel_to_bgra32(batch.pixels.pixels[i]);
             }
 
             // Track frame bounds for logical dimensions
-            max_x_written_ = std::max(max_x_written_, static_cast<size_t>(write_x + 8));
+            max_x_written_ = std::max(max_x_written_, static_cast<size_t>(write_x + pixel_count));
             max_y_written_ = std::max(max_y_written_, static_cast<size_t>(write_y + 1));
         }
 
-        x_ += 8;  // Each batch is 8 pixels
+        x_ += pixel_count;  // Advance by actual pixel count
     }
 
     // Get current raster position (for debugging)
@@ -271,6 +274,12 @@ private:
         meta.height = static_cast<uint32_t>(frame_height);
         meta.frame_number = frame_buffer_->version() + 1;
         meta.interlaced = in_interlace_mode_;
+
+        // BBC Micro always displays at 640 pixels wide (physical CRT width)
+        // regardless of logical resolution. Client scales width→display_width.
+        // Scale factors: MODE 0=1x, MODE 1=2x, MODE 2=4x, MODE 4=2x, MODE 5=4x
+        meta.display_width = 640;
+        meta.display_height = static_cast<uint32_t>(frame_height);
 
         // Calculate borders from tracked values
         meta.left_border = static_cast<uint32_t>(left_border_);

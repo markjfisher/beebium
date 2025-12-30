@@ -20,14 +20,23 @@
 
 namespace beebium {
 
-// Per-frame metadata describing the logical frame dimensions.
+// Per-frame metadata describing frame dimensions and scaling.
 // The physical buffer may be larger (fixed allocation), but only
 // width × height pixels contain valid content for this frame.
 struct FrameMetadata {
-    uint32_t width = 640;          // Frame width in pixels (logical)
-    uint32_t height = 512;         // Frame height in scanlines (logical)
+    uint32_t width = 640;          // Frame width in logical pixels
+    uint32_t height = 512;         // Frame height in scanlines
     uint64_t frame_number = 0;     // Incrementing frame counter
     bool interlaced = false;       // True for MODE 7 and custom interlace modes
+
+    // Target display resolution after scaling.
+    // BBC Micro displays all modes at the same physical size:
+    // - MODE 0: 640×256 logical = 640×256 display (1:1)
+    // - MODE 1: 320×256 logical = 640×256 display (2:1 horizontal)
+    // - MODE 2: 160×256 logical = 640×256 display (4:1 horizontal)
+    // Clients should scale width→display_width, height→display_height
+    uint32_t display_width = 640;  // Target display width in pixels
+    uint32_t display_height = 512; // Target display height in scanlines
 
     // Border dimensions (blanking area around active content)
     // These come from CRTC timing and allow clients to render

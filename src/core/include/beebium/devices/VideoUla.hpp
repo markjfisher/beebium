@@ -124,9 +124,33 @@ public:
     }
 
     // Emit blank pixels (during blanking period)
+    // Pixel count matches current mode for consistent line width tracking
     void emit_blank(PixelBatch& batch) {
         batch.set_type(PixelBatchType::Nothing);
         batch.clear();
+        batch.set_pixel_count(pixels_per_batch());
+    }
+
+    // Return the number of logical pixels per batch for current mode
+    uint8_t pixels_per_batch() const {
+        uint8_t lw = line_width_mode();
+        if (fast_clock()) {
+            // Fast modes: 8, 4, 2, or 8 pixels per batch
+            switch (lw) {
+                case 3: return 8;  // Mode 0: 8 pixels/byte
+                case 2: return 4;  // Mode 1: 4 pixels/byte
+                case 1: return 2;  // Mode 2: 2 pixels/byte
+                default: return 8; // Mode 3: 8 pixels/byte (text)
+            }
+        } else {
+            // Slow modes: 4, 2, 1, or 8 pixels per batch
+            switch (lw) {
+                case 3: return 4;  // Mode 4: 4 pixels/byte
+                case 2: return 2;  // Mode 5: 2 pixels/byte
+                case 1: return 1;  // Mode 6: 1 pixel/byte (text)
+                default: return 8; // Mode 7: teletext (8 pixels from SAA5050)
+            }
+        }
     }
 
     // Control register queries
@@ -191,68 +215,64 @@ private:
         }
     }
 
-    // Mode 0: 8 pixels/byte, 1bpp (each pixel uses 1 bit)
+    // Mode 0 (fast): 8 logical pixels/byte, 1bpp
+    // Output: 8 pixels per batch (640 pixels/line with R1=80)
     void emit_8bpp(PixelBatch& batch) {
         for (int i = 0; i < 8; ++i) {
             uint8_t idx = shift_pixel();
             batch.pixels.pixels[i] = get_pixel(idx);
         }
+        batch.set_pixel_count(8);
     }
 
-    // Mode 1: 4 pixels/byte, 2bpp (each pixel uses 2 bits)
+    // Mode 1 (fast): 4 logical pixels/byte, 2bpp
+    // Output: 4 pixels per batch (320 pixels/line with R1=80)
     void emit_4bpp(PixelBatch& batch) {
         for (int i = 0; i < 4; ++i) {
             uint8_t idx = shift_pixel();
-            VideoDataPixel p = get_pixel(idx);
-            // Double each pixel horizontally
-            batch.pixels.pixels[i * 2] = p;
-            batch.pixels.pixels[i * 2 + 1] = p;
+            batch.pixels.pixels[i] = get_pixel(idx);
         }
+        batch.set_pixel_count(4);
     }
 
-    // Mode 2: 2 pixels/byte, 4bpp (each pixel uses 4 bits)
+    // Mode 2 (fast): 2 logical pixels/byte, 4bpp
+    // Output: 2 pixels per batch (160 pixels/line with R1=80)
     void emit_2bpp(PixelBatch& batch) {
         for (int i = 0; i < 2; ++i) {
             uint8_t idx = shift_pixel();
-            VideoDataPixel p = get_pixel(idx);
-            // Quadruple each pixel horizontally
-            batch.pixels.pixels[i * 4] = p;
-            batch.pixels.pixels[i * 4 + 1] = p;
-            batch.pixels.pixels[i * 4 + 2] = p;
-            batch.pixels.pixels[i * 4 + 3] = p;
+            batch.pixels.pixels[i] = get_pixel(idx);
         }
+        batch.set_pixel_count(2);
     }
 
-    // Slow modes (1MHz CRTC) - each byte produces 4 output pixels
-    // but we need 8 pixels per batch, so we double everything
+    // Slow modes (1MHz CRTC) - R1=40, so half the batches per line
 
+    // Mode 4 (slow): 4 logical pixels/byte, 1bpp equivalent
+    // Output: 4 pixels per batch (160 pixels/line with R1=40)
     void emit_8bpp_slow(PixelBatch& batch) {
-        // 4 pixels from byte, doubled to 8
         for (int i = 0; i < 4; ++i) {
             uint8_t idx = shift_pixel();
-            VideoDataPixel p = get_pixel(idx);
-            batch.pixels.pixels[i * 2] = p;
-            batch.pixels.pixels[i * 2 + 1] = p;
+            batch.pixels.pixels[i] = get_pixel(idx);
         }
+        batch.set_pixel_count(4);
     }
 
+    // Mode 5 (slow): 2 logical pixels/byte, 2bpp equivalent
+    // Output: 2 pixels per batch (80 pixels/line with R1=40)
     void emit_4bpp_slow(PixelBatch& batch) {
-        // 2 pixels from byte, quadrupled to 8
         for (int i = 0; i < 2; ++i) {
             uint8_t idx = shift_pixel();
-            VideoDataPixel p = get_pixel(idx);
-            batch.pixels.pixels[i * 4] = p;
-            batch.pixels.pixels[i * 4 + 1] = p;
-            batch.pixels.pixels[i * 4 + 2] = p;
-            batch.pixels.pixels[i * 4 + 3] = p;
+            batch.pixels.pixels[i] = get_pixel(idx);
         }
+        batch.set_pixel_count(2);
     }
 
+    // Mode 6 text (slow): 1 logical pixel/byte, 4bpp equivalent
+    // Output: 1 pixel per batch (40 pixels/line with R1=40)
     void emit_2bpp_slow(PixelBatch& batch) {
-        // 1 pixel from byte, replicated to 8
         uint8_t idx = shift_pixel();
-        VideoDataPixel p = get_pixel(idx);
-        batch.fill(p);
+        batch.pixels.pixels[0] = get_pixel(idx);
+        batch.set_pixel_count(1);
     }
 
     uint8_t control_ = 0;

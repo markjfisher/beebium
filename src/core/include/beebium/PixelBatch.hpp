@@ -109,6 +109,21 @@ struct PixelBatch {
     bool vsync() const { return (flags() & VIDEO_FLAG_VSYNC) != 0; }
     bool display_enable() const { return (flags() & VIDEO_FLAG_DISPLAY) != 0; }
 
+    // Pixel count stored in pixels[2].x (1-8, number of valid pixels)
+    // This allows variable-width batches for different video modes:
+    // - Mode 0: 8 pixels per batch (1bpp, 8 pixels/byte)
+    // - Mode 1: 4 pixels per batch (2bpp, 4 pixels/byte)
+    // - Mode 2: 2 pixels per batch (4bpp, 2 pixels/byte)
+    // - Teletext: 8 pixels per batch (fixed)
+    void set_pixel_count(uint8_t count) {
+        pixels.pixels[2].bits.x = count & 0x0F;
+    }
+
+    uint8_t pixel_count() const {
+        uint8_t count = pixels.pixels[2].bits.x;
+        return (count > 0 && count <= 8) ? count : 8;  // Default to 8 if not set
+    }
+
     // Fill all 8 pixels with a single color (for blanking, borders, etc.)
     void fill(VideoDataPixel color) {
         for (int i = 0; i < 8; ++i) {

@@ -79,6 +79,10 @@ grpc::Status VideoServiceImpl::SubscribeFrames(
             frame.set_top_border(meta.top_border);
             frame.set_bottom_border(meta.bottom_border);
 
+            // Set target display resolution for client-side scaling
+            frame.set_display_width(meta.display_width);
+            frame.set_display_height(meta.display_height);
+
             if (!writer->Write(frame)) {
                 // Client disconnected
                 break;

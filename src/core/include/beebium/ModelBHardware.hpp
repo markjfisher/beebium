@@ -240,6 +240,17 @@ public:
         return irq_aggregator_.poll();
     }
 
+    // Set boot screen mode via startup links (0-7)
+    // Call before reset() to boot into specified mode
+    void set_startup_screen_mode(uint8_t screen_mode) {
+        system_via_peripheral.keyboard().set_startup_screen_mode(screen_mode);
+    }
+
+    // Get current startup screen mode from link state
+    uint8_t startup_screen_mode() const {
+        return system_via_peripheral.keyboard().startup_screen_mode();
+    }
+
 public:
     // ROM loading - directly access the owned ROM devices
     void load_mos(const uint8_t* data, size_t size) {

@@ -99,6 +99,43 @@ public:
         }
     }
 
+    // Set startup links for boot screen mode (0-7)
+    //
+    // The BBC Micro uses three startup links (6, 7, 8) in row 0 of the
+    // keyboard matrix to determine the boot screen mode:
+    //   Link 6 (row 0, col 7): Mode bit 2 (MSB)
+    //   Link 7 (row 0, col 8): Mode bit 1
+    //   Link 8 (row 0, col 9): Mode bit 0 (LSB)
+    //
+    // The MOS XORs the link readings with 7, so:
+    //   All links BROKEN (0,0,0) -> Mode 7 (default)
+    //   All links MADE (1,1,1) -> Mode 0
+    //
+    // Must be called before reset() to take effect during boot.
+    void set_startup_screen_mode(uint8_t screen_mode) {
+        if (screen_mode > 7) screen_mode = 7;
+
+        // Calculate link bits: screen_mode = 7 XOR link_bits
+        // So link_bits = 7 XOR screen_mode
+        uint8_t link_bits = 7 ^ screen_mode;
+
+        // Link 6 (bit 2) at column 7
+        if (link_bits & 0x04) key_down(0, 7); else key_up(0, 7);
+        // Link 7 (bit 1) at column 8
+        if (link_bits & 0x02) key_down(0, 8); else key_up(0, 8);
+        // Link 8 (bit 0) at column 9
+        if (link_bits & 0x01) key_down(0, 9); else key_up(0, 9);
+    }
+
+    // Get current startup screen mode from link state (thread-safe)
+    uint8_t startup_screen_mode() const {
+        uint8_t link_bits = 0;
+        if (is_key_pressed(0, 7)) link_bits |= 0x04;  // Link 6
+        if (is_key_pressed(0, 8)) link_bits |= 0x02;  // Link 7
+        if (is_key_pressed(0, 9)) link_bits |= 0x01;  // Link 8
+        return 7 ^ link_bits;
+    }
+
 private:
     // Each element is a bitmask of rows pressed in that column
     // Bit N set means row N is pressed in this column

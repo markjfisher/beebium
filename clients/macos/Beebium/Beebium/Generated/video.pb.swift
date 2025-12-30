@@ -87,10 +87,10 @@ struct Beebium_Frame: Sendable {
 
   var cycleCount: UInt64 = 0
 
-  /// Active area width in pixels
+  /// Logical width in pixels (varies by mode)
   var width: UInt32 = 0
 
-  /// Active area height in pixels
+  /// Logical height in scanlines
   var height: UInt32 = 0
 
   /// BGRA32 pixel data, width * height * 4 bytes
@@ -112,6 +112,18 @@ struct Beebium_Frame: Sendable {
 
   /// Scanlines from active area to bottom edge
   var bottomBorder: UInt32 = 0
+
+  /// Target display resolution for scaling.
+  /// BBC Micro displays all modes at the same physical CRT size.
+  /// Clients should scale: width -> display_width, height -> display_height
+  /// Examples:
+  ///   MODE 0: 640x256 logical = 640x256 display (1:1)
+  ///   MODE 1: 320x256 logical = 640x256 display (2:1 horizontal)
+  ///   MODE 2: 160x256 logical = 640x256 display (4:1 horizontal)
+  var displayWidth: UInt32 = 0
+
+  /// Target display height (typically 256)
+  var displayHeight: UInt32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -176,7 +188,7 @@ extension Beebium_SubscribeFramesRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Frame"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frame_number\0\u{3}cycle_count\0\u{1}width\0\u{1}height\0\u{1}pixels\0\u{3}field_order\0\u{3}left_border\0\u{3}right_border\0\u{3}top_border\0\u{3}bottom_border\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frame_number\0\u{3}cycle_count\0\u{1}width\0\u{1}height\0\u{1}pixels\0\u{3}field_order\0\u{3}left_border\0\u{3}right_border\0\u{3}top_border\0\u{3}bottom_border\0\u{3}display_width\0\u{3}display_height\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -194,6 +206,8 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
       case 8: try { try decoder.decodeSingularUInt32Field(value: &self.rightBorder) }()
       case 9: try { try decoder.decodeSingularUInt32Field(value: &self.topBorder) }()
       case 10: try { try decoder.decodeSingularUInt32Field(value: &self.bottomBorder) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self.displayWidth) }()
+      case 12: try { try decoder.decodeSingularUInt32Field(value: &self.displayHeight) }()
       default: break
       }
     }
@@ -230,6 +244,12 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
     if self.bottomBorder != 0 {
       try visitor.visitSingularUInt32Field(value: self.bottomBorder, fieldNumber: 10)
     }
+    if self.displayWidth != 0 {
+      try visitor.visitSingularUInt32Field(value: self.displayWidth, fieldNumber: 11)
+    }
+    if self.displayHeight != 0 {
+      try visitor.visitSingularUInt32Field(value: self.displayHeight, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -244,6 +264,8 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
     if lhs.rightBorder != rhs.rightBorder {return false}
     if lhs.topBorder != rhs.topBorder {return false}
     if lhs.bottomBorder != rhs.bottomBorder {return false}
+    if lhs.displayWidth != rhs.displayWidth {return false}
+    if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

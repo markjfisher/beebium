@@ -1181,3 +1181,65 @@ TEST_CASE("Model B+ shadow routing only affects 0x3000-0x7FFF", "[bplus][shadow]
     REQUIRE(hw.read_with_pc(0x2FFF, 0xD000) == 0x55);  // Main (outside shadow)
     REQUIRE(hw.read_with_pc(0x3000, 0xD000) == 0x77);  // Shadow (inside region)
 }
+
+// =============================================================================
+// Startup Screen Mode via Keyboard Links
+// =============================================================================
+// Tests that the BBC Micro boots into the correct screen mode based on
+// keyboard startup links (DIP switches). Links 6, 7, 8 at row 0, columns 7, 8, 9
+// control the boot screen mode via: mode = 7 XOR link_bits
+
+TEST_CASE("Boot into each screen mode via startup links", "[boot][startup][links]") {
+    if (!roms_available()) SKIP("ROMs not available");
+
+    const auto rom_dir = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos = load_rom(rom_dir / "acorn-mos_1_20.rom");
+    auto basic = load_rom(rom_dir / "bbc-basic_2.rom");
+
+    for (int expected_screen_mode = 0; expected_screen_mode <= 7; ++expected_screen_mode) {
+        SECTION("Mode " + std::to_string(expected_screen_mode)) {
+            ModelB machine;
+            machine.memory().load_mos(mos.data(), mos.size());
+            machine.memory().load_basic(basic.data(), basic.size());
+
+            // Set startup screen mode via links BEFORE reset
+            machine.memory().set_startup_screen_mode(static_cast<uint8_t>(expected_screen_mode));
+
+            // Verify link state is correct before reset
+            REQUIRE(machine.memory().startup_screen_mode() == expected_screen_mode);
+
+            machine.reset();
+
+            // Boot until MOS initializes startUpOptions
+            for (uint64_t i = 0; i < 3'500'000; ++i) {
+                machine.step();
+            }
+
+            // Check startUpOptions at $028F - bits 0-2 contain screen mode
+            uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
+            INFO("Expected mode: " << expected_screen_mode << ", Actual: " << (int)actual_screen_mode);
+            REQUIRE(actual_screen_mode == expected_screen_mode);
+
+            // Verify VideoULA teletext mode matches expected
+            bool expected_teletext = (expected_screen_mode == 7);
+            CHECK(machine.memory().video_ula.teletext_mode() == expected_teletext);
+        }
+    }
+}
+
+TEST_CASE("KeyboardMatrix startup link round-trip", "[keyboard][links][unit]") {
+    beebium::KeyboardMatrix matrix;
+
+    // Test each mode value
+    for (uint8_t mode = 0; mode <= 7; ++mode) {
+        matrix.set_startup_screen_mode(mode);
+        CHECK(matrix.startup_screen_mode() == mode);
+    }
+
+    // Test clamping of out-of-range values
+    matrix.set_startup_screen_mode(8);
+    CHECK(matrix.startup_screen_mode() == 7);  // Should clamp to 7
+
+    matrix.set_startup_screen_mode(255);
+    CHECK(matrix.startup_screen_mode() == 7);  // Should clamp to 7
+}

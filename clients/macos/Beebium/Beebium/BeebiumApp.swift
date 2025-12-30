@@ -14,6 +14,10 @@ import SwiftUI
 
 @main
 struct BeebiumApp: App {
+    init() {
+        NSLog("[BeebiumApp] Starting...")
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

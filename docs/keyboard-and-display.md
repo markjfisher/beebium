@@ -97,6 +97,7 @@ uint8_t update_port_a(uint8_t output, uint8_t ddr) override {
 
 This returns bit 7 = 0 for all positions, indicating no keys pressed and all links broken, which results in Mode 7 being selected.
 
+
 ## Screen Memory
 
 ### Mode 7 (Teletext)

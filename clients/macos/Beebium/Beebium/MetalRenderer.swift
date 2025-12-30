@@ -106,7 +106,8 @@ final class MetalRenderer: NSObject {
                      topBorder: Int, bottomBorder: Int) {
         updateCount += 1
         if updateCount % 50 == 0 {
-            print("[MetalRenderer] updateFrame #\(updateCount): \(width)x\(height), borders: L=\(leftBorder) R=\(rightBorder) T=\(topBorder) B=\(bottomBorder), data.count=\(data.count)")
+            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d, borders: L=%d R=%d T=%d B=%d",
+                  updateCount, width, height, leftBorder, rightBorder, topBorder, bottomBorder)
         }
 
         // Store border dimensions
