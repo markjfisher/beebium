@@ -35,22 +35,28 @@ namespace {
 // ============================================================================
 
 // Write BGRA32 framebuffer to PPM file (P6 binary format)
+// stride_pixels is the number of pixels per row in the buffer (may be > width for padding)
 bool write_ppm(const std::filesystem::path& filepath,
                const uint32_t* pixels,
-               size_t width, size_t height) {
+               size_t width, size_t height, size_t stride_pixels = 0) {
     std::ofstream file(filepath, std::ios::binary);
     if (!file) return false;
 
+    // If stride not specified, assume tightly packed
+    if (stride_pixels == 0) stride_pixels = width;
+
     file << "P6\n" << width << " " << height << "\n255\n";
 
-    for (size_t i = 0; i < width * height; ++i) {
-        uint32_t pixel = pixels[i];
-        uint8_t b = (pixel >> 0) & 0xFF;
-        uint8_t g = (pixel >> 8) & 0xFF;
-        uint8_t r = (pixel >> 16) & 0xFF;
-        file.put(static_cast<char>(r));
-        file.put(static_cast<char>(g));
-        file.put(static_cast<char>(b));
+    for (size_t y = 0; y < height; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            uint32_t pixel = pixels[y * stride_pixels + x];
+            uint8_t b = (pixel >> 0) & 0xFF;
+            uint8_t g = (pixel >> 8) & 0xFF;
+            uint8_t r = (pixel >> 16) & 0xFF;
+            file.put(static_cast<char>(r));
+            file.put(static_cast<char>(g));
+            file.put(static_cast<char>(b));
+        }
     }
 
     return file.good();
@@ -97,20 +103,29 @@ bool read_ppm(const std::filesystem::path& filepath,
 }
 
 // Compare with tolerance (for anti-aliasing variations)
-size_t compare_frames_tolerant(const uint32_t* a, const uint32_t* b, size_t count, int tolerance) {
+// a_stride is pixels per row in buffer a (may include padding)
+// b is assumed to be tightly packed (width pixels per row)
+size_t compare_frames_tolerant(const uint32_t* a, size_t a_stride,
+                               const uint32_t* b,
+                               size_t width, size_t height, int tolerance) {
     size_t diff = 0;
-    for (size_t i = 0; i < count; ++i) {
-        int ra = (a[i] >> 16) & 0xFF;
-        int ga = (a[i] >> 8) & 0xFF;
-        int ba = a[i] & 0xFF;
-        int rb = (b[i] >> 16) & 0xFF;
-        int gb = (b[i] >> 8) & 0xFF;
-        int bb = b[i] & 0xFF;
+    for (size_t y = 0; y < height; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            uint32_t pa = a[y * a_stride + x];
+            uint32_t pb = b[y * width + x];
 
-        if (std::abs(ra - rb) > tolerance ||
-            std::abs(ga - gb) > tolerance ||
-            std::abs(ba - bb) > tolerance) {
-            ++diff;
+            int ra = (pa >> 16) & 0xFF;
+            int ga = (pa >> 8) & 0xFF;
+            int ba = pa & 0xFF;
+            int rb = (pb >> 16) & 0xFF;
+            int gb = (pb >> 8) & 0xFF;
+            int bb = pb & 0xFF;
+
+            if (std::abs(ra - rb) > tolerance ||
+                std::abs(ga - gb) > tolerance ||
+                std::abs(ba - bb) > tolerance) {
+                ++diff;
+            }
         }
     }
     return diff;
@@ -310,7 +325,9 @@ TEST_CASE("Diagnostic: VideoUla emit_pixels produces correct colors", "[bitmap][
         PixelBatch batch;
         ula.emit_pixels(batch);
 
+        // Check color values (skip pixels[1] and pixels[2] which store flags/metadata)
         for (int i = 0; i < 8; ++i) {
+            if (i == 1 || i == 2) continue;  // Skip metadata slots
             INFO("Pixel[" << i << "] = 0x" << std::hex << batch.pixels.pixels[i].value);
             CHECK(batch.pixels.pixels[i].value == 0);
         }
@@ -682,14 +699,15 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
         REQUIRE(golden_w == fb.width());
         REQUIRE(golden_h == fb.height());
 
-        size_t diff = compare_frames_tolerant(frame.data(), golden.data(),
-                                               fb.width() * fb.height(), 16);
+        size_t diff = compare_frames_tolerant(frame.data(), fb.stride_pixels(),
+                                               golden.data(),
+                                               fb.width(), fb.height(), 16);
         double diff_percent = 100.0 * diff / (fb.width() * fb.height());
         INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
         CHECK(diff_percent < 0.1);
     } else {
         auto output_filepath = GOLDEN_DIR_MODE1 / "boot_screen_candidate.ppm";
-        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height()));
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
 }
@@ -768,14 +786,15 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
         REQUIRE(golden_w == fb.width());
         REQUIRE(golden_h == fb.height());
 
-        size_t diff = compare_frames_tolerant(frame.data(), golden.data(),
-                                               fb.width() * fb.height(), 16);
+        size_t diff = compare_frames_tolerant(frame.data(), fb.stride_pixels(),
+                                               golden.data(),
+                                               fb.width(), fb.height(), 16);
         double diff_percent = 100.0 * diff / (fb.width() * fb.height());
         INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
         CHECK(diff_percent < 0.1);
     } else {
         auto output_filepath = GOLDEN_DIR_MODE2 / "boot_screen_candidate.ppm";
-        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height()));
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
 }
