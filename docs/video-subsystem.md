@@ -359,4 +359,136 @@ TEST_CASE("MODE 1 test card") {
 }
 ```
 
-Test images are stored at logical resolution, making visual inspection and comparison straightforward
+Test images are stored at logical resolution, making visual inspection and comparison straightforward.
+
+## Display Geometry, Aspect Ratio, and Line-Doubling
+
+### Physical BBC Micro Display
+
+The BBC Micro uses a standard PAL CRT display with fixed timing constraints:
+
+- **Horizontal line time**: ~64μs total (~52μs active)
+- **Vertical frame time**: 20ms (50Hz refresh)
+- **Display aspect ratio**: 4:3
+
+All screen modes display at the same physical CRT size, but vary in:
+- Number of pixels per line (controlled by CRTC R1 and pixel clock)
+- Number of scanlines per frame (controlled by CRTC R4, R6)
+- Whether interlaced (controlled by CRTC R8)
+
+### Interlace vs Non-Interlace
+
+| Mode Type | CRTC R8 | Scanlines | Fields | Frame Swap |
+|-----------|---------|-----------|--------|------------|
+| MODE 0-6 (bitmap) | 0x00 | 256 | 1 (progressive) | Every VSYNC |
+| MODE 7 (teletext) | 0x03 | ~500 | 2 (interlaced) | Every 2nd VSYNC |
+
+**Interlaced mode (MODE 7):**
+- Two fields per frame: even lines in field 1, odd lines in field 2
+- 25 character rows × 10 scanlines = 250 lines per field
+- 250 × 2 = 500 total scanlines composited into framebuffer
+- VSYNC occurs twice per frame; buffer swap on every other VSYNC
+
+**Non-interlaced modes (MODE 0-6):**
+- Single field per frame with sequential scanlines
+- 32 character rows × 8 scanlines = 256 lines
+- VSYNC occurs once per frame; buffer swap on every VSYNC
+
+### Line-Doubling
+
+On a physical CRT, each scanline has the same vertical height regardless of mode. This means:
+
+- **Interlaced MODE 7**: 500 scanlines fill the full vertical space
+- **Non-interlaced bitmap modes**: 256 scanlines are "line-doubled" by the CRT electron beam
+
+Line-doubling means each scanline is displayed twice, effectively making 256 scanlines occupy the same vertical space as 512 interlaced lines. This is not pixel stretching—it's how CRTs physically work.
+
+**Effective heights for aspect ratio calculation:**
+
+| Mode | Actual Lines | Line-Doubled | Effective Height |
+|------|--------------|--------------|------------------|
+| MODE 7 (interlaced) | 500 | No | 500 |
+| MODE 0-6 (non-interlaced) | 256 | Yes (×2) | 512 |
+| Custom (e.g., Revs 208 lines) | 208 | Yes (×2) | 416 |
+
+### Pixel Aspect Ratio (PAR)
+
+BBC Micro pixels are not square. The Pixel Aspect Ratio (PAR) describes how wide a pixel is relative to its height.
+
+**PAR = 0.96** (from B2 emulator reference)
+
+This means BBC pixels are slightly narrower than they are tall. The PAR accounts for:
+- The difference between pixel clock timing and CRT horizontal scan rate
+- Standard PAL display geometry
+
+### Aspect Ratio Calculation
+
+The displayed aspect ratio combines PAR with line-doubling:
+
+```
+contentWidth = totalWidth × PAR
+effectiveHeight = totalHeight × (interlaced ? 1 : 2)
+aspectRatio = contentWidth / effectiveHeight
+```
+
+**Examples:**
+
+| Mode | Width | Height | PAR | Effective Height | Aspect Ratio |
+|------|-------|--------|-----|------------------|--------------|
+| MODE 7 | 640* | 500 | 0.96 | 500 | 1.23 |
+| MODE 0 | 640 | 256 | 0.96 | 512 | 1.20 |
+| MODE 1 | 320→640 | 256 | 0.96 | 512 | 1.20 |
+| Revs | 640 | 208 | 0.96 | 416 | 1.48 (letterbox) |
+
+*MODE 7 outputs 480 pixels but is padded/scaled to match border calculations.
+
+The ~2.4% difference between MODE 7 (1.23) and bitmap modes (1.20) is physically correct—MODE 7 has 12 fewer effective scanlines (500 vs 512).
+
+### Custom CRTC Modes
+
+Games can reprogram the CRTC for custom display modes:
+
+- **Revs**: 208 scanlines for letterbox effect (416 effective, aspect 1.48)
+- **Boffin**: 720 pixels wide (aspect 1.35 with 512 effective height)
+- **Elite**: Composite mode mixing 640 and 320 pixel regions
+
+The line-doubling approach correctly handles these custom modes:
+- Fewer scanlines → taller aspect ratio (letterbox)
+- More pixels → wider aspect ratio
+- No forced 4:3—the actual CRTC timing determines geometry
+
+### Frame Metadata
+
+The server sends frame metadata that clients use for correct display:
+
+```protobuf
+message Frame {
+    uint32 width = 3;           // Logical pixel width
+    uint32 height = 4;          // Scanline count
+    uint32 display_width = 11;  // Target width (640 for horizontal scaling)
+    uint32 display_height = 12; // Target height (same as height)
+    FieldOrder field_order = 6; // PROGRESSIVE or EVEN_FIRST/ODD_FIRST
+}
+```
+
+**Client interpretation:**
+1. If `field_order == PROGRESSIVE`: Apply line-doubling (×2 effective height)
+2. If `field_order != PROGRESSIVE`: Use height as-is (already interlaced)
+3. Apply PAR (0.96) to width
+4. Calculate aspect ratio for letterbox/pillarbox fitting
+
+### Interlace State Tracking
+
+The `FrameRenderer` tracks interlace state from the CRTC:
+
+```cpp
+// VIDEO_FLAG_INTERLACE comes from CRTC R8 register
+in_interlace_mode_ = interlace;  // Updated each frame, not sticky
+```
+
+This correctly handles:
+- MODE 7 boot → MODE 0 switch (interlace turns off)
+- `*TV` command changing interlace settings
+- Direct CRTC programming via VDU 23
+
+The interlace flag is passed through to clients via `field_order` in the Frame message

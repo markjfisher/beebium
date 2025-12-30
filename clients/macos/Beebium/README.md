@@ -95,3 +95,96 @@ The project uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) for project f
 brew install xcodegen
 xcodegen generate
 ```
+
+## Display Rendering
+
+The Metal renderer handles BBC Micro display geometry, including aspect ratio correction and line-doubling for non-interlaced modes.
+
+### Frame Data Flow
+
+```
+Server                          Client
+──────                          ──────
+FrameBuffer ──► gRPC Frame ──► VideoClient ──► MetalRenderer ──► Metal Shader
+  (logical      (+ metadata)    (extracts      (builds          (aspect ratio
+   pixels)                       interlace)     Uniforms)        + scaling)
+```
+
+### Key Concepts
+
+**Logical vs Display Resolution:**
+- Server outputs logical pixels (e.g., 320×256 for MODE 1)
+- `display_width`/`display_height` specify target dimensions
+- Shader scales texture to display size via UV mapping
+
+**Pixel Aspect Ratio (PAR):**
+- BBC pixels are not square: PAR = 0.96
+- Pixels are slightly narrower than tall
+- Applied in vertex shader for aspect ratio calculation
+
+**Line-Doubling:**
+- Non-interlaced modes (MODE 0-6): 256 scanlines line-doubled to 512 effective
+- Interlaced mode (MODE 7): 500 scanlines displayed as-is
+- Determined by `field_order` in frame metadata
+
+### Uniforms Structure
+
+```swift
+struct Uniforms {
+    var drawableSize: SIMD2<Float>   // Window size
+    var textureSize: SIMD2<Float>    // Logical frame dimensions
+    var displaySize: SIMD2<Float>    // Target display dimensions
+    var totalSize: SIMD2<Float>      // Display + borders
+    var borderOffset: SIMD2<Float>   // Left/top border offset
+    var parScale: Float              // 0.96 for BBC
+    var interlaced: UInt32           // 1 = interlaced, 0 = progressive
+    // ... border colors
+}
+```
+
+### Aspect Ratio Calculation (Vertex Shader)
+
+```metal
+// Apply PAR to width
+float contentWidth = uniforms.totalSize.x * uniforms.parScale;
+
+// Line-doubling for non-interlaced modes
+float contentHeight = uniforms.totalSize.y;
+if (uniforms.interlaced == 0) {
+    contentHeight *= 2.0;  // 256 → 512 effective height
+}
+
+// Calculate aspect ratio for letterbox/pillarbox
+float contentAspect = contentWidth / contentHeight;
+```
+
+### Mode Examples
+
+| Mode | Logical | Interlaced | Effective Height | Aspect |
+|------|---------|------------|------------------|--------|
+| MODE 7 | 480×500 | Yes | 500 | ~1.23 |
+| MODE 0 | 640×256 | No | 512 | ~1.20 |
+| MODE 1 | 320×256 | No | 512 | ~1.20 |
+| MODE 2 | 160×256 | No | 512 | ~1.20 |
+
+The ~2.4% aspect difference between MODE 7 and bitmap modes is physically correct—MODE 7 has 12 fewer scanlines (500 vs 512 effective).
+
+### Texture Sampling
+
+The fragment shader uses nearest-neighbor filtering for magnification (sharp pixels) and linear filtering for minification (prevents thin features like cursors from being skipped at certain window sizes):
+
+```metal
+constexpr sampler textureSampler(mag_filter::nearest,
+                                  min_filter::linear,
+                                  address::clamp_to_edge);
+```
+
+### Border Rendering
+
+The shader renders four distinct border regions around the content area, useful for debugging timing issues:
+- Left border: Dark red
+- Right border: Dark green
+- Top border: Dark blue
+- Bottom border: Dark yellow
+
+Border dimensions come from the server's tracking of blanking periods around the active display area
