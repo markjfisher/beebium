@@ -5,12 +5,12 @@ using namespace metal;
 // Note: float4 requires 16-byte alignment, so we add explicit padding
 struct Uniforms {
     float2 drawableSize;      // offset 0: Size of the drawable in pixels
-    float2 textureSize;       // offset 8: Size of the texture (content area)
-    float2 totalSize;         // offset 16: Total size including borders
-    float2 borderOffset;      // offset 24: Offset of content within total (left, top)
-    float parScale;           // offset 32: Pixel Aspect Ratio scale (0.96 for BBC)
-    float padding1;           // offset 36: Padding for alignment
-    float2 padding2;          // offset 40: Explicit padding for float4 alignment
+    float2 textureSize;       // offset 8: Logical texture size (for sampling)
+    float2 displaySize;       // offset 16: Display size (for layout, e.g. 640x256)
+    float2 totalSize;         // offset 24: Total size including borders
+    float2 borderOffset;      // offset 32: Offset of content within total (left, top)
+    float parScale;           // offset 40: Pixel Aspect Ratio scale (0.96 for BBC)
+    float padding1;           // offset 44: Padding for alignment
     float4 leftBorderColor;   // offset 48: RGBA color for left border
     float4 rightBorderColor;  // offset 64: RGBA color for right border
     float4 topBorderColor;    // offset 80: RGBA color for top border
@@ -74,17 +74,18 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
 }
 
 // Fragment shader: sample the emulator framebuffer texture with border rendering
+// Handles scaling from logical texture size to display size (e.g., 320->640 for MODE 1)
 fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                 constant Uniforms& uniforms [[buffer(0)]],
                                 texture2d<float> texture [[texture(0)]]) {
     // Convert normalized coordinates to pixel coordinates in total area
     float2 pixelCoord = in.texCoord * uniforms.totalSize;
 
-    // Calculate border boundaries
+    // Calculate border boundaries using displaySize (scaled dimensions)
     float leftEdge = uniforms.borderOffset.x;
     float topEdge = uniforms.borderOffset.y;
-    float rightEdge = leftEdge + uniforms.textureSize.x;
-    float bottomEdge = topEdge + uniforms.textureSize.y;
+    float rightEdge = leftEdge + uniforms.displaySize.x;
+    float bottomEdge = topEdge + uniforms.displaySize.y;
 
     // Determine which region we're in
     bool inLeftBorder = pixelCoord.x < leftEdge;
@@ -106,10 +107,12 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]],
         return uniforms.rightBorderColor;
     }
 
-    // Inside content area - sample texture
-    // Convert pixel coordinate to texture UV (relative to content area)
+    // Inside content area - sample texture with scaling
+    // Convert display coordinate to texture UV (handles mode-dependent scaling)
+    // displaySize -> textureSize mapping (e.g., 640 display pixels -> 320 texture pixels)
     float2 contentCoord = pixelCoord - uniforms.borderOffset;
-    float2 texUV = contentCoord / uniforms.textureSize;
+    float2 texUV = contentCoord / uniforms.displaySize;  // Normalize to [0,1]
+    // texUV now maps directly to texture [0,1] regardless of display/texture size ratio
 
     // Use nearest for magnification (sharp pixels when enlarged)
     // Use linear for minification (blend when shrunk) to prevent thin features

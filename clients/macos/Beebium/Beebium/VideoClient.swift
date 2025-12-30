@@ -32,9 +32,13 @@ final class VideoClient: ObservableObject {
     /// Latest received frame data (BGRA32 pixels)
     @Published private(set) var currentFrame: Data?
 
-    /// Frame dimensions
-    @Published private(set) var frameWidth: Int = 736
-    @Published private(set) var frameHeight: Int = 576
+    /// Frame dimensions (logical pixels)
+    @Published private(set) var frameWidth: Int = 640
+    @Published private(set) var frameHeight: Int = 256
+
+    /// Display dimensions (target after scaling)
+    @Published private(set) var displayWidth: Int = 640
+    @Published private(set) var displayHeight: Int = 256
 
     /// Frame counter for debugging
     @Published private(set) var frameCount: UInt64 = 0
@@ -150,11 +154,15 @@ final class VideoClient: ObservableObject {
         frameCount = frame.frameNumber
         frameWidth = Int(frame.width)
         frameHeight = Int(frame.height)
+        displayWidth = Int(frame.displayWidth)
+        displayHeight = Int(frame.displayHeight)
         currentFrame = frame.pixels
 
         // Debug: log every 50 frames (~1 second at 50Hz)
         if frameCount % 50 == 0 {
-            print("[VideoClient] Frame \(frameCount): \(frame.width)x\(frame.height), borders: L=\(frame.leftBorder) R=\(frame.rightBorder) T=\(frame.topBorder) B=\(frame.bottomBorder), renderer=\(renderer != nil)")
+            NSLog("[VideoClient] Frame %llu: %dx%d -> %dx%d, borders: L=%d R=%d T=%d B=%d",
+                  frameCount, frame.width, frame.height, frame.displayWidth, frame.displayHeight,
+                  frame.leftBorder, frame.rightBorder, frame.topBorder, frame.bottomBorder)
         }
 
         // Update renderer directly to bypass SwiftUI update batching
@@ -162,6 +170,8 @@ final class VideoClient: ObservableObject {
             data: frame.pixels,
             width: Int(frame.width),
             height: Int(frame.height),
+            displayWidth: Int(frame.displayWidth),
+            displayHeight: Int(frame.displayHeight),
             leftBorder: Int(frame.leftBorder),
             rightBorder: Int(frame.rightBorder),
             topBorder: Int(frame.topBorder),

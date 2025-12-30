@@ -19,12 +19,12 @@ import simd
 /// Note: Struct layout must match Metal exactly. float4 requires 16-byte alignment.
 struct Uniforms {
     var drawableSize: SIMD2<Float>   // offset 0: Size of the drawable in pixels
-    var textureSize: SIMD2<Float>    // offset 8: Size of the texture (content area)
-    var totalSize: SIMD2<Float>      // offset 16: Total size including borders
-    var borderOffset: SIMD2<Float>   // offset 24: Offset of content within total (left, top)
-    var parScale: Float              // offset 32: Pixel Aspect Ratio scale (0.96 for BBC)
-    var padding1: Float = 0          // offset 36: Padding for alignment
-    var padding2: SIMD2<Float> = .zero  // offset 40: Explicit padding for float4 alignment
+    var textureSize: SIMD2<Float>    // offset 8: Logical texture size (for sampling)
+    var displaySize: SIMD2<Float>    // offset 16: Display size (for layout, e.g. 640x256)
+    var totalSize: SIMD2<Float>      // offset 24: Total size including borders
+    var borderOffset: SIMD2<Float>   // offset 32: Offset of content within total (left, top)
+    var parScale: Float              // offset 40: Pixel Aspect Ratio scale (0.96 for BBC)
+    var padding1: Float = 0          // offset 44: Padding for alignment
     var leftBorderColor: SIMD4<Float>    // offset 48: RGBA color for left border
     var rightBorderColor: SIMD4<Float>   // offset 64: RGBA color for right border
     var topBorderColor: SIMD4<Float>     // offset 80: RGBA color for top border
@@ -41,6 +41,11 @@ final class MetalRenderer: NSObject {
     private var textureWidth: Int = 0
     private var textureHeight: Int = 0
     private var drawableSize: CGSize = .zero
+
+    // Display dimensions (target after scaling)
+    // BBC displays all modes at the same physical size (640 wide)
+    private var displayWidth: Int = 640
+    private var displayHeight: Int = 256
 
     // Border dimensions
     private var leftBorder: Int = 0
@@ -95,20 +100,28 @@ final class MetalRenderer: NSObject {
     /// Update the frame texture with new pixel data
     /// - Parameters:
     ///   - data: BGRA32 pixel data
-    ///   - width: Frame width in pixels
-    ///   - height: Frame height in pixels
+    ///   - width: Frame width in logical pixels
+    ///   - height: Frame height in logical pixels
+    ///   - displayWidth: Target display width (for scaling)
+    ///   - displayHeight: Target display height (for scaling)
     ///   - leftBorder: Left border width in pixels
     ///   - rightBorder: Right border width in pixels
     ///   - topBorder: Top border height in pixels
     ///   - bottomBorder: Bottom border height in pixels
     func updateFrame(data: Data, width: Int, height: Int,
+                     displayWidth: Int, displayHeight: Int,
                      leftBorder: Int, rightBorder: Int,
                      topBorder: Int, bottomBorder: Int) {
         updateCount += 1
         if updateCount % 50 == 0 {
-            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d, borders: L=%d R=%d T=%d B=%d",
-                  updateCount, width, height, leftBorder, rightBorder, topBorder, bottomBorder)
+            let scaleX = displayWidth > 0 ? displayWidth / width : 1
+            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d -> %dx%d (scale %dx), borders: L=%d R=%d T=%d B=%d",
+                  updateCount, width, height, displayWidth, displayHeight, scaleX, leftBorder, rightBorder, topBorder, bottomBorder)
         }
+
+        // Store display dimensions for scaling
+        self.displayWidth = displayWidth > 0 ? displayWidth : width
+        self.displayHeight = displayHeight > 0 ? displayHeight : height
 
         // Store border dimensions
         self.leftBorder = leftBorder
@@ -174,18 +187,20 @@ extension MetalRenderer: MTKViewDelegate {
         // Bind frame texture if available
         if let texture = frameTexture {
             // Calculate total size including borders
-            let totalWidth = Float(leftBorder + textureWidth + rightBorder)
-            let totalHeight = Float(topBorder + textureHeight + bottomBorder)
+            // Use displayWidth/displayHeight (scaled dimensions) for layout
+            let totalWidth = Float(leftBorder + displayWidth + rightBorder)
+            let totalHeight = Float(topBorder + displayHeight + bottomBorder)
 
             // Create uniforms for aspect ratio correction and border rendering
+            // textureSize is logical (for texture sampling), displaySize is for layout
             var uniforms = Uniforms(
                 drawableSize: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
                 textureSize: SIMD2<Float>(Float(textureWidth), Float(textureHeight)),
+                displaySize: SIMD2<Float>(Float(displayWidth), Float(displayHeight)),
                 totalSize: SIMD2<Float>(totalWidth, totalHeight),
                 borderOffset: SIMD2<Float>(Float(leftBorder), Float(topBorder)),
                 parScale: parScale,
                 padding1: 0,
-                padding2: .zero,
                 leftBorderColor: leftBorderColor,
                 rightBorderColor: rightBorderColor,
                 topBorderColor: topBorderColor,
