@@ -194,3 +194,169 @@ The SAA5050 requires specific timing signals derived from CRTC output:
 - Dynamic frame dimensions (adapts to mode changes)
 - Full border calculation (left, right, top, bottom)
 - Interlace field compositing for Mode 7
+- Logical pixel output with client-side scaling metadata
+
+## Logical Pixel Output and Client Scaling
+
+### Overview
+
+The BBC Micro displays all screen modes at the same physical CRT size, but different modes have different logical resolutions:
+
+| Mode | Logical Width | Display Width | Horizontal Scale |
+|------|--------------|---------------|------------------|
+| MODE 0 | 640 | 640 | 1× |
+| MODE 1 | 320 | 640 | 2× |
+| MODE 2 | 160 | 640 | 4× |
+| MODE 3 | 640 | 640 | 1× |
+| MODE 4 | 320 | 640 | 2× |
+| MODE 5 | 160 | 640 | 4× |
+| MODE 6 | 640 | 640 | 1× |
+| MODE 7 | 480* | 480 | 1× |
+
+*Mode 7 uses the SAA5050 teletext generator with 6→8 pixel expansion, producing 480 output pixels.
+
+### Design Philosophy
+
+Rather than pre-scaling pixels in the core (which would require interpolation decisions), Beebium outputs **logical pixels** and provides **display dimension metadata**. This approach:
+
+1. **Preserves pixel fidelity**: Golden master tests can compare logical pixels directly
+2. **Enables client choice**: Clients can use nearest-neighbor, bilinear, or CRT shader scaling
+3. **Simplifies the core**: No scaling logic needed in VideoULA or FrameRenderer
+4. **Supports flexible output**: Same frame data works for tests, framebuffers, and video streams
+
+### PixelBatch Variable Width
+
+The `PixelBatch` struct supports variable pixel counts per batch:
+
+```cpp
+struct PixelBatch {
+    PixelData pixels;           // 8 pixel slots
+    PixelBatchType type;        // Bitmap, Teletext, or Nothing
+    uint8_t flags;              // HSYNC, VSYNC, Display
+
+    // Variable pixel count (1-8), stored in pixels[2].bits.x
+    void set_pixel_count(uint8_t count);
+    uint8_t pixel_count() const;
+};
+```
+
+The VideoULA emits different pixel counts based on mode:
+
+| Bits per Pixel | Pixels per Batch | Modes |
+|----------------|------------------|-------|
+| 8 bpp | 8 pixels | MODE 0, 3, 6 |
+| 4 bpp | 4 pixels | MODE 1, 4 |
+| 2 bpp | 2 pixels | MODE 2, 5 |
+
+### FrameMetadata Display Dimensions
+
+The `FrameMetadata` struct includes target display dimensions:
+
+```cpp
+struct FrameMetadata {
+    // ... existing fields ...
+
+    // Target display resolution for client scaling
+    // BBC displays all modes at the same physical CRT size
+    uint32_t display_width = 640;   // Target width (typically 640)
+    uint32_t display_height = 256;  // Target height (scanlines)
+};
+```
+
+The `FrameRenderer` sets these in `finish_frame()`:
+
+```cpp
+void finish_frame() {
+    meta.display_width = 640;  // All modes display at same width
+    meta.display_height = static_cast<uint32_t>(frame_height);
+    // ... swap buffers ...
+}
+```
+
+### gRPC Frame Message
+
+The `video.proto` Frame message includes display dimensions:
+
+```protobuf
+message Frame {
+    uint64 frame_number = 1;
+    uint32 width = 3;           // Logical width (varies by mode)
+    uint32 height = 4;          // Logical height (scanlines)
+    bytes pixels = 5;           // BGRA32 at logical resolution
+
+    // Border dimensions
+    uint32 left_border = 7;
+    uint32 right_border = 8;
+    uint32 top_border = 9;
+    uint32 bottom_border = 10;
+
+    // Target display dimensions for scaling
+    uint32 display_width = 11;  // Target width (typically 640)
+    uint32 display_height = 12; // Target height (typically 256)
+}
+```
+
+### Client-Side Scaling
+
+Clients receive frames at logical resolution and scale to display dimensions:
+
+```
+Core Output          gRPC Transport       Client Rendering
+───────────          ──────────────       ────────────────
+MODE 1: 320×256  ──► Frame {              Scale 320→640 (2×)
+                     width: 320           using nearest-neighbor
+                     height: 256          or shader
+                     display_width: 640
+                     display_height: 256
+                    }
+```
+
+#### Metal Shader Example (macOS Client)
+
+The macOS client uses a Metal shader with separate texture and display sizes:
+
+```metal
+struct Uniforms {
+    float2 textureSize;    // Logical texture dimensions (e.g., 320×256)
+    float2 displaySize;    // Target display dimensions (e.g., 640×256)
+    float2 totalSize;      // Display size + borders
+    float2 borderOffset;   // Left and top border widths
+    // ...
+};
+
+fragment float4 fragmentShader(...) {
+    // Calculate position in total area (including borders)
+    float2 pixelCoord = in.texCoord * uniforms.totalSize;
+
+    // Content area boundaries use displaySize
+    float rightEdge = uniforms.borderOffset.x + uniforms.displaySize.x;
+    float bottomEdge = uniforms.borderOffset.y + uniforms.displaySize.y;
+
+    // Sample texture - UV automatically scales logical→display
+    float2 contentCoord = pixelCoord - uniforms.borderOffset;
+    float2 texUV = contentCoord / uniforms.displaySize;
+
+    return texture.sample(textureSampler, texUV);
+}
+```
+
+The shader uses `displaySize` for layout calculations but samples the texture using normalized UV coordinates, which automatically handles the scaling from logical to display resolution.
+
+### Testing with Logical Pixels
+
+Golden master tests benefit from logical pixel output:
+
+```cpp
+TEST_CASE("MODE 1 test card") {
+    machine.memory().set_startup_screen_mode(1);
+    machine.reset();
+    // ... run and render ...
+
+    // Frame is 320×256 - direct pixel comparison
+    // No scaling artifacts to account for
+    REQUIRE(frame.width() == 320);
+    compare_golden_master("mode1_testcard.ppm", frame);
+}
+```
+
+Test images are stored at logical resolution, making visual inspection and comparison straightforward

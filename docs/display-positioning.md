@@ -49,6 +49,8 @@ The FrameRenderer tracks all four borders by counting pixel batches:
 | `top_border` | Scanlines from VSYNC to first display enable |
 | `bottom_border` | Total frame scanlines − top border − displayed height |
 
+These border dimensions are included in `FrameMetadata` and sent to clients via the gRPC `Frame` message. See [video-subsystem.md](video-subsystem.md#logical-pixel-output-and-client-scaling) for details on client-side handling.
+
 This approach:
 - Automatically adapts to different screen modes
 - Works with custom CRTC timings (games like Elite, Exile)
@@ -100,9 +102,9 @@ Uses the CRTC's display enable signal directly rather than calculating offsets f
 ## Future Directions
 
 ### 1. Border Color Configuration
-Currently borders are rendered in debug colors (red/green/blue/yellow). Options:
-- Black borders (authentic CRT appearance)
-- User-configurable border color
+~~Currently borders are rendered in debug colors (red/green/blue/yellow).~~ The macOS client now renders configurable border colors, with distinct colors for each border edge. Options for future work:
+- Black borders (authentic CRT appearance) - the current default
+- User-configurable border color via preferences
 - Per-border color from CRTC/ULA state (if BBC had border color control)
 
 ### 2. Overscan/Cropping Options
