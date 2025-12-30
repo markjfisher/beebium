@@ -54,6 +54,10 @@ CLAUDE.md
 .jbeval
 /docs/discussion/
 
+# LLVM profiling
+*.profraw
+*.profdata
+
 # Python
 __pycache__/
 *.py[cod]
