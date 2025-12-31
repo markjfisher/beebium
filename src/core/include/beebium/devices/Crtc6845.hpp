@@ -211,10 +211,10 @@ public:
                         case 1: // No cursor
                             break;
                         case 2: // Blink at 1/16 field rate
-                            output.cursor = (frame_count_ & 0x08) ? 1 : 0;
+                            output.cursor = (field_count_ & 0x08) ? 1 : 0;
                             break;
                         case 3: // Blink at 1/32 field rate
-                            output.cursor = (frame_count_ & 0x10) ? 1 : 0;
+                            output.cursor = (field_count_ & 0x10) ? 1 : 0;
                             break;
                     }
                 }
@@ -236,7 +236,10 @@ public:
         // Handle end of vertical displayed
         if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
             v_display_ = false;
-            ++frame_count_;
+            // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
+            // In interlace mode, this triggers twice per frame (once per field).
+            // In non-interlace mode, this triggers once per frame, so we double it.
+            field_count_ += interlace_sync_and_video() ? 1 : 2;
             // Toggle field for interlace mode
             odd_field_ = !odd_field_;
         }
@@ -293,7 +296,7 @@ public:
         v_display_ = true;
         in_vadj_ = false;
         had_vsync_this_row_ = false;
-        frame_count_ = 0;
+        field_count_ = 0;
         odd_field_ = true;
         prev_lightpen_ = false;
         fast_clock_ = false;
@@ -434,8 +437,8 @@ private:
     bool in_vadj_ = false;
     bool had_vsync_this_row_ = false;
 
-    // Frame counting (for cursor blink)
-    uint8_t frame_count_ = 0;
+    // Field counter for cursor blink timing (always increments at 50Hz field rate)
+    uint8_t field_count_ = 0;
 
     // Field tracking for interlace mode
     bool odd_field_ = true;  // Odd field (first) or even field (second)

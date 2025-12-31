@@ -69,21 +69,29 @@ Apply cursor XOR only to pixels 0 to `pixel_count()-1` in `VideoUla::emit_pixels
 
 **Location:** `src/core/include/beebium/devices/VideoUla.hpp` lines 117-123
 
-### 2. Cursor Blink Rate Half Speed in Bitmap Modes
+### ~~2. Cursor Blink Rate Half Speed in Bitmap Modes~~ (FIXED)
 
-**Observed behavior:**
+**Original symptom:**
 - MODE 0, MODE 1, MODE 2: Cursor blinks at half the expected rate
 - MODE 7: Cursor blinks at correct rate
 
-**Possible causes:**
-- May be related to previous interlace timing issues (needs re-testing after fixes)
-- CRTC cursor timing registers may not be interpreted correctly for non-interlaced modes
-- CRTC `frame_count_` increment timing may differ between modes
+**Root cause:**
+The CRTC's `frame_count_` (now renamed `field_count_`) incremented at different rates depending on interlace mode:
+- In interlaced MODE 7: incremented twice per complete frame (once per field) = 100/sec
+- In non-interlaced MODE 0-6: incremented once per frame = 50/sec
 
-**Investigation needed:**
-1. Re-test after interlace fixes to confirm issue persists
-2. Trace CRTC `cursor_blink()` timing
-3. Compare frame_count_ increments between MODE 7 and MODE 0
+The blink masks (0x08, 0x10) assumed 50Hz field-rate counting, but this only held true in interlace mode.
+
+**Fix:**
+Renamed `frame_count_` to `field_count_` and normalized the increment rate:
+- In interlace mode: increment by 1 (twice per frame = 100/sec, but mask comparison still correct)
+- In non-interlace mode: increment by 2 per frame to simulate field rate
+
+```cpp
+field_count_ += interlace_sync_and_video() ? 1 : 2;
+```
+
+**Location:** `src/core/include/beebium/devices/Crtc6845.hpp` line 242
 
 ---
 
@@ -141,6 +149,6 @@ Interlace mode can be controlled independently of screen mode via the `*TV` comm
 
 - `src/core/include/beebium/devices/VideoUla.hpp` - Cursor XOR application
 - `src/core/include/beebium/FrameRenderer.hpp` - Interlace mode tracking (fixed)
-- `src/core/include/beebium/devices/Crtc6845.hpp` - Cursor timing and interlace detection
+- `src/core/include/beebium/devices/Crtc6845.hpp` - Cursor timing and interlace detection (blink rate fixed)
 - `clients/macos/Beebium/Beebium/Shaders.metal` - Line-doubling (fixed)
 - `clients/macos/Beebium/Beebium/MetalRenderer.swift` - Interlace flag passing (fixed)

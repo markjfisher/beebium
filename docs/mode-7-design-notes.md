@@ -184,7 +184,7 @@ Mode 7 sets CRTC register R8 = 0x03, enabling "interlace sync and video" mode. I
 - Each field contains half the scanlines: odd fields show rasters 0, 2, 4..., even fields show 1, 3, 5...
 - When both fields are displayed together on a CRT, they interleave to produce full vertical resolution
 
-This affects cursor timing because the CRTC's `frame_count_` (used for cursor blink) increments per field, not per frame.
+This affects cursor timing because the CRTC's `field_count_` (used for cursor blink) increments per field, not per frame.
 
 ### CRTC Interlace Handling
 
@@ -308,7 +308,7 @@ The FrameRenderer cannot rely on VIDEO_FLAG_INTERLACE at VSYNC time to determine
 
 #### Cursor Blink Rate
 
-The cursor blink rate is derived from `frame_count_`, which increments at the end of each field. With proper interlace handling, `frame_count_` increments at 50 Hz (PAL), giving the correct blink timing. Without it, frames take twice as long, halving the blink rate.
+The cursor blink rate is derived from `field_count_`, which increments at the end of each field. The counter always increments at 50 Hz (PAL field rate): in interlace mode it increments once per field, while in non-interlace mode it increments by 2 per frame to compensate. This ensures consistent cursor blink timing across all modes.
 
 #### Cursor Thickness
 
