@@ -244,9 +244,11 @@ The VideoULA emits different pixel counts based on mode:
 
 | Bits per Pixel | Pixels per Batch | Modes |
 |----------------|------------------|-------|
-| 8 bpp | 8 pixels | MODE 0, 3, 6 |
-| 4 bpp | 4 pixels | MODE 1, 4 |
-| 2 bpp | 2 pixels | MODE 2, 5 |
+| 1 bpp | 8 pixels | MODE 0 |
+| 2 bpp | 4 pixels | MODE 1 |
+| 4 bpp | 2 pixels | MODE 2 |
+
+Note: Text modes (MODE 3, 6) and slow clock modes (MODE 4, 5) have different pixel/batch counts but are less commonly used for graphics.
 
 ### FrameMetadata Display Dimensions
 
@@ -258,8 +260,9 @@ struct FrameMetadata {
 
     // Target display resolution for client scaling
     // BBC displays all modes at the same physical CRT size
-    uint32_t display_width = 640;   // Target width (typically 640)
-    uint32_t display_height = 256;  // Target height (scanlines)
+    uint32_t display_width = 640;   // Target width (always 640)
+    uint32_t display_height = ...;  // Set by FrameRenderer to frame_height
+    bool interlaced = false;        // True for MODE 7 and custom interlace
 };
 ```
 
@@ -304,43 +307,51 @@ Clients receive frames at logical resolution and scale to display dimensions:
 Core Output          gRPC Transport       Client Rendering
 ───────────          ──────────────       ────────────────
 MODE 1: 320×256  ──► Frame {              Scale 320→640 (2×)
-                     width: 320           using nearest-neighbor
-                     height: 256          or shader
+                     width: 320           Line-double if
+                     height: 256          field_order=PROGRESSIVE
                      display_width: 640
                      display_height: 256
+                     field_order: PROGRESSIVE
                     }
 ```
 
+The `field_order` field tells clients whether to apply line-doubling:
+- `PROGRESSIVE`: Non-interlaced mode, apply ×2 effective height
+- `EVEN_FIRST`/`ODD_FIRST`: Interlaced mode, use height as-is
+
 #### Metal Shader Example (macOS Client)
 
-The macOS client uses a Metal shader with separate texture and display sizes:
+The macOS client uses a Metal shader with aspect ratio correction and line-doubling:
 
 ```metal
 struct Uniforms {
-    float2 textureSize;    // Logical texture dimensions (e.g., 320×256)
-    float2 displaySize;    // Target display dimensions (e.g., 640×256)
-    float2 totalSize;      // Display size + borders
-    float2 borderOffset;   // Left and top border widths
-    // ...
+    float2 drawableSize;      // Window size
+    float2 textureSize;       // Logical texture dimensions (e.g., 320×256)
+    float2 displaySize;       // Target display dimensions (e.g., 640×256)
+    float2 totalSize;         // Display size + borders
+    float2 borderOffset;      // Left and top border offsets
+    float parScale;           // Pixel Aspect Ratio (0.96 for BBC)
+    uint interlaced;          // 1 = interlaced, 0 = progressive
+    // ... border colors
 };
 
-fragment float4 fragmentShader(...) {
-    // Calculate position in total area (including borders)
-    float2 pixelCoord = in.texCoord * uniforms.totalSize;
+vertex VertexOut vertexShader(...) {
+    // Apply PAR to width
+    float contentWidth = uniforms.totalSize.x * uniforms.parScale;
 
-    // Content area boundaries use displaySize
-    float rightEdge = uniforms.borderOffset.x + uniforms.displaySize.x;
-    float bottomEdge = uniforms.borderOffset.y + uniforms.displaySize.y;
+    // Line-doubling for non-interlaced modes
+    float contentHeight = uniforms.totalSize.y;
+    if (uniforms.interlaced == 0) {
+        contentHeight *= 2.0;  // 256 → 512 effective height
+    }
 
-    // Sample texture - UV automatically scales logical→display
-    float2 contentCoord = pixelCoord - uniforms.borderOffset;
-    float2 texUV = contentCoord / uniforms.displaySize;
-
-    return texture.sample(textureSampler, texUV);
+    // Calculate aspect ratio for letterbox/pillarbox fitting
+    float contentAspect = contentWidth / contentHeight;
+    // ... scale quad to fit drawable
 }
 ```
 
-The shader uses `displaySize` for layout calculations but samples the texture using normalized UV coordinates, which automatically handles the scaling from logical to display resolution.
+The vertex shader applies PAR correction and line-doubling to calculate the correct aspect ratio. The fragment shader samples the texture using normalized UV coordinates, which automatically scales from logical to display resolution.
 
 ### Testing with Logical Pixels
 

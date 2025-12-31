@@ -35,8 +35,9 @@ struct FrameMetadata {
     // - MODE 1: 320×256 logical = 640×256 display (2:1 horizontal)
     // - MODE 2: 160×256 logical = 640×256 display (4:1 horizontal)
     // Clients should scale width→display_width, height→display_height
+    // Note: FrameRenderer sets display_height = frame_height at swap time
     uint32_t display_width = 640;  // Target display width in pixels
-    uint32_t display_height = 512; // Target display height in scanlines
+    uint32_t display_height = 256; // Target display height (set by FrameRenderer)
 
     // Border dimensions (blanking area around active content)
     // These come from CRTC timing and allow clients to render
