@@ -76,7 +76,15 @@ public:
     // Called when CRTC provides a new memory address
     void byte(uint8_t data, bool cursor_active) {
         work_byte_ = data;
-        cursor_pattern_ = cursor_active ? cursor_width_pattern() : 0;
+
+        // Only load cursor pattern on rising edge of cursor_active.
+        // This allows cursor to persist across multiple byte() calls,
+        // spanning multiple batches for 8 logical pixels in all modes.
+        if (cursor_active && !cursor_was_active_) {
+            cursor_pattern_ = cursor_width_pattern();
+        }
+        cursor_was_active_ = cursor_active;
+        // Note: cursor_pattern_ is NOT cleared here - it exhausts via shifting
     }
 
     // Emit pixels for one 2MHz cycle into a PixelBatch
@@ -115,12 +123,16 @@ public:
         }
 
         // Apply cursor (XOR with white if cursor active)
+        // Only XOR valid pixels based on current mode's pixel count
         if (cursor_pattern_ & 1) {
-            for (int i = 0; i < 8; ++i) {
+            uint8_t count = pixels_per_batch();
+            for (int i = 0; i < count; ++i) {
                 batch.pixels.pixels[i].value ^= 0x0FFF;  // XOR RGB
             }
         }
-        cursor_pattern_ >>= fast_clock() ? 2 : 1;
+        // Shift by 1 bit per batch. Cursor pattern spans multiple batches
+        // via edge detection in byte(), giving 8 logical pixels in all modes.
+        cursor_pattern_ >>= 1;
     }
 
     // Emit blank pixels (during blanking period)
@@ -184,6 +196,7 @@ public:
         output_palette_.fill(VideoDataPixel{});
         work_byte_ = 0;
         cursor_pattern_ = 0;
+        cursor_was_active_ = false;
     }
 
 private:
@@ -204,15 +217,19 @@ private:
         return output_palette_[logical_index & 0x0F];
     }
 
-    // Cursor width pattern based on control register bits 5-7
+    // Cursor width pattern for 8 logical pixels in all modes.
+    // The MOS sets cursor_width_bits for constant physical size on screen,
+    // but we override this to produce constant logical pixel width.
+    //
+    // The cursor persists across multiple byte() calls via cursor_was_active_
+    // edge detection, allowing the pattern to span multiple batches.
     uint8_t cursor_width_pattern() const {
-        switch (cursor_width_bits()) {
-            case 0: return 0x00;  // No cursor
-            case 1: return 0x01;  // 1 byte wide
-            case 2: return 0x03;  // 2 bytes wide
-            case 3: return 0x0F;  // 4 bytes wide
-            default: return 0xFF; // Full width
-        }
+        if (cursor_width_bits() == 0) return 0x00;  // No cursor
+
+        // Always produce 8 logical pixels (1 text character width)
+        // MODE 0: 1 batch, MODE 1: 2 batches, MODE 2: 4 batches
+        uint8_t batches = 8 / pixels_per_batch();
+        return static_cast<uint8_t>((1u << batches) - 1);
     }
 
     // Mode 0 (fast): 8 logical pixels/byte, 1bpp
@@ -280,6 +297,7 @@ private:
     std::array<VideoDataPixel, 16> output_palette_{};  // Pre-computed RGB values
     uint8_t work_byte_ = 0;                       // Current screen byte being shifted
     uint8_t cursor_pattern_ = 0;                  // Cursor display pattern
+    bool cursor_was_active_ = false;              // Track cursor_active for edge detection
 };
 
 } // namespace beebium

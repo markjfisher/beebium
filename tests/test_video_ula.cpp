@@ -253,9 +253,14 @@ TEST_CASE("VideoUla blanking output", "[video_ula][blank]") {
 
         ula.emit_blank(batch);
 
-        REQUIRE(batch.pixels.values[0] == 0);
-        REQUIRE(batch.pixels.values[1] == 0);
+        // All RGB values should be 0 (black), but x metadata fields may be set
+        for (int i = 0; i < 8; ++i) {
+            REQUIRE(batch.pixels.pixels[i].bits.r == 0);
+            REQUIRE(batch.pixels.pixels[i].bits.g == 0);
+            REQUIRE(batch.pixels.pixels[i].bits.b == 0);
+        }
         REQUIRE(batch.type() == PixelBatchType::Nothing);
+        REQUIRE(batch.pixel_count() == ula.pixels_per_batch());
     }
 }
 

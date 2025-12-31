@@ -542,10 +542,13 @@ TEST_CASE("VideoUla pixel generation", "[video]") {
         PixelBatch unit{};
         ula.emit_blank(unit);
 
-        // Blank should produce black pixels
+        // Blank should produce black pixels (RGB = 0, but x field may have metadata)
         for (int i = 0; i < 8; ++i) {
-            CHECK(unit.pixels.pixels[i].value == 0);
+            CHECK(unit.pixels.pixels[i].bits.r == 0);
+            CHECK(unit.pixels.pixels[i].bits.g == 0);
+            CHECK(unit.pixels.pixels[i].bits.b == 0);
         }
+        CHECK(unit.type() == PixelBatchType::Nothing);
     }
 
     SECTION("emit pixels after byte") {

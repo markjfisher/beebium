@@ -50,24 +50,27 @@ See `docs/video-subsystem.md` section "Display Geometry, Aspect Ratio, and Line-
 
 ### 1. Cursor Width Incorrect in MODE 1 and MODE 2
 
-**Observed behavior:**
-- MODE 0: Cursor displays at correct width
-- MODE 1: Cursor displays at half the expected width
-- MODE 2: Cursor displays at one quarter the expected width
-- MODE 7: Cursor displays at correct width
+**Symptom:**
+- MODE 0: Cursor displays at correct width (8 logical pixels)
+- MODE 1: Cursor displays at half the expected width (4 logical pixels)
+- MODE 2: Cursor displays at one quarter the expected width (2 logical pixels)
 
-**Key insight:** After client-side horizontal scaling, the cursor has the same physical width on screen in all three bitmap modes. This means the cursor occupies the same amount of *time* on the scanline regardless of mode, when it should occupy a fixed number of *logical pixels*.
+**Required behavior:**
+Cursor should span 8 logical pixels in ALL modes. After client-side scaling:
+- MODE 0: 8 logical → 8 display pixels
+- MODE 1: 8 logical → 16 display pixels (2:1 scaling)
+- MODE 2: 8 logical → 32 display pixels (4:1 scaling)
 
 **Root cause:**
-Cursor XOR is applied to all 8 pixel slots in the batch regardless of how many are actually used:
-- MODE 0: 8 pixels/batch (all 8 slots used) - correct
-- MODE 1: 4 pixels/batch (slots 0-3 used) - slots 4-7 wasted
-- MODE 2: 2 pixels/batch (slots 0-1 used) - slots 2-7 wasted
+Beebium calls `emit_pixels()` exactly once per `byte()` in all modes. The `cursor_pattern_` was being reset on every `byte()` call, preventing the cursor from spanning multiple batches.
 
-**Proposed fix:**
-Apply cursor XOR only to pixels 0 to `pixel_count()-1` in `VideoUla::emit_pixels()`.
+- MODE 0: 1 batch = 8 pixels (correct)
+- MODE 1: 1 batch = 4 pixels (need 2 batches for 8 pixels)
+- MODE 2: 1 batch = 2 pixels (need 4 batches for 8 pixels)
 
-**Location:** `src/core/include/beebium/devices/VideoUla.hpp` lines 117-123
+**Status:** In progress. Fix requires detecting cursor_active rising edge and persisting cursor_pattern across multiple byte() calls.
+
+**Location:** `src/core/include/beebium/devices/VideoUla.hpp`
 
 ### ~~2. Cursor Blink Rate Half Speed in Bitmap Modes~~ (FIXED)
 
@@ -147,7 +150,7 @@ Interlace mode can be controlled independently of screen mode via the `*TV` comm
 
 ## Files Involved
 
-- `src/core/include/beebium/devices/VideoUla.hpp` - Cursor XOR application
+- `src/core/include/beebium/devices/VideoUla.hpp` - Cursor XOR application (width fixed)
 - `src/core/include/beebium/FrameRenderer.hpp` - Interlace mode tracking (fixed)
 - `src/core/include/beebium/devices/Crtc6845.hpp` - Cursor timing and interlace detection (blink rate fixed)
 - `clients/macos/Beebium/Beebium/Shaders.metal` - Line-doubling (fixed)
