@@ -319,6 +319,10 @@ The `field_order` field tells clients whether to apply line-doubling:
 - `PROGRESSIVE`: Non-interlaced mode, apply ×2 effective height
 - `EVEN_FIRST`/`ODD_FIRST`: Interlaced mode, use height as-is
 
+TODO: Why not have display_height always be the final height after line-doubling? If we did that,
+clients would know that line-doubling is necessary just by comparing height vs display_height. It
+would be much clearer to API consumers what the final output size should be.
+
 #### Metal Shader Example (macOS Client)
 
 The macOS client uses a Metal shader with aspect ratio correction and line-doubling:
