@@ -48,27 +48,36 @@ See `docs/video-subsystem.md` section "Display Geometry, Aspect Ratio, and Line-
 
 ## Outstanding Issues
 
-### 1. Cursor Width Incorrect in MODE 1 and MODE 2
+*All known cursor issues have been fixed.*
 
-**Symptom:**
+### ~~1. Cursor Width Incorrect in MODE 1 and MODE 2~~ (FIXED)
+
+**Original symptom:**
 - MODE 0: Cursor displays at correct width (8 logical pixels)
 - MODE 1: Cursor displays at half the expected width (4 logical pixels)
 - MODE 2: Cursor displays at one quarter the expected width (2 logical pixels)
 
-**Required behavior:**
-Cursor should span 8 logical pixels in ALL modes. After client-side scaling:
-- MODE 0: 8 logical → 8 display pixels
-- MODE 1: 8 logical → 16 display pixels (2:1 scaling)
-- MODE 2: 8 logical → 32 display pixels (4:1 scaling)
-
 **Root cause:**
 Beebium calls `emit_pixels()` exactly once per `byte()` in all modes. The `cursor_pattern_` was being reset on every `byte()` call, preventing the cursor from spanning multiple batches.
 
-- MODE 0: 1 batch = 8 pixels (correct)
-- MODE 1: 1 batch = 4 pixels (need 2 batches for 8 pixels)
-- MODE 2: 1 batch = 2 pixels (need 4 batches for 8 pixels)
+**Fix:**
+1. Added `cursor_was_active_` for rising-edge detection of cursor signal
+2. Load cursor pattern only once per cursor position, persist across batches
+3. Simplified `cursor_width_pattern()` to always produce 8 logical pixels
+4. Changed cursor shift from `fast_clock() ? 2 : 1` to fixed 1-bit per batch
 
-**Status:** In progress. Fix requires detecting cursor_active rising edge and persisting cursor_pattern across multiple byte() calls.
+Result: Cursor spans 8 logical pixels in all bitmap modes:
+- MODE 0: 1 batch × 8 pixels = 8 logical pixels
+- MODE 1: 2 batches × 4 pixels = 8 logical pixels
+- MODE 2: 4 batches × 2 pixels = 8 logical pixels
+
+**Discrepancy with BBC hardware:**
+The MOS writes to the VideoULA control register (0xFE20) with cursor width bits 5-7 set to values 4-7 for bitmap modes. According to the VideoULA encoding (`1xx` = 4 bytes), this specifies a 4-character-wide cursor, which would produce:
+- MODE 0: 4 chars × 8 pixels = 32 logical pixels
+- MODE 1: 4 chars × 4 pixels = 16 logical pixels
+- MODE 2: 4 chars × 2 pixels = 8 logical pixels
+
+After client-side scaling, this would give constant physical width (32 display pixels in all modes). However, Beebium intentionally ignores the `cursor_width_bits` value (except for "no cursor" = 0) and always produces 8 logical pixels. This gives consistent logical width but varying physical width after scaling.
 
 **Location:** `src/core/include/beebium/devices/VideoUla.hpp`
 
@@ -102,9 +111,9 @@ field_count_ += interlace_sync_and_video() ? 1 : 2;
 
 | Mode | Dimensions | Cursor | Notes |
 |------|------------|--------|-------|
-| MODE 0 | 640x256 (correct) | Missing | Capture timing issue |
-| MODE 1 | 320x256 (correct) | Half width | Cursor bug visible |
-| MODE 2 | 160x256 (correct) | Quarter width | Cursor bug visible |
+| MODE 0 | 640x256 (correct) | 8 pixels (correct) | Golden master needs update |
+| MODE 1 | 320x256 (correct) | 8 pixels (correct) | Golden master needs update |
+| MODE 2 | 160x256 (correct) | 8 pixels (correct) | Golden master needs update |
 | MODE 7 | 640x500 (correct) | Correct | Working correctly |
 
 ---
