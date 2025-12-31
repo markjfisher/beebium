@@ -111,10 +111,12 @@ field_count_ += interlace_sync_and_video() ? 1 : 2;
 
 | Mode | Dimensions | Cursor | Notes |
 |------|------------|--------|-------|
-| MODE 0 | 640x256 (correct) | 8 pixels (correct) | Golden master needs update |
-| MODE 1 | 320x256 (correct) | 8 pixels (correct) | Golden master needs update |
-| MODE 2 | 160x256 (correct) | 8 pixels (correct) | Golden master needs update |
+| MODE 0 | 640x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
+| MODE 1 | 320x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
+| MODE 2 | 160x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
 | MODE 7 | 640x500 (correct) | Correct | Working correctly |
+
+Golden master tests use `force_steady_cursor()` to set CRTC R10 cursor mode to steady (non-blinking) for deterministic capture. This ensures the cursor is always visible regardless of blink timing.
 
 ---
 
@@ -164,3 +166,4 @@ Interlace mode can be controlled independently of screen mode via the `*TV` comm
 - `src/core/include/beebium/devices/Crtc6845.hpp` - Cursor timing and interlace detection (blink rate fixed)
 - `clients/macos/Beebium/Beebium/Shaders.metal` - Line-doubling (fixed)
 - `clients/macos/Beebium/Beebium/MetalRenderer.swift` - Interlace flag passing (fixed)
+- `tests/test_bitmap_modes.cpp` - Golden master tests with `force_steady_cursor()` helper
