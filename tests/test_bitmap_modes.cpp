@@ -250,6 +250,18 @@ void release_key(ModelB& machine, uint8_t ascii_code) {
     }
 }
 
+// Force cursor to steady (non-blinking) mode for deterministic golden masters.
+// CRTC R10 bits 5-6 control cursor mode: 00=steady, 01=none, 10=blink/16, 11=blink/32
+// We preserve the underline-style cursor (start line 7) and set mode to steady.
+void force_steady_cursor(ModelB& machine) {
+    auto& crtc = machine.memory().crtc;
+    // R10: Cursor Start - bits 0-4 = start line, bits 5-6 = mode
+    // Set to 0x07 = start line 7 (underline), mode steady (bits 5-6 = 00)
+    // This matches the BBC default underline cursor style.
+    crtc.write(0, 10);  // Select R10
+    crtc.write(1, 0x07); // Start line 7 (underline), cursor mode = steady
+}
+
 // Type a string by injecting keypresses with timing
 void type_string(ModelB& machine, FrameRenderer& renderer, const char* str, int cycles_per_key = 50000) {
     for (const char* p = str; *p; ++p) {
@@ -675,6 +687,9 @@ TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
     uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
     REQUIRE(actual_screen_mode == 0);
 
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
+
     // Run additional frames for stable output
     for (int frame = 0; frame < 4; ++frame) {
         for (int i = 0; i < 80000; ++i) {
@@ -762,6 +777,9 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
     uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
     REQUIRE(actual_screen_mode == 1);
 
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
+
     // Run additional frames for stable output
     for (int frame = 0; frame < 4; ++frame) {
         for (int i = 0; i < 80000; ++i) {
@@ -848,6 +866,9 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
     // Verify startup options shows Mode 2
     uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
     REQUIRE(actual_screen_mode == 2);
+
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
 
     // Run additional frames for stable output
     for (int frame = 0; frame < 4; ++frame) {
