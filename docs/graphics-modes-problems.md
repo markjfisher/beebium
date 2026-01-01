@@ -48,7 +48,7 @@ See `docs/video-subsystem.md` section "Display Geometry, Aspect Ratio, and Line-
 
 ## Outstanding Issues
 
-*All known cursor issues have been fixed.*
+*All known bitmap mode rendering issues have been fixed.*
 
 ### ~~1. Cursor Width Incorrect in MODE 1 and MODE 2~~ (FIXED)
 
@@ -105,6 +105,31 @@ field_count_ += interlace_sync_and_video() ? 1 : 2;
 
 **Location:** `src/core/include/beebium/devices/Crtc6845.hpp` line 242
 
+### ~~3. Gap Scanlines Show Repeated Character Data~~ (FIXED)
+
+**Original symptom:**
+- MODE 3: The two blank rows at the bottom of each 10-scanline character cell showed a repeat of the top two rows of character data instead of being blank
+- MODE 6: Similar issue with gap scanlines
+
+**Root cause:**
+In `VideoRenderer::render_bitmap()`, pixel emission was based only on `crtc_output.display`. When CRTC raster values exceeded 7 (the last row of character data), the address calculation masked raster with 0x07, causing raster 8→0 and raster 9→1. This fetched character data for what should be blank gap scanlines.
+
+**Fix:**
+1. Added `has_character_data(raster)` predicate in `VideoRenderer.hpp` that returns `true` only for raster < 8
+2. Modified `render_bitmap()` to call `emit_blank()` instead of `emit_pixels()` when `!has_character_data(crtc_output.raster)`
+3. Updated `emit_blank()` in `VideoUla.hpp` to apply cursor XOR and shift the cursor pattern, ensuring the cursor remains visible on gap scanlines
+
+This matches B2 emulator's approach in `BBCMicro_Update.inl`:
+```cpp
+if (m_state.crtc_last_output.display && m_state.crtc_last_output.raster < 8) {
+    m_state.video_ula.EmitPixels(&video_unit->pixels);
+} else {
+    m_state.video_ula.EmitBlank(&video_unit->pixels);
+}
+```
+
+**Location:** `src/core/include/beebium/VideoRenderer.hpp`, `src/core/include/beebium/devices/VideoUla.hpp`
+
 ---
 
 ## Golden Master Status
@@ -141,6 +166,39 @@ The cursor is rendered by XORing with white (0x0FFF) when the cursor pattern bit
 | MODE 0 | 8 | 8 | 640 |
 | MODE 1 | 4 | 4 | 320 |
 | MODE 2 | 2 | 2 | 160 |
+
+### Gap Scanlines in MODE 3 and MODE 6
+
+Some bitmap modes use character cells taller than 8 scanlines:
+- **MODE 3**: 10 scanlines per character (R9 = 9)
+- **MODE 6**: 10 scanlines per character (R9 = 9)
+
+Screen memory only stores 8 bytes per character (one per scanline 0-7). Scanlines 8-9 are "gap scanlines" that contain no character data and must render as blank (black).
+
+The `has_character_data(raster)` predicate in `VideoRenderer.hpp` checks if raster < 8:
+```cpp
+static constexpr bool has_character_data(uint8_t raster) {
+    return raster < 8;
+}
+```
+
+For gap scanlines, `emit_blank()` is called instead of `emit_pixels()`. However, the cursor must still be visible on gap scanlines. Therefore `emit_blank()` applies the cursor XOR and shifts the cursor pattern, matching the behavior of `emit_pixels()`:
+```cpp
+void emit_blank(PixelBatch& batch) {
+    batch.set_type(PixelBatchType::Nothing);
+    batch.clear();
+    batch.set_pixel_count(pixels_per_batch());
+
+    // Apply cursor XOR even on blank scanlines
+    if (cursor_pattern_ & 1) {
+        uint8_t count = pixels_per_batch();
+        for (int i = 0; i < count; ++i) {
+            batch.pixels.pixels[i].value ^= 0x0FFF;
+        }
+    }
+    cursor_pattern_ >>= 1;
+}
+```
 
 ### Interlace Handling
 
