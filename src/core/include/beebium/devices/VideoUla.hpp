@@ -135,12 +135,22 @@ public:
         cursor_pattern_ >>= 1;
     }
 
-    // Emit blank pixels (during blanking period)
-    // Pixel count matches current mode for consistent line width tracking
+    // Emit blank pixels (during blanking or gap scanlines)
+    // Pixel count matches current mode for consistent line width tracking.
+    // Cursor is still applied - it should be visible on gap scanlines.
     void emit_blank(PixelBatch& batch) {
         batch.set_type(PixelBatchType::Nothing);
         batch.clear();
         batch.set_pixel_count(pixels_per_batch());
+
+        // Apply cursor XOR even on blank scanlines (e.g., gap scanlines in MODE 3/6)
+        if (cursor_pattern_ & 1) {
+            uint8_t count = pixels_per_batch();
+            for (int i = 0; i < count; ++i) {
+                batch.pixels.pixels[i].value ^= 0x0FFF;  // XOR RGB
+            }
+        }
+        cursor_pattern_ >>= 1;
     }
 
     // Return the number of logical pixels per batch for current mode

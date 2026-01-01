@@ -185,10 +185,17 @@ private:
         last_vsync_ = crtc_output.vsync;
     }
 
+    // Character data exists only for scanlines 0-7 within each character cell.
+    // Scanlines 8+ are "gap scanlines" used in modes like MODE 3 (10-line cells)
+    // and MODE 6 (8-line cells with gaps). These must render as blank.
+    static constexpr bool has_character_data(uint8_t raster) {
+        return raster < 8;
+    }
+
     void render_bitmap(PixelBatch& batch, const Crtc6845::Output& crtc_output, uint8_t screen_byte) {
         hardware_.video_ula.byte(screen_byte, crtc_output.cursor != 0);
 
-        if (crtc_output.display) {
+        if (crtc_output.display && has_character_data(crtc_output.raster)) {
             hardware_.video_ula.emit_pixels(batch);
         } else {
             hardware_.video_ula.emit_blank(batch);

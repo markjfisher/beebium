@@ -114,6 +114,7 @@ field_count_ += interlace_sync_and_video() ? 1 : 2;
 | MODE 0 | 640x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
 | MODE 1 | 320x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
 | MODE 2 | 160x256 (correct) | 8 pixels (correct) | Updated with steady cursor |
+| MODE 3 | 640x250 (correct) | 8 pixels (correct) | 10-line character cells with gap scanlines |
 | MODE 7 | 640x500 (correct) | Correct | Working correctly |
 
 Golden master tests use `force_steady_cursor()` to set CRTC R10 cursor mode to steady (non-blinking) for deterministic capture. This ensures the cursor is always visible regardless of blink timing.
@@ -161,7 +162,8 @@ Interlace mode can be controlled independently of screen mode via the `*TV` comm
 
 ## Files Involved
 
-- `src/core/include/beebium/devices/VideoUla.hpp` - Cursor XOR application (width fixed)
+- `src/core/include/beebium/VideoRenderer.hpp` - Gap scanline handling with `has_character_data()` predicate
+- `src/core/include/beebium/devices/VideoUla.hpp` - Cursor XOR in `emit_blank()` for gap scanlines
 - `src/core/include/beebium/FrameRenderer.hpp` - Interlace mode tracking (fixed)
 - `src/core/include/beebium/devices/Crtc6845.hpp` - Cursor timing and interlace detection (blink rate fixed)
 - `clients/macos/Beebium/Beebium/Shaders.metal` - Line-doubling (fixed)
