@@ -102,28 +102,20 @@ bool read_ppm(const std::filesystem::path& filepath,
     return file.good() || file.eof();
 }
 
-// Compare with tolerance (for anti-aliasing variations)
+// Exact pixel comparison for golden master tests.
 // a_stride is pixels per row in buffer a (may include padding)
 // b is assumed to be tightly packed (width pixels per row)
-size_t compare_frames_tolerant(const uint32_t* a, size_t a_stride,
-                               const uint32_t* b,
-                               size_t width, size_t height, int tolerance) {
+size_t compare_frames_exact(const uint32_t* a, size_t a_stride,
+                            const uint32_t* b,
+                            size_t width, size_t height) {
     size_t diff = 0;
     for (size_t y = 0; y < height; ++y) {
         for (size_t x = 0; x < width; ++x) {
             uint32_t pa = a[y * a_stride + x];
             uint32_t pb = b[y * width + x];
 
-            int ra = (pa >> 16) & 0xFF;
-            int ga = (pa >> 8) & 0xFF;
-            int ba = pa & 0xFF;
-            int rb = (pb >> 16) & 0xFF;
-            int gb = (pb >> 8) & 0xFF;
-            int bb = pb & 0xFF;
-
-            if (std::abs(ra - rb) > tolerance ||
-                std::abs(ga - gb) > tolerance ||
-                std::abs(ba - bb) > tolerance) {
+            // Compare RGB, ignore alpha
+            if ((pa & 0x00FFFFFF) != (pb & 0x00FFFFFF)) {
                 ++diff;
             }
         }
@@ -158,6 +150,7 @@ bool roms_available() {
 const std::filesystem::path GOLDEN_DIR_MODE0 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode0";
 const std::filesystem::path GOLDEN_DIR_MODE1 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode1";
 const std::filesystem::path GOLDEN_DIR_MODE2 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode2";
+const std::filesystem::path GOLDEN_DIR_MODE3 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode3";
 
 // BBC keyboard matrix: ASCII to (row, column) mapping
 // Returns (row, column) packed as (row << 4) | column, or 0xFF if not mappable
@@ -713,12 +706,11 @@ TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
         REQUIRE(golden_w == fb.width());
         REQUIRE(golden_h == fb.height());
 
-        size_t diff = compare_frames_tolerant(frame.data(), fb.stride_pixels(),
-                                               golden.data(),
-                                               fb.width(), fb.height(), 16);
-        double diff_percent = 100.0 * diff / (fb.width() * fb.height());
-        INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
-        CHECK(diff_percent < 0.1);
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(),
+                                           fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
     } else {
         auto output_filepath = GOLDEN_DIR_MODE0 / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
@@ -803,12 +795,11 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
         REQUIRE(golden_w == fb.width());
         REQUIRE(golden_h == fb.height());
 
-        size_t diff = compare_frames_tolerant(frame.data(), fb.stride_pixels(),
-                                               golden.data(),
-                                               fb.width(), fb.height(), 16);
-        double diff_percent = 100.0 * diff / (fb.width() * fb.height());
-        INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
-        CHECK(diff_percent < 0.1);
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(),
+                                           fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
     } else {
         auto output_filepath = GOLDEN_DIR_MODE1 / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
@@ -893,14 +884,101 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
         REQUIRE(golden_w == fb.width());
         REQUIRE(golden_h == fb.height());
 
-        size_t diff = compare_frames_tolerant(frame.data(), fb.stride_pixels(),
-                                               golden.data(),
-                                               fb.width(), fb.height(), 16);
-        double diff_percent = 100.0 * diff / (fb.width() * fb.height());
-        INFO("Pixel difference: " << diff << " (" << diff_percent << "%)");
-        CHECK(diff_percent < 0.1);
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(),
+                                           fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
     } else {
         auto output_filepath = GOLDEN_DIR_MODE2 / "boot_screen_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+// ============================================================================
+// Golden Master Tests - MODE 3
+// ============================================================================
+
+TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]") {
+    REQUIRE(roms_available());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    ModelB machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+
+    // Set startup screen mode to 3 BEFORE reset (uses startup links)
+    machine.memory().set_startup_screen_mode(3);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC - machine will start in Mode 3
+    // Mode 3: 80x25 text, 8x10 character cells (8 rows data + 2 gap rows)
+    // Screen memory at 0x4000-0x7FFF (16KB)
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+
+        // Check startUpOptions at $028F - bits 0-2 contain screen mode
+        if (i > 2'000'000) {
+            uint8_t startup_opts = machine.read(0x028F);
+            if ((startup_opts & 0x07) == 3) {
+                boot_complete = true;
+            }
+        }
+    }
+
+    // Verify we're in Mode 3 (not teletext)
+    REQUIRE_FALSE(machine.memory().video_ula.teletext_mode());
+
+    // Verify startup options shows Mode 3
+    uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
+    REQUIRE(actual_screen_mode == 3);
+
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
+
+    // Run additional frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    std::filesystem::create_directories(GOLDEN_DIR_MODE3);
+
+    // Check for golden master
+    auto golden_filepath = GOLDEN_DIR_MODE3 / "boot_screen.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(),
+                                           fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = GOLDEN_DIR_MODE3 / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
