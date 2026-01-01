@@ -27,7 +27,7 @@ Moreover, this architecture also facilitates native GUIs with first-class host p
 Beebium is under active development. Current capabilities:
 
 - Boots MOS 1.20 to BASIC prompt ("BBC Computer 32K")
-- Mode 7 teletext display working
+- All display modes working (MODE 0-7)
 - Full 6522 VIA emulation with timers and interrupts
 - Keyboard input via gRPC
 - macOS frontend with Metal rendering
@@ -35,7 +35,7 @@ Beebium is under active development. Current capabilities:
 ## Architecture
 
 ```
-beebium-server (C++)
+beebium-model-b / beebium-model-b-plus (C++)
     |
     +-- gRPC + shared memory
     |
@@ -99,10 +99,10 @@ pip install -e clients/python
 
 1. Start the emulator server:
    ```bash
-   ./build/src/server/beebium-server --mos path/to/MOS120.rom --basic path/to/BASIC2.rom
+   ./build/src/server/beebium-model-b --mos path/to/MOS120.rom --basic path/to/BASIC2.rom
    ```
 
-2. Launch the macOS frontend and connect to `localhost:50051`
+2. Launch the macOS frontend and connect to `localhost:48875`
 
 ### Python Client
 
