@@ -43,12 +43,15 @@ public:
     static constexpr uint8_t CTRL_CURSOR_WIDTH  = 0xE0;  // Bits 5-7: Cursor width
 
     // Video modes determined by line_width and fast_clock:
+    // Slow clock modes use the same pixels-per-byte as fast modes;
+    // the resolution difference comes from CRTC R1 (40 vs 80 chars/line).
+    //
     // fast_clock=1, line_width=3: Mode 0 (640x256, 2 colors, 8 pixels/byte)
     // fast_clock=1, line_width=2: Mode 1 (320x256, 4 colors, 4 pixels/byte)
     // fast_clock=1, line_width=1: Mode 2 (160x256, 16 colors, 2 pixels/byte)
-    // fast_clock=0, line_width=3: Mode 3 (80x25 text)
-    // fast_clock=0, line_width=2: Mode 4 (320x256, 2 colors)
-    // fast_clock=0, line_width=1: Mode 5 (160x256, 4 colors)
+    // fast_clock=0, line_width=3: Mode 3 (80x25 text, 8 pixels/byte)
+    // fast_clock=0, line_width=2: Mode 4 (320x256, 2 colors, 8 pixels/byte)
+    // fast_clock=0, line_width=1: Mode 5 (160x256, 4 colors, 4 pixels/byte)
     // fast_clock=0, line_width=0: Mode 6 (40x25 text)
     // teletext=1: Mode 7 (40x25 teletext)
 
@@ -112,13 +115,13 @@ public:
                 default: emit_blank(batch); break;
             }
         } else {
-            // Low-res modes (Modes 3, 4, 5, 6) - 1MHz CRTC clock
-            // Two bytes produce 8 pixels total (4 pixels per byte)
+            // Slow clock modes (1MHz CRTC) use same pixels-per-byte as fast modes.
+            // The resolution difference comes from CRTC R1 (40 vs 80 chars/line).
             switch (lw) {
-                case 3: emit_8bpp_slow(batch); break;  // Mode 3: text
-                case 2: emit_4bpp_slow(batch); break;  // Mode 4: 4 pixels/byte, 1bpp
-                case 1: emit_2bpp_slow(batch); break;  // Mode 5: 2 pixels/byte, 2bpp
-                default: emit_blank(batch); break;     // Mode 6: text
+                case 3: emit_8bpp(batch); break;  // Mode 3 text: 8 pixels/byte
+                case 2: emit_8bpp(batch); break;  // Mode 4: 8 pixels/byte (same as Mode 0)
+                case 1: emit_4bpp(batch); break;  // Mode 5: 4 pixels/byte (same as Mode 1)
+                default: emit_blank(batch); break; // Mode 6 text
             }
         }
 
@@ -165,12 +168,12 @@ public:
                 default: return 8; // Mode 3: 8 pixels/byte (text)
             }
         } else {
-            // Slow modes: 4, 2, 1, or 8 pixels per batch
+            // Slow clock modes: same pixels-per-batch as equivalent fast modes
             switch (lw) {
-                case 3: return 4;  // Mode 4: 4 pixels/byte
-                case 2: return 2;  // Mode 5: 2 pixels/byte
-                case 1: return 1;  // Mode 6: 1 pixel/byte (text)
-                default: return 8; // Mode 7: teletext (8 pixels from SAA5050)
+                case 3: return 8;  // Mode 3 text: 8 pixels/batch
+                case 2: return 8;  // Mode 4: 8 pixels/batch (same as Mode 0)
+                case 1: return 4;  // Mode 5: 4 pixels/batch (same as Mode 1)
+                default: return 8; // Mode 6 text, Mode 7 teletext
             }
         }
     }
@@ -270,36 +273,6 @@ private:
             batch.pixels.pixels[i] = get_pixel(idx);
         }
         batch.set_pixel_count(2);
-    }
-
-    // Slow modes (1MHz CRTC) - R1=40, so half the batches per line
-
-    // Mode 4 (slow): 4 logical pixels/byte, 1bpp equivalent
-    // Output: 4 pixels per batch (160 pixels/line with R1=40)
-    void emit_8bpp_slow(PixelBatch& batch) {
-        for (int i = 0; i < 4; ++i) {
-            uint8_t idx = shift_pixel();
-            batch.pixels.pixels[i] = get_pixel(idx);
-        }
-        batch.set_pixel_count(4);
-    }
-
-    // Mode 5 (slow): 2 logical pixels/byte, 2bpp equivalent
-    // Output: 2 pixels per batch (80 pixels/line with R1=40)
-    void emit_4bpp_slow(PixelBatch& batch) {
-        for (int i = 0; i < 2; ++i) {
-            uint8_t idx = shift_pixel();
-            batch.pixels.pixels[i] = get_pixel(idx);
-        }
-        batch.set_pixel_count(2);
-    }
-
-    // Mode 6 text (slow): 1 logical pixel/byte, 4bpp equivalent
-    // Output: 1 pixel per batch (40 pixels/line with R1=40)
-    void emit_2bpp_slow(PixelBatch& batch) {
-        uint8_t idx = shift_pixel();
-        batch.pixels.pixels[0] = get_pixel(idx);
-        batch.set_pixel_count(1);
     }
 
     uint8_t control_ = 0;
