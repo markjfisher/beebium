@@ -19,6 +19,7 @@
 #define BEEBIUM_TEST_KEYBOARD_HELPERS_HPP
 
 #include <beebium/FrameRenderer.hpp>
+#include <sstream>
 #include <string>
 
 namespace beebium::test {
@@ -87,6 +88,8 @@ inline uint8_t ascii_to_keycode(uint8_t ascii) {
         case '=':  return 0x17;  // row 1, col 7 (SHIFT+-)
         case '$':  return 0x12;  // row 1, col 2 (SHIFT+4)
         case '"':  return 0x31;  // row 3, col 1 (SHIFT+2)
+        case '&':  return 0x34;  // row 3, col 4 (SHIFT+6)
+        case '?':  return 0x68;  // row 6, col 8 (SHIFT+/)
 
         default: return 0xFF;  // Not mapped
     }
@@ -207,6 +210,20 @@ std::string read_mode7_screen(MachineType& machine, int start_row, int start_col
         }
     }
     return result;
+}
+
+// Type a multi-line BASIC program stored as a string.
+// Each line is typed followed by RETURN.
+template<typename MachineType>
+void type_basic_program(MachineType& machine, FrameRenderer& renderer,
+                        const std::string& program, int cycles_per_key = 100000) {
+    std::istringstream stream(program);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (!line.empty()) {
+            type_string_with_shift(machine, renderer, (line + "\r").c_str(), cycles_per_key);
+        }
+    }
 }
 
 } // namespace beebium::test
