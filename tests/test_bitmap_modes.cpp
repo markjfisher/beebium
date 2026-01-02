@@ -1903,4 +1903,592 @@ TEMPLATE_TEST_CASE("MODE 6 printable characters testcard", "[mode6][testcard][ch
     }
 }
 
+// ============================================================================
+// VDU 19 Blue Background Tests - Modes 0-6
+// ============================================================================
+// These tests issue VDU 19,0,4,0,0,0 to change the background color to blue.
+// In modes 3 and 6 (25-row text modes), the empty scanlines between text
+// lines remain black, creating an interesting "lined paper" effect.
+
+TEMPLATE_TEST_CASE("MODE 0 blue background", "[mode0][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(0);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 0) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type VDU command to change background to blue
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    // Wait for screen redraw
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode0");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 1 blue background", "[mode1][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(1);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 1) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode1");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 2 blue background", "[mode2][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(2);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 2) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode2");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 3 blue background", "[mode3][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 3: 80x25 - empty scanlines between text rows create "lined paper" effect
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(3);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 3) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode3");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 4 blue background", "[mode4][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(4);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 4) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode4");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 5 blue background", "[mode5][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(5);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 5) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode5");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 6 blue background", "[mode6][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 6: 40x25 - empty scanlines between text rows create "lined paper" effect
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(6);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 6) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode6");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
 #endif // BEEBIUM_ROM_DIR
