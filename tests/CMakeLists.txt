@@ -147,6 +147,14 @@ target_compile_definitions(test_bitmap_modes PRIVATE
 )
 catch_discover_tests(test_bitmap_modes)
 
+# Keyboard typing reliability tests
+add_executable(test_keyboard_typing test_keyboard_typing.cpp)
+target_link_libraries(test_keyboard_typing PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_keyboard_typing PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_keyboard_typing)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests
