@@ -33,12 +33,12 @@ final class VideoClient: ObservableObject {
     @Published private(set) var currentFrame: Data?
 
     /// Frame dimensions (logical pixels)
-    @Published private(set) var frameWidth: Int = 640
-    @Published private(set) var frameHeight: Int = 256
+    @Published private(set) var frameWidth: Int = 736
+    @Published private(set) var frameHeight: Int = 576
 
     /// Display dimensions (target after scaling)
-    @Published private(set) var displayWidth: Int = 640
-    @Published private(set) var displayHeight: Int = 256
+    @Published private(set) var displayWidth: Int = 736
+    @Published private(set) var displayHeight: Int = 576
 
     /// Frame counter for debugging
     @Published private(set) var frameCount: UInt64 = 0
