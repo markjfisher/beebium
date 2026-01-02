@@ -1362,8 +1362,7 @@ TEMPLATE_TEST_CASE("MODE 7 boot screen golden master", "[mode7][golden][teletext
     uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
     REQUIRE(actual_screen_mode == 7);
 
-    // Force cursor to steady (non-blinking) mode for deterministic capture
-    force_steady_cursor(machine);
+    // Use default flashing underline cursor - no adjustment
 
     // Run additional frames for stable output
     for (int frame = 0; frame < 4; ++frame) {
