@@ -31,6 +31,7 @@ enum VideoDataFlag : uint8_t {
     VIDEO_FLAG_VSYNC = 0x02,      // Vertical sync active
     VIDEO_FLAG_DISPLAY = 0x04,    // Display enable (visible area)
     VIDEO_FLAG_INTERLACE = 0x08,  // Interlace mode active (frame is two fields)
+    VIDEO_FLAG_ODD_FIELD = 0x10,  // Odd field (vs even) in interlace mode
 };
 
 // A single pixel with 4-bit RGB and 4-bit metadata
@@ -95,19 +96,24 @@ struct PixelBatch {
         return static_cast<PixelBatchType>(pixels.pixels[0].bits.x);
     }
 
-    // Set flags in pixels[1].x
+    // Set flags using two 4-bit fields (8 bits total):
+    // pixels[1].x = low nibble (HSYNC, VSYNC, DISPLAY, INTERLACE)
+    // pixels[3].x = high nibble (ODD_FIELD and future flags)
     void set_flags(uint8_t flags) {
-        pixels.pixels[1].bits.x = flags;
+        pixels.pixels[1].bits.x = flags & 0x0F;         // Low nibble
+        pixels.pixels[3].bits.x = (flags >> 4) & 0x0F;  // High nibble
     }
 
     uint8_t flags() const {
-        return pixels.pixels[1].bits.x;
+        return (pixels.pixels[1].bits.x & 0x0F) |
+               ((pixels.pixels[3].bits.x & 0x0F) << 4);
     }
 
     // Convenience flag accessors
     bool hsync() const { return (flags() & VIDEO_FLAG_HSYNC) != 0; }
     bool vsync() const { return (flags() & VIDEO_FLAG_VSYNC) != 0; }
     bool display_enable() const { return (flags() & VIDEO_FLAG_DISPLAY) != 0; }
+    bool odd_field() const { return (flags() & VIDEO_FLAG_ODD_FIELD) != 0; }
 
     // Pixel count stored in pixels[2].x (1-8, number of valid pixels)
     // This allows variable-width batches for different video modes:

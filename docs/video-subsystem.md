@@ -92,7 +92,7 @@ Control codes change rendering state but display as spaces:
 16-byte packet containing:
 - 8 pixels (4-bit RGB each)
 - Type (Bitmap/Teletext/Nothing)
-- Flags (HSYNC/VSYNC/Display)
+- Flags (HSYNC/VSYNC/DISPLAY/INTERLACE/ODD_FIELD) stored across two 4-bit fields
 
 ### OutputQueue
 

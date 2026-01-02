@@ -129,18 +129,33 @@ public:
             frame_scanline_count_ = 0;
 
             if (in_interlace_mode_) {
-                // In interlace mode, swap every other VSYNC (after completing both fields)
-                interlace_field_count_++;
-                if ((interlace_field_count_ & 1) == 0) {
-                    // Even field count (0, 2, 4...) - finish frame after completing a pair
+                // Latch CRTC's odd_field at VSYNC. The CRTC toggles odd_field at "end of
+                // vertical displayed" (mid-frame), so by VSYNC time it reflects the NEXT
+                // field that's about to start.
+                latched_odd_field_ = (batch.flags() & VIDEO_FLAG_ODD_FIELD) != 0;
+
+                // In interlace mode, a complete frame consists of two fields:
+                // - Field 1 (odd_field=true): renders to framebuffer rows 0,2,4...
+                // - Field 2 (odd_field=false): renders to framebuffer rows 1,3,5...
+                //
+                // We must swap buffers AFTER both fields complete, which is at the VSYNC
+                // that starts the NEXT frame's field 1. If we swap at field 2's VSYNC,
+                // we'd clear field 1's content before field 2 renders.
+                //
+                // Timing:
+                // - VSYNC with odd_field=true: Field 1 about to start, previous Field 2 just ended
+                //   → Finish and swap the completed frame, then start new frame
+                // - VSYNC with odd_field=false: Field 2 about to start, Field 1 just ended
+                //   → Don't swap yet, continue building current frame
+                if (latched_odd_field_) {
                     finish_frame();
                 }
             } else {
                 // Non-interlace mode - finish frame every VSYNC
                 finish_frame();
             }
-            y_ = 0;  // Reset vertical position for new frame
-            was_displaying_ = false;  // New frame starting
+            y_ = 0;  // Reset vertical position for new field
+            was_displaying_ = false;  // New field starting
         }
         in_vsync_ = vsync;
 
@@ -192,9 +207,14 @@ public:
         int write_y;
         if (in_interlace_mode_) {
             // Interlace: interleave fields on alternating framebuffer lines
-            // y_ is already set to 0 or 1 at frame start based on field
-            // Each subsequent line increments y_ by 1, but we double it for interlacing
-            int field_offset = (interlace_field_count_ & 1) ? 0 : 1;
+            // Use the batch's odd_field directly to determine framebuffer row offset:
+            // - odd_field=true (raster 0,2,4...) → offset=0 → write to rows 0,2,4...
+            // - odd_field=false (raster 1,3,5...) → offset=1 → write to rows 1,3,5...
+            // This directly maps raster values to framebuffer rows regardless of boot timing.
+            // Note: odd_field toggles at "end of vertical displayed" (mid-frame), but all
+            // visible pixels (display=true) have the correct value for their field.
+            bool batch_odd_field = (batch.flags() & VIDEO_FLAG_ODD_FIELD) != 0;
+            int field_offset = batch_odd_field ? 0 : 1;
             write_y = static_cast<int>(y_) * 2 + field_offset;
         } else {
             write_y = static_cast<int>(y_);
@@ -234,7 +254,7 @@ public:
         odd_field_ = false;
         field_offset_ = 0;
         in_interlace_mode_ = false;
-        interlace_field_count_ = 0;
+        latched_odd_field_ = true;   // Match CRTC reset odd_field=true
         was_displaying_ = false;
         was_displaying_line_ = false;
         max_x_written_ = 0;
@@ -333,7 +353,7 @@ private:
     bool odd_field_;         // For interlace: alternates each frame
     int field_offset_;       // 0 or 1 for interlace field positioning
     bool in_interlace_mode_ = false;   // True when interlace mode detected
-    uint32_t interlace_field_count_ = 0; // Counts fields in interlace mode
+    bool latched_odd_field_ = true;    // Latched at VSYNC; init matches CRTC reset odd_field=true
     bool was_displaying_ = false;      // Frame-level: have we seen display=true this frame?
     bool was_displaying_line_ = false; // Line-level: have we seen display=true this line?
 

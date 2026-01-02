@@ -379,6 +379,12 @@ public:
         dfs_rom.load(data, size);
     }
 
+    // Set the startup screen mode via keyboard link emulation.
+    // Mode 7 is the default if not set.
+    void set_startup_screen_mode(uint8_t screen_mode) {
+        system_via_peripheral.keyboard().set_startup_screen_mode(screen_mode);
+    }
+
     // Memory region discovery for debugger
     std::vector<MemoryRegionDescriptor> get_memory_regions() const {
         std::vector<MemoryRegionDescriptor> regions;

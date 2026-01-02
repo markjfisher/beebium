@@ -16,6 +16,7 @@
 // Also includes golden master tests for MODE 1 and MODE 2.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <beebium/Machines.hpp>
 #include <beebium/PixelBatch.hpp>
 #include <beebium/FrameAllocator.hpp>
@@ -27,6 +28,38 @@
 #include <cmath>
 
 using namespace beebium;
+
+// ============================================================================
+// Machine Type Configuration Traits
+// ============================================================================
+
+// ROM configuration per machine type
+template<typename MachineType>
+struct RomConfig;
+
+template<>
+struct RomConfig<ModelB> {
+    static constexpr const char* mos_filename = "acorn-mos_1_20.rom";
+};
+
+template<>
+struct RomConfig<ModelBPlus> {
+    static constexpr const char* mos_filename = "acorn-mos_2_0.rom";
+};
+
+// Golden master directory per machine type
+template<typename MachineType>
+struct GoldenConfig;
+
+template<>
+struct GoldenConfig<ModelB> {
+    static constexpr const char* subdir = "model-b";
+};
+
+template<>
+struct GoldenConfig<ModelBPlus> {
+    static constexpr const char* subdir = "model-b-plus";
+};
 
 namespace {
 
@@ -140,20 +173,28 @@ std::vector<uint8_t> load_rom(const std::filesystem::path& filepath) {
 }
 
 #ifdef BEEBIUM_ROM_DIR
+
+// Check if ROMs are available for a specific machine type
+template<typename MachineType>
 bool roms_available() {
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    return std::filesystem::exists(rom_dirpath / "acorn-mos_1_20.rom") &&
+    return std::filesystem::exists(rom_dirpath / RomConfig<MachineType>::mos_filename) &&
            std::filesystem::exists(rom_dirpath / "bbc-basic_2.rom");
 }
 
-// Golden master directories for each mode
-const std::filesystem::path GOLDEN_DIR_MODE0 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode0";
-const std::filesystem::path GOLDEN_DIR_MODE1 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode1";
-const std::filesystem::path GOLDEN_DIR_MODE2 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode2";
-const std::filesystem::path GOLDEN_DIR_MODE3 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode3";
-const std::filesystem::path GOLDEN_DIR_MODE4 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode4";
-const std::filesystem::path GOLDEN_DIR_MODE5 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode5";
-const std::filesystem::path GOLDEN_DIR_MODE6 = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden" / "mode6";
+// Non-templated version for diagnostic tests (ModelB only)
+bool roms_available() {
+    return roms_available<ModelB>();
+}
+
+// Base path for golden master files
+const std::filesystem::path GOLDEN_BASE = std::filesystem::path(BEEBIUM_ROM_DIR).parent_path() / "tests" / "golden";
+
+// Get golden directory for a specific machine type and mode
+template<typename MachineType>
+std::filesystem::path golden_dir(const std::string& mode) {
+    return GOLDEN_BASE / GoldenConfig<MachineType>::subdir / mode;
+}
 
 // BBC keyboard matrix: ASCII to (row, column) mapping
 // Returns (row, column) packed as (row << 4) | column, or 0xFF if not mappable
@@ -228,7 +269,8 @@ uint8_t ascii_to_keycode(uint8_t ascii) {
 }
 
 // Helper: inject a key press into the keyboard
-void press_key(ModelB& machine, uint8_t ascii_code) {
+template<typename MachineType>
+void press_key(MachineType& machine, uint8_t ascii_code) {
     uint8_t keycode = ascii_to_keycode(ascii_code);
     if (keycode != 0xFF) {
         uint8_t row = (keycode >> 4) & 0x0F;
@@ -237,7 +279,8 @@ void press_key(ModelB& machine, uint8_t ascii_code) {
     }
 }
 
-void release_key(ModelB& machine, uint8_t ascii_code) {
+template<typename MachineType>
+void release_key(MachineType& machine, uint8_t ascii_code) {
     uint8_t keycode = ascii_to_keycode(ascii_code);
     if (keycode != 0xFF) {
         uint8_t row = (keycode >> 4) & 0x0F;
@@ -249,7 +292,8 @@ void release_key(ModelB& machine, uint8_t ascii_code) {
 // Force cursor to steady (non-blinking) mode for deterministic golden masters.
 // CRTC R10 bits 5-6 control cursor mode: 00=steady, 01=none, 10=blink/16, 11=blink/32
 // We preserve the underline-style cursor (start line 7) and set mode to steady.
-void force_steady_cursor(ModelB& machine) {
+template<typename MachineType>
+void force_steady_cursor(MachineType& machine) {
     auto& crtc = machine.memory().crtc;
     // R10: Cursor Start - bits 0-4 = start line, bits 5-6 = mode
     // Set to 0x07 = start line 7 (underline), mode steady (bits 5-6 = 00)
@@ -259,7 +303,8 @@ void force_steady_cursor(ModelB& machine) {
 }
 
 // Type a string by injecting keypresses with timing
-void type_string(ModelB& machine, FrameRenderer& renderer, const char* str, int cycles_per_key = 50000) {
+template<typename MachineType>
+void type_string(MachineType& machine, FrameRenderer& renderer, const char* str, int cycles_per_key = 50000) {
     for (const char* p = str; *p; ++p) {
         uint8_t ch = static_cast<uint8_t>(*p);
 
@@ -638,14 +683,15 @@ TEST_CASE("Diagnostic: Direct screen memory write in Mode 0", "[bitmap][diagnost
 // Golden Master Tests - MODE 0
 // ============================================================================
 
-TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
-    REQUIRE(roms_available());
+TEMPLATE_TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -697,10 +743,11 @@ TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE0);
+    auto golden_dirpath = golden_dir<TestType>("mode0");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE0 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -715,7 +762,7 @@ TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE0 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -725,14 +772,15 @@ TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]") {
 // Golden Master Tests - MODE 1
 // ============================================================================
 
-TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
-    REQUIRE(roms_available());
+TEMPLATE_TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -786,10 +834,11 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE1);
+    auto golden_dirpath = golden_dir<TestType>("mode1");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE1 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -804,7 +853,7 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE1 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -814,14 +863,15 @@ TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]") {
 // Golden Master Tests - MODE 2
 // ============================================================================
 
-TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
-    REQUIRE(roms_available());
+TEMPLATE_TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -875,10 +925,11 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE2);
+    auto golden_dirpath = golden_dir<TestType>("mode2");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE2 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -893,7 +944,7 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE2 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -903,14 +954,15 @@ TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]") {
 // Golden Master Tests - MODE 3
 // ============================================================================
 
-TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]") {
-    REQUIRE(roms_available());
+TEMPLATE_TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -963,10 +1015,11 @@ TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE3);
+    auto golden_dirpath = golden_dir<TestType>("mode3");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE3 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -981,7 +1034,7 @@ TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE3 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -991,14 +1044,15 @@ TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]") {
 // Golden Master Tests - MODE 4
 // ============================================================================
 
-TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]") {
-    REQUIRE(roms_available());
+TEMPLATE_TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]",
+                   ModelB, ModelBPlus) {
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -1051,10 +1105,11 @@ TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE4);
+    auto golden_dirpath = golden_dir<TestType>("mode4");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE4 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -1069,7 +1124,7 @@ TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE4 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -1079,16 +1134,18 @@ TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]") {
 // MODE 5 Golden Master Test
 // ============================================================================
 
-TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]") {
+TEMPLATE_TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]",
+                   ModelB, ModelBPlus) {
     // MODE 5: 160x256, 4 colors (2bpp), same geometry as MODE 2
     // Uses slow clock (1MHz CRTC) with 4 pixels per byte
     // Screen memory at 0x5800-0x7FFF (10KB)
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -1139,10 +1196,11 @@ TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE5);
+    auto golden_dirpath = golden_dir<TestType>("mode5");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE5 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -1157,7 +1215,7 @@ TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE5 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
@@ -1167,16 +1225,18 @@ TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]") {
 // MODE 6 Golden Master Test
 // ============================================================================
 
-TEST_CASE("MODE 6 boot screen golden master", "[mode6][golden][bitmap]") {
+TEMPLATE_TEST_CASE("MODE 6 boot screen golden master", "[mode6][golden][bitmap]",
+                   ModelB, ModelBPlus) {
     // MODE 6: 40x25 text, 8x10 character cells (with gap scanlines)
     // Uses slow clock (1MHz CRTC), 320x250 pixels, 2 colors
     // Screen memory at 0x6000-0x7FFF (8KB)
+    REQUIRE(roms_available<TestType>());
 
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos_rom = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
     auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
 
-    ModelB machine;
+    TestType machine;
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
@@ -1227,10 +1287,11 @@ TEST_CASE("MODE 6 boot screen golden master", "[mode6][golden][bitmap]") {
     }
 
     auto frame = fb.read_frame();
-    std::filesystem::create_directories(GOLDEN_DIR_MODE6);
+    auto golden_dirpath = golden_dir<TestType>("mode6");
+    std::filesystem::create_directories(golden_dirpath);
 
     // Check for golden master
-    auto golden_filepath = GOLDEN_DIR_MODE6 / "boot_screen.ppm";
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
     if (std::filesystem::exists(golden_filepath)) {
         std::vector<uint32_t> golden;
         size_t golden_w, golden_h;
@@ -1245,7 +1306,96 @@ TEST_CASE("MODE 6 boot screen golden master", "[mode6][golden][bitmap]") {
         INFO("Pixel difference: " << diff);
         CHECK(diff == 0);
     } else {
-        auto output_filepath = GOLDEN_DIR_MODE6 / "boot_screen_candidate.ppm";
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+// ============================================================================
+// MODE 7 Golden Master Test (Teletext)
+// ============================================================================
+
+TEMPLATE_TEST_CASE("MODE 7 boot screen golden master", "[mode7][golden][teletext]",
+                   ModelB, ModelBPlus) {
+    // MODE 7: 40x25 teletext, rendered by SAA5050
+    // Screen memory at 0x7C00-0x7FFF (1KB)
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+
+    // Mode 7 is the default startup mode (no need to set startup links)
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC - machine will start in Mode 7 (default)
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+
+        // Check startUpOptions at $028F - bits 0-2 contain screen mode
+        if (i > 2'000'000) {
+            uint8_t startup_opts = machine.read(0x028F);
+            if ((startup_opts & 0x07) == 7) {
+                boot_complete = true;
+            }
+        }
+    }
+
+    // Verify we're in Mode 7 (teletext)
+    REQUIRE(machine.memory().video_ula.teletext_mode());
+
+    // Verify startup options shows Mode 7
+    uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
+    REQUIRE(actual_screen_mode == 7);
+
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
+
+    // Run additional frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode7");
+    std::filesystem::create_directories(golden_dirpath);
+
+    // Check for golden master
+    auto golden_filepath = golden_dirpath / "boot_screen.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(),
+                                           fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
