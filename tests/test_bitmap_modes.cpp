@@ -262,6 +262,31 @@ void force_steady_cursor(MachineType& machine) {
     crtc.write(1, cursor_start_line);  // Start line preserved, mode = steady
 }
 
+// Set up AUG MODE 8 - a custom 80x256 pixel, 16-color mode from the
+// Advanced User Guide for the BBC Microcomputer.
+// Must be called after booting into MODE 5.
+// Text grid: 10 columns x 32 rows
+template<typename MachineType>
+void setup_aug_mode8(MachineType& machine, FrameRenderer& renderer) {
+    const char* program = R"(MODE 5
+*FX 154,224
+?&360=&F
+?&361=1
+?&34F=&20
+?&363=&55
+?&362=&AA
+?&30A=9
+VDU 20)";
+    type_basic_program(machine, renderer, program);
+    // Wait for mode switch to complete
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+}
+
 #endif
 
 } // anonymous namespace
@@ -2486,6 +2511,185 @@ TEMPLATE_TEST_CASE("MODE 6 blue background", "[mode6][vdu19][background][golden]
         CHECK(diff == 0);
     } else {
         auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+// ============================================================================
+// AUG MODE 8 Tests (Advanced User Guide custom mode)
+// 80x256 pixels, 16 colors, 10 columns x 32 rows
+// ============================================================================
+
+TEMPLATE_TEST_CASE("AUG MODE 8 blue background", "[aug_mode8][vdu19][background][golden]",
+                   ModelB, ModelBPlus) {
+
+    REQUIRE(roms_available<TestType>());
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    REQUIRE(mos_rom.size() == 16384);
+
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+    REQUIRE(basic_rom.size() == 16384);
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(5);  // Start in MODE 5
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 5) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Set up the custom AUG MODE 8
+    setup_aug_mode8(machine, renderer);
+
+    // Change background to blue
+    type_string_with_shift(machine, renderer, "VDU 19,0,4,0,0,0\r", 100000);
+
+    for (int i = 0; i < 500000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("aug_mode8");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "blue_background.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "blue_background_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("AUG MODE 8 printable characters testcard", "[aug_mode8][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // AUG MODE 8: 10 columns x 32 rows
+
+    REQUIRE(roms_available<TestType>());
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    REQUIRE(mos_rom.size() == 16384);
+
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+    REQUIRE(basic_rom.size() == 16384);
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(5);  // Start in MODE 5
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 5) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Set up the custom AUG MODE 8
+    setup_aug_mode8(machine, renderer);
+
+    // Type the printable chars testcard: 10 cols x 32 rows => max_col=9, max_row=31
+    type_printable_chars_testcard(machine, renderer, 9, 31);
+
+    force_steady_cursor(machine);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("aug_mode8");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
