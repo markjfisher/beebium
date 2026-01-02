@@ -52,7 +52,8 @@ public:
     // fast_clock=0, line_width=3: Mode 3 (80x25 text, 8 pixels/byte)
     // fast_clock=0, line_width=2: Mode 4 (320x256, 2 colors, 8 pixels/byte)
     // fast_clock=0, line_width=1: Mode 5 (160x256, 4 colors, 4 pixels/byte)
-    // fast_clock=0, line_width=0: Mode 6 (40x25 text)
+    // fast_clock=0, line_width=2: Mode 6 (40x25 text, same as Mode 4)
+    // fast_clock=0, line_width=0: AUG Mode 8 (80x256, 16 colors, 10 chars/line)
     // teletext=1: Mode 7 (40x25 teletext)
 
     uint8_t read(uint16_t) const {
@@ -121,7 +122,8 @@ public:
                 case 3: emit_8bpp(batch); break;  // Mode 3 text: 8 pixels/byte
                 case 2: emit_8bpp(batch); break;  // Mode 4: 8 pixels/byte (same as Mode 0)
                 case 1: emit_4bpp(batch); break;  // Mode 5: 4 pixels/byte (same as Mode 1)
-                default: emit_blank(batch); break; // Mode 6 text
+                case 0: emit_2bpp(batch); break;  // AUG Mode 8: 2 pixels/byte (16 colors)
+                default: emit_blank(batch); break;
             }
         }
 
@@ -173,7 +175,8 @@ public:
                 case 3: return 8;  // Mode 3 text: 8 pixels/batch
                 case 2: return 8;  // Mode 4: 8 pixels/batch (same as Mode 0)
                 case 1: return 4;  // Mode 5: 4 pixels/batch (same as Mode 1)
-                default: return 8; // Mode 6 text, Mode 7 teletext
+                case 0: return 2;  // AUG Mode 8: 2 pixels/batch (16 colors)
+                default: return 8;
             }
         }
     }
