@@ -24,10 +24,14 @@
 #include <beebium/FrameRenderer.hpp>
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <vector>
 #include <cmath>
 
+#include "test_keyboard_helpers.hpp"
+
 using namespace beebium;
+using namespace beebium::test;
 
 // ============================================================================
 // Machine Type Configuration Traits
@@ -196,96 +200,50 @@ std::filesystem::path golden_dir(const std::string& mode) {
     return GOLDEN_BASE / GoldenConfig<MachineType>::subdir / mode;
 }
 
-// BBC keyboard matrix: ASCII to (row, column) mapping
-// Returns (row, column) packed as (row << 4) | column, or 0xFF if not mappable
-uint8_t ascii_to_keycode(uint8_t ascii) {
-    // BBC keyboard matrix (key number = row << 4 | column)
-    // This table covers the essential keys for typing BASIC commands
-    // Key positions verified against BBC keyboard documentation
-    switch (ascii) {
-        // Essential control characters
-        case '\r': return 0x49;  // RETURN (row 4, col 9)
-
-        // Space
-        case ' ':  return 0x62;  // SPACE (row 6, col 2)
-
-        // Digits 0-9
-        case '0':  return 0x27;  // row 2, col 7
-        case '1':  return 0x30;  // row 3, col 0
-        case '2':  return 0x31;  // row 3, col 1
-        case '3':  return 0x11;  // row 1, col 1
-        case '4':  return 0x12;  // row 1, col 2
-        case '5':  return 0x13;  // row 1, col 3
-        case '6':  return 0x34;  // row 3, col 4
-        case '7':  return 0x24;  // row 2, col 4
-        case '8':  return 0x15;  // row 1, col 5
-        case '9':  return 0x26;  // row 2, col 6
-
-        // Letters A-Z (BBC BASIC uses uppercase for keywords)
-        case 'A': case 'a': return 0x41;  // row 4, col 1
-        case 'B': case 'b': return 0x64;  // row 6, col 4
-        case 'C': case 'c': return 0x52;  // row 5, col 2
-        case 'D': case 'd': return 0x32;  // row 3, col 2
-        case 'E': case 'e': return 0x22;  // row 2, col 2
-        case 'F': case 'f': return 0x43;  // row 4, col 3
-        case 'G': case 'g': return 0x53;  // row 5, col 3
-        case 'H': case 'h': return 0x54;  // row 5, col 4
-        case 'I': case 'i': return 0x25;  // row 2, col 5
-        case 'J': case 'j': return 0x45;  // row 4, col 5
-        case 'K': case 'k': return 0x46;  // row 4, col 6
-        case 'L': case 'l': return 0x56;  // row 5, col 6
-        case 'M': case 'm': return 0x65;  // row 6, col 5
-        case 'N': case 'n': return 0x55;  // row 5, col 5
-        case 'O': case 'o': return 0x36;  // row 3, col 6
-        case 'P': case 'p': return 0x37;  // row 3, col 7
-        case 'Q': case 'q': return 0x10;  // row 1, col 0
-        case 'R': case 'r': return 0x33;  // row 3, col 3
-        case 'S': case 's': return 0x51;  // row 5, col 1
-        case 'T': case 't': return 0x23;  // row 2, col 3
-        case 'U': case 'u': return 0x35;  // row 3, col 5
-        case 'V': case 'v': return 0x63;  // row 6, col 3
-        case 'W': case 'w': return 0x21;  // row 2, col 1
-        case 'X': case 'x': return 0x42;  // row 4, col 2
-        case 'Y': case 'y': return 0x44;  // row 4, col 4
-        case 'Z': case 'z': return 0x61;  // row 6, col 1
-
-        // Essential punctuation for BASIC
-        case ';':  return 0x57;  // row 5, col 7
-        case ':':  return 0x48;  // row 4, col 8
-        case ',':  return 0x66;  // row 6, col 6
-        case '.':  return 0x67;  // row 6, col 7
-        case '(':  return 0x17;  // row 1, col 7
-        case ')':  return 0x28;  // row 2, col 8
-        case '+':  return 0x18;  // row 1, col 8 (needs SHIFT)
-        case '-':  return 0x17;  // row 1, col 7 (same as (, use minus key)
-        case '*':  return 0x47;  // row 4, col 7 (needs SHIFT)
-        case '/':  return 0x68;  // row 6, col 8
-        case '=':  return 0x38;  // row 3, col 8 (needs SHIFT)
-        case '$':  return 0x12;  // row 1, col 2 (needs SHIFT, same as 4)
-        case '"':  return 0x31;  // row 3, col 1 (needs SHIFT, same as 2)
-
-        default: return 0xFF;  // Not mapped
-    }
-}
-
-// Helper: inject a key press into the keyboard
+// Generate and type the printable chars testcard BASIC program
+// max_col = cols - 1 (e.g., 79 for 80-column mode)
+// max_row = rows - 1 (e.g., 31 for 32-row mode)
+// cycles_per_key: 100000 is the minimum reliable typing speed
 template<typename MachineType>
-void press_key(MachineType& machine, uint8_t ascii_code) {
-    uint8_t keycode = ascii_to_keycode(ascii_code);
-    if (keycode != 0xFF) {
-        uint8_t row = (keycode >> 4) & 0x0F;
-        uint8_t col = keycode & 0x0F;
-        machine.state().memory.system_via_peripheral.key_down(row, col);
-    }
-}
+void type_printable_chars_testcard(MachineType& machine, FrameRenderer& renderer,
+                                    int max_col, int max_row, int cycles_per_key = 100000) {
+    // Build the BASIC program string
+    // The inner loop uses {C}+(Y={R}) to print one less character on the last row,
+    // avoiding the bottom-right cell which would cause a scroll when printed.
+    // (In BBC BASIC, TRUE=-1, so when Y={R}, the limit becomes {C}-1)
+    // The REPEAT:UNTIL0 at the end creates an infinite loop to prevent the BASIC prompt from causing a scroll.
+    std::string program = "10CLS:FOR I=0TO" + std::to_string(max_col) +
+                          ":P.CHR$(48+I MOD10);:N.:FOR Y=1TO" + std::to_string(max_row) +
+                          ":P.CHR$(48+Y MOD10);:FOR X=1TO" + std::to_string(max_col) +
+                          "+(Y=" + std::to_string(max_row) + ")" +
+                          ":P.CHR$(32+((Y-1)*" + std::to_string(max_col) + "+X-1)MOD95);:N.:N.:REPEAT:UNTIL0";
 
-template<typename MachineType>
-void release_key(MachineType& machine, uint8_t ascii_code) {
-    uint8_t keycode = ascii_to_keycode(ascii_code);
-    if (keycode != 0xFF) {
-        uint8_t row = (keycode >> 4) & 0x0F;
-        uint8_t col = keycode & 0x0F;
-        machine.state().memory.system_via_peripheral.key_up(row, col);
+    // Type the program
+    type_string_with_shift(machine, renderer, program.c_str(), cycles_per_key);
+
+    // Press RETURN to enter the program
+    type_string_with_shift(machine, renderer, "\r", cycles_per_key);
+
+    // Small delay for program entry
+    for (int i = 0; i < 100000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type RUN and RETURN
+    type_string_with_shift(machine, renderer, "RUN\r", cycles_per_key);
+
+    // Wait for program execution (scales with screen size)
+    // Each character print in BASIC involves loop overhead, CHR$ call, and PRINT.
+    // At 2MHz, this takes roughly 20000 cycles per character position.
+    int execution_cycles = (max_col + 1) * (max_row + 1) * 20000;
+    for (int i = 0; i < execution_cycles; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
     }
 }
 
@@ -304,35 +262,6 @@ void force_steady_cursor(MachineType& machine) {
     crtc.write(1, cursor_start_line);  // Start line preserved, mode = steady
 }
 
-// Type a string by injecting keypresses with timing
-template<typename MachineType>
-void type_string(MachineType& machine, FrameRenderer& renderer, const char* str, int cycles_per_key = 50000) {
-    for (const char* p = str; *p; ++p) {
-        uint8_t ch = static_cast<uint8_t>(*p);
-
-        // Press key
-        press_key(machine, ch);
-
-        // Run cycles while key is held
-        for (int i = 0; i < cycles_per_key / 2; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
-            }
-        }
-
-        // Release key
-        release_key(machine, ch);
-
-        // Run cycles after release
-        for (int i = 0; i < cycles_per_key / 2; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
-            }
-        }
-    }
-}
 #endif
 
 } // anonymous namespace
@@ -1398,6 +1327,577 @@ TEMPLATE_TEST_CASE("MODE 7 boot screen golden master", "[mode7][golden][teletext
         CHECK(diff == 0);
     } else {
         auto output_filepath = golden_dirpath / "boot_screen_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+// ============================================================================
+// Printable Characters Testcard Tests - Modes 0-6
+// ============================================================================
+
+TEMPLATE_TEST_CASE("MODE 0 printable characters testcard", "[mode0][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 0: 80x32 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(0);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 0) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (80 cols, 32 rows)
+    type_printable_chars_testcard(machine, renderer, 79, 31);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode0");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 1 printable characters testcard", "[mode1][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 1: 40x32 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(1);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 1) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (40 cols, 32 rows)
+    type_printable_chars_testcard(machine, renderer, 39, 31);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode1");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 2 printable characters testcard", "[mode2][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 2: 20x32 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(2);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 2) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (20 cols, 32 rows)
+    type_printable_chars_testcard(machine, renderer, 19, 31);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode2");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 3 printable characters testcard", "[mode3][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 3: 80x25 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(3);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 3) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (80 cols, 25 rows)
+    type_printable_chars_testcard(machine, renderer, 79, 24);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode3");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 4 printable characters testcard", "[mode4][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 4: 40x32 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(4);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 4) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (40 cols, 32 rows)
+    type_printable_chars_testcard(machine, renderer, 39, 31);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode4");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 5 printable characters testcard", "[mode5][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 5: 20x32 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(5);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 5) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (20 cols, 32 rows)
+    type_printable_chars_testcard(machine, renderer, 19, 31);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode5");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
+        REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
+        WARN("Golden master not found. Candidate saved to: " << output_filepath);
+    }
+}
+
+TEMPLATE_TEST_CASE("MODE 6 printable characters testcard", "[mode6][testcard][characters][golden]",
+                   ModelB, ModelBPlus) {
+    // MODE 6: 40x25 characters
+    REQUIRE(roms_available<TestType>());
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos_rom = load_rom(rom_dirpath / RomConfig<TestType>::mos_filename);
+    auto basic_rom = load_rom(rom_dirpath / "bbc-basic_2.rom");
+
+    TestType machine;
+    machine.memory().load_mos(mos_rom.data(), mos_rom.size());
+    machine.memory().load_basic(basic_rom.data(), basic_rom.size());
+    machine.memory().enable_video_output();
+    machine.memory().set_startup_screen_mode(6);
+    machine.reset();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC
+    bool boot_complete = false;
+    for (uint64_t i = 0; i < 4'000'000 && !boot_complete; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (i > 2'000'000 && (machine.read(0x028F) & 0x07) == 6) {
+            boot_complete = true;
+        }
+    }
+    REQUIRE(boot_complete);
+
+    // Wait for BASIC to be fully ready
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Type and run the testcard program (40 cols, 25 rows)
+    type_printable_chars_testcard(machine, renderer, 39, 24);
+
+    // Force steady cursor for deterministic capture
+    force_steady_cursor(machine);
+
+    // Render frames for stable output
+    for (int frame = 0; frame < 4; ++frame) {
+        for (int i = 0; i < 80000; ++i) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
+        }
+    }
+
+    auto frame = fb.read_frame();
+    auto golden_dirpath = golden_dir<TestType>("mode6");
+    std::filesystem::create_directories(golden_dirpath);
+
+    auto golden_filepath = golden_dirpath / "testcard_printable_chars.ppm";
+    if (std::filesystem::exists(golden_filepath)) {
+        std::vector<uint32_t> golden;
+        size_t golden_w, golden_h;
+
+        REQUIRE(read_ppm(golden_filepath, golden, golden_w, golden_h));
+        REQUIRE(golden_w == fb.width());
+        REQUIRE(golden_h == fb.height());
+
+        size_t diff = compare_frames_exact(frame.data(), fb.stride_pixels(),
+                                           golden.data(), fb.width(), fb.height());
+        INFO("Pixel difference: " << diff);
+        CHECK(diff == 0);
+    } else {
+        auto output_filepath = golden_dirpath / "testcard_printable_chars_candidate.ppm";
         REQUIRE(write_ppm(output_filepath, frame.data(), fb.width(), fb.height(), fb.stride_pixels()));
         WARN("Golden master not found. Candidate saved to: " << output_filepath);
     }
