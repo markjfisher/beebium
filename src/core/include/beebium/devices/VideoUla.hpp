@@ -110,19 +110,19 @@ public:
             // High-res modes (Modes 0, 1, 2) - 2MHz CRTC clock
             // Each byte produces 8 pixels at different color depths
             switch (lw) {
-                case 3: emit_8bpp(batch); break;  // Mode 0: 8 pixels/byte, 1bpp
-                case 2: emit_4bpp(batch); break;  // Mode 1: 4 pixels/byte, 2bpp
-                case 1: emit_2bpp(batch); break;  // Mode 2: 2 pixels/byte, 4bpp
+                case 3: emit_8_pixels_1bpp(batch); break;  // Mode 0: 8 pixels/byte, 1bpp
+                case 2: emit_4_pixels_2bpp(batch); break;  // Mode 1: 4 pixels/byte, 2bpp
+                case 1: emit_2_pixels_4bpp(batch); break;  // Mode 2: 2 pixels/byte, 4bpp
                 default: emit_blank(batch); break;
             }
         } else {
             // Slow clock modes (1MHz CRTC) use same pixels-per-byte as fast modes.
             // The resolution difference comes from CRTC R1 (40 vs 80 chars/line).
             switch (lw) {
-                case 3: emit_8bpp(batch); break;  // Mode 3 text: 8 pixels/byte
-                case 2: emit_8bpp(batch); break;  // Mode 4: 8 pixels/byte (same as Mode 0)
-                case 1: emit_4bpp(batch); break;  // Mode 5: 4 pixels/byte (same as Mode 1)
-                case 0: emit_2bpp(batch); break;  // AUG Mode 8: 2 pixels/byte (16 colors)
+                case 3: emit_8_pixels_1bpp(batch); break;  // Mode 3 text: 8 pixels/byte
+                case 2: emit_8_pixels_1bpp(batch); break;  // Mode 4: 8 pixels/byte (same as Mode 0)
+                case 1: emit_4_pixels_2bpp(batch); break;  // Mode 5: 4 pixels/byte (same as Mode 1)
+                case 0: emit_2_pixels_4bpp(batch); break;  // AUG Mode 8: 2 pixels/byte (16 colors)
                 default: emit_blank(batch); break;
             }
         }
@@ -248,9 +248,9 @@ private:
         return static_cast<uint8_t>((1u << batches) - 1);
     }
 
-    // Mode 0 (fast): 8 logical pixels/byte, 1bpp
+    // Mode 0 (fast): 8 pixels per byte, 1 bit per pixel
     // Output: 8 pixels per batch (640 pixels/line with R1=80)
-    void emit_8bpp(PixelBatch& batch) {
+    void emit_8_pixels_1bpp(PixelBatch& batch) {
         for (int i = 0; i < 8; ++i) {
             uint8_t idx = shift_pixel();
             batch.pixels.pixels[i] = get_pixel(idx);
@@ -258,9 +258,9 @@ private:
         batch.set_pixel_count(8);
     }
 
-    // Mode 1 (fast): 4 logical pixels/byte, 2bpp
+    // Mode 1 (fast): 4 pixels per byte, 2 bits per pixel
     // Output: 4 pixels per batch (320 pixels/line with R1=80)
-    void emit_4bpp(PixelBatch& batch) {
+    void emit_4_pixels_2bpp(PixelBatch& batch) {
         for (int i = 0; i < 4; ++i) {
             uint8_t idx = shift_pixel();
             batch.pixels.pixels[i] = get_pixel(idx);
@@ -268,9 +268,9 @@ private:
         batch.set_pixel_count(4);
     }
 
-    // Mode 2 (fast): 2 logical pixels/byte, 4bpp
+    // Mode 2 (fast): 2 pixels per byte, 4 bits per pixel
     // Output: 2 pixels per batch (160 pixels/line with R1=80)
-    void emit_2bpp(PixelBatch& batch) {
+    void emit_2_pixels_4bpp(PixelBatch& batch) {
         for (int i = 0; i < 2; ++i) {
             uint8_t idx = shift_pixel();
             batch.pixels.pixels[i] = get_pixel(idx);
