@@ -45,3 +45,7 @@ Repository = "https://github.com/rob-smallshire/beebium"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/beebium"]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
