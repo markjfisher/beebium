@@ -291,15 +291,17 @@ void release_key(MachineType& machine, uint8_t ascii_code) {
 
 // Force cursor to steady (non-blinking) mode for deterministic golden masters.
 // CRTC R10 bits 5-6 control cursor mode: 00=steady, 01=none, 10=blink/16, 11=blink/32
-// We preserve the underline-style cursor (start line 7) and set mode to steady.
+// We preserve the MOS's cursor start line and only change the mode to steady.
 template<typename MachineType>
 void force_steady_cursor(MachineType& machine) {
     auto& crtc = machine.memory().crtc;
     // R10: Cursor Start - bits 0-4 = start line, bits 5-6 = mode
-    // Set to 0x07 = start line 7 (underline), mode steady (bits 5-6 = 00)
-    // This matches the BBC default underline cursor style.
+    // Read current value, clear mode bits, set mode to steady (00)
+    uint8_t r10 = crtc.reg(10);
+    uint8_t cursor_start_line = r10 & 0x1F;  // Preserve bits 0-4
+    // Write back with mode bits = 00 (steady)
     crtc.write(0, 10);  // Select R10
-    crtc.write(1, 0x07); // Start line 7 (underline), cursor mode = steady
+    crtc.write(1, cursor_start_line);  // Start line preserved, mode = steady
 }
 
 // Type a string by injecting keypresses with timing
@@ -1362,7 +1364,8 @@ TEMPLATE_TEST_CASE("MODE 7 boot screen golden master", "[mode7][golden][teletext
     uint8_t actual_screen_mode = machine.read(0x028F) & 0x07;
     REQUIRE(actual_screen_mode == 7);
 
-    // Use default flashing underline cursor - no adjustment
+    // Force cursor to steady (non-blinking) mode for deterministic capture
+    force_steady_cursor(machine);
 
     // Run additional frames for stable output
     for (int frame = 0; frame < 4; ++frame) {
