@@ -31,7 +31,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Run tests
-        run: ctest --test-dir build --output-on-failure --parallel
+        run: ctest --test-dir build --output-on-failure
 
   client:
     name: Build and Test macOS Client
