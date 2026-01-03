@@ -26,6 +26,11 @@ add_executable(test_disc_image test_disc_image.cpp)
 target_link_libraries(test_disc_image PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_disc_image)
 
+# Disc drive tests
+add_executable(test_disc_drive test_disc_drive.cpp)
+target_link_libraries(test_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_drive)
+
 # Memory histogram tests
 add_executable(test_memory_histogram test_memory_histogram.cpp)
 target_link_libraries(test_memory_histogram PRIVATE beebium_core Catch2::Catch2WithMain)
