@@ -46,6 +46,7 @@ public:
     void insert(std::unique_ptr<DiscImage> disc) { disc_ = std::move(disc); }
     std::unique_ptr<DiscImage> eject() { return std::move(disc_); }
     bool has_disc() const { return disc_ != nullptr; }
+    DiscImage* disc() const { return disc_.get(); }
 
     // Head positioning
     void step_in() {

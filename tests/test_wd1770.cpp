@@ -414,3 +414,294 @@ TEST_CASE("WD1770 INTRQ on command completion", "[disc][wd1770][type1]") {
     controller.read(0);
     CHECK_FALSE(controller.intrq());
 }
+
+// ============================================================================
+// Phase 6: Type II Commands (Read/Write Sector)
+// ============================================================================
+
+// Helper to transfer a full sector via DRQ
+namespace {
+std::vector<uint8_t> read_sector_data(WD1770& controller, int sector_size = 256) {
+    std::vector<uint8_t> data;
+    data.reserve(sector_size);
+
+    for (int i = 0; i < sector_size; ++i) {
+        // Wait for DRQ
+        int timeout = 10000;
+        while (!controller.drq() && timeout > 0) {
+            controller.tick();
+            --timeout;
+        }
+        if (timeout == 0) break;
+
+        // Read data byte
+        data.push_back(controller.read(3));
+        controller.tick();
+    }
+
+    // Wait for command completion
+    run_until_complete(controller);
+    return data;
+}
+
+void write_sector_data(WD1770& controller, const std::vector<uint8_t>& data) {
+    for (size_t i = 0; i < data.size(); ++i) {
+        // Wait for DRQ
+        int timeout = 10000;
+        while (!controller.drq() && timeout > 0) {
+            controller.tick();
+            --timeout;
+        }
+        if (timeout == 0) break;
+
+        // Write data byte
+        controller.write(3, data[i]);
+        controller.tick();
+    }
+
+    // Wait for command completion
+    run_until_complete(controller);
+}
+} // namespace
+
+// Phase 6.1: Read Sector sets BUSY
+TEST_CASE("WD1770 Read Sector sets BUSY", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK_FALSE(controller.busy());
+
+    // Read Sector command (0x80)
+    controller.write(0, 0x80);
+    CHECK(controller.busy());
+}
+
+// Phase 6.2: Read Sector asserts DRQ for data transfer
+TEST_CASE("WD1770 Read Sector asserts DRQ", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK_FALSE(controller.drq());
+
+    // Read Sector command
+    controller.write(2, 0);  // Sector 0
+    controller.write(0, 0x80);
+
+    // Tick until DRQ is asserted
+    for (int i = 0; i < 1000 && !controller.drq(); ++i) {
+        controller.tick();
+    }
+
+    CHECK(controller.drq());
+}
+
+// Phase 6.3: Read Sector returns sector data
+TEST_CASE("WD1770 Read Sector returns sector data", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+
+    // Write known data to sector 0
+    std::vector<uint8_t> test_data(256);
+    for (size_t i = 0; i < test_data.size(); ++i) {
+        test_data[i] = static_cast<uint8_t>(i);
+    }
+    disc->write_sector(0, 0, 0, test_data);
+
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(0);
+
+    // Read Sector 0
+    controller.write(2, 0);  // Sector register
+    controller.write(0, 0x80);  // Read Sector command
+
+    auto read_data = read_sector_data(controller);
+
+    REQUIRE(read_data.size() == 256);
+    CHECK(read_data == test_data);
+}
+
+// Phase 6.4: Read Sector increments sector register with m flag
+TEST_CASE("WD1770 Read Sector multi-sector mode", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Read Sector with m flag (0x90)
+    controller.write(2, 0);  // Start at sector 0
+    controller.write(0, 0x90);  // Read Sector with multi-sector flag
+
+    // Read first sector
+    read_sector_data(controller);
+
+    // Sector register should have incremented
+    // (Note: full multi-sector would continue reading, but we're testing register update)
+    CHECK(controller.read(2) == 1);
+}
+
+// Phase 6.5: Read Sector sets RNF for invalid sector
+TEST_CASE("WD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();  // 10 sectors per track (0-9)
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Try to read sector 15 (doesn't exist)
+    controller.write(2, 15);
+    controller.write(0, 0x80);
+
+    run_until_complete(controller);
+
+    uint8_t status = controller.read(0);
+    CHECK((status & WD1770::STATUS_RNF) != 0);
+}
+
+// Phase 6.6: Write Sector sets BUSY
+TEST_CASE("WD1770 Write Sector sets BUSY", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK_FALSE(controller.busy());
+
+    // Write Sector command (0xA0)
+    controller.write(0, 0xA0);
+    CHECK(controller.busy());
+}
+
+// Phase 6.7: Write Sector asserts DRQ for data transfer
+TEST_CASE("WD1770 Write Sector asserts DRQ", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK_FALSE(controller.drq());
+
+    // Write Sector command
+    controller.write(2, 0);  // Sector 0
+    controller.write(0, 0xA0);
+
+    // Tick until DRQ is asserted
+    for (int i = 0; i < 1000 && !controller.drq(); ++i) {
+        controller.tick();
+    }
+
+    CHECK(controller.drq());
+}
+
+// Phase 6.8: Write Sector writes data to disc
+TEST_CASE("WD1770 Write Sector writes data to disc", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc_ptr = MemoryDiscImage::create_ssd();
+    auto* disc = disc_ptr.get();
+    drive.insert(std::move(disc_ptr));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(0);
+
+    // Prepare test data
+    std::vector<uint8_t> test_data(256);
+    for (size_t i = 0; i < test_data.size(); ++i) {
+        test_data[i] = static_cast<uint8_t>(0xFF - i);
+    }
+
+    // Write Sector 0
+    controller.write(2, 0);  // Sector register
+    controller.write(0, 0xA0);  // Write Sector command
+
+    write_sector_data(controller, test_data);
+
+    // Verify data was written to disc
+    std::vector<uint8_t> read_back(256);
+    disc->read_sector(0, 0, 0, read_back);
+
+    CHECK(read_back == test_data);
+}
+
+// Phase 6.9: Write Sector fails on write-protected disc
+TEST_CASE("WD1770 Write Sector fails on write-protected disc", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    disc->set_write_protected(true);
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Write Sector command
+    controller.write(2, 0);
+    controller.write(0, 0xA0);
+
+    run_until_complete(controller);
+
+    uint8_t status = controller.read(0);
+    CHECK((status & WD1770::STATUS_WRITE_PROT) != 0);
+}
+
+// Phase 6.10: Reading data register clears DRQ
+TEST_CASE("WD1770 Reading data register clears DRQ", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Read Sector command
+    controller.write(2, 0);
+    controller.write(0, 0x80);
+
+    // Wait for DRQ
+    for (int i = 0; i < 1000 && !controller.drq(); ++i) {
+        controller.tick();
+    }
+    REQUIRE(controller.drq());
+
+    // Read data register should clear DRQ
+    controller.read(3);
+    CHECK_FALSE(controller.drq());
+}
+
+// Phase 6.11: DRQ appears in status register
+TEST_CASE("WD1770 DRQ appears in status register", "[disc][wd1770][type2]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Read Sector command
+    controller.write(2, 0);
+    controller.write(0, 0x80);
+
+    // Wait for DRQ
+    for (int i = 0; i < 1000 && !controller.drq(); ++i) {
+        controller.tick();
+    }
+
+    uint8_t status = controller.read(0);
+    CHECK((status & WD1770::STATUS_DRQ) != 0);
+}

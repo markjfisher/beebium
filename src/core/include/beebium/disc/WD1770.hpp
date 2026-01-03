@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace beebium {
 
@@ -67,6 +68,10 @@ public:
 
     // Command flags
     static constexpr uint8_t FLAG_UPDATE_TRACK  = 0x10;  // Type I: update track register
+    static constexpr uint8_t FLAG_MULTI_SECTOR  = 0x10;  // Type II: multiple sectors
+    static constexpr uint8_t FLAG_SIDE_SELECT   = 0x08;  // Type II: side select (if E flag set)
+    static constexpr uint8_t FLAG_DELAY         = 0x04;  // Type II: 15ms delay
+    static constexpr uint8_t FLAG_SIDE_COMPARE  = 0x02;  // Type II: compare side
 
     WD1770() = default;
     ~WD1770() = default;
@@ -81,10 +86,17 @@ public:
             case 0:
                 // Reading status clears INTRQ
                 intrq_ = false;
+                // Update status with current DRQ state
+                if (drq_) {
+                    return status_ | STATUS_DRQ;
+                }
                 return status_;
             case 1: return track_;
             case 2: return sector_;
-            case 3: return data_;
+            case 3:
+                // Reading data register clears DRQ during Type II/III
+                drq_ = false;
+                return data_;
             default: return 0xFF;
         }
     }
@@ -143,8 +155,14 @@ public:
             case 0x60:  // Step-Out (0x6x/0x7x with T flag)
                 tick_step_out();
                 break;
+            case 0x80:  // Read Sector (0x8x/0x9x)
+                tick_read_sector();
+                break;
+            case 0xA0:  // Write Sector (0xAx/0xBx)
+                tick_write_sector();
+                break;
             default:
-                // Type II/III/IV - complete immediately for now
+                // Type III/IV - complete immediately for now
                 complete_command();
                 break;
         }
@@ -190,6 +208,9 @@ public:
 
         step_direction_ = 1;  // Default: step in
         step_delay_ = 0;
+
+        sector_buffer_.clear();
+        byte_counter_ = 0;
     }
 
     // Identification
@@ -244,8 +265,14 @@ private:
             // Step-Out: step toward track 0
             step_direction_ = -1;
             step_delay_ = step_rates[rate_index];
+        } else if (cmd_type == 0x80) {
+            // Read Sector
+            start_read_sector();
+        } else if (cmd_type == 0xA0) {
+            // Write Sector
+            start_write_sector();
         } else {
-            // Type II/III commands - complete immediately for now
+            // Type III commands - complete immediately for now
             complete_command();
         }
     }
@@ -342,6 +369,121 @@ private:
         update_track0_status();
     }
 
+    // Type II command implementations
+    void start_read_sector() {
+        DiscDrive* drive = get_current_drive();
+        if (!drive || !drive->has_disc()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Check if sector is valid
+        if (sector_ >= drive->disc()->sectors_per_track()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Read the sector into buffer
+        sector_buffer_.resize(drive->disc()->sector_size());
+        if (!drive->read_sector(selected_side_, sector_, sector_buffer_)) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        byte_counter_ = 0;
+        // Assert DRQ for first byte
+        data_ = sector_buffer_[0];
+        drq_ = true;
+    }
+
+    void tick_read_sector() {
+        // If DRQ is still set, the host hasn't read the byte yet
+        // In a real system, we might set LOST_DATA, but for now just wait
+        if (drq_) {
+            return;
+        }
+
+        ++byte_counter_;
+
+        if (byte_counter_ >= sector_buffer_.size()) {
+            // Sector complete
+            if (current_command_ & FLAG_MULTI_SECTOR) {
+                ++sector_;
+                // In multi-sector mode, continue to next sector
+                // For now, just complete after one sector
+            }
+            complete_command();
+            return;
+        }
+
+        // Provide next byte
+        data_ = sector_buffer_[byte_counter_];
+        drq_ = true;
+    }
+
+    void start_write_sector() {
+        DiscDrive* drive = get_current_drive();
+        if (!drive || !drive->has_disc()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Check write protection
+        if (drive->is_write_protected()) {
+            status_ |= STATUS_WRITE_PROT;
+            complete_command();
+            return;
+        }
+
+        // Check if sector is valid
+        if (sector_ >= drive->disc()->sectors_per_track()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Prepare buffer for writing
+        sector_buffer_.resize(drive->disc()->sector_size());
+        byte_counter_ = 0;
+
+        // Assert DRQ for first byte
+        drq_ = true;
+    }
+
+    void tick_write_sector() {
+        // If DRQ is still set, the host hasn't written the byte yet
+        if (drq_) {
+            return;
+        }
+
+        // Store the byte that was written
+        if (byte_counter_ < sector_buffer_.size()) {
+            sector_buffer_[byte_counter_] = data_;
+        }
+        ++byte_counter_;
+
+        if (byte_counter_ >= sector_buffer_.size()) {
+            // All bytes received, write to disc
+            DiscDrive* drive = get_current_drive();
+            if (drive && drive->has_disc()) {
+                drive->write_sector(selected_side_, sector_, sector_buffer_);
+            }
+
+            if (current_command_ & FLAG_MULTI_SECTOR) {
+                ++sector_;
+            }
+            complete_command();
+            return;
+        }
+
+        // Request next byte
+        drq_ = true;
+    }
+
     void complete_command() {
         status_ &= ~STATUS_BUSY;
         intrq_ = true;
@@ -383,6 +525,10 @@ private:
     // Type I command state
     int step_direction_ = 1;  // +1 = in, -1 = out
     int step_delay_ = 0;      // Ticks until next step
+
+    // Type II command state
+    std::vector<uint8_t> sector_buffer_;
+    size_t byte_counter_ = 0;
 };
 
 } // namespace beebium
