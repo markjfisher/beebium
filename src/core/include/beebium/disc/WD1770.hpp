@@ -215,6 +215,7 @@ public:
 
         step_direction_ = 1;  // Default: step in
         step_delay_ = 0;
+        selected_step_rate_ = 6000;  // Default to 6ms
 
         sector_buffer_.clear();
         byte_counter_ = 0;
@@ -247,6 +248,7 @@ private:
         // 6ms, 12ms, 20ms, 30ms at 1MHz
         static constexpr int step_rates[] = {6000, 12000, 20000, 30000};
         int rate_index = cmd & 0x03;
+        selected_step_rate_ = step_rates[rate_index];
 
         // Type I commands use bits 7-5 for command type (mask 0xE0)
         // But Restore (0x0x) and Seek (0x1x) need special handling
@@ -256,22 +258,22 @@ private:
             // Could be Restore (0x0x) or Seek (0x1x)
             if ((cmd & 0xF0) == CMD_SEEK) {
                 // Seek: move to track in data register
-                step_delay_ = step_rates[rate_index];
+                step_delay_ = selected_step_rate_;
             } else {
                 // Restore: step out until track 0
-                step_delay_ = step_rates[rate_index];
+                step_delay_ = selected_step_rate_;
             }
         } else if (cmd_type == 0x20) {
             // Step: single step in last direction
-            step_delay_ = step_rates[rate_index];
+            step_delay_ = selected_step_rate_;
         } else if (cmd_type == 0x40) {
             // Step-In: step toward higher tracks
             step_direction_ = 1;
-            step_delay_ = step_rates[rate_index];
+            step_delay_ = selected_step_rate_;
         } else if (cmd_type == 0x60) {
             // Step-Out: step toward track 0
             step_direction_ = -1;
-            step_delay_ = step_rates[rate_index];
+            step_delay_ = selected_step_rate_;
         } else if (cmd_type == 0x80) {
             // Read Sector
             start_read_sector();
@@ -297,7 +299,7 @@ private:
             update_track0_status();
         } else {
             drive->step_out();
-            step_delay_ = 6000;  // Continue stepping
+            step_delay_ = selected_step_rate_;  // Use selected step rate
         }
     }
 
@@ -315,12 +317,12 @@ private:
             drive->step_in();
             ++track_;
             step_direction_ = 1;
-            step_delay_ = 6000;
+            step_delay_ = selected_step_rate_;  // Use selected step rate
         } else {
             drive->step_out();
             --track_;
             step_direction_ = -1;
-            step_delay_ = 6000;
+            step_delay_ = selected_step_rate_;  // Use selected step rate
         }
     }
 
@@ -532,6 +534,7 @@ private:
     // Type I command state
     int step_direction_ = 1;  // +1 = in, -1 = out
     int step_delay_ = 0;      // Ticks until next step
+    int selected_step_rate_ = 6000;  // Selected step rate in ticks
 
     // Type II command state
     std::vector<uint8_t> sector_buffer_;
