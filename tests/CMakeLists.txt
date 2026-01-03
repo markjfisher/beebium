@@ -71,6 +71,11 @@ add_executable(test_irq_aggregator test_irq_aggregator.cpp)
 target_link_libraries(test_irq_aggregator PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_irq_aggregator)
 
+# NMI aggregator tests
+add_executable(test_nmi_aggregator test_nmi_aggregator.cpp)
+target_link_libraries(test_nmi_aggregator PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_nmi_aggregator)
+
 # Tests requiring ROM files
 set(BEEBIUM_ROM_DIR "${CMAKE_SOURCE_DIR}/roms" CACHE PATH "Directory containing BBC Micro ROMs")
 

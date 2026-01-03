@@ -39,6 +39,11 @@ namespace beebium {
 // Bit 0: System VIA IRQ, Bit 1: User VIA IRQ
 constexpr uint8_t kViaIrqDeviceMask = 0x03;
 
+// NMI device mask for M6502_SetDeviceNMI
+// The 6502 library supports multiple NMI sources; we use mask 0x01 for disc controller
+// Bit 0: Disc controller NMI (WD1770 INTRQ on Model B+, 8271 on Model B)
+constexpr uint8_t kDiscNmiDeviceMask = 0x01;
+
 // Watchpoint callback: addr, value, is_write, cycle
 using WatchCallback = std::function<void(uint16_t addr, uint8_t value, bool is_write, uint64_t cycle)>;
 
@@ -147,6 +152,10 @@ public:
         // IRQ handling - poll aggregator and set CPU IRQ line
         uint8_t irq_mask = state_.memory.poll_irq();
         M6502_SetDeviceIRQ(&state_.cpu, kViaIrqDeviceMask, irq_mask ? 1 : 0);
+
+        // NMI handling - poll disc controller and set CPU NMI line
+        uint8_t nmi_mask = state_.memory.poll_nmi();
+        M6502_SetDeviceNMI(&state_.cpu, kDiscNmiDeviceMask, nmi_mask ? 1 : 0);
 
         ++state_.cycle_count;
         ++sequence_;

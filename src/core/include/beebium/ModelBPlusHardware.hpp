@@ -341,6 +341,14 @@ public:
         return irq_aggregator_.poll();
     }
 
+    // Poll NMI status from disc controller (called from Machine::step after clock tick)
+    // Returns non-zero if NMI is pending from disc controller.
+    // The disc controller will be integrated in Phase 8.
+    uint8_t poll_nmi() {
+        // TODO: Integrate WD1770 disc controller
+        return 0;
+    }
+
     // Paging register accessors for testing
     uint8_t romsel() const { return romsel_; }
     uint8_t acccon() const { return acccon_; }

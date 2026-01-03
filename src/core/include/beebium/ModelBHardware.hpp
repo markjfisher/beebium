@@ -240,6 +240,14 @@ public:
         return irq_aggregator_.poll();
     }
 
+    // Poll NMI status from disc controller (called from Machine::step after clock tick)
+    // Returns non-zero if NMI is pending from disc controller.
+    // Model B doesn't have a built-in disc controller (optional add-on).
+    uint8_t poll_nmi() {
+        // Disc controller is an optional add-on for Model B
+        return 0;
+    }
+
     // Set boot screen mode via startup links (0-7)
     // Call before reset() to boot into specified mode
     void set_startup_screen_mode(uint8_t screen_mode) {

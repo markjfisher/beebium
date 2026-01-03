@@ -173,6 +173,13 @@ public:
     bool intrq() const { return intrq_; }
     bool busy() const { return (status_ & STATUS_BUSY) != 0; }
 
+    // NMI source interface (for NmiAggregator)
+    // The WD1770's INTRQ line drives NMI on the BBC Micro disc system.
+    // Note: The actual BBC hardware has an NMI enable bit in the disc control
+    // register which gates INTRQ before it reaches the CPU's NMI line.
+    // This method reports whether the controller is asserting INTRQ.
+    bool nmi_pending() const { return intrq_; }
+
     // Drive attachment
     void attach_drive(int drive_num, DiscDrive* drive) {
         if (drive_num >= 0 && drive_num < 2) {
