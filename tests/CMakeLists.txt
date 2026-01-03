@@ -16,6 +16,11 @@ add_executable(test_memory test_memory.cpp)
 target_link_libraries(test_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_memory)
 
+# Disc geometry tests
+add_executable(test_disc_geometry test_disc_geometry.cpp)
+target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_geometry)
+
 # Memory histogram tests
 add_executable(test_memory_histogram test_memory_histogram.cpp)
 target_link_libraries(test_memory_histogram PRIVATE beebium_core Catch2::Catch2WithMain)

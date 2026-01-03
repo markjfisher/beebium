@@ -3,6 +3,7 @@
 
 add_library(beebium_core STATIC
     src/Via6522.cpp
+    src/disc/DiscGeometry.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
