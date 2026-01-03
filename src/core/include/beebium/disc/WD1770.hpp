@@ -229,9 +229,31 @@ private:
         command_ = cmd;
 
         // Force Interrupt (Type IV) can be issued at any time
+        // Bits 0-3 control interrupt conditions:
+        //   I3 (bit 3): Immediate interrupt
+        //   I2 (bit 2): Interrupt on every index pulse
+        //   I1 (bit 1): Interrupt on Ready to Not-Ready transition
+        //   I0 (bit 0): Interrupt on Not-Ready to Ready transition
+        //   All zero: Terminate command without generating interrupt
         if ((cmd & 0xF0) == CMD_FORCE_INT) {
+            // Always terminate current command
             status_ &= ~STATUS_BUSY;
-            intrq_ = true;
+            drq_ = false;
+
+            uint8_t interrupt_flags = cmd & 0x0F;
+            if (interrupt_flags == 0) {
+                // 0xD0: Terminate without interrupt
+                // INTRQ is not set
+            } else if (interrupt_flags & 0x08) {
+                // I3 set: Immediate interrupt
+                intrq_ = true;
+            } else {
+                // I0, I1, I2: Conditional interrupts
+                // I2 (index pulse) would require index tracking - set INTRQ for now
+                // I0, I1 (ready transitions) are not commonly used
+                // For compatibility, set INTRQ when any condition flag is set
+                intrq_ = true;
+            }
             return;
         }
 

@@ -981,18 +981,26 @@ TEST_CASE("WD1770 RNF status bit for invalid sector", "[disc][wd1770][status]") 
 // Phase 4: INTRQ Timing Tests
 // ============================================================================
 
-TEST_CASE("WD1770 Force Interrupt sets INTRQ", "[disc][wd1770][intrq]") {
+TEST_CASE("WD1770 Force Interrupt 0xD0 terminates without INTRQ", "[disc][wd1770][type4]") {
     WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
 
-    CHECK_FALSE(controller.intrq());
+    // Start a command to make controller busy
+    controller.write(0, 0x43);  // Step-In with 30ms rate
+    CHECK(controller.busy());
 
-    // Force Interrupt command (0xD0)
+    // Force Interrupt 0xD0 (no flags) should terminate without INTRQ
     controller.write(0, 0xD0);
 
-    CHECK(controller.intrq());
+    CHECK_FALSE(controller.busy());
+    CHECK_FALSE(controller.intrq());  // No interrupt with 0xD0
 }
 
-TEST_CASE("WD1770 Force Interrupt with I3 flag immediate INTRQ", "[disc][wd1770][intrq]") {
+TEST_CASE("WD1770 Force Interrupt with I3 flag sets INTRQ", "[disc][wd1770][type4]") {
     WD1770 controller;
 
     CHECK_FALSE(controller.intrq());
@@ -1001,6 +1009,68 @@ TEST_CASE("WD1770 Force Interrupt with I3 flag immediate INTRQ", "[disc][wd1770]
     controller.write(0, 0xD8);
 
     // INTRQ should be set immediately
+    CHECK(controller.intrq());
+}
+
+TEST_CASE("WD1770 Force Interrupt with I2 flag sets INTRQ", "[disc][wd1770][type4]") {
+    WD1770 controller;
+
+    CHECK_FALSE(controller.intrq());
+
+    // Force Interrupt with I2 (index pulse): 0xD4
+    // Note: Full implementation would wait for index pulse
+    // For now, INTRQ is set when any condition flag is present
+    controller.write(0, 0xD4);
+
+    CHECK(controller.intrq());
+}
+
+TEST_CASE("WD1770 Force Interrupt clears DRQ", "[disc][wd1770][type4]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Start Read Sector to get DRQ
+    controller.write(2, 0);
+    controller.write(0, 0x80);
+
+    // Wait for DRQ
+    for (int i = 0; i < 100 && !controller.drq(); ++i) {
+        controller.tick();
+    }
+    CHECK(controller.drq());
+
+    // Force Interrupt should clear DRQ
+    controller.write(0, 0xD0);
+    CHECK_FALSE(controller.drq());
+}
+
+TEST_CASE("WD1770 Force Interrupt can abort any command", "[disc][wd1770][type4]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Start a long Seek command
+    controller.write(1, 0);
+    controller.write(3, 50);
+    controller.write(0, 0x13);  // Seek with 30ms step rate
+    CHECK(controller.busy());
+
+    // Tick a few times but not enough to complete
+    for (int i = 0; i < 1000; ++i) {
+        controller.tick();
+    }
+    CHECK(controller.busy());  // Still busy
+
+    // Force Interrupt aborts the command
+    controller.write(0, 0xD8);
+    CHECK_FALSE(controller.busy());
     CHECK(controller.intrq());
 }
 
@@ -1029,8 +1099,8 @@ TEST_CASE("WD1770 Reading status clears INTRQ", "[disc][wd1770][intrq]") {
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
 
-    // Set INTRQ via Force Interrupt
-    controller.write(0, 0xD0);
+    // Set INTRQ via Force Interrupt with I3 flag
+    controller.write(0, 0xD8);
     CHECK(controller.intrq());
 
     // Reading status should clear INTRQ
