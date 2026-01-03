@@ -16,6 +16,7 @@
 #include "BankBinding.hpp"
 #include "ClockTypes.hpp"
 #include "IrqAggregator.hpp"
+#include "NmiAggregator.hpp"
 #include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
@@ -29,6 +30,8 @@
 #include "devices/Ram.hpp"
 #include "devices/Rom.hpp"
 #include "devices/VideoUla.hpp"
+#include "disc/DiscDrive.hpp"
+#include "disc/WD1770.hpp"
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -123,6 +126,11 @@ public:
     Via6522 system_via;
     Via6522 user_via;
 
+    // Disc controller (WD1770 built-in on Model B+)
+    WD1770 disc_controller;
+    DiscDrive disc_drive_0;
+    DiscDrive disc_drive_1;
+
     // IRQ aggregator type - polls VIAs for IRQ status
     using IrqAggregatorType = IrqAggregator<
         IrqBinding<Via6522, 0>,  // System VIA → bit 0
@@ -146,6 +154,16 @@ private:
     uint8_t romsel_ = 0;    // Bits 0-3: bank, Bit 7: ANDY enable
     uint8_t acccon_ = 0;    // Bit 7: shadow enable
 
+    // Disc control register state
+    // Bit 0: Drive select (0=drive 0, 1=drive 1)
+    // Bit 1: Side select
+    // Bit 2: Density (0=double/MFM, 1=single/FM)
+    // Bit 4: Motor on
+    // Bit 5: Reset (directly resets WD1770)
+    // Bit 6: NMI enable (gates INTRQ to NMI line)
+    uint8_t disc_control_ = 0;
+    bool nmi_enabled_ = false;
+
     // ROMSEL register wrapper for B+ - handles bank switching and ANDY control
     struct BPlusRomselRegister {
         SidewaysType& sideways;
@@ -168,9 +186,46 @@ private:
         }
     };
 
+    // Disc control register wrapper (0xFE80) - controls 1770 interface
+    struct DiscControlRegister {
+        WD1770& controller;
+        DiscDrive& drive0;
+        DiscDrive& drive1;
+        uint8_t& control;
+        bool& nmi_enabled;
+
+        uint8_t read(uint16_t) { return control; }
+
+        void write(uint16_t, uint8_t value) {
+            control = value;
+
+            // Bit 0: Drive select
+            controller.set_drive(value & 0x01);
+
+            // Bit 1: Side select
+            controller.set_side((value >> 1) & 0x01);
+
+            // Bit 2: Density (0=double/MFM, 1=single/FM)
+            controller.set_density((value & 0x04) == 0);
+
+            // Bit 4: Motor on
+            drive0.set_motor((value & 0x10) != 0);
+            drive1.set_motor((value & 0x10) != 0);
+
+            // Bit 5: Reset
+            if (value & 0x20) {
+                controller.reset();
+            }
+
+            // Bit 6: NMI enable
+            nmi_enabled = (value & 0x40) != 0;
+        }
+    };
+
 public:
     BPlusRomselRegister romsel_reg{sideways, romsel_};
     AccconRegister acccon_reg{acccon_};
+    DiscControlRegister disc_control_reg{disc_controller, disc_drive_0, disc_drive_1, disc_control_, nmi_enabled_};
 
     // Memory map type - note: I/O regions handled first, then RAM/ROM
     // For B+, we need custom read/write that handles paging
@@ -182,6 +237,8 @@ public:
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(std::declval<Via6522&>()),
             make_region<0xFE30, 0xFE33, Mirror<0x03>>(std::declval<BPlusRomselRegister&>()),
             make_region<0xFE34, 0xFE37, Mirror<0x03>>(std::declval<AccconRegister&>()),
+            make_region<0xFE80, 0xFE83, Mirror<0x03>>(std::declval<DiscControlRegister&>()),
+            make_region<0xFE84, 0xFE87, Mirror<0x03>>(std::declval<WD1770&>()),
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),
             make_region<0x8000, 0xBFFF>(std::declval<SidewaysType&>()),
             make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())
@@ -197,6 +254,9 @@ public:
     {
         // Connect internal peripheral to system VIA
         system_via.set_peripheral(&system_via_peripheral);
+        // Connect disc drives to disc controller
+        disc_controller.attach_drive(0, &disc_drive_0);
+        disc_controller.attach_drive(1, &disc_drive_1);
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -205,7 +265,11 @@ public:
         , user_via(user_peripheral)
         , memory_map_(make_memory_map())
         , irq_aggregator_(make_irq_aggregator())
-    {}
+    {
+        // Connect disc drives to disc controller
+        disc_controller.attach_drive(0, &disc_drive_0);
+        disc_controller.attach_drive(1, &disc_drive_1);
+    }
 
     // MemoryMappedDevice interface with B+ paging logic
     uint8_t read(uint16_t addr) {
@@ -319,6 +383,9 @@ public:
         sideways.select_bank(0);
         romsel_ = 0;
         acccon_ = 0;
+        disc_controller.reset();
+        disc_control_ = 0;
+        nmi_enabled_ = false;
     }
 
     // Enable video output with optional custom queue capacity
@@ -343,9 +410,13 @@ public:
 
     // Poll NMI status from disc controller (called from Machine::step after clock tick)
     // Returns non-zero if NMI is pending from disc controller.
-    // The disc controller will be integrated in Phase 8.
+    // NMI is only generated when both:
+    // - The WD1770 INTRQ line is asserted
+    // - NMI is enabled via bit 6 of the disc control register
     uint8_t poll_nmi() {
-        // TODO: Integrate WD1770 disc controller
+        if (nmi_enabled_ && disc_controller.nmi_pending()) {
+            return 0x01;  // Bit 0: disc controller NMI
+        }
         return 0;
     }
 
@@ -612,6 +683,8 @@ private:
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(user_via),
             make_region<0xFE30, 0xFE33, Mirror<0x03>>(romsel_reg),
             make_region<0xFE34, 0xFE37, Mirror<0x03>>(acccon_reg),
+            make_region<0xFE80, 0xFE83, Mirror<0x03>>(disc_control_reg),
+            make_region<0xFE84, 0xFE87, Mirror<0x03>>(disc_controller),
             make_region<0x0000, 0x7FFF>(main_ram),
             make_region<0x8000, 0xBFFF>(sideways),
             make_region<0xC000, 0xFFFF>(mos_rom)
