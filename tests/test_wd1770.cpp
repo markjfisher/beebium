@@ -169,3 +169,248 @@ TEST_CASE("WD1770 register offset uses only 2 bits", "[disc][wd1770]") {
     controller.write(1, 0x55);
     CHECK(controller.read(5) == 0x55);
 }
+
+// ============================================================================
+// Phase 5: Type I Commands (Seek/Step)
+// ============================================================================
+
+#include <beebium/disc/MemoryDiscImage.hpp>
+
+namespace {
+// Helper to run controller until command completes or timeout
+void run_until_complete(WD1770& controller, int max_ticks = 1000000) {
+    for (int i = 0; i < max_ticks; ++i) {
+        controller.tick();
+        // Use busy() to avoid clearing INTRQ via status read
+        if (!controller.busy()) {
+            return;
+        }
+    }
+}
+} // namespace
+
+// Phase 5.1: Force Interrupt command clears BUSY
+TEST_CASE("WD1770 Force Interrupt clears BUSY", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Start a Restore command
+    controller.write(0, 0x00);
+    CHECK((controller.read(0) & WD1770::STATUS_BUSY) != 0);
+
+    // Force Interrupt (0xD0) should clear BUSY
+    controller.write(0, 0xD0);
+    run_until_complete(controller, 100);
+    CHECK((controller.read(0) & WD1770::STATUS_BUSY) == 0);
+}
+
+// Phase 5.2: Writing command sets BUSY
+TEST_CASE("WD1770 writing command sets BUSY", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK((controller.read(0) & WD1770::STATUS_BUSY) == 0);
+
+    // Restore command
+    controller.write(0, 0x00);
+    CHECK((controller.read(0) & WD1770::STATUS_BUSY) != 0);
+}
+
+// Phase 5.3: Restore command seeks to track 0
+TEST_CASE("WD1770 Restore seeks to track 0", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Move drive head to track 20
+    for (int i = 0; i < 20; ++i) {
+        drive.step_in();
+    }
+    CHECK(drive.current_track() == 20);
+
+    // Restore command (0x00)
+    controller.write(0, 0x00);
+    run_until_complete(controller);
+
+    CHECK(drive.current_track() == 0);
+}
+
+// Phase 5.4: Restore updates track register
+TEST_CASE("WD1770 Restore updates track register", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Set track register to non-zero
+    controller.write(1, 0x20);
+    CHECK(controller.read(1) == 0x20);
+
+    // Restore command
+    controller.write(0, 0x00);
+    run_until_complete(controller);
+
+    // Track register should be 0 after restore
+    CHECK(controller.read(1) == 0x00);
+}
+
+// Phase 5.5: Seek command seeks to data register value
+TEST_CASE("WD1770 Seek moves to data register track", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Start at track 0
+    CHECK(drive.current_track() == 0);
+    controller.write(1, 0x00);  // Track register = 0
+
+    // Set data register to target track
+    controller.write(3, 25);
+
+    // Seek command (0x10)
+    controller.write(0, 0x10);
+    run_until_complete(controller);
+
+    CHECK(drive.current_track() == 25);
+    CHECK(controller.read(1) == 25);  // Track register updated
+}
+
+// Phase 5.6: Step command steps in last direction
+TEST_CASE("WD1770 Step uses last direction", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // First, do a Step-In to set direction
+    controller.write(0, 0x40);  // Step-In
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 1);
+
+    // Now Step (0x20) should continue in same direction
+    controller.write(0, 0x20);
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 2);
+}
+
+// Phase 5.7: Step-In steps toward higher tracks
+TEST_CASE("WD1770 Step-In increments track", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK(drive.current_track() == 0);
+
+    // Step-In without T flag: drive moves, track register unchanged
+    controller.write(0, 0x40);
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 1);
+    CHECK(controller.read(1) == 0);  // Track register unchanged
+
+    // Step-In with T flag: drive moves, track register increments
+    controller.write(0, 0x50);
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 2);
+    CHECK(controller.read(1) == 1);  // Incremented from 0 to 1
+}
+
+// Phase 5.8: Step-Out steps toward track 0
+TEST_CASE("WD1770 Step-Out decrements track", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Move to track 5
+    for (int i = 0; i < 5; ++i) {
+        drive.step_in();
+    }
+    controller.write(1, 5);  // Set track register to match drive
+    CHECK(drive.current_track() == 5);
+
+    // Step-Out without T flag: drive moves, track register unchanged
+    controller.write(0, 0x60);
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 4);
+    CHECK(controller.read(1) == 5);  // Track register unchanged
+
+    // Step-Out with T flag: drive moves, track register decrements
+    controller.write(0, 0x70);
+    run_until_complete(controller);
+    CHECK(drive.current_track() == 3);
+    CHECK(controller.read(1) == 4);  // Decremented from 5 to 4
+}
+
+// Phase 5.9: TRACK0 status bit set when at track 0
+TEST_CASE("WD1770 TRACK0 status bit", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // At track 0, status bit 2 should indicate track 0
+    controller.write(0, 0x00);  // Restore
+    run_until_complete(controller);
+
+    // For Type I commands, bit 2 is TRACK0 (not DRQ)
+    uint8_t status = controller.read(0);
+    CHECK((status & 0x04) != 0);  // TRACK0 flag set
+
+    // Move away from track 0
+    controller.write(3, 5);
+    controller.write(0, 0x10);  // Seek to track 5
+    run_until_complete(controller);
+
+    status = controller.read(0);
+    CHECK((status & 0x04) == 0);  // TRACK0 flag clear
+}
+
+// Phase 5.13: INTRQ asserted on command completion
+TEST_CASE("WD1770 INTRQ on command completion", "[disc][wd1770][type1]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    CHECK_FALSE(controller.intrq());
+
+    // Start Restore
+    controller.write(0, 0x00);
+
+    // Run until complete
+    run_until_complete(controller);
+
+    // INTRQ should be asserted
+    CHECK(controller.intrq());
+
+    // Reading status should clear INTRQ
+    controller.read(0);
+    CHECK_FALSE(controller.intrq());
+}
