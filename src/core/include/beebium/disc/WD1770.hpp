@@ -162,8 +162,8 @@ public:
                 tick_write_sector();
                 break;
             default:
-                // Type III/IV - complete immediately for now
-                complete_command();
+                // Type III commands - use upper nibble for dispatch
+                tick_type3_command();
                 break;
         }
     }
@@ -281,8 +281,19 @@ private:
             // Write Sector
             start_write_sector();
         } else {
-            // Type III commands - complete immediately for now
-            complete_command();
+            // Type III commands need upper nibble check (not 0xE0 mask)
+            // because Write Track (0xF0) would otherwise map to Read Track (0xE0)
+            uint8_t cmd_nibble = cmd & 0xF0;
+            if (cmd_nibble == 0xC0) {
+                // Read Address
+                start_read_address();
+            } else if (cmd_nibble == 0xE0) {
+                // Read Track
+                start_read_track();
+            } else {
+                // Write Track (0xF0)
+                start_write_track();
+            }
         }
     }
 
@@ -493,6 +504,196 @@ private:
         drq_ = true;
     }
 
+    // Type III command tick dispatcher
+    void tick_type3_command() {
+        uint8_t cmd_nibble = current_command_ & 0xF0;
+        if (cmd_nibble == 0xC0) {
+            tick_read_address();
+        } else if (cmd_nibble == 0xE0) {
+            tick_read_track();
+        } else {
+            tick_write_track();
+        }
+    }
+
+    // Type III command implementations
+
+    // Read Address: reads the ID field of the next sector
+    // Returns 6 bytes: Track, Side, Sector, Size, CRC1, CRC2
+    void start_read_address() {
+        DiscDrive* drive = get_current_drive();
+        if (!drive || !drive->has_disc()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Build the ID field for the current sector position
+        // In a real drive, this would read the next ID field encountered
+        // For emulation, we use the current track and simulate sector 0
+        uint8_t current_track = drive->current_track();
+        uint8_t sector_size_code = 1;  // 1 = 256 bytes (standard BBC)
+
+        // Use sector register as the "next" sector encountered
+        // This simulates the head being positioned at that sector
+        uint8_t current_sector = sector_;
+        if (current_sector >= drive->disc()->sectors_per_track()) {
+            current_sector = 0;  // Wrap to sector 0
+        }
+
+        id_field_[0] = current_track;       // Track
+        id_field_[1] = selected_side_;      // Side
+        id_field_[2] = current_sector;      // Sector
+        id_field_[3] = sector_size_code;    // Size (1 = 256 bytes)
+        id_field_[4] = 0x00;                // CRC high (dummy)
+        id_field_[5] = 0x00;                // CRC low (dummy)
+
+        id_field_index_ = 0;
+
+        // Update sector register with the sector number from ID field
+        sector_ = current_sector;
+
+        // Assert DRQ for first byte
+        data_ = id_field_[0];
+        drq_ = true;
+    }
+
+    void tick_read_address() {
+        if (drq_) {
+            return;  // Wait for host to read current byte
+        }
+
+        ++id_field_index_;
+
+        if (id_field_index_ >= 6) {
+            // All 6 bytes transferred
+            complete_command();
+            return;
+        }
+
+        // Provide next byte
+        data_ = id_field_[id_field_index_];
+        drq_ = true;
+    }
+
+    // Read Track: reads an entire track
+    // For sector-based disc images, we concatenate all sectors
+    void start_read_track() {
+        DiscDrive* drive = get_current_drive();
+        if (!drive || !drive->has_disc()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        // Build track data by reading all sectors
+        size_t sectors = drive->disc()->sectors_per_track();
+        size_t sector_size = drive->disc()->sector_size();
+        sector_buffer_.resize(sectors * sector_size);
+
+        std::vector<uint8_t> temp_sector(sector_size);
+        for (size_t s = 0; s < sectors; ++s) {
+            if (drive->read_sector(selected_side_, static_cast<uint8_t>(s), temp_sector)) {
+                std::copy(temp_sector.begin(), temp_sector.end(),
+                         sector_buffer_.begin() + s * sector_size);
+            } else {
+                // Fill with zeros if sector read fails
+                std::fill(sector_buffer_.begin() + s * sector_size,
+                         sector_buffer_.begin() + (s + 1) * sector_size, 0);
+            }
+        }
+
+        byte_counter_ = 0;
+
+        // Assert DRQ for first byte
+        if (!sector_buffer_.empty()) {
+            data_ = sector_buffer_[0];
+            drq_ = true;
+        } else {
+            complete_command();
+        }
+    }
+
+    void tick_read_track() {
+        if (drq_) {
+            return;  // Wait for host to read current byte
+        }
+
+        ++byte_counter_;
+
+        if (byte_counter_ >= sector_buffer_.size()) {
+            complete_command();
+            return;
+        }
+
+        // Provide next byte
+        data_ = sector_buffer_[byte_counter_];
+        drq_ = true;
+    }
+
+    // Write Track: formats/writes an entire track
+    // For sector-based disc images, we receive data and write sectors
+    void start_write_track() {
+        DiscDrive* drive = get_current_drive();
+        if (!drive || !drive->has_disc()) {
+            status_ |= STATUS_RNF;
+            complete_command();
+            return;
+        }
+
+        if (drive->is_write_protected()) {
+            status_ |= STATUS_WRITE_PROT;
+            complete_command();
+            return;
+        }
+
+        // Prepare buffer for track data
+        // In a real WD1770, the track format would be parsed for sync bytes,
+        // address marks, and data fields. For simplicity, we accept raw sector
+        // data and write it to all sectors on the track.
+        size_t sectors = drive->disc()->sectors_per_track();
+        size_t sector_size = drive->disc()->sector_size();
+        sector_buffer_.resize(sectors * sector_size);
+        byte_counter_ = 0;
+
+        // Assert DRQ for first byte
+        drq_ = true;
+    }
+
+    void tick_write_track() {
+        if (drq_) {
+            return;  // Wait for host to write next byte
+        }
+
+        // Store the byte
+        if (byte_counter_ < sector_buffer_.size()) {
+            sector_buffer_[byte_counter_] = data_;
+        }
+        ++byte_counter_;
+
+        if (byte_counter_ >= sector_buffer_.size()) {
+            // All bytes received, write sectors to disc
+            DiscDrive* drive = get_current_drive();
+            if (drive && drive->has_disc()) {
+                size_t sectors = drive->disc()->sectors_per_track();
+                size_t sector_size = drive->disc()->sector_size();
+
+                std::vector<uint8_t> temp_sector(sector_size);
+                for (size_t s = 0; s < sectors; ++s) {
+                    std::copy(sector_buffer_.begin() + s * sector_size,
+                             sector_buffer_.begin() + (s + 1) * sector_size,
+                             temp_sector.begin());
+                    drive->write_sector(selected_side_, static_cast<uint8_t>(s), temp_sector);
+                }
+            }
+            complete_command();
+            return;
+        }
+
+        // Request next byte
+        drq_ = true;
+    }
+
     void complete_command() {
         status_ &= ~STATUS_BUSY;
         intrq_ = true;
@@ -536,9 +737,14 @@ private:
     int step_delay_ = 0;      // Ticks until next step
     int selected_step_rate_ = 6000;  // Selected step rate in ticks
 
-    // Type II command state
+    // Type II/III command state
     std::vector<uint8_t> sector_buffer_;
     size_t byte_counter_ = 0;
+
+    // Type III Read Address state
+    // ID field: Track, Side, Sector, Size, CRC1, CRC2
+    std::array<uint8_t, 6> id_field_{};
+    uint8_t id_field_index_ = 0;
 };
 
 } // namespace beebium

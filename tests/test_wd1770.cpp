@@ -1190,10 +1190,10 @@ TEST_CASE("WD1770 multiple Step-In commands work correctly", "[disc][wd1770][edg
 }
 
 // ============================================================================
-// Phase 6: Type III Command Stubs (Not Yet Implemented)
+// Phase 6: Type III Commands (Read Address, Read Track, Write Track)
 // ============================================================================
 
-TEST_CASE("WD1770 Read Address sets BUSY", "[disc][wd1770][type3][!mayfail]") {
+TEST_CASE("WD1770 Read Address sets BUSY and DRQ", "[disc][wd1770][type3]") {
     WD1770 controller;
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
@@ -1204,14 +1204,90 @@ TEST_CASE("WD1770 Read Address sets BUSY", "[disc][wd1770][type3][!mayfail]") {
     // Read Address (0xC0)
     controller.write(0, 0xC0);
     CHECK(controller.busy());
-    run_until_complete(controller);
-
-    // Note: Full implementation would read ID field:
-    // Track, Side, Sector, Size, CRC1, CRC2
-    // For now, just verify command is accepted
+    CHECK(controller.drq());  // First byte ready immediately
 }
 
-TEST_CASE("WD1770 Read Track sets BUSY", "[disc][wd1770][type3][!mayfail]") {
+TEST_CASE("WD1770 Read Address returns 6-byte ID field", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(0);
+
+    // Set sector register to 5
+    controller.write(2, 5);
+
+    // Read Address (0xC0)
+    controller.write(0, 0xC0);
+
+    // Read all 6 bytes of ID field
+    std::vector<uint8_t> id_field;
+    for (int i = 0; i < 6; ++i) {
+        // Wait for DRQ
+        while (!controller.drq() && controller.busy()) {
+            controller.tick();
+        }
+        if (!controller.drq()) break;
+        id_field.push_back(controller.read(3));
+        controller.tick();
+    }
+
+    run_until_complete(controller);
+
+    REQUIRE(id_field.size() == 6);
+    CHECK(id_field[0] == 0);    // Track (at track 0)
+    CHECK(id_field[1] == 0);    // Side (side 0)
+    CHECK(id_field[2] == 5);    // Sector (from sector register)
+    CHECK(id_field[3] == 1);    // Size code (1 = 256 bytes)
+    // id_field[4] and [5] are CRC bytes
+
+    // Sector register should be updated
+    CHECK(controller.read(2) == 5);
+}
+
+TEST_CASE("WD1770 Read Address updates sector register", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Set sector register to 3
+    controller.write(2, 3);
+
+    // Read Address
+    controller.write(0, 0xC0);
+
+    // Read all 6 bytes
+    for (int i = 0; i < 6; ++i) {
+        while (!controller.drq() && controller.busy()) {
+            controller.tick();
+        }
+        if (controller.drq()) controller.read(3);
+        controller.tick();
+    }
+    run_until_complete(controller);
+
+    // Sector register should contain sector from ID field
+    CHECK(controller.read(2) == 3);
+}
+
+TEST_CASE("WD1770 Read Address with no disc sets RNF", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;  // Empty drive
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    controller.write(0, 0xC0);
+    run_until_complete(controller);
+
+    CHECK((controller.read(0) & WD1770::STATUS_RNF) != 0);
+}
+
+TEST_CASE("WD1770 Read Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
     WD1770 controller;
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
@@ -1222,12 +1298,64 @@ TEST_CASE("WD1770 Read Track sets BUSY", "[disc][wd1770][type3][!mayfail]") {
     // Read Track (0xE0)
     controller.write(0, 0xE0);
     CHECK(controller.busy());
-    run_until_complete(controller);
-
-    // Note: Full implementation would read entire track contents
+    CHECK(controller.drq());  // First byte ready immediately
 }
 
-TEST_CASE("WD1770 Write Track sets BUSY", "[disc][wd1770][type3][!mayfail]") {
+TEST_CASE("WD1770 Read Track returns all sectors", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc_ptr = MemoryDiscImage::create_ssd();
+    auto* disc = disc_ptr.get();
+
+    // Write known pattern to sectors 0-2
+    std::vector<uint8_t> sector0(256, 0xAA);
+    std::vector<uint8_t> sector1(256, 0xBB);
+    std::vector<uint8_t> sector2(256, 0xCC);
+    disc->write_sector(0, 0, 0, sector0);
+    disc->write_sector(0, 0, 1, sector1);
+    disc->write_sector(0, 0, 2, sector2);
+
+    drive.insert(std::move(disc_ptr));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(0);
+
+    // Read Track
+    controller.write(0, 0xE0);
+
+    // Read track data (10 sectors * 256 bytes = 2560 bytes for SSD)
+    std::vector<uint8_t> track_data;
+    while (controller.busy()) {
+        if (controller.drq()) {
+            track_data.push_back(controller.read(3));
+        }
+        controller.tick();
+    }
+
+    // SSD has 10 sectors per track
+    REQUIRE(track_data.size() == 10 * 256);
+
+    // Verify first three sectors have our pattern
+    for (int i = 0; i < 256; ++i) {
+        CHECK(track_data[i] == 0xAA);
+        CHECK(track_data[256 + i] == 0xBB);
+        CHECK(track_data[512 + i] == 0xCC);
+    }
+}
+
+TEST_CASE("WD1770 Read Track with no disc sets RNF", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;  // Empty drive
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    controller.write(0, 0xE0);
+    run_until_complete(controller);
+
+    CHECK((controller.read(0) & WD1770::STATUS_RNF) != 0);
+}
+
+TEST_CASE("WD1770 Write Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
     WD1770 controller;
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
@@ -1238,7 +1366,128 @@ TEST_CASE("WD1770 Write Track sets BUSY", "[disc][wd1770][type3][!mayfail]") {
     // Write Track (0xF0)
     controller.write(0, 0xF0);
     CHECK(controller.busy());
+    CHECK(controller.drq());  // Ready for first byte
+}
+
+TEST_CASE("WD1770 Write Track writes all sectors", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc_ptr = MemoryDiscImage::create_ssd();
+    auto* disc = disc_ptr.get();
+    drive.insert(std::move(disc_ptr));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(0);
+
+    // Write Track
+    controller.write(0, 0xF0);
+
+    // Write track data: 10 sectors with pattern
+    size_t total_bytes = 10 * 256;
+    for (size_t i = 0; i < total_bytes; ++i) {
+        while (!controller.drq() && controller.busy()) {
+            controller.tick();
+        }
+        if (!controller.drq()) break;
+        // Pattern: sector number in each byte of that sector
+        uint8_t sector_num = static_cast<uint8_t>(i / 256);
+        controller.write(3, sector_num);
+        controller.tick();
+    }
     run_until_complete(controller);
 
-    // Note: Full implementation would format the track
+    // Verify sectors were written
+    std::vector<uint8_t> read_back(256);
+    for (int s = 0; s < 10; ++s) {
+        disc->read_sector(0, 0, s, read_back);
+        for (int b = 0; b < 256; ++b) {
+            CHECK(read_back[b] == s);
+        }
+    }
+}
+
+TEST_CASE("WD1770 Write Track on protected disc sets WRITE_PROT", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    disc->set_write_protected(true);
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    controller.write(0, 0xF0);
+    run_until_complete(controller);
+
+    CHECK((controller.read(0) & WD1770::STATUS_WRITE_PROT) != 0);
+}
+
+TEST_CASE("WD1770 Write Track with no disc sets RNF", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;  // Empty drive
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    controller.write(0, 0xF0);
+    run_until_complete(controller);
+
+    CHECK((controller.read(0) & WD1770::STATUS_RNF) != 0);
+}
+
+TEST_CASE("WD1770 Read Address reflects current track", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_ssd();
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+
+    // Seek to track 15
+    controller.write(1, 0);   // Track register = 0
+    controller.write(3, 15);  // Data register = 15
+    controller.write(0, 0x10);  // Seek
+    run_until_complete(controller);
+
+    CHECK(drive.current_track() == 15);
+
+    // Read Address
+    controller.write(2, 0);  // Sector = 0
+    controller.write(0, 0xC0);
+
+    // Read first byte (track number)
+    while (!controller.drq() && controller.busy()) {
+        controller.tick();
+    }
+    uint8_t track_from_id = controller.read(3);
+    run_until_complete(controller);
+
+    CHECK(track_from_id == 15);
+}
+
+TEST_CASE("WD1770 Read Address reflects current side", "[disc][wd1770][type3]") {
+    WD1770 controller;
+    DiscDrive drive;
+    auto disc = MemoryDiscImage::create_dsd();  // Double-sided
+    drive.insert(std::move(disc));
+    controller.attach_drive(0, &drive);
+    controller.set_drive(0);
+    controller.set_side(1);  // Select side 1
+
+    controller.write(2, 0);  // Sector = 0
+    controller.write(0, 0xC0);  // Read Address
+
+    // Read first two bytes (track, side)
+    std::vector<uint8_t> id;
+    for (int i = 0; i < 2; ++i) {
+        while (!controller.drq() && controller.busy()) {
+            controller.tick();
+        }
+        if (controller.drq()) {
+            id.push_back(controller.read(3));
+        }
+        controller.tick();
+    }
+    run_until_complete(controller);
+
+    REQUIRE(id.size() >= 2);
+    CHECK(id[1] == 1);  // Side should be 1
 }
