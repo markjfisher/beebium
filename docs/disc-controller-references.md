@@ -54,11 +54,18 @@ Useful reference for understanding INTRQ, DRQ, and command timing.
 
 ## Implementation Notes
 
-### Current Status (Phase 6 Complete)
-- WD1770 Type I commands (positioning) implemented
-- WD1770 Type II commands (read/write sector) implemented
-- DRQ/INTRQ signals implemented
-- Basic timing with step delays
+### Current Status (Phase 9 Complete)
+- DiscGeometry for SSD/DSD format detection
+- DiscImage abstraction with FileDiscImage and MemoryDiscImage implementations
+- DiscDrive physical drive emulation (head positioning, motor control)
+- WD1770 Type I commands (Restore, Seek, Step, Step-In, Step-Out)
+- WD1770 Type II commands (Read Sector, Write Sector)
+- DRQ/INTRQ signals with proper status register behavior
+- NMI infrastructure in Machine class
+- Model B+ integration with disc control register at 0xFE80:
+  - Drive select, side select, density, motor control
+  - Reset and NMI enable/disable gating
+- Full integration tests for sector read/write
 
 ### Areas for Future Refinement (from MAME reference)
 - [ ] More accurate motor spin-up timing
@@ -68,3 +75,4 @@ Useful reference for understanding INTRQ, DRQ, and command timing.
 - [ ] Lost data detection with proper timing
 - [ ] Type III commands (Read Address, Read/Write Track)
 - [ ] Detailed format track support
+- [ ] Intel 8271 controller for Model B

@@ -76,6 +76,11 @@ add_executable(test_nmi_aggregator test_nmi_aggregator.cpp)
 target_link_libraries(test_nmi_aggregator PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_nmi_aggregator)
 
+# Disc controller integration tests
+add_executable(test_disc_integration test_disc_integration.cpp)
+target_link_libraries(test_disc_integration PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_integration)
+
 # Tests requiring ROM files
 set(BEEBIUM_ROM_DIR "${CMAKE_SOURCE_DIR}/roms" CACHE PATH "Directory containing BBC Micro ROMs")
 

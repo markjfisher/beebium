@@ -413,7 +413,13 @@ public:
     // NMI is only generated when both:
     // - The WD1770 INTRQ line is asserted
     // - NMI is enabled via bit 6 of the disc control register
+    //
+    // Note: This also ticks the disc controller as this method is called
+    // once per cycle from Machine::step().
     uint8_t poll_nmi() {
+        // Tick the disc controller (1MHz peripheral clock)
+        disc_controller.tick();
+
         if (nmi_enabled_ && disc_controller.nmi_pending()) {
             return 0x01;  // Bit 0: disc controller NMI
         }
