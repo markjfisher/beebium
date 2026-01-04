@@ -15,18 +15,20 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
-#include "beebium/disc/FileDiscImage.hpp"
+#include "beebium/disc/DiscLoader.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/RomPaths.hpp"
 
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <string>
-#include <map>
+#include <array>
+#include <atomic>
+#include <cctype>
 #include <csignal>
 #include <cstdlib>
-#include <atomic>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace beebium::server {
 
@@ -75,6 +77,34 @@ std::pair<uint8_t, std::string> parse_rom_arg(const std::string& arg) {
     return {static_cast<uint8_t>(slot), filepath};
 }
 
+// Parse "drive:url" format for floppy drives, returns (drive, url_or_filepath)
+// Note: URL can contain colons, so we only split on the first colon if followed by a digit
+std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
+    // Check if first character is a digit (drive number)
+    if (arg.empty() || !std::isdigit(arg[0])) {
+        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:url)");
+    }
+
+    auto colon_pos = arg.find(':');
+    if (colon_pos == std::string::npos) {
+        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:url)");
+    }
+
+    std::string drive_str = arg.substr(0, colon_pos);
+    std::string url_or_filepath = arg.substr(colon_pos + 1);
+
+    int drive = std::stoi(drive_str);
+    if (drive < 0 || drive > 1) {
+        throw std::runtime_error("Invalid floppy drive number: " + drive_str + " (must be 0 or 1)");
+    }
+
+    if (url_or_filepath.empty()) {
+        throw std::runtime_error("Invalid --floppy format: " + arg + " (URL or filepath required)");
+    }
+
+    return {static_cast<uint8_t>(drive), url_or_filepath};
+}
+
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
@@ -93,8 +123,8 @@ void print_usage(const char* program_name) {
               << "  --rom <slot>:            Leave slot empty (overrides default)\n"
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
-              << "  --drive0 <filepath>      Disc image for drive 0 (.ssd or .dsd)\n"
-              << "  --drive1 <filepath>      Disc image for drive 1 (.ssd or .dsd)\n"
+              << "  --floppy <drive>:<url>   Load disc image into floppy drive (0 or 1)\n"
+              << "                           Accepts file:// URLs or bare filepaths\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -111,7 +141,8 @@ void print_usage(const char* program_name) {
     std::cerr << "\n"
               << "Examples:\n"
               << "  " << program_name << "                           # Use all defaults\n"
-              << "  " << program_name << " --rom 15:forth.rom        # Replace BASIC with Forth\n";
+              << "  " << program_name << " --rom 15:forth.rom        # Replace BASIC with Forth\n"
+              << "  " << program_name << " --floppy 0:game.ssd       # Load disc image in floppy 0\n";
 
     if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
         std::cerr << "  " << program_name << " --rom 11:              # No DFS (leave slot 11 empty)\n";
@@ -149,8 +180,7 @@ int server_main(int argc, char* argv[]) {
     std::string rom_dirpath;
     std::map<uint8_t, std::string> rom_slots;  // slot -> filepath
     uint16_t port = DEFAULT_GRPC_PORT;
-    std::string drive0_filepath;
-    std::string drive1_filepath;
+    std::array<std::string, 2> floppy_filepaths;  // drive 0 and 1
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -172,10 +202,9 @@ int server_main(int argc, char* argv[]) {
             rom_dirpath = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             port = static_cast<uint16_t>(std::stoi(argv[++i]));
-        } else if (arg == "--drive0" && i + 1 < argc) {
-            drive0_filepath = argv[++i];
-        } else if (arg == "--drive1" && i + 1 < argc) {
-            drive1_filepath = argv[++i];
+        } else if (arg == "--floppy" && i + 1 < argc) {
+            auto [drive, filepath] = parse_floppy_arg(argv[++i]);
+            floppy_filepaths[drive] = filepath;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -317,22 +346,28 @@ int server_main(int argc, char* argv[]) {
 
         // Load disc images (Model B+ only)
         if constexpr (requires { machine.state().memory.disc_drive_0; }) {
-            if (!drive0_filepath.empty()) {
-                std::cout << "Loading disc into drive 0: " << drive0_filepath << "\n";
-                auto disc = FileDiscImage::load(drive0_filepath);
-                if (disc->is_write_protected()) {
+            if (!floppy_filepaths[0].empty()) {
+                std::cout << "Loading disc into floppy 0: " << floppy_filepaths[0] << "\n";
+                auto result = load_disc_from_url_or_filepath(floppy_filepaths[0]);
+                if (!result) {
+                    throw std::runtime_error("Failed to load disc: " + result.error);
+                }
+                if (result.image->is_write_protected()) {
                     std::cout << "  (write-protected)\n";
                 }
-                machine.state().memory.disc_drive_0.insert(std::move(disc));
+                machine.state().memory.disc_drive_0.insert(std::move(result.image), floppy_filepaths[0]);
             }
 
-            if (!drive1_filepath.empty()) {
-                std::cout << "Loading disc into drive 1: " << drive1_filepath << "\n";
-                auto disc = FileDiscImage::load(drive1_filepath);
-                if (disc->is_write_protected()) {
+            if (!floppy_filepaths[1].empty()) {
+                std::cout << "Loading disc into floppy 1: " << floppy_filepaths[1] << "\n";
+                auto result = load_disc_from_url_or_filepath(floppy_filepaths[1]);
+                if (!result) {
+                    throw std::runtime_error("Failed to load disc: " + result.error);
+                }
+                if (result.image->is_write_protected()) {
                     std::cout << "  (write-protected)\n";
                 }
-                machine.state().memory.disc_drive_1.insert(std::move(disc));
+                machine.state().memory.disc_drive_1.insert(std::move(result.image), floppy_filepaths[1]);
             }
         }
 

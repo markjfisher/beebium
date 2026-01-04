@@ -16,6 +16,7 @@
 #include "beebium/service/VideoService.hpp"
 #include "beebium/service/KeyboardService.hpp"
 #include "beebium/service/DebuggerService.hpp"
+#include "beebium/service/DiscService.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
 
@@ -71,6 +72,7 @@ private:
         std::unique_ptr<KeyboardServiceImpl> keyboard_service;
         std::unique_ptr<DebuggerControlServiceImpl<MachineType>> debugger_control_service;
         std::unique_ptr<Debugger6502ServiceImpl<MachineType>> debugger_6502_service;
+        std::unique_ptr<DiscServiceImpl<MachineType>> disc_service;
         std::unique_ptr<grpc::Server> grpc_server;
 
         std::atomic<bool> running{false};
@@ -132,6 +134,9 @@ void Server<MachineType>::start() {
     impl_->debugger_6502_service = std::make_unique<Debugger6502ServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->disc_service = std::make_unique<DiscServiceImpl<MachineType>>(
+        impl_->machine);
+
     // Build server address
     std::ostringstream addr_stream;
     addr_stream << impl_->address << ":" << impl_->port;
@@ -144,6 +149,7 @@ void Server<MachineType>::start() {
     builder.RegisterService(impl_->keyboard_service.get());
     builder.RegisterService(impl_->debugger_control_service.get());
     builder.RegisterService(impl_->debugger_6502_service.get());
+    builder.RegisterService(impl_->disc_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
     impl_->running = true;
@@ -174,6 +180,7 @@ void Server<MachineType>::stop() {
     impl_->keyboard_service.reset();
     impl_->debugger_control_service.reset();
     impl_->debugger_6502_service.reset();
+    impl_->disc_service.reset();
 }
 
 template<typename MachineType>

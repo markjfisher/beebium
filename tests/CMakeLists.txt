@@ -232,4 +232,16 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
     )
     catch_discover_tests(test_grpc_debugger)
+
+    # Disc service tests
+    add_executable(test_grpc_disc test_grpc_disc.cpp)
+    target_link_libraries(test_grpc_disc PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_disc PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+        BEEBIUM_DISCS_DIR="${BEEBIUM_DISCS_DIR}"
+    )
+    catch_discover_tests(test_grpc_disc)
 endif()
