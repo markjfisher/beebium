@@ -89,6 +89,8 @@ public:
     static constexpr std::string_view DEFAULT_MOS_ROM = "acorn-mos_2_0.rom";
     static constexpr std::string_view DEFAULT_LANGUAGE_ROM = "bbc-basic_2.rom";
     static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;
+    static constexpr std::string_view DEFAULT_DFS_ROM = "acorn-dfs_2_26.rom";
+    static constexpr uint8_t DEFAULT_DFS_SLOT = 11;
 
     // Default pacing configuration for this machine
     static constexpr PacingConfig default_pacing_config() {

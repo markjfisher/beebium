@@ -58,10 +58,11 @@ std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
 }
 
 // Parse "slot:filepath" format, returns (slot, filepath)
+// Empty filepath (e.g., "11:") means explicitly leave slot empty
 std::pair<uint8_t, std::string> parse_rom_arg(const std::string& arg) {
     auto colon_pos = arg.find(':');
     if (colon_pos == std::string::npos) {
-        throw std::runtime_error("Invalid --rom format: " + arg + " (expected slot:filepath)");
+        throw std::runtime_error("Invalid --rom format: " + arg + " (expected slot:filepath or slot: for empty)");
     }
     std::string slot_str = arg.substr(0, colon_pos);
     std::string filepath = arg.substr(colon_pos + 1);
@@ -73,6 +74,9 @@ std::pair<uint8_t, std::string> parse_rom_arg(const std::string& arg) {
 
     return {static_cast<uint8_t>(slot), filepath};
 }
+
+// Sentinel value to mark a slot as explicitly empty
+constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
 } // anonymous namespace
 
@@ -86,6 +90,7 @@ void print_usage(const char* program_name) {
               << "Optional:\n"
               << "  --mos <filepath>         MOS ROM filepath (default: " << Memory::DEFAULT_MOS_ROM << ")\n"
               << "  --rom <slot>:<filepath>  Load ROM into sideways slot (0-15)\n"
+              << "  --rom <slot>:            Leave slot empty (overrides default)\n"
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
               << "  --drive0 <filepath>      Disc image for drive 0 (.ssd or .dsd)\n"
@@ -95,12 +100,22 @@ void print_usage(const char* program_name) {
               << "\n"
               << "Default sideways ROMs:\n"
               << "  Slot " << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT) << ": "
-              << Memory::DEFAULT_LANGUAGE_ROM << " (language ROM)\n"
-              << "\n"
+              << Memory::DEFAULT_LANGUAGE_ROM << " (language ROM)\n";
+
+    // Show DFS default if machine has it
+    if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+        std::cerr << "  Slot " << static_cast<int>(Memory::DEFAULT_DFS_SLOT) << ": "
+                  << Memory::DEFAULT_DFS_ROM << " (disc filing system)\n";
+    }
+
+    std::cerr << "\n"
               << "Examples:\n"
               << "  " << program_name << "                           # Use all defaults\n"
-              << "  " << program_name << " --rom 15:forth.rom        # Replace BASIC with Forth\n"
-              << "  " << program_name << " --rom 14:dfs.rom          # Add DFS in slot 14\n";
+              << "  " << program_name << " --rom 15:forth.rom        # Replace BASIC with Forth\n";
+
+    if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+        std::cerr << "  " << program_name << " --rom 11:              # No DFS (leave slot 11 empty)\n";
+    }
 }
 
 template<typename MachineType>
@@ -115,8 +130,15 @@ void print_info(const char* program_name) {
               << "  \"version\": \"" << BEEBIUM_VERSION << "\",\n"
               << "  \"default_mos_rom\": \"" << Memory::DEFAULT_MOS_ROM << "\",\n"
               << "  \"default_language_rom\": \"" << Memory::DEFAULT_LANGUAGE_ROM << "\",\n"
-              << "  \"default_language_slot\": " << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT) << "\n"
-              << "}\n";
+              << "  \"default_language_slot\": " << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT);
+
+    if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+        std::cout << ",\n"
+                  << "  \"default_dfs_rom\": \"" << Memory::DEFAULT_DFS_ROM << "\",\n"
+                  << "  \"default_dfs_slot\": " << static_cast<int>(Memory::DEFAULT_DFS_SLOT);
+    }
+
+    std::cout << "\n}\n";
 }
 
 template<typename MachineType>
@@ -144,7 +166,8 @@ int server_main(int argc, char* argv[]) {
             mos_filepath = argv[++i];
         } else if (arg == "--rom" && i + 1 < argc) {
             auto [slot, filepath] = parse_rom_arg(argv[++i]);
-            rom_slots[slot] = filepath;
+            // Empty filepath means explicitly leave slot empty (override default)
+            rom_slots[slot] = filepath.empty() ? EMPTY_SLOT_MARKER : filepath;
         } else if (arg == "--rom-dir" && i + 1 < argc) {
             rom_dirpath = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
@@ -180,6 +203,13 @@ int server_main(int argc, char* argv[]) {
             rom_slots[Memory::DEFAULT_LANGUAGE_SLOT] = std::string(Memory::DEFAULT_LANGUAGE_ROM);
         }
 
+        // Load default DFS ROM if machine has one and slot not overridden
+        if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+            if (rom_slots.find(Memory::DEFAULT_DFS_SLOT) == rom_slots.end()) {
+                rom_slots[Memory::DEFAULT_DFS_SLOT] = std::string(Memory::DEFAULT_DFS_ROM);
+            }
+        }
+
         // Load MOS ROM
         auto mos_path = RomPaths::find_rom(mos_filepath);
         std::cout << "Loading MOS ROM: " << mos_path << "\n";
@@ -199,6 +229,12 @@ int server_main(int argc, char* argv[]) {
 
         // Load sideways ROMs
         for (const auto& [slot, filepath] : rom_slots) {
+            // Skip slots explicitly marked as empty
+            if (filepath == EMPTY_SLOT_MARKER) {
+                std::cout << "Slot " << static_cast<int>(slot) << ": empty (no ROM loaded)\n";
+                continue;
+            }
+
             auto rom_path = RomPaths::find_rom(filepath);
             std::cout << "Loading ROM into slot " << static_cast<int>(slot) << ": " << rom_path << "\n";
             auto rom_data = load_file(rom_path);
