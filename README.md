@@ -152,3 +152,10 @@ Beebium is licensed under the [GNU General Public License v3.0](COPYING.txt).
 
 - **Tom Seddon** - The 6502 library is ported from [B2](https://github.com/tom-seddon/b2), Tom's excellent BBC Micro emulator
 - The BBC Micro community at [Stardot](https://stardot.org.uk/)
+
+## Third-Party Libraries
+
+- **moodycamel::ReaderWriterQueue** - Lock-free single-producer, single-consumer queue
+  - Copyright (c) 2013-2021, Cameron Desrochers
+  - Simplified BSD License
+  - https://github.com/cameron314/readerwriterqueue
