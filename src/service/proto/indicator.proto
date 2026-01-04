@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package beebium;
+
+// Hardware indicator state service.
+//
+// Exposes observable hardware state (LEDs, motor activity) to frontends.
+// Indicators are identified by string names (e.g., "caps-lock-led",
+// "floppy-0-activity-led") and have configurable filtering (debounce,
+// duty-cycle averaging) applied server-side.
+service IndicatorService {
+    // Get current values of all indicators.
+    // Supports conditional fetch via if_changed_since for efficient polling.
+    rpc GetIndicators(GetIndicatorsRequest) returns (GetIndicatorsResponse);
+
+    // List all registered indicators with their metadata.
+    rpc ListIndicators(ListIndicatorsRequest) returns (ListIndicatorsResponse);
+
+    // Stream indicator value changes in real-time.
+    rpc Subscribe(SubscribeIndicatorsRequest) returns (stream IndicatorUpdate);
+}
+
+// --- Get Indicators ---
+
+message GetIndicatorsRequest {
+    // Optional: only return values if sequence has changed since this value.
+    // If current sequence equals if_changed_since, returns empty values map
+    // with changed=false to indicate no update needed.
+    uint64 if_changed_since = 1;
+}
+
+message GetIndicatorsResponse {
+    // Current indicator values (name -> value, 0-255).
+    // Empty if if_changed_since matched current sequence.
+    map<string, uint32> values = 1;
+
+    // Current sequence number (increments on any value change).
+    uint64 sequence = 2;
+
+    // True if values were returned, false if sequence matched if_changed_since.
+    bool changed = 3;
+}
+
+// --- List Indicators ---
+
+message ListIndicatorsRequest {
+    // Empty - returns all registered indicators
+}
+
+message ListIndicatorsResponse {
+    repeated IndicatorInfo indicators = 1;
+}
+
+message IndicatorInfo {
+    // Unique indicator name (e.g., "caps-lock-led")
+    string name = 1;
+
+    // Metadata for frontend rendering (e.g., {"label": "CAPS LOCK", "color": "470nm"})
+    map<string, string> metadata = 2;
+}
+
+// --- Subscribe ---
+
+message SubscribeIndicatorsRequest {
+    // Optional: filter to specific indicators (empty = all)
+    repeated string names = 1;
+
+    // Optional: minimum interval between updates in milliseconds (default: 20)
+    uint32 min_interval_ms = 2;
+}
+
+message IndicatorUpdate {
+    // Changed indicator values since last update
+    map<string, uint32> values = 1;
+
+    // Current sequence number
+    uint64 sequence = 2;
+}
