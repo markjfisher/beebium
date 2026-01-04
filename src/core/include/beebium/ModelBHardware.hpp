@@ -29,6 +29,8 @@
 #include "devices/Ram.hpp"
 #include "devices/Rom.hpp"
 #include "devices/VideoUla.hpp"
+#include "indicators/IndicatorFilter.hpp"
+#include "indicators/Indicators.hpp"
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -128,9 +130,12 @@ public:
     // Call enable_video_output() to activate
     std::optional<OutputQueue<PixelBatch>> video_output;
 
+    // Hardware indicators (LEDs) - must be declared before SystemViaPeripheral
+    Indicators indicators;
+
     // System VIA peripherals
     AddressableLatch addressable_latch;
-    SystemViaPeripheral system_via_peripheral{addressable_latch};
+    SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
 
     // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
     struct RomselRegister {
@@ -167,6 +172,8 @@ public:
     {
         // Connect internal peripheral to system VIA
         system_via.set_peripheral(&system_via_peripheral);
+        // Start the indicators consumer thread
+        indicators.start();
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -175,7 +182,14 @@ public:
         , user_via(user_peripheral)
         , memory_map_(make_memory_map())
         , irq_aggregator_(make_irq_aggregator())
-    {}
+    {
+        // Note: indicators registered by SystemViaPeripheral but custom peripheral used
+    }
+
+    // Destructor - stops indicator consumer thread
+    ~ModelBHardware() {
+        indicators.stop();
+    }
 
     // MemoryMappedDevice interface (delegates to memory_map)
     uint8_t read(uint16_t addr) {

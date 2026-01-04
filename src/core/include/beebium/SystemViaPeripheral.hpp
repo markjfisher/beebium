@@ -15,7 +15,11 @@
 #include "AddressableLatch.hpp"
 #include "KeyboardMatrix.hpp"
 #include "Via6522.hpp"
+#include "indicators/IndicatorFilter.hpp"
+#include "indicators/Indicators.hpp"
+#include <chrono>
 #include <cstdint>
+#include <memory>
 
 namespace beebium {
 
@@ -37,10 +41,21 @@ namespace beebium {
 //
 class SystemViaPeripheral : public ViaPeripheral {
 public:
-    SystemViaPeripheral(AddressableLatch& latch, KeyboardMatrix& keyboard)
-        : latch_(latch), keyboard_(keyboard) {}
+    // Full constructor with indicators and external keyboard
+    SystemViaPeripheral(AddressableLatch& latch, Indicators& indicators, KeyboardMatrix& keyboard)
+        : latch_(latch), keyboard_(keyboard), indicators_(&indicators)
+    {
+        register_indicators();
+    }
 
-    // Legacy constructor for backward compatibility (uses internal keyboard)
+    // Constructor with indicators, using internal keyboard
+    SystemViaPeripheral(AddressableLatch& latch, Indicators& indicators)
+        : latch_(latch), keyboard_(internal_keyboard_), indicators_(&indicators)
+    {
+        register_indicators();
+    }
+
+    // Legacy constructor for backward compatibility (no indicators, uses internal keyboard)
     explicit SystemViaPeripheral(AddressableLatch& latch)
         : latch_(latch), keyboard_(internal_keyboard_) {}
 
@@ -87,7 +102,23 @@ public:
         // Bit 3: Latch data value
         uint8_t latch_addr = output & 0x07;
         bool latch_data = (output & 0x08) != 0;
+
+        // Save old latch value to detect LED changes
+        uint8_t old_value = latch_.value;
         latch_.write(latch_addr, latch_data);
+        uint8_t new_value = latch_.value;
+
+        // Push indicator updates if LEDs changed
+        if (indicators_ && ((old_value ^ new_value) & 0xC0)) {
+            if ((old_value ^ new_value) & AddressableLatch::CAPS_LOCK_LED) {
+                indicators_->set(caps_lock_led_id_,
+                    (new_value & AddressableLatch::CAPS_LOCK_LED) ? 255 : 0);
+            }
+            if ((old_value ^ new_value) & AddressableLatch::SHIFT_LOCK_LED) {
+                indicators_->set(shift_lock_led_id_,
+                    (new_value & AddressableLatch::SHIFT_LOCK_LED) ? 255 : 0);
+            }
+        }
 
         // Port B input bits:
         // Bit 4: Joystick 0 fire (active low) - return 1 = not pressed
@@ -181,7 +212,27 @@ public:
     const AddressableLatch& latch() const { return latch_; }
     uint8_t keyboard_column() const { return auto_scan_column_; }
 
+    // Indicator ID accessors (valid only if constructed with Indicators)
+    uint16_t caps_lock_led_id() const { return caps_lock_led_id_; }
+    uint16_t shift_lock_led_id() const { return shift_lock_led_id_; }
+
 private:
+    void register_indicators() {
+        using namespace std::chrono_literals;
+
+        caps_lock_led_id_ = indicators_->register_indicator(
+            "caps-lock-led",
+            std::make_unique<DutyCycleFilter>(10ms),
+            {{"label", "CAPS LOCK"}, {"color", "470nm"}, {"shape", "domed"}}
+        );
+
+        shift_lock_led_id_ = indicators_->register_indicator(
+            "shift-lock-led",
+            std::make_unique<DutyCycleFilter>(10ms),
+            {{"label", "SHIFT LOCK"}, {"color", "470nm"}, {"shape", "domed"}}
+        );
+    }
+
     AddressableLatch& latch_;
     KeyboardMatrix& keyboard_;
     KeyboardMatrix internal_keyboard_;  // Used when no external keyboard provided
@@ -189,6 +240,11 @@ private:
     uint8_t port_a_output_ = 0;     // Last Port A output (key number for manual scan)
     uint8_t auto_scan_column_ = 0;  // Hardware auto-scan column counter (0-15)
     bool vsync_ = false;
+
+    // Indicator integration (optional)
+    Indicators* indicators_ = nullptr;
+    uint16_t caps_lock_led_id_ = 0;
+    uint16_t shift_lock_led_id_ = 0;
 };
 
 } // namespace beebium

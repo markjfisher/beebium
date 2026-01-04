@@ -32,6 +32,8 @@
 #include "devices/VideoUla.hpp"
 #include "disc/DiscDrive.hpp"
 #include "disc/WD1770.hpp"
+#include "indicators/IndicatorFilter.hpp"
+#include "indicators/Indicators.hpp"
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -162,11 +164,6 @@ public:
     Via6522 system_via;
     Via6522 user_via;
 
-    // Disc controller (WD1770 built-in on Model B+)
-    WD1770 disc_controller;
-    DiscDrive disc_drive_0;
-    DiscDrive disc_drive_1;
-
     // IRQ aggregator type - polls VIAs for IRQ status
     using IrqAggregatorType = IrqAggregator<
         IrqBinding<Via6522, 0>,  // System VIA → bit 0
@@ -181,9 +178,17 @@ public:
     // Video output queue (optional - only created if video output is enabled)
     std::optional<OutputQueue<PixelBatch>> video_output;
 
-    // System VIA peripherals
+    // Hardware indicators (LEDs, motors) - must be declared before components that use them
+    Indicators indicators;
+
+    // System VIA peripherals (registers its own LED indicators)
     AddressableLatch addressable_latch;
-    SystemViaPeripheral system_via_peripheral{addressable_latch};
+    SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
+
+    // Disc controller (WD1770 built-in on Model B+)
+    WD1770 disc_controller;
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Drive 0"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Drive 1"};
 
 private:
     // B+ specific paging registers
@@ -305,6 +310,8 @@ public:
         // Connect disc drives to disc controller
         disc_controller.attach_drive(0, &disc_drive_0);
         disc_controller.attach_drive(1, &disc_drive_1);
+        // Start the indicators consumer thread
+        indicators.start();
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -317,6 +324,12 @@ public:
         // Connect disc drives to disc controller
         disc_controller.attach_drive(0, &disc_drive_0);
         disc_controller.attach_drive(1, &disc_drive_1);
+        // Note: indicators registered by components but custom VIA peripheral used
+    }
+
+    // Destructor - stops indicator consumer thread
+    ~ModelBPlusHardware() {
+        indicators.stop();
     }
 
     // MemoryMappedDevice interface with B+ paging logic

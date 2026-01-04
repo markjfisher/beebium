@@ -13,6 +13,8 @@
 #pragma once
 
 #include "DiscImage.hpp"
+#include "beebium/indicators/IndicatorFilter.hpp"
+#include "beebium/indicators/Indicators.hpp"
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -60,7 +62,23 @@ public:
 
     using clock = std::chrono::steady_clock;
 
+    // Default constructor (no indicators)
     DiscDrive() = default;
+
+    // Constructor with indicator integration
+    // @param indicators Pointer to Indicators instance
+    // @param indicator_name Name for the activity LED (e.g., "floppy-0-activity-led")
+    // @param label Human-readable label (e.g., "Drive 0")
+    DiscDrive(Indicators& indicators, const std::string& indicator_name, const std::string& label)
+        : indicators_(&indicators)
+    {
+        activity_led_id_ = indicators_->register_indicator(
+            indicator_name,
+            std::make_unique<PassthroughFilter>(),
+            {{"label", label}, {"color", "590nm"}, {"shape", "rectangular"}}
+        );
+    }
+
     ~DiscDrive() = default;
 
     // Non-copyable, movable
@@ -189,14 +207,25 @@ public:
     // --- Motor control ---
 
     void set_motor(bool on) {
-        if (motor_on_ && !on) {
-            // Motor turning off - record time for quiescence tracking
-            motor_off_since_ = clock::now();
+        if (motor_on_ != on) {
+            if (motor_on_ && !on) {
+                // Motor turning off - record time for quiescence tracking
+                motor_off_since_ = clock::now();
+            }
+            motor_on_ = on;
+            // Push indicator update
+            if (indicators_) {
+                indicators_->set(activity_led_id_, on ? 255 : 0);
+            }
         }
-        motor_on_ = on;
     }
 
     bool motor_on() const { return motor_on_; }
+
+    // --- Indicator integration ---
+
+    // Activity LED indicator ID (valid only if constructed with Indicators)
+    uint16_t activity_led_id() const { return activity_led_id_; }
 
     // Check if motor has been off for at least the specified duration
     bool is_quiescent(std::chrono::milliseconds min_off) const {
@@ -255,6 +284,10 @@ private:
     EjectOptions pending_eject_;
     clock::time_point eject_requested_at_;
     bool was_forced_eject_ = false;
+
+    // Indicator integration (optional)
+    Indicators* indicators_ = nullptr;
+    uint16_t activity_led_id_ = 0;
 };
 
 } // namespace beebium
