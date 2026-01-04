@@ -198,6 +198,16 @@ target_compile_definitions(test_keyboard_typing PRIVATE
 )
 catch_discover_tests(test_keyboard_typing)
 
+# Indicator filter tests
+add_executable(test_indicator_filter test_indicator_filter.cpp)
+target_link_libraries(test_indicator_filter PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_indicator_filter)
+
+# Indicators class tests
+add_executable(test_indicators test_indicators.cpp)
+target_link_libraries(test_indicators PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_indicators)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests

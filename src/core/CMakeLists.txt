@@ -20,7 +20,10 @@ add_library(beebium_core STATIC
     include/beebium/devices/BankedMemory.hpp
 )
 
-target_include_directories(beebium_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(beebium_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+)
 
 # Link to 6502 library
 target_link_libraries(beebium_core PUBLIC 6502_lib)
