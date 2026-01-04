@@ -868,8 +868,8 @@ TEST_CASE("Model B+ ROMSEL bit 7 controls ANDY private RAM", "[bplus][memory]") 
     // Read from ROM space - should get ROM data
     uint8_t rom_byte = machine.read(0x8000);
 
-    // Enable ANDY via ROMSEL bit 7 (while keeping bank 0 selected)
-    machine.write(0xFE30, 0x80);
+    // Enable ANDY via ROMSEL bit 7 (while keeping bank 15 selected for BASIC)
+    machine.write(0xFE30, 0x8F);
     REQUIRE(machine.memory().andy_enabled() == true);
 
     // Now reads from $8000-$AFFF should come from ANDY RAM
@@ -894,8 +894,8 @@ TEST_CASE("Model B+ ROMSEL bit 7 controls ANDY private RAM", "[bplus][memory]") 
     INFO("$B000 = $" << std::hex << (int)bxxx_byte);
     // (This is ROM data, not ANDY)
 
-    // Disable ANDY - reads should return to ROM
-    machine.write(0xFE30, 0x00);
+    // Disable ANDY - reads should return to ROM (bank 15 for BASIC)
+    machine.write(0xFE30, 0x0F);
     REQUIRE(machine.memory().andy_enabled() == false);
 
     // ROM should be visible again at $8000

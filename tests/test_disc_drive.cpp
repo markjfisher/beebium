@@ -45,11 +45,7 @@ public:
     }
 
     std::unique_ptr<DiscImage> load() {
-        auto result = FileDiscImage::load(filepath_);
-        if (result) {
-            return std::move(*result);
-        }
-        return nullptr;
+        return FileDiscImage::load(filepath_);
     }
 
 private:

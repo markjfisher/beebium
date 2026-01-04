@@ -69,29 +69,27 @@ private:
     size_t tracks_;
 };
 
-// Phase 2.1: Test loading non-existent file returns error
-TEST_CASE("FileDiscImage load returns error for non-existent file", "[disc][image]") {
-    auto result = FileDiscImage::load("/nonexistent/path/to/disc.ssd");
-    CHECK_FALSE(result.has_value());
+// Phase 2.1: Test loading non-existent file throws exception
+TEST_CASE("FileDiscImage load throws for non-existent file", "[disc][image]") {
+    REQUIRE_THROWS_AS(
+        FileDiscImage::load("/nonexistent/path/to/disc.ssd"),
+        std::runtime_error
+    );
 }
 
 // Phase 2.2: Test loading valid SSD file succeeds
 TEST_CASE("FileDiscImage loads valid SSD file", "[disc][image]") {
     TempSsdImage temp_ssd;
 
-    auto result = FileDiscImage::load(temp_ssd.path());
+    auto image = FileDiscImage::load(temp_ssd.path());
 
-    REQUIRE(result.has_value());
-    auto& image = *result;
     CHECK(image->name() == temp_ssd.path().filename().string());
 }
 
 // Phase 2.3: Test read_sector() returns correct data
 TEST_CASE("FileDiscImage read_sector returns correct data", "[disc][image]") {
     TempSsdImage temp_ssd;
-    auto result = FileDiscImage::load(temp_ssd.path());
-    REQUIRE(result.has_value());
-    auto& image = *result;
+    auto image = FileDiscImage::load(temp_ssd.path());
 
     SECTION("read track 0, sector 0") {
         std::array<uint8_t, 256> buffer{};
@@ -124,9 +122,7 @@ TEST_CASE("FileDiscImage read_sector returns correct data", "[disc][image]") {
 // Phase 2.4: Test read_sector() on invalid sector returns false
 TEST_CASE("FileDiscImage read_sector returns false for invalid parameters", "[disc][image]") {
     TempSsdImage temp_ssd;
-    auto result = FileDiscImage::load(temp_ssd.path());
-    REQUIRE(result.has_value());
-    auto& image = *result;
+    auto image = FileDiscImage::load(temp_ssd.path());
 
     std::array<uint8_t, 256> buffer{};
 
@@ -149,9 +145,7 @@ TEST_CASE("FileDiscImage read_sector returns false for invalid parameters", "[di
 // Phase 2.5: Test geometry metadata accessors
 TEST_CASE("FileDiscImage provides correct geometry metadata", "[disc][image]") {
     TempSsdImage temp_ssd;
-    auto result = FileDiscImage::load(temp_ssd.path());
-    REQUIRE(result.has_value());
-    auto& image = *result;
+    auto image = FileDiscImage::load(temp_ssd.path());
 
     CHECK(image->sides() == 1);
     CHECK(image->tracks_per_side() == 80);
@@ -162,9 +156,7 @@ TEST_CASE("FileDiscImage provides correct geometry metadata", "[disc][image]") {
 // Phase 2.6: Test write-protected image rejects writes
 TEST_CASE("FileDiscImage write_sector fails when write-protected", "[disc][image]") {
     TempSsdImage temp_ssd;
-    auto result = FileDiscImage::load(temp_ssd.path());
-    REQUIRE(result.has_value());
-    auto& image = *result;
+    auto image = FileDiscImage::load(temp_ssd.path());
 
     // Set write protection
     image->set_write_protected(true);
@@ -180,9 +172,7 @@ TEST_CASE("FileDiscImage write_sector fails when write-protected", "[disc][image
 // Phase 2.7: Test write_sector() modifies in-memory data
 TEST_CASE("FileDiscImage write_sector modifies in-memory data", "[disc][image]") {
     TempSsdImage temp_ssd;
-    auto result = FileDiscImage::load(temp_ssd.path());
-    REQUIRE(result.has_value());
-    auto& image = *result;
+    auto image = FileDiscImage::load(temp_ssd.path());
 
     // Write new data to sector
     std::array<uint8_t, 256> write_buffer{};
@@ -205,9 +195,7 @@ TEST_CASE("FileDiscImage flush persists changes to file", "[disc][image]") {
 
     // Scope to ensure image is closed after flush
     {
-        auto result = FileDiscImage::load(filepath);
-        REQUIRE(result.has_value());
-        auto& image = *result;
+        auto image = FileDiscImage::load(filepath);
 
         // Write new data
         std::array<uint8_t, 256> write_buffer{};
@@ -221,9 +209,7 @@ TEST_CASE("FileDiscImage flush persists changes to file", "[disc][image]") {
     }
 
     // Reload and verify data persisted
-    auto result2 = FileDiscImage::load(filepath);
-    REQUIRE(result2.has_value());
-    auto& image2 = *result2;
+    auto image2 = FileDiscImage::load(filepath);
 
     std::array<uint8_t, 256> read_buffer{};
     bool read_success = image2->read_sector(0, 10, 5, read_buffer);
@@ -241,9 +227,7 @@ TEST_CASE("FileDiscImage write_sector persists immediately", "[disc][image]") {
 
     // Write through first image
     {
-        auto result = FileDiscImage::load(filepath);
-        REQUIRE(result.has_value());
-        auto& image = *result;
+        auto image = FileDiscImage::load(filepath);
 
         std::array<uint8_t, 256> write_buffer{};
         std::fill(write_buffer.begin(), write_buffer.end(), 0xDD);
@@ -253,9 +237,7 @@ TEST_CASE("FileDiscImage write_sector persists immediately", "[disc][image]") {
     }
 
     // Reload and verify data was persisted
-    auto result2 = FileDiscImage::load(filepath);
-    REQUIRE(result2.has_value());
-    auto& image2 = *result2;
+    auto image2 = FileDiscImage::load(filepath);
 
     std::array<uint8_t, 256> read_buffer{};
     image2->read_sector(0, 0, 0, read_buffer);

@@ -113,8 +113,9 @@ TEST_CASE("WD1770 nmi_pending reflects INTRQ", "[nmi][wd1770]") {
     // Initially no NMI
     CHECK_FALSE(controller.nmi_pending());
 
-    // Issue a command that will complete and set INTRQ
-    controller.write(0, 0xD0);  // Force Interrupt
+    // Issue Force Interrupt with I3=1 (immediate interrupt) to set INTRQ
+    // 0xD8 = Force Interrupt with I3 bit set for immediate interrupt
+    controller.write(0, 0xD8);
     CHECK(controller.nmi_pending());
 
     // Reading status clears INTRQ
@@ -129,8 +130,8 @@ TEST_CASE("NMI aggregator with WD1770", "[nmi][wd1770]") {
     // Initially no NMI
     CHECK(aggregator.poll() == 0x00);
 
-    // Issue Force Interrupt to set INTRQ
-    controller.write(0, 0xD0);
+    // Issue Force Interrupt with I3=1 (immediate interrupt) to set INTRQ
+    controller.write(0, 0xD8);
     CHECK(aggregator.poll() == 0x01);
 
     // Reading status clears INTRQ

@@ -84,6 +84,15 @@ catch_discover_tests(test_disc_integration)
 # Tests requiring ROM files
 set(BEEBIUM_ROM_DIR "${CMAKE_SOURCE_DIR}/roms" CACHE PATH "Directory containing BBC Micro ROMs")
 
+# Disc images directory for integration tests
+set(BEEBIUM_DISCS_DIR "${CMAKE_SOURCE_DIR}/discs" CACHE PATH "Directory containing test disc images")
+
+# Add ROM and disc dirs to disc integration tests
+target_compile_definitions(test_disc_integration PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_DISCS_DIR="${BEEBIUM_DISCS_DIR}"
+)
+
 # Boot trace tests (uses ProgramCounterHistogram for instruction profiling)
 add_executable(test_boot_trace test_boot_trace.cpp)
 target_link_libraries(test_boot_trace PRIVATE beebium_core Catch2::Catch2WithMain)
