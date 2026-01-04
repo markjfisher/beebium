@@ -36,6 +36,7 @@ add_custom_command(TARGET beebium-model-b POST_BUILD
         "${BEEBIUM_ROM_DIR}/acorn-mos_1_20.rom"
         "${BEEBIUM_ROM_DIR}/acorn-mos_2_0.rom"
         "${BEEBIUM_ROM_DIR}/bbc-basic_2.rom"
+        "${BEEBIUM_ROM_DIR}/acorn-dfs_2_26.rom"
         "${ROM_OUTPUT_DIR}/"
     COMMENT "Copying ROMs to build directory"
 )
