@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>  // For debug output
 #include <vector>
 
 namespace beebium {
@@ -83,14 +84,16 @@ public:
     // Register access (offset is masked to 2 bits)
     uint8_t read(uint16_t offset) {
         switch (offset & 0x03) {
-            case 0:
+            case 0: {
                 // Reading status clears INTRQ
                 intrq_ = false;
                 // Update status with current DRQ state
+                uint8_t result = status_;
                 if (drq_) {
-                    return status_ | STATUS_DRQ;
+                    result |= STATUS_DRQ;
                 }
-                return status_;
+                return result;
+            }
             case 1: return track_;
             case 2: return sector_;
             case 3:
@@ -134,6 +137,11 @@ public:
             return;
         }
 
+        if (byte_delay_ > 0) {
+            --byte_delay_;
+            return;
+        }
+
         // Execute pending operation
         // Type I commands: mask with 0xE0 to ignore T flag and step rate
         // Special case: Restore (0x0x) and Seek (0x1x) both have 0xE0 mask = 0x00
@@ -174,11 +182,12 @@ public:
     bool busy() const { return (status_ & STATUS_BUSY) != 0; }
 
     // NMI source interface (for NmiAggregator)
-    // The WD1770's INTRQ line drives NMI on the BBC Micro disc system.
+    // On the BBC Model B+ with 1770, both DRQ and INTRQ are OR'd together
+    // to generate NMI (when enabled by the disc control register bit 6).
+    // DRQ fires during data transfer (each byte), INTRQ at command completion.
     // Note: The actual BBC hardware has an NMI enable bit in the disc control
-    // register which gates INTRQ before it reaches the CPU's NMI line.
-    // This method reports whether the controller is asserting INTRQ.
-    bool nmi_pending() const { return intrq_; }
+    // register which gates the combined signal before it reaches the CPU's NMI line.
+    bool nmi_pending() const { return drq_ || intrq_; }
 
     // Drive attachment
     void attach_drive(int drive_num, DiscDrive* drive) {
@@ -219,10 +228,15 @@ public:
 
         sector_buffer_.clear();
         byte_counter_ = 0;
+        byte_delay_ = 0;
     }
 
     // Identification
     const char* name() const { return "WD1770"; }
+
+public:
+    // Debug flag - set externally to track commands
+    static inline bool debug_enabled = false;
 
 private:
     void execute_command(uint8_t cmd) {
@@ -263,7 +277,10 @@ private:
         }
 
         current_command_ = cmd;
-        status_ |= STATUS_BUSY;
+        // Clear all status bits except BUSY when starting a new command.
+        // The TRACK0 bit from a previous Type I command would otherwise
+        // be interpreted as LOST_DATA in a Type II/III command.
+        status_ = STATUS_BUSY;
         intrq_ = false;
 
         // Determine step rate from command bits 0-1
@@ -436,14 +453,17 @@ private:
         }
 
         byte_counter_ = 0;
-        // Assert DRQ for first byte
+        // Assert DRQ for first byte, with initial delay for sector search time.
+        // Real hardware takes ~300µs to find the sector header on the disc.
+        // We use a shorter delay (64µs = 1 byte time) for first byte consistency.
         data_ = sector_buffer_[0];
         drq_ = true;
+        byte_delay_ = US_PER_BYTE;  // Consistent inter-byte timing from the start
     }
 
     void tick_read_sector() {
-        // If DRQ is still set, the host hasn't read the byte yet
-        // In a real system, we might set LOST_DATA, but for now just wait
+        // If DRQ is still set, the host hasn't read the byte yet.
+        // In a real system, we might set LOST_DATA, but for now just wait.
         if (drq_) {
             return;
         }
@@ -461,9 +481,13 @@ private:
             return;
         }
 
-        // Provide next byte
+        // Set up the next byte with proper inter-byte delay.
+        // At 250kbps MFM, bytes arrive every ~64µs (64 1MHz ticks).
+        // This delay gives the NMI handler time to complete before
+        // the next DRQ asserts and triggers another NMI.
         data_ = sector_buffer_[byte_counter_];
         drq_ = true;
+        byte_delay_ = US_PER_BYTE;  // Wait before next byte can be processed
     }
 
     void start_write_sector() {
@@ -492,8 +516,9 @@ private:
         sector_buffer_.resize(drive->disc()->sector_size());
         byte_counter_ = 0;
 
-        // Assert DRQ for first byte
+        // Assert DRQ for first byte with consistent inter-byte timing
         drq_ = true;
+        byte_delay_ = US_PER_BYTE;
     }
 
     void tick_write_sector() {
@@ -522,8 +547,9 @@ private:
             return;
         }
 
-        // Request next byte
+        // Request next byte with proper inter-byte delay
         drq_ = true;
+        byte_delay_ = US_PER_BYTE;
     }
 
     // Type III command tick dispatcher
@@ -762,6 +788,11 @@ private:
     // Type II/III command state
     std::vector<uint8_t> sector_buffer_;
     size_t byte_counter_ = 0;
+    int byte_delay_ = 0;  // Ticks until next byte during data transfer
+
+    // Inter-byte timing: At 250kbps MFM (double density), each byte takes ~64µs.
+    // This is 64 1MHz ticks. The WD1770 is clocked at 1MHz.
+    static constexpr int US_PER_BYTE = 64;
 
     // Type III Read Address state
     // ID field: Track, Side, Sector, Size, CRC1, CRC2

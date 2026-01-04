@@ -153,9 +153,21 @@ public:
         uint8_t irq_mask = state_.memory.poll_irq();
         M6502_SetDeviceIRQ(&state_.cpu, kViaIrqDeviceMask, irq_mask ? 1 : 0);
 
-        // NMI handling - poll disc controller and set CPU NMI line
-        uint8_t nmi_mask = state_.memory.poll_nmi();
-        M6502_SetDeviceNMI(&state_.cpu, kDiscNmiDeviceMask, nmi_mask ? 1 : 0);
+        // NMI handling - only update on 1MHz clock edges (every other 2MHz cycle).
+        // The WD1770 disc controller runs at 1MHz. Updating NMI every 2MHz cycle
+        // causes DRQ to toggle too rapidly: after the NMI handler reads the data
+        // register (clearing DRQ), the next tick() would immediately set DRQ for
+        // the next byte, creating a new falling edge on /NMI before the handler
+        // completes RTI. This causes NMIs to stack up infinitely.
+        //
+        // By only updating on 1MHz edges, we match the real hardware timing where
+        // the WD1770 operates at 1MHz and the NMI line is sampled at that rate.
+        // This gives the NMI handler sufficient cycles to execute before the next
+        // DRQ assertion can trigger another NMI.
+        if ((state_.cycle_count & 1) == 0) {
+            uint8_t nmi_mask = state_.memory.poll_nmi();
+            M6502_SetDeviceNMI(&state_.cpu, kDiscNmiDeviceMask, nmi_mask ? 1 : 0);
+        }
 
         ++state_.cycle_count;
         ++sequence_;
