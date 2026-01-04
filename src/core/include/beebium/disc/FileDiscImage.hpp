@@ -17,7 +17,7 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
+#include <stdexcept>
 #include <vector>
 
 namespace beebium {
@@ -30,8 +30,9 @@ namespace beebium {
 class FileDiscImage : public DiscImage {
 public:
     // Load a disc image from file.
-    // Returns std::nullopt if the file cannot be read or format is unrecognized.
-    static std::optional<std::unique_ptr<FileDiscImage>> load(const std::filesystem::path& filepath);
+    // Throws std::runtime_error if the file cannot be read or format is unrecognized.
+    // Automatically detects write-protection from filesystem permissions.
+    static std::unique_ptr<FileDiscImage> load(const std::filesystem::path& filepath);
 
     // Create a new empty disc image with the given geometry.
     // The file is not created until flush() is called.

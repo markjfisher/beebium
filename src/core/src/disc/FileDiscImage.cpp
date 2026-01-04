@@ -24,31 +24,40 @@ FileDiscImage::FileDiscImage(std::filesystem::path filepath, DiscGeometry geomet
 {
 }
 
-std::optional<std::unique_ptr<FileDiscImage>> FileDiscImage::load(const std::filesystem::path& filepath) {
+std::unique_ptr<FileDiscImage> FileDiscImage::load(const std::filesystem::path& filepath) {
     // Check if file exists
     if (!std::filesystem::exists(filepath)) {
-        return std::nullopt;
+        throw std::runtime_error("Disc image not found: " + filepath.string());
+    }
+
+    // Check read permission and open file
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("Cannot open disc image (permission denied?): " + filepath.string());
     }
 
     // Read file contents
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file) {
-        return std::nullopt;
-    }
-
     std::vector<uint8_t> data(std::istreambuf_iterator<char>(file), {});
 
     // Detect geometry from file size and extension
     std::string extension = filepath.extension().string();
     auto geometry = DiscGeometry::detect_from_size(data.size(), extension);
     if (!geometry.has_value()) {
-        return std::nullopt;
+        throw std::runtime_error("Unrecognized disc image format (size="
+            + std::to_string(data.size()) + ", ext=" + extension + "): " + filepath.string());
     }
 
-    // Create the image (using a helper since constructor is private)
-    return std::unique_ptr<FileDiscImage>(
+    // Create the image
+    auto image = std::unique_ptr<FileDiscImage>(
         new FileDiscImage(filepath, *geometry, std::move(data))
     );
+
+    // Detect write-protection from filesystem permissions
+    auto perms = std::filesystem::status(filepath).permissions();
+    bool is_readonly = (perms & std::filesystem::perms::owner_write) == std::filesystem::perms::none;
+    image->set_write_protected(is_readonly);
+
+    return image;
 }
 
 std::unique_ptr<FileDiscImage> FileDiscImage::create(const std::filesystem::path& filepath,
