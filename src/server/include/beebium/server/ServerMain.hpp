@@ -15,6 +15,7 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
+#include "beebium/disc/FileDiscImage.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/RomPaths.hpp"
 
@@ -87,6 +88,8 @@ void print_usage(const char* program_name) {
               << "  --rom <slot>:<filepath>  Load ROM into sideways slot (0-15)\n"
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
+              << "  --drive0 <filepath>      Disc image for drive 0 (.ssd or .dsd)\n"
+              << "  --drive1 <filepath>      Disc image for drive 1 (.ssd or .dsd)\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -124,6 +127,8 @@ int server_main(int argc, char* argv[]) {
     std::string rom_dirpath;
     std::map<uint8_t, std::string> rom_slots;  // slot -> filepath
     uint16_t port = DEFAULT_GRPC_PORT;
+    std::string drive0_filepath;
+    std::string drive1_filepath;
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -144,6 +149,10 @@ int server_main(int argc, char* argv[]) {
             rom_dirpath = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (arg == "--drive0" && i + 1 < argc) {
+            drive0_filepath = argv[++i];
+        } else if (arg == "--drive1" && i + 1 < argc) {
+            drive1_filepath = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -199,31 +208,95 @@ int server_main(int argc, char* argv[]) {
                           << " bytes, expected 16384\n";
             }
 
-            // Load into appropriate slot
-            // Currently supported slots: 0 (basic_rom), 1 (dfs_rom), 4 (sideways_ram)
-            // Slot 15 maps to slot 0 (basic_rom) for language ROM compatibility
-            uint8_t physical_slot = slot;
-            if (slot == 15) {
-                physical_slot = 0;  // Language ROM goes into basic_rom slot
+            // Load ROM into appropriate socket based on machine type
+            // Model B+ has 6 ROM sockets, each covering a pair of slots:
+            //   IC71 (slots 1/15): BASIC/language ROM
+            //   IC68 (slots 10/11): DFS ROM
+            //   IC62 (slots 8/9): User ROM
+            //   IC57 (slots 6/7): User ROM
+            //   IC44 (slots 4/5): User ROM
+            //   IC35 (slots 2/3): User ROM
+            // Model B has simpler ROM sockets at slots 0, 1, 4, 15
+            bool loaded = false;
+
+            // Model B+ specific ROM sockets (IC71 has different slot mapping than Model B)
+            if constexpr (requires { machine.state().memory.rom_ic62; }) {
+                switch (slot) {
+                    case 15: case 14: case 1: case 0:  // IC71 - BASIC (link S13 selects slot pair)
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.basic_rom.data());
+                        loaded = true;
+                        break;
+                    case 11: case 10:  // IC68 - DFS
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.dfs_rom.data());
+                        loaded = true;
+                        break;
+                    case 9: case 8:    // IC62 - User ROM
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.rom_ic62.data());
+                        loaded = true;
+                        break;
+                    case 7: case 6:    // IC57 - User ROM
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.rom_ic57.data());
+                        loaded = true;
+                        break;
+                    case 5: case 4:    // IC44 - User ROM
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.rom_ic44.data());
+                        loaded = true;
+                        break;
+                    case 3: case 2:    // IC35 - User ROM
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.rom_ic35.data());
+                        loaded = true;
+                        break;
+                    default:
+                        break;
+                }
+            } else {
+                // Model B ROM sockets
+                switch (slot) {
+                    case 15: case 0:  // BASIC
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.basic_rom.data());
+                        loaded = true;
+                        break;
+                    case 1:  // DFS
+                        std::copy(rom_data.begin(), rom_data.end(),
+                                  machine.state().memory.dfs_rom.data());
+                        loaded = true;
+                        break;
+                    default:
+                        break;
+                }
             }
 
-            switch (physical_slot) {
-                case 0:
-                    std::copy(rom_data.begin(), rom_data.end(),
-                              machine.state().memory.basic_rom.data());
-                    break;
-                case 1:
-                    std::copy(rom_data.begin(), rom_data.end(),
-                              machine.state().memory.dfs_rom.data());
-                    break;
-                case 4:
-                    std::copy(rom_data.begin(), rom_data.end(),
-                              machine.state().memory.sideways_ram.data());
-                    break;
-                default:
-                    std::cerr << "Warning: Slot " << static_cast<int>(slot)
-                              << " is not currently populated in hardware, ROM ignored\n";
-                    break;
+            if (!loaded) {
+                std::cerr << "Warning: Slot " << static_cast<int>(slot)
+                          << " is not a valid ROM socket for this machine, ROM ignored\n";
+            }
+        }
+
+        // Load disc images (Model B+ only)
+        if constexpr (requires { machine.state().memory.disc_drive_0; }) {
+            if (!drive0_filepath.empty()) {
+                std::cout << "Loading disc into drive 0: " << drive0_filepath << "\n";
+                auto disc = FileDiscImage::load(drive0_filepath);
+                if (disc->is_write_protected()) {
+                    std::cout << "  (write-protected)\n";
+                }
+                machine.state().memory.disc_drive_0.insert(std::move(disc));
+            }
+
+            if (!drive1_filepath.empty()) {
+                std::cout << "Loading disc into drive 1: " << drive1_filepath << "\n";
+                auto disc = FileDiscImage::load(drive1_filepath);
+                if (disc->is_write_protected()) {
+                    std::cout << "  (write-protected)\n";
+                }
+                machine.state().memory.disc_drive_1.insert(std::move(disc));
             }
         }
 
