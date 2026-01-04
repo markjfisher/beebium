@@ -105,22 +105,56 @@ public:
     Ram<12288> andy_ram;           // Private RAM (ANDY) 0x8000-0xAFFF
     Rom<16384> mos_rom;            // MOS ROM
 
-    // Sideways ROM/RAM devices (owned, bound to BankedMemory)
-    Rom<16384> basic_rom;          // Bank 0
-    Rom<16384> dfs_rom;            // Bank 1
-    Ram<16384> sideways_ram;       // Bank 4
+    // Sideways ROM devices for 6 ROM sockets (Model B+ has 6 sockets, each supporting 16K or 32K EPROMs)
+    // For 16K ROMs, the same device appears in both slots of a pair (mirrored)
+    // Socket IC71 (slots 1/15): BASIC - link S13 selects which slot number addresses it
+    // Socket IC68 (slots 10/11): DFS
+    // Socket IC62 (slots 8/9): User ROM
+    // Socket IC57 (slots 6/7): User ROM
+    // Socket IC44 (slots 4/5): User ROM
+    // Socket IC35 (slots 2/3): User ROM
+    Rom<16384> basic_rom;          // IC71 - slots 1/15 (BASIC)
+    Rom<16384> dfs_rom;            // IC68 - slots 10/11 (DFS)
+    Rom<16384> rom_ic62;           // IC62 - slots 8/9
+    Rom<16384> rom_ic57;           // IC57 - slots 6/7
+    Rom<16384> rom_ic44;           // IC44 - slots 4/5
+    Rom<16384> rom_ic35;           // IC35 - slots 2/3
 
-    // Sideways banks type (same as Model B)
+    // Sideways banks type - each ROM device bound to both slots of its pair
+    // IC71 has a special arrangement: link S13 selects whether BASIC appears at
+    // slots 0/1 or 14/15. In the emulator, we bind all four slots to the same device.
     using SidewaysType = BankedMemory<
-        decltype(make_bank<0>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<15>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<14>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<11>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<10>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<9>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<8>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<7>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<6>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<5>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<4>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<3>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<2>(std::declval<Rom<16384>&>())),
         decltype(make_bank<1>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<4>(std::declval<Ram<16384>&>()))
+        decltype(make_bank<0>(std::declval<Rom<16384>&>()))
     >;
 
     SidewaysType sideways{
-        make_bank<0>(basic_rom),
-        make_bank<1>(dfs_rom),
-        make_bank<4>(sideways_ram)
+        make_bank<15>(basic_rom),    // IC71 - slot 15 (BASIC, standard config via S13)
+        make_bank<14>(basic_rom),    // IC71 - slot 14 (BASIC, alternate S13 position)
+        make_bank<11>(dfs_rom),      // IC68 - slot 11 (DFS high)
+        make_bank<10>(dfs_rom),      // IC68 - slot 10 (DFS low, mirrored)
+        make_bank<9>(rom_ic62),      // IC62 - slot 9 (high)
+        make_bank<8>(rom_ic62),      // IC62 - slot 8 (low, mirrored)
+        make_bank<7>(rom_ic57),      // IC57 - slot 7 (high)
+        make_bank<6>(rom_ic57),      // IC57 - slot 6 (low, mirrored)
+        make_bank<5>(rom_ic44),      // IC44 - slot 5 (high)
+        make_bank<4>(rom_ic44),      // IC44 - slot 4 (low, mirrored)
+        make_bank<3>(rom_ic35),      // IC35 - slot 3 (high)
+        make_bank<2>(rom_ic35),      // IC35 - slot 2 (low, mirrored)
+        make_bank<1>(basic_rom),     // IC71 - slot 1 (BASIC, alternate S13 position)
+        make_bank<0>(basic_rom)      // IC71 - slot 0 (BASIC, alternate S13 position)
     };
 
     Via6522 system_via;
@@ -194,26 +228,38 @@ private:
         uint8_t& control;
         bool& nmi_enabled;
 
-        uint8_t read(uint16_t) { return control; }
+        uint8_t read(uint16_t) { return 0xFF; }  // Write-only register, open bus
 
         void write(uint16_t, uint8_t value) {
+            // Save old control value for edge detection before updating
+            uint8_t old_control = control;
             control = value;
 
-            // Bit 0: Drive select
-            controller.set_drive(value & 0x01);
+            // Bit 0/1: Drive select (bit 0 = drive 0, bit 1 = drive 1)
+            // DFS uses bits 0-1 for drive select, not as a binary number
+            if (value & 0x01) {
+                controller.set_drive(0);
+            } else if (value & 0x02) {
+                controller.set_drive(1);
+            }
+            // If neither bit set, drive selection is indeterminate
 
-            // Bit 1: Side select
-            controller.set_side((value >> 1) & 0x01);
+            // Bit 2: Side select (bit 2 = side 1)
+            controller.set_side((value & 0x04) ? 1 : 0);
 
-            // Bit 2: Density (0=double/MFM, 1=single/FM)
-            controller.set_density((value & 0x04) == 0);
+            // Bit 3: Density (0=double/MFM, 1=single/FM)
+            controller.set_density((value & 0x08) == 0);
 
             // Bit 4: Motor on
             drive0.set_motor((value & 0x10) != 0);
             drive1.set_motor((value & 0x10) != 0);
 
-            // Bit 5: Reset
-            if (value & 0x20) {
+            // Bit 5: Reset (active low)
+            // Reset is active when bit 5 is LOW (0), inactive when HIGH (1)
+            // Only reset on the falling edge (transition from 1 to 0)
+            bool reset_active = (value & 0x20) == 0;
+            bool was_reset_active = (old_control & 0x20) == 0;
+            if (reset_active && !was_reset_active) {
                 controller.reset();
             }
 
@@ -380,8 +426,8 @@ public:
         video_ula.reset();
         saa5050.reset();
         addressable_latch.reset();
-        sideways.select_bank(0);
-        romsel_ = 0;
+        sideways.select_bank(15);  // Default to BASIC ROM at slot 15
+        romsel_ = 0x0F;  // ROMSEL bits 0-3 = 15 (BASIC), bit 7 = 0 (ANDY disabled)
         acccon_ = 0;
         disc_controller.reset();
         disc_control_ = 0;
@@ -410,20 +456,30 @@ public:
 
     // Poll NMI status from disc controller (called from Machine::step after clock tick)
     // Returns non-zero if NMI is pending from disc controller.
-    // NMI is only generated when both:
-    // - The WD1770 INTRQ line is asserted
-    // - NMI is enabled via bit 6 of the disc control register
+    // NMI is generated when the WD1770 DRQ or INTRQ line is asserted.
+    //
+    // DRQ fires during data transfer (each byte needs an NMI to trigger read),
+    // INTRQ fires at command completion.
+    //
+    // Note: The disc control register bit 6 is nominally an NMI enable bit,
+    // but B2 emulator doesn't gate NMI via this bit and DFS doesn't appear
+    // to set it before disc operations. Following B2's approach here.
     //
     // Note: This also ticks the disc controller as this method is called
-    // once per cycle from Machine::step().
+    // once per 1MHz cycle from Machine::step().
     uint8_t poll_nmi() {
+        // Check NMI state BEFORE ticking the disc controller.
+        // This is critical for edge detection: after the CPU reads the DATA
+        // register (clearing DRQ), we return 0. Then tick() sets DRQ for the
+        // next byte. On the next poll_nmi(), we return 1, creating an edge.
+        // If we ticked first, DRQ would be re-set before we return, and the
+        // NMI line would never go low.
+        uint8_t nmi = disc_controller.nmi_pending() ? 0x01 : 0x00;
+
         // Tick the disc controller (1MHz peripheral clock)
         disc_controller.tick();
 
-        if (nmi_enabled_ && disc_controller.nmi_pending()) {
-            return 0x01;  // Bit 0: disc controller NMI
-        }
-        return 0;
+        return nmi;
     }
 
     // Paging register accessors for testing
