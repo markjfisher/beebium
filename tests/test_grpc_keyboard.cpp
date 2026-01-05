@@ -55,13 +55,13 @@ public:
 #endif
         machine_.reset();
 
-        // Start server
-        server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 50053);
+        // Start server on a dynamically allocated port
+        server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
         server_->start();
 
-        // Create client channel
-        channel_ = grpc::CreateChannel("127.0.0.1:50053",
-                                       grpc::InsecureChannelCredentials());
+        // Create client channel using the actual bound port
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         stub_ = beebium::KeyboardService::NewStub(channel_);
     }
 

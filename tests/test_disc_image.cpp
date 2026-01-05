@@ -16,15 +16,29 @@
 #include <fstream>
 #include <array>
 #include <cstring>
+#include <atomic>
+#include <sstream>
+#include <unistd.h>
 
 using namespace beebium;
 namespace fs = std::filesystem;
+
+namespace {
+// Generate unique filename for parallel test safety
+// Uses PID + counter to ensure uniqueness across parallel ctest invocations
+std::string unique_temp_filename(const std::string& prefix, const std::string& extension) {
+    static std::atomic<uint64_t> counter{0};
+    std::ostringstream oss;
+    oss << prefix << "_" << getpid() << "_" << counter.fetch_add(1) << extension;
+    return oss.str();
+}
+} // namespace
 
 // Helper to create a minimal valid SSD image in a temporary location
 class TempSsdImage {
 public:
     explicit TempSsdImage(size_t tracks = 80) : tracks_(tracks) {
-        filepath_ = fs::temp_directory_path() / ("test_" + std::to_string(rand()) + ".ssd");
+        filepath_ = fs::temp_directory_path() / unique_temp_filename("test_disc", ".ssd");
         data_.resize(tracks * 10 * 256, 0);  // Initialize with zeros
 
         // Write a recognizable pattern: each sector starts with its track/sector number

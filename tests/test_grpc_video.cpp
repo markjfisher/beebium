@@ -60,16 +60,13 @@ public:
         machine_.state().memory.enable_video_output();
         machine_.reset();
 
-        // Start server on a random available port
+        // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
-        // Note: Port 0 would need special handling to get actual port
-        // For now, use a fixed test port
-        server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 50052);
         server_->start();
 
-        // Create client channel
-        channel_ = grpc::CreateChannel("127.0.0.1:50052",
-                                       grpc::InsecureChannelCredentials());
+        // Create client channel using the actual bound port
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         stub_ = beebium::VideoService::NewStub(channel_);
     }
 
