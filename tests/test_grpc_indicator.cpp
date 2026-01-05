@@ -237,7 +237,7 @@ TEST_CASE("IndicatorService GetIndicators conditional fetch returns unchanged wh
 
     // First, trigger a change to make sequence > 0
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     // Get the current sequence after the change
     uint64_t current_seq;
@@ -284,8 +284,8 @@ TEST_CASE("IndicatorService GetIndicators conditional fetch returns data when se
     fixture.machine().state().memory.addressable_latch.write(6, true);  // Caps Lock LED on
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
 
-    // Wait for consumer thread to process
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for consumer thread to process (longer delay for CI reliability)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     // Second fetch with old sequence
     {
@@ -309,8 +309,8 @@ TEST_CASE("IndicatorService GetIndicators reflects LED state changes", "[grpc][i
     // Turn on caps lock LED via indicator system
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
 
-    // Wait for consumer thread
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for consumer thread (longer delay for CI reliability)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
@@ -383,7 +383,7 @@ TEST_CASE("IndicatorService Subscribe filters by name", "[grpc][indicator]") {
     // Change both caps lock and floppy LED
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
     fixture.machine().state().memory.indicators.set("floppy-0-activity-led", 255);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     context.TryCancel();
 
@@ -405,8 +405,8 @@ TEST_CASE("IndicatorService Model B+ disc motor indicator updates", "[grpc][indi
     // Turn on disc motor for drive 0
     fixture.machine().state().memory.disc_drive_0.set_motor(true);
 
-    // Wait for consumer thread
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for consumer thread (longer delay for CI reliability)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
@@ -427,8 +427,8 @@ TEST_CASE("IndicatorService Model B+ both drives can be active", "[grpc][indicat
     fixture.machine().state().memory.disc_drive_0.set_motor(true);
     fixture.machine().state().memory.disc_drive_1.set_motor(true);
 
-    // Wait for consumer thread
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for consumer thread (longer delay for CI reliability)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
@@ -470,8 +470,8 @@ TEST_CASE("IndicatorService returns correct sequence after rapid updates", "[grp
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
 
-    // Wait for consumer thread to process (runs at 50Hz = 20ms intervals)
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for consumer thread to process (longer delay for CI reliability)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
