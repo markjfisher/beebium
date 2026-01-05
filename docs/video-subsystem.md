@@ -507,3 +507,8 @@ This correctly handles:
 - Direct CRTC programming via VDU 23
 
 The interlace flag is passed through to clients via `field_order` in the Frame message
+
+# Ideas
+
+- a CRT shader in the client, like this: https://blog.gingerbeardman.com/2026/01/04/webgl-crt-shader/
+- support for custom CRTC modes in the test suite (Revs, Boffin, Elite)
