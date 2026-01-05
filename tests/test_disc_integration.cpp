@@ -182,6 +182,9 @@ TEST_CASE("Model B+ disc control register controls WD1770", "[disc][integration]
 TEST_CASE("Model B+ can read sector from inserted disc", "[disc][integration]") {
     ModelBPlus machine;
 
+    // Disable spin-up delay for faster testing
+    machine.memory().disc_controller.set_spin_up_delay_enabled(false);
+
     // Create a disc with known content
     auto disc = MemoryDiscImage::create_ssd();
 
