@@ -263,6 +263,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_compile_definitions(test_grpc_indicator PRIVATE
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+        BEEBIUM_DISCS_DIR="${BEEBIUM_DISCS_DIR}"
     )
     catch_discover_tests(test_grpc_indicator)
 endif()

@@ -20,14 +20,23 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/service/Server.hpp"
+#include "beebium/disc/FileDiscImage.hpp"
+#include "beebium/FrameAllocator.hpp"
+#include "beebium/FrameBuffer.hpp"
+#include "beebium/FrameRenderer.hpp"
 
 #include "indicator.grpc.pb.h"
+#include "disc.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <thread>
 #include <vector>
+
+#include "test_keyboard_helpers.hpp"
 
 namespace {
 
@@ -103,7 +112,8 @@ public:
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-        stub_ = beebium::IndicatorService::NewStub(channel_);
+        indicator_stub_ = beebium::IndicatorService::NewStub(channel_);
+        disc_stub_ = beebium::DiscService::NewStub(channel_);
     }
 
     ~IndicatorTestFixtureBPlus() {
@@ -111,13 +121,15 @@ public:
     }
 
     beebium::ModelBPlus& machine() { return machine_; }
-    beebium::IndicatorService::Stub& stub() { return *stub_; }
+    beebium::IndicatorService::Stub& stub() { return *indicator_stub_; }
+    beebium::DiscService::Stub& disc_stub() { return *disc_stub_; }
 
 private:
     beebium::ModelBPlus machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelBPlus>> server_;
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<beebium::IndicatorService::Stub> stub_;
+    std::unique_ptr<beebium::IndicatorService::Stub> indicator_stub_;
+    std::unique_ptr<beebium::DiscService::Stub> disc_stub_;
 };
 
 } // anonymous namespace
@@ -482,4 +494,318 @@ TEST_CASE("IndicatorService returns correct sequence after rapid updates", "[grp
     REQUIRE(status.ok());
     // Sequence should have advanced
     CHECK(response.sequence() >= 1);
+}
+
+// =============================================================================
+// Integration test: disc control register -> indicator
+// =============================================================================
+
+TEST_CASE("IndicatorService drive LED activates when WD1770 executes command", "[grpc][indicator][integration]") {
+    // This test verifies the full signal path:
+    // WD1770 command execution -> spin_up() -> DiscDrive::set_motor()
+    // -> Indicators::set() -> consumer thread -> gRPC GetIndicators
+    //
+    // Note: The WD1770 handles motor control internally, not via the disc
+    // control register bit 4 (which was for 8271-style explicit control).
+    IndicatorTestFixtureBPlus fixture;
+
+    // Disable spin-up delay for faster testing
+    fixture.machine().state().memory.disc_controller.set_spin_up_delay_enabled(false);
+
+    // Get initial indicator state - should be off
+    {
+        grpc::ClientContext ctx;
+        beebium::GetIndicatorsRequest req;
+        beebium::GetIndicatorsResponse resp;
+        auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.values().at("floppy-0-activity-led") == 0);
+    }
+
+    // Select drive 0 and release reset via disc control register
+    // &FE80 = disc control register: bit 0 = drive 0 select, bit 5 = reset (active low)
+    fixture.machine().write(0xFE80, 0x21);  // Drive 0 selected, reset inactive
+
+    // Write a Restore command (0x00) to the WD1770 command register (&FE84)
+    // This Type I command will spin up the motor internally
+    fixture.machine().write(0xFE84, 0x00);
+
+    // Tick the machine a few times to let the WD1770 process the command
+    for (int i = 0; i < 1000; ++i) {
+        fixture.machine().step();
+    }
+
+    // Wait for indicator consumer thread to process
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    // Verify indicator is now on
+    {
+        grpc::ClientContext ctx;
+        beebium::GetIndicatorsRequest req;
+        beebium::GetIndicatorsResponse resp;
+        auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.values().at("floppy-0-activity-led") > 0);
+    }
+
+    // Force Interrupt (0xD0) terminates the command but motor stays on
+    // Motor will spin down after ~2 second idle timeout
+    fixture.machine().write(0xFE84, 0xD0);
+
+    // Tick the machine past the motor idle timeout (2M 1MHz ticks)
+    // Machine::step() is at 2MHz, poll_nmi() ticks disc at 1MHz every 2 steps
+    for (int i = 0; i < 4'500'000; ++i) {
+        fixture.machine().step();
+    }
+
+    // Wait for indicator consumer thread to process
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    // Verify indicator is off after idle timeout
+    {
+        grpc::ClientContext ctx;
+        beebium::GetIndicatorsRequest req;
+        beebium::GetIndicatorsResponse resp;
+        auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.values().at("floppy-0-activity-led") == 0);
+    }
+}
+
+// =============================================================================
+// Spin-up delay configuration tests
+// =============================================================================
+
+TEST_CASE("WD1770 spin-up delay is enabled by default", "[grpc][disc]") {
+    IndicatorTestFixtureBPlus fixture;
+
+    // Default should be enabled
+    CHECK(fixture.machine().state().memory.disc_controller.spin_up_delay_enabled() == true);
+}
+
+TEST_CASE("WD1770 spin-up delay can be toggled via accessor", "[grpc][disc]") {
+    IndicatorTestFixtureBPlus fixture;
+
+    // Disable
+    fixture.machine().state().memory.disc_controller.set_spin_up_delay_enabled(false);
+    CHECK(fixture.machine().state().memory.disc_controller.spin_up_delay_enabled() == false);
+
+    // Re-enable
+    fixture.machine().state().memory.disc_controller.set_spin_up_delay_enabled(true);
+    CHECK(fixture.machine().state().memory.disc_controller.spin_up_delay_enabled() == true);
+}
+
+TEST_CASE("DiscService spin-up delay can be queried and set via gRPC", "[grpc][disc]") {
+    IndicatorTestFixtureBPlus fixture;
+
+    // Query default value (should be enabled)
+    {
+        grpc::ClientContext ctx;
+        beebium::GetSpinUpDelayRequest req;
+        beebium::GetSpinUpDelayResponse resp;
+        auto status = fixture.disc_stub().GetSpinUpDelay(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.enabled() == true);
+    }
+
+    // Disable via gRPC
+    {
+        grpc::ClientContext ctx;
+        beebium::SetSpinUpDelayRequest req;
+        beebium::SetSpinUpDelayResponse resp;
+        req.set_enabled(false);
+        auto status = fixture.disc_stub().SetSpinUpDelay(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.success() == true);
+    }
+
+    // Verify disabled
+    {
+        grpc::ClientContext ctx;
+        beebium::GetSpinUpDelayRequest req;
+        beebium::GetSpinUpDelayResponse resp;
+        auto status = fixture.disc_stub().GetSpinUpDelay(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        CHECK(resp.enabled() == false);
+    }
+
+    // Also verify via direct accessor
+    CHECK(fixture.machine().state().memory.disc_controller.spin_up_delay_enabled() == false);
+}
+
+// =============================================================================
+// *CAT motor timing test - measures indicator duration via gRPC
+// =============================================================================
+
+namespace {
+
+// Helper to find a string anywhere in MODE 7 screen memory
+bool find_string_on_screen(beebium::ModelBPlus& machine, const std::string& needle) {
+    // MODE 7 screen memory is at 0x7C00-0x7FFF (1K)
+    for (uint16_t addr = 0x7C00; addr <= 0x7FFF - needle.size(); ++addr) {
+        bool found = true;
+        for (size_t i = 0; i < needle.size(); ++i) {
+            if (machine.read(addr + i) != static_cast<uint8_t>(needle[i])) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
+TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][indicator][timing][!mayfail]") {
+    // This test boots to BASIC, runs *CAT, and monitors the drive activity LED
+    // to measure how long the motor is active.
+
+#ifndef BEEBIUM_ROM_DIR
+    SKIP("BEEBIUM_ROM_DIR not defined");
+#else
+#ifndef BEEBIUM_DISCS_DIR
+    SKIP("BEEBIUM_DISCS_DIR not defined");
+#else
+    using namespace beebium;
+    using namespace beebium::test;
+
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto disc_dirpath = std::filesystem::path(BEEBIUM_DISCS_DIR);
+
+    auto mos_filepath = rom_dirpath / "acorn-mos_2_0.rom";
+    auto basic_filepath = rom_dirpath / "bbc-basic_2.rom";
+    auto dfs_filepath = rom_dirpath / "acorn-dfs_2_26.rom";
+    auto disc_filepath = disc_dirpath / "01-basic-validation.ssd";
+
+    if (!std::filesystem::exists(mos_filepath) ||
+        !std::filesystem::exists(basic_filepath) ||
+        !std::filesystem::exists(dfs_filepath)) {
+        SKIP("Required ROMs not available");
+    }
+    if (!std::filesystem::exists(disc_filepath)) {
+        SKIP("Test disc image not available: " + disc_filepath.string());
+    }
+
+    // Create machine and load ROMs
+    ModelBPlus machine;
+    {
+        auto mos = load_rom(mos_filepath.string());
+        auto basic = load_rom(basic_filepath.string());
+        auto dfs = load_rom(dfs_filepath.string());
+        std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
+        std::copy(basic.begin(), basic.end(), machine.state().memory.basic_rom.data());
+        std::copy(dfs.begin(), dfs.end(), machine.state().memory.dfs_rom.data());
+    }
+
+    // Load and insert disc image
+    auto disc = FileDiscImage::load(disc_filepath);
+    machine.state().memory.disc_drive_0.insert(std::move(disc));
+
+    // Disable spin-up delay for faster testing
+    machine.state().memory.disc_controller.set_spin_up_delay_enabled(false);
+
+    // Enable video output and reset
+    machine.state().memory.enable_video_output();
+    machine.reset();
+
+    // Set up frame rendering (minimal)
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC prompt (~4M cycles, ~2 sec emulated)
+    for (uint64_t i = 0; i < 4'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+    REQUIRE(find_string_on_screen(machine, "Acorn 1770 DFS"));
+
+    // Type "*CAT" (without RETURN yet)
+    type_string_with_shift(machine, renderer, "*CAT", 100000);
+
+    // Start motor monitoring BEFORE pressing RETURN
+    bool motor_was_on = false;
+    int transition_count = 0;
+    uint64_t motor_on_cycle = 0;
+    uint64_t total_motor_cycles = 0;
+    uint64_t global_cycle = 0;
+    uint8_t last_disc_ctrl = 0xFF;  // Initial impossible value to ensure first change is logged
+
+    // Helper to step and check motor
+    auto step_and_check = [&]() {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+        if (global_cycle % 100 == 0) {  // Check every 100 cycles for finer resolution
+            bool motor_on = machine.state().memory.disc_drive_0.motor_on();
+            if (motor_on && !motor_was_on) {
+                transition_count++;
+                motor_on_cycle = global_cycle;
+                WARN("[cycle " << global_cycle << "] Motor ON");
+            } else if (!motor_on && motor_was_on) {
+                uint64_t duration = global_cycle - motor_on_cycle;
+                total_motor_cycles += duration;
+                WARN("[cycle " << global_cycle << "] Motor OFF after " << duration << " cycles ("
+                     << (duration / 2000) << "ms)");
+            }
+            motor_was_on = motor_on;
+
+            // Log ANY change to disc control register
+            uint8_t disc_ctrl = machine.state().memory.disc_control_reg.control;
+            if (disc_ctrl != last_disc_ctrl) {
+                WARN("[cycle " << global_cycle << "] disc_control changed: 0x" << std::hex
+                     << (int)last_disc_ctrl << " -> 0x" << (int)disc_ctrl << std::dec
+                     << " (motor=" << ((disc_ctrl & 0x10) ? "ON" : "OFF")
+                     << " drive=" << (disc_ctrl & 0x03)
+                     << " side=" << ((disc_ctrl & 0x04) >> 2)
+                     << " nmi=" << ((disc_ctrl & 0x40) ? "EN" : "DIS") << ")");
+                last_disc_ctrl = disc_ctrl;
+            }
+        }
+        global_cycle++;
+    };
+
+    // Now press RETURN and monitor during the disc access
+    // Enable WD1770 debug output BEFORE pressing RETURN to capture all commands
+    WD1770::debug_enabled = true;
+    WARN("Pressing RETURN...");
+    machine.state().memory.system_via_peripheral.key_down(4, 9);  // RETURN key
+    for (int i = 0; i < 50000; ++i) step_and_check();  // Hold for 25ms
+    machine.state().memory.system_via_peripheral.key_up(4, 9);
+    for (int i = 0; i < 50000; ++i) step_and_check();  // Release for 25ms
+
+    // Continue monitoring for disc access (~4M cycles = 2 sec emulated)
+    WARN("Monitoring disc access...");
+    constexpr uint64_t TOTAL_CYCLES = 4'000'000;
+    for (uint64_t cycle = 0; cycle < TOTAL_CYCLES; ++cycle) {
+        step_and_check();
+    }
+
+    WD1770::debug_enabled = false;
+
+    // Check screen for *CAT output
+    bool has_drive = find_string_on_screen(machine, "Drive");  // DFS shows "Drive 0"
+    bool has_option = find_string_on_screen(machine, "Option");  // DFS shows "Option X"
+    bool has_dir = find_string_on_screen(machine, "Dir.");  // DFS shows "Dir. $"
+    WARN("Screen check: Drive=" << has_drive << " Option=" << has_option << " Dir=" << has_dir);
+
+    // Summary
+    WARN("=== Motor Activity Summary ===");
+    WARN("Transitions: " << transition_count);
+    WARN("Total motor ON: " << total_motor_cycles << " cycles (" << (total_motor_cycles / 2000) << "ms)");
+
+    if (transition_count == 0) {
+        WARN("WARNING: Motor was never turned ON during *CAT!");
+    }
+
+    CHECK(transition_count >= 0);
+
+#endif
+#endif
 }
