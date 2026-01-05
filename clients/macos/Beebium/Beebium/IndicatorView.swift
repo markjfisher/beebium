@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
+import AppKit
 
 /// Annulus (ring) shape where the filled area is proportional to a value
 ///
@@ -76,15 +77,16 @@ struct IndicatorView: View {
     /// Color of the indicator
     let color: Color
 
-    /// Size of the indicator circle (traffic-light button size)
-    var size: CGFloat = 10
+    /// Size of the indicator circle
+    var size: CGFloat = 12
 
     var body: some View {
         HStack(spacing: 4) {
             ZStack {
                 // Outline ring (always visible, provides structure when value is 0)
+                // Use darker, more saturated version like macOS traffic light buttons
                 Circle()
-                    .strokeBorder(color.opacity(0.4), lineWidth: 1)
+                    .strokeBorder(outlineColor, lineWidth: 1)
                     .frame(width: size, height: size)
 
                 // Filled annulus
@@ -95,7 +97,7 @@ struct IndicatorView: View {
             .frame(width: size, height: size)
 
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundColor(.secondary)
         }
     }
@@ -103,6 +105,34 @@ struct IndicatorView: View {
     /// Convert 0-255 value to 0.0-1.0 fill fraction
     private var fillFraction: Double {
         Double(value) / 255.0
+    }
+
+    /// Outline color: darker and more saturated than fill (like macOS traffic light buttons)
+    private var outlineColor: Color {
+        // Convert to NSColor to access HSB components
+        let nsColor = NSColor(color)
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        // Get HSB components (convert to calibrated RGB color space first)
+        if let calibrated = nsColor.usingColorSpace(.sRGB) {
+            calibrated.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        } else {
+            // Fallback if conversion fails
+            return color.opacity(0.6)
+        }
+
+        // Adjust: ~12% less brightness, ~10% more saturation, clamped to [0, 1]
+        let adjustedBrightness = min(1, max(0, brightness * 0.88))
+        let adjustedSaturation = min(1, max(0, saturation * 1.10 + 0.05))
+
+        return Color(
+            hue: Double(hue),
+            saturation: Double(adjustedSaturation),
+            brightness: Double(adjustedBrightness)
+        )
     }
 }
 

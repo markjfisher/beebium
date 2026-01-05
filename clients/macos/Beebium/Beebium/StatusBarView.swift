@@ -45,12 +45,12 @@ struct StatusBarView: View {
             // Machine name on right
             if systemClient.isLoaded {
                 Text(systemClient.machineDisplayName)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
         }
+        .frame(height: 22)
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
         .background(.bar)
     }
 }
