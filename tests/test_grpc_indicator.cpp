@@ -204,7 +204,7 @@ TEST_CASE("IndicatorService ListIndicators includes metadata", "[grpc][indicator
     // Find caps-lock-led and check all metadata fields
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "caps-lock-led") {
-            CHECK(indicator.metadata().at("color") == "470nm");
+            CHECK(indicator.metadata().at("color") == "625nm");
             CHECK(indicator.metadata().at("shape") == "domed");
             return;
         }
