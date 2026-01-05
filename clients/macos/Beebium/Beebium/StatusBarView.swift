@@ -15,11 +15,34 @@ import SwiftUI
 /// Status bar displayed at the bottom of the main window
 struct StatusBarView: View {
     @ObservedObject var systemClient: SystemClient
+    @ObservedObject var indicatorClient: IndicatorClient
+
+    /// Display order for indicators (keyboard LEDs first, then drives)
+    private let indicatorOrder = [
+        "caps-lock-led",
+        "shift-lock-led",
+        "floppy-0-activity-led",
+        "floppy-1-activity-led"
+    ]
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Indicators on left
+            if indicatorClient.isLoaded {
+                ForEach(indicatorOrder, id: \.self) { name in
+                    if let meta = indicatorClient.metadata[name] {
+                        IndicatorView(
+                            value: indicatorClient.values[name] ?? 0,
+                            label: meta.label,
+                            color: meta.color
+                        )
+                    }
+                }
+            }
+
             Spacer()
 
+            // Machine name on right
             if systemClient.isLoaded {
                 Text(systemClient.machineDisplayName)
                     .font(.system(size: 11))
@@ -35,8 +58,8 @@ struct StatusBarView: View {
 #if DEBUG
 struct StatusBarView_Previews: PreviewProvider {
     static var previews: some View {
-        StatusBarView(systemClient: SystemClient())
-            .frame(width: 400)
+        StatusBarView(systemClient: SystemClient(), indicatorClient: IndicatorClient())
+            .frame(width: 600)
     }
 }
 #endif

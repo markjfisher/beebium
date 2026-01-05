@@ -17,6 +17,7 @@ struct ContentView: View {
     @StateObject private var videoClient = VideoClient()
     @StateObject private var keyboardClient = KeyboardClient()
     @StateObject private var systemClient = SystemClient()
+    @StateObject private var indicatorClient = IndicatorClient()
     @Binding var showStatusBar: Bool
 
     var body: some View {
@@ -33,7 +34,7 @@ struct ContentView: View {
 
             // Status bar at bottom
             if showStatusBar {
-                StatusBarView(systemClient: systemClient)
+                StatusBarView(systemClient: systemClient, indicatorClient: indicatorClient)
             }
         }
         .frame(minWidth: 320, minHeight: 240)
@@ -41,6 +42,7 @@ struct ContentView: View {
             videoClient.connect()
         }
         .onDisappear {
+            indicatorClient.disconnect()
             systemClient.disconnect()
             keyboardClient.disconnect()
             videoClient.disconnect()
@@ -50,10 +52,13 @@ struct ContentView: View {
             if case .connected = newState, let channel = videoClient.channel {
                 keyboardClient.connect(channel: channel)
                 systemClient.connect(channel: channel)
+                indicatorClient.connect(channel: channel)
             } else if case .disconnected = newState {
+                indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
             } else if case .error = newState {
+                indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
             }
