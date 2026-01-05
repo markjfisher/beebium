@@ -18,6 +18,12 @@ service DiscService {
 
     // Stream drive events (insert, eject, motor changes)
     rpc SubscribeDiscEvents(SubscribeDiscEventsRequest) returns (stream DiscEvent);
+
+    // Configure motor spin-up delay (for automation scenarios)
+    rpc SetSpinUpDelay(SetSpinUpDelayRequest) returns (SetSpinUpDelayResponse);
+
+    // Query spin-up delay configuration
+    rpc GetSpinUpDelay(GetSpinUpDelayRequest) returns (GetSpinUpDelayResponse);
 }
 
 // --- Drive State ---
@@ -114,4 +120,23 @@ message DiscEvent {
     uint32 drive = 2;                  // Which drive (0 or 1)
     uint64 timestamp_cycles = 3;       // Emulator cycle count
     DiscMetadata disc = 4;             // Disc info (for insert/eject events)
+}
+
+// --- Spin-Up Delay Configuration ---
+
+message SetSpinUpDelayRequest {
+    bool enabled = 1;                  // Enable/disable motor spin-up delay
+}
+
+message SetSpinUpDelayResponse {
+    bool success = 1;
+    string error = 2;                  // Error message if !success
+}
+
+message GetSpinUpDelayRequest {
+    // Empty
+}
+
+message GetSpinUpDelayResponse {
+    bool enabled = 1;                  // Current spin-up delay setting
 }

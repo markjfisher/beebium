@@ -16,43 +16,55 @@
 
 using namespace beebium;
 
+namespace {
+
+// Create a WD1770 controller configured for testing (spin-up delay disabled)
+// This avoids the 1.2M tick delay that would otherwise make timing tests fail
+WD1770 create_test_controller() {
+    WD1770 controller;
+    controller.set_spin_up_delay_enabled(false);
+    return controller;
+}
+
+} // namespace
+
 // Phase 4.1: Test initial status register is 0x00
 TEST_CASE("WD1770 initial status register is 0x00", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     CHECK(controller.read(0) == 0x00);
 }
 
 // Phase 4.2: Test read offset 0 returns status register
 TEST_CASE("WD1770 read offset 0 returns status register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     // Initial status should be 0
     CHECK(controller.read(0) == 0x00);
 }
 
 // Phase 4.3: Test read offset 1 returns track register
 TEST_CASE("WD1770 read offset 1 returns track register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     // Initial track register is 0
     CHECK(controller.read(1) == 0x00);
 }
 
 // Phase 4.4: Test read offset 2 returns sector register
 TEST_CASE("WD1770 read offset 2 returns sector register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     // Initial sector register is 1 (per WD1770 spec)
     CHECK(controller.read(2) == 0x01);
 }
 
 // Phase 4.5: Test read offset 3 returns data register
 TEST_CASE("WD1770 read offset 3 returns data register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     // Initial data register is 0
     CHECK(controller.read(3) == 0x00);
 }
 
 // Phase 4.6: Test write offset 1 sets track register
 TEST_CASE("WD1770 write offset 1 sets track register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     controller.write(1, 0x42);
     CHECK(controller.read(1) == 0x42);
@@ -63,7 +75,7 @@ TEST_CASE("WD1770 write offset 1 sets track register", "[disc][wd1770]") {
 
 // Phase 4.7: Test write offset 2 sets sector register
 TEST_CASE("WD1770 write offset 2 sets sector register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     controller.write(2, 0x05);
     CHECK(controller.read(2) == 0x05);
@@ -74,7 +86,7 @@ TEST_CASE("WD1770 write offset 2 sets sector register", "[disc][wd1770]") {
 
 // Phase 4.8: Test write offset 3 sets data register
 TEST_CASE("WD1770 write offset 3 sets data register", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     controller.write(3, 0xAB);
     CHECK(controller.read(3) == 0xAB);
@@ -85,7 +97,7 @@ TEST_CASE("WD1770 write offset 3 sets data register", "[disc][wd1770]") {
 
 // Phase 4.9: Test attach_drive connects drives
 TEST_CASE("WD1770 attach_drive connects drives", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive0;
     DiscDrive drive1;
 
@@ -98,7 +110,7 @@ TEST_CASE("WD1770 attach_drive connects drives", "[disc][wd1770]") {
 
 // Phase 4.10: Test set_side/set_drive/set_density external control
 TEST_CASE("WD1770 external control signals", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     SECTION("set_side") {
         controller.set_side(0);
@@ -127,7 +139,7 @@ TEST_CASE("WD1770 external control signals", "[disc][wd1770]") {
 
 // Phase 4.11: Test reset clears all state
 TEST_CASE("WD1770 reset clears all state", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     // Modify state
     controller.write(1, 0x42);  // Track
@@ -152,7 +164,7 @@ TEST_CASE("WD1770 reset clears all state", "[disc][wd1770]") {
 
 // Additional tests for interrupt status
 TEST_CASE("WD1770 initial interrupt state", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     CHECK_FALSE(controller.drq());
     CHECK_FALSE(controller.intrq());
@@ -160,7 +172,7 @@ TEST_CASE("WD1770 initial interrupt state", "[disc][wd1770]") {
 
 // Test register offset wrapping (only 2 bits used)
 TEST_CASE("WD1770 register offset uses only 2 bits", "[disc][wd1770]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     // Offset 4 should map to offset 0 (status)
     CHECK(controller.read(4) == controller.read(0));
@@ -233,7 +245,7 @@ bool within_tolerance(int measured, int expected, double tolerance = TIMING_TOLE
 
 // Phase 5.1: Force Interrupt command clears BUSY
 TEST_CASE("WD1770 Force Interrupt clears BUSY", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -252,7 +264,7 @@ TEST_CASE("WD1770 Force Interrupt clears BUSY", "[disc][wd1770][type1]") {
 
 // Phase 5.2: Writing command sets BUSY
 TEST_CASE("WD1770 writing command sets BUSY", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -268,7 +280,7 @@ TEST_CASE("WD1770 writing command sets BUSY", "[disc][wd1770][type1]") {
 
 // Phase 5.3: Restore command seeks to track 0
 TEST_CASE("WD1770 Restore seeks to track 0", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -290,7 +302,7 @@ TEST_CASE("WD1770 Restore seeks to track 0", "[disc][wd1770][type1]") {
 
 // Phase 5.4: Restore updates track register
 TEST_CASE("WD1770 Restore updates track register", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -311,7 +323,7 @@ TEST_CASE("WD1770 Restore updates track register", "[disc][wd1770][type1]") {
 
 // Phase 5.5: Seek command seeks to data register value
 TEST_CASE("WD1770 Seek moves to data register track", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -335,7 +347,7 @@ TEST_CASE("WD1770 Seek moves to data register track", "[disc][wd1770][type1]") {
 
 // Phase 5.6: Step command steps in last direction
 TEST_CASE("WD1770 Step uses last direction", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -355,7 +367,7 @@ TEST_CASE("WD1770 Step uses last direction", "[disc][wd1770][type1]") {
 
 // Phase 5.7: Step-In steps toward higher tracks
 TEST_CASE("WD1770 Step-In increments track", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -379,7 +391,7 @@ TEST_CASE("WD1770 Step-In increments track", "[disc][wd1770][type1]") {
 
 // Phase 5.8: Step-Out steps toward track 0
 TEST_CASE("WD1770 Step-Out decrements track", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -408,7 +420,7 @@ TEST_CASE("WD1770 Step-Out decrements track", "[disc][wd1770][type1]") {
 
 // Phase 5.9: TRACK0 status bit set when at track 0
 TEST_CASE("WD1770 TRACK0 status bit", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -434,7 +446,7 @@ TEST_CASE("WD1770 TRACK0 status bit", "[disc][wd1770][type1]") {
 
 // Phase 5.13: INTRQ asserted on command completion
 TEST_CASE("WD1770 INTRQ on command completion", "[disc][wd1770][type1]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -508,7 +520,7 @@ void write_sector_data(WD1770& controller, const std::vector<uint8_t>& data) {
 
 // Phase 6.1: Read Sector sets BUSY
 TEST_CASE("WD1770 Read Sector sets BUSY", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -524,7 +536,7 @@ TEST_CASE("WD1770 Read Sector sets BUSY", "[disc][wd1770][type2]") {
 
 // Phase 6.2: Read Sector asserts DRQ for data transfer
 TEST_CASE("WD1770 Read Sector asserts DRQ", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -547,7 +559,7 @@ TEST_CASE("WD1770 Read Sector asserts DRQ", "[disc][wd1770][type2]") {
 
 // Phase 6.3: Read Sector returns sector data
 TEST_CASE("WD1770 Read Sector returns sector data", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
 
@@ -575,7 +587,7 @@ TEST_CASE("WD1770 Read Sector returns sector data", "[disc][wd1770][type2]") {
 
 // Phase 6.4: Read Sector increments sector register with m flag
 TEST_CASE("WD1770 Read Sector multi-sector mode", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -596,7 +608,7 @@ TEST_CASE("WD1770 Read Sector multi-sector mode", "[disc][wd1770][type2]") {
 
 // Phase 6.5: Read Sector sets RNF for invalid sector
 TEST_CASE("WD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();  // 10 sectors per track (0-9)
     drive.insert(std::move(disc));
@@ -615,7 +627,7 @@ TEST_CASE("WD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770][type
 
 // Phase 6.6: Write Sector sets BUSY
 TEST_CASE("WD1770 Write Sector sets BUSY", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -631,7 +643,7 @@ TEST_CASE("WD1770 Write Sector sets BUSY", "[disc][wd1770][type2]") {
 
 // Phase 6.7: Write Sector asserts DRQ for data transfer
 TEST_CASE("WD1770 Write Sector asserts DRQ", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -654,7 +666,7 @@ TEST_CASE("WD1770 Write Sector asserts DRQ", "[disc][wd1770][type2]") {
 
 // Phase 6.8: Write Sector writes data to disc
 TEST_CASE("WD1770 Write Sector writes data to disc", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc_ptr = MemoryDiscImage::create_ssd();
     auto* disc = disc_ptr.get();
@@ -684,7 +696,7 @@ TEST_CASE("WD1770 Write Sector writes data to disc", "[disc][wd1770][type2]") {
 
 // Phase 6.9: Write Sector fails on write-protected disc
 TEST_CASE("WD1770 Write Sector fails on write-protected disc", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     disc->set_write_protected(true);
@@ -704,7 +716,7 @@ TEST_CASE("WD1770 Write Sector fails on write-protected disc", "[disc][wd1770][t
 
 // Phase 6.10: Reading data register clears DRQ
 TEST_CASE("WD1770 Reading data register clears DRQ", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -728,7 +740,7 @@ TEST_CASE("WD1770 Reading data register clears DRQ", "[disc][wd1770][type2]") {
 
 // Phase 6.11: DRQ appears in status register
 TEST_CASE("WD1770 DRQ appears in status register", "[disc][wd1770][type2]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -753,7 +765,7 @@ TEST_CASE("WD1770 DRQ appears in status register", "[disc][wd1770][type2]") {
 // ============================================================================
 
 TEST_CASE("WD1770 Step-In timing uses step rate 00 (6ms)", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -769,7 +781,7 @@ TEST_CASE("WD1770 Step-In timing uses step rate 00 (6ms)", "[disc][wd1770][timin
 }
 
 TEST_CASE("WD1770 Step-In timing uses step rate 01 (12ms)", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -785,7 +797,7 @@ TEST_CASE("WD1770 Step-In timing uses step rate 01 (12ms)", "[disc][wd1770][timi
 }
 
 TEST_CASE("WD1770 Step-In timing uses step rate 10 (20ms)", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -801,7 +813,7 @@ TEST_CASE("WD1770 Step-In timing uses step rate 10 (20ms)", "[disc][wd1770][timi
 }
 
 TEST_CASE("WD1770 Step-In timing uses step rate 11 (30ms)", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -817,7 +829,7 @@ TEST_CASE("WD1770 Step-In timing uses step rate 11 (30ms)", "[disc][wd1770][timi
 }
 
 TEST_CASE("WD1770 Seek uses selected step rate", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -840,7 +852,7 @@ TEST_CASE("WD1770 Seek uses selected step rate", "[disc][wd1770][timing]") {
 }
 
 TEST_CASE("WD1770 Restore uses selected step rate", "[disc][wd1770][timing]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -869,7 +881,7 @@ TEST_CASE("WD1770 Restore uses selected step rate", "[disc][wd1770][timing]") {
 // ============================================================================
 
 TEST_CASE("WD1770 Type I status bit 7 reflects motor state", "[disc][wd1770][status]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -890,7 +902,7 @@ TEST_CASE("WD1770 Type I status bit 7 reflects motor state", "[disc][wd1770][sta
 }
 
 TEST_CASE("WD1770 Type I TRACK0 status set at track 0", "[disc][wd1770][status]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -904,7 +916,7 @@ TEST_CASE("WD1770 Type I TRACK0 status set at track 0", "[disc][wd1770][status]"
 }
 
 TEST_CASE("WD1770 Type I TRACK0 status clear when not at track 0", "[disc][wd1770][status]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -925,7 +937,7 @@ TEST_CASE("WD1770 Type II status bit 2 is LOST_DATA not TRACK0", "[disc][wd1770]
     // Type I: TRACK0
     // Type II: LOST_DATA
 
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -945,7 +957,7 @@ TEST_CASE("WD1770 Type II status bit 2 is LOST_DATA not TRACK0", "[disc][wd1770]
 }
 
 TEST_CASE("WD1770 Write protect status bit", "[disc][wd1770][status]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     disc->set_write_protected(true);
@@ -962,7 +974,7 @@ TEST_CASE("WD1770 Write protect status bit", "[disc][wd1770][status]") {
 }
 
 TEST_CASE("WD1770 RNF status bit for invalid sector", "[disc][wd1770][status]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();  // 10 sectors per track
     drive.insert(std::move(disc));
@@ -982,7 +994,7 @@ TEST_CASE("WD1770 RNF status bit for invalid sector", "[disc][wd1770][status]") 
 // ============================================================================
 
 TEST_CASE("WD1770 Force Interrupt 0xD0 terminates without INTRQ", "[disc][wd1770][type4]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1001,7 +1013,7 @@ TEST_CASE("WD1770 Force Interrupt 0xD0 terminates without INTRQ", "[disc][wd1770
 }
 
 TEST_CASE("WD1770 Force Interrupt with I3 flag sets INTRQ", "[disc][wd1770][type4]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     CHECK_FALSE(controller.intrq());
 
@@ -1013,7 +1025,7 @@ TEST_CASE("WD1770 Force Interrupt with I3 flag sets INTRQ", "[disc][wd1770][type
 }
 
 TEST_CASE("WD1770 Force Interrupt with I2 flag sets INTRQ", "[disc][wd1770][type4]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
 
     CHECK_FALSE(controller.intrq());
 
@@ -1026,7 +1038,7 @@ TEST_CASE("WD1770 Force Interrupt with I2 flag sets INTRQ", "[disc][wd1770][type
 }
 
 TEST_CASE("WD1770 Force Interrupt clears DRQ", "[disc][wd1770][type4]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1049,7 +1061,7 @@ TEST_CASE("WD1770 Force Interrupt clears DRQ", "[disc][wd1770][type4]") {
 }
 
 TEST_CASE("WD1770 Force Interrupt can abort any command", "[disc][wd1770][type4]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1075,7 +1087,7 @@ TEST_CASE("WD1770 Force Interrupt can abort any command", "[disc][wd1770][type4]
 }
 
 TEST_CASE("WD1770 INTRQ asserted on command completion", "[disc][wd1770][intrq]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1092,7 +1104,7 @@ TEST_CASE("WD1770 INTRQ asserted on command completion", "[disc][wd1770][intrq]"
 }
 
 TEST_CASE("WD1770 Reading status clears INTRQ", "[disc][wd1770][intrq]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1113,7 +1125,7 @@ TEST_CASE("WD1770 Reading status clears INTRQ", "[disc][wd1770][intrq]") {
 // ============================================================================
 
 TEST_CASE("WD1770 command ignored when busy", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1140,7 +1152,7 @@ TEST_CASE("WD1770 command ignored when busy", "[disc][wd1770][edge]") {
 }
 
 TEST_CASE("WD1770 Step-Out at track 0 stays at track 0", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1161,7 +1173,7 @@ TEST_CASE("WD1770 Step-Out at track 0 stays at track 0", "[disc][wd1770][edge]")
 }
 
 TEST_CASE("WD1770 Registers protected when BUSY", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1188,7 +1200,7 @@ TEST_CASE("WD1770 Registers protected when BUSY", "[disc][wd1770][edge]") {
 }
 
 TEST_CASE("WD1770 Data register can be written while busy", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1212,7 +1224,7 @@ TEST_CASE("WD1770 Data register can be written while busy", "[disc][wd1770][edge
 }
 
 TEST_CASE("WD1770 Read with no disc sets RNF", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;  // Empty drive, no disc
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
@@ -1226,7 +1238,7 @@ TEST_CASE("WD1770 Read with no disc sets RNF", "[disc][wd1770][edge]") {
 }
 
 TEST_CASE("WD1770 Write with no disc sets RNF", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;  // Empty drive, no disc
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
@@ -1240,7 +1252,7 @@ TEST_CASE("WD1770 Write with no disc sets RNF", "[disc][wd1770][edge]") {
 }
 
 TEST_CASE("WD1770 multiple Step-In commands work correctly", "[disc][wd1770][edge]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1264,7 +1276,7 @@ TEST_CASE("WD1770 multiple Step-In commands work correctly", "[disc][wd1770][edg
 // ============================================================================
 
 TEST_CASE("WD1770 Read Address sets BUSY and DRQ", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1278,7 +1290,7 @@ TEST_CASE("WD1770 Read Address sets BUSY and DRQ", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Read Address returns 6-byte ID field", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1318,7 +1330,7 @@ TEST_CASE("WD1770 Read Address returns 6-byte ID field", "[disc][wd1770][type3]"
 }
 
 TEST_CASE("WD1770 Read Address updates sector register", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1346,7 +1358,7 @@ TEST_CASE("WD1770 Read Address updates sector register", "[disc][wd1770][type3]"
 }
 
 TEST_CASE("WD1770 Read Address with no disc sets RNF", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;  // Empty drive
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
@@ -1358,7 +1370,7 @@ TEST_CASE("WD1770 Read Address with no disc sets RNF", "[disc][wd1770][type3]") 
 }
 
 TEST_CASE("WD1770 Read Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1372,7 +1384,7 @@ TEST_CASE("WD1770 Read Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Read Track returns all sectors", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc_ptr = MemoryDiscImage::create_ssd();
     auto* disc = disc_ptr.get();
@@ -1414,7 +1426,7 @@ TEST_CASE("WD1770 Read Track returns all sectors", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Read Track with no disc sets RNF", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;  // Empty drive
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
@@ -1426,7 +1438,7 @@ TEST_CASE("WD1770 Read Track with no disc sets RNF", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Write Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1440,7 +1452,7 @@ TEST_CASE("WD1770 Write Track sets BUSY and DRQ", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Write Track writes all sectors", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc_ptr = MemoryDiscImage::create_ssd();
     auto* disc = disc_ptr.get();
@@ -1477,7 +1489,7 @@ TEST_CASE("WD1770 Write Track writes all sectors", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Write Track on protected disc sets WRITE_PROT", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     disc->set_write_protected(true);
@@ -1492,7 +1504,7 @@ TEST_CASE("WD1770 Write Track on protected disc sets WRITE_PROT", "[disc][wd1770
 }
 
 TEST_CASE("WD1770 Write Track with no disc sets RNF", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;  // Empty drive
     controller.attach_drive(0, &drive);
     controller.set_drive(0);
@@ -1504,7 +1516,7 @@ TEST_CASE("WD1770 Write Track with no disc sets RNF", "[disc][wd1770][type3]") {
 }
 
 TEST_CASE("WD1770 Read Address reflects current track", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_ssd();
     drive.insert(std::move(disc));
@@ -1534,7 +1546,7 @@ TEST_CASE("WD1770 Read Address reflects current track", "[disc][wd1770][type3]")
 }
 
 TEST_CASE("WD1770 Read Address reflects current side", "[disc][wd1770][type3]") {
-    WD1770 controller;
+    auto controller = create_test_controller();
     DiscDrive drive;
     auto disc = MemoryDiscImage::create_dsd();  // Double-sided
     drive.insert(std::move(disc));

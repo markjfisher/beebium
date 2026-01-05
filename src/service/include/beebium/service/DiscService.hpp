@@ -226,6 +226,44 @@ public:
         }
     }
 
+    grpc::Status SetSpinUpDelay(
+        grpc::ServerContext* context,
+        const SetSpinUpDelayRequest* request,
+        SetSpinUpDelayResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if constexpr (!HasDiscDrives<typename MachineType::Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no disc controller");
+            return grpc::Status::OK;
+        } else {
+            machine_.state().memory.disc_controller.set_spin_up_delay_enabled(request->enabled());
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status GetSpinUpDelay(
+        grpc::ServerContext* context,
+        const GetSpinUpDelayRequest* request,
+        GetSpinUpDelayResponse* response) override
+    {
+        (void)context;
+        (void)request;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if constexpr (!HasDiscDrives<typename MachineType::Memory>) {
+            // No disc controller - return false (no delay possible)
+            response->set_enabled(false);
+            return grpc::Status::OK;
+        } else {
+            response->set_enabled(machine_.state().memory.disc_controller.spin_up_delay_enabled());
+            return grpc::Status::OK;
+        }
+    }
+
 private:
     void fill_disc_metadata(DiscMetadata* metadata, const DiscImage* image) {
         if (!image) return;

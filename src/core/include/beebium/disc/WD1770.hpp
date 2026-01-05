@@ -81,6 +81,10 @@ public:
     WD1770(const WD1770&) = delete;
     WD1770& operator=(const WD1770&) = delete;
 
+    // Movable (for factory functions in tests)
+    WD1770(WD1770&&) = default;
+    WD1770& operator=(WD1770&&) = default;
+
     // Register access (offset is masked to 2 bits)
     uint8_t read(uint16_t offset) {
         switch (offset & 0x03) {
@@ -128,7 +132,20 @@ public:
 
     // Clock tick (1MHz peripheral clock)
     void tick() {
+        // Track idle time for motor spindown when not busy
         if (!(status_ & STATUS_BUSY)) {
+            if (motor_on_) {
+                if (++idle_ticks_ >= MOTOR_OFF_DELAY_TICKS) {
+                    spin_down();
+                    idle_ticks_ = 0;
+                }
+            }
+            return;
+        }
+
+        // Wait for motor spin-up delay before processing commands
+        if (spin_up_delay_ > 0) {
+            --spin_up_delay_;
             return;
         }
 
@@ -206,6 +223,10 @@ public:
     uint8_t selected_drive() const { return selected_drive_; }
     bool is_double_density() const { return double_density_; }
 
+    // Spin-up delay configuration (for automation scenarios)
+    void set_spin_up_delay_enabled(bool enabled) { spin_up_delay_enabled_ = enabled; }
+    bool spin_up_delay_enabled() const { return spin_up_delay_enabled_; }
+
     // Reset controller
     void reset() {
         status_ = 0x00;
@@ -229,6 +250,13 @@ public:
         sector_buffer_.clear();
         byte_counter_ = 0;
         byte_delay_ = 0;
+
+        // Reset motor state - spin down if motor was running
+        if (motor_on_) {
+            spin_down();
+        }
+        idle_ticks_ = 0;
+        spin_up_delay_ = 0;
     }
 
     // Identification
@@ -282,6 +310,10 @@ private:
         // be interpreted as LOST_DATA in a Type II/III command.
         status_ = STATUS_BUSY;
         intrq_ = false;
+
+        // Spin up motor for all disc access commands (Type I/II/III)
+        // The WD1770 handles motor control internally, not via external control
+        spin_up();
 
         // Determine step rate from command bits 0-1
         // 6ms, 12ms, 20ms, 30ms at 1MHz
@@ -760,6 +792,33 @@ private:
         return drives_[selected_drive_];
     }
 
+    // Motor control - called internally by WD1770 during command execution
+    void spin_up() {
+        if (!motor_on_) {
+            motor_on_ = true;
+            status_ |= STATUS_MOTOR_ON;
+            // Set spin-up delay if enabled (motor needs time to reach stable speed)
+            if (spin_up_delay_enabled_) {
+                spin_up_delay_ = SPIN_UP_DELAY_TICKS;
+            }
+            if (auto* drive = get_current_drive()) {
+                drive->spin_up();
+            }
+        }
+        // Reset idle counter whenever motor is requested
+        idle_ticks_ = 0;
+    }
+
+    void spin_down() {
+        if (motor_on_) {
+            motor_on_ = false;
+            status_ &= ~STATUS_MOTOR_ON;
+            if (auto* drive = get_current_drive()) {
+                drive->spin_down();
+            }
+        }
+    }
+
     // Registers
     uint8_t status_ = 0x00;
     uint8_t track_ = 0x00;
@@ -794,10 +853,26 @@ private:
     // This is 64 1MHz ticks. The WD1770 is clocked at 1MHz.
     static constexpr int US_PER_BYTE = 64;
 
+    // Motor spindown delay: ~2 seconds at 1MHz (2 million ticks).
+    // Real WD1770 spins down after 10 index pulses (~2 seconds at 300 RPM).
+    static constexpr int MOTOR_OFF_DELAY_TICKS = 2'000'000;
+
+    // Motor spin-up delay: ~1.2 seconds at 1MHz (1.2 million ticks).
+    // Real WD1770 waits 6 revolutions at 300 RPM for motor to reach stable speed.
+    static constexpr int SPIN_UP_DELAY_TICKS = 1'200'000;
+
     // Type III Read Address state
     // ID field: Track, Side, Sector, Size, CRC1, CRC2
     std::array<uint8_t, 6> id_field_{};
     uint8_t id_field_index_ = 0;
+
+    // Motor control state
+    bool motor_on_ = false;    // WD1770's internal motor status bit (STATUS_MOTOR_ON)
+    int idle_ticks_ = 0;       // Ticks since last command completed (for spindown)
+
+    // Spin-up delay state (configurable for automation scenarios)
+    bool spin_up_delay_enabled_ = true;  // On by default for accurate emulation
+    int spin_up_delay_ = 0;              // Countdown timer for motor spin-up
 };
 
 } // namespace beebium

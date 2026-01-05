@@ -358,6 +358,211 @@ uint8_t poll_nmi() {
 
 Note the ordering: NMI state is sampled **before** ticking the controller. This is critical for edge detection—after the CPU reads the DATA register (clearing DRQ), `poll_nmi()` returns 0. Then `tick()` may set DRQ for the next byte. On the next `poll_nmi()` call, we return 1, creating a clean 0→1 edge for the 6502's edge-triggered NMI detection.
 
+### Motor Control
+
+The BBC Micro's disc interface supported two different floppy disc controllers with fundamentally different motor control mechanisms. Understanding this distinction is crucial for emulator implementation.
+
+#### 8271 vs WD1770 Motor Control
+
+| Controller | Motor Control | Used In |
+|------------|--------------|---------|
+| Intel 8271 | **Explicit** via disc control register bit 4 | Model B (original) |
+| WD1770 | **Internal** to controller during command execution | Model B+ (built-in), Model B (upgrade) |
+
+The disc control register at 0xFE80 has bit 4 labelled "Motor on" in documentation, but this is only relevant for 8271-style explicit motor control. The WD1770 manages motor state internally:
+
+```
+8271 Motor Control:
+    DFS software → writes 0x1x to 0xFE80 → motor on
+    DFS software → writes 0x0x to 0xFE80 → motor off
+
+WD1770 Motor Control:
+    DFS software → writes command to 0xFE84 → WD1770 spins up internally
+    WD1770 → command completes → idle timeout → WD1770 spins down internally
+```
+
+**Evidence:** When DFS 2.26 issues a `*CAT` command, it writes `0x29` to the disc control register:
+- Bit 0 = 1: Drive 0 select
+- Bit 3 = 1: Single density
+- Bit 4 = 0: **Motor bit is NOT set**
+- Bit 5 = 1: Reset inactive
+
+DFS does not set the motor bit because it relies on the WD1770's internal motor control.
+
+#### WD1770 Internal Motor Control
+
+The WD1770 maintains motor state via the STATUS_MOTOR_ON bit (bit 7 of the status register). Motor control is triggered by command execution:
+
+```cpp
+// In WD1770::execute_command()
+void execute_command(uint8_t cmd) {
+    // ... command setup ...
+
+    // Spin up motor for all disc access commands (Type I/II/III)
+    spin_up();
+
+    // ... rest of command ...
+}
+```
+
+The `spin_up()` method:
+1. Sets the internal `motor_on_` flag
+2. Sets STATUS_MOTOR_ON in the status register
+3. Calls `DiscDrive::spin_up()` which activates the drive's motor and LED indicator
+4. Resets the idle timeout counter
+
+#### Motor Spin-Up Delay
+
+Real WD1770 hardware waits for the motor to reach stable speed before executing commands. This takes approximately 6 disc revolutions at 300 RPM (~1.2 seconds). Beebium implements this delay:
+
+```cpp
+// In WD1770::spin_up()
+void spin_up() {
+    if (!motor_on_) {
+        motor_on_ = true;
+        status_ |= STATUS_MOTOR_ON;
+        if (spin_up_delay_enabled_) {
+            spin_up_delay_ = SPIN_UP_DELAY_TICKS;  // 1.2M ticks at 1MHz
+        }
+        if (auto* drive = get_current_drive()) {
+            drive->spin_up();  // LED activates immediately
+        }
+    }
+}
+
+// In WD1770::tick()
+void tick() {
+    if (spin_up_delay_ > 0) {
+        --spin_up_delay_;
+        return;  // Wait for motor to reach speed
+    }
+    // ... command execution proceeds ...
+}
+```
+
+**Behavior:**
+- LED activates immediately when `spin_up()` is called
+- Command execution is delayed until spin-up completes
+- If motor is already running, no delay (commands execute immediately)
+
+**Configuration via gRPC:**
+
+The spin-up delay can be disabled for automation scenarios via the DiscService gRPC API:
+
+```protobuf
+service DiscService {
+    rpc SetSpinUpDelay(SetSpinUpDelayRequest) returns (SetSpinUpDelayResponse);
+    rpc GetSpinUpDelay(GetSpinUpDelayRequest) returns (GetSpinUpDelayResponse);
+}
+
+message SetSpinUpDelayRequest { bool enabled = 1; }
+message GetSpinUpDelayResponse { bool enabled = 1; }
+```
+
+**Usage:**
+```
+// Disable for fast automated testing
+DiscService.SetSpinUpDelay(enabled=false)
+
+// Query current setting
+DiscService.GetSpinUpDelay() → enabled: true/false
+```
+
+**Direct accessor (for tests):**
+```cpp
+machine.state().memory.disc_controller.set_spin_up_delay_enabled(false);
+```
+
+#### Motor Spin-Down Timeout
+
+After a command completes, the motor remains on for an idle period before spinning down. Real WD1770 hardware spins down after approximately 10 index pulses (~2 seconds at 300 RPM). Beebium implements this as a tick counter:
+
+```cpp
+// In WD1770::tick()
+void tick() {
+    if (!(status_ & STATUS_BUSY)) {
+        if (motor_on_) {
+            if (++idle_ticks_ >= MOTOR_OFF_DELAY_TICKS) {  // 2,000,000 ticks = 2s at 1MHz
+                spin_down();
+                idle_ticks_ = 0;
+            }
+        }
+        return;
+    }
+    // ... command execution ...
+}
+```
+
+The `spin_down()` method:
+1. Clears the internal `motor_on_` flag
+2. Clears STATUS_MOTOR_ON in the status register
+3. Calls `DiscDrive::spin_down()` which deactivates the drive's motor and LED indicator
+
+#### Object Model
+
+The motor control hierarchy follows proper encapsulation:
+
+```
+WD1770 (disc controller)
+    │
+    ├── spin_up() / spin_down()     ← called during command execution
+    │
+    └── DiscDrive (physical drive)
+            │
+            ├── spin_up() / spin_down()  ← delegated from WD1770
+            │
+            ├── set_motor(bool)          ← updates motor state & indicator
+            │
+            └── Indicators               ← activity LED signaling
+```
+
+The WD1770 talks to drives (via `DiscDrive` pointers), and drives encapsulate their motor. The disc controller doesn't directly manipulate indicators; that's handled by `DiscDrive::set_motor()`.
+
+#### Implications for 8271 Implementation
+
+When implementing Intel 8271 support for Model B compatibility:
+
+1. **8271 does NOT have internal motor control** — the motor bit in the disc control register (0xFE80 bit 4) must directly control `DiscDrive::set_motor()`
+
+2. **DFS for 8271 explicitly sets motor bit** — the software writes to enable/disable motor
+
+3. **Same DiscDrive class can be used** — only the controller logic differs:
+   ```cpp
+   // 8271 disc control register write handler
+   void write(uint16_t, uint8_t value) {
+       // ...
+       // Bit 4: Motor on (8271 explicit control)
+       drive0.set_motor((value & 0x10) != 0);
+       drive1.set_motor((value & 0x10) != 0);
+       // ...
+   }
+   ```
+
+4. **Detection mechanism** — DFS reads from 0xFE80 to distinguish controllers:
+   - 8271: Returns valid status (command/status registers at 0xFE80-0xFE83)
+   - WD1770: Returns 0xFF (write-only latch, open bus on read)
+
+#### Drive Activity LED Indicators
+
+Motor state directly controls the drive activity LED indicator:
+
+```cpp
+// In DiscDrive::set_motor()
+void set_motor(bool on) {
+    if (motor_on_ != on) {
+        motor_on_ = on;
+        if (indicators_) {
+            indicators_->set(activity_led_id_, on ? 255 : 0);
+        }
+    }
+}
+```
+
+With WD1770 internal motor control:
+- LED activates when WD1770 executes any Type I/II/III command
+- LED remains on during command execution and idle timeout
+- LED deactivates ~2 seconds after last command completes
+
 ## File Formats
 
 ### SSD (Single-Sided Disc)
@@ -429,6 +634,9 @@ machine.memory().disc_drive_0.insert(std::move(disc));
 - DRQ/INTRQ signal generation with proper timing
 - Inter-byte timing (64µs between bytes at 250kbps MFM)
 - 1MHz clock synchronization for NMI updates
+- Motor control (spin-up at command start, spin-down after ~2s idle)
+- Motor spin-up delay (~1.2s, configurable via gRPC for automation)
+- Drive activity LED indicators via motor state
 - Model B+ hardware integration
 - Command-line disc configuration
 
@@ -460,7 +668,6 @@ The following features are not implemented. They may be needed for compatibility
 
 ### Medium Priority
 
-- **Motor spin-up timing**: Commands execute immediately; real WD1770 waits 6 revolutions (~1.2s).
 - **Head load/settle timing**: 15ms or 30ms delay not implemented.
 - **CRC error detection**: Sector CRC not verified on read.
 
