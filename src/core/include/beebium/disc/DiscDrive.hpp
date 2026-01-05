@@ -68,7 +68,7 @@ public:
     // Constructor with indicator integration
     // @param indicators Pointer to Indicators instance
     // @param indicator_name Name for the activity LED (e.g., "floppy-0-activity-led")
-    // @param label Human-readable label (e.g., "Drive 0")
+    // @param label Human-readable label (e.g., "Floppy 0")
     DiscDrive(Indicators& indicators, const std::string& indicator_name, const std::string& label)
         : indicators_(&indicators)
     {
