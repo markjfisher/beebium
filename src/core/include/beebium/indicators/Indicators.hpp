@@ -28,13 +28,58 @@
 
 namespace beebium {
 
+// =============================================================================
+// Clock Abstractions for Dependency Injection
+// =============================================================================
+
+/// Default clock using std::chrono::steady_clock.
+/// Used in production.
+struct SteadyClock {
+    using time_point = std::chrono::steady_clock::time_point;
+    using duration = std::chrono::steady_clock::duration;
+
+    static time_point now() {
+        return std::chrono::steady_clock::now();
+    }
+};
+
+/// Manually-controlled clock for testing.
+/// Allows tests to control time progression without relying on wall-clock time.
+struct ManualClock {
+    using time_point = std::chrono::steady_clock::time_point;
+    using duration = std::chrono::steady_clock::duration;
+
+    static time_point now() {
+        return current_time_;
+    }
+
+    static void set(time_point t) {
+        current_time_ = t;
+    }
+
+    static void advance(duration d) {
+        current_time_ += d;
+    }
+
+    static void reset() {
+        current_time_ = time_point{};
+    }
+
+private:
+    static inline time_point current_time_{};
+};
+
 /// Event representing an indicator value change.
 /// Pushed to the event queue by the emulation thread.
-struct IndicatorEvent {
+template<typename Clock = SteadyClock>
+struct IndicatorEventT {
     uint16_t id;
     uint8_t value;
-    std::chrono::steady_clock::time_point timestamp;
+    typename Clock::time_point timestamp;
 };
+
+// Default event type for production
+using IndicatorEvent = IndicatorEventT<SteadyClock>;
 
 /// Manages observable hardware state (LEDs, motors) with configurable filtering.
 ///
@@ -47,19 +92,24 @@ struct IndicatorEvent {
 /// - A unique string name (e.g., "caps-lock-led", "floppy-0-activity-led")
 /// - A filter policy (passthrough, debounce, duty-cycle)
 /// - Optional metadata (label, color, shape) for frontend rendering
-class Indicators {
+///
+/// Template parameter Clock allows injection of a test clock for deterministic testing.
+template<typename Clock = SteadyClock>
+class IndicatorsBase {
 public:
-    Indicators() = default;
+    using Event = IndicatorEventT<Clock>;
 
-    ~Indicators() {
+    IndicatorsBase() = default;
+
+    ~IndicatorsBase() {
         stop();
     }
 
     // Non-copyable, non-movable (owns thread)
-    Indicators(const Indicators&) = delete;
-    Indicators& operator=(const Indicators&) = delete;
-    Indicators(Indicators&&) = delete;
-    Indicators& operator=(Indicators&&) = delete;
+    IndicatorsBase(const IndicatorsBase&) = delete;
+    IndicatorsBase& operator=(const IndicatorsBase&) = delete;
+    IndicatorsBase(IndicatorsBase&&) = delete;
+    IndicatorsBase& operator=(IndicatorsBase&&) = delete;
 
     /// Register an indicator with a filter policy.
     /// Must be called before start().
@@ -94,7 +144,7 @@ public:
     /// @param value New value (typically 0 or 255)
     /// @return true if event was queued, false if queue was full (event dropped)
     bool set(uint16_t id, uint8_t value) {
-        IndicatorEvent event{id, value, std::chrono::steady_clock::now()};
+        Event event{id, value, Clock::now()};
         return event_queue_.try_enqueue(event);
     }
 
@@ -180,7 +230,7 @@ public:
         if (running_.exchange(true)) {
             return;  // Already running
         }
-        consumer_thread_ = std::thread(&Indicators::consumer_loop, this);
+        consumer_thread_ = std::thread(&IndicatorsBase::consumer_loop, this);
     }
 
     /// Stop the consumer thread and wait for it to finish.
@@ -196,6 +246,42 @@ public:
     /// Check if the consumer thread is running.
     bool is_running() const {
         return running_.load(std::memory_order_relaxed);
+    }
+
+    /// Process pending events and sample all filters synchronously.
+    /// For testing with ManualClock - allows deterministic testing without consumer thread.
+    /// @return true if any published value changed
+    bool process_pending() {
+        auto now = Clock::now();
+
+        // Drain the event queue, dispatch to filters
+        Event event;
+        while (event_queue_.try_dequeue(event)) {
+            std::shared_lock lock(registry_mutex_);
+            if (event.id < indicators_.size()) {
+                indicators_[event.id].filter->update(event.value, event.timestamp);
+            }
+        }
+
+        // Sample all filters, update published values
+        bool any_changed = false;
+        {
+            std::shared_lock lock(registry_mutex_);
+            for (auto& state : indicators_) {
+                uint8_t old_val = state.published_value.load(std::memory_order_relaxed);
+                uint8_t new_val = state.filter->sample(now);
+                if (old_val != new_val) {
+                    state.published_value.store(new_val, std::memory_order_relaxed);
+                    any_changed = true;
+                }
+            }
+        }
+
+        if (any_changed) {
+            sequence_.fetch_add(1, std::memory_order_release);
+        }
+
+        return any_changed;
     }
 
 private:
@@ -216,10 +302,10 @@ private:
 
     void consumer_loop() {
         while (running_.load(std::memory_order_relaxed)) {
-            auto now = std::chrono::steady_clock::now();
+            auto now = Clock::now();
 
             // Drain the event queue, dispatch to filters
-            IndicatorEvent event;
+            Event event;
             while (event_queue_.try_dequeue(event)) {
                 std::shared_lock lock(registry_mutex_);
                 if (event.id < indicators_.size()) {
@@ -256,7 +342,7 @@ private:
     mutable std::shared_mutex registry_mutex_;
 
     // Lock-free event queue (ring buffer, drops old events when full)
-    moodycamel::ReaderWriterQueue<IndicatorEvent> event_queue_{4096};
+    moodycamel::ReaderWriterQueue<Event> event_queue_{4096};
 
     // Consumer thread
     std::thread consumer_thread_;
@@ -265,6 +351,12 @@ private:
     // Change tracking
     std::atomic<uint64_t> sequence_{0};
 };
+
+// Type alias for production use (backwards compatibility)
+using Indicators = IndicatorsBase<SteadyClock>;
+
+// Type alias for testing with manually controlled time
+using TestIndicators = IndicatorsBase<ManualClock>;
 
 } // namespace beebium
 

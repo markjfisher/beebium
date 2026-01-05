@@ -256,60 +256,65 @@ TEST_CASE("Indicators sequence does not increment when value unchanged", "[indic
 // =============================================================================
 
 TEST_CASE("Indicators with DebounceFilter delays value change", "[indicators]") {
-    Indicators indicators;
+    // Use ManualClock for deterministic timing - no reliance on wall-clock
+    ManualClock::reset();
 
-    // Use 500ms debounce to provide margin for thread scheduling delays in CI
+    TestIndicators indicators;
+
+    // 100ms debounce
     indicators.register_indicator(
         "led",
-        std::make_unique<DebounceFilter>(500ms)
+        std::make_unique<DebounceFilter>(100ms)
     );
 
-    indicators.start();
-
-    // Set value
+    // Set value at time 0
     indicators.set("led", 255);
 
-    // After 100ms, value should still be 0 (debounce not complete)
-    // Using 100ms check with 500ms debounce gives 400ms margin for thread delays
-    std::this_thread::sleep_for(100ms);
+    // Process at time 50ms - should still be 0 (debounce not complete)
+    ManualClock::advance(50ms);
+    indicators.process_pending();
     REQUIRE(indicators.get("led") == 0);
 
-    // After another 500ms (total ~600ms), debounce should be complete
-    std::this_thread::sleep_for(500ms);
-    REQUIRE(indicators.get("led") == 255);
+    // Process at time 99ms - should still be 0
+    ManualClock::advance(49ms);
+    indicators.process_pending();
+    REQUIRE(indicators.get("led") == 0);
 
-    indicators.stop();
+    // Process at time 101ms - debounce complete, should be 255
+    ManualClock::advance(2ms);
+    indicators.process_pending();
+    REQUIRE(indicators.get("led") == 255);
 }
 
 TEST_CASE("Indicators with DutyCycleFilter computes average", "[indicators]") {
-    Indicators indicators;
+    // Use ManualClock for deterministic timing - no reliance on wall-clock
+    ManualClock::reset();
+
+    TestIndicators indicators;
 
     auto id = indicators.register_indicator(
         "led",
         std::make_unique<DutyCycleFilter>(100ms)
     );
 
-    indicators.start();
-
-    // Simulate 50% PWM: alternate on/off every 10ms
-    for (int i = 0; i < 10; ++i) {
+    // Simulate 50% PWM: alternate on/off every 10ms over 100ms window
+    for (int i = 0; i < 5; ++i) {
+        // On for 10ms
         indicators.set(id, 255);
-        std::this_thread::sleep_for(5ms);
+        ManualClock::advance(10ms);
+        indicators.process_pending();
+
+        // Off for 10ms
         indicators.set(id, 0);
-        std::this_thread::sleep_for(5ms);
+        ManualClock::advance(10ms);
+        indicators.process_pending();
     }
 
-    // Wait for filter to settle
-    std::this_thread::sleep_for(50ms);
-
-    // Should be roughly 50% (127 +/- tolerance for timing jitter)
+    // After 100ms of 50% duty cycle, value should be close to 127
     auto value = indicators.get("led");
-    // Very wide tolerance due to timing variability in CI/test environments
-    // The key assertion is that we get a non-zero, non-max intermediate value
-    REQUIRE(value >= 20);
-    REQUIRE(value <= 235);
-
-    indicators.stop();
+    // With deterministic timing, we can use a tighter tolerance
+    REQUIRE(value >= 100);
+    REQUIRE(value <= 155);
 }
 
 // =============================================================================
