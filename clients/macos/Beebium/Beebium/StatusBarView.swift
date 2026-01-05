@@ -12,23 +12,31 @@
 
 import SwiftUI
 
-@main
-struct BeebiumApp: App {
-    @AppStorage("showStatusBar") private var showStatusBar = true
+/// Status bar displayed at the bottom of the main window
+struct StatusBarView: View {
+    @ObservedObject var systemClient: SystemClient
 
-    init() {
-        NSLog("[BeebiumApp] Starting...")
-    }
+    var body: some View {
+        HStack {
+            Spacer()
 
-    var body: some Scene {
-        WindowGroup("Beebium") {
-            ContentView(showStatusBar: $showStatusBar)
-        }
-        .commands {
-            CommandGroup(after: .toolbar) {
-                Toggle("Show Status Bar", isOn: $showStatusBar)
-                    .keyboardShortcut("/", modifiers: .command)
+            if systemClient.isLoaded {
+                Text(systemClient.machineDisplayName)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.bar)
     }
 }
+
+#if DEBUG
+struct StatusBarView_Previews: PreviewProvider {
+    static var previews: some View {
+        StatusBarView(systemClient: SystemClient())
+            .frame(width: 400)
+    }
+}
+#endif

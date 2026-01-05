@@ -57,8 +57,10 @@ Beebium.app
 ├── BeebiumApp.swift      # App entry point
 ├── ContentView.swift     # Main window
 ├── EmulatorView.swift    # Emulator display container
+├── StatusBarView.swift   # Status bar at bottom of window
 ├── VideoClient.swift     # gRPC video streaming client
 ├── KeyboardClient.swift  # gRPC keyboard input client
+├── SystemClient.swift    # gRPC system info client
 ├── KeyboardMapper.swift  # macOS keycode to BBC matrix mapping
 ├── KeyboardMTKView.swift # Metal view with keyboard handling
 ├── MetalRenderer.swift   # Metal frame rendering
@@ -66,8 +68,17 @@ Beebium.app
     ├── video.pb.swift
     ├── video.grpc.swift
     ├── keyboard.pb.swift
-    └── keyboard.grpc.swift
+    ├── keyboard.grpc.swift
+    ├── system.pb.swift
+    └── system.grpc.swift
 ```
+
+## Status Bar
+
+The status bar displays information about the connected emulator at the bottom of the window. Currently it shows the machine model (e.g., "BBC Model B+ 64K").
+
+- **Toggle visibility**: View > Show Status Bar (Cmd+/)
+- The preference is persisted across app launches using UserDefaults
 
 ## Regenerating gRPC Stubs
 
@@ -77,9 +88,10 @@ If the proto files change:
 protoc \
   --swift_out=Beebium/Generated \
   --grpc-swift_out=Beebium/Generated \
-  -I ../../src/service/proto \
-  ../../src/service/proto/video.proto \
-  ../../src/service/proto/keyboard.proto
+  -I ../../../src/service/proto \
+  ../../../src/service/proto/video.proto \
+  ../../../src/service/proto/keyboard.proto \
+  ../../../src/service/proto/system.proto
 ```
 
 Requires `protoc` and `protoc-gen-grpc-swift`:

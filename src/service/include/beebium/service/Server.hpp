@@ -18,6 +18,7 @@
 #include "beebium/service/DebuggerService.hpp"
 #include "beebium/service/DiscService.hpp"
 #include "beebium/service/IndicatorService.hpp"
+#include "beebium/service/SystemService.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
 
@@ -75,6 +76,7 @@ private:
         std::unique_ptr<Debugger6502ServiceImpl<MachineType>> debugger_6502_service;
         std::unique_ptr<DiscServiceImpl<MachineType>> disc_service;
         std::unique_ptr<IndicatorServiceImpl<MachineType>> indicator_service;
+        std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
         std::unique_ptr<grpc::Server> grpc_server;
 
         std::atomic<bool> running{false};
@@ -142,6 +144,9 @@ void Server<MachineType>::start() {
     impl_->indicator_service = std::make_unique<IndicatorServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
+        impl_->machine);
+
     // Build server address
     std::ostringstream addr_stream;
     addr_stream << impl_->address << ":" << impl_->port;
@@ -157,6 +162,7 @@ void Server<MachineType>::start() {
     builder.RegisterService(impl_->debugger_6502_service.get());
     builder.RegisterService(impl_->disc_service.get());
     builder.RegisterService(impl_->indicator_service.get());
+    builder.RegisterService(impl_->system_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
 
@@ -195,6 +201,7 @@ void Server<MachineType>::stop() {
     impl_->debugger_6502_service.reset();
     impl_->disc_service.reset();
     impl_->indicator_service.reset();
+    impl_->system_service.reset();
 }
 
 template<typename MachineType>

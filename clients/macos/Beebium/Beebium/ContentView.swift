@@ -16,15 +16,24 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var videoClient = VideoClient()
     @StateObject private var keyboardClient = KeyboardClient()
+    @StateObject private var systemClient = SystemClient()
+    @Binding var showStatusBar: Bool
 
     var body: some View {
-        ZStack {
-            // Emulator display (receives frames directly via videoClient.renderer)
-            EmulatorView(videoClient: videoClient, keyboardClient: keyboardClient)
+        VStack(spacing: 0) {
+            ZStack {
+                // Emulator display (receives frames directly via videoClient.renderer)
+                EmulatorView(videoClient: videoClient, keyboardClient: keyboardClient)
 
-            // Status overlay when not connected
-            if videoClient.connectionState != .connected {
-                statusOverlay
+                // Status overlay when not connected
+                if videoClient.connectionState != .connected {
+                    statusOverlay
+                }
+            }
+
+            // Status bar at bottom
+            if showStatusBar {
+                StatusBarView(systemClient: systemClient)
             }
         }
         .frame(minWidth: 320, minHeight: 240)
@@ -32,19 +41,24 @@ struct ContentView: View {
             videoClient.connect()
         }
         .onDisappear {
+            systemClient.disconnect()
             keyboardClient.disconnect()
             videoClient.disconnect()
         }
         .onChange(of: videoClient.connectionState) { newState in
-            // Connect keyboard client when video client connects
+            // Connect clients when video client connects
             if case .connected = newState, let channel = videoClient.channel {
                 keyboardClient.connect(channel: channel)
+                systemClient.connect(channel: channel)
             } else if case .disconnected = newState {
                 keyboardClient.disconnect()
+                systemClient.disconnect()
             } else if case .error = newState {
                 keyboardClient.disconnect()
+                systemClient.disconnect()
             }
         }
+        .navigationTitle("Beebium")
     }
 
     @ViewBuilder
@@ -93,7 +107,7 @@ struct ContentView: View {
 #if DEBUG
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView()
+        ContentView(showStatusBar: .constant(true))
     }
 }
 #endif

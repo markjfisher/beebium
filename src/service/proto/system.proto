@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package beebium;
+
+// System information service
+// Provides machine configuration and identity information
+service SystemService {
+    // Get current system/machine information
+    rpc GetSystemInfo(GetSystemInfoRequest) returns (SystemInfo);
+}
+
+message GetSystemInfoRequest {
+    // Future: request specific fields, version info, etc.
+}
+
+message SystemInfo {
+    // Machine identification
+    string machine_type = 1;         // Internal type ID (e.g., "ModelB", "ModelBPlus")
+    string machine_display_name = 2; // Human-readable name (e.g., "BBC Model B+ 64K")
+
+    // Future expansion:
+    // uint32 clock_speed_hz = 3;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
+    // string cpu_type = 4;          // Primary CPU (e.g., "6502", "65C02")
+    // string coprocessor_type = 5;  // Second processor if present (e.g., "Z80", "32016")
+}

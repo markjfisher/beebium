@@ -7,6 +7,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/debugger.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/disc.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/indicator.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/system.proto
 )
 
 # Output directories for generated code
