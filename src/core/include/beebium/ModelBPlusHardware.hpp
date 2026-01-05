@@ -257,9 +257,10 @@ private:
             // Bit 3: Density (0=double/MFM, 1=single/FM)
             controller.set_density((value & 0x08) == 0);
 
-            // Bit 4: Motor on
-            drive0.set_motor((value & 0x10) != 0);
-            drive1.set_motor((value & 0x10) != 0);
+            // Bit 4: Motor on (for 8271-style explicit control)
+            // Note: WD1770 handles motor internally via spin_up()/spin_down()
+            // during command execution, so this bit is effectively ignored.
+            // DFS writes 0x29 (motor bit clear), relying on WD1770's motor control.
 
             // Bit 5: Reset (active low)
             // Reset is active when bit 5 is LOW (0), inactive when HIGH (1)

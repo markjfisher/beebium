@@ -206,6 +206,16 @@ public:
 
     // --- Motor control ---
 
+    // Spin up the drive motor (called by disc controller at command start)
+    void spin_up() {
+        set_motor(true);
+    }
+
+    // Spin down the drive motor (called by disc controller after idle timeout)
+    void spin_down() {
+        set_motor(false);
+    }
+
     void set_motor(bool on) {
         if (motor_on_ != on) {
             if (motor_on_ && !on) {
