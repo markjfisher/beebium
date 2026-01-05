@@ -149,7 +149,8 @@ void Server<MachineType>::start() {
 
     // Create and start gRPC server
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    int selected_port = 0;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials(), &selected_port);
     builder.RegisterService(impl_->video_service.get());
     builder.RegisterService(impl_->keyboard_service.get());
     builder.RegisterService(impl_->debugger_control_service.get());
@@ -158,6 +159,12 @@ void Server<MachineType>::start() {
     builder.RegisterService(impl_->indicator_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
+
+    // Update port with the actual bound port (important when port 0 was requested)
+    if (selected_port > 0) {
+        impl_->port = static_cast<uint16_t>(selected_port);
+    }
+
     impl_->running = true;
 
     // Start render thread
