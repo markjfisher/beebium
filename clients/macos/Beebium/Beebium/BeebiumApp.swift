@@ -15,6 +15,7 @@ import SwiftUI
 @main
 struct BeebiumApp: App {
     @AppStorage("showStatusBar") private var showStatusBar = true
+    @AppStorage("showSidebar") private var showSidebar = true
 
     init() {
         NSLog("[BeebiumApp] Starting...")
@@ -22,12 +23,19 @@ struct BeebiumApp: App {
 
     var body: some Scene {
         WindowGroup("Beebium") {
-            ContentView(showStatusBar: $showStatusBar)
+            ContentView(showStatusBar: $showStatusBar, showSidebar: $showSidebar)
         }
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(after: .toolbar) {
                 Toggle("Show Status Bar", isOn: $showStatusBar)
                     .keyboardShortcut("/", modifiers: .command)
+            }
+            CommandGroup(before: .sidebar) {
+                Button(showSidebar ? "Hide Sidebar" : "Show Sidebar") {
+                    withAnimation { showSidebar.toggle() }
+                }
+                .keyboardShortcut("s", modifiers: [.control, .command])
             }
         }
     }

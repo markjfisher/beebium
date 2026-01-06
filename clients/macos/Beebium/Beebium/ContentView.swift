@@ -19,25 +19,45 @@ struct ContentView: View {
     @StateObject private var systemClient = SystemClient()
     @StateObject private var indicatorClient = IndicatorClient()
     @Binding var showStatusBar: Bool
+    @Binding var showSidebar: Bool
+
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { showSidebar ? .all : .detailOnly },
+            set: { showSidebar = ($0 != .detailOnly) }
+        )
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                // Emulator display (receives frames directly via videoClient.renderer)
-                EmulatorView(videoClient: videoClient, keyboardClient: keyboardClient)
+        NavigationSplitView(columnVisibility: columnVisibility) {
+            List {
+                // Sidebar content placeholder
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
+        } detail: {
+            VStack(spacing: 0) {
+                ZStack {
+                    // Emulator display (receives frames directly via videoClient.renderer)
+                    EmulatorView(videoClient: videoClient, keyboardClient: keyboardClient)
 
-                // Status overlay when not connected
-                if videoClient.connectionState != .connected {
-                    statusOverlay
+                    // Status overlay when not connected
+                    if videoClient.connectionState != .connected {
+                        statusOverlay
+                    }
+                }
+
+                // Status bar at bottom
+                if showStatusBar {
+                    StatusBarView(systemClient: systemClient, indicatorClient: indicatorClient)
                 }
             }
-
-            // Status bar at bottom
-            if showStatusBar {
-                StatusBarView(systemClient: systemClient, indicatorClient: indicatorClient)
-            }
+            .frame(minWidth: 320, minHeight: 240)
         }
-        .frame(minWidth: 320, minHeight: 240)
+        .navigationSplitViewStyle(.balanced)
+        .navigationTitle("Beebium")
+        .animation(.default, value: showSidebar)
         .onAppear {
             videoClient.connect()
         }
@@ -63,7 +83,6 @@ struct ContentView: View {
                 systemClient.disconnect()
             }
         }
-        .navigationTitle("Beebium")
     }
 
     @ViewBuilder
@@ -112,7 +131,7 @@ struct ContentView: View {
 #if DEBUG
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView(showStatusBar: .constant(true))
+        ContentView(showStatusBar: .constant(true), showSidebar: .constant(true))
     }
 }
 #endif
