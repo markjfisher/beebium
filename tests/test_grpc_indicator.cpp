@@ -189,13 +189,13 @@ TEST_CASE("IndicatorService ListIndicators returns disc indicators for Model B+"
         if (indicator.name() == "floppy-0-activity-led") {
             found_floppy_0 = true;
             CHECK(indicator.metadata().count("label") > 0);
-            CHECK(indicator.metadata().at("label") == "Drive 0");
+            CHECK(indicator.metadata().at("label") == "Floppy 0");
             CHECK(indicator.metadata().count("color") > 0);
             CHECK(indicator.metadata().at("color") == "590nm");
         }
         if (indicator.name() == "floppy-1-activity-led") {
             found_floppy_1 = true;
-            CHECK(indicator.metadata().at("label") == "Drive 1");
+            CHECK(indicator.metadata().at("label") == "Floppy 1");
         }
     }
     CHECK(found_floppy_0);

@@ -222,13 +222,13 @@ private:
 
         caps_lock_led_id_ = indicators_->register_indicator(
             "caps-lock-led",
-            std::make_unique<DutyCycleFilter>(10ms),
+            std::make_unique<QuantizedDutyCycleFilter<2>>(100ms),
             {{"label", "CAPS LOCK"}, {"color", "625nm"}, {"shape", "domed"}}
         );
 
         shift_lock_led_id_ = indicators_->register_indicator(
             "shift-lock-led",
-            std::make_unique<DutyCycleFilter>(10ms),
+            std::make_unique<QuantizedDutyCycleFilter<2>>(100ms),
             {{"label", "SHIFT LOCK"}, {"color", "625nm"}, {"shape", "domed"}}
         );
     }
