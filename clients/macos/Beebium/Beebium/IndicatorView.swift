@@ -13,15 +13,18 @@
 import SwiftUI
 import AppKit
 
-/// Annulus (ring) shape where the filled area is proportional to a value
+/// Annulus (ring) shape where the ring thickness is proportional to a value
 ///
 /// When fillFraction is 0, displays as a thin ring (outline only).
 /// When fillFraction is 1, displays as a completely filled circle.
-/// The inner radius is calculated so that the filled area is linearly
-/// proportional to fillFraction: r_inner = R * sqrt(1 - fillFraction)
+/// The inner radius is calculated so that the ring thickness is linearly
+/// proportional to fillFraction: r_inner = R * (1 - fillFraction)
 struct AnnulusShape: Shape {
     /// Fill fraction from 0.0 (empty ring) to 1.0 (filled circle)
     var fillFraction: Double
+
+    /// Inset from frame edge for outer radius
+    var inset: CGFloat = 0
 
     var animatableData: Double {
         get { fillFraction }
@@ -32,15 +35,15 @@ struct AnnulusShape: Shape {
         var path = Path()
 
         let center = CGPoint(x: rect.midX, y: rect.midY)
-        let outerRadius = min(rect.width, rect.height) / 2
+        let outerRadius = min(rect.width, rect.height) / 2 - inset
 
         // Clamp fillFraction to valid range
         let f = max(0, min(1, fillFraction))
 
-        // Calculate inner radius for area-proportional fill
-        // Filled area = pi * (R^2 - r^2) = pi * R^2 * f
-        // Therefore: r = R * sqrt(1 - f)
-        let innerRadius = outerRadius * sqrt(1 - f)
+        // Calculate inner radius for thickness-proportional fill
+        // Ring thickness = R - r = R * f
+        // Therefore: r = R * (1 - f)
+        let innerRadius = outerRadius * (1 - f)
 
         // Draw outer circle clockwise
         path.addArc(
@@ -89,10 +92,10 @@ struct IndicatorView: View {
                     .strokeBorder(outlineColor, lineWidth: 1)
                     .frame(width: size, height: size)
 
-                // Filled annulus
-                AnnulusShape(fillFraction: fillFraction)
+                // Filled annulus (inset to hide outer edge behind stroke border)
+                AnnulusShape(fillFraction: fillFraction, inset: 0.5)
                     .fill(color)
-                    .frame(width: size - 2, height: size - 2)  // Inset to fit within outline
+                    .frame(width: size, height: size)
             }
             .frame(width: size, height: size)
 
