@@ -16,6 +16,7 @@ import SwiftUI
 struct BeebiumApp: App {
     @AppStorage("showStatusBar") private var showStatusBar = true
     @AppStorage("showSidebar") private var showSidebar = true
+    @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
 
     init() {
         NSLog("[BeebiumApp] Starting...")
@@ -36,6 +37,17 @@ struct BeebiumApp: App {
                     withAnimation { showSidebar.toggle() }
                 }
                 .keyboardShortcut("s", modifiers: [.control, .command])
+            }
+            CommandGroup(after: .sidebar) {
+                ForEach(SidebarMode.allCases) { mode in
+                    Button(mode.label) {
+                        sidebarMode = mode
+                        if !showSidebar {
+                            withAnimation { showSidebar = true }
+                        }
+                    }
+                    .keyboardShortcut(mode.shortcutKey, modifiers: .command)
+                }
             }
         }
     }

@@ -211,6 +211,10 @@ public:
 
                 std::lock_guard<std::mutex> lock(mutex_);
 
+                // Tick safe eject for both drives (checks quiescence, completes ejection)
+                machine_.state().memory.disc_drive_0.tick_eject();
+                machine_.state().memory.disc_drive_1.tick_eject();
+
                 // Check drive 0
                 check_and_send_events(writer, 0,
                     machine_.state().memory.disc_drive_0,

@@ -18,8 +18,10 @@ struct ContentView: View {
     @StateObject private var keyboardClient = KeyboardClient()
     @StateObject private var systemClient = SystemClient()
     @StateObject private var indicatorClient = IndicatorClient()
+    @StateObject private var discClient = DiscClient()
     @Binding var showStatusBar: Bool
     @Binding var showSidebar: Bool
+    @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
@@ -30,12 +32,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: columnVisibility) {
-            List {
-                // Sidebar content placeholder
+            VStack(spacing: 0) {
+                SidebarModeToolbar(selectedMode: $sidebarMode)
+                Divider()
+                SidebarModeContent(mode: sidebarMode, discClient: discClient)
             }
-            .scrollContentBackground(.hidden)
             .background(Color(nsColor: .windowBackgroundColor))
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 260, max: 500)
         } detail: {
             VStack(spacing: 0) {
                 ZStack {
@@ -62,6 +65,7 @@ struct ContentView: View {
             videoClient.connect()
         }
         .onDisappear {
+            discClient.disconnect()
             indicatorClient.disconnect()
             systemClient.disconnect()
             keyboardClient.disconnect()
@@ -73,11 +77,14 @@ struct ContentView: View {
                 keyboardClient.connect(channel: channel)
                 systemClient.connect(channel: channel)
                 indicatorClient.connect(channel: channel)
+                discClient.connect(channel: channel)
             } else if case .disconnected = newState {
+                discClient.disconnect()
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
             } else if case .error = newState {
+                discClient.disconnect()
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()

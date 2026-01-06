@@ -108,6 +108,19 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
+// Convert a URL or filepath to a canonical file:// URL.
+// If the input is already a URL, returns it unchanged.
+// If it's a filepath, resolves to canonical absolute path (no . or ..) and prepends file://
+std::string to_absolute_file_url(const std::string& url_or_filepath) {
+    // If it's already a URL, return as-is
+    if (url_or_filepath.find("://") != std::string::npos) {
+        return url_or_filepath;
+    }
+    // Convert filepath to canonical absolute path (resolves . and .. and symlinks)
+    auto canonical_path = std::filesystem::canonical(url_or_filepath);
+    return "file://" + canonical_path.string();
+}
+
 } // anonymous namespace
 
 template<typename MachineType>
@@ -347,27 +360,31 @@ int server_main(int argc, char* argv[]) {
         // Load disc images (Model B+ only)
         if constexpr (requires { machine.state().memory.disc_drive_0; }) {
             if (!floppy_filepaths[0].empty()) {
-                std::cout << "Loading disc into floppy 0: " << floppy_filepaths[0] << "\n";
-                auto result = load_disc_from_url_or_filepath(floppy_filepaths[0]);
+                // Resolve to absolute file:// URL for consistent API behaviour
+                auto source_url = to_absolute_file_url(floppy_filepaths[0]);
+                std::cout << "Loading disc into floppy 0: " << source_url << "\n";
+                auto result = load_disc_from_url(source_url);
                 if (!result) {
                     throw std::runtime_error("Failed to load disc: " + result.error);
                 }
                 if (result.image->is_write_protected()) {
                     std::cout << "  (write-protected)\n";
                 }
-                machine.state().memory.disc_drive_0.insert(std::move(result.image), floppy_filepaths[0]);
+                machine.state().memory.disc_drive_0.insert(std::move(result.image), source_url);
             }
 
             if (!floppy_filepaths[1].empty()) {
-                std::cout << "Loading disc into floppy 1: " << floppy_filepaths[1] << "\n";
-                auto result = load_disc_from_url_or_filepath(floppy_filepaths[1]);
+                // Resolve to absolute file:// URL for consistent API behaviour
+                auto source_url = to_absolute_file_url(floppy_filepaths[1]);
+                std::cout << "Loading disc into floppy 1: " << source_url << "\n";
+                auto result = load_disc_from_url(source_url);
                 if (!result) {
                     throw std::runtime_error("Failed to load disc: " + result.error);
                 }
                 if (result.image->is_write_protected()) {
                     std::cout << "  (write-protected)\n";
                 }
-                machine.state().memory.disc_drive_1.insert(std::move(result.image), floppy_filepaths[1]);
+                machine.state().memory.disc_drive_1.insert(std::move(result.image), source_url);
             }
         }
 
