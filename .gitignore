@@ -39,6 +39,9 @@ CLAUDE.md
 *.sln
 *.vcxproj*
 
+# LSP and tooling caches
+.cache/
+
 # Editor swap/backup files
 *~
 *.swp
