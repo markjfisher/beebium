@@ -56,6 +56,11 @@ add_executable(test_via6522 test_via6522.cpp)
 target_link_libraries(test_via6522 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_via6522)
 
+# VIA 6522 integrated CPU+VIA timing tests
+add_executable(test_via_integrated test_via_integrated.cpp)
+target_link_libraries(test_via_integrated PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_via_integrated)
+
 # Memory map tests
 add_executable(test_memory_map test_memory_map.cpp)
 target_link_libraries(test_memory_map PRIVATE beebium_core Catch2::Catch2WithMain)

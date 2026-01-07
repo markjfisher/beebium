@@ -131,6 +131,7 @@ struct Via6522State {
     bool t1_reload  = false;  // T1 needs reload
     bool t1_pending = false;  // T1 is active and can generate IRQ
     bool t1_timeout = false;  // T1 timed out this cycle
+    bool t1_started = false;  // T1CH was just written (new timer started)
     uint8_t t1_pb7  = 0;      // PB7 output state from T1
 
     // Timer 2

@@ -230,6 +230,7 @@ void Via6522::write(uint16_t offset, uint8_t value) {
         state_.t1lh = value;
         state_.t1_pending = true;
         state_.t1_reload = true;
+        state_.t1_started = true;  // Mark that a new timer was manually started
         state_.t1_pb7 = 0;
         break;
 
@@ -251,6 +252,9 @@ void Via6522::write(uint16_t offset, uint8_t value) {
         state_.t2lh = value;
         state_.t2_pending = true;
         state_.t2_reload = true;
+        // In clock mode, counting starts immediately. In pulse mode,
+        // counting waits for the first PB6 falling edge.
+        state_.t2_count = !state_.acr.bits.t2_count_pb6;
         break;
 
     case REG_SR:  // Shift Register
@@ -292,10 +296,18 @@ void Via6522::write(uint16_t offset, uint8_t value) {
 uint8_t Via6522::update_phi2_leading_edge() {
     // Handle T1 timeout
     if (state_.t1_timeout) {
-        state_.t1_pending = state_.acr.bits.t1_continuous;
+        // Only update t1_pending if a new timer wasn't just started this cycle.
+        // If t1_started is set, a write to T1CH started a new timer between
+        // trailing_edge (when timeout was detected) and now, so preserve t1_pending.
+        if (!state_.t1_started) {
+            state_.t1_pending = state_.acr.bits.t1_continuous;
+        }
         state_.ifr.bits.t1 = 1;
         state_.t1_pb7 ^= 0x80;  // Toggle PB7 output
     }
+    // Clear t1_started after every leading edge - it only protects
+    // for the cycle in which T1CH was written
+    state_.t1_started = false;
 
     // Handle T2 timeout
     if (state_.t2_timeout) {
@@ -445,8 +457,8 @@ void Via6522::tick_control_phi2_trailing_edge(ViaPort& port,
     // Cx1 is always an input - reset to 1 for peripheral to drive
     port.c1 = 1;
 
-    // Update port value: output bits from OR, input bits pulled high
-    port.p = ~port.ddr | (port.or_ & port.ddr);
+    // Note: port.p is already set by update_port_pins() which is called
+    // before tick_control_phi2_trailing_edge(). Don't overwrite it here.
 }
 
 uint8_t Via6522::compute_port_value(const ViaPort& port) {
