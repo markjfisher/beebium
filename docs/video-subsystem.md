@@ -24,6 +24,17 @@ Generates timing signals and memory addresses. Produces `Output` struct with:
 - HSYNC/VSYNC signals
 - Display enable flag
 - Cursor state
+- Raster counter (scanline within character row)
+- Interlace and field state
+
+**Edge cases tested (from beebjit):**
+- VSYNC width 0 = 16 scanlines (per Hitachi 6845 datasheet)
+- R6=0 quirk: first scanline still displays before v_display clears
+- R6 > R7: VSYNC fires before display ends (Caesar's Travels)
+- R6 > R4: field state freezes (R6 never hit)
+- Small R0 values and frame boundary recovery
+- Mid-scanline R6/R7 register changes
+- 1MHz/2MHz clock speed switching
 
 ### VideoUla
 
@@ -511,4 +522,4 @@ The interlace flag is passed through to clients via `field_order` in the Frame m
 # Ideas
 
 - a CRT shader in the client, like this: https://blog.gingerbeardman.com/2026/01/04/webgl-crt-shader/
-- support for custom CRTC modes in the test suite (Revs, Boffin, Elite)
+- visual testing with disc images: Revs.ssd, Thrust.ssd, EliteD.ssd

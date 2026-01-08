@@ -233,17 +233,6 @@ public:
             ++column_;
         }
 
-        // Handle end of vertical displayed
-        if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
-            v_display_ = false;
-            // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
-            // In interlace mode, this triggers twice per frame (once per field).
-            // In non-interlace mode, this triggers once per frame, so we double it.
-            field_count_ += interlace_sync_and_video() ? 1 : 2;
-            // Toggle field for interlace mode
-            odd_field_ = !odd_field_;
-        }
-
         return output;
     }
 
@@ -260,7 +249,11 @@ public:
 
     uint8_t max_scanline() const { return registers_[R9_MAX_SCANLINE] & 0x1F; }
     uint8_t hsync_width() const { return registers_[R3_SYNC_WIDTH] & 0x0F; }
-    uint8_t vsync_width() const { return (registers_[R3_SYNC_WIDTH] >> 4) & 0x0F; }
+    // VSYNC width: 0 means 16 scanlines (per Hitachi 6845 datasheet)
+    uint8_t vsync_width() const {
+        uint8_t w = (registers_[R3_SYNC_WIDTH] >> 4) & 0x0F;
+        return (w == 0) ? 16 : w;
+    }
 
     // Interlace mode detection
     // R8 bits 0-1: 00=normal, 01=interlace sync, 10=normal, 11=interlace sync and video
@@ -307,9 +300,8 @@ private:
         // Handle vsync counter
         if (vsync_counter_ >= 0) {
             ++vsync_counter_;
-            uint8_t vw = vsync_width();
-            if (vw == 0) vw = 16;  // 0 means 16
-            if (vsync_counter_ >= vw) {
+            // vsync_width() already returns 16 when register value is 0
+            if (vsync_counter_ >= vsync_width()) {
                 vsync_counter_ = -1;
             }
         }
@@ -340,6 +332,21 @@ private:
             end_of_row();
         }
 
+        // Handle end of vertical displayed (R6 check)
+        // This must happen BEFORE the v_adjust/end_of_frame logic so that
+        // end_of_frame() can reset v_display_ to true for the new frame.
+        // With R6=0, this allows the first scanline to display before v_display
+        // is cleared at the end of that scanline.
+        if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
+            v_display_ = false;
+            // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
+            // In interlace mode, this triggers twice per frame (once per field).
+            // In non-interlace mode, this triggers once per frame, so we double it.
+            field_count_ += interlace_sync_and_video() ? 1 : 2;
+            // Toggle field for interlace mode
+            odd_field_ = !odd_field_;
+        }
+
         // Check for vertical adjust period
         if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
             if (registers_[R5_VTOTAL_ADJ] > 0) {
@@ -352,7 +359,9 @@ private:
 
         if (in_vadj_) {
             ++vadj_counter_;
-            if (vadj_counter_ >= registers_[R5_VTOTAL_ADJ]) {
+            // Use > not >= because vadj_counter is incremented on the same
+            // end_of_scanline call that enters v_adjust, so we need one extra count
+            if (vadj_counter_ > registers_[R5_VTOTAL_ADJ]) {
                 in_vadj_ = false;
                 end_of_frame();
             }

@@ -151,6 +151,7 @@ Beebium is licensed under the [GNU General Public License v3.0](COPYING.txt).
 ## Acknowledgments
 
 - **Tom Seddon** - The 6502 library is ported from [B2](https://github.com/tom-seddon/b2), Tom's excellent BBC Micro emulator
+- **Chris Evans** - CRTC 6845 edge case tests ported from [beebjit](https://github.com/scarybeasts/beebjit)
 - The BBC Micro community at [Stardot](https://stardot.org.uk/)
 
 ## Third-Party Libraries
