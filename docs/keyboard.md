@@ -96,7 +96,15 @@ Only bits 0-3 have consistent meanings across all BBC Micro configurations:
 Bits 4-7 are interpreted differently by different ROMs:
 - **Bits 4-5**: Disc timing (varies by DFS ROM and controller chip)
 - **Bit 6**: Varies by filing system (HADFS, ENFS, etc.)
-- **Bit 7**: Filing system priority (DFS vs NFS) or screen mode on Master
+- **Bit 7**: Filing system priority (DFS vs NFS) on Model B; screen mode high bit on Master
+
+### BBC Master Note (Future Work)
+
+On the BBC Master, bit 7 controls the high bit of the screen mode, adding 128 to enable
+shadow RAM by default. This means startup modes 128-135 are valid on Master (corresponding
+to modes 0-7 with shadow RAM enabled).
+
+When Master support is added, `--screen-mode` will need to accept values 0-7 and 128-135.
 
 ### Emulation Implementation
 
