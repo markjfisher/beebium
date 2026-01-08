@@ -943,3 +943,241 @@ TEST_CASE("Crtc6845 interlace: mode toggle stability", "[crtc6845][interlace][ph
     // Just verify we didn't crash and state is valid
     REQUIRE((out.raster & 0x1F) < 32);
 }
+
+// ============================================================================
+// Phase 3: Clock Speed Alignment Tests
+// ============================================================================
+//
+// These tests verify that clock speed switching (1MHz/2MHz) works correctly
+// at both even and odd cycle boundaries. This is critical for games like
+// Revs that rely on accurate VSYNC timing during mid-screen CRTC changes.
+//
+// In 1MHz mode, the CRTC should only advance on even cycles.
+// In 2MHz mode, the CRTC advances every cycle.
+// Mode switches can happen at any cycle, and the CRTC must handle the
+// transition correctly.
+//
+// Ported from: video_test_clock_speed_flip (beebjit lines 203-270)
+
+// Helper: Simulates ClockBinding behavior by tracking cycles and only
+// ticking the CRTC when appropriate for the current clock rate
+static void advance_with_clock_binding(Crtc6845& crtc, uint64_t& cycle) {
+    // In 2MHz mode: tick every cycle
+    // In 1MHz mode: tick only on even cycles
+    if (crtc.fast_clock() || (cycle & 1) == 0) {
+        crtc.tick();
+    }
+    ++cycle;
+}
+
+TEST_CASE("Crtc6845 clock binding: 1MHz to 2MHz at even cycle", "[crtc6845][clock][phase3]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_timing(crtc);  // Starts in 1MHz mode
+
+    uint64_t cycle = 0;
+
+    REQUIRE(crtc.fast_clock() == false);  // 1MHz
+    REQUIRE(crtc.column() == 0);
+
+    // In 1MHz mode: advances on even cycles only
+    // Cycle 0 (even) -> tick, column becomes 1
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 1);
+
+    // Cycle 1 (odd) -> no tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 1);
+
+    // Cycle 2 (even) -> tick, column becomes 2
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 2);
+
+    // Cycle 3 (odd) -> no tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 2);
+
+    // Now at cycle 4 (even) - switch to 2MHz
+    REQUIRE((cycle & 1) == 0);  // Verify we're at even cycle
+    crtc.set_fast_clock(true);
+    REQUIRE(crtc.fast_clock() == true);
+
+    // Cycle 4 (even, 2MHz) -> tick, column becomes 3
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 3);
+
+    // Cycle 5 (odd, 2MHz) -> tick (2MHz ticks every cycle)
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 4);
+}
+
+TEST_CASE("Crtc6845 clock binding: 2MHz to 1MHz at even cycle", "[crtc6845][clock][phase3]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_timing(crtc);
+    crtc.set_fast_clock(true);  // Start in 2MHz mode
+
+    uint64_t cycle = 0;
+
+    REQUIRE(crtc.fast_clock() == true);  // 2MHz
+    REQUIRE(crtc.column() == 0);
+
+    // In 2MHz mode: advances every cycle
+    // Cycles 0, 1, 2, 3 -> column becomes 1, 2, 3, 4
+    advance_with_clock_binding(crtc, cycle);  // cycle 0 -> column 1
+    advance_with_clock_binding(crtc, cycle);  // cycle 1 -> column 2
+    advance_with_clock_binding(crtc, cycle);  // cycle 2 -> column 3
+    advance_with_clock_binding(crtc, cycle);  // cycle 3 -> column 4
+    REQUIRE(crtc.column() == 4);
+
+    // Now at cycle 4 (even) - switch to 1MHz
+    REQUIRE((cycle & 1) == 0);  // Verify we're at even cycle
+    crtc.set_fast_clock(false);
+    REQUIRE(crtc.fast_clock() == false);
+
+    // Cycle 4 (even, 1MHz) -> tick, column becomes 5
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 5);
+
+    // Cycle 5 (odd, 1MHz) -> no tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 5);
+
+    // Cycle 6 (even, 1MHz) -> tick, column becomes 6
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 6);
+}
+
+TEST_CASE("Crtc6845 clock binding: 1MHz to 2MHz at odd cycle", "[crtc6845][clock][phase3]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_timing(crtc);  // Starts in 1MHz mode
+
+    uint64_t cycle = 0;
+
+    REQUIRE(crtc.fast_clock() == false);  // 1MHz
+    REQUIRE(crtc.column() == 0);
+
+    // Advance to an odd cycle
+    advance_with_clock_binding(crtc, cycle);  // cycle 0 (even) -> column 1
+    REQUIRE(crtc.column() == 1);
+
+    // Now at cycle 1 (odd) - switch to 2MHz
+    REQUIRE((cycle & 1) == 1);  // Verify we're at odd cycle
+    crtc.set_fast_clock(true);
+    REQUIRE(crtc.fast_clock() == true);
+
+    // Cycle 1 (odd, 2MHz) -> tick (2MHz ticks every cycle)
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 2);
+
+    // Cycle 2 (even, 2MHz) -> tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 3);
+
+    // Cycle 3 (odd, 2MHz) -> tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 4);
+}
+
+TEST_CASE("Crtc6845 clock binding: 2MHz to 1MHz at odd cycle", "[crtc6845][clock][phase3]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_timing(crtc);
+    crtc.set_fast_clock(true);  // Start in 2MHz mode
+
+    uint64_t cycle = 0;
+
+    REQUIRE(crtc.fast_clock() == true);  // 2MHz
+    REQUIRE(crtc.column() == 0);
+
+    // Advance to an odd cycle
+    advance_with_clock_binding(crtc, cycle);  // cycle 0 -> column 1
+    REQUIRE(crtc.column() == 1);
+
+    // Now at cycle 1 (odd) - switch to 1MHz
+    REQUIRE((cycle & 1) == 1);  // Verify we're at odd cycle
+    crtc.set_fast_clock(false);
+    REQUIRE(crtc.fast_clock() == false);
+
+    // Cycle 1 (odd, 1MHz) -> no tick (1MHz only ticks on even cycles)
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 1);
+
+    // Cycle 2 (even, 1MHz) -> tick, column becomes 2
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 2);
+
+    // Cycle 3 (odd, 1MHz) -> no tick
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 2);
+
+    // Cycle 4 (even, 1MHz) -> tick, column becomes 3
+    advance_with_clock_binding(crtc, cycle);
+    REQUIRE(crtc.column() == 3);
+}
+
+// Full test matching beebjit's video_test_clock_speed_flip sequence
+TEST_CASE("Crtc6845 clock binding: full beebjit sequence", "[crtc6845][clock][phase3][beebjit]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_timing(crtc);  // Starts in 1MHz mode
+
+    uint64_t cycle = 0;
+
+    // Initial state
+    REQUIRE(crtc.column() == 0);
+    REQUIRE(crtc.fast_clock() == false);  // 1MHz
+
+    // 1MHz mode: 2 cycles per CRTC tick
+    advance_with_clock_binding(crtc, cycle);  // cycle 0 (even) -> tick
+    REQUIRE(crtc.column() == 1);
+    advance_with_clock_binding(crtc, cycle);  // cycle 1 (odd) -> no tick
+    REQUIRE(crtc.column() == 1);
+    advance_with_clock_binding(crtc, cycle);  // cycle 2 (even) -> tick
+    REQUIRE(crtc.column() == 2);
+    advance_with_clock_binding(crtc, cycle);  // cycle 3 (odd) -> no tick
+    REQUIRE(crtc.column() == 2);
+
+    // 1->2MHz at even cycle (cycle 4)
+    REQUIRE((cycle & 1) == 0);
+    crtc.set_fast_clock(true);
+
+    advance_with_clock_binding(crtc, cycle);  // cycle 4 (even, 2MHz) -> tick
+    REQUIRE(crtc.column() == 3);
+    advance_with_clock_binding(crtc, cycle);  // cycle 5 (odd, 2MHz) -> tick
+    REQUIRE(crtc.column() == 4);
+
+    // 2->1MHz at even cycle (cycle 6)
+    REQUIRE((cycle & 1) == 0);
+    crtc.set_fast_clock(false);
+
+    advance_with_clock_binding(crtc, cycle);  // cycle 6 (even, 1MHz) -> tick
+    REQUIRE(crtc.column() == 5);
+    advance_with_clock_binding(crtc, cycle);  // cycle 7 (odd, 1MHz) -> no tick
+    REQUIRE(crtc.column() == 5);
+    advance_with_clock_binding(crtc, cycle);  // cycle 8 (even, 1MHz) -> tick
+    REQUIRE(crtc.column() == 6);
+
+    // 1->2MHz at odd cycle (cycle 9)
+    REQUIRE((cycle & 1) == 1);
+    crtc.set_fast_clock(true);
+
+    advance_with_clock_binding(crtc, cycle);  // cycle 9 (odd, 2MHz) -> tick
+    REQUIRE(crtc.column() == 7);
+    advance_with_clock_binding(crtc, cycle);  // cycle 10 (even, 2MHz) -> tick
+    REQUIRE(crtc.column() == 8);
+
+    // 2->1MHz at odd cycle (cycle 11)
+    REQUIRE((cycle & 1) == 1);
+    crtc.set_fast_clock(false);
+
+    advance_with_clock_binding(crtc, cycle);  // cycle 11 (odd, 1MHz) -> no tick
+    REQUIRE(crtc.column() == 8);
+    advance_with_clock_binding(crtc, cycle);  // cycle 12 (even, 1MHz) -> tick
+    REQUIRE(crtc.column() == 9);
+    advance_with_clock_binding(crtc, cycle);  // cycle 13 (odd, 1MHz) -> no tick
+    REQUIRE(crtc.column() == 9);
+    advance_with_clock_binding(crtc, cycle);  // cycle 14 (even, 1MHz) -> tick
+    REQUIRE(crtc.column() == 10);
+}
