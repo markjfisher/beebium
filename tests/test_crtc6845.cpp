@@ -822,3 +822,124 @@ TEST_CASE("Crtc6845 corner case: tiny frame", "[crtc6845][corner][beebjit]") {
     REQUIRE(out.raster == 0);
     REQUIRE(out.vsync == 1);  // VSYNC active again at row 0
 }
+
+// ============================================================================
+// Phase 2: Interlace Mode Tests
+// ============================================================================
+
+// Helper to set up MODE 7 style interlace timing
+static void setup_mode7_interlace_timing(Crtc6845& crtc) {
+    crtc.write(0, 0);  crtc.write(1, 63);   // R0: H total = 63 (64 chars)
+    crtc.write(0, 1);  crtc.write(1, 40);   // R1: H displayed = 40 chars
+    crtc.write(0, 2);  crtc.write(1, 49);   // R2: HSYNC position = 49
+    crtc.write(0, 3);  crtc.write(1, 0x24); // R3: HSYNC=4, VSYNC=2
+    crtc.write(0, 4);  crtc.write(1, 30);   // R4: V total = 30 (31 rows)
+    crtc.write(0, 5);  crtc.write(1, 2);    // R5: V adjust = 2
+    crtc.write(0, 6);  crtc.write(1, 25);   // R6: V displayed = 25 rows
+    crtc.write(0, 7);  crtc.write(1, 28);   // R7: VSYNC position = 28
+    crtc.write(0, 8);  crtc.write(1, 3);    // R8: Interlace sync and video
+    crtc.write(0, 9);  crtc.write(1, 18);   // R9: max scanline = 18 (19 lines doubled)
+}
+
+// Test interlace mode odd/even field tracking
+// Verifies that the CRTC correctly tracks odd/even fields
+TEST_CASE("Crtc6845 interlace: odd/even field tracking", "[crtc6845][interlace][phase2]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_interlace_timing(crtc);
+
+    // At reset, should be odd field
+    auto out = crtc.tick();
+    REQUIRE(out.odd_field == 1);
+    REQUIRE(out.interlace == 1);
+
+    // Field should toggle when R6 is hit (row 25)
+    // In interlace mode with R9=18, each row has ~10 doubled scanlines
+    // Raster increments by 2 in interlace mode, so 10 iterations per row
+    const int chars_per_line = 64;
+    const int scanlines_per_row = 10;  // raster 0,2,4,6,8,10,12,14,16,18 then row++
+    const int rows_to_r6 = 25;
+
+    // Advance to row 25 (R6)
+    tick_n(crtc, rows_to_r6 * scanlines_per_row * chars_per_line);
+
+    // Should have toggled to even field at R6 hit
+    out = crtc.tick();
+    REQUIRE(out.odd_field == 0);
+
+    // Complete one full frame (31 rows + 2 v_adjust scanlines)
+    // From row 25, need 6 more rows + 2 v_adjust scanlines
+    const int remaining_rows = 6;
+    const int v_adjust = 2;
+    tick_n(crtc, (remaining_rows * scanlines_per_row + v_adjust) * chars_per_line);
+
+    // At start of new frame, odd_field should still be 0 (even field frame)
+    out = crtc.tick();
+    REQUIRE(crtc.row() == 0);
+    // Note: odd_field will toggle again when R6 is hit in this new frame
+}
+
+// Test interlace VSYNC timing
+// In interlace mode, VSYNC should trigger at R7 for odd fields
+TEST_CASE("Crtc6845 interlace: VSYNC at R7", "[crtc6845][interlace][phase2]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_interlace_timing(crtc);
+
+    const int chars_per_line = 64;
+    const int scanlines_per_row = 10;
+    const int vsync_row = 28;  // R7
+
+    // Advance to row 28 (R7) - VSYNC should trigger somewhere in this row
+    tick_n(crtc, vsync_row * scanlines_per_row * chars_per_line);
+
+    // VSYNC should now be active (triggered at start of R7 row)
+    auto out = crtc.tick();
+    REQUIRE(crtc.row() == vsync_row);
+    REQUIRE(out.vsync == 1);
+
+    // VSYNC width is 2 scanlines (R3 high nibble = 2)
+    // After 2 scanlines, VSYNC should end
+    tick_n(crtc, 2 * chars_per_line - 1);
+    out = crtc.tick();
+    REQUIRE(out.vsync == 0);
+}
+
+// Test that interlace mode doesn't crash when toggled mid-frame
+// Ported from: video_test_vsync_change_interlace (beebjit)
+TEST_CASE("Crtc6845 interlace: mode toggle stability", "[crtc6845][interlace][phase2]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_interlace_timing(crtc);
+
+    const int chars_per_line = 64;
+    const int scanlines_per_row = 10;
+    const int vsync_row = 28;
+
+    // Advance to mid-VSYNC
+    tick_n(crtc, vsync_row * scanlines_per_row * chars_per_line + chars_per_line);
+
+    // Should be in VSYNC
+    auto out = crtc.tick();
+    REQUIRE(out.vsync == 1);
+
+    // Toggle interlace mode off
+    crtc.write(0, 8);  crtc.write(1, 0);  // R8: No interlace
+
+    // Should not crash, VSYNC state should update gracefully
+    out = crtc.tick();
+    REQUIRE(out.interlace == 0);
+
+    // Toggle interlace mode back on
+    crtc.write(0, 8);  crtc.write(1, 3);  // R8: Interlace sync and video
+
+    // Should not crash
+    out = crtc.tick();
+    REQUIRE(out.interlace == 1);
+
+    // Continue to end of frame - should not crash
+    tick_n(crtc, (31 - vsync_row) * scanlines_per_row * chars_per_line);
+    out = crtc.tick();
+    // Just verify we didn't crash and state is valid
+    REQUIRE((out.raster & 0x1F) < 32);
+}

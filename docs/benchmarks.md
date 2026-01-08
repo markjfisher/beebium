@@ -9,3 +9,8 @@ https://www.stardot.org.uk/forums/viewtopic.php?p=465610&hilit=boffin+screen#p46
 A MODE 4 / MODE 7 split screen (emulation challenge):
 
 https://www.stardot.org.uk/forums/viewtopic.php?p=356012#p356012
+
+6845 Quirks:
+
+https://stardot.org.uk/forums/viewtopic.php?t=22008
+
