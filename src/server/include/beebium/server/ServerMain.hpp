@@ -138,6 +138,10 @@ void print_usage(const char* program_name) {
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
               << "  --floppy <drive>:<url>   Load disc image into floppy drive (0 or 1)\n"
               << "                           Accepts file:// URLs or bare filepaths\n"
+              << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
+              << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
+              << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
+              << "                           with --screen-mode and --auto-boot)\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -195,6 +199,14 @@ int server_main(int argc, char* argv[]) {
     uint16_t port = DEFAULT_GRPC_PORT;
     std::array<std::string, 2> floppy_filepaths;  // drive 0 and 1
 
+    // Startup options (keyboard links)
+    // -1 means not set; we use int to detect if user specified a value
+    int screen_mode = -1;
+    bool auto_boot = false;
+    int raw_links = -1;  // -1 means not set
+    bool screen_mode_set = false;
+    bool auto_boot_set = false;
+
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -218,11 +230,33 @@ int server_main(int argc, char* argv[]) {
         } else if (arg == "--floppy" && i + 1 < argc) {
             auto [drive, filepath] = parse_floppy_arg(argv[++i]);
             floppy_filepaths[drive] = filepath;
+        } else if (arg == "--screen-mode" && i + 1 < argc) {
+            screen_mode = std::stoi(argv[++i]);
+            if (screen_mode < 0 || screen_mode > 7) {
+                std::cerr << "Error: --screen-mode must be 0-7\n";
+                return 1;
+            }
+            screen_mode_set = true;
+        } else if (arg == "--auto-boot") {
+            auto_boot = true;
+            auto_boot_set = true;
+        } else if (arg == "--links" && i + 1 < argc) {
+            raw_links = std::stoi(argv[++i]);
+            if (raw_links < 0 || raw_links > 255) {
+                std::cerr << "Error: --links must be 0-255\n";
+                return 1;
+            }
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
             return 1;
         }
+    }
+
+    // Validate startup options: --links is mutually exclusive with semantic options
+    if (raw_links >= 0 && (screen_mode_set || auto_boot_set)) {
+        std::cerr << "Error: --links cannot be combined with --screen-mode or --auto-boot\n";
+        return 1;
     }
 
     // Set up signal handler
@@ -390,6 +424,24 @@ int server_main(int argc, char* argv[]) {
 
         // Enable video output
         machine.state().memory.enable_video_output();
+
+        // Apply startup options (keyboard links) before reset
+        // These must be set before reset() as the MOS reads them during initialization
+        if (raw_links >= 0) {
+            // Raw byte overrides everything
+            machine.state().memory.set_startup_options(static_cast<uint8_t>(raw_links));
+            std::cout << "Startup links: 0x" << std::hex << raw_links << std::dec << "\n";
+        } else {
+            // Apply semantic options (modifies specific bits, preserves others)
+            if (screen_mode_set) {
+                machine.state().memory.set_screen_mode(static_cast<uint8_t>(screen_mode));
+                std::cout << "Startup screen mode: " << screen_mode << "\n";
+            }
+            if (auto_boot_set) {
+                machine.state().memory.set_auto_boot(auto_boot);
+                std::cout << "Auto-boot: " << (auto_boot ? "enabled" : "disabled") << "\n";
+            }
+        }
 
         // Reset machine
         machine.reset();

@@ -20,13 +20,27 @@ namespace beebium {
 // BBC Micro keyboard matrix (10 columns x 10 rows)
 //
 // The BBC keyboard is a matrix of 10 columns and 10 rows. Each key
-// position corresponds to a (row, column) pair. Links (DIP switches)
-// on the bottom of the keyboard also appear in this matrix.
+// position corresponds to a (row, column) pair.
 //
 // Key positions:
 // - Columns 0-9: Physical keyboard columns
 // - Rows 0-9: Physical keyboard rows
-// - Row 0 is special: contains startup links (mode selection)
+// - Row 0, columns 0-1: SHIFT and CTRL keys
+// - Row 0, columns 2-9: Startup links (DIP switches) - stored separately
+//
+// Startup Options (keyboard links):
+// The 8 keyboard links in row 0 (columns 2-9) form a startup options byte:
+//   Link 1 (col 2) = bit 7: ROM-dependent (filing system)
+//   Link 2 (col 3) = bit 6: ROM-dependent
+//   Link 3 (col 4) = bit 5: ROM-dependent (disc timing)
+//   Link 4 (col 5) = bit 4: ROM-dependent (disc timing)
+//   Link 5 (col 6) = bit 3: SHIFT-BREAK action (1=normal, 0=reversed)
+//   Link 6 (col 7) = bit 2: Screen mode bit 2
+//   Link 7 (col 8) = bit 1: Screen mode bit 1
+//   Link 8 (col 9) = bit 0: Screen mode bit 0
+//
+// Active-low logic: bit SET = link broken (open), bit CLEAR = link made.
+// Default value 0xFF (all links broken) = Mode 7, normal SHIFT-BREAK.
 //
 // Thread Safety:
 // This class is thread-safe. It can be written from one thread (e.g., gRPC)
@@ -99,41 +113,61 @@ public:
         }
     }
 
-    // Set startup links for boot screen mode (0-7)
-    //
-    // The BBC Micro uses three startup links (6, 7, 8) in row 0 of the
-    // keyboard matrix to determine the boot screen mode:
-    //   Link 6 (row 0, col 7): Mode bit 2 (MSB)
-    //   Link 7 (row 0, col 8): Mode bit 1
-    //   Link 8 (row 0, col 9): Mode bit 0 (LSB)
-    //
-    // The MOS XORs the link readings with 7, so:
-    //   All links BROKEN (0,0,0) -> Mode 7 (default)
-    //   All links MADE (1,1,1) -> Mode 0
-    //
-    // Must be called before reset() to take effect during boot.
-    void set_startup_screen_mode(uint8_t screen_mode) {
-        if (screen_mode > 7) screen_mode = 7;
+    // =========================================================================
+    // Startup Options (keyboard links)
+    // =========================================================================
 
-        // Calculate link bits: screen_mode = 7 XOR link_bits
-        // So link_bits = 7 XOR screen_mode
-        uint8_t link_bits = 7 ^ screen_mode;
-
-        // Link 6 (bit 2) at column 7
-        if (link_bits & 0x04) key_down(0, 7); else key_up(0, 7);
-        // Link 7 (bit 1) at column 8
-        if (link_bits & 0x02) key_down(0, 8); else key_up(0, 8);
-        // Link 8 (bit 0) at column 9
-        if (link_bits & 0x01) key_down(0, 9); else key_up(0, 9);
+    // Set raw startup options byte (thread-safe)
+    // This is the 8-bit value representing all keyboard links.
+    // Active-low: bit SET = link broken, bit CLEAR = link made.
+    void set_startup_options(uint8_t options) {
+        startup_options_.store(options, std::memory_order_release);
     }
 
-    // Get current startup screen mode from link state (thread-safe)
-    uint8_t startup_screen_mode() const {
-        uint8_t link_bits = 0;
-        if (is_key_pressed(0, 7)) link_bits |= 0x04;  // Link 6
-        if (is_key_pressed(0, 8)) link_bits |= 0x02;  // Link 7
-        if (is_key_pressed(0, 9)) link_bits |= 0x01;  // Link 8
-        return 7 ^ link_bits;
+    // Get raw startup options byte (thread-safe)
+    uint8_t startup_options() const {
+        return startup_options_.load(std::memory_order_acquire);
+    }
+
+    // Set startup screen mode (0-7) (thread-safe)
+    // Modifies bits 0-2 of startup options, preserving other bits.
+    // Mode is stored directly: mode 0 = bits cleared, mode 7 = bits set.
+    // This works because is_link_made() uses active-low logic (bit clear = made),
+    // and MOS XORs the readings with 7.
+    void set_screen_mode(uint8_t mode) {
+        if (mode > 7) mode = 7;
+        uint8_t current = startup_options_.load(std::memory_order_acquire);
+        uint8_t updated = (current & 0xF8) | mode;  // Store mode directly in bits 0-2
+        startup_options_.store(updated, std::memory_order_release);
+    }
+
+    // Get startup screen mode from bits 0-2 (thread-safe)
+    uint8_t screen_mode() const {
+        return startup_options_.load(std::memory_order_acquire) & 0x07;
+    }
+
+    // Set auto-boot flag (thread-safe)
+    // When enabled (true), bit 3 is cleared, reversing SHIFT-BREAK action.
+    // When disabled (false), bit 3 is set (normal behavior).
+    void set_auto_boot(bool enabled) {
+        uint8_t current = startup_options_.load(std::memory_order_acquire);
+        uint8_t updated = enabled ? (current & ~0x08) : (current | 0x08);
+        startup_options_.store(updated, std::memory_order_release);
+    }
+
+    // Get auto-boot flag (thread-safe)
+    // Returns true if bit 3 is cleared (reversed SHIFT-BREAK action).
+    bool auto_boot() const {
+        return (startup_options_.load(std::memory_order_acquire) & 0x08) == 0;
+    }
+
+    // Check if a specific link is made (closed) (thread-safe)
+    // Column must be 2-9 (links 1-8). Returns false for invalid columns.
+    // Note: link made = bit CLEAR in startup options (active-low).
+    bool is_link_made(uint8_t column) const {
+        if (column < 2 || column > 9) return false;
+        uint8_t bit = 9 - column;  // Column 9 = bit 0, column 2 = bit 7
+        return (startup_options_.load(std::memory_order_acquire) & (1 << bit)) == 0;
     }
 
 private:
@@ -141,6 +175,10 @@ private:
     // Bit N set means row N is pressed in this column
     // Using std::atomic for thread-safe access from gRPC and emulator threads
     std::atomic<uint16_t> columns_[NUM_COLUMNS] = {};
+
+    // Startup options byte (keyboard links)
+    // Default 0xFF = all links broken = Mode 7, normal SHIFT-BREAK
+    std::atomic<uint8_t> startup_options_{0xFF};
 };
 
 } // namespace beebium

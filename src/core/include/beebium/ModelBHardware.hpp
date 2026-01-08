@@ -262,15 +262,40 @@ public:
         return 0;
     }
 
-    // Set boot screen mode via startup links (0-7)
-    // Call before reset() to boot into specified mode
-    void set_startup_screen_mode(uint8_t screen_mode) {
-        system_via_peripheral.keyboard().set_startup_screen_mode(screen_mode);
+    // =========================================================================
+    // Startup Options (keyboard links)
+    // =========================================================================
+
+    // Set raw startup options byte (all 8 keyboard links)
+    void set_startup_options(uint8_t options) {
+        system_via_peripheral.keyboard().set_startup_options(options);
     }
 
-    // Get current startup screen mode from link state
-    uint8_t startup_screen_mode() const {
-        return system_via_peripheral.keyboard().startup_screen_mode();
+    // Get raw startup options byte
+    uint8_t startup_options() const {
+        return system_via_peripheral.keyboard().startup_options();
+    }
+
+    // Set boot screen mode (0-7) - modifies bits 0-2 of startup options
+    // Call before reset() to boot into specified mode
+    void set_screen_mode(uint8_t mode) {
+        system_via_peripheral.keyboard().set_screen_mode(mode);
+    }
+
+    // Get current screen mode from startup options
+    uint8_t screen_mode() const {
+        return system_via_peripheral.keyboard().screen_mode();
+    }
+
+    // Set auto-boot flag - modifies bit 3 of startup options
+    // When enabled, reverses SHIFT-BREAK action
+    void set_auto_boot(bool enabled) {
+        system_via_peripheral.keyboard().set_auto_boot(enabled);
+    }
+
+    // Get auto-boot flag from startup options
+    bool auto_boot() const {
+        return system_via_peripheral.keyboard().auto_boot();
     }
 
 public:

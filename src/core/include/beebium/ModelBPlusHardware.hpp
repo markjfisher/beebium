@@ -536,10 +536,40 @@ public:
         dfs_rom.load(data, size);
     }
 
-    // Set the startup screen mode via keyboard link emulation.
+    // =========================================================================
+    // Startup Options (keyboard links)
+    // =========================================================================
+
+    // Set raw startup options byte (all 8 keyboard links)
+    void set_startup_options(uint8_t options) {
+        system_via_peripheral.keyboard().set_startup_options(options);
+    }
+
+    // Get raw startup options byte
+    uint8_t startup_options() const {
+        return system_via_peripheral.keyboard().startup_options();
+    }
+
+    // Set boot screen mode (0-7) - modifies bits 0-2 of startup options
     // Mode 7 is the default if not set.
-    void set_startup_screen_mode(uint8_t screen_mode) {
-        system_via_peripheral.keyboard().set_startup_screen_mode(screen_mode);
+    void set_screen_mode(uint8_t mode) {
+        system_via_peripheral.keyboard().set_screen_mode(mode);
+    }
+
+    // Get current screen mode from startup options
+    uint8_t screen_mode() const {
+        return system_via_peripheral.keyboard().screen_mode();
+    }
+
+    // Set auto-boot flag - modifies bit 3 of startup options
+    // When enabled, reverses SHIFT-BREAK action
+    void set_auto_boot(bool enabled) {
+        system_via_peripheral.keyboard().set_auto_boot(enabled);
+    }
+
+    // Get auto-boot flag from startup options
+    bool auto_boot() const {
+        return system_via_peripheral.keyboard().auto_boot();
     }
 
     // Memory region discovery for debugger

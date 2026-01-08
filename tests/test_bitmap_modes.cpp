@@ -653,7 +653,7 @@ TEMPLATE_TEST_CASE("MODE 0 boot screen golden master", "[mode0][boot][golden]",
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 0 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(0);
+    machine.memory().set_screen_mode(0);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -742,7 +742,7 @@ TEMPLATE_TEST_CASE("MODE 1 boot screen golden master", "[mode1][boot][golden]",
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 1 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(1);
+    machine.memory().set_screen_mode(1);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -833,7 +833,7 @@ TEMPLATE_TEST_CASE("MODE 2 boot screen golden master", "[mode2][boot][golden]",
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 2 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(2);
+    machine.memory().set_screen_mode(2);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -924,7 +924,7 @@ TEMPLATE_TEST_CASE("MODE 3 boot screen golden master", "[mode3][boot][golden]",
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 3 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(3);
+    machine.memory().set_screen_mode(3);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1014,7 +1014,7 @@ TEMPLATE_TEST_CASE("MODE 4 boot screen golden master", "[mode4][boot][golden]",
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 4 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(4);
+    machine.memory().set_screen_mode(4);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1107,7 +1107,7 @@ TEMPLATE_TEST_CASE("MODE 5 boot screen golden master", "[mode5][golden][bitmap]"
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 5 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(5);
+    machine.memory().set_screen_mode(5);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1198,7 +1198,7 @@ TEMPLATE_TEST_CASE("MODE 6 boot screen golden master", "[mode6][golden][bitmap]"
     machine.memory().enable_video_output();
 
     // Set startup screen mode to 6 BEFORE reset (uses startup links)
-    machine.memory().set_startup_screen_mode(6);
+    machine.memory().set_screen_mode(6);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1374,7 +1374,7 @@ TEMPLATE_TEST_CASE("MODE 0 printable characters testcard", "[mode0][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(0);
+    machine.memory().set_screen_mode(0);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1455,7 +1455,7 @@ TEMPLATE_TEST_CASE("MODE 1 printable characters testcard", "[mode1][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(1);
+    machine.memory().set_screen_mode(1);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1536,7 +1536,7 @@ TEMPLATE_TEST_CASE("MODE 2 printable characters testcard", "[mode2][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(2);
+    machine.memory().set_screen_mode(2);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1617,7 +1617,7 @@ TEMPLATE_TEST_CASE("MODE 3 printable characters testcard", "[mode3][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(3);
+    machine.memory().set_screen_mode(3);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1698,7 +1698,7 @@ TEMPLATE_TEST_CASE("MODE 4 printable characters testcard", "[mode4][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(4);
+    machine.memory().set_screen_mode(4);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1779,7 +1779,7 @@ TEMPLATE_TEST_CASE("MODE 5 printable characters testcard", "[mode5][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(5);
+    machine.memory().set_screen_mode(5);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1860,7 +1860,7 @@ TEMPLATE_TEST_CASE("MODE 6 printable characters testcard", "[mode6][testcard][ch
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(6);
+    machine.memory().set_screen_mode(6);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -1947,7 +1947,7 @@ TEMPLATE_TEST_CASE("MODE 0 blue background", "[mode0][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(0);
+    machine.memory().set_screen_mode(0);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2034,7 +2034,7 @@ TEMPLATE_TEST_CASE("MODE 1 blue background", "[mode1][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(1);
+    machine.memory().set_screen_mode(1);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2116,7 +2116,7 @@ TEMPLATE_TEST_CASE("MODE 2 blue background", "[mode2][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(2);
+    machine.memory().set_screen_mode(2);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2199,7 +2199,7 @@ TEMPLATE_TEST_CASE("MODE 3 blue background", "[mode3][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(3);
+    machine.memory().set_screen_mode(3);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2281,7 +2281,7 @@ TEMPLATE_TEST_CASE("MODE 4 blue background", "[mode4][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(4);
+    machine.memory().set_screen_mode(4);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2363,7 +2363,7 @@ TEMPLATE_TEST_CASE("MODE 5 blue background", "[mode5][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(5);
+    machine.memory().set_screen_mode(5);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2446,7 +2446,7 @@ TEMPLATE_TEST_CASE("MODE 6 blue background", "[mode6][vdu19][background][golden]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(6);
+    machine.memory().set_screen_mode(6);
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2537,7 +2537,7 @@ TEMPLATE_TEST_CASE("AUG MODE 8 blue background", "[aug_mode8][vdu19][background]
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(5);  // Start in MODE 5
+    machine.memory().set_screen_mode(5);  // Start in MODE 5
     machine.reset();
 
     HeapFrameAllocator allocator;
@@ -2628,7 +2628,7 @@ TEMPLATE_TEST_CASE("AUG MODE 8 printable characters testcard", "[aug_mode8][test
     machine.memory().load_mos(mos_rom.data(), mos_rom.size());
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
-    machine.memory().set_startup_screen_mode(5);  // Start in MODE 5
+    machine.memory().set_screen_mode(5);  // Start in MODE 5
     machine.reset();
 
     HeapFrameAllocator allocator;

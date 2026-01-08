@@ -83,10 +83,18 @@ public:
         uint8_t column = key_number & 0x0F;
         uint8_t row = (key_number >> 4) & 0x07;
 
-        // Check if key is pressed in our matrix
-        bool pressed = keyboard_.is_key_pressed(row, column);
+        bool pressed = false;
 
-        // Return the key number with bit 7 set if pressed
+        if (row == 0 && column >= 2 && column <= 9) {
+            // Row 0, columns 2-9 are startup links (DIP switches)
+            // Read from the startup options byte instead of key matrix
+            pressed = keyboard_.is_link_made(column);
+        } else {
+            // Regular key matrix lookup
+            pressed = keyboard_.is_key_pressed(row, column);
+        }
+
+        // Return the key number with bit 7 set if pressed/made
         if (pressed) {
             return key_number | 0x80;
         } else {

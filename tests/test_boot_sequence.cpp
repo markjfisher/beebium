@@ -1203,10 +1203,10 @@ TEST_CASE("Boot into each screen mode via startup links", "[boot][startup][links
             machine.memory().load_basic(basic.data(), basic.size());
 
             // Set startup screen mode via links BEFORE reset
-            machine.memory().set_startup_screen_mode(static_cast<uint8_t>(expected_screen_mode));
+            machine.memory().set_screen_mode(static_cast<uint8_t>(expected_screen_mode));
 
             // Verify link state is correct before reset
-            REQUIRE(machine.memory().startup_screen_mode() == expected_screen_mode);
+            REQUIRE(machine.memory().screen_mode() == expected_screen_mode);
 
             machine.reset();
 
@@ -1232,14 +1232,14 @@ TEST_CASE("KeyboardMatrix startup link round-trip", "[keyboard][links][unit]") {
 
     // Test each mode value
     for (uint8_t mode = 0; mode <= 7; ++mode) {
-        matrix.set_startup_screen_mode(mode);
-        CHECK(matrix.startup_screen_mode() == mode);
+        matrix.set_screen_mode(mode);
+        CHECK(matrix.screen_mode() == mode);
     }
 
     // Test clamping of out-of-range values
-    matrix.set_startup_screen_mode(8);
-    CHECK(matrix.startup_screen_mode() == 7);  // Should clamp to 7
+    matrix.set_screen_mode(8);
+    CHECK(matrix.screen_mode() == 7);  // Should clamp to 7
 
-    matrix.set_startup_screen_mode(255);
-    CHECK(matrix.startup_screen_mode() == 7);  // Should clamp to 7
+    matrix.set_screen_mode(255);
+    CHECK(matrix.screen_mode() == 7);  // Should clamp to 7
 }

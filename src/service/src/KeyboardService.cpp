@@ -63,16 +63,6 @@ grpc::Status KeyboardServiceImpl::KeyUp(
     return grpc::Status::OK;
 }
 
-grpc::Status KeyboardServiceImpl::TypeText(
-    grpc::ServerContext* /*context*/,
-    const TypeTextRequest* /*request*/,
-    TypeTextResponse* response) {
-
-    // TODO: Implement text typing with timing
-    response->set_started(false);
-    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TypeText not yet implemented");
-}
-
 grpc::Status KeyboardServiceImpl::GetState(
     grpc::ServerContext* /*context*/,
     const GetStateRequest* /*request*/,
@@ -84,6 +74,71 @@ grpc::Status KeyboardServiceImpl::GetState(
     for (int row = 0; row < 10; ++row) {
         response->add_pressed_rows(keyboard_.get_row_state(row));
     }
+
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::SetStartupOptions(
+    grpc::ServerContext* /*context*/,
+    const SetStartupOptionsRequest* request,
+    SetStartupOptionsResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto& matrix = keyboard_.keyboard();
+
+    switch (request->options_case()) {
+        case SetStartupOptionsRequest::kRawByte: {
+            uint32_t raw = request->raw_byte();
+            if (raw > 255) {
+                response->set_success(false);
+                response->set_error("raw_byte must be 0-255");
+                return grpc::Status::OK;
+            }
+            matrix.set_startup_options(static_cast<uint8_t>(raw));
+            break;
+        }
+
+        case SetStartupOptionsRequest::kSemantic: {
+            const auto& semantic = request->semantic();
+
+            if (semantic.has_screen_mode()) {
+                uint32_t mode = semantic.screen_mode();
+                if (mode > 7) {
+                    response->set_success(false);
+                    response->set_error("screen_mode must be 0-7");
+                    return grpc::Status::OK;
+                }
+                matrix.set_screen_mode(static_cast<uint8_t>(mode));
+            }
+
+            if (semantic.has_auto_boot()) {
+                matrix.set_auto_boot(semantic.auto_boot());
+            }
+            break;
+        }
+
+        case SetStartupOptionsRequest::OPTIONS_NOT_SET:
+            // No options provided - nothing to do
+            break;
+    }
+
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetStartupOptions(
+    grpc::ServerContext* /*context*/,
+    const GetStartupOptionsRequest* /*request*/,
+    StartupOptions* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto& matrix = keyboard_.keyboard();
+
+    response->set_raw_byte(matrix.startup_options());
+    response->set_screen_mode(matrix.screen_mode());
+    response->set_auto_boot(matrix.auto_boot());
 
     return grpc::Status::OK;
 }

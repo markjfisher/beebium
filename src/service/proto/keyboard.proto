@@ -4,15 +4,17 @@ package beebium;
 
 // BBC keyboard matrix input service
 service KeyboardService {
-    // Press/release by matrix position
+    // Press/release by matrix position (momentary key events)
     rpc KeyDown(KeyRequest) returns (KeyResponse);
     rpc KeyUp(KeyRequest) returns (KeyResponse);
 
-    // Type a string (auto press/release with timing)
-    rpc TypeText(TypeTextRequest) returns (TypeTextResponse);
-
     // Query current pressed keys
     rpc GetState(GetStateRequest) returns (KeyboardState);
+
+    // Startup options (keyboard links / DIP switches)
+    // These are persistent configuration settings, not momentary key events.
+    rpc SetStartupOptions(SetStartupOptionsRequest) returns (SetStartupOptionsResponse);
+    rpc GetStartupOptions(GetStartupOptionsRequest) returns (StartupOptions);
 }
 
 message KeyRequest {
@@ -25,18 +27,51 @@ message KeyResponse {
     bool accepted = 1;
 }
 
-message TypeTextRequest {
-    string text = 1;
-    uint32 inter_key_delay_ms = 2;  // Default: 50ms
-}
-
-message TypeTextResponse {
-    bool started = 1;
-}
-
 message GetStateRequest {}
 
 message KeyboardState {
     // Bitmap of pressed keys (10 rows)
     repeated uint32 pressed_rows = 1;
+}
+
+// ============================================================================
+// Startup Options (keyboard links / DIP switches)
+// ============================================================================
+//
+// The BBC Micro has 8 keyboard links (row 0, columns 2-9) that form a startup
+// options byte. Active-low: bit SET = link broken (open), bit CLEAR = link made.
+//
+// Bit layout:
+//   Bits 0-2: Screen mode (XOR'd with 7 by MOS, so 0x07 = Mode 7)
+//   Bit 3: SHIFT-BREAK action (1 = normal, 0 = reversed)
+//   Bits 4-7: ROM-dependent (disc timing, filing system, etc.)
+//
+// Default value 0xFF (all links broken) = Mode 7, normal SHIFT-BREAK.
+
+// Set startup options - can set raw byte OR individual semantic fields
+message SetStartupOptionsRequest {
+    oneof options {
+        uint32 raw_byte = 1;           // Full 8-bit value (0-255)
+        SemanticOptions semantic = 2;  // Structured options
+    }
+}
+
+// Semantic startup options (modifies specific bits, preserves others)
+message SemanticOptions {
+    optional uint32 screen_mode = 1;   // 0-7, sets bits 0-2
+    optional bool auto_boot = 2;       // true = bit 3 cleared (reversed SHIFT-BREAK)
+}
+
+message SetStartupOptionsResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStartupOptionsRequest {}
+
+// Current startup options state
+message StartupOptions {
+    uint32 raw_byte = 1;        // Full 8-bit value
+    uint32 screen_mode = 2;     // Derived from bits 0-2 (0-7)
+    bool auto_boot = 3;         // Derived from bit 3 (true if bit 3 = 0)
 }

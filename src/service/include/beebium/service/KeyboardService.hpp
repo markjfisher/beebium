@@ -43,15 +43,20 @@ public:
         const KeyRequest* request,
         KeyResponse* response) override;
 
-    grpc::Status TypeText(
-        grpc::ServerContext* context,
-        const TypeTextRequest* request,
-        TypeTextResponse* response) override;
-
     grpc::Status GetState(
         grpc::ServerContext* context,
         const GetStateRequest* request,
         KeyboardState* response) override;
+
+    grpc::Status SetStartupOptions(
+        grpc::ServerContext* context,
+        const SetStartupOptionsRequest* request,
+        SetStartupOptionsResponse* response) override;
+
+    grpc::Status GetStartupOptions(
+        grpc::ServerContext* context,
+        const GetStartupOptionsRequest* request,
+        StartupOptions* response) override;
 
 private:
     SystemViaPeripheral& keyboard_;
