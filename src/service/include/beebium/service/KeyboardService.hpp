@@ -48,15 +48,37 @@ public:
         const GetStateRequest* request,
         KeyboardState* response) override;
 
-    grpc::Status SetStartupOptions(
+    // Keyboard links (raw byte access)
+    grpc::Status SetLinks(
         grpc::ServerContext* context,
-        const SetStartupOptionsRequest* request,
-        SetStartupOptionsResponse* response) override;
+        const SetLinksRequest* request,
+        SetLinksResponse* response) override;
 
-    grpc::Status GetStartupOptions(
+    grpc::Status GetLinks(
         grpc::ServerContext* context,
-        const GetStartupOptionsRequest* request,
-        StartupOptions* response) override;
+        const GetLinksRequest* request,
+        LinksState* response) override;
+
+    // Semantic accessors
+    grpc::Status SetStartupScreenMode(
+        grpc::ServerContext* context,
+        const SetStartupScreenModeRequest* request,
+        SetStartupScreenModeResponse* response) override;
+
+    grpc::Status GetStartupScreenMode(
+        grpc::ServerContext* context,
+        const GetStartupScreenModeRequest* request,
+        StartupScreenModeState* response) override;
+
+    grpc::Status SetStartupAutoBoot(
+        grpc::ServerContext* context,
+        const SetStartupAutoBootRequest* request,
+        SetStartupAutoBootResponse* response) override;
+
+    grpc::Status GetStartupAutoBoot(
+        grpc::ServerContext* context,
+        const GetStartupAutoBootRequest* request,
+        StartupAutoBootState* response) override;
 
 private:
     SystemViaPeripheral& keyboard_;

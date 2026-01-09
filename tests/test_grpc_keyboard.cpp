@@ -198,3 +198,403 @@ TEST_CASE("KeyboardService multiple keys can be pressed simultaneously", "[grpc]
     CHECK(peripheral.is_key_pressed(0, 0));
     CHECK(peripheral.is_key_pressed(4, 1));
 }
+
+// =============================================================================
+// Keyboard Links API Tests
+// =============================================================================
+
+TEST_CASE("KeyboardService SetLinks and GetLinks roundtrip", "[grpc][keyboard][links]") {
+    KeyboardTestFixture fixture;
+
+    SECTION("default value is 0xFF (all links broken)") {
+        grpc::ClientContext context;
+        beebium::GetLinksRequest request;
+        beebium::LinksState response;
+
+        auto status = fixture.stub().GetLinks(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK(response.value() == 0xFF);
+    }
+
+    SECTION("set and read back raw byte") {
+        // Set to 0xF8 (Mode 0)
+        {
+            grpc::ClientContext context;
+            beebium::SetLinksRequest request;
+            request.set_value(0xF8);
+            beebium::SetLinksResponse response;
+
+            auto status = fixture.stub().SetLinks(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.success());
+        }
+
+        // Read back
+        {
+            grpc::ClientContext context;
+            beebium::GetLinksRequest request;
+            beebium::LinksState response;
+
+            auto status = fixture.stub().GetLinks(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.value() == 0xF8);
+        }
+    }
+
+    SECTION("rejects values > 255") {
+        grpc::ClientContext context;
+        beebium::SetLinksRequest request;
+        request.set_value(256);
+        beebium::SetLinksResponse response;
+
+        auto status = fixture.stub().SetLinks(&context, request, &response);
+        REQUIRE(status.ok());
+        CHECK_FALSE(response.success());
+        CHECK(response.error() == "value must be 0-255");
+    }
+}
+
+TEST_CASE("KeyboardService SetStartupScreenMode and GetStartupScreenMode roundtrip", "[grpc][keyboard][links]") {
+    KeyboardTestFixture fixture;
+
+    SECTION("default mode is 7") {
+        grpc::ClientContext context;
+        beebium::GetStartupScreenModeRequest request;
+        beebium::StartupScreenModeState response;
+
+        auto status = fixture.stub().GetStartupScreenMode(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK(response.mode() == 7);
+    }
+
+    SECTION("set mode 0 and read back") {
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupScreenModeRequest request;
+            request.set_mode(0);
+            beebium::SetStartupScreenModeResponse response;
+
+            auto status = fixture.stub().SetStartupScreenMode(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.success());
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupScreenModeRequest request;
+            beebium::StartupScreenModeState response;
+
+            auto status = fixture.stub().GetStartupScreenMode(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.mode() == 0);
+        }
+    }
+
+    SECTION("set each mode 0-7") {
+        for (uint32_t mode = 0; mode <= 7; ++mode) {
+            {
+                grpc::ClientContext context;
+                beebium::SetStartupScreenModeRequest request;
+                request.set_mode(mode);
+                beebium::SetStartupScreenModeResponse response;
+
+                auto status = fixture.stub().SetStartupScreenMode(&context, request, &response);
+                REQUIRE(status.ok());
+                CHECK(response.success());
+            }
+
+            {
+                grpc::ClientContext context;
+                beebium::GetStartupScreenModeRequest request;
+                beebium::StartupScreenModeState response;
+
+                auto status = fixture.stub().GetStartupScreenMode(&context, request, &response);
+                REQUIRE(status.ok());
+                CHECK(response.mode() == mode);
+            }
+        }
+    }
+
+    SECTION("rejects mode > 7") {
+        grpc::ClientContext context;
+        beebium::SetStartupScreenModeRequest request;
+        request.set_mode(8);
+        beebium::SetStartupScreenModeResponse response;
+
+        auto status = fixture.stub().SetStartupScreenMode(&context, request, &response);
+        REQUIRE(status.ok());
+        CHECK_FALSE(response.success());
+        CHECK(response.error() == "mode must be 0-7");
+    }
+}
+
+TEST_CASE("KeyboardService SetStartupAutoBoot and GetStartupAutoBoot roundtrip", "[grpc][keyboard][links]") {
+    KeyboardTestFixture fixture;
+
+    SECTION("default auto-boot is false") {
+        grpc::ClientContext context;
+        beebium::GetStartupAutoBootRequest request;
+        beebium::StartupAutoBootState response;
+
+        auto status = fixture.stub().GetStartupAutoBoot(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK_FALSE(response.enabled());
+    }
+
+    SECTION("enable auto-boot and read back") {
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupAutoBootRequest request;
+            request.set_enabled(true);
+            beebium::SetStartupAutoBootResponse response;
+
+            auto status = fixture.stub().SetStartupAutoBoot(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.success());
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupAutoBootRequest request;
+            beebium::StartupAutoBootState response;
+
+            auto status = fixture.stub().GetStartupAutoBoot(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.enabled());
+        }
+    }
+
+    SECTION("disable auto-boot after enabling") {
+        // Enable
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupAutoBootRequest request;
+            request.set_enabled(true);
+            beebium::SetStartupAutoBootResponse response;
+            fixture.stub().SetStartupAutoBoot(&context, request, &response);
+        }
+
+        // Disable
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupAutoBootRequest request;
+            request.set_enabled(false);
+            beebium::SetStartupAutoBootResponse response;
+
+            auto status = fixture.stub().SetStartupAutoBoot(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK(response.success());
+        }
+
+        // Verify disabled
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupAutoBootRequest request;
+            beebium::StartupAutoBootState response;
+
+            auto status = fixture.stub().GetStartupAutoBoot(&context, request, &response);
+            REQUIRE(status.ok());
+            CHECK_FALSE(response.enabled());
+        }
+    }
+}
+
+TEST_CASE("KeyboardService semantic options to raw links roundtrip", "[grpc][keyboard][links]") {
+    KeyboardTestFixture fixture;
+
+    SECTION("mode 0 sets raw byte bits 0-2 to 0") {
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupScreenModeRequest request;
+            request.set_mode(0);
+            beebium::SetStartupScreenModeResponse response;
+            fixture.stub().SetStartupScreenMode(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetLinksRequest request;
+            beebium::LinksState response;
+            fixture.stub().GetLinks(&context, request, &response);
+
+            // Default is 0xFF, mode 0 clears bits 0-2 -> 0xF8
+            CHECK(response.value() == 0xF8);
+        }
+    }
+
+    SECTION("mode 7 sets raw byte bits 0-2 to 7") {
+        // First set to mode 0
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupScreenModeRequest request;
+            request.set_mode(0);
+            beebium::SetStartupScreenModeResponse response;
+            fixture.stub().SetStartupScreenMode(&context, request, &response);
+        }
+
+        // Then set to mode 7
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupScreenModeRequest request;
+            request.set_mode(7);
+            beebium::SetStartupScreenModeResponse response;
+            fixture.stub().SetStartupScreenMode(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetLinksRequest request;
+            beebium::LinksState response;
+            fixture.stub().GetLinks(&context, request, &response);
+
+            // bits 0-2 = 7, other bits unchanged at 0xF8 -> 0xFF
+            CHECK(response.value() == 0xFF);
+        }
+    }
+
+    SECTION("auto-boot enabled clears bit 3") {
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupAutoBootRequest request;
+            request.set_enabled(true);
+            beebium::SetStartupAutoBootResponse response;
+            fixture.stub().SetStartupAutoBoot(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetLinksRequest request;
+            beebium::LinksState response;
+            fixture.stub().GetLinks(&context, request, &response);
+
+            // Default 0xFF with bit 3 cleared -> 0xF7
+            CHECK(response.value() == 0xF7);
+        }
+    }
+
+    SECTION("combined mode and auto-boot") {
+        // Set mode 3
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupScreenModeRequest request;
+            request.set_mode(3);
+            beebium::SetStartupScreenModeResponse response;
+            fixture.stub().SetStartupScreenMode(&context, request, &response);
+        }
+
+        // Enable auto-boot
+        {
+            grpc::ClientContext context;
+            beebium::SetStartupAutoBootRequest request;
+            request.set_enabled(true);
+            beebium::SetStartupAutoBootResponse response;
+            fixture.stub().SetStartupAutoBoot(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetLinksRequest request;
+            beebium::LinksState response;
+            fixture.stub().GetLinks(&context, request, &response);
+
+            // bits 0-2 = 3, bit 3 = 0, bits 4-7 = 0xF -> 0xF3
+            CHECK(response.value() == 0xF3);
+        }
+    }
+}
+
+TEST_CASE("KeyboardService raw links to semantic options roundtrip", "[grpc][keyboard][links]") {
+    KeyboardTestFixture fixture;
+
+    SECTION("raw byte 0xF8 reads as mode 0") {
+        {
+            grpc::ClientContext context;
+            beebium::SetLinksRequest request;
+            request.set_value(0xF8);
+            beebium::SetLinksResponse response;
+            fixture.stub().SetLinks(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupScreenModeRequest request;
+            beebium::StartupScreenModeState response;
+            fixture.stub().GetStartupScreenMode(&context, request, &response);
+
+            CHECK(response.mode() == 0);
+        }
+    }
+
+    SECTION("raw byte 0xF7 reads as auto-boot enabled") {
+        {
+            grpc::ClientContext context;
+            beebium::SetLinksRequest request;
+            request.set_value(0xF7);  // bit 3 cleared
+            beebium::SetLinksResponse response;
+            fixture.stub().SetLinks(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupAutoBootRequest request;
+            beebium::StartupAutoBootState response;
+            fixture.stub().GetStartupAutoBoot(&context, request, &response);
+
+            CHECK(response.enabled());
+        }
+    }
+
+    SECTION("raw byte 0x00 reads as mode 0 and auto-boot enabled") {
+        {
+            grpc::ClientContext context;
+            beebium::SetLinksRequest request;
+            request.set_value(0x00);  // All bits cleared
+            beebium::SetLinksResponse response;
+            fixture.stub().SetLinks(&context, request, &response);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupScreenModeRequest request;
+            beebium::StartupScreenModeState response;
+            fixture.stub().GetStartupScreenMode(&context, request, &response);
+
+            CHECK(response.mode() == 0);
+        }
+
+        {
+            grpc::ClientContext context;
+            beebium::GetStartupAutoBootRequest request;
+            beebium::StartupAutoBootState response;
+            fixture.stub().GetStartupAutoBoot(&context, request, &response);
+
+            CHECK(response.enabled());
+        }
+    }
+
+    SECTION("each mode value 0-7 roundtrips through raw byte") {
+        for (uint32_t mode = 0; mode <= 7; ++mode) {
+            // Set raw byte with mode in bits 0-2, other bits set
+            uint8_t raw_value = 0xF8 | static_cast<uint8_t>(mode);
+            {
+                grpc::ClientContext context;
+                beebium::SetLinksRequest request;
+                request.set_value(raw_value);
+                beebium::SetLinksResponse response;
+                fixture.stub().SetLinks(&context, request, &response);
+            }
+
+            {
+                grpc::ClientContext context;
+                beebium::GetStartupScreenModeRequest request;
+                beebium::StartupScreenModeState response;
+                fixture.stub().GetStartupScreenMode(&context, request, &response);
+
+                CHECK(response.mode() == mode);
+            }
+        }
+    }
+}

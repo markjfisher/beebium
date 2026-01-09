@@ -78,68 +78,94 @@ grpc::Status KeyboardServiceImpl::GetState(
     return grpc::Status::OK;
 }
 
-grpc::Status KeyboardServiceImpl::SetStartupOptions(
+// =============================================================================
+// Keyboard Links (raw byte access)
+// =============================================================================
+
+grpc::Status KeyboardServiceImpl::SetLinks(
     grpc::ServerContext* /*context*/,
-    const SetStartupOptionsRequest* request,
-    SetStartupOptionsResponse* response) {
+    const SetLinksRequest* request,
+    SetLinksResponse* response) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    auto& matrix = keyboard_.keyboard();
-
-    switch (request->options_case()) {
-        case SetStartupOptionsRequest::kRawByte: {
-            uint32_t raw = request->raw_byte();
-            if (raw > 255) {
-                response->set_success(false);
-                response->set_error("raw_byte must be 0-255");
-                return grpc::Status::OK;
-            }
-            matrix.set_startup_options(static_cast<uint8_t>(raw));
-            break;
-        }
-
-        case SetStartupOptionsRequest::kSemantic: {
-            const auto& semantic = request->semantic();
-
-            if (semantic.has_screen_mode()) {
-                uint32_t mode = semantic.screen_mode();
-                if (mode > 7) {
-                    response->set_success(false);
-                    response->set_error("screen_mode must be 0-7");
-                    return grpc::Status::OK;
-                }
-                matrix.set_screen_mode(static_cast<uint8_t>(mode));
-            }
-
-            if (semantic.has_auto_boot()) {
-                matrix.set_auto_boot(semantic.auto_boot());
-            }
-            break;
-        }
-
-        case SetStartupOptionsRequest::OPTIONS_NOT_SET:
-            // No options provided - nothing to do
-            break;
+    uint32_t value = request->value();
+    if (value > 255) {
+        response->set_success(false);
+        response->set_error("value must be 0-255");
+        return grpc::Status::OK;
     }
 
+    keyboard_.keyboard().set_startup_options(static_cast<uint8_t>(value));
     response->set_success(true);
     return grpc::Status::OK;
 }
 
-grpc::Status KeyboardServiceImpl::GetStartupOptions(
+grpc::Status KeyboardServiceImpl::GetLinks(
     grpc::ServerContext* /*context*/,
-    const GetStartupOptionsRequest* /*request*/,
-    StartupOptions* response) {
+    const GetLinksRequest* /*request*/,
+    LinksState* response) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    auto& matrix = keyboard_.keyboard();
+    response->set_value(keyboard_.keyboard().startup_options());
+    return grpc::Status::OK;
+}
 
-    response->set_raw_byte(matrix.startup_options());
-    response->set_screen_mode(matrix.screen_mode());
-    response->set_auto_boot(matrix.auto_boot());
+// =============================================================================
+// Semantic accessors
+// =============================================================================
 
+grpc::Status KeyboardServiceImpl::SetStartupScreenMode(
+    grpc::ServerContext* /*context*/,
+    const SetStartupScreenModeRequest* request,
+    SetStartupScreenModeResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t mode = request->mode();
+    if (mode > 7) {
+        response->set_success(false);
+        response->set_error("mode must be 0-7");
+        return grpc::Status::OK;
+    }
+
+    keyboard_.keyboard().set_screen_mode(static_cast<uint8_t>(mode));
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetStartupScreenMode(
+    grpc::ServerContext* /*context*/,
+    const GetStartupScreenModeRequest* /*request*/,
+    StartupScreenModeState* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    response->set_mode(keyboard_.keyboard().screen_mode());
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::SetStartupAutoBoot(
+    grpc::ServerContext* /*context*/,
+    const SetStartupAutoBootRequest* request,
+    SetStartupAutoBootResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    keyboard_.keyboard().set_auto_boot(request->enabled());
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetStartupAutoBoot(
+    grpc::ServerContext* /*context*/,
+    const GetStartupAutoBootRequest* /*request*/,
+    StartupAutoBootState* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    response->set_enabled(keyboard_.keyboard().auto_boot());
     return grpc::Status::OK;
 }
 

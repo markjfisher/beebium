@@ -11,10 +11,21 @@ service KeyboardService {
     // Query current pressed keys
     rpc GetState(GetStateRequest) returns (KeyboardState);
 
-    // Startup options (keyboard links / DIP switches)
+    // =========================================================================
+    // Keyboard Links (DIP switches)
+    // =========================================================================
     // These are persistent configuration settings, not momentary key events.
-    rpc SetStartupOptions(SetStartupOptionsRequest) returns (SetStartupOptionsResponse);
-    rpc GetStartupOptions(GetStartupOptionsRequest) returns (StartupOptions);
+    // The 8 links form a startup options byte read by MOS at reset.
+
+    // Raw byte access to all 8 links
+    rpc SetLinks(SetLinksRequest) returns (SetLinksResponse);
+    rpc GetLinks(GetLinksRequest) returns (LinksState);
+
+    // Semantic accessors for specific link groups
+    rpc SetStartupScreenMode(SetStartupScreenModeRequest) returns (SetStartupScreenModeResponse);
+    rpc GetStartupScreenMode(GetStartupScreenModeRequest) returns (StartupScreenModeState);
+    rpc SetStartupAutoBoot(SetStartupAutoBootRequest) returns (SetStartupAutoBootResponse);
+    rpc GetStartupAutoBoot(GetStartupAutoBootRequest) returns (StartupAutoBootState);
 }
 
 message KeyRequest {
@@ -35,7 +46,7 @@ message KeyboardState {
 }
 
 // ============================================================================
-// Startup Options (keyboard links / DIP switches)
+// Keyboard Links (DIP switches)
 // ============================================================================
 //
 // The BBC Micro has 8 keyboard links (row 0, columns 2-9) that form a startup
@@ -48,30 +59,53 @@ message KeyboardState {
 //
 // Default value 0xFF (all links broken) = Mode 7, normal SHIFT-BREAK.
 
-// Set startup options - can set raw byte OR individual semantic fields
-message SetStartupOptionsRequest {
-    oneof options {
-        uint32 raw_byte = 1;           // Full 8-bit value (0-255)
-        SemanticOptions semantic = 2;  // Structured options
-    }
+// --- Raw byte access ---
+
+message SetLinksRequest {
+    uint32 value = 1;  // 8-bit value (0-255)
 }
 
-// Semantic startup options (modifies specific bits, preserves others)
-message SemanticOptions {
-    optional uint32 screen_mode = 1;   // 0-7, sets bits 0-2
-    optional bool auto_boot = 2;       // true = bit 3 cleared (reversed SHIFT-BREAK)
-}
-
-message SetStartupOptionsResponse {
+message SetLinksResponse {
     bool success = 1;
     string error = 2;
 }
 
-message GetStartupOptionsRequest {}
+message GetLinksRequest {}
 
-// Current startup options state
-message StartupOptions {
-    uint32 raw_byte = 1;        // Full 8-bit value
-    uint32 screen_mode = 2;     // Derived from bits 0-2 (0-7)
-    bool auto_boot = 3;         // Derived from bit 3 (true if bit 3 = 0)
+message LinksState {
+    uint32 value = 1;  // Current 8-bit links value
+}
+
+// --- Startup Screen Mode (bits 0-2) ---
+
+message SetStartupScreenModeRequest {
+    uint32 mode = 1;  // 0-7
+}
+
+message SetStartupScreenModeResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStartupScreenModeRequest {}
+
+message StartupScreenModeState {
+    uint32 mode = 1;  // Current mode (0-7)
+}
+
+// --- Startup Auto-Boot (bit 3) ---
+
+message SetStartupAutoBootRequest {
+    bool enabled = 1;  // true = SHIFT-BREAK boots (bit 3 cleared)
+}
+
+message SetStartupAutoBootResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStartupAutoBootRequest {}
+
+message StartupAutoBootState {
+    bool enabled = 1;  // true if bit 3 is cleared
 }
