@@ -175,6 +175,52 @@ The CRTC outputs a 14-bit address. Translation depends on mode:
 - **Bitmap modes**: Screen base from addressable latch (IC32) bits 4-5:
   - 00: 0x3000, 01: 0x4000, 10: 0x5800, 11: 0x6000
 
+### Mode 7 Screen Memory Layout
+
+Mode 7 is a 40×25 character teletext display:
+
+| Property | Value |
+|----------|-------|
+| Screen start | $7C00 |
+| Screen end | $7FFF |
+| Size | 1000 bytes (1024 allocated) |
+| Characters per row | 40 |
+| Rows | 25 |
+| Bytes per character | 1 |
+
+Memory is laid out sequentially:
+
+```
+$7C00: Row 0, columns 0-39
+$7C28: Row 1, columns 0-39
+$7C50: Row 2, columns 0-39
+...
+$7FC8: Row 24, columns 0-39
+```
+
+Row offset = row_number × 40 (decimal) = row_number × $28 (hex)
+
+### MOS VDU Variables
+
+Key MOS variables for screen handling:
+
+| Address | Name | Description |
+|---------|------|-------------|
+| $0350-$0351 | vduScreenTopAddress | Start of screen memory |
+| $034E-$034F | vduCurrentTextCell | Current cursor position (character offset) |
+| $0355 | screenMode | Current display mode (0-7) |
+
+### Character Output Path
+
+When OSWRCH ($FFEE) is called:
+1. JMP through WRCHV ($020E) → default handler at $E0A4
+2. VDU handler processes character
+3. For printable characters in Mode 7:
+   - Calculate screen address from cursor position
+   - Write character byte directly to screen memory
+   - Increment cursor position
+4. The actual write happens at $CFE6 in the MOS
+
 ### SAA5050 Timing Integration
 
 The SAA5050 requires specific timing signals derived from CRTC output:
