@@ -146,8 +146,7 @@ final class KeyboardClient: ObservableObject {
         }
 
         var request = Beebium_KeyRequest()
-        request.row = UInt32(row)
-        request.column = UInt32(column)
+        request.ikNumber = UInt32((row << 4) | column)
 
         do {
             _ = try await client.keyDown(request).response.get()
@@ -163,8 +162,7 @@ final class KeyboardClient: ObservableObject {
         }
 
         var request = Beebium_KeyRequest()
-        request.row = UInt32(row)
-        request.column = UInt32(column)
+        request.ikNumber = UInt32((row << 4) | column)
 
         do {
             _ = try await client.keyUp(request).response.get()

@@ -28,8 +28,9 @@ grpc::Status KeyboardServiceImpl::KeyDown(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    uint32_t row = request->row();
-    uint32_t column = request->column();
+    uint32_t ik_number = request->ik_number();
+    uint32_t row = (ik_number >> 4) & 0x0F;
+    uint32_t column = ik_number & 0x0F;
 
     if (row >= 10 || column >= 10) {
         response->set_accepted(false);
@@ -49,8 +50,9 @@ grpc::Status KeyboardServiceImpl::KeyUp(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    uint32_t row = request->row();
-    uint32_t column = request->column();
+    uint32_t ik_number = request->ik_number();
+    uint32_t row = (ik_number >> 4) & 0x0F;
+    uint32_t column = ik_number & 0x0F;
 
     if (row >= 10 || column >= 10) {
         response->set_accepted(false);

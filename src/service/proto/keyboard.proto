@@ -29,9 +29,9 @@ service KeyboardService {
 }
 
 message KeyRequest {
-    // BBC keyboard matrix: row 0-9, column 0-9
-    uint32 row = 1;
-    uint32 column = 2;
+    // Internal key number: row is hi-nybble, column is lo-nybble
+    // giving 0x<row><column> in hexadecimal (e.g., 'V' = 0x63)
+    uint32 ik_number = 1;
 }
 
 message KeyResponse {

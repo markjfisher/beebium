@@ -45,15 +45,40 @@ class KeyboardServiceStub(object):
                 request_serializer=keyboard__pb2.KeyRequest.SerializeToString,
                 response_deserializer=keyboard__pb2.KeyResponse.FromString,
                 _registered_method=True)
-        self.TypeText = channel.unary_unary(
-                '/beebium.KeyboardService/TypeText',
-                request_serializer=keyboard__pb2.TypeTextRequest.SerializeToString,
-                response_deserializer=keyboard__pb2.TypeTextResponse.FromString,
-                _registered_method=True)
         self.GetState = channel.unary_unary(
                 '/beebium.KeyboardService/GetState',
                 request_serializer=keyboard__pb2.GetStateRequest.SerializeToString,
                 response_deserializer=keyboard__pb2.KeyboardState.FromString,
+                _registered_method=True)
+        self.SetLinks = channel.unary_unary(
+                '/beebium.KeyboardService/SetLinks',
+                request_serializer=keyboard__pb2.SetLinksRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.SetLinksResponse.FromString,
+                _registered_method=True)
+        self.GetLinks = channel.unary_unary(
+                '/beebium.KeyboardService/GetLinks',
+                request_serializer=keyboard__pb2.GetLinksRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.LinksState.FromString,
+                _registered_method=True)
+        self.SetStartupScreenMode = channel.unary_unary(
+                '/beebium.KeyboardService/SetStartupScreenMode',
+                request_serializer=keyboard__pb2.SetStartupScreenModeRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.SetStartupScreenModeResponse.FromString,
+                _registered_method=True)
+        self.GetStartupScreenMode = channel.unary_unary(
+                '/beebium.KeyboardService/GetStartupScreenMode',
+                request_serializer=keyboard__pb2.GetStartupScreenModeRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.StartupScreenModeState.FromString,
+                _registered_method=True)
+        self.SetStartupAutoBoot = channel.unary_unary(
+                '/beebium.KeyboardService/SetStartupAutoBoot',
+                request_serializer=keyboard__pb2.SetStartupAutoBootRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.SetStartupAutoBootResponse.FromString,
+                _registered_method=True)
+        self.GetStartupAutoBoot = channel.unary_unary(
+                '/beebium.KeyboardService/GetStartupAutoBoot',
+                request_serializer=keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.StartupAutoBootState.FromString,
                 _registered_method=True)
 
 
@@ -62,7 +87,7 @@ class KeyboardServiceServicer(object):
     """
 
     def KeyDown(self, request, context):
-        """Press/release by matrix position
+        """Press/release by matrix position (momentary key events)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -74,16 +99,53 @@ class KeyboardServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def TypeText(self, request, context):
-        """Type a string (auto press/release with timing)
+    def GetState(self, request, context):
+        """Query current pressed keys
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetState(self, request, context):
-        """Query current pressed keys
+    def SetLinks(self, request, context):
+        """=========================================================================
+        Keyboard Links (DIP switches)
+        =========================================================================
+        These are persistent configuration settings, not momentary key events.
+        The 8 links form a startup options byte read by MOS at reset.
+
+        Raw byte access to all 8 links
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetLinks(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetStartupScreenMode(self, request, context):
+        """Semantic accessors for specific link groups
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetStartupScreenMode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetStartupAutoBoot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetStartupAutoBoot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -101,15 +163,40 @@ def add_KeyboardServiceServicer_to_server(servicer, server):
                     request_deserializer=keyboard__pb2.KeyRequest.FromString,
                     response_serializer=keyboard__pb2.KeyResponse.SerializeToString,
             ),
-            'TypeText': grpc.unary_unary_rpc_method_handler(
-                    servicer.TypeText,
-                    request_deserializer=keyboard__pb2.TypeTextRequest.FromString,
-                    response_serializer=keyboard__pb2.TypeTextResponse.SerializeToString,
-            ),
             'GetState': grpc.unary_unary_rpc_method_handler(
                     servicer.GetState,
                     request_deserializer=keyboard__pb2.GetStateRequest.FromString,
                     response_serializer=keyboard__pb2.KeyboardState.SerializeToString,
+            ),
+            'SetLinks': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetLinks,
+                    request_deserializer=keyboard__pb2.SetLinksRequest.FromString,
+                    response_serializer=keyboard__pb2.SetLinksResponse.SerializeToString,
+            ),
+            'GetLinks': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLinks,
+                    request_deserializer=keyboard__pb2.GetLinksRequest.FromString,
+                    response_serializer=keyboard__pb2.LinksState.SerializeToString,
+            ),
+            'SetStartupScreenMode': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetStartupScreenMode,
+                    request_deserializer=keyboard__pb2.SetStartupScreenModeRequest.FromString,
+                    response_serializer=keyboard__pb2.SetStartupScreenModeResponse.SerializeToString,
+            ),
+            'GetStartupScreenMode': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetStartupScreenMode,
+                    request_deserializer=keyboard__pb2.GetStartupScreenModeRequest.FromString,
+                    response_serializer=keyboard__pb2.StartupScreenModeState.SerializeToString,
+            ),
+            'SetStartupAutoBoot': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetStartupAutoBoot,
+                    request_deserializer=keyboard__pb2.SetStartupAutoBootRequest.FromString,
+                    response_serializer=keyboard__pb2.SetStartupAutoBootResponse.SerializeToString,
+            ),
+            'GetStartupAutoBoot': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetStartupAutoBoot,
+                    request_deserializer=keyboard__pb2.GetStartupAutoBootRequest.FromString,
+                    response_serializer=keyboard__pb2.StartupAutoBootState.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -178,33 +265,6 @@ class KeyboardService(object):
             _registered_method=True)
 
     @staticmethod
-    def TypeText(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.KeyboardService/TypeText',
-            keyboard__pb2.TypeTextRequest.SerializeToString,
-            keyboard__pb2.TypeTextResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
     def GetState(request,
             target,
             options=(),
@@ -221,6 +281,168 @@ class KeyboardService(object):
             '/beebium.KeyboardService/GetState',
             keyboard__pb2.GetStateRequest.SerializeToString,
             keyboard__pb2.KeyboardState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetLinks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/SetLinks',
+            keyboard__pb2.SetLinksRequest.SerializeToString,
+            keyboard__pb2.SetLinksResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLinks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetLinks',
+            keyboard__pb2.GetLinksRequest.SerializeToString,
+            keyboard__pb2.LinksState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetStartupScreenMode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/SetStartupScreenMode',
+            keyboard__pb2.SetStartupScreenModeRequest.SerializeToString,
+            keyboard__pb2.SetStartupScreenModeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetStartupScreenMode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetStartupScreenMode',
+            keyboard__pb2.GetStartupScreenModeRequest.SerializeToString,
+            keyboard__pb2.StartupScreenModeState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetStartupAutoBoot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/SetStartupAutoBoot',
+            keyboard__pb2.SetStartupAutoBootRequest.SerializeToString,
+            keyboard__pb2.SetStartupAutoBootResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetStartupAutoBoot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetStartupAutoBoot',
+            keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
+            keyboard__pb2.StartupAutoBootState.FromString,
             options,
             channel_credentials,
             insecure,

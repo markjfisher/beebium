@@ -229,7 +229,7 @@ class Keyboard:
         Returns:
             True if accepted by server.
         """
-        request = keyboard_pb2.KeyRequest(row=row, column=column)
+        request = keyboard_pb2.KeyRequest(ik_number=(row << 4) | column)
         response = self._stub.KeyDown(request)
         return response.accepted
 
@@ -243,7 +243,7 @@ class Keyboard:
         Returns:
             True if accepted by server.
         """
-        request = keyboard_pb2.KeyRequest(row=row, column=column)
+        request = keyboard_pb2.KeyRequest(ik_number=(row << 4) | column)
         response = self._stub.KeyUp(request)
         return response.accepted
 

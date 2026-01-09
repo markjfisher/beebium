@@ -24,21 +24,23 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bvideo.proto\x12\x07\x62\x65\x65\x62ium\"\x18\n\x16SubscribeFramesRequest\"a\n\x05\x46rame\x12\x14\n\x0c\x66rame_number\x18\x01 \x01(\x04\x12\x13\n\x0b\x63ycle_count\x18\x02 \x01(\x04\x12\r\n\x05width\x18\x03 \x01(\r\x12\x0e\n\x06height\x18\x04 \x01(\r\x12\x0e\n\x06pixels\x18\x05 \x01(\x0c\"\x12\n\x10GetConfigRequest\"B\n\x0bVideoConfig\x12\r\n\x05width\x18\x01 \x01(\r\x12\x0e\n\x06height\x18\x02 \x01(\r\x12\x14\n\x0c\x66ramerate_hz\x18\x03 \x01(\r2\x92\x01\n\x0cVideoService\x12\x44\n\x0fSubscribeFrames\x12\x1f.beebium.SubscribeFramesRequest\x1a\x0e.beebium.Frame0\x01\x12<\n\tGetConfig\x12\x19.beebium.GetConfigRequest\x1a\x14.beebium.VideoConfigb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bvideo.proto\x12\x07\x62\x65\x65\x62ium\"\x18\n\x16SubscribeFramesRequest\"\x90\x02\n\x05\x46rame\x12\x14\n\x0c\x66rame_number\x18\x01 \x01(\x04\x12\x13\n\x0b\x63ycle_count\x18\x02 \x01(\x04\x12\r\n\x05width\x18\x03 \x01(\r\x12\x0e\n\x06height\x18\x04 \x01(\r\x12\x0e\n\x06pixels\x18\x05 \x01(\x0c\x12(\n\x0b\x66ield_order\x18\x06 \x01(\x0e\x32\x13.beebium.FieldOrder\x12\x13\n\x0bleft_border\x18\x07 \x01(\r\x12\x14\n\x0cright_border\x18\x08 \x01(\r\x12\x12\n\ntop_border\x18\t \x01(\r\x12\x15\n\rbottom_border\x18\n \x01(\r\x12\x15\n\rdisplay_width\x18\x0b \x01(\r\x12\x16\n\x0e\x64isplay_height\x18\x0c \x01(\r\"\x12\n\x10GetConfigRequest\"B\n\x0bVideoConfig\x12\r\n\x05width\x18\x01 \x01(\r\x12\x0e\n\x06height\x18\x02 \x01(\r\x12\x14\n\x0c\x66ramerate_hz\x18\x03 \x01(\r*<\n\nFieldOrder\x12\x0f\n\x0bPROGRESSIVE\x10\x00\x12\x0e\n\nEVEN_FIRST\x10\x01\x12\r\n\tODD_FIRST\x10\x02\x32\x92\x01\n\x0cVideoService\x12\x44\n\x0fSubscribeFrames\x12\x1f.beebium.SubscribeFramesRequest\x1a\x0e.beebium.Frame0\x01\x12<\n\tGetConfig\x12\x19.beebium.GetConfigRequest\x1a\x14.beebium.VideoConfigb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'video_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
+  _globals['_FIELDORDER']._serialized_start=413
+  _globals['_FIELDORDER']._serialized_end=473
   _globals['_SUBSCRIBEFRAMESREQUEST']._serialized_start=24
   _globals['_SUBSCRIBEFRAMESREQUEST']._serialized_end=48
-  _globals['_FRAME']._serialized_start=50
-  _globals['_FRAME']._serialized_end=147
-  _globals['_GETCONFIGREQUEST']._serialized_start=149
-  _globals['_GETCONFIGREQUEST']._serialized_end=167
-  _globals['_VIDEOCONFIG']._serialized_start=169
-  _globals['_VIDEOCONFIG']._serialized_end=235
-  _globals['_VIDEOSERVICE']._serialized_start=238
-  _globals['_VIDEOSERVICE']._serialized_end=384
+  _globals['_FRAME']._serialized_start=51
+  _globals['_FRAME']._serialized_end=323
+  _globals['_GETCONFIGREQUEST']._serialized_start=325
+  _globals['_GETCONFIGREQUEST']._serialized_end=343
+  _globals['_VIDEOCONFIG']._serialized_start=345
+  _globals['_VIDEOCONFIG']._serialized_end=411
+  _globals['_VIDEOSERVICE']._serialized_start=476
+  _globals['_VIDEOSERVICE']._serialized_end=622
 # @@protoc_insertion_point(module_scope)

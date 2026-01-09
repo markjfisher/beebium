@@ -4,34 +4,38 @@ package beebium;
 
 // BBC keyboard matrix input service
 service KeyboardService {
-    // Press/release by matrix position
+    // Press/release by matrix position (momentary key events)
     rpc KeyDown(KeyRequest) returns (KeyResponse);
     rpc KeyUp(KeyRequest) returns (KeyResponse);
 
-    // Type a string (auto press/release with timing)
-    rpc TypeText(TypeTextRequest) returns (TypeTextResponse);
-
     // Query current pressed keys
     rpc GetState(GetStateRequest) returns (KeyboardState);
+
+    // =========================================================================
+    // Keyboard Links (DIP switches)
+    // =========================================================================
+    // These are persistent configuration settings, not momentary key events.
+    // The 8 links form a startup options byte read by MOS at reset.
+
+    // Raw byte access to all 8 links
+    rpc SetLinks(SetLinksRequest) returns (SetLinksResponse);
+    rpc GetLinks(GetLinksRequest) returns (LinksState);
+
+    // Semantic accessors for specific link groups
+    rpc SetStartupScreenMode(SetStartupScreenModeRequest) returns (SetStartupScreenModeResponse);
+    rpc GetStartupScreenMode(GetStartupScreenModeRequest) returns (StartupScreenModeState);
+    rpc SetStartupAutoBoot(SetStartupAutoBootRequest) returns (SetStartupAutoBootResponse);
+    rpc GetStartupAutoBoot(GetStartupAutoBootRequest) returns (StartupAutoBootState);
 }
 
 message KeyRequest {
-    // BBC keyboard matrix: row 0-9, column 0-9
-    uint32 row = 1;
-    uint32 column = 2;
+    // Internal key number: row is hi-nybble, column is lo-nybble
+    // giving 0x<row><column> in hexadecimal (e.g., 'V' = 0x63)
+    uint32 ik_number = 1;
 }
 
 message KeyResponse {
     bool accepted = 1;
-}
-
-message TypeTextRequest {
-    string text = 1;
-    uint32 inter_key_delay_ms = 2;  // Default: 50ms
-}
-
-message TypeTextResponse {
-    bool started = 1;
 }
 
 message GetStateRequest {}
@@ -39,4 +43,69 @@ message GetStateRequest {}
 message KeyboardState {
     // Bitmap of pressed keys (10 rows)
     repeated uint32 pressed_rows = 1;
+}
+
+// ============================================================================
+// Keyboard Links (DIP switches)
+// ============================================================================
+//
+// The BBC Micro has 8 keyboard links (row 0, columns 2-9) that form a startup
+// options byte. Active-low: bit SET = link broken (open), bit CLEAR = link made.
+//
+// Bit layout:
+//   Bits 0-2: Screen mode (XOR'd with 7 by MOS, so 0x07 = Mode 7)
+//   Bit 3: SHIFT-BREAK action (1 = normal, 0 = reversed)
+//   Bits 4-7: ROM-dependent (disc timing, filing system, etc.)
+//
+// Default value 0xFF (all links broken) = Mode 7, normal SHIFT-BREAK.
+
+// --- Raw byte access ---
+
+message SetLinksRequest {
+    uint32 value = 1;  // 8-bit value (0-255)
+}
+
+message SetLinksResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLinksRequest {}
+
+message LinksState {
+    uint32 value = 1;  // Current 8-bit links value
+}
+
+// --- Startup Screen Mode (bits 0-2) ---
+
+message SetStartupScreenModeRequest {
+    uint32 mode = 1;  // 0-7
+}
+
+message SetStartupScreenModeResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStartupScreenModeRequest {}
+
+message StartupScreenModeState {
+    uint32 mode = 1;  // Current mode (0-7)
+}
+
+// --- Startup Auto-Boot (bit 3) ---
+
+message SetStartupAutoBootRequest {
+    bool enabled = 1;  // true = SHIFT-BREAK boots (bit 3 cleared)
+}
+
+message SetStartupAutoBootResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStartupAutoBootRequest {}
+
+message StartupAutoBootState {
+    bool enabled = 1;  // true if bit 3 is cleared
 }

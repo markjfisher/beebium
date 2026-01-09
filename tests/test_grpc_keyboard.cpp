@@ -84,11 +84,10 @@ private:
 TEST_CASE("KeyboardService KeyDown sets key in matrix", "[grpc][keyboard]") {
     KeyboardTestFixture fixture;
 
-    // Press key at row 0, column 0 (should be 'Q' on BBC keyboard)
+    // Press key at row 0, column 0 (SHIFT key)
     grpc::ClientContext context;
     beebium::KeyRequest request;
-    request.set_row(0);
-    request.set_column(0);
+    request.set_ik_number(0x00);  // row 0, column 0
     beebium::KeyResponse response;
 
     auto status = fixture.stub().KeyDown(&context, request, &response);
@@ -103,12 +102,11 @@ TEST_CASE("KeyboardService KeyDown sets key in matrix", "[grpc][keyboard]") {
 TEST_CASE("KeyboardService KeyUp clears key in matrix", "[grpc][keyboard]") {
     KeyboardTestFixture fixture;
 
-    // First press a key
+    // First press a key (row 1, column 2)
     {
         grpc::ClientContext context;
         beebium::KeyRequest request;
-        request.set_row(1);
-        request.set_column(2);
+        request.set_ik_number(0x12);  // row 1, column 2
         beebium::KeyResponse response;
         fixture.stub().KeyDown(&context, request, &response);
     }
@@ -120,8 +118,7 @@ TEST_CASE("KeyboardService KeyUp clears key in matrix", "[grpc][keyboard]") {
     {
         grpc::ClientContext context;
         beebium::KeyRequest request;
-        request.set_row(1);
-        request.set_column(2);
+        request.set_ik_number(0x12);  // row 1, column 2
         beebium::KeyResponse response;
         fixture.stub().KeyUp(&context, request, &response);
 
@@ -138,8 +135,7 @@ TEST_CASE("KeyboardService rejects invalid key positions", "[grpc][keyboard]") {
     // Try to press key at invalid position (row 10, column 10)
     grpc::ClientContext context;
     beebium::KeyRequest request;
-    request.set_row(10);
-    request.set_column(10);
+    request.set_ik_number(0xAA);  // row 10, column 10 (invalid)
     beebium::KeyResponse response;
 
     auto status = fixture.stub().KeyDown(&context, request, &response);
@@ -175,20 +171,18 @@ TEST_CASE("KeyboardService GetState returns current keyboard state", "[grpc][key
 TEST_CASE("KeyboardService multiple keys can be pressed simultaneously", "[grpc][keyboard]") {
     KeyboardTestFixture fixture;
 
-    // Press SHIFT (row 0, column 0) and 'A' (row 4, column 1)
+    // Press SHIFT (0x00) and 'A' (0x41)
     {
         grpc::ClientContext context;
         beebium::KeyRequest request;
-        request.set_row(0);
-        request.set_column(0);
+        request.set_ik_number(0x00);  // SHIFT: row 0, column 0
         beebium::KeyResponse response;
         fixture.stub().KeyDown(&context, request, &response);
     }
     {
         grpc::ClientContext context;
         beebium::KeyRequest request;
-        request.set_row(4);
-        request.set_column(1);
+        request.set_ik_number(0x41);  // 'A': row 4, column 1
         beebium::KeyResponse response;
         fixture.stub().KeyDown(&context, request, &response);
     }

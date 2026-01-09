@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0ekeyboard.proto\x12\x07\x62\x65\x65\x62ium\")\n\nKeyRequest\x12\x0b\n\x03row\x18\x01 \x01(\r\x12\x0e\n\x06\x63olumn\x18\x02 \x01(\r\"\x1f\n\x0bKeyResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\";\n\x0fTypeTextRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x1a\n\x12inter_key_delay_ms\x18\x02 \x01(\r\"#\n\x10TypeTextResponse\x12\x0f\n\x07started\x18\x01 \x01(\x08\"\x11\n\x0fGetStateRequest\"%\n\rKeyboardState\x12\x14\n\x0cpressed_rows\x18\x01 \x03(\r2\xfa\x01\n\x0fKeyboardService\x12\x34\n\x07KeyDown\x12\x13.beebium.KeyRequest\x1a\x14.beebium.KeyResponse\x12\x32\n\x05KeyUp\x12\x13.beebium.KeyRequest\x1a\x14.beebium.KeyResponse\x12?\n\x08TypeText\x12\x18.beebium.TypeTextRequest\x1a\x19.beebium.TypeTextResponse\x12<\n\x08GetState\x12\x18.beebium.GetStateRequest\x1a\x16.beebium.KeyboardStateb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0ekeyboard.proto\x12\x07\x62\x65\x65\x62ium\"\x1f\n\nKeyRequest\x12\x11\n\tik_number\x18\x01 \x01(\r\"\x1f\n\x0bKeyResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\"\x11\n\x0fGetStateRequest\"%\n\rKeyboardState\x12\x14\n\x0cpressed_rows\x18\x01 \x03(\r\" \n\x0fSetLinksRequest\x12\r\n\x05value\x18\x01 \x01(\r\"2\n\x10SetLinksResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x11\n\x0fGetLinksRequest\"\x1b\n\nLinksState\x12\r\n\x05value\x18\x01 \x01(\r\"+\n\x1bSetStartupScreenModeRequest\x12\x0c\n\x04mode\x18\x01 \x01(\r\">\n\x1cSetStartupScreenModeResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x1d\n\x1bGetStartupScreenModeRequest\"&\n\x16StartupScreenModeState\x12\x0c\n\x04mode\x18\x01 \x01(\r\",\n\x19SetStartupAutoBootRequest\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\"<\n\x1aSetStartupAutoBootResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x1b\n\x19GetStartupAutoBootRequest\"\'\n\x14StartupAutoBootState\x12\x0f\n\x07\x65nabled\x18\x01 \x01(\x08\x32\xb1\x05\n\x0fKeyboardService\x12\x34\n\x07KeyDown\x12\x13.beebium.KeyRequest\x1a\x14.beebium.KeyResponse\x12\x32\n\x05KeyUp\x12\x13.beebium.KeyRequest\x1a\x14.beebium.KeyResponse\x12<\n\x08GetState\x12\x18.beebium.GetStateRequest\x1a\x16.beebium.KeyboardState\x12?\n\x08SetLinks\x12\x18.beebium.SetLinksRequest\x1a\x19.beebium.SetLinksResponse\x12\x39\n\x08GetLinks\x12\x18.beebium.GetLinksRequest\x1a\x13.beebium.LinksState\x12\x63\n\x14SetStartupScreenMode\x12$.beebium.SetStartupScreenModeRequest\x1a%.beebium.SetStartupScreenModeResponse\x12]\n\x14GetStartupScreenMode\x12$.beebium.GetStartupScreenModeRequest\x1a\x1f.beebium.StartupScreenModeState\x12]\n\x12SetStartupAutoBoot\x12\".beebium.SetStartupAutoBootRequest\x1a#.beebium.SetStartupAutoBootResponse\x12W\n\x12GetStartupAutoBoot\x12\".beebium.GetStartupAutoBootRequest\x1a\x1d.beebium.StartupAutoBootStateb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,17 +32,37 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'keyboard_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_KEYREQUEST']._serialized_start=27
-  _globals['_KEYREQUEST']._serialized_end=68
-  _globals['_KEYRESPONSE']._serialized_start=70
-  _globals['_KEYRESPONSE']._serialized_end=101
-  _globals['_TYPETEXTREQUEST']._serialized_start=103
-  _globals['_TYPETEXTREQUEST']._serialized_end=162
-  _globals['_TYPETEXTRESPONSE']._serialized_start=164
-  _globals['_TYPETEXTRESPONSE']._serialized_end=199
-  _globals['_GETSTATEREQUEST']._serialized_start=201
-  _globals['_GETSTATEREQUEST']._serialized_end=218
-  _globals['_KEYBOARDSTATE']._serialized_start=220
-  _globals['_KEYBOARDSTATE']._serialized_end=257
-  _globals['_KEYBOARDSERVICE']._serialized_start=260
-  _globals['_KEYBOARDSERVICE']._serialized_end=510
+  _globals['_KEYREQUEST']._serialized_end=58
+  _globals['_KEYRESPONSE']._serialized_start=60
+  _globals['_KEYRESPONSE']._serialized_end=91
+  _globals['_GETSTATEREQUEST']._serialized_start=93
+  _globals['_GETSTATEREQUEST']._serialized_end=110
+  _globals['_KEYBOARDSTATE']._serialized_start=112
+  _globals['_KEYBOARDSTATE']._serialized_end=149
+  _globals['_SETLINKSREQUEST']._serialized_start=151
+  _globals['_SETLINKSREQUEST']._serialized_end=183
+  _globals['_SETLINKSRESPONSE']._serialized_start=185
+  _globals['_SETLINKSRESPONSE']._serialized_end=235
+  _globals['_GETLINKSREQUEST']._serialized_start=237
+  _globals['_GETLINKSREQUEST']._serialized_end=254
+  _globals['_LINKSSTATE']._serialized_start=256
+  _globals['_LINKSSTATE']._serialized_end=283
+  _globals['_SETSTARTUPSCREENMODEREQUEST']._serialized_start=285
+  _globals['_SETSTARTUPSCREENMODEREQUEST']._serialized_end=328
+  _globals['_SETSTARTUPSCREENMODERESPONSE']._serialized_start=330
+  _globals['_SETSTARTUPSCREENMODERESPONSE']._serialized_end=392
+  _globals['_GETSTARTUPSCREENMODEREQUEST']._serialized_start=394
+  _globals['_GETSTARTUPSCREENMODEREQUEST']._serialized_end=423
+  _globals['_STARTUPSCREENMODESTATE']._serialized_start=425
+  _globals['_STARTUPSCREENMODESTATE']._serialized_end=463
+  _globals['_SETSTARTUPAUTOBOOTREQUEST']._serialized_start=465
+  _globals['_SETSTARTUPAUTOBOOTREQUEST']._serialized_end=509
+  _globals['_SETSTARTUPAUTOBOOTRESPONSE']._serialized_start=511
+  _globals['_SETSTARTUPAUTOBOOTRESPONSE']._serialized_end=571
+  _globals['_GETSTARTUPAUTOBOOTREQUEST']._serialized_start=573
+  _globals['_GETSTARTUPAUTOBOOTREQUEST']._serialized_end=600
+  _globals['_STARTUPAUTOBOOTSTATE']._serialized_start=602
+  _globals['_STARTUPAUTOBOOTSTATE']._serialized_end=641
+  _globals['_KEYBOARDSERVICE']._serialized_start=644
+  _globals['_KEYBOARDSERVICE']._serialized_end=1333
 # @@protoc_insertion_point(module_scope)
