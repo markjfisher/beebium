@@ -10,12 +10,14 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import SwiftUI
 
 /// Container view that displays content for the selected sidebar mode
 struct SidebarModeContent: View {
     let mode: SidebarMode
     @ObservedObject var discClient: DiscClient
+    @ObservedObject var keyboardMappingManager: KeyboardMappingManager
 
     var body: some View {
         switch mode {
@@ -30,7 +32,7 @@ struct SidebarModeContent: View {
         case .sound:
             SoundModeView()
         case .keyboard:
-            KeyboardModeView()
+            KeyboardModeView(mappingManager: keyboardMappingManager)
         case .coprocessor:
             CoprocessorModeView()
         case .network:
@@ -69,10 +71,93 @@ struct SoundModeView: View {
     }
 }
 
-/// Placeholder view for Keyboard mode
+/// Keyboard mode view showing mapping selection
 struct KeyboardModeView: View {
+    @ObservedObject var mappingManager: KeyboardMappingManager
+
+    private var builtInMappings: [KeyboardMapping] {
+        mappingManager.mappings.filter { $0.isBuiltIn }
+    }
+
+    private var userMappings: [KeyboardMapping] {
+        mappingManager.mappings.filter { !$0.isBuiltIn }
+    }
+
     var body: some View {
-        ModePlaceholder(mode: .keyboard)
+        VStack(alignment: .leading, spacing: 0) {
+            // Heading
+            Text("Keyboard Mappings")
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+            // Mapping list
+            List {
+                Section {
+                    ForEach(builtInMappings) { mapping in
+                        MappingRowView(
+                            mapping: mapping,
+                            isActive: mapping.id == mappingManager.activeMapping?.id,
+                            onSelect: { selectMapping(mapping) }
+                        )
+                    }
+                } header: {
+                    Text("Beebium")
+                }
+
+                if !userMappings.isEmpty {
+                    Section {
+                        ForEach(userMappings) { mapping in
+                            MappingRowView(
+                                mapping: mapping,
+                                isActive: mapping.id == mappingManager.activeMapping?.id,
+                                onSelect: { selectMapping(mapping) }
+                            )
+                            .contextMenu {
+                                if let url = mappingManager.fileURL(for: mapping) {
+                                    Button {
+                                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                                    } label: {
+                                        Label("Reveal in Finder", systemImage: "folder")
+                                    }
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Custom")
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+        }
+    }
+
+    private func selectMapping(_ mapping: KeyboardMapping) {
+        mappingManager.activeMapping = mapping
+    }
+}
+
+/// Row view for a single keyboard mapping
+private struct MappingRowView: View {
+    let mapping: KeyboardMapping
+    let isActive: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack {
+                Text(mapping.name)
+                    .lineLimit(1)
+                Spacer()
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -112,9 +197,13 @@ private struct ModePlaceholder: View {
 #if DEBUG
 struct SidebarModeContent_Previews: PreviewProvider {
     static var previews: some View {
-        SidebarModeContent(mode: .storage, discClient: DiscClient())
-            .frame(width: 220, height: 300)
-            .background(Color(nsColor: .windowBackgroundColor))
+        SidebarModeContent(
+            mode: .keyboard,
+            discClient: DiscClient(),
+            keyboardMappingManager: KeyboardMappingManager()
+        )
+        .frame(width: 220, height: 300)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 #endif

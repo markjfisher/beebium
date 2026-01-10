@@ -38,33 +38,20 @@ final class KeyboardMTKView: MTKView {
     override func keyDown(with event: NSEvent) {
         // Ignore macOS key repeat - BBC MOS handles its own auto-repeat
         if event.isARepeat {
-            print("[KeyboardMTKView] keyDown REPEAT ignored: keyCode=\(event.keyCode)")
             return
         }
 
-        guard let characters = event.characters else {
-            print("[KeyboardMTKView] keyDown: no characters, keyCode=\(event.keyCode)")
-            return
-        }
+        let input = KeyInput(event: event, source: .physicalKeyboard)
+        print("[KeyboardMTKView] keyDown: keyCode=\(event.keyCode) chars='\(input.characters)'")
 
-        print("[KeyboardMTKView] keyDown: '\(characters)' keyCode=\(event.keyCode)")
-
-        for char in characters {
-            keyboardClient?.keyDown(character: char)
-        }
+        keyboardClient?.keyDown(input: input)
     }
 
     override func keyUp(with event: NSEvent) {
-        guard let characters = event.characters else {
-            print("[KeyboardMTKView] keyUp: no characters, keyCode=\(event.keyCode)")
-            return
-        }
+        let input = KeyInput(event: event, source: .physicalKeyboard)
+        print("[KeyboardMTKView] keyUp: keyCode=\(event.keyCode) chars='\(input.characters)'")
 
-        print("[KeyboardMTKView] keyUp: '\(characters)' keyCode=\(event.keyCode)")
-
-        for char in characters {
-            keyboardClient?.keyUp(character: char)
-        }
+        keyboardClient?.keyUp(input: input)
     }
 
     // MARK: - Focus Handling
