@@ -117,6 +117,19 @@ public:
         return (state_.ifr.value & state_.ier.value & 0x7F) != 0;
     }
 
+    // Effective counter values - what the counter WILL BE at end of this cycle.
+    // These are used by read() to return post-decrement values, matching
+    // real hardware behavior where the CPU read sees the result of the
+    // pending VIA trailing edge operations.
+    uint16_t effective_t1() const;
+    uint16_t effective_t2() const;
+
+    // For 1MHz bus stretching: skip prediction on next timer read.
+    // When the VIA has been pre-ticked for bus synchronization, the
+    // counter is already at the correct value and shouldn't be
+    // predicted further. Call this before reading T1CL/T1CH/T2CL/T2CH.
+    void skip_next_timer_prediction() { skip_timer_prediction_ = true; }
+
     // Register addresses
     static constexpr uint8_t REG_ORB    = 0x00;  // Output Register B (+ input)
     static constexpr uint8_t REG_ORA    = 0x01;  // Output Register A (+ input, handshake)
@@ -138,6 +151,7 @@ public:
 private:
     Via6522State state_;
     ViaPeripheral* peripheral_ = nullptr;
+    mutable bool skip_timer_prediction_ = false;  // For 1MHz pre-ticked reads
 
     // Control line edge detection and handshaking
     void tick_control_phi2_trailing_edge(ViaPort& port,

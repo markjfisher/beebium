@@ -10,22 +10,26 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// Category E: Integrated CPU+VIA Timing Tests
+// VIA 6522 Cycle-Accurate Timing Tests
 //
-// These tests verify that the VIA timer IRQ timing is correct when running
-// actual 6502 instructions. Based on issues identified in stardot forums:
-// https://stardot.org.uk/forums/viewtopic.php?t=16138
+// These tests verify that VIA timer timing is cycle-accurate when running
+// actual 6502 instructions. Tests are divided into two categories:
 //
-// Key behaviors tested:
-// 1. IRQ detection timing - CPU should see IRQ on correct cycle
-// 2. Instruction mid-cycle reads - different instructions access VIA at different points
-// 3. Timer reads during multi-cycle instructions
+// 1. Basic Integration Tests: Verify correct CPU+VIA interaction
+//    - IRQ detection timing
+//    - Timer reads during multi-cycle instructions
+//    - Timer countdown sequences
+//
+// 2. Hardware-Validated Tests: Verified against real BBC hardware
+//    - Created by @scarybeasts, validated on BBC Master
+//    - Source: https://github.com/mattgodbolt/jsbeeb/issues/179
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/Machines.hpp>
 #include <beebium/Via6522.hpp>
 #include <beebium/Types.hpp>
 #include <array>
+#include <vector>
 
 using namespace beebium;
 
@@ -670,4 +674,490 @@ TEST_CASE("Integrated: Multiple timer reads show countdown", "[via][cpu][timer][
     REQUIRE(d2 <= 6);
     REQUIRE(d3 >= 2);
     REQUIRE(d3 <= 6);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Hardware-Validated Timer Tests
+//
+// These tests verify cycle-accurate VIA timer behavior against real BBC
+// hardware measurements. Expected values are from @scarybeasts' BBC Master.
+//
+// Source: jsbeeb tests/integration/via.js
+// Reference: https://github.com/mattgodbolt/jsbeeb/issues/179
+//
+// These tests are hardware-validated against real BBC Master measurements
+// by @scarybeasts. The 1MHz bus stretch timing is implemented in CpuBinding
+// to add proper wait cycles when the 2MHz CPU accesses 1MHz peripherals.
+//////////////////////////////////////////////////////////////////////////////
+
+// User VIA register addresses (base 0xFE60, mirrored with 0x0F)
+[[maybe_unused]] constexpr uint16_t USER_VIA_ORB   = kUserViaAddr + Via6522::REG_ORB;    // 0xFE60
+[[maybe_unused]] constexpr uint16_t USER_VIA_DDRB  = kUserViaAddr + Via6522::REG_DDRB;   // 0xFE62
+[[maybe_unused]] constexpr uint16_t USER_VIA_T1CL  = kUserViaAddr + Via6522::REG_T1CL;   // 0xFE64
+[[maybe_unused]] constexpr uint16_t USER_VIA_T1CH  = kUserViaAddr + Via6522::REG_T1CH;   // 0xFE65
+[[maybe_unused]] constexpr uint16_t USER_VIA_T1LL  = kUserViaAddr + Via6522::REG_T1LL;   // 0xFE66
+[[maybe_unused]] constexpr uint16_t USER_VIA_T1LH  = kUserViaAddr + Via6522::REG_T1LH;   // 0xFE67
+[[maybe_unused]] constexpr uint16_t USER_VIA_T2CL  = kUserViaAddr + Via6522::REG_T2CL;   // 0xFE68
+[[maybe_unused]] constexpr uint16_t USER_VIA_T2CH  = kUserViaAddr + Via6522::REG_T2CH;   // 0xFE69
+[[maybe_unused]] constexpr uint16_t USER_VIA_SR    = kUserViaAddr + Via6522::REG_SR;     // 0xFE6A
+[[maybe_unused]] constexpr uint16_t USER_VIA_ACR   = kUserViaAddr + Via6522::REG_ACR;    // 0xFE6B
+[[maybe_unused]] constexpr uint16_t USER_VIA_IFR   = kUserViaAddr + Via6522::REG_IFR;    // 0xFE6D
+[[maybe_unused]] constexpr uint16_t USER_VIA_IER   = kUserViaAddr + Via6522::REG_IER;    // 0xFE6E
+[[maybe_unused]] constexpr uint16_t USER_VIA_PCR   = kUserViaAddr + 0x0C;                // 0xFE6C
+[[maybe_unused]] constexpr uint16_t USER_VIA_ORA_NH= kUserViaAddr + 0x0F;                // 0xFE6F
+
+// Helper to check a sequence of bytes at a given address
+static void check_results(ModelB& machine, uint16_t addr, const std::vector<uint8_t>& expected, const char* test_name) {
+    for (size_t i = 0; i < expected.size(); ++i) {
+        uint8_t actual = machine.read(static_cast<uint16_t>(addr + i));
+        INFO(test_name << " - mismatch at offset " << i << " (address 0x" << std::hex << (addr + i) << ")");
+        REQUIRE(actual == expected[i]);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// ACR write during timer operation
+// REAL BBC MASTER: 64, 0, 0, 128
+// Source: @scarybeasts VIA.AC1 test
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("ACR write during timer operation", "[via][hardware-validated][acr]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program at 0x0400:
+    // SEI
+    // LDA #$FF : STA $FE62          ; DDRB = 0xFF (all outputs)
+    // LDA #$00 : STA $FE60          ; ORB = 0x00
+    // LDA #$7F : STA $FE6E          ; IER = disable all interrupts
+    // LDA #$80 : STA $FE6B          ; ACR = 0x80 (T1 continuous, PB7 output)
+    // LDA #$04 : STA $FE64          ; T1LL = 4
+    // LDA #$00 : STA $FE65          ; T1CH = 0 (start timer)
+    // NOP : NOP : NOP
+    // LDA $FE6D : STA R%            ; Read IFR, store result[0]
+    // NOP : NOP
+    // LDA #$C0 : STA $FE6B          ; ACR = 0xC0 (T1 continuous, PB7 output)
+    // LDA $FE64 : STA R%+1          ; Read T1CL, store result[1]
+    // LDA $FE6D : STA R%+2          ; Read IFR, store result[2]
+    // LDA $FE60 : STA R%+3          ; Read ORB, store result[3]
+    // CLI : RTS
+
+    size_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$FF
+    machine.write(pc++, 0xFF);
+    machine.write(pc++, 0x8D);        // STA $FE62
+    machine.write(pc++, 0x62);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE60
+    machine.write(pc++, 0x60);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$7F
+    machine.write(pc++, 0x7F);
+    machine.write(pc++, 0x8D);        // STA $FE6E
+    machine.write(pc++, 0x6E);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$80
+    machine.write(pc++, 0x80);
+    machine.write(pc++, 0x8D);        // STA $FE6B
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$04
+    machine.write(pc++, 0x04);
+    machine.write(pc++, 0x8D);        // STA $FE64
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xAD);        // LDA $FE6D (read IFR)
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xA9);        // LDA #$C0
+    machine.write(pc++, 0xC0);
+    machine.write(pc++, 0x8D);        // STA $FE6B (change ACR)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE64 (read T1CL)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0101
+    machine.write(pc++, (RESULT_ADDR + 1) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 1) >> 8);
+    machine.write(pc++, 0xAD);        // LDA $FE6D (read IFR)
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0102
+    machine.write(pc++, (RESULT_ADDR + 2) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 2) >> 8);
+    machine.write(pc++, 0xAD);        // LDA $FE60 (read ORB)
+    machine.write(pc++, 0x60);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0103
+    machine.write(pc++, (RESULT_ADDR + 3) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 3) >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();  // Reset sequence
+
+    // Execute until RTS
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // REAL BBC: 64, 0, 0, 128
+    // 64 = IFR with T1 flag set (0x40)
+    // 0 = T1CL after reload
+    // 0 = IFR after T1CL read (cleared T1 flag)
+    // 128 = ORB with PB7 high (0x80 from T1 toggle)
+    check_results(machine, RESULT_ADDR, {64, 0, 0, 128}, "VIA.AC1");
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// T1 counter sequence through timeout and reload
+// REAL BBC MASTER: 1, 0, 255, 4, 3, 2
+// Source: @scarybeasts VIA.T11 test
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("T1 counter sequence through timeout and reload", "[via][hardware-validated][timer]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // This test reads T1CL at 6 different times after starting the timer
+    // with latch=4 to see exactly how it counts down and wraps
+    // The jsbeeb test calls PROCtimeit(N%) with N=1 to 6, where each call
+    // adds N NOPs before reading T1CL
+
+    // We'll build a sequence that does all 6 reads consecutively
+    // For each read: SEI, setup timer with latch=4, N NOPs, read T1CL, store result
+
+    size_t code_pc = 0x0400;
+
+    // Helper to write one timer read sequence
+    auto write_timer_read = [&](int nop_count, uint16_t result_addr) {
+        machine.write(code_pc++, 0x78);        // SEI
+        machine.write(code_pc++, 0xA2);        // LDX #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0xA0);        // LDY #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0xA9);        // LDA #4
+        machine.write(code_pc++, 0x04);
+        machine.write(code_pc++, 0x8D);        // STA $FE64 (T1LL)
+        machine.write(code_pc++, 0x64);
+        machine.write(code_pc++, 0xFE);
+        machine.write(code_pc++, 0xA9);        // LDA #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0x8D);        // STA $FE65 (T1CH - starts timer)
+        machine.write(code_pc++, 0x65);
+        machine.write(code_pc++, 0xFE);
+
+        // Insert N NOPs
+        for (int i = 0; i < nop_count; i++) {
+            machine.write(code_pc++, 0xEA);    // NOP
+        }
+
+        machine.write(code_pc++, 0xAD);        // LDA $FE64 (T1CL)
+        machine.write(code_pc++, 0x64);
+        machine.write(code_pc++, 0xFE);
+        machine.write(code_pc++, 0x8D);        // STA result_addr
+        machine.write(code_pc++, result_addr & 0xFF);
+        machine.write(code_pc++, result_addr >> 8);
+        machine.write(code_pc++, 0x58);        // CLI
+    };
+
+    // Write 6 timer read sequences with 1-6 NOPs
+    write_timer_read(1, RESULT_ADDR + 0);
+    write_timer_read(2, RESULT_ADDR + 1);
+    write_timer_read(3, RESULT_ADDR + 2);
+    write_timer_read(4, RESULT_ADDR + 3);
+    write_timer_read(5, RESULT_ADDR + 4);
+    write_timer_read(6, RESULT_ADDR + 5);
+    machine.write(code_pc++, 0x60);            // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < code_pc && iterations < 2000) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // REAL BBC: 1, 0, 255, 4, 3, 2
+    // This shows the timer counting: 4 -> 3 -> 2 -> 1 -> 0 -> underflow to 255 -> reload to 4 -> 3 -> 2
+    check_results(machine, RESULT_ADDR, {1, 0, 255, 4, 3, 2}, "VIA.T11");
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// T2 counter continues past timeout
+// REAL BBC MASTER: 1, 0, 255, 254, 253, 252
+// Source: @scarybeasts VIA.T22 test
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("T2 counter continues past timeout", "[via][hardware-validated][timer][t2]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // T2 in one-shot mode should continue counting past expiry (into FFFF, FFFE, etc.)
+    // Similar to T11 but for T2
+
+    size_t code_pc = 0x0400;
+
+    // First set ACR to 0 (one-shot T2)
+    machine.write(code_pc++, 0xA9);        // LDA #0
+    machine.write(code_pc++, 0x00);
+    machine.write(code_pc++, 0x8D);        // STA $FE6B
+    machine.write(code_pc++, 0x6B);
+    machine.write(code_pc++, 0xFE);
+
+    auto write_timer_read = [&](int nop_count, uint16_t result_addr) {
+        machine.write(code_pc++, 0x78);        // SEI
+        machine.write(code_pc++, 0xA2);        // LDX #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0xA0);        // LDY #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0xA9);        // LDA #4
+        machine.write(code_pc++, 0x04);
+        machine.write(code_pc++, 0x8D);        // STA $FE68 (T2CL)
+        machine.write(code_pc++, 0x68);
+        machine.write(code_pc++, 0xFE);
+        machine.write(code_pc++, 0xA9);        // LDA #0
+        machine.write(code_pc++, 0x00);
+        machine.write(code_pc++, 0x8D);        // STA $FE69 (T2CH - starts timer)
+        machine.write(code_pc++, 0x69);
+        machine.write(code_pc++, 0xFE);
+
+        for (int i = 0; i < nop_count; i++) {
+            machine.write(code_pc++, 0xEA);    // NOP
+        }
+
+        machine.write(code_pc++, 0xAD);        // LDA $FE68 (T2CL)
+        machine.write(code_pc++, 0x68);
+        machine.write(code_pc++, 0xFE);
+        machine.write(code_pc++, 0x8D);        // STA result_addr
+        machine.write(code_pc++, result_addr & 0xFF);
+        machine.write(code_pc++, result_addr >> 8);
+        machine.write(code_pc++, 0x58);        // CLI
+    };
+
+    write_timer_read(1, RESULT_ADDR + 0);
+    write_timer_read(2, RESULT_ADDR + 1);
+    write_timer_read(3, RESULT_ADDR + 2);
+    write_timer_read(4, RESULT_ADDR + 3);
+    write_timer_read(5, RESULT_ADDR + 4);
+    write_timer_read(6, RESULT_ADDR + 5);
+    machine.write(code_pc++, 0x60);            // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < code_pc && iterations < 2000) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // REAL BBC: 1, 0, 255, 254, 253, 252
+    // T2 continues counting down past 0 into 255, 254, etc. (no reload in one-shot)
+    check_results(machine, RESULT_ADDR, {1, 0, 255, 254, 253, 252}, "VIA.T22");
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// T1LH write clears interrupt flag
+// REAL BBC MASTER: 64, 0
+// Source: @scarybeasts VIA.I1 test
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("T1LH write clears interrupt flag", "[via][hardware-validated][interrupt]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program:
+    // SEI
+    // LDA #$7F : STA $FE6E          ; Disable all interrupts
+    // LDA #$00 : STA $FE6B          ; ACR = 0 (one-shot)
+    // STA $FE64                     ; T1LL = 0
+    // STA $FE65                     ; T1CH = 0 (start timer)
+    // NOP : NOP
+    // LDA $FE6D : STA R%            ; Read IFR (should have T1 flag set)
+    // LDA #$00 : STA $FE67          ; Write T1LH (should clear T1 flag)
+    // LDA $FE6D : STA R%+1          ; Read IFR (should be clear now)
+    // CLI : RTS
+
+    size_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$7F
+    machine.write(pc++, 0x7F);
+    machine.write(pc++, 0x8D);        // STA $FE6E
+    machine.write(pc++, 0x6E);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE6B
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $FE64 (T1LL)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $FE65 (T1CH - start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xAD);        // LDA $FE6D
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE67 (T1LH - should clear T1 flag)
+    machine.write(pc++, 0x67);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE6D
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0101
+    machine.write(pc++, (RESULT_ADDR + 1) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 1) >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // REAL BBC: 64, 0
+    // 64 = T1 flag set in IFR (0x40)
+    // 0 = T1 flag cleared after T1LH write
+    check_results(machine, RESULT_ADDR, {64, 0}, "VIA.I1");
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// T1 latch write timing relative to expiry
+// REAL BBC MASTER: 253, 0
+// Source: @scarybeasts VIA.T12 test
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("T1 latch write timing relative to expiry", "[via][hardware-validated][timer]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // This test checks timing of T1LL writes vs timer reload
+    // Program:
+    // SEI
+    // LDA #$00 : STA $FE6B          ; ACR = 0 (one-shot)
+    // LDA #$7F : STA $FE6E          ; Disable interrupts
+    // LDA #$02 : STA $FE64          ; T1LL = 2
+    // LDA #$00 : STA $FE65          ; T1CH = 0 (start timer)
+    // LDA #$FF : STA $FE66          ; Write T1LL = 255 just before expiry
+    // LDA $FE64 : STA R%            ; Read T1CL
+    // -- Now do same thing but with more delay --
+    // LDA #$03 : STA $FE64          ; T1LL = 3
+    // LDA #$00 : STA $FE65          ; Start timer
+    // NOP : NOP
+    // LDA #$FF : STA $FE66          ; Write T1LL = 255 after expiry
+    // LDA $FE64 : STA R%+1          ; Read T1CL
+    // CLI : RTS
+
+    size_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE6B
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$7F
+    machine.write(pc++, 0x7F);
+    machine.write(pc++, 0x8D);        // STA $FE6E
+    machine.write(pc++, 0x6E);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$02
+    machine.write(pc++, 0x02);
+    machine.write(pc++, 0x8D);        // STA $FE64 (T1LL = 2)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$FF
+    machine.write(pc++, 0xFF);
+    machine.write(pc++, 0x8D);        // STA $FE66 (T1LL = 255)
+    machine.write(pc++, 0x66);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE64
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA R%
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    // Second sequence
+    machine.write(pc++, 0xA9);        // LDA #$03
+    machine.write(pc++, 0x03);
+    machine.write(pc++, 0x8D);        // STA $FE64
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xEA);        // NOP
+    machine.write(pc++, 0xA9);        // LDA #$FF
+    machine.write(pc++, 0xFF);
+    machine.write(pc++, 0x8D);        // STA $FE66
+    machine.write(pc++, 0x66);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE64
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA R%+1
+    machine.write(pc++, (RESULT_ADDR + 1) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 1) >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // REAL BBC: 253, 0
+    // 253 = Timer counting down from 255 (new latch value took effect before reload)
+    // 0 = Timer at 0 (write was after expiry, timer continuing free-run)
+    check_results(machine, RESULT_ADDR, {253, 0}, "VIA.T12");
 }
