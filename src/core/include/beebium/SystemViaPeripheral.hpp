@@ -14,6 +14,7 @@
 
 #include "AddressableLatch.hpp"
 #include "KeyboardMatrix.hpp"
+#include "TypeAheadQueue.hpp"
 #include "Via6522.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
@@ -43,21 +44,24 @@ class SystemViaPeripheral : public ViaPeripheral {
 public:
     // Full constructor with indicators and external keyboard
     SystemViaPeripheral(AddressableLatch& latch, Indicators& indicators, KeyboardMatrix& keyboard)
-        : latch_(latch), keyboard_(keyboard), indicators_(&indicators)
+        : latch_(latch), keyboard_(keyboard), indicators_(&indicators),
+          type_ahead_(std::make_unique<TypeAheadQueue>(keyboard_))
     {
         register_indicators();
     }
 
     // Constructor with indicators, using internal keyboard
     SystemViaPeripheral(AddressableLatch& latch, Indicators& indicators)
-        : latch_(latch), keyboard_(internal_keyboard_), indicators_(&indicators)
+        : latch_(latch), keyboard_(internal_keyboard_), indicators_(&indicators),
+          type_ahead_(std::make_unique<TypeAheadQueue>(keyboard_))
     {
         register_indicators();
     }
 
     // Legacy constructor for backward compatibility (no indicators, uses internal keyboard)
     explicit SystemViaPeripheral(AddressableLatch& latch)
-        : latch_(latch), keyboard_(internal_keyboard_) {}
+        : latch_(latch), keyboard_(internal_keyboard_),
+          type_ahead_(std::make_unique<TypeAheadQueue>(keyboard_)) {}
 
     uint8_t update_port_a(uint8_t output, uint8_t ddr) override {
         (void)ddr;
@@ -224,6 +228,13 @@ public:
     uint16_t caps_lock_led_id() const { return caps_lock_led_id_; }
     uint16_t shift_lock_led_id() const { return shift_lock_led_id_; }
 
+    // Type-ahead queue access (for gRPC service)
+    TypeAheadQueue& type_ahead() { return *type_ahead_; }
+    const TypeAheadQueue& type_ahead() const { return *type_ahead_; }
+
+    // Tick the type-ahead queue (call from emulator main loop)
+    void tick_type_ahead() { type_ahead_->tick(); }
+
 private:
     void register_indicators() {
         using namespace std::chrono_literals;
@@ -253,6 +264,9 @@ private:
     Indicators* indicators_ = nullptr;
     uint16_t caps_lock_led_id_ = 0;
     uint16_t shift_lock_led_id_ = 0;
+
+    // Type-ahead queue for TypeQuickly functionality
+    std::unique_ptr<TypeAheadQueue> type_ahead_;
 };
 
 } // namespace beebium

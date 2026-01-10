@@ -26,6 +26,32 @@ service KeyboardService {
     rpc GetStartupScreenMode(GetStartupScreenModeRequest) returns (StartupScreenModeState);
     rpc SetStartupAutoBoot(SetStartupAutoBootRequest) returns (SetStartupAutoBootResponse);
     rpc GetStartupAutoBoot(GetStartupAutoBootRequest) returns (StartupAutoBootState);
+
+    // =========================================================================
+    // Type-ahead (TypeQuickly)
+    // =========================================================================
+    // Non-blocking text input that types strings at machine speed.
+    // Text is queued and typed character-by-character as the emulator runs.
+
+    // Enqueue text to type at machine speed (non-blocking)
+    rpc TypeQuickly(TypeQuicklyRequest) returns (TypeQuicklyResponse);
+
+    // Query typing status
+    rpc GetTypingStatus(GetTypingStatusRequest) returns (TypingStatus);
+
+    // Clear pending typing
+    rpc ClearTyping(ClearTypingRequest) returns (ClearTypingResponse);
+
+    // =========================================================================
+    // Character-to-key mapping
+    // =========================================================================
+    // Query the canonical character-to-key mapping table.
+
+    // Get mapping for a single character
+    rpc GetKeyMapping(GetKeyMappingRequest) returns (KeyMappingEntry);
+
+    // Get complete mapping table (for client caching)
+    rpc GetAllKeyMappings(GetAllKeyMappingsRequest) returns (AllKeyMappingsResponse);
 }
 
 message KeyRequest {
@@ -108,4 +134,61 @@ message GetStartupAutoBootRequest {}
 
 message StartupAutoBootState {
     bool enabled = 1;  // true if bit 3 is cleared
+}
+
+// ============================================================================
+// Type-ahead (TypeQuickly)
+// ============================================================================
+
+// Enqueue text for typing at machine speed (non-blocking, returns immediately)
+message TypeQuicklyRequest {
+    string text = 1;              // UTF-8 string to type
+    uint32 cycles_per_key = 2;    // Optional: cycles per keystroke (default 100000)
+}
+
+message TypeQuicklyResponse {
+    bool accepted = 1;            // True if text was enqueued
+    string error = 2;             // Error message if not accepted (e.g., unmappable char)
+    uint32 pending_characters = 3; // Total chars now pending in queue
+}
+
+// Query typing status
+message GetTypingStatusRequest {}
+
+message TypingStatus {
+    bool idle = 1;                // True if queue is empty (all typing complete)
+    uint32 pending_characters = 2; // Characters remaining to type
+    uint32 strings_queued = 3;    // Number of strings in queue
+}
+
+// Clear typing queue
+message ClearTypingRequest {}
+
+message ClearTypingResponse {
+    uint32 characters_cleared = 1; // Number of characters that were pending
+}
+
+// ============================================================================
+// Character-to-key mapping
+// ============================================================================
+
+// Query mapping for a single character
+message GetKeyMappingRequest {
+    string character = 1;         // Single UTF-8 character
+}
+
+// Get entire mapping table (for client caching)
+message GetAllKeyMappingsRequest {}
+
+// Key mapping entry - used for both single lookups and bulk queries
+message KeyMappingEntry {
+    bool found = 1;               // True if mapping exists (always true in bulk queries)
+    string character = 2;         // UTF-8 character (empty for named-only keys)
+    uint32 ik_number = 3;         // Internal key number (row << 4 | column)
+    bool needs_shift = 4;         // True if SHIFT required
+    string name = 5;              // Key name (e.g., "A", "Return", "f0", "Up")
+}
+
+message AllKeyMappingsResponse {
+    repeated KeyMappingEntry mappings = 1;
 }

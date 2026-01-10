@@ -80,6 +80,31 @@ class KeyboardServiceStub(object):
                 request_serializer=keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
                 response_deserializer=keyboard__pb2.StartupAutoBootState.FromString,
                 _registered_method=True)
+        self.TypeQuickly = channel.unary_unary(
+                '/beebium.KeyboardService/TypeQuickly',
+                request_serializer=keyboard__pb2.TypeQuicklyRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.TypeQuicklyResponse.FromString,
+                _registered_method=True)
+        self.GetTypingStatus = channel.unary_unary(
+                '/beebium.KeyboardService/GetTypingStatus',
+                request_serializer=keyboard__pb2.GetTypingStatusRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.TypingStatus.FromString,
+                _registered_method=True)
+        self.ClearTyping = channel.unary_unary(
+                '/beebium.KeyboardService/ClearTyping',
+                request_serializer=keyboard__pb2.ClearTypingRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.ClearTypingResponse.FromString,
+                _registered_method=True)
+        self.GetKeyMapping = channel.unary_unary(
+                '/beebium.KeyboardService/GetKeyMapping',
+                request_serializer=keyboard__pb2.GetKeyMappingRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.KeyMappingEntry.FromString,
+                _registered_method=True)
+        self.GetAllKeyMappings = channel.unary_unary(
+                '/beebium.KeyboardService/GetAllKeyMappings',
+                request_serializer=keyboard__pb2.GetAllKeyMappingsRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.AllKeyMappingsResponse.FromString,
+                _registered_method=True)
 
 
 class KeyboardServiceServicer(object):
@@ -150,6 +175,52 @@ class KeyboardServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def TypeQuickly(self, request, context):
+        """=========================================================================
+        Type-ahead (TypeQuickly)
+        =========================================================================
+        Non-blocking text input that types strings at machine speed.
+        Text is queued and typed character-by-character as the emulator runs.
+
+        Enqueue text to type at machine speed (non-blocking)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetTypingStatus(self, request, context):
+        """Query typing status
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ClearTyping(self, request, context):
+        """Clear pending typing
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetKeyMapping(self, request, context):
+        """=========================================================================
+        Character-to-key mapping
+        =========================================================================
+        Query the canonical character-to-key mapping table.
+
+        Get mapping for a single character
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAllKeyMappings(self, request, context):
+        """Get complete mapping table (for client caching)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_KeyboardServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -197,6 +268,31 @@ def add_KeyboardServiceServicer_to_server(servicer, server):
                     servicer.GetStartupAutoBoot,
                     request_deserializer=keyboard__pb2.GetStartupAutoBootRequest.FromString,
                     response_serializer=keyboard__pb2.StartupAutoBootState.SerializeToString,
+            ),
+            'TypeQuickly': grpc.unary_unary_rpc_method_handler(
+                    servicer.TypeQuickly,
+                    request_deserializer=keyboard__pb2.TypeQuicklyRequest.FromString,
+                    response_serializer=keyboard__pb2.TypeQuicklyResponse.SerializeToString,
+            ),
+            'GetTypingStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTypingStatus,
+                    request_deserializer=keyboard__pb2.GetTypingStatusRequest.FromString,
+                    response_serializer=keyboard__pb2.TypingStatus.SerializeToString,
+            ),
+            'ClearTyping': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClearTyping,
+                    request_deserializer=keyboard__pb2.ClearTypingRequest.FromString,
+                    response_serializer=keyboard__pb2.ClearTypingResponse.SerializeToString,
+            ),
+            'GetKeyMapping': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetKeyMapping,
+                    request_deserializer=keyboard__pb2.GetKeyMappingRequest.FromString,
+                    response_serializer=keyboard__pb2.KeyMappingEntry.SerializeToString,
+            ),
+            'GetAllKeyMappings': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAllKeyMappings,
+                    request_deserializer=keyboard__pb2.GetAllKeyMappingsRequest.FromString,
+                    response_serializer=keyboard__pb2.AllKeyMappingsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -443,6 +539,141 @@ class KeyboardService(object):
             '/beebium.KeyboardService/GetStartupAutoBoot',
             keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
             keyboard__pb2.StartupAutoBootState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TypeQuickly(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/TypeQuickly',
+            keyboard__pb2.TypeQuicklyRequest.SerializeToString,
+            keyboard__pb2.TypeQuicklyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetTypingStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetTypingStatus',
+            keyboard__pb2.GetTypingStatusRequest.SerializeToString,
+            keyboard__pb2.TypingStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClearTyping(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/ClearTyping',
+            keyboard__pb2.ClearTypingRequest.SerializeToString,
+            keyboard__pb2.ClearTypingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetKeyMapping(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetKeyMapping',
+            keyboard__pb2.GetKeyMappingRequest.SerializeToString,
+            keyboard__pb2.KeyMappingEntry.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAllKeyMappings(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetAllKeyMappings',
+            keyboard__pb2.GetAllKeyMappingsRequest.SerializeToString,
+            keyboard__pb2.AllKeyMappingsResponse.FromString,
             options,
             channel_credentials,
             insecure,

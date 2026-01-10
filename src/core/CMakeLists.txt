@@ -3,6 +3,8 @@
 
 add_library(beebium_core STATIC
     src/Via6522.cpp
+    src/KeyboardMapping.cpp
+    src/TypeAheadQueue.cpp
     src/disc/DiscGeometry.cpp
     src/disc/FileDiscImage.cpp
     include/beebium/Types.hpp

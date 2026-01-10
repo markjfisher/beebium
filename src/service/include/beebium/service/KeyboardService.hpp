@@ -80,6 +80,33 @@ public:
         const GetStartupAutoBootRequest* request,
         StartupAutoBootState* response) override;
 
+    // Type-ahead (TypeQuickly)
+    grpc::Status TypeQuickly(
+        grpc::ServerContext* context,
+        const TypeQuicklyRequest* request,
+        TypeQuicklyResponse* response) override;
+
+    grpc::Status GetTypingStatus(
+        grpc::ServerContext* context,
+        const GetTypingStatusRequest* request,
+        TypingStatus* response) override;
+
+    grpc::Status ClearTyping(
+        grpc::ServerContext* context,
+        const ClearTypingRequest* request,
+        ClearTypingResponse* response) override;
+
+    // Character-to-key mapping
+    grpc::Status GetKeyMapping(
+        grpc::ServerContext* context,
+        const GetKeyMappingRequest* request,
+        KeyMappingEntry* response) override;
+
+    grpc::Status GetAllKeyMappings(
+        grpc::ServerContext* context,
+        const GetAllKeyMappingsRequest* request,
+        AllKeyMappingsResponse* response) override;
+
 private:
     SystemViaPeripheral& keyboard_;
     std::mutex mutex_;

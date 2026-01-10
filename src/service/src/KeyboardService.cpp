@@ -11,7 +11,9 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include "beebium/service/KeyboardService.hpp"
+#include "beebium/KeyboardMapping.hpp"
 #include "beebium/SystemViaPeripheral.hpp"
+#include "beebium/TypeAheadQueue.hpp"
 
 namespace beebium::service {
 
@@ -168,6 +170,157 @@ grpc::Status KeyboardServiceImpl::GetStartupAutoBoot(
     std::lock_guard<std::mutex> lock(mutex_);
 
     response->set_enabled(keyboard_.keyboard().auto_boot());
+    return grpc::Status::OK;
+}
+
+// =============================================================================
+// Type-ahead (TypeQuickly)
+// =============================================================================
+
+grpc::Status KeyboardServiceImpl::TypeQuickly(
+    grpc::ServerContext* /*context*/,
+    const TypeQuicklyRequest* request,
+    TypeQuicklyResponse* response) {
+
+    const std::string& text = request->text();
+
+    // Use default cycles if not specified (0 means use default)
+    size_t cycles_per_key = request->cycles_per_key();
+    if (cycles_per_key == 0) {
+        cycles_per_key = TypeAheadQueue::DEFAULT_CYCLES_PER_KEY;
+    }
+
+    // Enqueue the text
+    bool accepted = keyboard_.type_ahead().enqueue(text, cycles_per_key);
+
+    if (!accepted) {
+        response->set_accepted(false);
+        response->set_error("Text contains unmappable characters");
+        response->set_pending_characters(
+            static_cast<uint32_t>(keyboard_.type_ahead().pending_characters()));
+        return grpc::Status::OK;
+    }
+
+    response->set_accepted(true);
+    response->set_pending_characters(
+        static_cast<uint32_t>(keyboard_.type_ahead().pending_characters()));
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetTypingStatus(
+    grpc::ServerContext* /*context*/,
+    const GetTypingStatusRequest* /*request*/,
+    TypingStatus* response) {
+
+    response->set_idle(keyboard_.type_ahead().empty());
+    response->set_pending_characters(
+        static_cast<uint32_t>(keyboard_.type_ahead().pending_characters()));
+    response->set_strings_queued(
+        static_cast<uint32_t>(keyboard_.type_ahead().strings_queued()));
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::ClearTyping(
+    grpc::ServerContext* /*context*/,
+    const ClearTypingRequest* /*request*/,
+    ClearTypingResponse* response) {
+
+    size_t cleared = keyboard_.type_ahead().clear();
+    response->set_characters_cleared(static_cast<uint32_t>(cleared));
+    return grpc::Status::OK;
+}
+
+// =============================================================================
+// Character-to-key mapping
+// =============================================================================
+
+grpc::Status KeyboardServiceImpl::GetKeyMapping(
+    grpc::ServerContext* /*context*/,
+    const GetKeyMappingRequest* request,
+    KeyMappingEntry* response) {
+
+    const std::string& char_str = request->character();
+
+    // Extract single codepoint from UTF-8 string
+    if (char_str.empty()) {
+        response->set_found(false);
+        return grpc::Status::OK;
+    }
+
+    // Decode first UTF-8 character
+    char32_t codepoint;
+    uint8_t byte = static_cast<uint8_t>(char_str[0]);
+
+    if ((byte & 0x80) == 0) {
+        codepoint = byte;
+    } else if ((byte & 0xE0) == 0xC0 && char_str.size() >= 2) {
+        codepoint = ((byte & 0x1F) << 6) |
+                    (static_cast<uint8_t>(char_str[1]) & 0x3F);
+    } else if ((byte & 0xF0) == 0xE0 && char_str.size() >= 3) {
+        codepoint = ((byte & 0x0F) << 12) |
+                    ((static_cast<uint8_t>(char_str[1]) & 0x3F) << 6) |
+                    (static_cast<uint8_t>(char_str[2]) & 0x3F);
+    } else if ((byte & 0xF8) == 0xF0 && char_str.size() >= 4) {
+        codepoint = ((byte & 0x07) << 18) |
+                    ((static_cast<uint8_t>(char_str[1]) & 0x3F) << 12) |
+                    ((static_cast<uint8_t>(char_str[2]) & 0x3F) << 6) |
+                    (static_cast<uint8_t>(char_str[3]) & 0x3F);
+    } else {
+        response->set_found(false);
+        return grpc::Status::OK;
+    }
+
+    auto mapping = char_to_key(codepoint);
+    if (!mapping) {
+        response->set_found(false);
+        return grpc::Status::OK;
+    }
+
+    response->set_found(true);
+    response->set_character(char_str);
+    response->set_ik_number(mapping->ik_number);
+    response->set_needs_shift(mapping->needs_shift);
+    response->set_name(mapping->name);
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetAllKeyMappings(
+    grpc::ServerContext* /*context*/,
+    const GetAllKeyMappingsRequest* /*request*/,
+    AllKeyMappingsResponse* response) {
+
+    for (const auto& mapping : get_all_mappings()) {
+        auto* entry = response->add_mappings();
+
+        // Convert codepoint to UTF-8 string
+        char32_t cp = mapping.codepoint;
+        std::string utf8;
+        if (cp == 0) {
+            // Named-only key (no character)
+            utf8 = "";
+        } else if (cp < 0x80) {
+            utf8 = static_cast<char>(cp);
+        } else if (cp < 0x800) {
+            utf8 += static_cast<char>(0xC0 | (cp >> 6));
+            utf8 += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            utf8 += static_cast<char>(0xE0 | (cp >> 12));
+            utf8 += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (cp & 0x3F));
+        } else {
+            utf8 += static_cast<char>(0xF0 | (cp >> 18));
+            utf8 += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            utf8 += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+
+        entry->set_found(true);
+        entry->set_character(utf8);
+        entry->set_ik_number(mapping.ik_number);
+        entry->set_needs_shift(mapping.needs_shift);
+        entry->set_name(mapping.name);
+    }
+
     return grpc::Status::OK;
 }
 
