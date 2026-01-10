@@ -140,6 +140,13 @@ final class KeyboardMappingManager: ObservableObject {
         }
     }
 
+    /// Get the file URL for a user-defined mapping (for Reveal in Finder)
+    /// Returns nil for built-in mappings
+    func fileURL(for mapping: KeyboardMapping) -> URL? {
+        guard !mapping.isBuiltIn else { return nil }
+        return userMappingsDirectory.appendingPathComponent("\(mapping.id.uuidString).json")
+    }
+
     /// Import a mapping from JSON data
     func importMapping(from data: Data) throws -> KeyboardMapping {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

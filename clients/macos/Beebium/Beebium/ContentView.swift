@@ -36,7 +36,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 SidebarModeToolbar(selectedMode: $sidebarMode)
                 Divider()
-                SidebarModeContent(mode: sidebarMode, discClient: discClient)
+                SidebarModeContent(mode: sidebarMode, discClient: discClient, keyboardMappingManager: keyboardMappingManager)
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .navigationSplitViewColumnWidth(min: 180, ideal: 260, max: 500)
