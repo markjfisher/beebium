@@ -130,6 +130,14 @@ target_compile_definitions(test_clearram PRIVATE
 )
 catch_discover_tests(test_clearram)
 
+# Reset behavior tests (soft reset, power-on reset, Break key)
+add_executable(test_reset test_reset.cpp)
+target_link_libraries(test_reset PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_reset PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_reset)
+
 # Video output tests
 add_executable(test_video test_video.cpp)
 target_link_libraries(test_video PRIVATE beebium_core Catch2::Catch2WithMain)

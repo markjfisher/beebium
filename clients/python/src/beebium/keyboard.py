@@ -359,3 +359,196 @@ class Keyboard:
             True if all characters are typeable according to server.
         """
         return all(self.get_key_mapping(c) is not None for c in text)
+
+    # =========================================================================
+    # Break key operations
+    # =========================================================================
+    # The Break key is NOT part of the keyboard matrix. It is directly
+    # connected to the reset circuit (IC16 NE555 timer) via pin 4.
+    #
+    # While Break is held: CPU is halted (reset line held low)
+    # On Break release: Soft reset sequence begins
+    #
+    # Note: Hardware always does a soft reset. MOS checks if Ctrl is held
+    # during its reset sequence to decide between warm/cold reset behavior.
+
+    def break_down(self) -> bool:
+        """Hold the Break key (halt the CPU).
+
+        This asserts the reset line, halting the CPU. The CPU remains
+        halted until break_up() is called.
+
+        Returns:
+            True if successful.
+        """
+        request = keyboard_pb2.BreakDownRequest()
+        response = self._stub.BreakDown(request)
+        return response.success
+
+    def break_up(self) -> bool:
+        """Release the Break key (begin soft reset sequence).
+
+        This releases the reset line. The CPU will execute the 7-cycle
+        reset sequence and then begin execution from the reset vector.
+
+        MOS checks if Ctrl is held at this moment to determine reset type:
+        - If Ctrl pressed: MOS performs "hard reset" (clears VIA config)
+        - If Ctrl not pressed: MOS performs "warm reset" (preserves state)
+
+        Returns:
+            True if successful.
+        """
+        request = keyboard_pb2.BreakUpRequest()
+        response = self._stub.BreakUp(request)
+        return response.success
+
+    def is_break_held(self) -> bool:
+        """Check if the Break key is currently held.
+
+        Returns:
+            True if Break is currently held (CPU halted).
+        """
+        request = keyboard_pb2.GetBreakStateRequest()
+        response = self._stub.GetBreakState(request)
+        return response.is_held
+
+    def press_break(self, hold_time: float = 0.02) -> bool:
+        """Press and release the Break key (perform soft reset).
+
+        This is a convenience method that calls break_down(), waits
+        briefly, then calls break_up().
+
+        Args:
+            hold_time: How long to hold Break (seconds).
+
+        Returns:
+            True if both operations succeeded.
+        """
+        down_ok = self.break_down()
+        time.sleep(hold_time)
+        up_ok = self.break_up()
+        return down_ok and up_ok
+
+    def ctrl_break(self, hold_time: float = 0.02) -> bool:
+        """Press Ctrl-Break (trigger MOS hard reset).
+
+        This holds Ctrl while pressing Break, which causes MOS to
+        detect a "hard reset" and perform full reinitialization.
+
+        Note: The hardware always performs a soft reset. MOS checks
+        the keyboard matrix during its reset routine and clears the
+        VIA configuration if Ctrl is held, simulating a hard reset.
+
+        Args:
+            hold_time: How long to hold Break (seconds).
+
+        Returns:
+            True if all operations succeeded.
+        """
+        self.ctrl_down()
+        time.sleep(0.01)  # Brief delay to ensure Ctrl is registered
+        down_ok = self.break_down()
+        time.sleep(hold_time)
+        up_ok = self.break_up()
+        time.sleep(0.01)  # Brief delay before releasing Ctrl
+        self.ctrl_up()
+        return down_ok and up_ok
+
+    # =========================================================================
+    # Keyboard links (DIP switches)
+    # =========================================================================
+    # The BBC Micro has 8 keyboard links (row 0, columns 2-9) that form a
+    # startup options byte. Active-low: bit SET = link broken (open),
+    # bit CLEAR = link made.
+    #
+    # Bit layout:
+    #   Bits 0-2: Screen mode (XOR'd with 7 by MOS, so 0x07 = Mode 7)
+    #   Bit 3: SHIFT-BREAK action (1 = normal, 0 = reversed/auto-boot)
+    #   Bits 4-7: ROM-dependent (disc timing, filing system, etc.)
+    #
+    # Default value 0xFF (all links broken) = Mode 7, normal SHIFT-BREAK.
+
+    def get_links(self) -> int:
+        """Get the raw keyboard links byte (8 bits).
+
+        Returns:
+            The current 8-bit links value (0-255).
+        """
+        request = keyboard_pb2.GetLinksRequest()
+        response = self._stub.GetLinks(request)
+        return response.value
+
+    def set_links(self, value: int) -> bool:
+        """Set the raw keyboard links byte (8 bits).
+
+        Args:
+            value: The 8-bit links value (0-255).
+
+        Returns:
+            True if successful.
+
+        Raises:
+            ValueError: If value is not in range 0-255.
+        """
+        if not 0 <= value <= 255:
+            raise ValueError("Links value must be 0-255")
+        request = keyboard_pb2.SetLinksRequest(value=value)
+        response = self._stub.SetLinks(request)
+        if not response.success:
+            raise ValueError(response.error)
+        return True
+
+    def get_startup_screen_mode(self) -> int:
+        """Get the startup screen mode (0-7).
+
+        Returns:
+            The configured startup screen mode.
+        """
+        request = keyboard_pb2.GetStartupScreenModeRequest()
+        response = self._stub.GetStartupScreenMode(request)
+        return response.mode
+
+    def set_startup_screen_mode(self, mode: int) -> bool:
+        """Set the startup screen mode (0-7).
+
+        Args:
+            mode: The screen mode (0-7).
+
+        Returns:
+            True if successful.
+
+        Raises:
+            ValueError: If mode is not in range 0-7.
+        """
+        if not 0 <= mode <= 7:
+            raise ValueError("Mode must be 0-7")
+        request = keyboard_pb2.SetStartupScreenModeRequest(mode=mode)
+        response = self._stub.SetStartupScreenMode(request)
+        if not response.success:
+            raise ValueError(response.error)
+        return True
+
+    def get_startup_auto_boot(self) -> bool:
+        """Check if auto-boot on SHIFT-BREAK is enabled.
+
+        Returns:
+            True if SHIFT-BREAK triggers auto-boot.
+        """
+        request = keyboard_pb2.GetStartupAutoBootRequest()
+        response = self._stub.GetStartupAutoBoot(request)
+        return response.enabled
+
+    def set_startup_auto_boot(self, enabled: bool) -> bool:
+        """Enable or disable auto-boot on SHIFT-BREAK.
+
+        When enabled, SHIFT-BREAK causes MOS to load and run !Boot.
+
+        Args:
+            enabled: True to enable auto-boot.
+
+        Returns:
+            True if successful.
+        """
+        request = keyboard_pb2.SetStartupAutoBootRequest(enabled=enabled)
+        response = self._stub.SetStartupAutoBoot(request)
+        return response.success

@@ -134,14 +134,61 @@ public:
     Machine(const Machine&) = delete;
     Machine& operator=(const Machine&) = delete;
 
-    // Reset to power-on state
+    // =========================================================================
+    // Reset methods
+    // =========================================================================
+
+    // Power-on reset: clear RAM and reset all devices including System VIA.
+    // This is the full initialization state, equivalent to powering off and on.
+    // MOS will detect the cleared System VIA and perform full initialization.
     void reset() {
         M6502_Init(&state_.cpu, CpuPolicy::config);
         M6502_Reset(&state_.cpu);
         state_.memory.reset();
         video_binding_.reset();
         state_.cycle_count = 0;
+        in_reset_ = false;
         ++sequence_;
+    }
+
+    // Soft reset (Break key): reset CPU and peripherals, but preserve System VIA.
+    // The System VIA's preserved state allows MOS to detect this as a warm reset.
+    // Does NOT clear RAM - programs and variables survive.
+    // This is what happens when the Break key is released.
+    void soft_reset() {
+        M6502_Init(&state_.cpu, CpuPolicy::config);
+        M6502_Reset(&state_.cpu);
+        state_.memory.soft_reset();
+        video_binding_.reset();
+        // Do NOT reset cycle_count - maintains timing continuity
+        in_reset_ = false;
+        ++sequence_;
+    }
+
+    // =========================================================================
+    // Break key handling (directly connected to reset circuit)
+    // =========================================================================
+
+    // Assert Break key (hold reset line low, halting CPU)
+    // While Break is held, the CPU is frozen - step() will not execute instructions.
+    void break_down() {
+        in_reset_ = true;
+        M6502_Halt(&state_.cpu);
+        ++sequence_;
+    }
+
+    // Release Break key (begin reset sequence)
+    // This always performs a soft reset - hardware does NOT distinguish Ctrl-Break.
+    // The System VIA is preserved, and MOS checks the keyboard matrix during its
+    // reset sequence. If Ctrl is held, MOS itself clears the VIA configuration
+    // to force a "hard reset" behavior.
+    void break_up() {
+        soft_reset();
+    }
+
+    // Check if Break key is currently held (CPU halted)
+    bool is_in_reset() const {
+        return in_reset_;
     }
 
     // Execute one CPU cycle
@@ -311,6 +358,9 @@ private:
     std::condition_variable debug_cv_;
     std::atomic<bool> paused_{false};
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
+
+    // Break key state (true when Break is held, CPU halted)
+    bool in_reset_ = false;
 
     SystemClockType make_system_clock() {
         return make_clock(

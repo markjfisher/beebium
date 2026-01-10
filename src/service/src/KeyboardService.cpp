@@ -18,7 +18,13 @@
 namespace beebium::service {
 
 KeyboardServiceImpl::KeyboardServiceImpl(SystemViaPeripheral& keyboard)
-    : keyboard_(keyboard) {
+    : keyboard_(keyboard)
+    , break_callbacks_{} {
+}
+
+KeyboardServiceImpl::KeyboardServiceImpl(SystemViaPeripheral& keyboard, BreakCallbacks break_callbacks)
+    : keyboard_(keyboard)
+    , break_callbacks_(std::move(break_callbacks)) {
 }
 
 KeyboardServiceImpl::~KeyboardServiceImpl() = default;
@@ -321,6 +327,51 @@ grpc::Status KeyboardServiceImpl::GetAllKeyMappings(
         entry->set_name(mapping.name);
     }
 
+    return grpc::Status::OK;
+}
+
+// =============================================================================
+// Break key operations
+// =============================================================================
+
+grpc::Status KeyboardServiceImpl::BreakDown(
+    grpc::ServerContext* /*context*/,
+    const BreakDownRequest* /*request*/,
+    BreakDownResponse* response) {
+
+    if (break_callbacks_.break_down) {
+        break_callbacks_.break_down();
+        response->set_success(true);
+    } else {
+        response->set_success(false);
+    }
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::BreakUp(
+    grpc::ServerContext* /*context*/,
+    const BreakUpRequest* /*request*/,
+    BreakUpResponse* response) {
+
+    if (break_callbacks_.break_up) {
+        break_callbacks_.break_up();
+        response->set_success(true);
+    } else {
+        response->set_success(false);
+    }
+    return grpc::Status::OK;
+}
+
+grpc::Status KeyboardServiceImpl::GetBreakState(
+    grpc::ServerContext* /*context*/,
+    const GetBreakStateRequest* /*request*/,
+    BreakKeyState* response) {
+
+    if (break_callbacks_.is_in_reset) {
+        response->set_is_held(break_callbacks_.is_in_reset());
+    } else {
+        response->set_is_held(false);
+    }
     return grpc::Status::OK;
 }
 

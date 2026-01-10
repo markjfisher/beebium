@@ -221,7 +221,8 @@ public:
         return main_ram.read(addr);
     }
 
-    // Reset all devices
+    // Power-on reset: clear RAM and reset all devices including System VIA
+    // This is the original reset() behavior, equivalent to powering off and on.
     void reset() {
         main_ram.clear();
         system_via.reset();
@@ -231,6 +232,22 @@ public:
         saa5050.reset();
         addressable_latch.reset();
         sideways.select_bank(0);
+    }
+
+    // Soft reset (Break key): reset peripherals but preserve System VIA state
+    // The System VIA's preserved IER allows MOS to detect this as a warm reset.
+    // Does NOT clear RAM - allows variables and programs to survive.
+    // Note: Hardware does NOT distinguish Ctrl-Break from Break - MOS checks
+    // the keyboard matrix during reset and clears VIA config if Ctrl is held.
+    void soft_reset() {
+        // Do NOT reset system_via - this is how MOS detects soft vs hard reset
+        user_via.reset();
+        crtc.reset();
+        video_ula.reset();
+        saa5050.reset();
+        addressable_latch.reset();
+        // Do NOT clear RAM
+        // Do NOT reset sideways bank selection
     }
 
     // Enable video output with optional custom queue capacity

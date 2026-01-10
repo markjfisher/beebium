@@ -129,8 +129,16 @@ void Server<MachineType>::start() {
     // Create services
     impl_->video_service = std::make_unique<VideoServiceImpl>(impl_->frame_buffer);
 
+    // Create break callbacks that call Machine methods
+    BreakCallbacks break_callbacks{
+        [this]() { impl_->machine.break_down(); },
+        [this]() { impl_->machine.break_up(); },
+        [this]() { return impl_->machine.is_in_reset(); }
+    };
+
     impl_->keyboard_service = std::make_unique<KeyboardServiceImpl>(
-        impl_->machine.state().memory.system_via_peripheral);
+        impl_->machine.state().memory.system_via_peripheral,
+        std::move(break_callbacks));
 
     impl_->debugger_control_service = std::make_unique<DebuggerControlServiceImpl<MachineType>>(
         impl_->machine);

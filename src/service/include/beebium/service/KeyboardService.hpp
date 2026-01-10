@@ -15,6 +15,7 @@
 
 #include "keyboard.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
+#include <functional>
 #include <mutex>
 
 namespace beebium {
@@ -23,10 +24,18 @@ class SystemViaPeripheral;
 
 namespace service {
 
+/// Callback interface for Break key operations (separate from keyboard matrix)
+struct BreakCallbacks {
+    std::function<void()> break_down;      // Called when Break is pressed (halt CPU)
+    std::function<void()> break_up;        // Called when Break is released (soft reset)
+    std::function<bool()> is_in_reset;     // Returns true if Break is currently held
+};
+
 /// gRPC service implementation for keyboard input
 class KeyboardServiceImpl final : public KeyboardService::Service {
 public:
     explicit KeyboardServiceImpl(SystemViaPeripheral& keyboard);
+    KeyboardServiceImpl(SystemViaPeripheral& keyboard, BreakCallbacks break_callbacks);
     ~KeyboardServiceImpl() override;
 
     // Non-copyable
@@ -107,8 +116,25 @@ public:
         const GetAllKeyMappingsRequest* request,
         AllKeyMappingsResponse* response) override;
 
+    // Break key operations
+    grpc::Status BreakDown(
+        grpc::ServerContext* context,
+        const BreakDownRequest* request,
+        BreakDownResponse* response) override;
+
+    grpc::Status BreakUp(
+        grpc::ServerContext* context,
+        const BreakUpRequest* request,
+        BreakUpResponse* response) override;
+
+    grpc::Status GetBreakState(
+        grpc::ServerContext* context,
+        const GetBreakStateRequest* request,
+        BreakKeyState* response) override;
+
 private:
     SystemViaPeripheral& keyboard_;
+    BreakCallbacks break_callbacks_;
     std::mutex mutex_;
 };
 

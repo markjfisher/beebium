@@ -28,6 +28,27 @@ service KeyboardService {
     rpc GetStartupAutoBoot(GetStartupAutoBootRequest) returns (StartupAutoBootState);
 
     // =========================================================================
+    // Break Key (Reset)
+    // =========================================================================
+    // The Break key is NOT part of the keyboard matrix. It is directly
+    // connected to the reset circuit (IC16 NE555 timer) via pin 4.
+    //
+    // While Break is held: CPU is halted (reset line held low)
+    // On Break release: Soft reset sequence begins
+    //
+    // Note: Hardware always does a soft reset. MOS checks if Ctrl is held
+    // during its reset sequence to decide between warm/cold reset behavior.
+
+    // Hold Break key (halt CPU)
+    rpc BreakDown(BreakDownRequest) returns (BreakDownResponse);
+
+    // Release Break key (begin soft reset)
+    rpc BreakUp(BreakUpRequest) returns (BreakUpResponse);
+
+    // Query Break key state
+    rpc GetBreakState(GetBreakStateRequest) returns (BreakKeyState);
+
+    // =========================================================================
     // Type-ahead (TypeQuickly)
     // =========================================================================
     // Non-blocking text input that types strings at machine speed.
@@ -134,6 +155,31 @@ message GetStartupAutoBootRequest {}
 
 message StartupAutoBootState {
     bool enabled = 1;  // true if bit 3 is cleared
+}
+
+// ============================================================================
+// Break Key (Reset)
+// ============================================================================
+//
+// The Break key is directly connected to the reset circuit, not the keyboard
+// matrix. It provides direct hardware reset control.
+
+message BreakDownRequest {}
+
+message BreakDownResponse {
+    bool success = 1;       // Always true unless emulator error
+}
+
+message BreakUpRequest {}
+
+message BreakUpResponse {
+    bool success = 1;       // Always true unless emulator error
+}
+
+message GetBreakStateRequest {}
+
+message BreakKeyState {
+    bool is_held = 1;       // True if Break key is currently held
 }
 
 // ============================================================================
