@@ -76,6 +76,68 @@ public:
 
 The `Machine::step()` method dispatches clock ticks to devices based on these declarations.
 
+## 1MHz Bus Stretching
+
+The BBC Micro's 2MHz CPU can access 1MHz peripherals, but these accesses require synchronization. The bus controller inserts wait cycles ("bus stretching") to align the CPU with the slower peripheral clock.
+
+### Affected Address Ranges
+
+| Address Range | Device | 1MHz? |
+|---------------|--------|-------|
+| $FC00-$FCFF | FRED (external I/O) | Yes |
+| $FD00-$FDFF | JIM (external I/O) | Yes |
+| $FE00-$FE1F | CRTC, ACIA, Serial ULA | Yes |
+| $FE20-$FE3F | Video ULA | No (clocked by video) |
+| $FE40-$FE5F | System VIA | Yes |
+| $FE60-$FE7F | User VIA | Yes |
+| $FE80-$FE9F | Disc controller (WD1770) | No |
+| $FEA0-$FEBF | Econet | No |
+| $FEC0-$FEDF | A/D converter | Yes |
+| $FEE0-$FEFF | Tube | No |
+
+### Timing Model
+
+When the CPU accesses a 1MHz peripheral:
+
+1. **Instruction executes normally** until the memory access cycle
+2. **The memory access cycle** is part of the 1MHz access (not separate)
+3. **Extra cycles** are added to complete the 1MHz timing:
+   - 1 cycle if already aligned with the 1MHz clock (even 2MHz cycle)
+   - 2 cycles if misaligned (odd 2MHz cycle)
+
+```
+CPU cycle N: Instruction reaches memory access phase
+             ├─ If N is even (aligned): add 1 extra cycle
+             └─ If N is odd (misaligned): add 2 extra cycles
+
+During extra cycles:
+  - CPU is halted (no new cycles execute)
+  - 1MHz peripherals continue to tick
+  - Video continues to tick
+```
+
+### Implementation
+
+Bus stretching is implemented in `CpuBinding`:
+
+1. After the CPU executes a cycle, the accessed address is checked
+2. If it's a 1MHz address, VIAs are pre-ticked for the stretch amount
+3. The memory access then completes
+4. Machine accounts for the stretch cycles (halting CPU, ticking video only)
+
+This "Option B" approach (pre-tick before access) ensures the CPU reads see the correct peripheral state after synchronization, matching real hardware behavior.
+
+```cpp
+// BusStretching.hpp
+constexpr uint8_t stretch_cycles(uint64_t cycle_count) {
+    return 1 + static_cast<uint8_t>(cycle_count & 1);
+}
+```
+
+### Validation
+
+This implementation passes hardware-validated timing tests from jsbeeb (VIA.AC1, VIA.T12) which were measured against real BBC Master hardware by @scarybeasts.
+
 ## Real-time Pacing
 
 ### Design Goals
@@ -224,6 +286,7 @@ struct TimingStats {
 | File | Purpose |
 |------|---------|
 | `ClockTypes.hpp` | Clock edge/rate enums, timing constants |
+| `BusStretching.hpp` | 1MHz bus stretch address detection and cycle calculation |
 | `PacingConfig.hpp` | Pacing configuration struct |
 | `PacingClock.hpp` | Real-time pacing clock implementation |
 | `ModelBHardware.hpp` | Machine-specific default pacing config |
