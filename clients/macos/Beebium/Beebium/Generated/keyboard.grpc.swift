@@ -28,15 +28,80 @@ internal protocol Beebium_KeyboardServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_KeyRequest, Beebium_KeyResponse>
 
-  func typeText(
-    _ request: Beebium_TypeTextRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_TypeTextRequest, Beebium_TypeTextResponse>
-
   func getState(
     _ request: Beebium_GetStateRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_GetStateRequest, Beebium_KeyboardState>
+
+  func setLinks(
+    _ request: Beebium_SetLinksRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetLinksRequest, Beebium_SetLinksResponse>
+
+  func getLinks(
+    _ request: Beebium_GetLinksRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetLinksRequest, Beebium_LinksState>
+
+  func setStartupScreenMode(
+    _ request: Beebium_SetStartupScreenModeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse>
+
+  func getStartupScreenMode(
+    _ request: Beebium_GetStartupScreenModeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState>
+
+  func setStartupAutoBoot(
+    _ request: Beebium_SetStartupAutoBootRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse>
+
+  func getStartupAutoBoot(
+    _ request: Beebium_GetStartupAutoBootRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState>
+
+  func breakDown(
+    _ request: Beebium_BreakDownRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_BreakDownRequest, Beebium_BreakDownResponse>
+
+  func breakUp(
+    _ request: Beebium_BreakUpRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_BreakUpRequest, Beebium_BreakUpResponse>
+
+  func getBreakState(
+    _ request: Beebium_GetBreakStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>
+
+  func typeQuickly(
+    _ request: Beebium_TypeQuicklyRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>
+
+  func getTypingStatus(
+    _ request: Beebium_GetTypingStatusRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetTypingStatusRequest, Beebium_TypingStatus>
+
+  func clearTyping(
+    _ request: Beebium_ClearTypingRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse>
+
+  func getKeyMapping(
+    _ request: Beebium_GetKeyMappingRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry>
+
+  func getAllKeyMappings(
+    _ request: Beebium_GetAllKeyMappingsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse>
 }
 
 extension Beebium_KeyboardServiceClientProtocol {
@@ -44,7 +109,7 @@ extension Beebium_KeyboardServiceClientProtocol {
     return "beebium.KeyboardService"
   }
 
-  /// Press/release by matrix position
+  /// Press/release by matrix position (momentary key events)
   ///
   /// - Parameters:
   ///   - request: Request to send to KeyDown.
@@ -80,24 +145,6 @@ extension Beebium_KeyboardServiceClientProtocol {
     )
   }
 
-  /// Type a string (auto press/release with timing)
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to TypeText.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func typeText(
-    _ request: Beebium_TypeTextRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_TypeTextRequest, Beebium_TypeTextResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_KeyboardServiceClientMetadata.Methods.typeText.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeTypeTextInterceptors() ?? []
-    )
-  }
-
   /// Query current pressed keys
   ///
   /// - Parameters:
@@ -113,6 +160,258 @@ extension Beebium_KeyboardServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetStateInterceptors() ?? []
+    )
+  }
+
+  /// Raw byte access to all 8 links
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetLinks.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setLinks(
+    _ request: Beebium_SetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetLinksRequest, Beebium_SetLinksResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetLinksInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetLinks
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetLinks.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getLinks(
+    _ request: Beebium_GetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetLinksRequest, Beebium_LinksState> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLinksInterceptors() ?? []
+    )
+  }
+
+  /// Semantic accessors for specific link groups
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetStartupScreenMode.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setStartupScreenMode(
+    _ request: Beebium_SetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetStartupScreenMode
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetStartupScreenMode.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getStartupScreenMode(
+    _ request: Beebium_GetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to SetStartupAutoBoot
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetStartupAutoBoot.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setStartupAutoBoot(
+    _ request: Beebium_SetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetStartupAutoBoot
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetStartupAutoBoot.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getStartupAutoBoot(
+    _ request: Beebium_GetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  /// Hold Break key (halt CPU)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to BreakDown.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func breakDown(
+    _ request: Beebium_BreakDownRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_BreakDownRequest, Beebium_BreakDownResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakDown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakDownInterceptors() ?? []
+    )
+  }
+
+  /// Release Break key (begin soft reset)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to BreakUp.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func breakUp(
+    _ request: Beebium_BreakUpRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_BreakUpRequest, Beebium_BreakUpResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakUp.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakUpInterceptors() ?? []
+    )
+  }
+
+  /// Query Break key state
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetBreakState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getBreakState(
+    _ request: Beebium_GetBreakStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getBreakState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? []
+    )
+  }
+
+  /// Enqueue text to type at machine speed (non-blocking)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to TypeQuickly.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func typeQuickly(
+    _ request: Beebium_TypeQuicklyRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.typeQuickly.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeTypeQuicklyInterceptors() ?? []
+    )
+  }
+
+  /// Query typing status
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetTypingStatus.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getTypingStatus(
+    _ request: Beebium_GetTypingStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetTypingStatusRequest, Beebium_TypingStatus> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getTypingStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetTypingStatusInterceptors() ?? []
+    )
+  }
+
+  /// Clear pending typing
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ClearTyping.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func clearTyping(
+    _ request: Beebium_ClearTypingRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.clearTyping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearTypingInterceptors() ?? []
+    )
+  }
+
+  /// Get mapping for a single character
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetKeyMapping.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getKeyMapping(
+    _ request: Beebium_GetKeyMappingRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getKeyMapping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetKeyMappingInterceptors() ?? []
+    )
+  }
+
+  /// Get complete mapping table (for client caching)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetAllKeyMappings.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getAllKeyMappings(
+    _ request: Beebium_GetAllKeyMappingsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getAllKeyMappings.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAllKeyMappingsInterceptors() ?? []
     )
   }
 }
@@ -190,15 +489,80 @@ internal protocol Beebium_KeyboardServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_KeyRequest, Beebium_KeyResponse>
 
-  func makeTypeTextCall(
-    _ request: Beebium_TypeTextRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_TypeTextRequest, Beebium_TypeTextResponse>
-
   func makeGetStateCall(
     _ request: Beebium_GetStateRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_GetStateRequest, Beebium_KeyboardState>
+
+  func makeSetLinksCall(
+    _ request: Beebium_SetLinksRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetLinksRequest, Beebium_SetLinksResponse>
+
+  func makeGetLinksCall(
+    _ request: Beebium_GetLinksRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetLinksRequest, Beebium_LinksState>
+
+  func makeSetStartupScreenModeCall(
+    _ request: Beebium_SetStartupScreenModeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse>
+
+  func makeGetStartupScreenModeCall(
+    _ request: Beebium_GetStartupScreenModeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState>
+
+  func makeSetStartupAutoBootCall(
+    _ request: Beebium_SetStartupAutoBootRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse>
+
+  func makeGetStartupAutoBootCall(
+    _ request: Beebium_GetStartupAutoBootRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState>
+
+  func makeBreakDownCall(
+    _ request: Beebium_BreakDownRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_BreakDownRequest, Beebium_BreakDownResponse>
+
+  func makeBreakUpCall(
+    _ request: Beebium_BreakUpRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_BreakUpRequest, Beebium_BreakUpResponse>
+
+  func makeGetBreakStateCall(
+    _ request: Beebium_GetBreakStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>
+
+  func makeTypeQuicklyCall(
+    _ request: Beebium_TypeQuicklyRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>
+
+  func makeGetTypingStatusCall(
+    _ request: Beebium_GetTypingStatusRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetTypingStatusRequest, Beebium_TypingStatus>
+
+  func makeClearTypingCall(
+    _ request: Beebium_ClearTypingRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse>
+
+  func makeGetKeyMappingCall(
+    _ request: Beebium_GetKeyMappingRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry>
+
+  func makeGetAllKeyMappingsCall(
+    _ request: Beebium_GetAllKeyMappingsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -235,18 +599,6 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeTypeTextCall(
-    _ request: Beebium_TypeTextRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_TypeTextRequest, Beebium_TypeTextResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_KeyboardServiceClientMetadata.Methods.typeText.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeTypeTextInterceptors() ?? []
-    )
-  }
-
   internal func makeGetStateCall(
     _ request: Beebium_GetStateRequest,
     callOptions: CallOptions? = nil
@@ -256,6 +608,174 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetLinksCall(
+    _ request: Beebium_SetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetLinksRequest, Beebium_SetLinksResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetLinksInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetLinksCall(
+    _ request: Beebium_GetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetLinksRequest, Beebium_LinksState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLinksInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetStartupScreenModeCall(
+    _ request: Beebium_SetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetStartupScreenModeCall(
+    _ request: Beebium_GetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetStartupAutoBootCall(
+    _ request: Beebium_SetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetStartupAutoBootCall(
+    _ request: Beebium_GetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  internal func makeBreakDownCall(
+    _ request: Beebium_BreakDownRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_BreakDownRequest, Beebium_BreakDownResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakDown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakDownInterceptors() ?? []
+    )
+  }
+
+  internal func makeBreakUpCall(
+    _ request: Beebium_BreakUpRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_BreakUpRequest, Beebium_BreakUpResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakUp.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakUpInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetBreakStateCall(
+    _ request: Beebium_GetBreakStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getBreakState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeTypeQuicklyCall(
+    _ request: Beebium_TypeQuicklyRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.typeQuickly.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeTypeQuicklyInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetTypingStatusCall(
+    _ request: Beebium_GetTypingStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetTypingStatusRequest, Beebium_TypingStatus> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getTypingStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetTypingStatusInterceptors() ?? []
+    )
+  }
+
+  internal func makeClearTypingCall(
+    _ request: Beebium_ClearTypingRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.clearTyping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearTypingInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetKeyMappingCall(
+    _ request: Beebium_GetKeyMappingRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getKeyMapping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetKeyMappingInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetAllKeyMappingsCall(
+    _ request: Beebium_GetAllKeyMappingsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getAllKeyMappings.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAllKeyMappingsInterceptors() ?? []
     )
   }
 }
@@ -286,18 +806,6 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
     )
   }
 
-  internal func typeText(
-    _ request: Beebium_TypeTextRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_TypeTextResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_KeyboardServiceClientMetadata.Methods.typeText.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeTypeTextInterceptors() ?? []
-    )
-  }
-
   internal func getState(
     _ request: Beebium_GetStateRequest,
     callOptions: CallOptions? = nil
@@ -307,6 +815,174 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetStateInterceptors() ?? []
+    )
+  }
+
+  internal func setLinks(
+    _ request: Beebium_SetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetLinksResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetLinksInterceptors() ?? []
+    )
+  }
+
+  internal func getLinks(
+    _ request: Beebium_GetLinksRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_LinksState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLinks.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLinksInterceptors() ?? []
+    )
+  }
+
+  internal func setStartupScreenMode(
+    _ request: Beebium_SetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetStartupScreenModeResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  internal func getStartupScreenMode(
+    _ request: Beebium_GetStartupScreenModeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_StartupScreenModeState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupScreenMode.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupScreenModeInterceptors() ?? []
+    )
+  }
+
+  internal func setStartupAutoBoot(
+    _ request: Beebium_SetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetStartupAutoBootResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.setStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  internal func getStartupAutoBoot(
+    _ request: Beebium_GetStartupAutoBootRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_StartupAutoBootState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getStartupAutoBoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetStartupAutoBootInterceptors() ?? []
+    )
+  }
+
+  internal func breakDown(
+    _ request: Beebium_BreakDownRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_BreakDownResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakDown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakDownInterceptors() ?? []
+    )
+  }
+
+  internal func breakUp(
+    _ request: Beebium_BreakUpRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_BreakUpResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.breakUp.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeBreakUpInterceptors() ?? []
+    )
+  }
+
+  internal func getBreakState(
+    _ request: Beebium_GetBreakStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_BreakKeyState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getBreakState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? []
+    )
+  }
+
+  internal func typeQuickly(
+    _ request: Beebium_TypeQuicklyRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_TypeQuicklyResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.typeQuickly.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeTypeQuicklyInterceptors() ?? []
+    )
+  }
+
+  internal func getTypingStatus(
+    _ request: Beebium_GetTypingStatusRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_TypingStatus {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getTypingStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetTypingStatusInterceptors() ?? []
+    )
+  }
+
+  internal func clearTyping(
+    _ request: Beebium_ClearTypingRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_ClearTypingResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.clearTyping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearTypingInterceptors() ?? []
+    )
+  }
+
+  internal func getKeyMapping(
+    _ request: Beebium_GetKeyMappingRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_KeyMappingEntry {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getKeyMapping.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetKeyMappingInterceptors() ?? []
+    )
+  }
+
+  internal func getAllKeyMappings(
+    _ request: Beebium_GetAllKeyMappingsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_AllKeyMappingsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getAllKeyMappings.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAllKeyMappingsInterceptors() ?? []
     )
   }
 }
@@ -336,11 +1012,50 @@ internal protocol Beebium_KeyboardServiceClientInterceptorFactoryProtocol: Senda
   /// - Returns: Interceptors to use when invoking 'keyUp'.
   func makeKeyUpInterceptors() -> [ClientInterceptor<Beebium_KeyRequest, Beebium_KeyResponse>]
 
-  /// - Returns: Interceptors to use when invoking 'typeText'.
-  func makeTypeTextInterceptors() -> [ClientInterceptor<Beebium_TypeTextRequest, Beebium_TypeTextResponse>]
-
   /// - Returns: Interceptors to use when invoking 'getState'.
   func makeGetStateInterceptors() -> [ClientInterceptor<Beebium_GetStateRequest, Beebium_KeyboardState>]
+
+  /// - Returns: Interceptors to use when invoking 'setLinks'.
+  func makeSetLinksInterceptors() -> [ClientInterceptor<Beebium_SetLinksRequest, Beebium_SetLinksResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getLinks'.
+  func makeGetLinksInterceptors() -> [ClientInterceptor<Beebium_GetLinksRequest, Beebium_LinksState>]
+
+  /// - Returns: Interceptors to use when invoking 'setStartupScreenMode'.
+  func makeSetStartupScreenModeInterceptors() -> [ClientInterceptor<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getStartupScreenMode'.
+  func makeGetStartupScreenModeInterceptors() -> [ClientInterceptor<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState>]
+
+  /// - Returns: Interceptors to use when invoking 'setStartupAutoBoot'.
+  func makeSetStartupAutoBootInterceptors() -> [ClientInterceptor<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getStartupAutoBoot'.
+  func makeGetStartupAutoBootInterceptors() -> [ClientInterceptor<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState>]
+
+  /// - Returns: Interceptors to use when invoking 'breakDown'.
+  func makeBreakDownInterceptors() -> [ClientInterceptor<Beebium_BreakDownRequest, Beebium_BreakDownResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'breakUp'.
+  func makeBreakUpInterceptors() -> [ClientInterceptor<Beebium_BreakUpRequest, Beebium_BreakUpResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getBreakState'.
+  func makeGetBreakStateInterceptors() -> [ClientInterceptor<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>]
+
+  /// - Returns: Interceptors to use when invoking 'typeQuickly'.
+  func makeTypeQuicklyInterceptors() -> [ClientInterceptor<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getTypingStatus'.
+  func makeGetTypingStatusInterceptors() -> [ClientInterceptor<Beebium_GetTypingStatusRequest, Beebium_TypingStatus>]
+
+  /// - Returns: Interceptors to use when invoking 'clearTyping'.
+  func makeClearTypingInterceptors() -> [ClientInterceptor<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getKeyMapping'.
+  func makeGetKeyMappingInterceptors() -> [ClientInterceptor<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry>]
+
+  /// - Returns: Interceptors to use when invoking 'getAllKeyMappings'.
+  func makeGetAllKeyMappingsInterceptors() -> [ClientInterceptor<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse>]
 }
 
 internal enum Beebium_KeyboardServiceClientMetadata {
@@ -350,8 +1065,21 @@ internal enum Beebium_KeyboardServiceClientMetadata {
     methods: [
       Beebium_KeyboardServiceClientMetadata.Methods.keyDown,
       Beebium_KeyboardServiceClientMetadata.Methods.keyUp,
-      Beebium_KeyboardServiceClientMetadata.Methods.typeText,
       Beebium_KeyboardServiceClientMetadata.Methods.getState,
+      Beebium_KeyboardServiceClientMetadata.Methods.setLinks,
+      Beebium_KeyboardServiceClientMetadata.Methods.getLinks,
+      Beebium_KeyboardServiceClientMetadata.Methods.setStartupScreenMode,
+      Beebium_KeyboardServiceClientMetadata.Methods.getStartupScreenMode,
+      Beebium_KeyboardServiceClientMetadata.Methods.setStartupAutoBoot,
+      Beebium_KeyboardServiceClientMetadata.Methods.getStartupAutoBoot,
+      Beebium_KeyboardServiceClientMetadata.Methods.breakDown,
+      Beebium_KeyboardServiceClientMetadata.Methods.breakUp,
+      Beebium_KeyboardServiceClientMetadata.Methods.getBreakState,
+      Beebium_KeyboardServiceClientMetadata.Methods.typeQuickly,
+      Beebium_KeyboardServiceClientMetadata.Methods.getTypingStatus,
+      Beebium_KeyboardServiceClientMetadata.Methods.clearTyping,
+      Beebium_KeyboardServiceClientMetadata.Methods.getKeyMapping,
+      Beebium_KeyboardServiceClientMetadata.Methods.getAllKeyMappings,
     ]
   )
 
@@ -368,15 +1096,93 @@ internal enum Beebium_KeyboardServiceClientMetadata {
       type: GRPCCallType.unary
     )
 
-    internal static let typeText = GRPCMethodDescriptor(
-      name: "TypeText",
-      path: "/beebium.KeyboardService/TypeText",
-      type: GRPCCallType.unary
-    )
-
     internal static let getState = GRPCMethodDescriptor(
       name: "GetState",
       path: "/beebium.KeyboardService/GetState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setLinks = GRPCMethodDescriptor(
+      name: "SetLinks",
+      path: "/beebium.KeyboardService/SetLinks",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getLinks = GRPCMethodDescriptor(
+      name: "GetLinks",
+      path: "/beebium.KeyboardService/GetLinks",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setStartupScreenMode = GRPCMethodDescriptor(
+      name: "SetStartupScreenMode",
+      path: "/beebium.KeyboardService/SetStartupScreenMode",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getStartupScreenMode = GRPCMethodDescriptor(
+      name: "GetStartupScreenMode",
+      path: "/beebium.KeyboardService/GetStartupScreenMode",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setStartupAutoBoot = GRPCMethodDescriptor(
+      name: "SetStartupAutoBoot",
+      path: "/beebium.KeyboardService/SetStartupAutoBoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getStartupAutoBoot = GRPCMethodDescriptor(
+      name: "GetStartupAutoBoot",
+      path: "/beebium.KeyboardService/GetStartupAutoBoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let breakDown = GRPCMethodDescriptor(
+      name: "BreakDown",
+      path: "/beebium.KeyboardService/BreakDown",
+      type: GRPCCallType.unary
+    )
+
+    internal static let breakUp = GRPCMethodDescriptor(
+      name: "BreakUp",
+      path: "/beebium.KeyboardService/BreakUp",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getBreakState = GRPCMethodDescriptor(
+      name: "GetBreakState",
+      path: "/beebium.KeyboardService/GetBreakState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let typeQuickly = GRPCMethodDescriptor(
+      name: "TypeQuickly",
+      path: "/beebium.KeyboardService/TypeQuickly",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getTypingStatus = GRPCMethodDescriptor(
+      name: "GetTypingStatus",
+      path: "/beebium.KeyboardService/GetTypingStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearTyping = GRPCMethodDescriptor(
+      name: "ClearTyping",
+      path: "/beebium.KeyboardService/ClearTyping",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getKeyMapping = GRPCMethodDescriptor(
+      name: "GetKeyMapping",
+      path: "/beebium.KeyboardService/GetKeyMapping",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAllKeyMappings = GRPCMethodDescriptor(
+      name: "GetAllKeyMappings",
+      path: "/beebium.KeyboardService/GetAllKeyMappings",
       type: GRPCCallType.unary
     )
   }
@@ -388,16 +1194,51 @@ internal enum Beebium_KeyboardServiceClientMetadata {
 internal protocol Beebium_KeyboardServiceProvider: CallHandlerProvider {
   var interceptors: Beebium_KeyboardServiceServerInterceptorFactoryProtocol? { get }
 
-  /// Press/release by matrix position
+  /// Press/release by matrix position (momentary key events)
   func keyDown(request: Beebium_KeyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_KeyResponse>
 
   func keyUp(request: Beebium_KeyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_KeyResponse>
 
-  /// Type a string (auto press/release with timing)
-  func typeText(request: Beebium_TypeTextRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_TypeTextResponse>
-
   /// Query current pressed keys
   func getState(request: Beebium_GetStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_KeyboardState>
+
+  /// Raw byte access to all 8 links
+  func setLinks(request: Beebium_SetLinksRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetLinksResponse>
+
+  func getLinks(request: Beebium_GetLinksRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_LinksState>
+
+  /// Semantic accessors for specific link groups
+  func setStartupScreenMode(request: Beebium_SetStartupScreenModeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetStartupScreenModeResponse>
+
+  func getStartupScreenMode(request: Beebium_GetStartupScreenModeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_StartupScreenModeState>
+
+  func setStartupAutoBoot(request: Beebium_SetStartupAutoBootRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetStartupAutoBootResponse>
+
+  func getStartupAutoBoot(request: Beebium_GetStartupAutoBootRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_StartupAutoBootState>
+
+  /// Hold Break key (halt CPU)
+  func breakDown(request: Beebium_BreakDownRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_BreakDownResponse>
+
+  /// Release Break key (begin soft reset)
+  func breakUp(request: Beebium_BreakUpRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_BreakUpResponse>
+
+  /// Query Break key state
+  func getBreakState(request: Beebium_GetBreakStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_BreakKeyState>
+
+  /// Enqueue text to type at machine speed (non-blocking)
+  func typeQuickly(request: Beebium_TypeQuicklyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_TypeQuicklyResponse>
+
+  /// Query typing status
+  func getTypingStatus(request: Beebium_GetTypingStatusRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_TypingStatus>
+
+  /// Clear pending typing
+  func clearTyping(request: Beebium_ClearTypingRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ClearTypingResponse>
+
+  /// Get mapping for a single character
+  func getKeyMapping(request: Beebium_GetKeyMappingRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_KeyMappingEntry>
+
+  /// Get complete mapping table (for client caching)
+  func getAllKeyMappings(request: Beebium_GetAllKeyMappingsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_AllKeyMappingsResponse>
 }
 
 extension Beebium_KeyboardServiceProvider {
@@ -430,15 +1271,6 @@ extension Beebium_KeyboardServiceProvider {
         userFunction: self.keyUp(request:context:)
       )
 
-    case "TypeText":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_TypeTextRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_TypeTextResponse>(),
-        interceptors: self.interceptors?.makeTypeTextInterceptors() ?? [],
-        userFunction: self.typeText(request:context:)
-      )
-
     case "GetState":
       return UnaryServerHandler(
         context: context,
@@ -446,6 +1278,132 @@ extension Beebium_KeyboardServiceProvider {
         responseSerializer: ProtobufSerializer<Beebium_KeyboardState>(),
         interceptors: self.interceptors?.makeGetStateInterceptors() ?? [],
         userFunction: self.getState(request:context:)
+      )
+
+    case "SetLinks":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetLinksRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetLinksResponse>(),
+        interceptors: self.interceptors?.makeSetLinksInterceptors() ?? [],
+        userFunction: self.setLinks(request:context:)
+      )
+
+    case "GetLinks":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetLinksRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_LinksState>(),
+        interceptors: self.interceptors?.makeGetLinksInterceptors() ?? [],
+        userFunction: self.getLinks(request:context:)
+      )
+
+    case "SetStartupScreenMode":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetStartupScreenModeRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetStartupScreenModeResponse>(),
+        interceptors: self.interceptors?.makeSetStartupScreenModeInterceptors() ?? [],
+        userFunction: self.setStartupScreenMode(request:context:)
+      )
+
+    case "GetStartupScreenMode":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetStartupScreenModeRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_StartupScreenModeState>(),
+        interceptors: self.interceptors?.makeGetStartupScreenModeInterceptors() ?? [],
+        userFunction: self.getStartupScreenMode(request:context:)
+      )
+
+    case "SetStartupAutoBoot":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetStartupAutoBootRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetStartupAutoBootResponse>(),
+        interceptors: self.interceptors?.makeSetStartupAutoBootInterceptors() ?? [],
+        userFunction: self.setStartupAutoBoot(request:context:)
+      )
+
+    case "GetStartupAutoBoot":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetStartupAutoBootRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_StartupAutoBootState>(),
+        interceptors: self.interceptors?.makeGetStartupAutoBootInterceptors() ?? [],
+        userFunction: self.getStartupAutoBoot(request:context:)
+      )
+
+    case "BreakDown":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_BreakDownRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakDownResponse>(),
+        interceptors: self.interceptors?.makeBreakDownInterceptors() ?? [],
+        userFunction: self.breakDown(request:context:)
+      )
+
+    case "BreakUp":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_BreakUpRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakUpResponse>(),
+        interceptors: self.interceptors?.makeBreakUpInterceptors() ?? [],
+        userFunction: self.breakUp(request:context:)
+      )
+
+    case "GetBreakState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetBreakStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakKeyState>(),
+        interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? [],
+        userFunction: self.getBreakState(request:context:)
+      )
+
+    case "TypeQuickly":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_TypeQuicklyRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_TypeQuicklyResponse>(),
+        interceptors: self.interceptors?.makeTypeQuicklyInterceptors() ?? [],
+        userFunction: self.typeQuickly(request:context:)
+      )
+
+    case "GetTypingStatus":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetTypingStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_TypingStatus>(),
+        interceptors: self.interceptors?.makeGetTypingStatusInterceptors() ?? [],
+        userFunction: self.getTypingStatus(request:context:)
+      )
+
+    case "ClearTyping":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ClearTypingRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ClearTypingResponse>(),
+        interceptors: self.interceptors?.makeClearTypingInterceptors() ?? [],
+        userFunction: self.clearTyping(request:context:)
+      )
+
+    case "GetKeyMapping":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetKeyMappingRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_KeyMappingEntry>(),
+        interceptors: self.interceptors?.makeGetKeyMappingInterceptors() ?? [],
+        userFunction: self.getKeyMapping(request:context:)
+      )
+
+    case "GetAllKeyMappings":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAllKeyMappingsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_AllKeyMappingsResponse>(),
+        interceptors: self.interceptors?.makeGetAllKeyMappingsInterceptors() ?? [],
+        userFunction: self.getAllKeyMappings(request:context:)
       )
 
     default:
@@ -462,7 +1420,7 @@ internal protocol Beebium_KeyboardServiceAsyncProvider: CallHandlerProvider, Sen
   static var serviceDescriptor: GRPCServiceDescriptor { get }
   var interceptors: Beebium_KeyboardServiceServerInterceptorFactoryProtocol? { get }
 
-  /// Press/release by matrix position
+  /// Press/release by matrix position (momentary key events)
   func keyDown(
     request: Beebium_KeyRequest,
     context: GRPCAsyncServerCallContext
@@ -473,17 +1431,91 @@ internal protocol Beebium_KeyboardServiceAsyncProvider: CallHandlerProvider, Sen
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_KeyResponse
 
-  /// Type a string (auto press/release with timing)
-  func typeText(
-    request: Beebium_TypeTextRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_TypeTextResponse
-
   /// Query current pressed keys
   func getState(
     request: Beebium_GetStateRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_KeyboardState
+
+  /// Raw byte access to all 8 links
+  func setLinks(
+    request: Beebium_SetLinksRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetLinksResponse
+
+  func getLinks(
+    request: Beebium_GetLinksRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_LinksState
+
+  /// Semantic accessors for specific link groups
+  func setStartupScreenMode(
+    request: Beebium_SetStartupScreenModeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetStartupScreenModeResponse
+
+  func getStartupScreenMode(
+    request: Beebium_GetStartupScreenModeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_StartupScreenModeState
+
+  func setStartupAutoBoot(
+    request: Beebium_SetStartupAutoBootRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetStartupAutoBootResponse
+
+  func getStartupAutoBoot(
+    request: Beebium_GetStartupAutoBootRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_StartupAutoBootState
+
+  /// Hold Break key (halt CPU)
+  func breakDown(
+    request: Beebium_BreakDownRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_BreakDownResponse
+
+  /// Release Break key (begin soft reset)
+  func breakUp(
+    request: Beebium_BreakUpRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_BreakUpResponse
+
+  /// Query Break key state
+  func getBreakState(
+    request: Beebium_GetBreakStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_BreakKeyState
+
+  /// Enqueue text to type at machine speed (non-blocking)
+  func typeQuickly(
+    request: Beebium_TypeQuicklyRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_TypeQuicklyResponse
+
+  /// Query typing status
+  func getTypingStatus(
+    request: Beebium_GetTypingStatusRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_TypingStatus
+
+  /// Clear pending typing
+  func clearTyping(
+    request: Beebium_ClearTypingRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_ClearTypingResponse
+
+  /// Get mapping for a single character
+  func getKeyMapping(
+    request: Beebium_GetKeyMappingRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_KeyMappingEntry
+
+  /// Get complete mapping table (for client caching)
+  func getAllKeyMappings(
+    request: Beebium_GetAllKeyMappingsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_AllKeyMappingsResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -523,15 +1555,6 @@ extension Beebium_KeyboardServiceAsyncProvider {
         wrapping: { try await self.keyUp(request: $0, context: $1) }
       )
 
-    case "TypeText":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_TypeTextRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_TypeTextResponse>(),
-        interceptors: self.interceptors?.makeTypeTextInterceptors() ?? [],
-        wrapping: { try await self.typeText(request: $0, context: $1) }
-      )
-
     case "GetState":
       return GRPCAsyncServerHandler(
         context: context,
@@ -539,6 +1562,132 @@ extension Beebium_KeyboardServiceAsyncProvider {
         responseSerializer: ProtobufSerializer<Beebium_KeyboardState>(),
         interceptors: self.interceptors?.makeGetStateInterceptors() ?? [],
         wrapping: { try await self.getState(request: $0, context: $1) }
+      )
+
+    case "SetLinks":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetLinksRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetLinksResponse>(),
+        interceptors: self.interceptors?.makeSetLinksInterceptors() ?? [],
+        wrapping: { try await self.setLinks(request: $0, context: $1) }
+      )
+
+    case "GetLinks":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetLinksRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_LinksState>(),
+        interceptors: self.interceptors?.makeGetLinksInterceptors() ?? [],
+        wrapping: { try await self.getLinks(request: $0, context: $1) }
+      )
+
+    case "SetStartupScreenMode":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetStartupScreenModeRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetStartupScreenModeResponse>(),
+        interceptors: self.interceptors?.makeSetStartupScreenModeInterceptors() ?? [],
+        wrapping: { try await self.setStartupScreenMode(request: $0, context: $1) }
+      )
+
+    case "GetStartupScreenMode":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetStartupScreenModeRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_StartupScreenModeState>(),
+        interceptors: self.interceptors?.makeGetStartupScreenModeInterceptors() ?? [],
+        wrapping: { try await self.getStartupScreenMode(request: $0, context: $1) }
+      )
+
+    case "SetStartupAutoBoot":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetStartupAutoBootRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetStartupAutoBootResponse>(),
+        interceptors: self.interceptors?.makeSetStartupAutoBootInterceptors() ?? [],
+        wrapping: { try await self.setStartupAutoBoot(request: $0, context: $1) }
+      )
+
+    case "GetStartupAutoBoot":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetStartupAutoBootRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_StartupAutoBootState>(),
+        interceptors: self.interceptors?.makeGetStartupAutoBootInterceptors() ?? [],
+        wrapping: { try await self.getStartupAutoBoot(request: $0, context: $1) }
+      )
+
+    case "BreakDown":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_BreakDownRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakDownResponse>(),
+        interceptors: self.interceptors?.makeBreakDownInterceptors() ?? [],
+        wrapping: { try await self.breakDown(request: $0, context: $1) }
+      )
+
+    case "BreakUp":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_BreakUpRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakUpResponse>(),
+        interceptors: self.interceptors?.makeBreakUpInterceptors() ?? [],
+        wrapping: { try await self.breakUp(request: $0, context: $1) }
+      )
+
+    case "GetBreakState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetBreakStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_BreakKeyState>(),
+        interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? [],
+        wrapping: { try await self.getBreakState(request: $0, context: $1) }
+      )
+
+    case "TypeQuickly":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_TypeQuicklyRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_TypeQuicklyResponse>(),
+        interceptors: self.interceptors?.makeTypeQuicklyInterceptors() ?? [],
+        wrapping: { try await self.typeQuickly(request: $0, context: $1) }
+      )
+
+    case "GetTypingStatus":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetTypingStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_TypingStatus>(),
+        interceptors: self.interceptors?.makeGetTypingStatusInterceptors() ?? [],
+        wrapping: { try await self.getTypingStatus(request: $0, context: $1) }
+      )
+
+    case "ClearTyping":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ClearTypingRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ClearTypingResponse>(),
+        interceptors: self.interceptors?.makeClearTypingInterceptors() ?? [],
+        wrapping: { try await self.clearTyping(request: $0, context: $1) }
+      )
+
+    case "GetKeyMapping":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetKeyMappingRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_KeyMappingEntry>(),
+        interceptors: self.interceptors?.makeGetKeyMappingInterceptors() ?? [],
+        wrapping: { try await self.getKeyMapping(request: $0, context: $1) }
+      )
+
+    case "GetAllKeyMappings":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAllKeyMappingsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_AllKeyMappingsResponse>(),
+        interceptors: self.interceptors?.makeGetAllKeyMappingsInterceptors() ?? [],
+        wrapping: { try await self.getAllKeyMappings(request: $0, context: $1) }
       )
 
     default:
@@ -557,13 +1706,65 @@ internal protocol Beebium_KeyboardServiceServerInterceptorFactoryProtocol: Senda
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeKeyUpInterceptors() -> [ServerInterceptor<Beebium_KeyRequest, Beebium_KeyResponse>]
 
-  /// - Returns: Interceptors to use when handling 'typeText'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeTypeTextInterceptors() -> [ServerInterceptor<Beebium_TypeTextRequest, Beebium_TypeTextResponse>]
-
   /// - Returns: Interceptors to use when handling 'getState'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetStateInterceptors() -> [ServerInterceptor<Beebium_GetStateRequest, Beebium_KeyboardState>]
+
+  /// - Returns: Interceptors to use when handling 'setLinks'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetLinksInterceptors() -> [ServerInterceptor<Beebium_SetLinksRequest, Beebium_SetLinksResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getLinks'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetLinksInterceptors() -> [ServerInterceptor<Beebium_GetLinksRequest, Beebium_LinksState>]
+
+  /// - Returns: Interceptors to use when handling 'setStartupScreenMode'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetStartupScreenModeInterceptors() -> [ServerInterceptor<Beebium_SetStartupScreenModeRequest, Beebium_SetStartupScreenModeResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getStartupScreenMode'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetStartupScreenModeInterceptors() -> [ServerInterceptor<Beebium_GetStartupScreenModeRequest, Beebium_StartupScreenModeState>]
+
+  /// - Returns: Interceptors to use when handling 'setStartupAutoBoot'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetStartupAutoBootInterceptors() -> [ServerInterceptor<Beebium_SetStartupAutoBootRequest, Beebium_SetStartupAutoBootResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getStartupAutoBoot'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetStartupAutoBootInterceptors() -> [ServerInterceptor<Beebium_GetStartupAutoBootRequest, Beebium_StartupAutoBootState>]
+
+  /// - Returns: Interceptors to use when handling 'breakDown'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeBreakDownInterceptors() -> [ServerInterceptor<Beebium_BreakDownRequest, Beebium_BreakDownResponse>]
+
+  /// - Returns: Interceptors to use when handling 'breakUp'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeBreakUpInterceptors() -> [ServerInterceptor<Beebium_BreakUpRequest, Beebium_BreakUpResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getBreakState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetBreakStateInterceptors() -> [ServerInterceptor<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>]
+
+  /// - Returns: Interceptors to use when handling 'typeQuickly'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeTypeQuicklyInterceptors() -> [ServerInterceptor<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getTypingStatus'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetTypingStatusInterceptors() -> [ServerInterceptor<Beebium_GetTypingStatusRequest, Beebium_TypingStatus>]
+
+  /// - Returns: Interceptors to use when handling 'clearTyping'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeClearTypingInterceptors() -> [ServerInterceptor<Beebium_ClearTypingRequest, Beebium_ClearTypingResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getKeyMapping'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetKeyMappingInterceptors() -> [ServerInterceptor<Beebium_GetKeyMappingRequest, Beebium_KeyMappingEntry>]
+
+  /// - Returns: Interceptors to use when handling 'getAllKeyMappings'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetAllKeyMappingsInterceptors() -> [ServerInterceptor<Beebium_GetAllKeyMappingsRequest, Beebium_AllKeyMappingsResponse>]
 }
 
 internal enum Beebium_KeyboardServiceServerMetadata {
@@ -573,8 +1774,21 @@ internal enum Beebium_KeyboardServiceServerMetadata {
     methods: [
       Beebium_KeyboardServiceServerMetadata.Methods.keyDown,
       Beebium_KeyboardServiceServerMetadata.Methods.keyUp,
-      Beebium_KeyboardServiceServerMetadata.Methods.typeText,
       Beebium_KeyboardServiceServerMetadata.Methods.getState,
+      Beebium_KeyboardServiceServerMetadata.Methods.setLinks,
+      Beebium_KeyboardServiceServerMetadata.Methods.getLinks,
+      Beebium_KeyboardServiceServerMetadata.Methods.setStartupScreenMode,
+      Beebium_KeyboardServiceServerMetadata.Methods.getStartupScreenMode,
+      Beebium_KeyboardServiceServerMetadata.Methods.setStartupAutoBoot,
+      Beebium_KeyboardServiceServerMetadata.Methods.getStartupAutoBoot,
+      Beebium_KeyboardServiceServerMetadata.Methods.breakDown,
+      Beebium_KeyboardServiceServerMetadata.Methods.breakUp,
+      Beebium_KeyboardServiceServerMetadata.Methods.getBreakState,
+      Beebium_KeyboardServiceServerMetadata.Methods.typeQuickly,
+      Beebium_KeyboardServiceServerMetadata.Methods.getTypingStatus,
+      Beebium_KeyboardServiceServerMetadata.Methods.clearTyping,
+      Beebium_KeyboardServiceServerMetadata.Methods.getKeyMapping,
+      Beebium_KeyboardServiceServerMetadata.Methods.getAllKeyMappings,
     ]
   )
 
@@ -591,15 +1805,93 @@ internal enum Beebium_KeyboardServiceServerMetadata {
       type: GRPCCallType.unary
     )
 
-    internal static let typeText = GRPCMethodDescriptor(
-      name: "TypeText",
-      path: "/beebium.KeyboardService/TypeText",
-      type: GRPCCallType.unary
-    )
-
     internal static let getState = GRPCMethodDescriptor(
       name: "GetState",
       path: "/beebium.KeyboardService/GetState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setLinks = GRPCMethodDescriptor(
+      name: "SetLinks",
+      path: "/beebium.KeyboardService/SetLinks",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getLinks = GRPCMethodDescriptor(
+      name: "GetLinks",
+      path: "/beebium.KeyboardService/GetLinks",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setStartupScreenMode = GRPCMethodDescriptor(
+      name: "SetStartupScreenMode",
+      path: "/beebium.KeyboardService/SetStartupScreenMode",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getStartupScreenMode = GRPCMethodDescriptor(
+      name: "GetStartupScreenMode",
+      path: "/beebium.KeyboardService/GetStartupScreenMode",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setStartupAutoBoot = GRPCMethodDescriptor(
+      name: "SetStartupAutoBoot",
+      path: "/beebium.KeyboardService/SetStartupAutoBoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getStartupAutoBoot = GRPCMethodDescriptor(
+      name: "GetStartupAutoBoot",
+      path: "/beebium.KeyboardService/GetStartupAutoBoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let breakDown = GRPCMethodDescriptor(
+      name: "BreakDown",
+      path: "/beebium.KeyboardService/BreakDown",
+      type: GRPCCallType.unary
+    )
+
+    internal static let breakUp = GRPCMethodDescriptor(
+      name: "BreakUp",
+      path: "/beebium.KeyboardService/BreakUp",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getBreakState = GRPCMethodDescriptor(
+      name: "GetBreakState",
+      path: "/beebium.KeyboardService/GetBreakState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let typeQuickly = GRPCMethodDescriptor(
+      name: "TypeQuickly",
+      path: "/beebium.KeyboardService/TypeQuickly",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getTypingStatus = GRPCMethodDescriptor(
+      name: "GetTypingStatus",
+      path: "/beebium.KeyboardService/GetTypingStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearTyping = GRPCMethodDescriptor(
+      name: "ClearTyping",
+      path: "/beebium.KeyboardService/ClearTyping",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getKeyMapping = GRPCMethodDescriptor(
+      name: "GetKeyMapping",
+      path: "/beebium.KeyboardService/GetKeyMapping",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAllKeyMappings = GRPCMethodDescriptor(
+      name: "GetAllKeyMappings",
+      path: "/beebium.KeyboardService/GetAllKeyMappings",
       type: GRPCCallType.unary
     )
   }

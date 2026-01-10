@@ -16,6 +16,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var videoClient = VideoClient()
     @StateObject private var keyboardClient = KeyboardClient()
+    @StateObject private var keyboardMappingManager = KeyboardMappingManager()
     @StateObject private var systemClient = SystemClient()
     @StateObject private var indicatorClient = IndicatorClient()
     @StateObject private var discClient = DiscClient()
@@ -62,6 +63,8 @@ struct ContentView: View {
         .navigationTitle("Beebium")
         .animation(.default, value: showSidebar)
         .onAppear {
+            // Wire up keyboard client to mapping manager
+            keyboardClient.mappingManager = keyboardMappingManager
             videoClient.connect()
         }
         .onDisappear {
@@ -78,6 +81,11 @@ struct ContentView: View {
                 systemClient.connect(channel: channel)
                 indicatorClient.connect(channel: channel)
                 discClient.connect(channel: channel)
+
+                // Load keyboard mappings from core
+                Task {
+                    await keyboardClient.loadKeyMappings()
+                }
             } else if case .disconnected = newState {
                 discClient.disconnect()
                 indicatorClient.disconnect()

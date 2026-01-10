@@ -14,31 +14,43 @@ import Foundation
 import GRPC
 import NIO
 
-/// Position in the BBC keyboard matrix
-struct BBCKeyPosition: Hashable {
-    let row: Int
-    let column: Int
+/// BBC keyboard internal key numbers for modifier keys
+private enum BBCModifierKey {
+    static let shift: UInt8 = 0x00  // Row 0, Column 0
+    static let ctrl: UInt8 = 0x01   // Row 0, Column 1
+}
+
+/// Tracks a pressed key and its synthetic modifier state
+private struct PressedKeyState {
+    let ikNumber: UInt8
+    let syntheticShift: Bool
+    let syntheticCtrl: Bool
+    let isBreak: Bool
 }
 
 /// Client for sending keyboard input to beebium-server via gRPC.
 ///
-/// This client handles the logical mapping from characters to BBC keyboard
-/// matrix positions, including automatic Shift key handling for uppercase
-/// letters and shifted symbols.
+/// This client uses the keyboard mapping system to resolve host key inputs
+/// to BBC keyboard matrix positions, including automatic handling of
+/// synthetic Shift and Ctrl keys.
 @MainActor
 final class KeyboardClient: ObservableObject {
 
     private var channel: GRPCChannel?
     private var client: Beebium_KeyboardServiceClient?
 
-    /// Track which keys are currently pressed (for proper release)
-    private var pressedKeys: Set<BBCKeyPosition> = []
+    /// The keyboard mapping manager (provides cache and active mapping)
+    weak var mappingManager: KeyboardMappingManager?
 
-    /// Track characters that triggered a shift press (for proper shift release)
-    private var shiftedCharacters: Set<Character> = []
+    /// Track pressed keys by their keyCode (for proper release matching)
+    /// Maps keyCode to the state of the pressed key
+    private var pressedKeys: [UInt16: PressedKeyState] = [:]
 
-    /// Debug logging
-    private var keyEventCount: UInt64 = 0
+    /// Count of keys currently holding synthetic Shift
+    private var syntheticShiftCount: Int = 0
+
+    /// Count of keys currently holding synthetic Ctrl
+    private var syntheticCtrlCount: Int = 0
 
     /// Connect to the keyboard service using an existing channel
     /// - Parameter channel: The gRPC channel (shared with VideoClient)
@@ -46,107 +58,162 @@ final class KeyboardClient: ObservableObject {
         self.channel = channel
         self.client = Beebium_KeyboardServiceClient(channel: channel)
         pressedKeys.removeAll()
-        shiftedCharacters.removeAll()
+        syntheticShiftCount = 0
+        syntheticCtrlCount = 0
         print("[KeyboardClient] Connected to keyboard service")
     }
 
     /// Disconnect from the server
     func disconnect() {
         // Release all pressed keys
-        for position in pressedKeys {
+        for (_, state) in pressedKeys {
             Task {
-                await sendKeyUp(row: position.row, column: position.column)
+                await sendKeyUp(ikNumber: state.ikNumber)
             }
         }
+
+        // Release synthetic modifiers
+        if syntheticShiftCount > 0 {
+            Task {
+                await sendKeyUp(ikNumber: BBCModifierKey.shift)
+            }
+        }
+        if syntheticCtrlCount > 0 {
+            Task {
+                await sendKeyUp(ikNumber: BBCModifierKey.ctrl)
+            }
+        }
+
         pressedKeys.removeAll()
-        shiftedCharacters.removeAll()
+        syntheticShiftCount = 0
+        syntheticCtrlCount = 0
 
         client = nil
         channel = nil
     }
 
-    /// Handle a key down event for a character
-    /// - Parameter character: The character that was typed
-    func keyDown(character: Character) {
-        guard let bbcKey = KeyboardMapper.characterToMatrix(character) else {
-            // Character not mapped - ignore
+    /// Fetch the keyboard mappings from the core and populate the cache
+    func loadKeyMappings() async {
+        guard let client = client else {
+            print("[KeyboardClient] loadKeyMappings: no client!")
             return
         }
 
-        let position = BBCKeyPosition(row: bbcKey.row, column: bbcKey.column)
-
-        // Don't send duplicate key down events
-        if pressedKeys.contains(position) {
-            return
-        }
-
-        keyEventCount += 1
-        print("[KeyboardClient] keyDown '\(character)' → row=\(bbcKey.row) col=\(bbcKey.column) shift=\(bbcKey.needsShift)")
-
-        // Track pressed state SYNCHRONOUSLY before async work
-        // This prevents race condition where keyUp arrives before Task completes
-        pressedKeys.insert(position)
-        if bbcKey.needsShift {
-            shiftedCharacters.insert(character)
-        }
-
-        Task {
-            // If this character needs Shift, press Shift first
-            if bbcKey.needsShift {
-                await sendKeyDown(row: BBCKey.shift.row, column: BBCKey.shift.column)
-            }
-
-            // Press the actual key
-            await sendKeyDown(row: bbcKey.row, column: bbcKey.column)
+        do {
+            let request = Beebium_GetAllKeyMappingsRequest()
+            let response = try await client.getAllKeyMappings(request).response.get()
+            mappingManager?.loadCache(from: response)
+            print("[KeyboardClient] Loaded \(response.mappings.count) key mappings from core")
+        } catch {
+            print("[KeyboardClient] Failed to load key mappings: \(error)")
         }
     }
 
-    /// Handle a key up event for a character
-    /// - Parameter character: The character that was released
-    func keyUp(character: Character) {
-        guard let bbcKey = KeyboardMapper.characterToMatrix(character) else {
-            // Character not mapped - ignore
+    /// Handle a key down event
+    /// - Parameter input: The key input event
+    func keyDown(input: KeyInput) {
+        guard let manager = mappingManager,
+              let mapping = manager.activeMapping,
+              manager.isCacheLoaded else {
+            print("[KeyboardClient] keyDown: mapping not ready")
             return
         }
 
-        let position = BBCKeyPosition(row: bbcKey.row, column: bbcKey.column)
-
-        // Only release if we think it's pressed
-        guard pressedKeys.contains(position) else {
-            print("[KeyboardClient] keyUp '\(character)' ignored - not in pressedKeys")
+        // Resolve the input using the active mapping
+        guard let resolved = mapping.resolve(input, cache: manager.bbcKeyCache) else {
+            // Key not mapped - ignore
             return
         }
 
-        print("[KeyboardClient] keyUp '\(character)' → row=\(bbcKey.row) col=\(bbcKey.column)")
+        // Check if already pressed (by keyCode)
+        if pressedKeys[input.keyCode] != nil {
+            return
+        }
 
-        // Track released state SYNCHRONOUSLY before async work
-        pressedKeys.remove(position)
-        let needsShiftRelease = shiftedCharacters.contains(character)
-        if needsShiftRelease {
-            shiftedCharacters.remove(character)
+        // Track this key press
+        let state = PressedKeyState(
+            ikNumber: resolved.ikNumber,
+            syntheticShift: resolved.bbcShift,
+            syntheticCtrl: resolved.bbcCtrl,
+            isBreak: resolved.isBreak
+        )
+        pressedKeys[input.keyCode] = state
+
+        Task {
+            // Break key is handled specially - not part of keyboard matrix
+            if resolved.isBreak {
+                await sendBreakDown()
+                return
+            }
+
+            // Press synthetic Shift if needed
+            if resolved.bbcShift {
+                if syntheticShiftCount == 0 {
+                    await sendKeyDown(ikNumber: BBCModifierKey.shift)
+                }
+                syntheticShiftCount += 1
+            }
+
+            // Press synthetic Ctrl if needed
+            if resolved.bbcCtrl {
+                if syntheticCtrlCount == 0 {
+                    await sendKeyDown(ikNumber: BBCModifierKey.ctrl)
+                }
+                syntheticCtrlCount += 1
+            }
+
+            // Press the actual key
+            await sendKeyDown(ikNumber: resolved.ikNumber)
+        }
+    }
+
+    /// Handle a key up event
+    /// - Parameter input: The key input event
+    func keyUp(input: KeyInput) {
+        // Look up the state from when this key was pressed
+        guard let state = pressedKeys.removeValue(forKey: input.keyCode) else {
+            // Key wasn't tracked as pressed
+            return
         }
 
         Task {
-            // Release the key
-            await sendKeyUp(row: bbcKey.row, column: bbcKey.column)
+            // Break key is handled specially - not part of keyboard matrix
+            if state.isBreak {
+                await sendBreakUp()
+                return
+            }
 
-            // If we pressed Shift for this character, release it
-            if needsShiftRelease && shiftedCharacters.isEmpty {
-                await sendKeyUp(row: BBCKey.shift.row, column: BBCKey.shift.column)
+            // Release the key
+            await sendKeyUp(ikNumber: state.ikNumber)
+
+            // Release synthetic Shift if this key was holding it
+            if state.syntheticShift {
+                syntheticShiftCount -= 1
+                if syntheticShiftCount == 0 {
+                    await sendKeyUp(ikNumber: BBCModifierKey.shift)
+                }
+            }
+
+            // Release synthetic Ctrl if this key was holding it
+            if state.syntheticCtrl {
+                syntheticCtrlCount -= 1
+                if syntheticCtrlCount == 0 {
+                    await sendKeyUp(ikNumber: BBCModifierKey.ctrl)
+                }
             }
         }
     }
 
     // MARK: - Private gRPC Methods
 
-    private func sendKeyDown(row: Int, column: Int) async {
+    private func sendKeyDown(ikNumber: UInt8) async {
         guard let client = client else {
             print("[KeyboardClient] sendKeyDown: no client!")
             return
         }
 
         var request = Beebium_KeyRequest()
-        request.ikNumber = UInt32((row << 4) | column)
+        request.ikNumber = UInt32(ikNumber)
 
         do {
             _ = try await client.keyDown(request).response.get()
@@ -155,19 +222,49 @@ final class KeyboardClient: ObservableObject {
         }
     }
 
-    private func sendKeyUp(row: Int, column: Int) async {
+    private func sendKeyUp(ikNumber: UInt8) async {
         guard let client = client else {
             print("[KeyboardClient] sendKeyUp: no client!")
             return
         }
 
         var request = Beebium_KeyRequest()
-        request.ikNumber = UInt32((row << 4) | column)
+        request.ikNumber = UInt32(ikNumber)
 
         do {
             _ = try await client.keyUp(request).response.get()
         } catch {
             print("[KeyboardClient] sendKeyUp gRPC error: \(error)")
+        }
+    }
+
+    private func sendBreakDown() async {
+        guard let client = client else {
+            print("[KeyboardClient] sendBreakDown: no client!")
+            return
+        }
+
+        let request = Beebium_BreakDownRequest()
+
+        do {
+            _ = try await client.breakDown(request).response.get()
+        } catch {
+            print("[KeyboardClient] sendBreakDown gRPC error: \(error)")
+        }
+    }
+
+    private func sendBreakUp() async {
+        guard let client = client else {
+            print("[KeyboardClient] sendBreakUp: no client!")
+            return
+        }
+
+        let request = Beebium_BreakUpRequest()
+
+        do {
+            _ = try await client.breakUp(request).response.get()
+        } catch {
+            print("[KeyboardClient] sendBreakUp gRPC error: \(error)")
         }
     }
 }
