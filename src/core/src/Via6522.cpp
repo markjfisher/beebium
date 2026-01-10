@@ -102,15 +102,34 @@ uint8_t Via6522::read(uint16_t offset) {
     case REG_DDRA:
         return state_.port_a.ddr;
 
-    case REG_T1CL:  // Timer 1 Counter Low
+    case REG_T1CL: {  // Timer 1 Counter Low
         // Don't acknowledge IRQ if T1 just timed out this cycle
         if (!state_.t1_timeout) {
             state_.ifr.bits.t1 = 0;
         }
-        return static_cast<uint8_t>(state_.t1);
+        // For 1MHz pre-ticked reads, the counter is already at the correct value.
+        // For normal reads, predict the post-decrement value.
+        uint16_t value;
+        if (skip_timer_prediction_) {
+            value = state_.t1;
+            skip_timer_prediction_ = false;
+        } else {
+            value = effective_t1();
+        }
+        return static_cast<uint8_t>(value);
+    }
 
-    case REG_T1CH:  // Timer 1 Counter High
-        return static_cast<uint8_t>(state_.t1 >> 8);
+    case REG_T1CH: {  // Timer 1 Counter High
+        // For 1MHz pre-ticked reads, the counter is already at the correct value.
+        uint16_t value;
+        if (skip_timer_prediction_) {
+            value = state_.t1;
+            skip_timer_prediction_ = false;
+        } else {
+            value = effective_t1();
+        }
+        return static_cast<uint8_t>(value >> 8);
+    }
 
     case REG_T1LL:  // Timer 1 Latch Low
         return state_.t1ll;
@@ -118,14 +137,31 @@ uint8_t Via6522::read(uint16_t offset) {
     case REG_T1LH:  // Timer 1 Latch High
         return state_.t1lh;
 
-    case REG_T2CL:  // Timer 2 Counter Low
+    case REG_T2CL: {  // Timer 2 Counter Low
         if (!state_.t2_timeout) {
             state_.ifr.bits.t2 = 0;
         }
-        return static_cast<uint8_t>(state_.t2);
+        // For 1MHz pre-ticked reads, the counter is already at the correct value.
+        uint16_t value;
+        if (skip_timer_prediction_) {
+            value = state_.t2;
+            skip_timer_prediction_ = false;
+        } else {
+            value = effective_t2();
+        }
+        return static_cast<uint8_t>(value);
+    }
 
-    case REG_T2CH:  // Timer 2 Counter High
-        return static_cast<uint8_t>(state_.t2 >> 8);
+    case REG_T2CH: {  // Timer 2 Counter High
+        uint16_t value;
+        if (skip_timer_prediction_) {
+            value = state_.t2;
+            skip_timer_prediction_ = false;
+        } else {
+            value = effective_t2();
+        }
+        return static_cast<uint8_t>(value >> 8);
+    }
 
     case REG_SR:  // Shift Register
         return state_.sr;
@@ -138,8 +174,16 @@ uint8_t Via6522::read(uint16_t offset) {
 
     case REG_IFR: {  // Interrupt Flag Register
         uint8_t value = state_.ifr.value & 0x7F;
+        // Predict pending T1 timeout (counter will wrap to 0xFFFF this cycle)
+        if (state_.t1_pending && !state_.t1_reload && state_.t1 == 0) {
+            value |= static_cast<uint8_t>(ViaIrqMask::T1);
+        }
+        // Predict pending T2 timeout
+        if (state_.t2_pending && !state_.t2_reload && state_.t2_count && state_.t2 == 0) {
+            value |= static_cast<uint8_t>(ViaIrqMask::T2);
+        }
         // Set bit 7 if any enabled interrupt is pending
-        if (state_.ier.value & state_.ifr.value & 0x7F) {
+        if (state_.ier.value & value & 0x7F) {
             value |= 0x80;
         }
         return value;
@@ -228,6 +272,10 @@ void Via6522::write(uint16_t offset, uint8_t value) {
             state_.ifr.bits.t1 = 0;
         }
         state_.t1lh = value;
+        // Write to T1C-H schedules counter reload on next trailing edge.
+        // The reload flag also prevents decrement on that edge, matching
+        // the 6522 behavior where the counter loads then starts counting
+        // from the next clock edge.
         state_.t1_pending = true;
         state_.t1_reload = true;
         state_.t1_started = true;  // Mark that a new timer was manually started
@@ -250,6 +298,8 @@ void Via6522::write(uint16_t offset, uint8_t value) {
             state_.ifr.bits.t2 = 0;
         }
         state_.t2lh = value;
+        // Write to T2C-H schedules counter reload on next trailing edge.
+        // The reload flag also prevents decrement on that edge.
         state_.t2_pending = true;
         state_.t2_reload = true;
         // In clock mode, counting starts immediately. In pulse mode,
@@ -302,6 +352,7 @@ uint8_t Via6522::update_phi2_leading_edge() {
         if (!state_.t1_started) {
             state_.t1_pending = state_.acr.bits.t1_continuous;
         }
+        // Set IFR flag (may have been cleared between trailing and leading edge)
         state_.ifr.bits.t1 = 1;
         state_.t1_pb7 ^= 0x80;  // Toggle PB7 output
     }
@@ -312,6 +363,7 @@ uint8_t Via6522::update_phi2_leading_edge() {
     // Handle T2 timeout
     if (state_.t2_timeout) {
         state_.t2_pending = false;
+        // Set IFR flag (may have been cleared between trailing and leading edge)
         state_.ifr.bits.t2 = 1;
     }
 
@@ -357,6 +409,10 @@ uint8_t Via6522::update_phi2_trailing_edge() {
         --state_.t1;
         state_.t1_reload = (state_.t1 == 0xFFFF);
         state_.t1_timeout = state_.t1_pending && state_.t1_reload;
+        // Set IFR flag immediately on timeout (CPU reads see it this cycle)
+        if (state_.t1_timeout) {
+            state_.ifr.bits.t1 = 1;
+        }
     }
 
     // Timer 2
@@ -370,6 +426,10 @@ uint8_t Via6522::update_phi2_trailing_edge() {
         if (state_.t2_count) {
             --state_.t2;
             state_.t2_timeout = state_.t2_pending && (state_.t2 == 0xFFFF);
+            // Set IFR flag immediately on timeout (CPU reads see it this cycle)
+            if (state_.t2_timeout) {
+                state_.ifr.bits.t2 = 1;
+            }
         }
     }
 
@@ -564,6 +624,41 @@ uint8_t Via6522::peek(uint16_t offset) const {
 
     default:
         return 0xFF;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Effective counter values (post-trailing-edge prediction)
+//////////////////////////////////////////////////////////////////////////////
+
+uint16_t Via6522::effective_t1() const {
+    // Compute what T1 counter WILL BE at end of this cycle's trailing edge.
+    // This matches real hardware where CPU read during PHI2 high sees the
+    // result of the pending VIA operations at PHI2 falling edge.
+
+    if (state_.t1_reload) {
+        // If reload flag is set, counter will be loaded from latch
+        return static_cast<uint16_t>(state_.t1ll) |
+               (static_cast<uint16_t>(state_.t1lh) << 8);
+    } else {
+        // Counter will decrement
+        return state_.t1 - 1;  // Note: wraps to 0xFFFF if counter is 0
+    }
+}
+
+uint16_t Via6522::effective_t2() const {
+    // Compute what T2 counter WILL BE at end of this cycle's trailing edge.
+
+    if (state_.t2_reload) {
+        // If reload flag is set, counter will be loaded from latch
+        return static_cast<uint16_t>(state_.t2ll) |
+               (static_cast<uint16_t>(state_.t2lh) << 8);
+    } else if (state_.t2_count) {
+        // In clock mode, counter will decrement
+        return state_.t2 - 1;  // Note: wraps to 0xFFFF if counter is 0
+    } else {
+        // In pulse counting mode but not counting, counter unchanged
+        return state_.t2;
     }
 }
 

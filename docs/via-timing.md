@@ -186,6 +186,46 @@ if (state_.t1_timeout) {
 }
 ```
 
+## 1MHz Bus Stretching
+
+The VIA operates at 1MHz while the CPU runs at 2MHz. When the CPU accesses a VIA register, the bus controller inserts wait cycles to synchronize with the VIA's slower clock. This affects the timing relationship between CPU reads/writes and VIA counter values.
+
+### How It Affects VIA Timing
+
+Consider a sequence of VIA accesses:
+
+```
+Instruction 1: STA $FE6B    ; Write to ACR (1MHz access)
+Instruction 2: LDA $FE64    ; Read T1CL (1MHz access)
+```
+
+Without bus stretching, these would execute with normal instruction timing. With stretching:
+
+1. Each VIA access adds 1-2 extra cycles (depending on phase alignment)
+2. During the extra cycles, the VIA timer continues to decrement
+3. The CPU read sees the timer value after synchronization completes
+
+### Pre-Tick Model
+
+Beebium implements "Option B" bus stretching:
+
+1. CPU executes until the memory access cycle
+2. Before the VIA read/write completes, the VIA is pre-ticked for the stretch duration
+3. The memory operation then completes, with the CPU seeing the post-synchronization state
+4. Timer counter reads use raw values (skip the normal end-of-cycle prediction)
+
+This ensures that `LDA $FE64` returns the timer value that would be present after the 1MHz bus synchronization, matching real hardware.
+
+### Impact on Timer Reads
+
+When reading T1CL or T2CL during a stretched access:
+
+- The timer decrements during the stretch cycles
+- The value returned reflects the post-stretch counter state
+- The `skip_next_timer_prediction()` mechanism prevents double-counting
+
+See [Clock Architecture](clock-architecture.md#1mhz-bus-stretching) for the full timing model.
+
 ## System Integration
 
 ### BBC Micro Memory Map
@@ -241,5 +281,10 @@ Our test suite validates these behaviors:
 ## References
 
 - [Stardot Forum: VIA Emulation Quality](https://stardot.org.uk/forums/viewtopic.php?t=16138)
+- [jsbeeb VIA Tests](https://github.com/mattgodbolt/jsbeeb/blob/master/tests/integration/via.js) - Hardware-validated timing tests by @scarybeasts
 - MOS 6522 Versatile Interface Adapter Datasheet
 - BBC Microcomputer Service Manual
+
+## See Also
+
+- [Clock Architecture](clock-architecture.md) - Overall timing model including 1MHz bus stretching
