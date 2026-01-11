@@ -171,6 +171,7 @@ static constexpr std::array kMappingTable = {
     KeyMapping{'@', 0x47, false, "@"},
     KeyMapping{'\\', 0x78, false, "\\"},
     KeyMapping{'_', 0x28, false, "_"},
+    KeyMapping{0x00A3, 0x28, true, "£"},  // Unicode pound sterling (U+00A3)
 
     // Shifted punctuation
     KeyMapping{'<', 0x66, true, "<"},
