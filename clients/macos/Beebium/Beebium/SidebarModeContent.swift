@@ -13,6 +13,24 @@
 import AppKit
 import SwiftUI
 
+/// Header showing mode icon and title at top of sidebar content
+private struct SidebarHeader: View {
+    let mode: SidebarMode
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: mode.icon)
+                .font(.system(size: 18))
+                .foregroundColor(.secondary)
+            Text(mode.label)
+                .font(.headline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
 /// Container view that displays content for the selected sidebar mode
 struct SidebarModeContent: View {
     let mode: SidebarMode
@@ -20,23 +38,27 @@ struct SidebarModeContent: View {
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
 
     var body: some View {
-        switch mode {
-        case .storage:
-            StorageModeView(discClient: discClient)
-        case .memory:
-            MemoryModeView()
-        case .peripherals:
-            PeripheralsModeView()
-        case .video:
-            VideoModeView()
-        case .sound:
-            SoundModeView()
-        case .keyboard:
-            KeyboardModeView(mappingManager: keyboardMappingManager)
-        case .coprocessor:
-            CoprocessorModeView()
-        case .network:
-            NetworkModeView()
+        VStack(spacing: 0) {
+            SidebarHeader(mode: mode)
+
+            switch mode {
+            case .storage:
+                StorageModeView(discClient: discClient)
+            case .memory:
+                MemoryModeView()
+            case .peripherals:
+                PeripheralsModeView()
+            case .video:
+                VideoModeView()
+            case .sound:
+                SoundModeView()
+            case .keyboard:
+                KeyboardModeView(mappingManager: keyboardMappingManager)
+            case .coprocessor:
+                CoprocessorModeView()
+            case .network:
+                NetworkModeView()
+            }
         }
     }
 }
@@ -84,52 +106,43 @@ struct KeyboardModeView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Heading
-            Text("Keyboard Mappings")
-                .font(.headline)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+        List {
+            Section {
+                ForEach(builtInMappings) { mapping in
+                    MappingRowView(
+                        mapping: mapping,
+                        isActive: mapping.id == mappingManager.activeMapping?.id,
+                        onSelect: { selectMapping(mapping) }
+                    )
+                }
+            } header: {
+                Text("Beebium")
+            }
 
-            // Mapping list
-            List {
+            if !userMappings.isEmpty {
                 Section {
-                    ForEach(builtInMappings) { mapping in
+                    ForEach(userMappings) { mapping in
                         MappingRowView(
                             mapping: mapping,
                             isActive: mapping.id == mappingManager.activeMapping?.id,
                             onSelect: { selectMapping(mapping) }
                         )
-                    }
-                } header: {
-                    Text("Beebium")
-                }
-
-                if !userMappings.isEmpty {
-                    Section {
-                        ForEach(userMappings) { mapping in
-                            MappingRowView(
-                                mapping: mapping,
-                                isActive: mapping.id == mappingManager.activeMapping?.id,
-                                onSelect: { selectMapping(mapping) }
-                            )
-                            .contextMenu {
-                                if let url = mappingManager.fileURL(for: mapping) {
-                                    Button {
-                                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                                    } label: {
-                                        Label("Reveal in Finder", systemImage: "folder")
-                                    }
+                        .contextMenu {
+                            if let url = mappingManager.fileURL(for: mapping) {
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                } label: {
+                                    Label("Reveal in Finder", systemImage: "folder")
                                 }
                             }
                         }
-                    } header: {
-                        Text("Custom")
                     }
+                } header: {
+                    Text("Custom")
                 }
             }
-            .listStyle(.sidebar)
         }
+        .listStyle(.sidebar)
     }
 
     private func selectMapping(_ mapping: KeyboardMapping) {
@@ -177,20 +190,15 @@ struct NetworkModeView: View {
 
 // MARK: - Common Placeholder
 
-/// Generic placeholder view showing mode icon and name
+/// Generic placeholder view for unimplemented modes
 private struct ModePlaceholder: View {
     let mode: SidebarMode
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: mode.icon)
-                .font(.system(size: 32))
-                .foregroundColor(.secondary)
-            Text(mode.label)
-                .font(.headline)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Text("Coming soon")
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
