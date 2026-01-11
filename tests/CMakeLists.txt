@@ -211,6 +211,14 @@ target_compile_definitions(test_keyboard_typing PRIVATE
 )
 catch_discover_tests(test_keyboard_typing)
 
+# Keyboard lock keys tests (Caps Lock and Shift Lock)
+add_executable(test_keyboard_lock_keys test_keyboard_lock_keys.cpp)
+target_link_libraries(test_keyboard_lock_keys PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_keyboard_lock_keys PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_keyboard_lock_keys)
+
 # Indicator filter tests
 add_executable(test_indicator_filter test_indicator_filter.cpp)
 target_link_libraries(test_indicator_filter PRIVATE beebium_core Catch2::Catch2WithMain)

@@ -226,6 +226,109 @@ void type_basic_program(MachineType& machine, FrameRenderer& renderer,
     }
 }
 
+// ============================================================================
+// Lock Key Support (Caps Lock and Shift Lock)
+// ============================================================================
+
+// Lock key positions on BBC keyboard
+constexpr uint8_t CAPS_LOCK_ROW = 4;
+constexpr uint8_t CAPS_LOCK_COL = 0;
+constexpr uint8_t SHIFT_LOCK_ROW = 5;
+constexpr uint8_t SHIFT_LOCK_COL = 0;
+
+// CTRL key position (row 0, col 1)
+constexpr uint8_t CTRL_ROW = 0;
+constexpr uint8_t CTRL_COL = 1;
+
+// Press and release a lock key (simulates full key press cycle).
+// This triggers the MOS to toggle the lock state and LED.
+template<typename MachineType>
+void toggle_lock_key(MachineType& machine, FrameRenderer& renderer,
+                     uint8_t row, uint8_t col, int cycles = 100000) {
+    // Press the key
+    machine.state().memory.system_via_peripheral.key_down(row, col);
+
+    // Run cycles while key is held
+    for (int i = 0; i < cycles / 2; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Release the key
+    machine.state().memory.system_via_peripheral.key_up(row, col);
+
+    // Run cycles after release
+    for (int i = 0; i < cycles / 2; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+}
+
+// Convenience wrappers for toggling specific lock keys
+template<typename MachineType>
+void toggle_caps_lock(MachineType& machine, FrameRenderer& renderer, int cycles = 100000) {
+    toggle_lock_key(machine, renderer, CAPS_LOCK_ROW, CAPS_LOCK_COL, cycles);
+}
+
+template<typename MachineType>
+void toggle_shift_lock(MachineType& machine, FrameRenderer& renderer, int cycles = 100000) {
+    toggle_lock_key(machine, renderer, SHIFT_LOCK_ROW, SHIFT_LOCK_COL, cycles);
+}
+
+// Get current LED states from the addressable latch
+template<typename MachineType>
+bool caps_lock_led_on(MachineType& machine) {
+    return machine.memory().addressable_latch.caps_lock_led();
+}
+
+template<typename MachineType>
+bool shift_lock_led_on(MachineType& machine) {
+    return machine.memory().addressable_latch.shift_lock_led();
+}
+
+// Type a raw key by row/column (without ascii mapping).
+// Useful for keys that don't have ASCII representation.
+template<typename MachineType>
+void type_raw_key(MachineType& machine, FrameRenderer& renderer,
+                  uint8_t row, uint8_t col, int cycles = 100000) {
+    // Press the key
+    machine.state().memory.system_via_peripheral.key_down(row, col);
+
+    // Run cycles while key is held
+    for (int i = 0; i < cycles / 2; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    // Release the key
+    machine.state().memory.system_via_peripheral.key_up(row, col);
+
+    // Run cycles after release
+    for (int i = 0; i < cycles / 2; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+}
+
+// Run machine for specified number of cycles (without typing)
+template<typename MachineType>
+void run_cycles(MachineType& machine, FrameRenderer& renderer, int num_cycles) {
+    for (int i = 0; i < num_cycles; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+}
+
 } // namespace beebium::test
 
 #endif // BEEBIUM_TEST_KEYBOARD_HELPERS_HPP

@@ -136,9 +136,76 @@ rpc SetStartupOptions(SetStartupOptionsRequest) returns (SetStartupOptionsRespon
 rpc GetStartupOptions(GetStartupOptionsRequest) returns (StartupOptions);
 ```
 
+## Caps Lock Synchronization (macOS)
+
+### The Problem
+
+macOS and the BBC Micro handle Caps Lock fundamentally differently:
+
+| Aspect | macOS | BBC Micro |
+|--------|-------|-----------|
+| **Key type** | Toggle (persistent LED state) | Momentary key (matrix row 4, col 0) |
+| **Event delivery** | `flagsChanged` modifier events | Keyboard matrix scan by MOS |
+| **State toggle** | On each physical press | MOS toggles IC32 bit 6 on KEY DOWN only |
+| **KEY UP effect** | Reports state change | No effect (MOS ignores it) |
+
+This mismatch means Caps Lock states can drift out of sync when:
+- User toggles Mac Caps Lock while the emulator window is unfocused
+- BBC MOS initializes with default LED state
+- BBC program programmatically changes the LED state
+
+### Solution: Multi-Point Synchronization
+
+Beebium implements synchronization at five points:
+
+1. **User Keypress** - When `flagsChanged` detects Mac Caps Lock toggle, send a simulated key press to the BBC
+2. **Window Focus** - When window becomes key, compare states and sync if different
+3. **Frontend Connection** - After gRPC connect, sync immediately (core may already be running)
+4. **MOS Boot** - On first "caps-lock-led" indicator update, sync states
+5. **Sync Enabled** - When user enables sync via sidebar checkbox, sync immediately
+
+### Implementation Details
+
+**Key Press Simulation:**
+When macOS Caps Lock is pressed, we send a complete BBC Caps Lock cycle:
+- KEY DOWN (triggers MOS to toggle state)
+- Wait 50ms (40ms MOS scan interval + 10ms margin)
+- KEY UP (releases key for next press)
+
+**LED State Observation:**
+The BBC Caps Lock LED is controlled by IC32 bit 6 in the addressable latch. Beebium's indicator system reports this as `caps-lock-led` with brightness 0-255.
+
+For sync purposes, only definitive states are used:
+- **0** = LED off (BBC Caps Lock is OFF)
+- **255** = LED on (BBC Caps Lock is ON)
+- **1-254** = Transient (ignore for sync - may be PWM filtered intermediate values)
+
+**Rate Limiting:**
+To prevent feedback loops, sync operations are rate-limited to a minimum of 500ms between syncs.
+
+### Configuration
+
+Caps Lock synchronization can be enabled/disabled per keyboard mapping:
+
+```json
+{
+  "name": "My Mapping",
+  "synchronizeCapsLock": true,
+  ...
+}
+```
+
+The setting can also be temporarily overridden via the keyboard sidebar checkbox during a session. The override resets when a different mapping is selected.
+
+### Known Limitations
+
+- **INKEY(-65)** cannot detect "held" Caps Lock state (macOS reports toggle state, not key-held)
+- **System Preferences remapping** - If user remaps Caps Lock → Control in macOS settings, sync will break (macOS delivers Control modifier, not Caps Lock)
+
 ## References
 
 - BeebEm source: `Src/SysVia.cpp` - keyboard matrix and link handling
+- BeebEm source: `BeebEm-Bridging-Keyboard.cpp` - Caps Lock sync implementation
 - B2 source: `src/beeb/src/BBCMicro_Update.inl` - keyboard state management
 - MOS 1.20 disassembly: https://tobylobster.github.io/mos/mos/
 - BBC Micro Advanced User Guide - keyboard hardware description

@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import SwiftUI
 
 /// Main content view displaying the emulator output
@@ -65,6 +66,18 @@ struct ContentView: View {
         .onAppear {
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager
+
+            // Set up initial Caps Lock sync callback (triggered on first LED update after MOS boot)
+            indicatorClient.onInitialCapsLockSync = { [weak keyboardClient, weak indicatorClient] in
+                guard let keyboardClient = keyboardClient,
+                      let indicatorClient = indicatorClient else { return }
+                let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
+                keyboardClient.syncCapsLockState(
+                    macCapsLockIsOn: macCapsLockIsOn,
+                    bbcState: indicatorClient.capsLockState
+                )
+            }
+
             videoClient.connect()
         }
         .onDisappear {
@@ -86,6 +99,13 @@ struct ContentView: View {
                 Task {
                     await keyboardClient.loadKeyMappings()
                 }
+
+                // Sync Caps Lock state on connection (core may already be running)
+                let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
+                keyboardClient.syncCapsLockState(
+                    macCapsLockIsOn: macCapsLockIsOn,
+                    bbcState: indicatorClient.capsLockState
+                )
             } else if case .disconnected = newState {
                 discClient.disconnect()
                 indicatorClient.disconnect()
@@ -96,6 +116,25 @@ struct ContentView: View {
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // Sync Caps Lock state when window gains focus
+            // (macOS Caps Lock may have changed while we were unfocused)
+            let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
+            keyboardClient.syncCapsLockState(
+                macCapsLockIsOn: macCapsLockIsOn,
+                bbcState: indicatorClient.capsLockState
+            )
+        }
+        .onChange(of: keyboardMappingManager.isCapsLockSyncEnabled) { isEnabled in
+            // Sync immediately when user enables Caps Lock sync
+            if isEnabled {
+                let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
+                keyboardClient.syncCapsLockState(
+                    macCapsLockIsOn: macCapsLockIsOn,
+                    bbcState: indicatorClient.capsLockState
+                )
             }
         }
     }

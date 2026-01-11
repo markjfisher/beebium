@@ -55,10 +55,11 @@ struct AddressableLatch {
     }
 
     // Query latch state
+    // Note: LEDs are active-low (bit clear = LED on, bit set = LED off)
     bool sound_write_enabled() const { return (value & SOUND_WRITE) == 0; }
     bool keyboard_enabled() const { return (value & KB_WRITE) == 0; }
-    bool caps_lock_led() const { return (value & CAPS_LOCK_LED) != 0; }
-    bool shift_lock_led() const { return (value & SHIFT_LOCK_LED) != 0; }
+    bool caps_lock_led() const { return (value & CAPS_LOCK_LED) == 0; }
+    bool shift_lock_led() const { return (value & SHIFT_LOCK_LED) == 0; }
 
     // Screen base address bits (used for wrap-around in screen memory)
     uint8_t screen_base() const { return (value >> 4) & 0x03; }

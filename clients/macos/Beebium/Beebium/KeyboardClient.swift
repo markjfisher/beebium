@@ -17,8 +17,9 @@ import NIO
 
 /// BBC keyboard internal key numbers for modifier keys
 private enum BBCModifierKey {
-    static let shift: UInt8 = 0x00  // Row 0, Column 0
-    static let ctrl: UInt8 = 0x01   // Row 0, Column 1
+    static let shift: UInt8 = 0x00      // Row 0, Column 0
+    static let ctrl: UInt8 = 0x01       // Row 0, Column 1
+    static let capsLock: UInt8 = 0x40   // Row 4, Column 0
 }
 
 /// Tracks a pressed key and its synthetic modifier state
@@ -52,6 +53,14 @@ final class KeyboardClient: ObservableObject {
 
     /// Count of keys currently holding synthetic Ctrl
     private var syntheticCtrlCount: Int = 0
+
+    // MARK: - Caps Lock Sync
+
+    /// Rate limiting: minimum interval between sync operations (500ms)
+    private let minSyncInterval: TimeInterval = 0.5
+
+    /// Time of last sync operation
+    private var lastSyncTime: Date = .distantPast
 
     /// Connect to the keyboard service using an existing channel
     /// - Parameter channel: The gRPC channel (shared with VideoClient)
@@ -203,6 +212,49 @@ final class KeyboardClient: ObservableObject {
                     await sendKeyUp(ikNumber: BBCModifierKey.ctrl)
                 }
             }
+        }
+    }
+
+    // MARK: - Caps Lock Synchronization
+
+    /// Handle user pressing Mac Caps Lock key (from flagsChanged event)
+    func handleCapsLockToggle() {
+        guard mappingManager?.isCapsLockSyncEnabled == true else { return }
+        pressCapsLock()
+    }
+
+    /// Sync BBC Caps Lock state to match macOS state (with rate limiting).
+    /// Only syncs when BBC state is definitive (0 or 255); ignores transient states.
+    /// - Parameters:
+    ///   - macCapsLockIsOn: Current macOS Caps Lock state
+    ///   - bbcState: Current BBC Caps Lock LED state
+    func syncCapsLockState(macCapsLockIsOn: Bool, bbcState: CapsLockState) {
+        guard mappingManager?.isCapsLockSyncEnabled == true else { return }
+
+        // Ignore transient states (PWM filtered intermediate values)
+        guard bbcState != .transient else { return }
+
+        // Rate limiting to prevent feedback loops
+        let now = Date()
+        guard now.timeIntervalSince(lastSyncTime) >= minSyncInterval else { return }
+
+        let bbcCapsLockIsOn = (bbcState == .on)
+        if macCapsLockIsOn != bbcCapsLockIsOn {
+            lastSyncTime = now
+            pressCapsLock()
+        }
+    }
+
+    /// Send a complete Caps Lock key DOWN/UP cycle to BBC.
+    /// The 50ms delay ensures MOS has time to scan keyboard and process the key press.
+    private func pressCapsLock() {
+        Task {
+            await sendKeyDown(ikNumber: BBCModifierKey.capsLock)
+
+            // Wait 50ms for MOS keyboard scan (40ms scan interval + 10ms margin)
+            try? await Task.sleep(nanoseconds: 50_000_000)
+
+            await sendKeyUp(ikNumber: BBCModifierKey.capsLock)
         }
     }
 

@@ -23,6 +23,9 @@ final class KeyboardMTKView: MTKView {
     /// Keyboard client for sending key events to the server
     weak var keyboardClient: KeyboardClient?
 
+    /// Track previous modifier flags for change detection
+    private var lastModifiers: NSEvent.ModifierFlags = []
+
     // MARK: - First Responder
 
     override var acceptsFirstResponder: Bool {
@@ -54,16 +57,57 @@ final class KeyboardMTKView: MTKView {
         keyboardClient?.keyUp(input: input)
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        let current = event.modifierFlags
+        let diff = current.symmetricDifference(lastModifiers)
+
+        // Caps Lock changed?
+        if diff.contains(.capsLock) {
+            keyboardClient?.handleCapsLockToggle()
+        }
+
+        lastModifiers = current
+    }
+
+    /// Reset modifier tracking to current state (call on window focus gain)
+    func resetModifierTracking() {
+        lastModifiers = NSEvent.modifierFlags
+    }
+
     // MARK: - Focus Handling
+
+    /// Observer for window becoming key (focus gained)
+    private var windowDidBecomeKeyObserver: NSObjectProtocol?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
-        // Become first responder when added to window
-        if window != nil {
+        // Remove old observer if any
+        if let observer = windowDidBecomeKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowDidBecomeKeyObserver = nil
+        }
+
+        if let window = window {
+            // Become first responder when added to window
             DispatchQueue.main.async { [weak self] in
-                self?.window?.makeFirstResponder(self)
+                window.makeFirstResponder(self)
             }
+
+            // Observe window becoming key to reset modifier tracking
+            windowDidBecomeKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.resetModifierTracking()
+            }
+        }
+    }
+
+    deinit {
+        if let observer = windowDidBecomeKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 }

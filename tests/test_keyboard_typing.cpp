@@ -112,17 +112,6 @@ bool boot_to_mode7_basic(MachineType& machine, FrameRenderer& renderer) {
     return true;
 }
 
-// Run machine for specified number of cycles
-template<typename MachineType>
-void run_cycles(MachineType& machine, FrameRenderer& renderer, int num_cycles) {
-    for (int i = 0; i < num_cycles; ++i) {
-        machine.step();
-        if (machine.memory().video_output.has_value()) {
-            renderer.process(machine.memory().video_output.value());
-        }
-    }
-}
-
 // Find a string anywhere in first N rows of MODE 7 screen
 template<typename MachineType>
 bool find_string_on_screen(MachineType& machine, const std::string& target, int max_rows = 15) {

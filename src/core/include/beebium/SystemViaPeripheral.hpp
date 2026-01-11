@@ -121,14 +121,15 @@ public:
         uint8_t new_value = latch_.value;
 
         // Push indicator updates if LEDs changed
+        // Note: LEDs are active-low (bit clear = LED on, bit set = LED off)
         if (indicators_ && ((old_value ^ new_value) & 0xC0)) {
             if ((old_value ^ new_value) & AddressableLatch::CAPS_LOCK_LED) {
                 indicators_->set(caps_lock_led_id_,
-                    (new_value & AddressableLatch::CAPS_LOCK_LED) ? 255 : 0);
+                    (new_value & AddressableLatch::CAPS_LOCK_LED) ? 0 : 255);
             }
             if ((old_value ^ new_value) & AddressableLatch::SHIFT_LOCK_LED) {
                 indicators_->set(shift_lock_led_id_,
-                    (new_value & AddressableLatch::SHIFT_LOCK_LED) ? 255 : 0);
+                    (new_value & AddressableLatch::SHIFT_LOCK_LED) ? 0 : 255);
             }
         }
 

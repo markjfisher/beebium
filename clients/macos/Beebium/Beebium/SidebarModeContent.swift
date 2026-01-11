@@ -105,44 +105,61 @@ struct KeyboardModeView: View {
         mappingManager.mappings.filter { !$0.isBuiltIn }
     }
 
-    var body: some View {
-        List {
-            Section {
-                ForEach(builtInMappings) { mapping in
-                    MappingRowView(
-                        mapping: mapping,
-                        isActive: mapping.id == mappingManager.activeMapping?.id,
-                        onSelect: { selectMapping(mapping) }
-                    )
-                }
-            } header: {
-                Text("Beebium")
-            }
+    /// Binding for Caps Lock sync toggle that sets the session override
+    private var capsLockSyncBinding: Binding<Bool> {
+        Binding(
+            get: { mappingManager.isCapsLockSyncEnabled },
+            set: { mappingManager.capsLockSyncOverride = $0 }
+        )
+    }
 
-            if !userMappings.isEmpty {
+    var body: some View {
+        VStack(spacing: 0) {
+            List {
                 Section {
-                    ForEach(userMappings) { mapping in
+                    ForEach(builtInMappings) { mapping in
                         MappingRowView(
                             mapping: mapping,
                             isActive: mapping.id == mappingManager.activeMapping?.id,
                             onSelect: { selectMapping(mapping) }
                         )
-                        .contextMenu {
-                            if let url = mappingManager.fileURL(for: mapping) {
-                                Button {
-                                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                                } label: {
-                                    Label("Reveal in Finder", systemImage: "folder")
+                    }
+                } header: {
+                    Text("Beebium")
+                }
+
+                if !userMappings.isEmpty {
+                    Section {
+                        ForEach(userMappings) { mapping in
+                            MappingRowView(
+                                mapping: mapping,
+                                isActive: mapping.id == mappingManager.activeMapping?.id,
+                                onSelect: { selectMapping(mapping) }
+                            )
+                            .contextMenu {
+                                if let url = mappingManager.fileURL(for: mapping) {
+                                    Button {
+                                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                                    } label: {
+                                        Label("Reveal in Finder", systemImage: "folder")
+                                    }
                                 }
                             }
                         }
+                    } header: {
+                        Text("Custom")
                     }
-                } header: {
-                    Text("Custom")
                 }
             }
+            .listStyle(.sidebar)
+
+            Divider()
+
+            Toggle("Synchronize Caps Lock", isOn: capsLockSyncBinding)
+                .toggleStyle(.checkbox)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
         }
-        .listStyle(.sidebar)
     }
 
     private func selectMapping(_ mapping: KeyboardMapping) {

@@ -3,6 +3,7 @@
   "id": "00000000-0000-0000-0000-000000000001",
   "name": "Logical (Default)",
   "characterMapping": true,
+  "synchronizeCapsLock": true,
   "keyMappings": [
     { "macOSKeyCode": 126, "windowsVKCode": 38, "bbcKeyName": "Up" },
     { "macOSKeyCode": 125, "windowsVKCode": 40, "bbcKeyName": "Down" },

@@ -99,6 +99,9 @@ final class KeyboardMapping: Identifiable {
     /// Enable character→BBC key resolution
     var characterMapping: Bool
 
+    /// Whether to synchronize macOS Caps Lock state with BBC Caps Lock
+    var synchronizeCapsLock: Bool
+
     /// Direct keyCode→BBC key mappings (checked first)
     /// Extracted from allEntries for macOS use
     var keyMappings: [UInt16: BBCKeyRef]
@@ -176,12 +179,14 @@ final class KeyboardMapping: Identifiable {
         name: String,
         isBuiltIn: Bool = false,
         characterMapping: Bool = true,
+        synchronizeCapsLock: Bool = true,
         keyMappings: [UInt16: BBCKeyRef] = [:]
     ) {
         self.id = id
         self.name = name
         self.isBuiltIn = isBuiltIn
         self.characterMapping = characterMapping
+        self.synchronizeCapsLock = synchronizeCapsLock
         self.keyMappings = keyMappings
 
         // Build allEntries from keyMappings
@@ -211,6 +216,7 @@ final class KeyboardMapping: Identifiable {
         self.name = json["name"] as? String ?? "Unnamed"
         self.isBuiltIn = isBuiltIn
         self.characterMapping = json["characterMapping"] as? Bool ?? true
+        self.synchronizeCapsLock = json["synchronizeCapsLock"] as? Bool ?? true
 
         // Parse all entries, preserving raw JSON
         let entriesJSON = json["keyMappings"] as? [[String: Any]] ?? []
@@ -237,6 +243,7 @@ final class KeyboardMapping: Identifiable {
             "id": id.uuidString,
             "name": name,
             "characterMapping": characterMapping,
+            "synchronizeCapsLock": synchronizeCapsLock,
             "keyMappings": allEntries.map { $0.rawJSON }
         ]
     }
@@ -250,6 +257,7 @@ final class KeyboardMapping: Identifiable {
             name: newName,
             isBuiltIn: false,
             characterMapping: cloned.characterMapping,
+            synchronizeCapsLock: cloned.synchronizeCapsLock,
             keyMappings: cloned.keyMappings
         )
     }

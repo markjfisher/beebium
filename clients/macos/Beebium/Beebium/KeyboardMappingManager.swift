@@ -26,7 +26,23 @@ final class KeyboardMappingManager: ObservableObject {
     @Published private(set) var mappings: [KeyboardMapping] = []
 
     /// The currently active mapping
-    @Published var activeMapping: KeyboardMapping?
+    @Published var activeMapping: KeyboardMapping? {
+        didSet {
+            // Reset session override when mapping changes
+            capsLockSyncOverride = nil
+        }
+    }
+
+    /// Session override for Caps Lock sync (nil = use mapping default)
+    @Published var capsLockSyncOverride: Bool? = nil
+
+    /// Effective Caps Lock sync setting (respects session override)
+    var isCapsLockSyncEnabled: Bool {
+        if let override = capsLockSyncOverride {
+            return override
+        }
+        return activeMapping?.synchronizeCapsLock ?? true
+    }
 
     /// The BBC key cache (populated from core)
     let bbcKeyCache = BBCKeyCache()

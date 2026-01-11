@@ -21,6 +21,15 @@ struct IndicatorMetadata {
     let color: Color
 }
 
+/// BBC Caps Lock LED state for synchronization purposes.
+/// Only definitive states (0 or 255) are meaningful; intermediate values
+/// (1-254) from PWM filtering should be ignored during sync.
+enum CapsLockState {
+    case off        // brightness = 0
+    case on         // brightness = 255
+    case transient  // brightness 1-254 (ignore for sync)
+}
+
 /// Client for streaming indicator states from beebium-server via gRPC
 @MainActor
 final class IndicatorClient: ObservableObject {
@@ -36,8 +45,24 @@ final class IndicatorClient: ObservableObject {
     /// Error message if connection or streaming failed
     @Published private(set) var errorMessage: String?
 
+    /// Callback for initial Caps Lock sync (called when first LED update received)
+    var onInitialCapsLockSync: (() -> Void)?
+
+    /// Whether initial sync has been triggered this session
+    private var hasTriggeredInitialSync = false
+
     private var client: Beebium_IndicatorServiceNIOClient?
     private var subscriptionTask: Task<Void, Never>?
+
+    /// BBC Caps Lock LED state for synchronization
+    var capsLockState: CapsLockState {
+        guard let brightness = values["caps-lock-led"] else { return .off }
+        switch brightness {
+        case 0: return .off
+        case 255: return .on
+        default: return .transient
+        }
+    }
 
     /// Connect to the server using an existing gRPC channel
     func connect(channel: GRPCChannel) {
@@ -57,6 +82,7 @@ final class IndicatorClient: ObservableObject {
         values = [:]
         metadata = [:]
         errorMessage = nil
+        hasTriggeredInitialSync = false
     }
 
     private func fetchMetadataAndSubscribe() async {
@@ -119,6 +145,12 @@ final class IndicatorClient: ObservableObject {
         // Merge updated values into our state
         for (name, value) in update.values {
             values[name] = value
+        }
+
+        // Trigger initial Caps Lock sync on first caps-lock-led update
+        if !hasTriggeredInitialSync && update.values["caps-lock-led"] != nil {
+            hasTriggeredInitialSync = true
+            onInitialCapsLockSync?()
         }
     }
 
