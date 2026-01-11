@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AudioToolbox
 import Foundation
 import GRPC
 import NIO
@@ -121,7 +122,8 @@ final class KeyboardClient: ObservableObject {
 
         // Resolve the input using the active mapping
         guard let resolved = mapping.resolve(input, cache: manager.bbcKeyCache) else {
-            // Key not mapped - ignore
+            // Key not mapped - play system alert
+            signalUnmappedKey()
             return
         }
 
@@ -266,5 +268,10 @@ final class KeyboardClient: ObservableObject {
         } catch {
             print("[KeyboardClient] sendBreakUp gRPC error: \(error)")
         }
+    }
+
+    /// Play system alert sound for unmapped keys
+    private func signalUnmappedKey() {
+        AudioServicesPlaySystemSound(kSystemSoundID_UserPreferredAlert)
     }
 }
