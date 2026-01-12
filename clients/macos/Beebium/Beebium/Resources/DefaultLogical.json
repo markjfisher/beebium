@@ -5,27 +5,110 @@
   "characterMapping": true,
   "synchronizeCapsLock": true,
   "keyMappings": [
-    { "macOSKeyCode": 126, "windowsVKCode": 38, "bbcKeyName": "Up" },
-    { "macOSKeyCode": 125, "windowsVKCode": 40, "bbcKeyName": "Down" },
-    { "macOSKeyCode": 123, "windowsVKCode": 37, "bbcKeyName": "Left" },
-    { "macOSKeyCode": 124, "windowsVKCode": 39, "bbcKeyName": "Right" },
-    { "macOSKeyCode": 122, "windowsVKCode": 112, "bbcKeyName": "f1" },
-    { "macOSKeyCode": 120, "windowsVKCode": 113, "bbcKeyName": "f2" },
-    { "macOSKeyCode": 99,  "windowsVKCode": 114, "bbcKeyName": "f3" },
-    { "macOSKeyCode": 118, "windowsVKCode": 115, "bbcKeyName": "f4" },
-    { "macOSKeyCode": 96,  "windowsVKCode": 116, "bbcKeyName": "f5" },
-    { "macOSKeyCode": 97,  "windowsVKCode": 117, "bbcKeyName": "f6" },
-    { "macOSKeyCode": 98,  "windowsVKCode": 118, "bbcKeyName": "f7" },
-    { "macOSKeyCode": 100, "windowsVKCode": 119, "bbcKeyName": "f8" },
-    { "macOSKeyCode": 101, "windowsVKCode": 120, "bbcKeyName": "f9" },
-    { "macOSKeyCode": 109, "windowsVKCode": 121, "bbcKeyName": "f0" },
-    { "macOSKeyCode": 103, "windowsVKCode": 122, "bbcKeyName": "Copy" },
-    { "macOSKeyCode": 111, "windowsVKCode": 123, "bbcKeyName": "Break" },
-    { "macOSKeyCode": 105, "bbcKeyName": "ShiftLock" },
-    { "macOSKeyCode": 51, "windowsVKCode": 8, "bbcKeyName": "Delete" },
-    { "macOSKeyCode": 56, "bbcKeyName": "Shift" },
-    { "macOSKeyCode": 60, "bbcKeyName": "Shift" },
-    { "macOSKeyCode": 59, "bbcKeyName": "Ctrl" },
-    { "macOSKeyCode": 62, "bbcKeyName": "Ctrl" }
+    {
+      "macOS": { "keyCode": 126 },
+      "windows": { "VKCode": 38 },
+      "bbc": { "keyName": "Up" }
+    },
+    {
+      "macOS": { "keyCode": 125 },
+      "windows": { "VKCode": 40 },
+      "bbc": { "keyName": "Down" }
+    },
+    {
+      "macOS": { "keyCode": 123 },
+      "windows": { "VKCode": 37 },
+      "bbc": { "keyName": "Left" }
+    },
+    {
+      "macOS": { "keyCode": 124 },
+      "windows": { "VKCode": 39 },
+      "bbc": { "keyName": "Right" }
+    },
+    {
+      "macOS": { "keyCode": 122 },
+      "windows": { "VKCode": 112 },
+      "bbc": { "keyName": "f1" }
+    },
+    {
+      "macOS": { "keyCode": 120 },
+      "windows": { "VKCode": 113 },
+      "bbc": { "keyName": "f2" }
+    },
+    {
+      "macOS": { "keyCode": 99 },
+      "windows": { "VKCode": 114 },
+      "bbc": { "keyName": "f3" }
+    },
+    {
+      "macOS": { "keyCode": 118 },
+      "windows": { "VKCode": 115 },
+      "bbc": { "keyName": "f4" }
+    },
+    {
+      "macOS": { "keyCode": 96 },
+      "windows": { "VKCode": 116 },
+      "bbc": { "keyName": "f5" }
+    },
+    {
+      "macOS": { "keyCode": 97 },
+      "windows": { "VKCode": 117 },
+      "bbc": { "keyName": "f6" }
+    },
+    {
+      "macOS": { "keyCode": 98 },
+      "windows": { "VKCode": 118 },
+      "bbc": { "keyName": "f7" }
+    },
+    {
+      "macOS": { "keyCode": 100 },
+      "windows": { "VKCode": 119 },
+      "bbc": { "keyName": "f8" }
+    },
+    {
+      "macOS": { "keyCode": 101 },
+      "windows": { "VKCode": 120 },
+      "bbc": { "keyName": "f9" }
+    },
+    {
+      "macOS": { "keyCode": 109 },
+      "windows": { "VKCode": 121 },
+      "bbc": { "keyName": "f0" }
+    },
+    {
+      "macOS": { "keyCode": 103 },
+      "windows": { "VKCode": 122 },
+      "bbc": { "keyName": "Copy" }
+    },
+    {
+      "macOS": { "keyCode": 111, "option": true },
+      "windows": { "VKCode": 123, "alt": true },
+      "bbc": { "keyName": "Break" }
+    },
+    {
+      "macOS": { "keyCode": 105 },
+      "bbc": { "keyName": "ShiftLock" }
+    },
+    {
+      "macOS": { "keyCode": 51 },
+      "windows": { "VKCode": 8 },
+      "bbc": { "keyName": "Delete" }
+    },
+    {
+      "macOS": { "keyCode": 56 },
+      "bbc": { "keyName": "Shift" }
+    },
+    {
+      "macOS": { "keyCode": 60 },
+      "bbc": { "keyName": "Shift" }
+    },
+    {
+      "macOS": { "keyCode": 59 },
+      "bbc": { "keyName": "Ctrl" }
+    },
+    {
+      "macOS": { "keyCode": 62 },
+      "bbc": { "keyName": "Ctrl" }
+    }
   ]
 }
