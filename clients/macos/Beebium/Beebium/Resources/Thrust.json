@@ -7,7 +7,7 @@
   "keyMappings": [
     {
       "macOS": { "keyCode": 6 },
-      "bbc": { "keyName": "ShiftLock" }
+      "bbc": { "keyName": "Caps Lock" }
     },
     {
       "macOS": { "keyCode": 7 },
@@ -44,6 +44,10 @@
     {
       "macOS": { "keyCode": 51 },
       "bbc": { "keyName": "Delete" }
+    },
+    {
+      "macOS": { "keyCode": 103 },
+      "bbc": { "keyName": "Copy" }
     },
     {
       "macOS": { "keyCode": 111, "option": true },
