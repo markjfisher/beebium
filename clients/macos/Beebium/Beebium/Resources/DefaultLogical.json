@@ -22,6 +22,10 @@
     { "macOSKeyCode": 103, "windowsVKCode": 122, "bbcKeyName": "Copy" },
     { "macOSKeyCode": 111, "windowsVKCode": 123, "bbcKeyName": "Break" },
     { "macOSKeyCode": 105, "bbcKeyName": "ShiftLock" },
-    { "macOSKeyCode": 51, "windowsVKCode": 8, "bbcKeyName": "Delete" }
+    { "macOSKeyCode": 51, "windowsVKCode": 8, "bbcKeyName": "Delete" },
+    { "macOSKeyCode": 56, "bbcKeyName": "Shift" },
+    { "macOSKeyCode": 60, "bbcKeyName": "Shift" },
+    { "macOSKeyCode": 59, "bbcKeyName": "Ctrl" },
+    { "macOSKeyCode": 62, "bbcKeyName": "Ctrl" }
   ]
 }

@@ -60,13 +60,60 @@ final class KeyboardMTKView: MTKView {
     override func flagsChanged(with event: NSEvent) {
         let current = event.modifierFlags
         let diff = current.symmetricDifference(lastModifiers)
+        let keyCode = event.keyCode
 
-        // Caps Lock changed?
+        // Caps Lock uses special handling (toggle sync)
         if diff.contains(.capsLock) {
             keyboardClient?.handleCapsLockToggle()
         }
 
+        // Other modifiers: route through normal mapping system
+        // This allows modifier keys to be mapped to BBC keys via keyMappings
+        if isModifierKeyCode(keyCode) && keyCode != MacKeyCode.capsLock {
+            let isDown = isModifierPressed(keyCode: keyCode, flags: current)
+            let input = KeyInput(keyCode: keyCode, source: .physicalKeyboard)
+            print("[KeyboardMTKView] flagsChanged: keyCode=\(keyCode) isDown=\(isDown)")
+
+            if isDown {
+                keyboardClient?.keyDown(input: input)
+            } else {
+                keyboardClient?.keyUp(input: input)
+            }
+        }
+
         lastModifiers = current
+    }
+
+    /// Check if a keyCode is a modifier key
+    private func isModifierKeyCode(_ keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case MacKeyCode.shift, MacKeyCode.rightShift,
+             MacKeyCode.control, MacKeyCode.rightControl,
+             MacKeyCode.option, MacKeyCode.rightOption,
+             MacKeyCode.command, MacKeyCode.rightCommand,
+             MacKeyCode.function, MacKeyCode.capsLock:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Determine if a specific modifier key is pressed based on its keyCode and current flags
+    private func isModifierPressed(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        switch keyCode {
+        case MacKeyCode.shift, MacKeyCode.rightShift:
+            return flags.contains(.shift)
+        case MacKeyCode.control, MacKeyCode.rightControl:
+            return flags.contains(.control)
+        case MacKeyCode.option, MacKeyCode.rightOption:
+            return flags.contains(.option)
+        case MacKeyCode.command, MacKeyCode.rightCommand:
+            return flags.contains(.command)
+        case MacKeyCode.function:
+            return flags.contains(.function)
+        default:
+            return false
+        }
     }
 
     /// Reset modifier tracking to current state (call on window focus gain)
