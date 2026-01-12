@@ -28,13 +28,18 @@ final class KeyboardMappingManager: ObservableObject {
     /// The currently active mapping
     @Published var activeMapping: KeyboardMapping? {
         didSet {
-            // Reset session override when mapping changes
+            // Reset session overrides when mapping changes
             capsLockSyncOverride = nil
+            disabledKeysOverride = nil
         }
     }
 
     /// Session override for Caps Lock sync (nil = use mapping default)
     @Published var capsLockSyncOverride: Bool? = nil
+
+    /// Session overrides for disabled keys (nil = use mapping defaults)
+    /// Maps BBC key name to disabled state
+    @Published var disabledKeysOverride: [String: Bool]? = nil
 
     /// Effective Caps Lock sync setting (respects session override)
     var isCapsLockSyncEnabled: Bool {
@@ -42,6 +47,21 @@ final class KeyboardMappingManager: ObservableObject {
             return override
         }
         return activeMapping?.synchronizeCapsLock ?? true
+    }
+
+    /// Check if a BBC key is currently disabled (respects session override)
+    func isKeyDisabled(_ keyName: String) -> Bool {
+        // Session override takes priority
+        if let override = disabledKeysOverride?[keyName] {
+            return override
+        }
+        // Fall back to mapping default
+        return activeMapping?.disableableKeys[keyName] ?? false
+    }
+
+    /// Get sorted list of disableable keys in the active mapping
+    var disableableKeyNames: [String] {
+        return (activeMapping?.disableableKeys.keys.sorted()) ?? []
     }
 
     /// The BBC key cache (populated from core)

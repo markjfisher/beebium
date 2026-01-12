@@ -89,12 +89,14 @@ struct KeyMappingEntry {
         let keyName: String
         let shift: Bool
         let ctrl: Bool
+        let disabled: Bool?  // Tri-state: nil = not disableable, false/true = disableable with default state
 
         init?(dict: [String: Any]) {
             guard let keyName = dict["keyName"] as? String else { return nil }
             self.keyName = keyName
             self.shift = dict["shift"] as? Bool ?? false
             self.ctrl = dict["ctrl"] as? Bool ?? false
+            self.disabled = dict["disabled"] as? Bool  // nil if absent
         }
     }
 
@@ -138,6 +140,11 @@ final class KeyboardMapping: Identifiable {
     /// All entries from JSON (for round-trip serialization)
     /// Includes entries for other platforms that we don't understand
     private var allEntries: [KeyMappingEntry]
+
+    /// Maps BBC key names to their default disabled state
+    /// Key present in dictionary = disableable (value = default state)
+    /// Key absent = NOT disableable
+    var disableableKeys: [String: Bool] = [:]
 
     /// The result of resolving an input to a BBC key
     struct ResolvedKey {
@@ -255,10 +262,11 @@ final class KeyboardMapping: Identifiable {
     }
 
     /// Create BBC section dictionary from key name and modifiers
-    private static func createBBCDict(keyName: String, shift: Bool, ctrl: Bool) -> [String: Any] {
+    private static func createBBCDict(keyName: String, shift: Bool, ctrl: Bool, disabled: Bool? = nil) -> [String: Any] {
         var dict: [String: Any] = ["keyName": keyName]
         if shift { dict["shift"] = true }
         if ctrl { dict["ctrl"] = true }
+        if let disabled = disabled { dict["disabled"] = disabled }
         return dict
     }
 
@@ -344,6 +352,20 @@ final class KeyboardMapping: Identifiable {
         }
 
         self.keyMappings = mappingDict
+
+        // Build disableableKeys from entries with "disabled" field
+        var disableableDict: [String: Bool] = [:]
+        for entry in allEntries {
+            guard let bbcSpec = entry.bbc,
+                  let disabledState = bbcSpec.disabled else {
+                continue
+            }
+            // First entry wins if multiple mappings target same key
+            if disableableDict[bbcSpec.keyName] == nil {
+                disableableDict[bbcSpec.keyName] = disabledState
+            }
+        }
+        self.disableableKeys = disableableDict
     }
 
     /// Serialize to JSON dictionary, preserving all platform entries

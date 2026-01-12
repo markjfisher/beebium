@@ -81,9 +81,14 @@
       "bbc": { "keyName": "Copy" }
     },
     {
+      "macOS": { "keyCode": 53 },
+      "windows": { "VKCode": 27 },
+      "bbc": { "keyName": "Escape", "disabled": false }
+    },
+    {
       "macOS": { "keyCode": 111, "option": true },
       "windows": { "VKCode": 123, "alt": true },
-      "bbc": { "keyName": "Break" }
+      "bbc": { "keyName": "Break", "disabled": true }
     },
     {
       "macOS": { "keyCode": 105 },

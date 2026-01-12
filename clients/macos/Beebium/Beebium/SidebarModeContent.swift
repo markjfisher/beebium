@@ -113,8 +113,24 @@ struct KeyboardModeView: View {
         )
     }
 
+    /// Binding for a specific key's disabled state
+    private func disabledKeyBinding(for keyName: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                mappingManager.isKeyDisabled(keyName)
+            },
+            set: { newValue in
+                // Initialize override dictionary if needed
+                if mappingManager.disabledKeysOverride == nil {
+                    mappingManager.disabledKeysOverride = [:]
+                }
+                mappingManager.disabledKeysOverride?[keyName] = newValue
+            }
+        )
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             List {
                 Section {
                     ForEach(builtInMappings) { mapping in
@@ -154,6 +170,18 @@ struct KeyboardModeView: View {
             .listStyle(.sidebar)
 
             Divider()
+
+            // Disableable keys section
+            if !mappingManager.disableableKeyNames.isEmpty {
+                ForEach(mappingManager.disableableKeyNames, id: \.self) { keyName in
+                    Toggle("Disable \(keyName)", isOn: disabledKeyBinding(for: keyName))
+                        .toggleStyle(.checkbox)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                }
+
+                Divider()
+            }
 
             Toggle("Synchronize Caps Lock", isOn: capsLockSyncBinding)
                 .toggleStyle(.checkbox)

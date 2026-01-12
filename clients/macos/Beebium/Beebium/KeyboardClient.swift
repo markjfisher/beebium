@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import AudioToolbox
 import Foundation
 import GRPC
@@ -54,6 +55,9 @@ final class KeyboardClient: ObservableObject {
     /// Count of keys currently holding synthetic Ctrl
     private var syntheticCtrlCount: Int = 0
 
+    /// Cached SystemSoundID for disabled key sound
+    private var disabledKeySoundID: SystemSoundID = 0
+
     // MARK: - Caps Lock Sync
 
     /// Rate limiting: minimum interval between sync operations (500ms)
@@ -70,6 +74,13 @@ final class KeyboardClient: ObservableObject {
         pressedKeys.removeAll()
         syntheticShiftCount = 0
         syntheticCtrlCount = 0
+
+        // Initialize disabled key sound (Funk)
+        if disabledKeySoundID == 0 {
+            let soundURL = URL(fileURLWithPath: "/System/Library/Sounds/Funk.aiff")
+            AudioServicesCreateSystemSoundID(soundURL as CFURL, &disabledKeySoundID)
+        }
+
         print("[KeyboardClient] Connected to keyboard service")
     }
 
@@ -92,6 +103,12 @@ final class KeyboardClient: ObservableObject {
             Task {
                 await sendKeyUp(ikNumber: BBCModifierKey.ctrl)
             }
+        }
+
+        // Clean up disabled key sound
+        if disabledKeySoundID != 0 {
+            AudioServicesDisposeSystemSoundID(disabledKeySoundID)
+            disabledKeySoundID = 0
         }
 
         pressedKeys.removeAll()
@@ -133,6 +150,12 @@ final class KeyboardClient: ObservableObject {
         guard let resolved = mapping.resolve(input, cache: manager.bbcKeyCache) else {
             // Key not mapped - play system alert
             signalUnmappedKey()
+            return
+        }
+
+        // Check if key is disabled
+        if manager.isKeyDisabled(resolved.bbcKeyName) {
+            signalDisabledKey()
             return
         }
 
@@ -325,5 +348,12 @@ final class KeyboardClient: ObservableObject {
     /// Play system alert sound for unmapped keys
     private func signalUnmappedKey() {
         AudioServicesPlaySystemSound(kSystemSoundID_UserPreferredAlert)
+    }
+
+    /// Play Funk sound for disabled keys (distinct from unmapped alert)
+    private func signalDisabledKey() {
+        if disabledKeySoundID != 0 {
+            AudioServicesPlaySystemSound(disabledKeySoundID)
+        }
     }
 }
