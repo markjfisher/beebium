@@ -234,7 +234,8 @@ final class KeyboardMappingManager: ObservableObject {
 
     private static func createBuiltInMappings() -> [KeyboardMapping] {
         return [
-            KeyboardMapping.createDefaultLogical()
+            KeyboardMapping.createDefaultLogical(),
+            KeyboardMapping.createThrust()
         ]
     }
 

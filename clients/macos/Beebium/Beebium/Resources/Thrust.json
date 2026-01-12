@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "00000000-0000-0000-0000-000000000002",
+  "name": "Thrust",
+  "characterMapping": false,
+  "synchronizeCapsLock": false,
+  "keyMappings": [
+    {
+      "macOS": { "keyCode": 6 },
+      "bbc": { "keyName": "ShiftLock" }
+    },
+    {
+      "macOS": { "keyCode": 7 },
+      "bbc": { "keyName": "Ctrl" }
+    },
+    {
+      "macOS": { "keyCode": 49 },
+      "bbc": { "keyName": "Space" }
+    },
+    {
+      "macOS": { "keyCode": 53 },
+      "bbc": { "keyName": "Escape", "disabled": false }
+    },
+    {
+      "macOS": { "keyCode": 36 },
+      "bbc": { "keyName": "Return" }
+    },
+    {
+      "macOS": { "keyCode": 56 },
+      "bbc": { "keyName": "Shift" }
+    },
+    {
+      "macOS": { "keyCode": 60 },
+      "bbc": { "keyName": "Shift" }
+    },
+    {
+      "macOS": { "keyCode": 12 },
+      "bbc": { "keyName": "Q" }
+    },
+    {
+      "macOS": { "keyCode": 1 },
+      "bbc": { "keyName": "S" }
+    },
+    {
+      "macOS": { "keyCode": 51 },
+      "bbc": { "keyName": "Delete" }
+    },
+    {
+      "macOS": { "keyCode": 111, "option": true },
+      "bbc": { "keyName": "Break", "disabled": false }
+    }
+  ]
+}

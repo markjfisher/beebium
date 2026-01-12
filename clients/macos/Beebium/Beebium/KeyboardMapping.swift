@@ -464,4 +464,21 @@ extension KeyboardMapping {
             fatalError("Failed to load DefaultLogical.json: \(error)")
         }
     }
+
+    /// Load the Thrust mapping from bundle resources
+    static func createThrust() -> KeyboardMapping {
+        guard let url = Bundle.main.url(forResource: "Thrust", withExtension: "json") else {
+            fatalError("Thrust.json not found in bundle")
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                fatalError("Thrust.json is not valid JSON")
+            }
+            return KeyboardMapping(json: json, isBuiltIn: true)
+        } catch {
+            fatalError("Failed to load Thrust.json: \(error)")
+        }
+    }
 }
