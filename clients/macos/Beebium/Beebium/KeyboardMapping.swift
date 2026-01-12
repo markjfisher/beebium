@@ -90,6 +90,7 @@ struct KeyMappingEntry {
         let shift: Bool
         let ctrl: Bool
         let disabled: Bool?  // Tri-state: nil = not disableable, false/true = disableable with default state
+        let action: String?  // Optional action description for reference table
 
         init?(dict: [String: Any]) {
             guard let keyName = dict["keyName"] as? String else { return nil }
@@ -97,6 +98,7 @@ struct KeyMappingEntry {
             self.shift = dict["shift"] as? Bool ?? false
             self.ctrl = dict["ctrl"] as? Bool ?? false
             self.disabled = dict["disabled"] as? Bool  // nil if absent
+            self.action = dict["action"] as? String  // nil if absent
         }
     }
 
@@ -139,7 +141,7 @@ final class KeyboardMapping: Identifiable {
 
     /// All entries from JSON (for round-trip serialization)
     /// Includes entries for other platforms that we don't understand
-    private var allEntries: [KeyMappingEntry]
+    internal private(set) var allEntries: [KeyMappingEntry]
 
     /// Maps BBC key names to their default disabled state
     /// Key present in dictionary = disableable (value = default state)
@@ -262,11 +264,12 @@ final class KeyboardMapping: Identifiable {
     }
 
     /// Create BBC section dictionary from key name and modifiers
-    private static func createBBCDict(keyName: String, shift: Bool, ctrl: Bool, disabled: Bool? = nil) -> [String: Any] {
+    private static func createBBCDict(keyName: String, shift: Bool, ctrl: Bool, disabled: Bool? = nil, action: String? = nil) -> [String: Any] {
         var dict: [String: Any] = ["keyName": keyName]
         if shift { dict["shift"] = true }
         if ctrl { dict["ctrl"] = true }
         if let disabled = disabled { dict["disabled"] = disabled }
+        if let action = action { dict["action"] = action }
         return dict
     }
 

@@ -171,6 +171,33 @@ struct KeyboardModeView: View {
 
             Divider()
 
+            // Mapping reference table (only if entries with actions exist)
+            if !mappingManager.mappingReferenceEntries.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(mappingManager.mappingReferenceEntries) { entry in
+                        HStack(spacing: 0) {
+                            // Host key column
+                            Text(entry.hostKeyLabel)
+                                .font(.system(.body).weight(.medium))
+                                .foregroundColor(.primary)
+                                .frame(width: 80, alignment: .leading)
+
+                            // Function column
+                            Text(entry.action)
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+                Divider()
+            }
+
             // Disableable keys section
             if !mappingManager.disableableKeyNames.isEmpty {
                 ForEach(mappingManager.disableableKeyNames, id: \.self) { keyName in

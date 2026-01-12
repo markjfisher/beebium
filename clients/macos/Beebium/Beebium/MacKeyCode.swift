@@ -159,6 +159,119 @@ enum MacKeyCode {
 
     // MARK: - Display Names
 
+    /// Short name for a key code (for compact display in reference tables)
+    /// Uses symbols for special keys where appropriate
+    static func name(for keyCode: UInt16) -> String {
+        switch keyCode {
+        // Letters
+        case a: return "A"
+        case b: return "B"
+        case c: return "C"
+        case d: return "D"
+        case e: return "E"
+        case f: return "F"
+        case g: return "G"
+        case h: return "H"
+        case i: return "I"
+        case j: return "J"
+        case k: return "K"
+        case l: return "L"
+        case m: return "M"
+        case n: return "N"
+        case o: return "O"
+        case p: return "P"
+        case q: return "Q"
+        case r: return "R"
+        case s: return "S"
+        case t: return "T"
+        case u: return "U"
+        case v: return "V"
+        case w: return "W"
+        case x: return "X"
+        case y: return "Y"
+        case z: return "Z"
+
+        // Digits
+        case digit0: return "0"
+        case digit1: return "1"
+        case digit2: return "2"
+        case digit3: return "3"
+        case digit4: return "4"
+        case digit5: return "5"
+        case digit6: return "6"
+        case digit7: return "7"
+        case digit8: return "8"
+        case digit9: return "9"
+
+        // Function keys
+        case f1: return "F1"
+        case f2: return "F2"
+        case f3: return "F3"
+        case f4: return "F4"
+        case f5: return "F5"
+        case f6: return "F6"
+        case f7: return "F7"
+        case f8: return "F8"
+        case f9: return "F9"
+        case f10: return "F10"
+        case f11: return "F11"
+        case f12: return "F12"
+        case f13: return "F13"
+        case f14: return "F14"
+        case f15: return "F15"
+        case f16: return "F16"
+        case f17: return "F17"
+        case f18: return "F18"
+        case f19: return "F19"
+        case f20: return "F20"
+
+        // Special keys (with symbols)
+        case returnKey: return "↩"
+        case tab: return "⇥"
+        case space: return "Space"
+        case delete: return "⌫"
+        case escape: return "⎋"
+        case capsLock: return "⇪"
+
+        // Modifier keys (shouldn't appear as base keys, but handle gracefully)
+        case shift, rightShift: return "⇧"
+        case control, rightControl: return "⌃"
+        case option, rightOption: return "⌥"
+        case command, rightCommand: return "⌘"
+        case function: return "Fn"
+
+        // Arrow keys
+        case upArrow: return "↑"
+        case downArrow: return "↓"
+        case leftArrow: return "←"
+        case rightArrow: return "→"
+
+        // Navigation
+        case home: return "Home"
+        case end: return "End"
+        case pageUp: return "Page Up"
+        case pageDown: return "Page Down"
+        case forwardDelete: return "⌦"
+        case help: return "Help"
+
+        // Punctuation
+        case equal: return "="
+        case minus: return "-"
+        case leftBracket: return "["
+        case rightBracket: return "]"
+        case quote: return "'"
+        case semicolon: return ";"
+        case backslash: return "\\"
+        case comma: return ","
+        case period: return "."
+        case slash: return "/"
+        case grave: return "`"
+
+        default:
+            return "?"
+        }
+    }
+
     /// Human-readable name for a key code (for UI display)
     static func displayName(for keyCode: UInt16) -> String {
         switch keyCode {

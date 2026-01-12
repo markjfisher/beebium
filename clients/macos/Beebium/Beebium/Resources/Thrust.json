@@ -7,15 +7,15 @@
   "keyMappings": [
     {
       "macOS": { "keyCode": 6 },
-      "bbc": { "keyName": "Caps Lock" }
+      "bbc": { "keyName": "Caps Lock", "action": "Rotate Left" }
     },
     {
       "macOS": { "keyCode": 7 },
-      "bbc": { "keyName": "Ctrl" }
+      "bbc": { "keyName": "Ctrl", "action": "Rotate Right" }
     },
     {
       "macOS": { "keyCode": 49 },
-      "bbc": { "keyName": "Space" }
+      "bbc": { "keyName": "Space", "action": "Shield/Tractor" }
     },
     {
       "macOS": { "keyCode": 53 },
@@ -23,11 +23,11 @@
     },
     {
       "macOS": { "keyCode": 36 },
-      "bbc": { "keyName": "Return" }
+      "bbc": { "keyName": "Return", "action": "Fire" }
     },
     {
       "macOS": { "keyCode": 56 },
-      "bbc": { "keyName": "Shift" }
+      "bbc": { "keyName": "Shift", "action": "Thrust" }
     },
     {
       "macOS": { "keyCode": 60 },
@@ -35,19 +35,20 @@
     },
     {
       "macOS": { "keyCode": 12 },
-      "bbc": { "keyName": "Q" }
+      "bbc": { "keyName": "Q", "action": "Quiet" }
     },
     {
       "macOS": { "keyCode": 1 },
-      "bbc": { "keyName": "S" }
+      "bbc": { "keyName": "S", "action": "Sound" }
     },
     {
       "macOS": { "keyCode": 51 },
-      "bbc": { "keyName": "Delete" }
+      "bbc": { "keyName": "Delete", "action": "Unfreeze"
+      }
     },
     {
       "macOS": { "keyCode": 103 },
-      "bbc": { "keyName": "Copy" }
+      "bbc": { "keyName": "Copy", "action": "Freeze" }
     },
     {
       "macOS": { "keyCode": 111, "option": true },

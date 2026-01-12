@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import AppKit
 
 /// Manages keyboard mappings: built-in and user-defined.
 ///
@@ -62,6 +63,54 @@ final class KeyboardMappingManager: ObservableObject {
     /// Get sorted list of disableable keys in the active mapping
     var disableableKeyNames: [String] {
         return (activeMapping?.disableableKeys.keys.sorted()) ?? []
+    }
+
+    /// Represents a key mapping with action for display in reference table
+    struct MappingReferenceEntry: Identifiable {
+        let id = UUID()
+        let keyCode: UInt16
+        let modifiers: NSEvent.ModifierFlags
+        let action: String
+
+        /// Format host key with macOS modifier symbols
+        var hostKeyLabel: String {
+            var components: [String] = []
+
+            if modifiers.contains(.control) { components.append("⌃") }
+            if modifiers.contains(.option) { components.append("⌥") }
+            if modifiers.contains(.shift) { components.append("⇧") }
+            if modifiers.contains(.command) { components.append("⌘") }
+
+            // Get base key name from keyCode
+            let keyName = MacKeyCode.name(for: keyCode) ?? "?"
+            components.append(keyName)
+
+            return components.joined()
+        }
+    }
+
+    /// Get ordered mapping reference entries (only those with actions)
+    var mappingReferenceEntries: [MappingReferenceEntry] {
+        guard let mapping = activeMapping else { return [] }
+
+        var entries: [MappingReferenceEntry] = []
+
+        for entry in mapping.allEntries {
+            // Only include entries with both macOS and BBC sections
+            guard let macOSSpec = entry.macOS,
+                  let bbcSpec = entry.bbc,
+                  let action = bbcSpec.action else {
+                continue
+            }
+
+            entries.append(MappingReferenceEntry(
+                keyCode: macOSSpec.keyCode,
+                modifiers: macOSSpec.requiredModifiers,
+                action: action
+            ))
+        }
+
+        return entries
     }
 
     /// The BBC key cache (populated from core)
