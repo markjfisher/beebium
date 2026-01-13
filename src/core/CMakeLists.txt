@@ -3,6 +3,7 @@
 
 add_library(beebium_core STATIC
     src/Via6522.cpp
+    src/Sn76489.cpp
     src/KeyboardMapping.cpp
     src/TypeAheadQueue.cpp
     src/disc/DiscGeometry.cpp
@@ -20,6 +21,8 @@ add_library(beebium_core STATIC
     include/beebium/devices/Rom.hpp
     include/beebium/devices/EmptySlot.hpp
     include/beebium/devices/BankedMemory.hpp
+    include/beebium/devices/Sn76489.hpp
+    include/beebium/AudioBuffer.hpp
 )
 
 target_include_directories(beebium_core PUBLIC

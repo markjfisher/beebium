@@ -235,6 +235,11 @@ public:
             }
         }
 
+        // Tick sound chip at 2 MHz if audio output is enabled
+        if (state_.memory.audio_buffer) {
+            state_.memory.sound_chip.tick(state_.memory.audio_buffer.value());
+        }
+
         // Check if the CPU's memory access triggered bus stretching
         if (cpu_binding_.needs_stretch()) {
             // VIAs were already pre-ticked by CpuBinding for synchronization.

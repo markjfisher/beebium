@@ -16,6 +16,7 @@
 #include "KeyboardMatrix.hpp"
 #include "TypeAheadQueue.hpp"
 #include "Via6522.hpp"
+#include "devices/Sn76489.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
 #include <chrono>
@@ -66,6 +67,21 @@ public:
     uint8_t update_port_a(uint8_t output, uint8_t ddr) override {
         (void)ddr;
 
+        // Store full 8-bit Port A output for sound chip strobe
+        port_a_full_output_ = output;
+
+        // Sound chip write (gated by addressable latch bit 0, active low)
+        //
+        // Two write patterns are supported:
+        // 1. Write while SOUND_WRITE is already enabled (handled here)
+        // 2. Strobe: Write Port A, then toggle SOUND_WRITE (handled in update_port_b)
+        //
+        // After reset, SOUND_WRITE starts LOW (enabled), so the MOS can write
+        // to the sound chip just by writing to Port A without toggling the latch.
+        if (sound_chip_ && latch_.sound_write_enabled()) {
+            sound_chip_->write(output);
+        }
+
         // Port A reads keyboard matrix data
         // The MOS writes a key number to Port A (bits 0-6) where:
         //   - Bits 0-3: column (0-15, but only 0-9 used)
@@ -115,10 +131,31 @@ public:
         uint8_t latch_addr = output & 0x07;
         bool latch_data = (output & 0x08) != 0;
 
-        // Save old latch value to detect LED changes
+        // Save old latch value to detect sound write and LED changes
         uint8_t old_value = latch_.value;
         latch_.write(latch_addr, latch_data);
         uint8_t new_value = latch_.value;
+
+        // Sound chip write strobe detection
+        //
+        // The BBC Micro's sound write sequence is:
+        // 1. MOS writes data byte to VIA Port A
+        // 2. MOS pulls SOUND_WRITE LOW (via addressable latch bit 0)
+        // 3. MOS waits >= 8µs
+        // 4. MOS pulls SOUND_WRITE HIGH again
+        //
+        // The sound chip latches data on the falling edge (HIGH→LOW) of
+        // SOUND_WRITE. We detect this transition and write Port A to chip.
+        //
+        // Note: SOUND_WRITE is active LOW, so bit 0 = 0 means ENABLED
+        bool old_sound_write = (old_value & AddressableLatch::SOUND_WRITE) != 0;
+        bool new_sound_write = (new_value & AddressableLatch::SOUND_WRITE) != 0;
+
+        if (sound_chip_ && old_sound_write && !new_sound_write) {
+            // Falling edge: SOUND_WRITE went from HIGH (disabled) to LOW (enabled)
+            // Write current Port A output value to sound chip
+            sound_chip_->write(port_a_full_output_);
+        }
 
         // Push indicator updates if LEDs changed
         // Note: LEDs are active-low (bit clear = LED on, bit set = LED off)
@@ -236,6 +273,10 @@ public:
     // Tick the type-ahead queue (call from emulator main loop)
     void tick_type_ahead() { type_ahead_->tick(); }
 
+    // Sound chip integration (optional)
+    void set_sound_chip(Sn76489* chip) { sound_chip_ = chip; }
+    Sn76489* sound_chip() const { return sound_chip_; }
+
 private:
     void register_indicators() {
         using namespace std::chrono_literals;
@@ -257,8 +298,9 @@ private:
     KeyboardMatrix& keyboard_;
     KeyboardMatrix internal_keyboard_;  // Used when no external keyboard provided
 
-    uint8_t port_a_output_ = 0;     // Last Port A output (key number for manual scan)
-    uint8_t auto_scan_column_ = 0;  // Hardware auto-scan column counter (0-15)
+    uint8_t port_a_output_ = 0;      // Last Port A output (key number for manual scan)
+    uint8_t port_a_full_output_ = 0; // Full 8-bit Port A output (for sound chip strobe)
+    uint8_t auto_scan_column_ = 0;   // Hardware auto-scan column counter (0-15)
     bool vsync_ = false;
 
     // Indicator integration (optional)
@@ -268,6 +310,9 @@ private:
 
     // Type-ahead queue for TypeQuickly functionality
     std::unique_ptr<TypeAheadQueue> type_ahead_;
+
+    // Sound chip integration (optional)
+    Sn76489* sound_chip_ = nullptr;
 };
 
 } // namespace beebium

@@ -153,6 +153,7 @@ Beebium is licensed under the [GNU General Public License v3.0](COPYING.txt).
 - **Tom Seddon** - The 6502 library is ported from [B2](https://github.com/tom-seddon/b2), Tom's excellent BBC Micro emulator
 - **Matt Godbolt** - Creator of [jsbeeb](https://github.com/mattgodbolt/jsbeeb), from which VIA timing tests and 1MHz bus stretching logic were adapted
 - **Chris Evans** (@scarybeasts) - Hardware-validated VIA timing data measured on real BBC Master hardware, and CRTC 6845 edge case tests from [beebjit](https://github.com/scarybeasts/beebjit)
+- **Nicola Salmoria and MAME contributors** - Hardware-verified SN76489/SN76496 sound chip behaviors documented in [MAME](https://github.com/mamedev/mame), including LFSR tap positions, noise reset behavior, and chip variant differences
 - The BBC Micro community at [Stardot](https://stardot.org.uk/)
 
 ## Third-Party Libraries

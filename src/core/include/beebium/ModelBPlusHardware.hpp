@@ -13,6 +13,7 @@
 #pragma once
 
 #include "AddressableLatch.hpp"
+#include "AudioBuffer.hpp"
 #include "BankBinding.hpp"
 #include "ClockTypes.hpp"
 #include "IrqAggregator.hpp"
@@ -29,6 +30,7 @@
 #include "devices/Crtc6845.hpp"
 #include "devices/Ram.hpp"
 #include "devices/Rom.hpp"
+#include "devices/Sn76489.hpp"
 #include "devices/VideoUla.hpp"
 #include "disc/DiscDrive.hpp"
 #include "disc/WD1770.hpp"
@@ -178,6 +180,12 @@ public:
     // Video output queue (optional - only created if video output is enabled)
     std::optional<OutputQueue<PixelBatch>> video_output;
 
+    // Sound hardware
+    Sn76489 sound_chip{4'000'000, 48'000};  // 4 MHz clock, 48 kHz sample rate
+
+    // Audio output buffer (optional - only created if audio output is enabled)
+    std::optional<AudioBuffer> audio_buffer;
+
     // Hardware indicators (LEDs, motors) - must be declared before components that use them
     Indicators indicators;
 
@@ -308,6 +316,8 @@ public:
     {
         // Connect internal peripheral to system VIA
         system_via.set_peripheral(&system_via_peripheral);
+        // Connect sound chip to system VIA peripheral
+        system_via_peripheral.set_sound_chip(&sound_chip);
         // Connect disc drives to disc controller
         disc_controller.attach_drive(0, &disc_drive_0);
         disc_controller.attach_drive(1, &disc_drive_1);
@@ -442,6 +452,7 @@ public:
         crtc.reset();
         video_ula.reset();
         saa5050.reset();
+        sound_chip.reset();
         addressable_latch.reset();
         sideways.select_bank(15);  // Default to BASIC ROM at slot 15
         romsel_ = 0x0F;  // ROMSEL bits 0-3 = 15 (BASIC), bit 7 = 0 (ANDY disabled)
@@ -462,6 +473,7 @@ public:
         crtc.reset();
         video_ula.reset();
         saa5050.reset();
+        sound_chip.reset();
         addressable_latch.reset();
         disc_controller.reset();
         disc_control_ = 0;
@@ -483,6 +495,23 @@ public:
     // Check if video output is enabled
     bool video_output_enabled() const {
         return video_output.has_value();
+    }
+
+    // Enable audio output with optional custom buffer capacity
+    void enable_audio_output(size_t capacity = AudioBuffer::DEFAULT_CAPACITY) {
+        if (!audio_buffer) {
+            audio_buffer.emplace(capacity);
+        }
+    }
+
+    // Disable audio output and free buffer memory
+    void disable_audio_output() {
+        audio_buffer.reset();
+    }
+
+    // Check if audio output is enabled
+    bool audio_output_enabled() const {
+        return audio_buffer.has_value();
     }
 
     // Poll IRQ status from VIAs (called from Machine::step after clock tick)

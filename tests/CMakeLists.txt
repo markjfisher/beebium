@@ -56,6 +56,97 @@ add_executable(test_via6522 test_via6522.cpp)
 target_link_libraries(test_via6522 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_via6522)
 
+# SN76489 sound chip tests
+add_executable(test_sn76489 test_sn76489.cpp)
+target_link_libraries(test_sn76489 PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sn76489)
+
+# SN76489 MAME-inspired tests (hardware-verified behaviors)
+add_executable(test_sn76489_mame test_sn76489_mame.cpp)
+target_link_libraries(test_sn76489_mame PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sn76489_mame)
+
+# SN76489 DC bias metadata tests
+add_executable(test_sn76489_dc_bias test_sn76489_dc_bias.cpp)
+target_link_libraries(test_sn76489_dc_bias PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sn76489_dc_bias)
+
+# BBC BASIC SOUND command integration tests
+add_executable(test_sound_basic test_sound_basic.cpp)
+target_link_libraries(test_sound_basic PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_sound_basic PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_sound_basic)
+
+# Direct VIA sound integration tests (no ROM required)
+add_executable(test_sound_via test_sound_via.cpp)
+target_link_libraries(test_sound_via PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sound_via)
+
+# MOS sound system diagnostic test
+add_executable(test_sound_mos_diagnostic test_sound_mos_diagnostic.cpp)
+target_link_libraries(test_sound_mos_diagnostic PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_sound_mos_diagnostic PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_sound_mos_diagnostic)
+
+# Sound chip boot trace
+add_executable(test_sound_boot_trace test_sound_boot_trace.cpp)
+target_link_libraries(test_sound_boot_trace PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_sound_boot_trace PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_sound_boot_trace)
+
+# Sound edge case tests (inspired by beebjit)
+add_executable(test_sound_edge_cases test_sound_edge_cases.cpp)
+target_link_libraries(test_sound_edge_cases PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sound_edge_cases)
+
+# Sound state consistency tests
+add_executable(test_sound_state test_sound_state.cpp)
+target_link_libraries(test_sound_state PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sound_state)
+
+# Sound timing precision tests
+add_executable(test_sound_timing test_sound_timing.cpp)
+target_link_libraries(test_sound_timing PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_sound_timing)
+
+# VSYNC interrupt check
+add_executable(test_vsync_check test_vsync_check.cpp)
+target_link_libraries(test_vsync_check PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_vsync_check PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_vsync_check)
+
+# VSYNC interrupt diagnostic
+add_executable(test_vsync_diagnostic test_vsync_diagnostic.cpp)
+target_link_libraries(test_vsync_diagnostic PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_vsync_diagnostic PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_vsync_diagnostic)
+
+# CRTC timing diagnostic
+add_executable(test_crtc_timing test_crtc_timing.cpp)
+target_link_libraries(test_crtc_timing PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_crtc_timing PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_crtc_timing)
+
+# VSYNC frequency measurement
+add_executable(test_vsync_frequency test_vsync_frequency.cpp)
+target_link_libraries(test_vsync_frequency PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_vsync_frequency PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_vsync_frequency)
+
 # VIA 6522 cycle-accurate timing tests (hardware-validated)
 add_executable(test_via_timing test_via_timing.cpp)
 target_link_libraries(test_via_timing PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -287,4 +378,15 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_DISCS_DIR="${BEEBIUM_DISCS_DIR}"
     )
     catch_discover_tests(test_grpc_indicator)
+
+    # Audio service tests
+    add_executable(test_grpc_audio test_grpc_audio.cpp)
+    target_link_libraries(test_grpc_audio PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_audio PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_grpc_audio)
 endif()

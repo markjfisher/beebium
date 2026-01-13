@@ -8,6 +8,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/disc.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/indicator.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/system.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/audio.proto
 )
 
 # Output directories for generated code
