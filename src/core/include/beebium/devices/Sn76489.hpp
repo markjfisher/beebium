@@ -57,9 +57,13 @@ public:
     // Hardware write interface (called when addressable latch enables sound writes)
     void write(uint8_t data);
 
-    // Clock advance - called every 2 MHz cycle
-    // Uses phase accumulator to tick at 250 kHz
-    // Generates samples at 48 kHz via sample accumulator
+    // Emulator clock advance - called at 2 MHz (CPU clock rate)
+    //
+    // The real hardware receives 4 MHz from the Video ULA and divides by 16
+    // internally to get 250 kHz. The emulator achieves the same 250 kHz by
+    // being called at 2 MHz and using a phase accumulator to divide by 8.
+    //
+    // Generates samples at 48 kHz via sample accumulator.
     void tick(AudioBuffer& buffer);
 
     // Reset to power-on state
@@ -142,10 +146,12 @@ private:
     uint8_t latched_reg_;        // Last latched register (0-7)
 
     // --- Timing accumulators ---
+    //
+    // Real hardware: 4 MHz input clock ÷16 = 250 kHz internal
+    // Emulator: tick() called at 2 MHz (CPU rate), phase accumulator ÷8 = 250 kHz
 
-    // Phase accumulator for 250 kHz tick from 2 MHz input
     uint64_t phase_accumulator_;
-    uint64_t phase_increment_;   // (2^32) / 8 for 2MHz→250kHz
+    uint64_t phase_increment_;   // (2^32) / 8 for emulator's 2MHz→250kHz
 
     // Sample accumulator for 48 kHz output from 250 kHz internal
     uint32_t sample_accumulator_;

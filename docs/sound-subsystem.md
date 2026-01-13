@@ -17,8 +17,9 @@ Beebium implements BBC Micro audio through a combination of:
 │    ├─> System VIA Port A writes                            │
 │    │     └─> Addressable Latch bit 0 (sound_write_enabled) │
 │    │           └─> Sn76489::write(data)                    │
-│    └─> Sn76489::tick() [every 2 MHz cycle]                 │
-│          └─> AudioBuffer::push(AudioSample)                 │
+│    └─> Sn76489::tick() [called at 2 MHz CPU rate]          │
+│          └─> Phase accumulator derives 250 kHz internal    │
+│                └─> AudioBuffer::push(AudioSample)          │
 ├─────────────────────────────────────────────────────────────┤
 │  AudioBuffer (circular SPSC queue, 48000 samples)           │
 └─────────────────────────────────────────────────────────────┘
@@ -38,10 +39,13 @@ Beebium implements BBC Micro audio through a combination of:
 
 ### Hardware Characteristics
 
-- **Input clock**: 4 MHz (BBC Micro system clock)
-- **Internal clock**: 250 kHz (4 MHz ÷ 16)
-- **Output sample rate**: 48 kHz
+- **Input clock**: 4 MHz (from Video ULA, directly to pin 14)
+- **Internal clock**: 250 kHz (4 MHz ÷ 16 internal divider)
+- **Output sample rate**: 48 kHz (emulator output)
 - **Channels**: 3 tone generators + 1 noise generator
+
+**Emulator note**: The emulator calls `tick()` at 2 MHz (CPU clock rate) and uses a
+phase accumulator to derive the same 250 kHz internal clock (2 MHz ÷ 8 = 250 kHz).
 
 ### Register Protocol
 
@@ -309,5 +313,7 @@ for tone0, tone1, tone2, noise in unpack_samples(chunk, format):
 
 - [SN76489 chip details](http://www.zeridajh.org/articles/me_sn76489_sound_chip_details/index.html)
 - [SN76489 Development](https://www.smspower.org/Development/SN76489)
-- [BBC Micro sound discussion](https://stardot.org.uk/forums/viewtopic.php?t=30838)
+- [SN76489 bus side behavior](https://stardot.org.uk/forums/viewtopic.php?t=30838)
+- [Sampled sound on the SN76489](https://stardot.org.uk/forums/viewtopic.php?t=17537) - DC bias and volume modulation for PCM playback
+- [Sampled sound 1980s style](https://scarybeastsecurity.blogspot.com/2020/06/sampled-sound-1980s-style-from-sn76489.html) - Chris Evans' hardware measurements
 - [MOS 1.20 Reassembly](https://tobylobster.github.io/mos/mos/S-s16.html)

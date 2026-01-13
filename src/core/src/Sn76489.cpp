@@ -21,7 +21,7 @@ Sn76489::Sn76489(uint32_t clock_hz, uint32_t sample_rate)
     , noise_{}
     , latched_reg_(0)
     , phase_accumulator_(0)
-    , phase_increment_((1ULL << 32) / 8)  // 2 MHz → 250 kHz (÷8)
+    , phase_increment_((1ULL << 32) / 8)  // Emulator: 2 MHz call rate ÷8 → 250 kHz internal
     , sample_accumulator_(0)
     , clock_hz_(clock_hz)
     , sample_rate_(sample_rate)
