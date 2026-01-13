@@ -36,6 +36,8 @@ struct SidebarModeContent: View {
     let mode: SidebarMode
     @ObservedObject var discClient: DiscClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
+    @ObservedObject var audioClient: AudioClient
+    @ObservedObject var audioMixerState: AudioMixerState
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,7 +53,7 @@ struct SidebarModeContent: View {
             case .video:
                 VideoModeView()
             case .sound:
-                SoundModeView()
+                AudioMixerView(audioClient: audioClient, mixerState: audioMixerState)
             case .keyboard:
                 KeyboardModeView(mappingManager: keyboardMappingManager)
             case .coprocessor:
@@ -86,12 +88,7 @@ struct VideoModeView: View {
     }
 }
 
-/// Placeholder view for Sound mode
-struct SoundModeView: View {
-    var body: some View {
-        ModePlaceholder(mode: .sound)
-    }
-}
+// SoundModeView replaced by AudioMixerView
 
 /// Keyboard mode view showing mapping selection
 struct KeyboardModeView: View {
@@ -280,7 +277,9 @@ struct SidebarModeContent_Previews: PreviewProvider {
         SidebarModeContent(
             mode: .keyboard,
             discClient: DiscClient(),
-            keyboardMappingManager: KeyboardMappingManager()
+            keyboardMappingManager: KeyboardMappingManager(),
+            audioClient: AudioClient(),
+            audioMixerState: AudioMixerState()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))

@@ -21,6 +21,8 @@ struct ContentView: View {
     @StateObject private var systemClient = SystemClient()
     @StateObject private var indicatorClient = IndicatorClient()
     @StateObject private var discClient = DiscClient()
+    @StateObject private var audioClient = AudioClient()
+    @StateObject private var audioMixerState = AudioMixerState()
     @Binding var showStatusBar: Bool
     @Binding var showSidebar: Bool
     @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
@@ -37,7 +39,13 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 SidebarModeToolbar(selectedMode: $sidebarMode)
                 Divider()
-                SidebarModeContent(mode: sidebarMode, discClient: discClient, keyboardMappingManager: keyboardMappingManager)
+                SidebarModeContent(
+                    mode: sidebarMode,
+                    discClient: discClient,
+                    keyboardMappingManager: keyboardMappingManager,
+                    audioClient: audioClient,
+                    audioMixerState: audioMixerState
+                )
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .navigationSplitViewColumnWidth(min: 180, ideal: 260, max: 500)
@@ -67,6 +75,9 @@ struct ContentView: View {
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager
 
+            // Wire up audio mixer state to audio client
+            audioMixerState.audioClient = audioClient
+
             // Set up initial Caps Lock sync callback (triggered on first LED update after MOS boot)
             indicatorClient.onInitialCapsLockSync = { [weak keyboardClient, weak indicatorClient] in
                 guard let keyboardClient = keyboardClient,
@@ -81,6 +92,7 @@ struct ContentView: View {
             videoClient.connect()
         }
         .onDisappear {
+            audioClient.disconnect()
             discClient.disconnect()
             indicatorClient.disconnect()
             systemClient.disconnect()
@@ -94,6 +106,7 @@ struct ContentView: View {
                 systemClient.connect(channel: channel)
                 indicatorClient.connect(channel: channel)
                 discClient.connect(channel: channel)
+                audioClient.connect(channel: channel)
 
                 // Load keyboard mappings from core
                 Task {
@@ -107,11 +120,13 @@ struct ContentView: View {
                     bbcState: indicatorClient.capsLockState
                 )
             } else if case .disconnected = newState {
+                audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
             } else if case .error = newState {
+                audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()

@@ -425,6 +425,9 @@ int server_main(int argc, char* argv[]) {
         // Enable video output
         machine.state().memory.enable_video_output();
 
+        // Enable audio output
+        machine.state().memory.enable_audio_output();
+
         // Apply startup options (keyboard links) before reset
         // These must be set before reset() as the MOS reads them during initialization
         if (raw_links >= 0) {
