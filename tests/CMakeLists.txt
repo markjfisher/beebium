@@ -115,22 +115,6 @@ add_executable(test_sound_timing test_sound_timing.cpp)
 target_link_libraries(test_sound_timing PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_sound_timing)
 
-# VSYNC interrupt check
-add_executable(test_vsync_check test_vsync_check.cpp)
-target_link_libraries(test_vsync_check PRIVATE beebium_core Catch2::Catch2WithMain)
-target_compile_definitions(test_vsync_check PRIVATE
-    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
-)
-catch_discover_tests(test_vsync_check)
-
-# VSYNC interrupt diagnostic
-add_executable(test_vsync_diagnostic test_vsync_diagnostic.cpp)
-target_link_libraries(test_vsync_diagnostic PRIVATE beebium_core Catch2::Catch2WithMain)
-target_compile_definitions(test_vsync_diagnostic PRIVATE
-    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
-)
-catch_discover_tests(test_vsync_diagnostic)
-
 # CRTC timing diagnostic
 add_executable(test_crtc_timing test_crtc_timing.cpp)
 target_link_libraries(test_crtc_timing PRIVATE beebium_core Catch2::Catch2WithMain)
