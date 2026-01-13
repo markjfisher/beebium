@@ -25,7 +25,7 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 enum Beebium_SourceEncoding: SwiftProtobuf.Enum, Swift.CaseIterable {
   typealias RawValue = Int
 
-  /// 4 × int8 channels (e.g., SN76489)
+  /// 4 × int8 channels, zero-centered (legacy)
   case encoding4X8BitSigned // = 0
 
   /// 2 × int16 channels (e.g., Music 5000 stereo)
@@ -36,6 +36,9 @@ enum Beebium_SourceEncoding: SwiftProtobuf.Enum, Swift.CaseIterable {
 
   /// Unused/silent source
   case encodingSilence // = 3
+
+  /// 4 × uint8 channels, DC bias pre-applied (SN76489)
+  case encoding4X8BitUnsigned // = 4
   case UNRECOGNIZED(Int)
 
   init() {
@@ -48,6 +51,7 @@ enum Beebium_SourceEncoding: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 1: self = .encoding2X16BitSigned
     case 2: self = .encoding1X32BitSigned
     case 3: self = .encodingSilence
+    case 4: self = .encoding4X8BitUnsigned
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -58,6 +62,7 @@ enum Beebium_SourceEncoding: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .encoding2X16BitSigned: return 1
     case .encoding1X32BitSigned: return 2
     case .encodingSilence: return 3
+    case .encoding4X8BitUnsigned: return 4
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -68,6 +73,7 @@ enum Beebium_SourceEncoding: SwiftProtobuf.Enum, Swift.CaseIterable {
     .encoding2X16BitSigned,
     .encoding1X32BitSigned,
     .encodingSilence,
+    .encoding4X8BitUnsigned,
   ]
 
 }
@@ -276,7 +282,7 @@ struct Beebium_ChannelStatesResponse: Sendable {
 fileprivate let _protobuf_package = "beebium"
 
 extension Beebium_SourceEncoding: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ENCODING_4X8BIT_SIGNED\0\u{1}ENCODING_2X16BIT_SIGNED\0\u{1}ENCODING_1X32BIT_SIGNED\0\u{1}ENCODING_SILENCE\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0ENCODING_4X8BIT_SIGNED\0\u{1}ENCODING_2X16BIT_SIGNED\0\u{1}ENCODING_1X32BIT_SIGNED\0\u{1}ENCODING_SILENCE\0\u{1}ENCODING_4X8BIT_UNSIGNED\0")
 }
 
 extension Beebium_SubscribeAudioRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

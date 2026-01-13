@@ -36,30 +36,31 @@ using namespace beebium;
 using namespace beebium::test;
 
 // Helper: Unpack SN76489 channel from packed AudioSample
-// sources[0] format: [tone0|tone1|tone2|noise] (4 × 8-bit signed)
+// sources[0] format: [tone0|tone1|tone2|noise] (4 × 8-bit unsigned, DC bias pre-applied)
+// Value 128 = DC midpoint (silence), 0-127 = negative swing, 129-255 = positive swing
 struct UnpackedSample {
-    int8_t tone0;
-    int8_t tone1;
-    int8_t tone2;
-    int8_t noise;
+    uint8_t tone0;
+    uint8_t tone1;
+    uint8_t tone2;
+    uint8_t noise;
 };
 
 UnpackedSample unpack_sn76489_sample(const AudioSample& sample) {
     uint32_t packed = sample.sources[0];
 
     // Extract unsigned bytes
-    uint8_t u0 = (packed >> 24) & 0xFF;
-    uint8_t u1 = (packed >> 16) & 0xFF;
-    uint8_t u2 = (packed >> 8) & 0xFF;
-    uint8_t u3 = packed & 0xFF;
-
-    // Reinterpret as signed
     return {
-        static_cast<int8_t>(u0),
-        static_cast<int8_t>(u1),
-        static_cast<int8_t>(u2),
-        static_cast<int8_t>(u3)
+        static_cast<uint8_t>((packed >> 24) & 0xFF),
+        static_cast<uint8_t>((packed >> 16) & 0xFF),
+        static_cast<uint8_t>((packed >> 8) & 0xFF),
+        static_cast<uint8_t>(packed & 0xFF)
     };
+}
+
+// Convert unsigned sample (0-255) to signed amplitude (-127 to +127)
+// 128 → 0 (silence), 0 → -128, 255 → +127
+inline int amplitude_from_unsigned(uint8_t value) {
+    return static_cast<int>(value) - 128;
 }
 
 // BBC BASIC to SN76489 channel mapping
@@ -90,19 +91,20 @@ constexpr size_t basic_to_chip_tone_channel(size_t basic_channel) {
     return 3 - basic_channel;
 }
 
-// Helper: Check if a channel has non-zero activity (not silent)
+// Helper: Check if a channel has activity (deviation from DC midpoint 128)
 // Takes SN76489 channel index (0-2 for tones, 3 for noise), NOT BASIC channel
 bool is_channel_active(const std::vector<AudioSample>& samples, size_t sn76489_channel) {
     for (const auto& sample : samples) {
         auto unpacked = unpack_sn76489_sample(sample);
-        int8_t amp = 0;
+        uint8_t value = 128;  // DC midpoint = silence
         switch (sn76489_channel) {
-            case 0: amp = unpacked.tone0; break;
-            case 1: amp = unpacked.tone1; break;
-            case 2: amp = unpacked.tone2; break;
-            case 3: amp = unpacked.noise; break;
+            case 0: value = unpacked.tone0; break;
+            case 1: value = unpacked.tone1; break;
+            case 2: value = unpacked.tone2; break;
+            case 3: value = unpacked.noise; break;
         }
-        if (amp != 0) return true;
+        // Active if deviating from DC midpoint (128)
+        if (value != 128) return true;
     }
     return false;
 }
@@ -114,14 +116,15 @@ bool is_basic_channel_active(const std::vector<AudioSample>& samples, size_t bas
 
 // Helper: Measure approximate frequency from square wave samples
 // Returns frequency in Hz, or 0 if unable to measure
-float measure_frequency(const std::vector<int8_t>& samples, uint32_t sample_rate) {
+// Samples are unsigned (0-255) with DC midpoint at 128
+float measure_frequency(const std::vector<uint8_t>& samples, uint32_t sample_rate) {
     if (samples.size() < 10) return 0.0f;
 
-    // Find zero crossings
+    // Find crossings of DC midpoint (128)
     std::vector<size_t> crossings;
     for (size_t i = 1; i < samples.size(); ++i) {
-        if ((samples[i-1] < 0 && samples[i] >= 0) ||
-            (samples[i-1] > 0 && samples[i] <= 0)) {
+        if ((samples[i-1] < 128 && samples[i] >= 128) ||
+            (samples[i-1] > 128 && samples[i] <= 128)) {
             crossings.push_back(i);
         }
     }
@@ -279,13 +282,15 @@ TEMPLATE_TEST_CASE("BBC BASIC SOUND commands", "[sound][basic]", ModelB, ModelBP
         REQUIRE(is_basic_channel_active(samples, 1));
 
         // Find max amplitude in the samples (should be high for -15)
-        int8_t max_amp = 0;
+        // Amplitude is deviation from DC midpoint (128)
+        int max_amp = 0;
         for (size_t i = 0; i < count; ++i) {
             auto unpacked = unpack_sn76489_sample(samples[i]);
-            int8_t amp = std::abs(
+            uint8_t value =
                 (basic_to_audio_channel(1) == 0) ? unpacked.tone0 :
                 (basic_to_audio_channel(1) == 1) ? unpacked.tone1 :
-                (basic_to_audio_channel(1) == 2) ? unpacked.tone2 : unpacked.noise);
+                (basic_to_audio_channel(1) == 2) ? unpacked.tone2 : unpacked.noise;
+            int amp = std::abs(amplitude_from_unsigned(value));
             if (amp > max_amp) max_amp = amp;
         }
         REQUIRE(max_amp > 50);  // Should have significant amplitude
@@ -322,7 +327,7 @@ TEMPLATE_TEST_CASE("BBC BASIC SOUND commands", "[sound][basic]", ModelB, ModelBP
         REQUIRE(count > 100);  // Should have generated samples
 
         // Extract BASIC channel 1 samples (SN76489 tone 2)
-        std::vector<int8_t> channel_samples;
+        std::vector<uint8_t> channel_samples;
         for (size_t i = 0; i < count; ++i) {
             auto unpacked = unpack_sn76489_sample(samples[i]);
             // BASIC channel 1 → audio channel 2 (tone2)
@@ -448,8 +453,8 @@ TEST_CASE("Square wave integrity", "[sn76489][waveform]") {
     }
 
     SECTION("Amplitude consistency within wave cycle") {
-        // All positive samples should have the same amplitude,
-        // and all negative samples should have the same (negated) amplitude
+        // All high samples should have the same value (128 + amplitude),
+        // and all low samples should have the same value (128 - amplitude)
         Sn76489 chip(4'000'000, 48'000);
         AudioBuffer buffer(8192);
 
@@ -465,22 +470,22 @@ TEST_CASE("Square wave integrity", "[sn76489][waveform]") {
         size_t count = buffer.read(samples.data(), samples.size());
         REQUIRE(count > 10);
 
-        // Collect unique amplitude values
-        std::set<int8_t> amplitudes;
+        // Collect unique sample values (unsigned)
+        std::set<uint8_t> values;
         for (size_t i = 0; i < count; ++i) {
             uint32_t packed = samples[i].sources[0];
-            int8_t tone0 = static_cast<int8_t>((packed >> 24) & 0xFF);
-            amplitudes.insert(tone0);
+            uint8_t tone0 = static_cast<uint8_t>((packed >> 24) & 0xFF);
+            values.insert(tone0);
         }
 
-        // Should only have 2 unique values: +127 and -127 (for volume=0)
-        REQUIRE(amplitudes.size() == 2);
-        REQUIRE(amplitudes.find(127) != amplitudes.end());
-        REQUIRE(amplitudes.find(-127) != amplitudes.end());
+        // Should only have 2 unique values: 255 (128+127) and 1 (128-127) for volume=0
+        REQUIRE(values.size() == 2);
+        REQUIRE(values.find(255) != values.end());  // 128 + 127
+        REQUIRE(values.find(1) != values.end());    // 128 - 127
     }
 
-    SECTION("No DC offset") {
-        // The average of samples over multiple complete cycles should be ~0
+    SECTION("Symmetric around DC midpoint") {
+        // The average of samples over multiple complete cycles should be ~128 (DC midpoint)
         Sn76489 chip(4'000'000, 48'000);
         AudioBuffer buffer(48000);
 
@@ -497,21 +502,21 @@ TEST_CASE("Square wave integrity", "[sn76489][waveform]") {
         size_t count = buffer.read(samples.data(), samples.size());
         REQUIRE(count > 1000);
 
-        // Calculate average amplitude
+        // Calculate average value (unsigned)
         int64_t sum = 0;
         for (size_t i = 0; i < count; ++i) {
             uint32_t packed = samples[i].sources[0];
-            int8_t tone0 = static_cast<int8_t>((packed >> 24) & 0xFF);
+            uint8_t tone0 = static_cast<uint8_t>((packed >> 24) & 0xFF);
             sum += tone0;
         }
 
         double avg = static_cast<double>(sum) / count;
 
-        // DC offset should be very small (near 0)
-        REQUIRE(std::abs(avg) < 5.0);  // Allow small bias due to incomplete cycles
+        // Average should be near DC midpoint (128)
+        REQUIRE(std::abs(avg - 128.0) < 5.0);  // Allow small bias due to incomplete cycles
     }
 
-    SECTION("Zero crossings match expected frequency") {
+    SECTION("DC midpoint crossings match expected frequency") {
         Sn76489 chip(4'000'000, 48'000);
         AudioBuffer buffer(48000);
 
@@ -529,15 +534,15 @@ TEST_CASE("Square wave integrity", "[sn76489][waveform]") {
         size_t count = buffer.read(samples.data(), samples.size());
         REQUIRE(count > 1000);
 
-        // Count zero crossings
+        // Count crossings of DC midpoint (128)
         int crossings = 0;
         for (size_t i = 1; i < count; ++i) {
             uint32_t packed_prev = samples[i-1].sources[0];
             uint32_t packed = samples[i].sources[0];
-            int8_t prev = static_cast<int8_t>((packed_prev >> 24) & 0xFF);
-            int8_t curr = static_cast<int8_t>((packed >> 24) & 0xFF);
+            uint8_t prev = static_cast<uint8_t>((packed_prev >> 24) & 0xFF);
+            uint8_t curr = static_cast<uint8_t>((packed >> 24) & 0xFF);
 
-            if ((prev < 0 && curr >= 0) || (prev > 0 && curr <= 0)) {
+            if ((prev < 128 && curr >= 128) || (prev > 128 && curr <= 128)) {
                 crossings++;
             }
         }

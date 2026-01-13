@@ -209,16 +209,17 @@ uint8_t Sn76489::next_periodic_noise_bit() {
 
 void Sn76489::emit_sample(AudioBuffer& buffer) {
     // Generate audio sample with 4 separate channels
+    // Uses unsigned encoding (0-255) with DC bias pre-applied
     AudioSample sample;
 
-    // Get amplitudes for each channel
-    int8_t tone0 = get_tone_amplitude(0);
-    int8_t tone1 = get_tone_amplitude(1);
-    int8_t tone2 = get_tone_amplitude(2);
-    int8_t noise_amp = get_noise_amplitude();
+    // Get normalized samples for each channel (unsigned, centered at 128)
+    uint8_t tone0 = get_tone_normalized(0);
+    uint8_t tone1 = get_tone_normalized(1);
+    uint8_t tone2 = get_tone_normalized(2);
+    uint8_t noise_samp = get_noise_normalized();
 
     // Pack into 32-bit field: [tone0|tone1|tone2|noise]
-    sample.pack_4x8bit(0, tone0, tone1, tone2, noise_amp);
+    sample.pack_4x8bit_unsigned(0, tone0, tone1, tone2, noise_samp);
 
     // Sources 1-3 reserved for future expansion (speech, 1MHz bus audio)
     sample.sources[1] = 0;
@@ -255,6 +256,37 @@ int8_t Sn76489::get_noise_amplitude() const {
 
     // Apply noise bit polarity
     return noise_.output_bit ? amplitude : -amplitude;
+}
+
+uint8_t Sn76489::get_tone_normalized(size_t channel) const {
+    assert(channel < 3);
+    const auto& tone = tone_[channel];
+
+    // Volume 15 = silence → return mid-point (128)
+    if (tone.volume >= 15) {
+        return 128;
+    }
+
+    // Get base amplitude from volume table (0-127)
+    int8_t amplitude = VOLUME_TABLE[tone.volume];
+
+    // Map to 0-255 range centered at 128:
+    // output_bit=1 → 128 + amplitude (high)
+    // output_bit=0 → 128 - amplitude (low)
+    return static_cast<uint8_t>(128 + (tone.output_bit ? amplitude : -amplitude));
+}
+
+uint8_t Sn76489::get_noise_normalized() const {
+    // Volume 15 = silence → return mid-point (128)
+    if (noise_.volume >= 15) {
+        return 128;
+    }
+
+    // Get base amplitude from volume table (0-127)
+    int8_t amplitude = VOLUME_TABLE[noise_.volume];
+
+    // Map to 0-255 range centered at 128
+    return static_cast<uint8_t>(128 + (noise_.output_bit ? amplitude : -amplitude));
 }
 
 // --- Introspection interface ---

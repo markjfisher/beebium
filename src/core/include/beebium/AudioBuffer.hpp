@@ -32,18 +32,26 @@ struct AudioSample {
 
     AudioSample() : sources{0, 0, 0, 0} {}
 
-    // Pack 4 × 8-bit signed channels into sources[0] (for SN76489)
-    void pack_4x8bit(size_t index, int8_t ch0, int8_t ch1, int8_t ch2, int8_t ch3) {
-        // Convert signed to unsigned for packing
-        uint8_t u0 = static_cast<uint8_t>(ch0);
-        uint8_t u1 = static_cast<uint8_t>(ch1);
-        uint8_t u2 = static_cast<uint8_t>(ch2);
-        uint8_t u3 = static_cast<uint8_t>(ch3);
+    // Pack 4 × 8-bit signed channels into sources[index] (legacy zero-centered)
+    void pack_4x8bit_signed(size_t index, int8_t ch0, int8_t ch1, int8_t ch2, int8_t ch3) {
+        sources[index] = (static_cast<uint32_t>(static_cast<uint8_t>(ch0)) << 24) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(ch1)) << 16) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(ch2)) << 8) |
+                        static_cast<uint32_t>(static_cast<uint8_t>(ch3));
+    }
 
-        sources[index] = (static_cast<uint32_t>(u0) << 24) |
-                        (static_cast<uint32_t>(u1) << 16) |
-                        (static_cast<uint32_t>(u2) << 8) |
-                        static_cast<uint32_t>(u3);
+    // Pack 4 × 8-bit unsigned channels into sources[index] (DC bias pre-applied)
+    // Used for SN76489: 0-255 normalized samples with DC bias baked in
+    void pack_4x8bit_unsigned(size_t index, uint8_t ch0, uint8_t ch1, uint8_t ch2, uint8_t ch3) {
+        sources[index] = (static_cast<uint32_t>(ch0) << 24) |
+                        (static_cast<uint32_t>(ch1) << 16) |
+                        (static_cast<uint32_t>(ch2) << 8) |
+                        static_cast<uint32_t>(ch3);
+    }
+
+    // Legacy alias for signed packing
+    void pack_4x8bit(size_t index, int8_t ch0, int8_t ch1, int8_t ch2, int8_t ch3) {
+        pack_4x8bit_signed(index, ch0, ch1, ch2, ch3);
     }
 
     // Pack 2 × 16-bit signed channels (for stereo sources)

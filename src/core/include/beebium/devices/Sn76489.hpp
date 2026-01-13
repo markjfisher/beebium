@@ -175,14 +175,24 @@ private:
     // Generate periodic noise bit (15-cycle pattern)
     uint8_t next_periodic_noise_bit();
 
-    // Emit audio sample to buffer
+    // Emit audio sample to buffer (uses unsigned encoding with DC bias pre-applied)
     void emit_sample(AudioBuffer& buffer);
 
     // Compute tone channel output amplitude (applies volume table)
+    // Returns signed -127 to +127 (legacy, for signed encoding)
     int8_t get_tone_amplitude(size_t channel) const;
 
     // Compute noise channel output amplitude
+    // Returns signed -127 to +127 (legacy, for signed encoding)
     int8_t get_noise_amplitude() const;
+
+    // Compute normalized tone channel sample (DC bias pre-applied)
+    // Returns unsigned 0-255, centered at 128
+    uint8_t get_tone_normalized(size_t channel) const;
+
+    // Compute normalized noise channel sample (DC bias pre-applied)
+    // Returns unsigned 0-255, centered at 128
+    uint8_t get_noise_normalized() const;
 
     // Logarithmic volume table: 4-bit register → 8-bit signed amplitude
     // Formula: amplitude[v] = round(127 × 10^(-0.1v))

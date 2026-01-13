@@ -31,10 +31,11 @@ message AudioChunk {
 
 // Describes how to interpret a 32-bit source field
 enum SourceEncoding {
-    ENCODING_4X8BIT_SIGNED = 0;   // 4 × int8 channels (e.g., SN76489)
+    ENCODING_4X8BIT_SIGNED = 0;   // 4 × int8 channels, zero-centered (legacy)
     ENCODING_2X16BIT_SIGNED = 1;  // 2 × int16 channels (e.g., Music 5000 stereo)
     ENCODING_1X32BIT_SIGNED = 2;  // 1 × int32 channel (high-quality)
     ENCODING_SILENCE = 3;         // Unused/silent source
+    ENCODING_4X8BIT_UNSIGNED = 4; // 4 × uint8 channels, DC bias pre-applied (SN76489)
 }
 
 message AudioSource {

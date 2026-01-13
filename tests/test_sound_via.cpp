@@ -69,41 +69,37 @@ void write_sound_chip(MachineType& machine, uint8_t data) {
 }
 
 // Helper: Unpack SN76489 channels from AudioSample
+// Samples are unsigned (0-255) with DC midpoint at 128
 struct UnpackedSample {
-    int8_t tone0;
-    int8_t tone1;
-    int8_t tone2;
-    int8_t noise;
+    uint8_t tone0;
+    uint8_t tone1;
+    uint8_t tone2;
+    uint8_t noise;
 };
 
 UnpackedSample unpack_sn76489_sample(const AudioSample& sample) {
     uint32_t packed = sample.sources[0];
 
-    uint8_t u0 = (packed >> 24) & 0xFF;
-    uint8_t u1 = (packed >> 16) & 0xFF;
-    uint8_t u2 = (packed >> 8) & 0xFF;
-    uint8_t u3 = packed & 0xFF;
-
     return {
-        static_cast<int8_t>(u0),
-        static_cast<int8_t>(u1),
-        static_cast<int8_t>(u2),
-        static_cast<int8_t>(u3)
+        static_cast<uint8_t>((packed >> 24) & 0xFF),
+        static_cast<uint8_t>((packed >> 16) & 0xFF),
+        static_cast<uint8_t>((packed >> 8) & 0xFF),
+        static_cast<uint8_t>(packed & 0xFF)
     };
 }
 
-// Helper: Check if channel has activity
+// Helper: Check if channel has activity (deviation from DC midpoint 128)
 bool has_channel_activity(const std::vector<AudioSample>& samples, size_t channel_index) {
     for (const auto& sample : samples) {
         auto unpacked = unpack_sn76489_sample(sample);
-        int8_t amp = 0;
+        uint8_t value = 128;  // DC midpoint = silence
         switch (channel_index) {
-            case 0: amp = unpacked.tone0; break;
-            case 1: amp = unpacked.tone1; break;
-            case 2: amp = unpacked.tone2; break;
-            case 3: amp = unpacked.noise; break;
+            case 0: value = unpacked.tone0; break;
+            case 1: value = unpacked.tone1; break;
+            case 2: value = unpacked.tone2; break;
+            case 3: value = unpacked.noise; break;
         }
-        if (amp != 0) return true;
+        if (value != 128) return true;
     }
     return false;
 }

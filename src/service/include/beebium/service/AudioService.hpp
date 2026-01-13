@@ -141,7 +141,7 @@ grpc::Status AudioServiceImpl<MachineType>::GetAudioFormat(
     auto* sn76489 = response->add_sources();
     sn76489->set_source_index(0);
     sn76489->set_source_name("SN76489");
-    sn76489->set_encoding(ENCODING_4X8BIT_SIGNED);
+    sn76489->set_encoding(ENCODING_4X8BIT_UNSIGNED);
     sn76489->add_channel_names("Tone0");
     sn76489->add_channel_names("Tone1");
     sn76489->add_channel_names("Tone2");

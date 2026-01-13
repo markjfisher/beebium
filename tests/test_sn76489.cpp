@@ -360,7 +360,7 @@ TEST_CASE("SN76489 sample generation", "[sn76489]") {
         }
     }
 
-    SECTION("Silent channels produce zero amplitude") {
+    SECTION("Silent channels produce DC midpoint (128)") {
         // Set all channels to volume 15 (silence)
         chip.write(0x9F);  // Tone 0 volume = 15
         chip.write(0xBF);  // Tone 1 volume = 15
@@ -377,8 +377,9 @@ TEST_CASE("SN76489 sample generation", "[sn76489]") {
         if (buffer.available() > 0) {
             buffer.read(&sample, 1);
 
-            // All channels should be zero
-            REQUIRE(sample.sources[0] == 0);
+            // All channels should be at DC midpoint (128 = 0x80)
+            // Packed as: [tone0|tone1|tone2|noise] = 0x80808080
+            REQUIRE(sample.sources[0] == 0x80808080);
         }
     }
 }

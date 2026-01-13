@@ -16,17 +16,19 @@ import Atomics
 /// Audio signal processing pipeline for BBC Micro audio.
 ///
 /// Handles the full DSP chain:
-/// 1. Unpack 4 x 8-bit channels from packed samples
-/// 2. DC bias reconstruction using voltage metadata
-/// 3. High-pass filter to remove DC offset
-/// 4. Low-pass filter for anti-aliasing
-/// 5. Per-channel volume with exponential scaling
-/// 6. Per-channel stereo panning
-/// 7. Mix to stereo with master volume
-/// 8. Level metering (RMS/peak per channel)
+/// 1. Unpack 4 x 8-bit unsigned channels from packed samples (DC bias pre-applied)
+/// 2. High-pass filter to remove DC offset
+/// 3. Low-pass filter for anti-aliasing
+/// 4. Per-channel volume with exponential scaling
+/// 5. Per-channel stereo panning
+/// 6. Mix to stereo with master volume
+/// 7. Level metering (RMS/peak per channel)
+///
+/// Sample format: Backend emits unsigned 8-bit samples (0-255) with DC bias pre-applied.
+/// Value 128 = DC mid-point (silence), 0-127 = negative swing, 129-255 = positive swing.
 ///
 /// Thread safety:
-/// - Volume, mute, and DC bias state are accessed atomically
+/// - Volume and mute state are accessed atomically
 /// - Filter state is only accessed from the audio render thread
 /// - Meter state is written from audio thread, read from main thread
 final class AudioRenderer: @unchecked Sendable {
@@ -36,8 +38,8 @@ final class AudioRenderer: @unchecked Sendable {
     /// Number of audio channels (Tone0, Tone1, Tone2, Noise)
     static let channelCount = 4
 
-    /// Default lowpass cutoff frequency (based on beebjit research)
-    static let defaultLowpassCutoffHz: Float = 7200.0
+    /// Default lowpass cutoff frequency (BBC Microcomputer Service Manual, 1985)
+    static let defaultLowpassCutoffHz: Float = 8000.0
 
     /// Highpass cutoff for DC removal
     static let highpassCutoffHz: Float = 20.0
@@ -174,70 +176,26 @@ final class AudioRenderer: @unchecked Sendable {
             panPositions[i] = uint32ToFloat(atomicPanPositions[i].load(ordering: .relaxed))
         }
 
-        // Load DC bias metadata
-        var dcBias = [Float](repeating: Self.defaultDCBias, count: Self.channelCount)
-        var peak = [Float](repeating: Self.defaultDCBias + 0.4, count: Self.channelCount)
-        var trough = [Float](repeating: Self.defaultDCBias - 0.4, count: Self.channelCount)
-
-        for i in 0..<Self.channelCount {
-            dcBias[i] = uint32ToFloat(dcBiasVoltage[i].load(ordering: .relaxed))
-            peak[i] = uint32ToFloat(peakVoltage[i].load(ordering: .relaxed))
-            trough[i] = uint32ToFloat(troughVoltage[i].load(ordering: .relaxed))
-        }
-
         // Process samples
         for i in 0..<framesToRender {
             var left: Float = 0
             var right: Float = 0
 
             if i < samplesRead && !isMuted {
-                // Unpack 4 x 8-bit channels from packed sample
+                // Unpack 4 x 8-bit unsigned channels from packed sample
+                // Backend emits normalized samples with DC bias pre-applied:
+                // - 128 = DC mid-point (silent channel)
+                // - 0-127 = negative swing, 129-255 = positive swing
                 let packed = packedSamples[i]
-                let amplitudes = unpackChannels(packed)
+                let samples = unpackChannelsUnsigned(packed)
 
                 // Process each channel
                 for ch in 0..<Self.channelCount {
-                    // The SN76489 output is a square wave with DC bias characteristics.
-                    // The amplitude value (+127 to -127) encodes both:
-                    // - Polarity: positive = output high, negative = output low
-                    // - Magnitude: proportional to volume register (0=max, 15=silent)
-                    //
-                    // The DC bias metadata (peak_v, trough_v, dc_bias_v) tells us the
-                    // actual analog voltage characteristics at the current volume.
-                    //
-                    // For accurate analog reconstruction:
-                    // - Map positive amplitude to peak voltage
-                    // - Map negative amplitude to trough voltage
-                    // - Map zero amplitude to DC bias (silent channel)
-                    // - Scale by amplitude magnitude to account for volume level
+                    // Convert unsigned to signed float: (value - 128) / 127.0
+                    // This maps 0→-1.008, 128→0, 255→+1.0
+                    var sample = (Float(samples[ch]) - 128.0) / 127.0
 
-                    var sample: Float
-                    let amplitude = amplitudes[ch]
-
-                    if amplitude == 0 {
-                        // Silent channel - output DC bias (which will be filtered out)
-                        sample = dcBias[ch]
-                    } else {
-                        // Active channel - interpolate between peak and trough
-                        // based on amplitude magnitude and polarity
-                        let normalizedMagnitude = abs(Float(amplitude)) / 127.0
-                        if amplitude > 0 {
-                            // Output high - move from dcBias toward peak
-                            sample = dcBias[ch] + normalizedMagnitude * (peak[ch] - dcBias[ch])
-                        } else {
-                            // Output low - move from dcBias toward trough
-                            sample = dcBias[ch] + normalizedMagnitude * (trough[ch] - dcBias[ch])
-                        }
-                    }
-
-                    // Remove DC offset by subtracting the bias
-                    sample -= dcBias[ch]
-
-                    // Normalize to audio range. The maximum swing from dcBias is ~0.4V
-                    // (half of the 0.8V peak-to-peak at max volume), so scale by 2.5
-                    sample *= 2.5
-
-                    // Apply highpass filter (remove DC)
+                    // Apply highpass filter (removes residual DC)
                     sample = highpassFilters.process(sample, channel: ch)
 
                     // Apply lowpass filter (anti-aliasing)
@@ -358,13 +316,14 @@ final class AudioRenderer: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    /// Unpack 4 x 8-bit signed channels from a big-endian packed 32-bit sample
-    private func unpackChannels(_ packed: UInt32) -> [Int8] {
+    /// Unpack 4 x 8-bit unsigned channels from a big-endian packed 32-bit sample
+    /// Values are normalized with DC bias pre-applied: 128 = silence, 0-255 = full swing
+    private func unpackChannelsUnsigned(_ packed: UInt32) -> [UInt8] {
         return [
-            Int8(bitPattern: UInt8((packed >> 24) & 0xFF)),  // Tone0
-            Int8(bitPattern: UInt8((packed >> 16) & 0xFF)),  // Tone1
-            Int8(bitPattern: UInt8((packed >> 8) & 0xFF)),   // Tone2
-            Int8(bitPattern: UInt8(packed & 0xFF))           // Noise
+            UInt8((packed >> 24) & 0xFF),  // Tone0
+            UInt8((packed >> 16) & 0xFF),  // Tone1
+            UInt8((packed >> 8) & 0xFF),   // Tone2
+            UInt8(packed & 0xFF)           // Noise
         ]
     }
 

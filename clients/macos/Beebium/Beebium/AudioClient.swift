@@ -132,7 +132,8 @@ final class AudioClient: ObservableObject {
             await self?.fetchFormatAndSubscribe()
         }
 
-        // Start periodic channel state polling for DC bias metadata
+        // Start periodic channel state polling for visualization
+        // (DC bias is pre-applied in samples, so this is for UI display only)
         startChannelStatePolling()
     }
 
@@ -273,7 +274,7 @@ final class AudioClient: ObservableObject {
         }
     }
 
-    // MARK: - Channel State Polling (for DC bias)
+    // MARK: - Channel State Polling (for visualization)
 
     private func startChannelStatePolling() {
         channelStateTask = Task { [weak self] in
@@ -284,7 +285,8 @@ final class AudioClient: ObservableObject {
         }
     }
 
-    /// Refresh channel states from server (for DC bias and visualization)
+    /// Refresh channel states from server (for visualization only)
+    /// DC bias is now pre-applied in samples, so this is purely for UI display
     func refreshChannelStates() async {
         guard let client = client else { return }
 
@@ -307,16 +309,6 @@ final class AudioClient: ObservableObject {
 
             await MainActor.run {
                 self.channelStates = states
-            }
-
-            // Update renderer with DC bias metadata
-            for state in states {
-                renderer.setDCBias(
-                    channel: Int(state.channelId),
-                    dcBias: state.dcBiasVoltage,
-                    peak: state.peakVoltage,
-                    trough: state.troughVoltage
-                )
             }
         } catch {
             // Silently ignore errors - polling will retry
