@@ -114,11 +114,19 @@ Where:
 - **White noise**: XOR feedback, period 32767
 - **Periodic noise**: Simple rotation, period 15
 
-Noise rate select (bits 0-1 of register 6):
+**Register 6 format** (noise control): `%----MRR`
+- RR (bits 0-1): Rate select
+- M (bit 2): Mode (0=periodic, 1=white noise)
+
+**Noise rate select** (bits 0-1):
 - 0: N/512 (~488 Hz)
 - 1: N/1024 (~244 Hz)
 - 2: N/2048 (~122 Hz)
 - 3: Clocked from Tone 2 output
+
+**LFSR reset behavior** (MAME-verified): Writing to register 6 (noise control) resets
+the LFSR to its initial state (`0x4000`). This is important for deterministic noise
+sequences and matches hardware behavior documented in MAME's SN76496 implementation.
 
 ### DC Bias Behavior
 
@@ -205,6 +213,121 @@ Each channel is an 8-bit signed amplitude (-127 to +127).
 - Index 1: Speech synthesizer (TMS5220)
 - Index 2: 1 MHz bus audio (Music 5000)
 - Index 3: Reserved
+
+## AudioBuffer
+
+The `AudioBuffer` class is a lock-free single-producer single-consumer (SPSC) circular
+queue that bridges the emulator core and gRPC streaming.
+
+### Characteristics
+
+| Property | Value |
+|----------|-------|
+| Default capacity | 48,000 samples (~1 second @ 48 kHz) |
+| Sample size | 16 bytes (4 × 32-bit sources) |
+| Memory usage | ~768 KB at default capacity |
+| Thread safety | SPSC lock-free (one producer, one consumer) |
+| Overflow behavior | `push()` returns `false`, sample dropped |
+
+### Producer Interface (core thread)
+
+```cpp
+AudioBuffer buffer(48000);
+
+// Single sample push
+AudioSample sample;
+sample.pack_4x8bit(0, tone0, tone1, tone2, noise);
+if (!buffer.push(sample)) {
+    // Buffer full - sample dropped
+}
+
+// Batch write (more efficient)
+auto producer = buffer.get_producer_buffer();
+// Write samples to producer.data()...
+buffer.produce(count);
+```
+
+### Consumer Interface (gRPC thread)
+
+```cpp
+std::vector<AudioSample> samples(1024);
+size_t count = buffer.read(samples.data(), samples.size());
+// Process 'count' samples...
+```
+
+### Sequence Numbers
+
+The buffer tracks a monotonically increasing sequence number for drop detection:
+
+```cpp
+uint64_t seq = buffer.sequence();  // Total samples ever produced
+```
+
+Frontends can detect dropped samples by comparing `AudioChunk.sequence` values.
+
+## C++ API Usage
+
+### Direct Chip Access
+
+```cpp
+#include "beebium/devices/Sn76489.hpp"
+#include "beebium/AudioBuffer.hpp"
+
+// Create chip: 4 MHz input clock, 48 kHz output sample rate
+Sn76489 chip(4'000'000, 48'000);
+AudioBuffer buffer;
+
+// Set Tone 0 to ~440 Hz (A4)
+// Divider = 4,000,000 / (32 × 440) ≈ 284 = 0x11C
+chip.write(0x8C);  // Latch: Tone 0 freq, low nibble = 0xC
+chip.write(0x11);  // Data: high 6 bits = 0x11
+
+// Set Tone 0 volume to maximum
+chip.write(0x90);  // Latch: Tone 0 volume = 0 (max)
+
+// Generate samples (call every 2 MHz cycle)
+for (int i = 0; i < 2'000'000; ++i) {
+    chip.tick(buffer);
+}
+
+// Read generated samples
+std::vector<AudioSample> samples(48000);
+size_t count = buffer.read(samples.data(), samples.size());
+```
+
+### Introspection
+
+```cpp
+// Query tone channel state
+auto state = chip.get_tone_channel_state(0);
+std::cout << "Frequency: " << state.frequency_hz << " Hz\n";
+std::cout << "Volume: " << (int)state.volume << "\n";
+std::cout << "Amplitude: " << (int)state.amplitude << "\n";
+std::cout << "DC bias: " << state.dc_bias_v << " V\n";
+
+// Query noise channel state
+auto noise = chip.get_noise_channel_state();
+std::cout << "LFSR: 0x" << std::hex << noise.lfsr << "\n";
+std::cout << "White mode: " << noise.white_mode << "\n";
+```
+
+### Integration with Machine
+
+In `ModelBHardware`, the sound chip is wired to the System VIA:
+
+```cpp
+// Hardware state includes sound chip and audio buffer
+Sn76489 sound_chip{4'000'000, 48'000};
+std::optional<AudioBuffer> audio_buffer;
+
+// SystemViaPeripheral routes writes through addressable latch
+system_via_peripheral.set_sound_chip(&sound_chip);
+
+// Machine::step() ticks the sound chip every cycle
+if (state_.memory.audio_buffer) {
+    state_.memory.sound_chip.tick(state_.memory.audio_buffer.value());
+}
+```
 
 ## gRPC AudioService
 
@@ -304,9 +427,14 @@ for tone0, tone1, tone2, noise in unpack_samples(chunk, format):
 | `src/core/include/beebium/AudioBuffer.hpp` | Circular buffer for samples |
 | `src/service/proto/audio.proto` | gRPC service definitions |
 | `src/service/include/beebium/service/AudioService.hpp` | Service implementation |
-| `tests/test_sn76489.cpp` | Unit tests |
-| `tests/test_sound_basic.cpp` | BBC BASIC integration tests |
+| `tests/test_sn76489.cpp` | Core unit tests (register protocol, frequency, volume) |
+| `tests/test_sn76489_dc_bias.cpp` | DC bias metadata tests |
+| `tests/test_sn76489_mame.cpp` | MAME-verified behavior tests |
+| `tests/test_sound_basic.cpp` | BBC BASIC SOUND/ENVELOPE integration |
 | `tests/test_sound_via.cpp` | Direct VIA integration tests |
+| `tests/test_sound_edge_cases.cpp` | Edge cases and boundary conditions |
+| `tests/test_sound_state.cpp` | State introspection tests |
+| `tests/test_sound_timing.cpp` | Timing and sample rate tests |
 | `tests/test_grpc_audio.cpp` | gRPC service tests |
 
 ## Useful References
