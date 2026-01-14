@@ -111,7 +111,7 @@ TEST_CASE("AudioService GetAudioFormat returns correct metadata", "[grpc][audio]
     auto& sn76489 = response.sources(0);
     CHECK(sn76489.source_index() == 0);
     CHECK(sn76489.source_name() == "SN76489");
-    CHECK(sn76489.encoding() == beebium::ENCODING_4X8BIT_SIGNED);
+    CHECK(sn76489.encoding() == beebium::ENCODING_4X8BIT_UNSIGNED);
     REQUIRE(sn76489.channel_names_size() == 4);
     CHECK(sn76489.channel_names(0) == "Tone0");
     CHECK(sn76489.channel_names(1) == "Tone1");

@@ -413,9 +413,10 @@ TEST_CASE("SN76489 noise register special handling (MAME)", "[sn76489][mame][noi
         Sn76489 chip(4'000'000, 48'000);
 
         // Expected rates at 250 kHz internal clock:
-        // Rate 0: 250000 / 512 = 488.28 Hz
-        // Rate 1: 250000 / 1024 = 244.14 Hz
-        // Rate 2: 250000 / 2048 = 122.07 Hz
+        // Dividers: 32, 64, 128 (matches MAME formula: 1 << (5 + rate))
+        // Rate 0: 250000 / 32 = 7812.5 Hz
+        // Rate 1: 250000 / 64 = 3906.25 Hz
+        // Rate 2: 250000 / 128 = 1953.125 Hz
 
         struct RateTest {
             uint8_t rate;
@@ -423,9 +424,9 @@ TEST_CASE("SN76489 noise register special handling (MAME)", "[sn76489][mame][noi
         };
 
         std::vector<RateTest> tests = {
-            {0, 250000.0f / 512.0f},   // 488.28 Hz
-            {1, 250000.0f / 1024.0f},  // 244.14 Hz
-            {2, 250000.0f / 2048.0f},  // 122.07 Hz
+            {0, 250000.0f / 32.0f},   // 7812.5 Hz
+            {1, 250000.0f / 64.0f},   // 3906.25 Hz
+            {2, 250000.0f / 128.0f},  // 1953.125 Hz
         };
 
         for (const auto& test : tests) {

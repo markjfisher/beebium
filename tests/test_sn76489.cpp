@@ -279,20 +279,20 @@ TEST_CASE("SN76489 noise channel", "[sn76489]") {
     }
 
     SECTION("Noise rate select affects update frequency") {
-        // Rate 0: divider = 512 → 250 kHz / 512 ≈ 488 Hz
+        // Rate 0: divider = 32 → 250 kHz / 32 = 7812.5 Hz
         chip.write(0xE0);  // Noise: rate=0
         auto state = chip.get_noise_channel_state();
-        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(488.28f, 0.01f));
+        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(7812.5f, 0.01f));
 
-        // Rate 1: divider = 1024 → 250 kHz / 1024 ≈ 244 Hz
+        // Rate 1: divider = 64 → 250 kHz / 64 = 3906.25 Hz
         chip.write(0xE1);  // Noise: rate=1
         state = chip.get_noise_channel_state();
-        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(244.14f, 0.01f));
+        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(3906.25f, 0.01f));
 
-        // Rate 2: divider = 2048 → 250 kHz / 2048 ≈ 122 Hz
+        // Rate 2: divider = 128 → 250 kHz / 128 = 1953.125 Hz
         chip.write(0xE2);  // Noise: rate=2
         state = chip.get_noise_channel_state();
-        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(122.07f, 0.01f));
+        REQUIRE_THAT(state.rate_hz, Catch::Matchers::WithinRel(1953.125f, 0.01f));
     }
 
     SECTION("Noise rate=3 uses tone 2 frequency") {

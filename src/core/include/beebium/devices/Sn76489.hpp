@@ -221,7 +221,9 @@ private:
     static constexpr uint16_t LFSR_MASK = 0x7FFF;  // 15-bit mask
 
     // Noise rate dividers (from 250 kHz internal clock)
-    static constexpr uint16_t NOISE_RATE_DIVIDERS[3] = {512, 1024, 2048};
+    // Rate 0: 32 (7812.5 Hz), Rate 1: 64 (3906.25 Hz), Rate 2: 128 (1953.125 Hz)
+    // Formula: 1 << (5 + rate) - matches MAME and B2
+    static constexpr uint16_t NOISE_RATE_DIVIDERS[3] = {32, 64, 128};
 
     // DC bias voltage constants (from hardware measurements)
     // Reference: scarybeastsecurity.blogspot.com/2020/06/sampled-sound-1980s-style

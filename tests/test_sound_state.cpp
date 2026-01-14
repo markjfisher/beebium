@@ -123,8 +123,8 @@ TEST_CASE("SN76489 state consistency", "[sn76489][state]") {
         REQUIRE(noise.white_mode == true);
         REQUIRE(noise.volume == 3);
 
-        // Rate Hz for rate 2: 250 kHz / 2048 ≈ 122.07 Hz
-        REQUIRE_THAT(noise.rate_hz, Catch::Matchers::WithinRel(122.07f, 0.01f));
+        // Rate Hz for rate 2: 250 kHz / 128 = 1953.125 Hz
+        REQUIRE_THAT(noise.rate_hz, Catch::Matchers::WithinRel(1953.125f, 0.01f));
     }
 
     SECTION("LFSR state evolves during playback") {
@@ -345,11 +345,11 @@ TEST_CASE("SN76489 frequency_hz calculations", "[sn76489][state]") {
     SECTION("Noise rate_hz matches formula for fixed rates") {
         Sn76489 chip(4'000'000, 48'000);
 
-        // Rate dividers: 512, 1024, 2048
+        // Rate dividers: 32, 64, 128 (matches MAME formula: 1 << (5 + rate))
         std::vector<std::pair<uint8_t, float>> rate_tests = {
-            {0, 250000.0f / 512.0f},   // ~488 Hz
-            {1, 250000.0f / 1024.0f},  // ~244 Hz
-            {2, 250000.0f / 2048.0f},  // ~122 Hz
+            {0, 250000.0f / 32.0f},   // 7812.5 Hz
+            {1, 250000.0f / 64.0f},   // 3906.25 Hz
+            {2, 250000.0f / 128.0f},  // 1953.125 Hz
         };
 
         for (auto [rate, expected_hz] : rate_tests) {

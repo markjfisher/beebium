@@ -177,14 +177,10 @@ void Sn76489::update_noise_channel() {
         if (noise_.rate_select < 3) {
             noise_.counter = NOISE_RATE_DIVIDERS[noise_.rate_select];
         } else {
-            // Rate select = 3: clock from tone channel 2 output
-            // When tone 2 toggles, advance noise LFSR
-            // Check if tone 2 counter just hit zero (about to toggle)
-            if (tone_[2].counter == 0) {
-                noise_.counter = (tone_[2].frequency == 0) ? 1024 : tone_[2].frequency;
-            } else {
-                noise_.counter = 1;  // Wait for next tone 2 toggle
-            }
+            // Rate 3: use tone 2's period x 2 (MAME-verified behavior)
+            // No synchronization to tone 2's counter state is needed
+            uint16_t tone2_freq = (tone_[2].frequency == 0) ? 1024 : tone_[2].frequency;
+            noise_.counter = tone2_freq * 2;
         }
     }
 }
