@@ -70,3 +70,7 @@ __pycache__/
 dist/
 .venv/
 *.egg
+/docs/manuals/
+/docs/manuals_text/
+/docs/datasheets/
+/discs/games/
