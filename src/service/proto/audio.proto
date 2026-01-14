@@ -2,16 +2,14 @@ syntax = "proto3";
 
 package beebium;
 
-// Audio streaming and introspection service
+// Audio streaming service
+// Note: Sound chip state introspection moved to DebuggerControl.GetSoundChipState
 service AudioService {
     // Stream audio samples as they're generated
     rpc SubscribeAudio(SubscribeAudioRequest) returns (stream AudioChunk);
 
     // Get audio format metadata (how to interpret sample data)
     rpc GetAudioFormat(GetAudioFormatRequest) returns (AudioFormat);
-
-    // Get current state of all sound channels (introspection)
-    rpc GetChannelStates(GetChannelStatesRequest) returns (ChannelStatesResponse);
 }
 
 message SubscribeAudioRequest {
@@ -42,7 +40,9 @@ message AudioSource {
     uint32 source_index = 1;      // Index into sample sources array
     string source_name = 2;       // E.g., "SN76489", "Speech", "Music5000"
     SourceEncoding encoding = 3;  // How the 32-bit field is subdivided
-    repeated string channel_names = 4;  // Sub-channel labels (e.g., "Tone0", "Tone1", "Tone2", "Noise")
+    // Sub-channel labels using MOS SOUND channel numbering:
+    // "0" (noise), "1", "2", "3" (tones) - matches BBC BASIC SOUND command
+    repeated string channel_names = 4;
     uint32 group_id = 5;          // Channel group ID (0 = ungrouped)
 }
 
@@ -63,36 +63,4 @@ message AudioFormat {
     repeated ChannelGroup groups = 4;     // Channel group definitions
 }
 
-message GetChannelStatesRequest {}
-
-// State of a single sound channel
-message ChannelState {
-    uint32 channel_id = 1;        // Channel index (0-3)
-    string channel_name = 2;      // "Tone0", "Tone1", "Tone2", or "Noise"
-
-    // Tone channel state (channel_id 0-2)
-    uint32 frequency_divider = 3; // 10-bit divider value (0-1023)
-    uint32 counter = 4;           // Current countdown value
-    bool output_bit = 5;          // Square wave polarity
-    uint32 volume = 6;            // 4-bit attenuation (0=max, 15=silent)
-    float frequency_hz = 7;       // Computed output frequency
-    int32 amplitude = 8;          // Current 8-bit signed amplitude (-127 to +127)
-
-    // Noise channel state (channel_id 3 only)
-    uint32 noise_rate = 9;        // 2-bit rate select (0-3, where 3=Tone2)
-    bool white_noise = 10;        // true=white noise, false=periodic
-    uint32 lfsr_state = 11;       // 15-bit LFSR state
-
-    // DC bias metadata for accurate analog reconstruction
-    // Reference: scarybeastsecurity.blogspot.com/2020/06/sampled-sound-1980s-style
-    // The SN76489 output is centered around ~0.8V, not 0V. This matters for
-    // sampled sound techniques that modulate volume to encode PCM data.
-    float dc_bias_voltage = 12;   // Mid-point voltage (V)
-    float peak_voltage = 13;      // Voltage when output high (V)
-    float trough_voltage = 14;    // Voltage when output low (V)
-}
-
-message ChannelStatesResponse {
-    repeated ChannelState channels = 1;  // All 4 channels (3 tone + 1 noise)
-    uint32 latched_register = 2;         // Currently latched register (0-7)
-}
+// Note: GetChannelStates moved to DebuggerControl.GetSoundChipState in debugger.proto

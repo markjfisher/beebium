@@ -22,11 +22,16 @@ import beebium
 from beebium.basic import Basic
 from beebium.connection import Connection
 from beebium.cpu import CPU
+from beebium.crtc import Crtc
 from beebium.debugger import Debugger
 from beebium.keyboard import Keyboard
+from beebium.latch import AddressableLatch
 from beebium.memory import Memory
 from beebium.server import ServerProcess
+from beebium.sound import Sound
+from beebium.via import Via, ViaId
 from beebium.video import Video
+from beebium.video_ula import VideoUla
 
 
 class Beebium:
@@ -67,6 +72,12 @@ class Beebium:
         self._video: Video | None = None
         self._memory: Memory | None = None
         self._basic: Basic | None = None
+        self._system_via: Via | None = None
+        self._user_via: Via | None = None
+        self._crtc: Crtc | None = None
+        self._video_ula: VideoUla | None = None
+        self._addressable_latch: AddressableLatch | None = None
+        self._sound: Sound | None = None
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -149,7 +160,7 @@ class Beebium:
     def cpu(self) -> CPU:
         """Access 6502 CPU registers."""
         if self._cpu is None:
-            self._cpu = CPU(self._connection.cpu_stub)
+            self._cpu = CPU(self._connection.debugger_stub)
         return self._cpu
 
     @property
@@ -179,6 +190,48 @@ class Beebium:
         if self._basic is None:
             self._basic = Basic(self)
         return self._basic
+
+    @property
+    def system_via(self) -> Via:
+        """Access System VIA (6522) state."""
+        if self._system_via is None:
+            self._system_via = Via(self._connection.debugger_stub, ViaId.SYSTEM)
+        return self._system_via
+
+    @property
+    def user_via(self) -> Via:
+        """Access User VIA (6522) state."""
+        if self._user_via is None:
+            self._user_via = Via(self._connection.debugger_stub, ViaId.USER)
+        return self._user_via
+
+    @property
+    def crtc(self) -> Crtc:
+        """Access CRTC (6845) state."""
+        if self._crtc is None:
+            self._crtc = Crtc(self._connection.debugger_stub)
+        return self._crtc
+
+    @property
+    def video_ula(self) -> VideoUla:
+        """Access Video ULA state."""
+        if self._video_ula is None:
+            self._video_ula = VideoUla(self._connection.debugger_stub)
+        return self._video_ula
+
+    @property
+    def addressable_latch(self) -> AddressableLatch:
+        """Access addressable latch state."""
+        if self._addressable_latch is None:
+            self._addressable_latch = AddressableLatch(self._connection.debugger_stub)
+        return self._addressable_latch
+
+    @property
+    def sound(self) -> Sound:
+        """Access SN76489 sound chip state."""
+        if self._sound is None:
+            self._sound = Sound(self._connection.debugger_stub)
+        return self._sound
 
     def close(self) -> None:
         """Close the connection and stop any managed server."""

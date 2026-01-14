@@ -29,18 +29,6 @@ struct ChannelGroupInfo: Identifiable {
     let color: String
 }
 
-/// Per-channel state for visualization and DC bias reconstruction
-struct ChannelStateInfo {
-    let channelId: UInt32
-    let channelName: String
-    let frequencyHz: Float
-    let volume: UInt32
-    let amplitude: Int32
-    let dcBiasVoltage: Float
-    let peakVoltage: Float
-    let troughVoltage: Float
-}
-
 /// Client for streaming audio from beebium-server via gRPC.
 ///
 /// Follows the established client pattern:
@@ -64,10 +52,10 @@ final class AudioClient: ObservableObject {
     /// Channel groups for UI organization
     @Published private(set) var groups: [ChannelGroupInfo] = []
 
-    // MARK: - Channel Introspection
+    // MARK: - Channel Introspection (Reserved)
 
-    /// Current state of all channels (for visualization and DC bias)
-    @Published private(set) var channelStates: [ChannelStateInfo] = []
+    // Channel state visualization can be added via debugger service's GetSoundChipState
+    // when needed. For now, channel names come from AudioFormat metadata.
 
     // MARK: - Connection State
 
@@ -103,7 +91,6 @@ final class AudioClient: ObservableObject {
 
     private var client: Beebium_AudioServiceNIOClient?
     private var streamTask: Task<Void, Never>?
-    private var channelStateTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -131,18 +118,10 @@ final class AudioClient: ObservableObject {
         streamTask = Task { [weak self] in
             await self?.fetchFormatAndSubscribe()
         }
-
-        // Start periodic channel state polling for visualization
-        // (DC bias is pre-applied in samples, so this is for UI display only)
-        startChannelStatePolling()
     }
 
     /// Disconnect from the server
     func disconnect() {
-        // Stop polling
-        channelStateTask?.cancel()
-        channelStateTask = nil
-
         // Stop streaming
         streamTask?.cancel()
         streamTask = nil
@@ -156,7 +135,6 @@ final class AudioClient: ObservableObject {
         isLoaded = false
         sources = []
         groups = []
-        channelStates = []
         errorMessage = nil
         chunksReceived = 0
         samplesDropped = 0
@@ -271,47 +249,6 @@ final class AudioClient: ObservableObject {
             if written < sampleCount {
                 self.samplesDropped += UInt64(sampleCount - written)
             }
-        }
-    }
-
-    // MARK: - Channel State Polling (for visualization)
-
-    private func startChannelStatePolling() {
-        channelStateTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refreshChannelStates()
-                try? await Task.sleep(nanoseconds: 16_666_667)  // ~60Hz
-            }
-        }
-    }
-
-    /// Refresh channel states from server (for visualization only)
-    /// DC bias is now pre-applied in samples, so this is purely for UI display
-    func refreshChannelStates() async {
-        guard let client = client else { return }
-
-        do {
-            let request = Beebium_GetChannelStatesRequest()
-            let response = try await client.getChannelStates(request).response.get()
-
-            let states = response.channels.map { channel in
-                ChannelStateInfo(
-                    channelId: channel.channelID,
-                    channelName: channel.channelName,
-                    frequencyHz: channel.frequencyHz,
-                    volume: channel.volume,
-                    amplitude: channel.amplitude,
-                    dcBiasVoltage: channel.dcBiasVoltage,
-                    peakVoltage: channel.peakVoltage,
-                    troughVoltage: channel.troughVoltage
-                )
-            }
-
-            await MainActor.run {
-                self.channelStates = states
-            }
-        } catch {
-            // Silently ignore errors - polling will retry
         }
     }
 

@@ -11,7 +11,8 @@ import NIOConcurrencyHelpers
 import SwiftProtobuf
 
 
-/// Audio streaming and introspection service
+/// Audio streaming service
+/// Note: Sound chip state introspection moved to DebuggerControl.GetSoundChipState
 ///
 /// Usage: instantiate `Beebium_AudioServiceClient`, then call methods of this protocol to make API calls.
 internal protocol Beebium_AudioServiceClientProtocol: GRPCClient {
@@ -28,11 +29,6 @@ internal protocol Beebium_AudioServiceClientProtocol: GRPCClient {
     _ request: Beebium_GetAudioFormatRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_GetAudioFormatRequest, Beebium_AudioFormat>
-
-  func getChannelStates(
-    _ request: Beebium_GetChannelStatesRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse>
 }
 
 extension Beebium_AudioServiceClientProtocol {
@@ -76,24 +72,6 @@ extension Beebium_AudioServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetAudioFormatInterceptors() ?? []
-    )
-  }
-
-  /// Get current state of all sound channels (introspection)
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetChannelStates.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getChannelStates(
-    _ request: Beebium_GetChannelStatesRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_AudioServiceClientMetadata.Methods.getChannelStates.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetChannelStatesInterceptors() ?? []
     )
   }
 }
@@ -155,7 +133,8 @@ internal struct Beebium_AudioServiceNIOClient: Beebium_AudioServiceClientProtoco
   }
 }
 
-/// Audio streaming and introspection service
+/// Audio streaming service
+/// Note: Sound chip state introspection moved to DebuggerControl.GetSoundChipState
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 internal protocol Beebium_AudioServiceAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
@@ -170,11 +149,6 @@ internal protocol Beebium_AudioServiceAsyncClientProtocol: GRPCClient {
     _ request: Beebium_GetAudioFormatRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_GetAudioFormatRequest, Beebium_AudioFormat>
-
-  func makeGetChannelStatesCall(
-    _ request: Beebium_GetChannelStatesRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -210,18 +184,6 @@ extension Beebium_AudioServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetAudioFormatInterceptors() ?? []
     )
   }
-
-  internal func makeGetChannelStatesCall(
-    _ request: Beebium_GetChannelStatesRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_AudioServiceClientMetadata.Methods.getChannelStates.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetChannelStatesInterceptors() ?? []
-    )
-  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -247,18 +209,6 @@ extension Beebium_AudioServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetAudioFormatInterceptors() ?? []
-    )
-  }
-
-  internal func getChannelStates(
-    _ request: Beebium_GetChannelStatesRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_ChannelStatesResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_AudioServiceClientMetadata.Methods.getChannelStates.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetChannelStatesInterceptors() ?? []
     )
   }
 }
@@ -287,9 +237,6 @@ internal protocol Beebium_AudioServiceClientInterceptorFactoryProtocol: Sendable
 
   /// - Returns: Interceptors to use when invoking 'getAudioFormat'.
   func makeGetAudioFormatInterceptors() -> [ClientInterceptor<Beebium_GetAudioFormatRequest, Beebium_AudioFormat>]
-
-  /// - Returns: Interceptors to use when invoking 'getChannelStates'.
-  func makeGetChannelStatesInterceptors() -> [ClientInterceptor<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse>]
 }
 
 internal enum Beebium_AudioServiceClientMetadata {
@@ -299,7 +246,6 @@ internal enum Beebium_AudioServiceClientMetadata {
     methods: [
       Beebium_AudioServiceClientMetadata.Methods.subscribeAudio,
       Beebium_AudioServiceClientMetadata.Methods.getAudioFormat,
-      Beebium_AudioServiceClientMetadata.Methods.getChannelStates,
     ]
   )
 
@@ -315,16 +261,11 @@ internal enum Beebium_AudioServiceClientMetadata {
       path: "/beebium.AudioService/GetAudioFormat",
       type: GRPCCallType.unary
     )
-
-    internal static let getChannelStates = GRPCMethodDescriptor(
-      name: "GetChannelStates",
-      path: "/beebium.AudioService/GetChannelStates",
-      type: GRPCCallType.unary
-    )
   }
 }
 
-/// Audio streaming and introspection service
+/// Audio streaming service
+/// Note: Sound chip state introspection moved to DebuggerControl.GetSoundChipState
 ///
 /// To build a server, implement a class that conforms to this protocol.
 internal protocol Beebium_AudioServiceProvider: CallHandlerProvider {
@@ -335,9 +276,6 @@ internal protocol Beebium_AudioServiceProvider: CallHandlerProvider {
 
   /// Get audio format metadata (how to interpret sample data)
   func getAudioFormat(request: Beebium_GetAudioFormatRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_AudioFormat>
-
-  /// Get current state of all sound channels (introspection)
-  func getChannelStates(request: Beebium_GetChannelStatesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ChannelStatesResponse>
 }
 
 extension Beebium_AudioServiceProvider {
@@ -370,22 +308,14 @@ extension Beebium_AudioServiceProvider {
         userFunction: self.getAudioFormat(request:context:)
       )
 
-    case "GetChannelStates":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetChannelStatesRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ChannelStatesResponse>(),
-        interceptors: self.interceptors?.makeGetChannelStatesInterceptors() ?? [],
-        userFunction: self.getChannelStates(request:context:)
-      )
-
     default:
       return nil
     }
   }
 }
 
-/// Audio streaming and introspection service
+/// Audio streaming service
+/// Note: Sound chip state introspection moved to DebuggerControl.GetSoundChipState
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -405,12 +335,6 @@ internal protocol Beebium_AudioServiceAsyncProvider: CallHandlerProvider, Sendab
     request: Beebium_GetAudioFormatRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_AudioFormat
-
-  /// Get current state of all sound channels (introspection)
-  func getChannelStates(
-    request: Beebium_GetChannelStatesRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_ChannelStatesResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -450,15 +374,6 @@ extension Beebium_AudioServiceAsyncProvider {
         wrapping: { try await self.getAudioFormat(request: $0, context: $1) }
       )
 
-    case "GetChannelStates":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetChannelStatesRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ChannelStatesResponse>(),
-        interceptors: self.interceptors?.makeGetChannelStatesInterceptors() ?? [],
-        wrapping: { try await self.getChannelStates(request: $0, context: $1) }
-      )
-
     default:
       return nil
     }
@@ -474,10 +389,6 @@ internal protocol Beebium_AudioServiceServerInterceptorFactoryProtocol: Sendable
   /// - Returns: Interceptors to use when handling 'getAudioFormat'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetAudioFormatInterceptors() -> [ServerInterceptor<Beebium_GetAudioFormatRequest, Beebium_AudioFormat>]
-
-  /// - Returns: Interceptors to use when handling 'getChannelStates'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetChannelStatesInterceptors() -> [ServerInterceptor<Beebium_GetChannelStatesRequest, Beebium_ChannelStatesResponse>]
 }
 
 internal enum Beebium_AudioServiceServerMetadata {
@@ -487,7 +398,6 @@ internal enum Beebium_AudioServiceServerMetadata {
     methods: [
       Beebium_AudioServiceServerMetadata.Methods.subscribeAudio,
       Beebium_AudioServiceServerMetadata.Methods.getAudioFormat,
-      Beebium_AudioServiceServerMetadata.Methods.getChannelStates,
     ]
   )
 
@@ -501,12 +411,6 @@ internal enum Beebium_AudioServiceServerMetadata {
     internal static let getAudioFormat = GRPCMethodDescriptor(
       name: "GetAudioFormat",
       path: "/beebium.AudioService/GetAudioFormat",
-      type: GRPCCallType.unary
-    )
-
-    internal static let getChannelStates = GRPCMethodDescriptor(
-      name: "GetChannelStates",
-      path: "/beebium.AudioService/GetChannelStates",
       type: GRPCCallType.unary
     )
   }

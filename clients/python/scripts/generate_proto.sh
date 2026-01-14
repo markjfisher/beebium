@@ -30,7 +30,8 @@ python -m grpc_tools.protoc \
     --grpc_python_out="$OUT_DIR" \
     "$PROTO_DIR/video.proto" \
     "$PROTO_DIR/keyboard.proto" \
-    "$PROTO_DIR/debugger.proto"
+    "$PROTO_DIR/debugger.proto" \
+    "$PROTO_DIR/audio.proto"
 
 # Fix imports in generated files to use relative imports
 # The generated code uses absolute imports which don't work with src layout

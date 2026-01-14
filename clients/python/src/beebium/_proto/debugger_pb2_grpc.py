@@ -120,6 +120,46 @@ class DebuggerControlStub(object):
                 request_serializer=debugger__pb2.Empty.SerializeToString,
                 response_deserializer=debugger__pb2.ClearBreakpointsResponse.FromString,
                 _registered_method=True)
+        self.Get6502State = channel.unary_unary(
+                '/beebium.DebuggerControl/Get6502State',
+                request_serializer=debugger__pb2.Get6502StateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.Cpu6502State.FromString,
+                _registered_method=True)
+        self.Set6502State = channel.unary_unary(
+                '/beebium.DebuggerControl/Set6502State',
+                request_serializer=debugger__pb2.Set6502StateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.Set6502StateResponse.FromString,
+                _registered_method=True)
+        self.GetSystemViaState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetSystemViaState',
+                request_serializer=debugger__pb2.GetSystemViaStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.ViaState.FromString,
+                _registered_method=True)
+        self.GetUserViaState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetUserViaState',
+                request_serializer=debugger__pb2.GetUserViaStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.ViaState.FromString,
+                _registered_method=True)
+        self.GetCrtcState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetCrtcState',
+                request_serializer=debugger__pb2.GetCrtcStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.CrtcState.FromString,
+                _registered_method=True)
+        self.GetVideoUlaState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetVideoUlaState',
+                request_serializer=debugger__pb2.GetVideoUlaStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.VideoUlaState.FromString,
+                _registered_method=True)
+        self.GetAddressableLatchState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetAddressableLatchState',
+                request_serializer=debugger__pb2.GetAddressableLatchStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.AddressableLatchState.FromString,
+                _registered_method=True)
+        self.GetSoundGeneratorState = channel.unary_unary(
+                '/beebium.DebuggerControl/GetSoundGeneratorState',
+                request_serializer=debugger__pb2.GetSoundGeneratorStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.SoundGeneratorState.FromString,
+                _registered_method=True)
 
 
 class DebuggerControlServicer(object):
@@ -232,6 +272,56 @@ class DebuggerControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Get6502State(self, request, context):
+        """CPU state
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Set6502State(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSystemViaState(self, request, context):
+        """Device state inspection (debugger access to write-only registers and internal state)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetUserViaState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetCrtcState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetVideoUlaState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAddressableLatchState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSoundGeneratorState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DebuggerControlServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -319,6 +409,46 @@ def add_DebuggerControlServicer_to_server(servicer, server):
                     servicer.ClearBreakpoints,
                     request_deserializer=debugger__pb2.Empty.FromString,
                     response_serializer=debugger__pb2.ClearBreakpointsResponse.SerializeToString,
+            ),
+            'Get6502State': grpc.unary_unary_rpc_method_handler(
+                    servicer.Get6502State,
+                    request_deserializer=debugger__pb2.Get6502StateRequest.FromString,
+                    response_serializer=debugger__pb2.Cpu6502State.SerializeToString,
+            ),
+            'Set6502State': grpc.unary_unary_rpc_method_handler(
+                    servicer.Set6502State,
+                    request_deserializer=debugger__pb2.Set6502StateRequest.FromString,
+                    response_serializer=debugger__pb2.Set6502StateResponse.SerializeToString,
+            ),
+            'GetSystemViaState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSystemViaState,
+                    request_deserializer=debugger__pb2.GetSystemViaStateRequest.FromString,
+                    response_serializer=debugger__pb2.ViaState.SerializeToString,
+            ),
+            'GetUserViaState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetUserViaState,
+                    request_deserializer=debugger__pb2.GetUserViaStateRequest.FromString,
+                    response_serializer=debugger__pb2.ViaState.SerializeToString,
+            ),
+            'GetCrtcState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCrtcState,
+                    request_deserializer=debugger__pb2.GetCrtcStateRequest.FromString,
+                    response_serializer=debugger__pb2.CrtcState.SerializeToString,
+            ),
+            'GetVideoUlaState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetVideoUlaState,
+                    request_deserializer=debugger__pb2.GetVideoUlaStateRequest.FromString,
+                    response_serializer=debugger__pb2.VideoUlaState.SerializeToString,
+            ),
+            'GetAddressableLatchState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAddressableLatchState,
+                    request_deserializer=debugger__pb2.GetAddressableLatchStateRequest.FromString,
+                    response_serializer=debugger__pb2.AddressableLatchState.SerializeToString,
+            ),
+            'GetSoundGeneratorState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSoundGeneratorState,
+                    request_deserializer=debugger__pb2.GetSoundGeneratorStateRequest.FromString,
+                    response_serializer=debugger__pb2.SoundGeneratorState.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -791,72 +921,8 @@ class DebuggerControl(object):
             metadata,
             _registered_method=True)
 
-
-class Debugger6502Stub(object):
-    """6502-specific debugger service
-    """
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.ReadRegisters = channel.unary_unary(
-                '/beebium.Debugger6502/ReadRegisters',
-                request_serializer=debugger__pb2.Empty.SerializeToString,
-                response_deserializer=debugger__pb2.Registers6502.FromString,
-                _registered_method=True)
-        self.WriteRegisters = channel.unary_unary(
-                '/beebium.Debugger6502/WriteRegisters',
-                request_serializer=debugger__pb2.WriteRegisters6502Request.SerializeToString,
-                response_deserializer=debugger__pb2.WriteRegistersResponse.FromString,
-                _registered_method=True)
-
-
-class Debugger6502Servicer(object):
-    """6502-specific debugger service
-    """
-
-    def ReadRegisters(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def WriteRegisters(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_Debugger6502Servicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'ReadRegisters': grpc.unary_unary_rpc_method_handler(
-                    servicer.ReadRegisters,
-                    request_deserializer=debugger__pb2.Empty.FromString,
-                    response_serializer=debugger__pb2.Registers6502.SerializeToString,
-            ),
-            'WriteRegisters': grpc.unary_unary_rpc_method_handler(
-                    servicer.WriteRegisters,
-                    request_deserializer=debugger__pb2.WriteRegisters6502Request.FromString,
-                    response_serializer=debugger__pb2.WriteRegistersResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'beebium.Debugger6502', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('beebium.Debugger6502', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class Debugger6502(object):
-    """6502-specific debugger service
-    """
-
     @staticmethod
-    def ReadRegisters(request,
+    def Get6502State(request,
             target,
             options=(),
             channel_credentials=None,
@@ -869,9 +935,9 @@ class Debugger6502(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/beebium.Debugger6502/ReadRegisters',
-            debugger__pb2.Empty.SerializeToString,
-            debugger__pb2.Registers6502.FromString,
+            '/beebium.DebuggerControl/Get6502State',
+            debugger__pb2.Get6502StateRequest.SerializeToString,
+            debugger__pb2.Cpu6502State.FromString,
             options,
             channel_credentials,
             insecure,
@@ -883,7 +949,7 @@ class Debugger6502(object):
             _registered_method=True)
 
     @staticmethod
-    def WriteRegisters(request,
+    def Set6502State(request,
             target,
             options=(),
             channel_credentials=None,
@@ -896,9 +962,171 @@ class Debugger6502(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/beebium.Debugger6502/WriteRegisters',
-            debugger__pb2.WriteRegisters6502Request.SerializeToString,
-            debugger__pb2.WriteRegistersResponse.FromString,
+            '/beebium.DebuggerControl/Set6502State',
+            debugger__pb2.Set6502StateRequest.SerializeToString,
+            debugger__pb2.Set6502StateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSystemViaState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetSystemViaState',
+            debugger__pb2.GetSystemViaStateRequest.SerializeToString,
+            debugger__pb2.ViaState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetUserViaState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetUserViaState',
+            debugger__pb2.GetUserViaStateRequest.SerializeToString,
+            debugger__pb2.ViaState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetCrtcState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetCrtcState',
+            debugger__pb2.GetCrtcStateRequest.SerializeToString,
+            debugger__pb2.CrtcState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetVideoUlaState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetVideoUlaState',
+            debugger__pb2.GetVideoUlaStateRequest.SerializeToString,
+            debugger__pb2.VideoUlaState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAddressableLatchState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetAddressableLatchState',
+            debugger__pb2.GetAddressableLatchStateRequest.SerializeToString,
+            debugger__pb2.AddressableLatchState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSoundGeneratorState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/GetSoundGeneratorState',
+            debugger__pb2.GetSoundGeneratorStateRequest.SerializeToString,
+            debugger__pb2.SoundGeneratorState.FromString,
             options,
             channel_credentials,
             insecure,

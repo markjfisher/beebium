@@ -273,6 +273,14 @@ public:
         return (index < 18) ? registers_[index] : 0;
     }
 
+    // Address register (currently selected register for read/write)
+    uint8_t address_register() const { return address_register_; }
+
+    // Sync and display state for debugger inspection
+    bool in_hsync() const { return hsync_counter_ >= 0; }
+    bool in_vsync() const { return vsync_counter_ >= 0; }
+    bool display_enabled() const { return h_display_ && v_display_; }
+
     void reset() {
         address_register_ = 0;
         registers_.fill(0);

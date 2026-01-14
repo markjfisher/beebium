@@ -44,11 +44,6 @@ public:
         const GetAudioFormatRequest* request,
         AudioFormat* response) override;
 
-    grpc::Status GetChannelStates(
-        grpc::ServerContext* context,
-        const GetChannelStatesRequest* request,
-        ChannelStatesResponse* response) override;
-
 private:
     MachineType& machine_;
 
@@ -138,14 +133,15 @@ grpc::Status AudioServiceImpl<MachineType>::GetAudioFormat(
     internal_group->set_color("#FF6B35");  // Orange
 
     // SN76489 source (always present at index 0)
+    // Channel names use MOS SOUND command numbering: 0=noise, 1-3=tones
     auto* sn76489 = response->add_sources();
     sn76489->set_source_index(0);
     sn76489->set_source_name("SN76489");
     sn76489->set_encoding(ENCODING_4X8BIT_UNSIGNED);
-    sn76489->add_channel_names("Tone0");
-    sn76489->add_channel_names("Tone1");
-    sn76489->add_channel_names("Tone2");
-    sn76489->add_channel_names("Noise");
+    sn76489->add_channel_names("1");  // Tone0 = MOS channel 1
+    sn76489->add_channel_names("2");  // Tone1 = MOS channel 2
+    sn76489->add_channel_names("3");  // Tone2 = MOS channel 3
+    sn76489->add_channel_names("0");  // Noise = MOS channel 0
     sn76489->set_group_id(1);
 
     // Reserved sources (silent for now)
@@ -156,55 +152,6 @@ grpc::Status AudioServiceImpl<MachineType>::GetAudioFormat(
         reserved->set_encoding(ENCODING_SILENCE);
         reserved->set_group_id(0);  // Ungrouped
     }
-
-    return grpc::Status::OK;
-}
-
-template<typename MachineType>
-grpc::Status AudioServiceImpl<MachineType>::GetChannelStates(
-    grpc::ServerContext* /*context*/,
-    const GetChannelStatesRequest* /*request*/,
-    ChannelStatesResponse* response) {
-
-    auto& sound_chip = machine_.state().memory.sound_chip;
-
-    // Tone channels (0-2)
-    static const char* tone_names[] = {"Tone0", "Tone1", "Tone2"};
-    for (size_t i = 0; i < 3; ++i) {
-        auto state = sound_chip.get_tone_channel_state(i);
-
-        auto* channel = response->add_channels();
-        channel->set_channel_id(static_cast<uint32_t>(i));
-        channel->set_channel_name(tone_names[i]);
-        channel->set_frequency_divider(state.frequency);
-        channel->set_counter(state.counter);
-        channel->set_output_bit(state.output_bit);
-        channel->set_volume(state.volume);
-        channel->set_frequency_hz(state.frequency_hz);
-        channel->set_amplitude(state.amplitude);
-        channel->set_dc_bias_voltage(state.dc_bias_v);
-        channel->set_peak_voltage(state.peak_v);
-        channel->set_trough_voltage(state.trough_v);
-    }
-
-    // Noise channel (3)
-    auto noise_state = sound_chip.get_noise_channel_state();
-
-    auto* noise = response->add_channels();
-    noise->set_channel_id(3);
-    noise->set_channel_name("Noise");
-    noise->set_noise_rate(noise_state.rate_select);
-    noise->set_white_noise(noise_state.white_mode);
-    noise->set_lfsr_state(noise_state.lfsr);
-    noise->set_volume(noise_state.volume);
-    noise->set_frequency_hz(noise_state.rate_hz);
-    noise->set_amplitude(noise_state.amplitude);
-    noise->set_dc_bias_voltage(noise_state.dc_bias_v);
-    noise->set_peak_voltage(noise_state.peak_v);
-    noise->set_trough_voltage(noise_state.trough_v);
-
-    // Latched register
-    response->set_latched_register(sound_chip.latched_register());
 
     return grpc::Status::OK;
 }

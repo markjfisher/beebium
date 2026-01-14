@@ -112,11 +112,14 @@ TEST_CASE("AudioService GetAudioFormat returns correct metadata", "[grpc][audio]
     CHECK(sn76489.source_index() == 0);
     CHECK(sn76489.source_name() == "SN76489");
     CHECK(sn76489.encoding() == beebium::ENCODING_4X8BIT_UNSIGNED);
+    // Channel names use MOS SOUND command numbering: 0=noise, 1-3=tones
+    // The sample data layout matches chip order: Tone0, Tone1, Tone2, Noise
+    // So channel_names[0] = "1" (Tone0 maps to MOS channel 1)
     REQUIRE(sn76489.channel_names_size() == 4);
-    CHECK(sn76489.channel_names(0) == "Tone0");
-    CHECK(sn76489.channel_names(1) == "Tone1");
-    CHECK(sn76489.channel_names(2) == "Tone2");
-    CHECK(sn76489.channel_names(3) == "Noise");
+    CHECK(sn76489.channel_names(0) == "1");  // Tone0 = MOS channel 1
+    CHECK(sn76489.channel_names(1) == "2");  // Tone1 = MOS channel 2
+    CHECK(sn76489.channel_names(2) == "3");  // Tone2 = MOS channel 3
+    CHECK(sn76489.channel_names(3) == "0");  // Noise = MOS channel 0
 
     // Verify channel group
     REQUIRE(response.groups_size() >= 1);
@@ -125,34 +128,7 @@ TEST_CASE("AudioService GetAudioFormat returns correct metadata", "[grpc][audio]
     CHECK(group.group_name() == "Internal Sound");
 }
 
-TEST_CASE("AudioService GetChannelStates returns channel information", "[grpc][audio]") {
-    AudioTestFixture fixture;
-
-    // Run some emulation to initialize sound chip
-    fixture.run_cycles(100000);
-
-    grpc::ClientContext context;
-    beebium::GetChannelStatesRequest request;
-    beebium::ChannelStatesResponse response;
-
-    auto status = fixture.stub().GetChannelStates(&context, request, &response);
-
-    REQUIRE(status.ok());
-    REQUIRE(response.channels_size() == 4);
-
-    // Check tone channels (0-2)
-    for (int i = 0; i < 3; ++i) {
-        auto& ch = response.channels(i);
-        CHECK(ch.channel_id() == static_cast<uint32_t>(i));
-        // Volume 15 = silent (initial state)
-        CHECK(ch.volume() <= 15);
-    }
-
-    // Check noise channel (3)
-    auto& noise = response.channels(3);
-    CHECK(noise.channel_id() == 3);
-    CHECK(noise.channel_name() == "Noise");
-}
+// Note: GetChannelStates moved to DebuggerControl.GetSoundChipState in debugger.proto
 
 TEST_CASE("AudioService SubscribeAudio streams audio samples", "[grpc][audio]") {
     AudioTestFixture fixture;

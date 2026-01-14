@@ -28,12 +28,18 @@ service DebuggerControl {
     rpc RemoveBreakpoint(RemoveBreakpointRequest) returns (RemoveBreakpointResponse);
     rpc ListBreakpoints(Empty) returns (ListBreakpointsResponse);
     rpc ClearBreakpoints(Empty) returns (ClearBreakpointsResponse);
-}
 
-// 6502-specific debugger service
-service Debugger6502 {
-    rpc ReadRegisters(Empty) returns (Registers6502);
-    rpc WriteRegisters(WriteRegisters6502Request) returns (WriteRegistersResponse);
+    // CPU state
+    rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
+    rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+
+    // Device state inspection (debugger access to write-only registers and internal state)
+    rpc GetSystemViaState(GetSystemViaStateRequest) returns (ViaState);
+    rpc GetUserViaState(GetUserViaStateRequest) returns (ViaState);
+    rpc GetCrtcState(GetCrtcStateRequest) returns (CrtcState);
+    rpc GetVideoUlaState(GetVideoUlaStateRequest) returns (VideoUlaState);
+    rpc GetAddressableLatchState(GetAddressableLatchStateRequest) returns (AddressableLatchState);
+    rpc GetSoundGeneratorState(GetSoundGeneratorStateRequest) returns (SoundGeneratorState);
 }
 
 message Empty {}
@@ -137,7 +143,11 @@ message ClearBreakpointsResponse {
     uint32 count_removed = 1;
 }
 
-message Registers6502 {
+// === CPU 6502 ===
+
+message Get6502StateRequest {}
+
+message Cpu6502State {
     uint32 a = 1;
     uint32 x = 2;
     uint32 y = 3;
@@ -146,7 +156,7 @@ message Registers6502 {
     uint32 p = 6;
 }
 
-message WriteRegisters6502Request {
+message Set6502StateRequest {
     optional uint32 a = 1;
     optional uint32 x = 2;
     optional uint32 y = 3;
@@ -155,7 +165,7 @@ message WriteRegisters6502Request {
     optional uint32 p = 6;
 }
 
-message WriteRegistersResponse {
+message Set6502StateResponse {
     bool success = 1;
 }
 
@@ -198,4 +208,137 @@ message WriteRegionRequest {
 message WriteRegionResponse {
     bool success = 1;
     string error = 2;
+}
+
+// =============================================================================
+// Device State Inspection Messages
+// =============================================================================
+
+// === VIA 6522 ===
+
+message GetSystemViaStateRequest {}
+message GetUserViaStateRequest {}
+
+message ViaState {
+    // Port state
+    uint32 ora = 1;       // Output Register A
+    uint32 orb = 2;       // Output Register B
+    uint32 ddra = 3;      // Data Direction Register A
+    uint32 ddrb = 4;      // Data Direction Register B
+    uint32 ira = 5;       // Input Register A (computed: port pins masked by DDR)
+    uint32 irb = 6;       // Input Register B (computed: port pins masked by DDR)
+
+    // Timer 1 (16-bit free-running or one-shot)
+    uint32 t1c = 7;       // Timer 1 counter (16-bit, effective value)
+    uint32 t1l = 8;       // Timer 1 latch (16-bit)
+
+    // Timer 2 (16-bit one-shot or pulse counting)
+    uint32 t2c = 9;       // Timer 2 counter (16-bit, effective value)
+    uint32 t2l = 10;      // Timer 2 latch low (8-bit, high byte not latched)
+
+    // Control registers
+    uint32 acr = 11;      // Auxiliary Control Register
+    uint32 pcr = 12;      // Peripheral Control Register
+    uint32 sr = 13;       // Shift Register
+
+    // Interrupt registers
+    uint32 ifr = 14;      // Interrupt Flag Register
+    uint32 ier = 15;      // Interrupt Enable Register
+
+    // Internal state (not directly memory-mapped)
+    bool t1_pending = 16; // Timer 1 active and can generate IRQ
+    bool t2_pending = 17; // Timer 2 active and can generate IRQ
+    uint32 t1_pb7 = 18;   // PB7 output state from Timer 1 (when ACR bit 7 set)
+
+    // Control lines
+    bool ca1 = 19;
+    bool ca2 = 20;
+    bool cb1 = 21;
+    bool cb2 = 22;
+}
+
+// === CRTC 6845 ===
+
+message GetCrtcStateRequest {}
+
+message CrtcState {
+    // All 18 registers (R0-R17, includes write-only timing registers)
+    repeated uint32 registers = 1;
+
+    // Currently selected register (address register)
+    uint32 address_register = 2;
+
+    // Internal timing counters
+    uint32 column = 3;        // Horizontal character position (0 to R0)
+    uint32 row = 4;           // Vertical character row (0 to R4)
+    uint32 raster = 5;        // Scanline within character row (0 to R9)
+    uint32 char_addr = 6;     // Current character address (MA0-MA13)
+
+    // Computed values (convenience)
+    uint32 screen_start = 7;  // R12/R13: Display start address
+    uint32 cursor_position = 8; // R14/R15: Cursor address
+
+    // Sync state
+    bool in_hsync = 9;
+    bool in_vsync = 10;
+    bool display_enabled = 11;
+}
+
+// === Video ULA ===
+
+message GetVideoUlaStateRequest {}
+
+message VideoUlaState {
+    // Control register (0xFE20)
+    uint32 control = 1;
+
+    // Palette (16 entries, logical colour -> physical colour)
+    // Written via 0xFE21, not directly readable by CPU
+    repeated uint32 palette = 2;
+}
+
+// === Addressable Latch (IC32 74LS259 on Model B) ===
+
+message GetAddressableLatchStateRequest {}
+
+message AddressableLatchState {
+    // Raw 8-bit latch value
+    uint32 value = 1;
+
+    // Decoded fields for convenience
+    uint32 screen_base = 2;       // Bits 4-5: Screen memory base address select
+    bool sound_write_enable = 3;  // Bit 0: Active low
+    bool speech_read = 4;         // Bit 1: Active low
+    bool speech_write = 5;        // Bit 2: Active low
+    bool keyboard_write = 6;      // Bit 3: Active low
+    bool caps_lock_led = 7;       // Bit 6: Active low (accent grave on keyboard)
+    bool shift_lock_led = 8;      // Bit 7: Active low
+}
+
+// === Sound Generator SN76489 ===
+
+message GetSoundGeneratorStateRequest {
+    // No parameters - always returns chip-native ordering
+}
+
+message SoundGeneratorState {
+    repeated SoundChannelState channels = 1;
+    uint32 latched_register = 2;  // Currently latched register (0-7)
+}
+
+message SoundChannelState {
+    uint32 channel_id = 1;        // Channel index (depends on view)
+    string channel_name = 2;      // "Tone0"/"Noise" (native) or "0"/"1"/"2"/"3" (MOS)
+
+    // Tone channel state
+    uint32 frequency_divider = 3; // 10-bit divider value (0-1023)
+    uint32 counter = 4;           // Current countdown value
+    bool output_bit = 5;          // Square wave polarity
+    uint32 volume = 6;            // 4-bit attenuation (0=max, 15=silent)
+    float frequency_hz = 7;       // Computed output frequency
+
+    // Noise channel state (only valid for noise channel)
+    uint32 noise_rate = 8;        // 2-bit rate select (0-3, where 3=Tone2)
+    bool white_noise = 9;         // true=white noise, false=periodic
+    uint32 lfsr_state = 10;       // 15-bit LFSR state
 }

@@ -74,7 +74,6 @@ private:
         std::unique_ptr<VideoServiceImpl> video_service;
         std::unique_ptr<KeyboardServiceImpl> keyboard_service;
         std::unique_ptr<DebuggerControlServiceImpl<MachineType>> debugger_control_service;
-        std::unique_ptr<Debugger6502ServiceImpl<MachineType>> debugger_6502_service;
         std::unique_ptr<DiscServiceImpl<MachineType>> disc_service;
         std::unique_ptr<IndicatorServiceImpl<MachineType>> indicator_service;
         std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
@@ -145,9 +144,6 @@ void Server<MachineType>::start() {
     impl_->debugger_control_service = std::make_unique<DebuggerControlServiceImpl<MachineType>>(
         impl_->machine);
 
-    impl_->debugger_6502_service = std::make_unique<Debugger6502ServiceImpl<MachineType>>(
-        impl_->machine);
-
     impl_->disc_service = std::make_unique<DiscServiceImpl<MachineType>>(
         impl_->machine);
 
@@ -172,7 +168,6 @@ void Server<MachineType>::start() {
     builder.RegisterService(impl_->video_service.get());
     builder.RegisterService(impl_->keyboard_service.get());
     builder.RegisterService(impl_->debugger_control_service.get());
-    builder.RegisterService(impl_->debugger_6502_service.get());
     builder.RegisterService(impl_->disc_service.get());
     builder.RegisterService(impl_->indicator_service.get());
     builder.RegisterService(impl_->system_service.get());
@@ -212,7 +207,6 @@ void Server<MachineType>::stop() {
     impl_->video_service.reset();
     impl_->keyboard_service.reset();
     impl_->debugger_control_service.reset();
-    impl_->debugger_6502_service.reset();
     impl_->disc_service.reset();
     impl_->indicator_service.reset();
     impl_->system_service.reset();

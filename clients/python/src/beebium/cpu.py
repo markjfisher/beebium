@@ -106,18 +106,18 @@ class CPU:
         bbc.cpu.a = 0x42
     """
 
-    def __init__(self, stub: debugger_pb2_grpc.Debugger6502Stub):
+    def __init__(self, stub: debugger_pb2_grpc.DebuggerControlStub):
         """Create a CPU interface.
 
         Args:
-            stub: The gRPC stub for the Debugger6502 service.
+            stub: The gRPC stub for the DebuggerControl service.
         """
         self._stub = stub
 
     @property
     def registers(self) -> Registers:
         """Read all registers at once."""
-        response = self._stub.ReadRegisters(debugger_pb2.Empty())
+        response = self._stub.Get6502State(debugger_pb2.Get6502StateRequest())
         return Registers(
             a=response.a,
             x=response.x,
@@ -198,7 +198,7 @@ class CPU:
 
         Only the registers that are explicitly provided will be modified.
         """
-        request = debugger_pb2.WriteRegisters6502Request()
+        request = debugger_pb2.Set6502StateRequest()
         if a is not None:
             request.a = a
         if x is not None:
@@ -212,6 +212,6 @@ class CPU:
         if p is not None:
             request.p = p
 
-        response = self._stub.WriteRegisters(request)
+        response = self._stub.Set6502State(request)
         if not response.success:
             raise DebuggerError("Failed to write registers")

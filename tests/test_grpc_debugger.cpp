@@ -10,9 +10,9 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// Test gRPC DebuggerControl and Debugger6502 services
+// Test gRPC DebuggerControl service
 //
-// These tests verify the debugger service implementations by acting as gRPC clients.
+// These tests verify the debugger service implementation by acting as a gRPC client.
 // They create a local server, connect to it, and verify debugger functionality.
 
 #include <catch2/catch_test_macros.hpp>
@@ -63,7 +63,6 @@ public:
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         debugger_stub_ = beebium::DebuggerControl::NewStub(channel_);
-        cpu_stub_ = beebium::Debugger6502::NewStub(channel_);
     }
 
     ~DebuggerTestFixture() {
@@ -72,14 +71,12 @@ public:
 
     beebium::ModelB& machine() { return machine_; }
     beebium::DebuggerControl::Stub& debugger() { return *debugger_stub_; }
-    beebium::Debugger6502::Stub& cpu() { return *cpu_stub_; }
 
 private:
     beebium::ModelB machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
-    std::unique_ptr<beebium::Debugger6502::Stub> cpu_stub_;
 };
 
 } // anonymous namespace
@@ -454,10 +451,10 @@ TEST_CASE("DebuggerControl ClearBreakpoints removes all breakpoints", "[grpc][de
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// Debugger6502 Register Tests
+// CPU 6502 State Tests
 //////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("Debugger6502 ReadRegisters returns CPU registers", "[grpc][debugger]") {
+TEST_CASE("DebuggerControl Get6502State returns CPU registers", "[grpc][debugger]") {
     DebuggerTestFixture fixture;
 
     // Set some known values
@@ -468,10 +465,10 @@ TEST_CASE("Debugger6502 ReadRegisters returns CPU registers", "[grpc][debugger]"
     fixture.machine().set_p(0x24);  // N=0, V=0, B=1, D=0, I=1, Z=0, C=0
 
     grpc::ClientContext context;
-    beebium::Empty request;
-    beebium::Registers6502 response;
+    beebium::Get6502StateRequest request;
+    beebium::Cpu6502State response;
 
-    auto status = fixture.cpu().ReadRegisters(&context, request, &response);
+    auto status = fixture.debugger().Get6502State(&context, request, &response);
 
     REQUIRE(status.ok());
     CHECK(response.a() == 0x42);
@@ -481,16 +478,16 @@ TEST_CASE("Debugger6502 ReadRegisters returns CPU registers", "[grpc][debugger]"
     CHECK(response.p() == 0x24);
 }
 
-TEST_CASE("Debugger6502 WriteRegisters sets individual registers", "[grpc][debugger]") {
+TEST_CASE("DebuggerControl Set6502State sets individual registers", "[grpc][debugger]") {
     DebuggerTestFixture fixture;
 
     grpc::ClientContext context;
-    beebium::WriteRegisters6502Request request;
+    beebium::Set6502StateRequest request;
     request.set_a(0xAA);
     request.set_x(0xBB);
-    beebium::WriteRegistersResponse response;
+    beebium::Set6502StateResponse response;
 
-    auto status = fixture.cpu().WriteRegisters(&context, request, &response);
+    auto status = fixture.debugger().Set6502State(&context, request, &response);
 
     REQUIRE(status.ok());
     CHECK(response.success());
@@ -500,15 +497,15 @@ TEST_CASE("Debugger6502 WriteRegisters sets individual registers", "[grpc][debug
     CHECK(fixture.machine().x() == 0xBB);
 }
 
-TEST_CASE("Debugger6502 WriteRegisters can set PC", "[grpc][debugger]") {
+TEST_CASE("DebuggerControl Set6502State can set PC", "[grpc][debugger]") {
     DebuggerTestFixture fixture;
 
     grpc::ClientContext context;
-    beebium::WriteRegisters6502Request request;
+    beebium::Set6502StateRequest request;
     request.set_pc(0xC000);
-    beebium::WriteRegistersResponse response;
+    beebium::Set6502StateResponse response;
 
-    auto status = fixture.cpu().WriteRegisters(&context, request, &response);
+    auto status = fixture.debugger().Set6502State(&context, request, &response);
 
     REQUIRE(status.ok());
     CHECK(response.success());
@@ -578,10 +575,10 @@ TEST_CASE("Sequence counter increments on register write", "[grpc][debugger]") {
     // Write a register
     {
         grpc::ClientContext context;
-        beebium::WriteRegisters6502Request request;
+        beebium::Set6502StateRequest request;
         request.set_a(0x99);
-        beebium::WriteRegistersResponse response;
-        fixture.cpu().WriteRegisters(&context, request, &response);
+        beebium::Set6502StateResponse response;
+        fixture.debugger().Set6502State(&context, request, &response);
     }
 
     // Get new sequence

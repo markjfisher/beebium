@@ -39,7 +39,6 @@ class Connection:
         self._target = target
         self._channel: grpc.Channel | None = None
         self._debugger_stub: debugger_pb2_grpc.DebuggerControlStub | None = None
-        self._cpu_stub: debugger_pb2_grpc.Debugger6502Stub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
 
@@ -62,7 +61,6 @@ class Connection:
 
         # Create service stubs
         self._debugger_stub = debugger_pb2_grpc.DebuggerControlStub(self._channel)
-        self._cpu_stub = debugger_pb2_grpc.Debugger6502Stub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
 
@@ -84,13 +82,6 @@ class Connection:
         return self._debugger_stub
 
     @property
-    def cpu_stub(self) -> debugger_pb2_grpc.Debugger6502Stub:
-        """The Debugger6502 service stub."""
-        if self._cpu_stub is None:
-            raise ConnectionError("Not connected")
-        return self._cpu_stub
-
-    @property
     def keyboard_stub(self) -> keyboard_pb2_grpc.KeyboardServiceStub:
         """The KeyboardService stub."""
         if self._keyboard_stub is None:
@@ -110,7 +101,6 @@ class Connection:
             self._channel.close()
             self._channel = None
             self._debugger_stub = None
-            self._cpu_stub = None
             self._keyboard_stub = None
             self._video_stub = None
 

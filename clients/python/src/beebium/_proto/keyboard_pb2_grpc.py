@@ -80,6 +80,21 @@ class KeyboardServiceStub(object):
                 request_serializer=keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
                 response_deserializer=keyboard__pb2.StartupAutoBootState.FromString,
                 _registered_method=True)
+        self.BreakDown = channel.unary_unary(
+                '/beebium.KeyboardService/BreakDown',
+                request_serializer=keyboard__pb2.BreakDownRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.BreakDownResponse.FromString,
+                _registered_method=True)
+        self.BreakUp = channel.unary_unary(
+                '/beebium.KeyboardService/BreakUp',
+                request_serializer=keyboard__pb2.BreakUpRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.BreakUpResponse.FromString,
+                _registered_method=True)
+        self.GetBreakState = channel.unary_unary(
+                '/beebium.KeyboardService/GetBreakState',
+                request_serializer=keyboard__pb2.GetBreakStateRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.BreakKeyState.FromString,
+                _registered_method=True)
         self.TypeQuickly = channel.unary_unary(
                 '/beebium.KeyboardService/TypeQuickly',
                 request_serializer=keyboard__pb2.TypeQuicklyRequest.SerializeToString,
@@ -171,6 +186,39 @@ class KeyboardServiceServicer(object):
 
     def GetStartupAutoBoot(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BreakDown(self, request, context):
+        """=========================================================================
+        Break Key (Reset)
+        =========================================================================
+        The Break key is NOT part of the keyboard matrix. It is directly
+        connected to the reset circuit (IC16 NE555 timer) via pin 4.
+
+        While Break is held: CPU is halted (reset line held low)
+        On Break release: Soft reset sequence begins
+
+        Note: Hardware always does a soft reset. MOS checks if Ctrl is held
+        during its reset sequence to decide between warm/cold reset behavior.
+
+        Hold Break key (halt CPU)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BreakUp(self, request, context):
+        """Release Break key (begin soft reset)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetBreakState(self, request, context):
+        """Query Break key state
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -268,6 +316,21 @@ def add_KeyboardServiceServicer_to_server(servicer, server):
                     servicer.GetStartupAutoBoot,
                     request_deserializer=keyboard__pb2.GetStartupAutoBootRequest.FromString,
                     response_serializer=keyboard__pb2.StartupAutoBootState.SerializeToString,
+            ),
+            'BreakDown': grpc.unary_unary_rpc_method_handler(
+                    servicer.BreakDown,
+                    request_deserializer=keyboard__pb2.BreakDownRequest.FromString,
+                    response_serializer=keyboard__pb2.BreakDownResponse.SerializeToString,
+            ),
+            'BreakUp': grpc.unary_unary_rpc_method_handler(
+                    servicer.BreakUp,
+                    request_deserializer=keyboard__pb2.BreakUpRequest.FromString,
+                    response_serializer=keyboard__pb2.BreakUpResponse.SerializeToString,
+            ),
+            'GetBreakState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBreakState,
+                    request_deserializer=keyboard__pb2.GetBreakStateRequest.FromString,
+                    response_serializer=keyboard__pb2.BreakKeyState.SerializeToString,
             ),
             'TypeQuickly': grpc.unary_unary_rpc_method_handler(
                     servicer.TypeQuickly,
@@ -539,6 +602,87 @@ class KeyboardService(object):
             '/beebium.KeyboardService/GetStartupAutoBoot',
             keyboard__pb2.GetStartupAutoBootRequest.SerializeToString,
             keyboard__pb2.StartupAutoBootState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BreakDown(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/BreakDown',
+            keyboard__pb2.BreakDownRequest.SerializeToString,
+            keyboard__pb2.BreakDownResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BreakUp(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/BreakUp',
+            keyboard__pb2.BreakUpRequest.SerializeToString,
+            keyboard__pb2.BreakUpResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetBreakState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetBreakState',
+            keyboard__pb2.GetBreakStateRequest.SerializeToString,
+            keyboard__pb2.BreakKeyState.FromString,
             options,
             channel_credentials,
             insecure,
