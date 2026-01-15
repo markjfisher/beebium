@@ -7,6 +7,11 @@ package beebium;
 service SystemService {
     // Get current system/machine information
     rpc GetSystemInfo(GetSystemInfoRequest) returns (SystemInfo);
+
+    // Subscribe to server status events (shutdown notifications, etc.)
+    // Server sends READY immediately upon subscription, then status changes.
+    // Stream ends when server shuts down or client disconnects.
+    rpc WatchServerStatus(WatchServerStatusRequest) returns (stream ServerStatusEvent);
 }
 
 message GetSystemInfoRequest {
@@ -22,4 +27,34 @@ message SystemInfo {
     // uint32 clock_speed_hz = 3;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
     // string cpu_type = 4;          // Primary CPU (e.g., "6502", "65C02")
     // string coprocessor_type = 5;  // Second processor if present (e.g., "Z80", "32016")
+}
+
+// === Server Status Streaming ===
+
+message WatchServerStatusRequest {
+    // Future: filter for specific event types
+}
+
+// Server status event sent to subscribers
+message ServerStatusEvent {
+    // Type of status event
+    ServerStatusType status = 1;
+
+    // Optional human-readable message
+    string message = 2;
+
+    // For SHUTTING_DOWN: grace period in milliseconds before forced termination
+    // Clients should disconnect within this time
+    uint32 shutdown_grace_ms = 3;
+}
+
+// Server status types
+enum ServerStatusType {
+    // Server is ready and running normally
+    // Sent immediately when client subscribes
+    SERVER_STATUS_READY = 0;
+
+    // Server is beginning shutdown sequence
+    // Clients should finish pending operations and disconnect
+    SERVER_STATUS_SHUTTING_DOWN = 1;
 }

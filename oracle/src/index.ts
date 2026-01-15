@@ -5,9 +5,10 @@
  */
 
 export { JsbeebOracle } from './jsbeeb-oracle.js';
-export { BeebiumClient } from './beebium-client.js';
+export { BeebiumClient, ServerStatusWatcher } from './beebium-client.js';
 export { DiffRunner, type DiffRunnerOptions } from './diff-runner.js';
 export { ServerFixture, createServerFixture, type ServerFixtureOptions } from './server-fixture.js';
+export { ServerStatusType } from './types.js';
 export type {
     CpuState,
     ViaState,
@@ -17,4 +18,5 @@ export type {
     ComparisonResult,
     Divergence,
     AddressRange,
+    ServerStatusEvent,
 } from './types.js';

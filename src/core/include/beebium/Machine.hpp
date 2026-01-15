@@ -326,12 +326,24 @@ public:
     }
 
     // Block until not paused - call from emulation loop
+    // Returns immediately if shutdown is requested, allowing clean exit
     void wait_if_paused() {
         if (paused_.load()) {
             std::unique_lock<std::mutex> lock(debug_mutex_);
-            debug_cv_.wait(lock, [this] { return !paused_.load(); });
+            debug_cv_.wait(lock, [this] {
+                return !paused_.load() || shutdown_requested_.load();
+            });
         }
     }
+
+    // Request clean shutdown - unblocks wait_if_paused()
+    void request_shutdown() {
+        shutdown_requested_.store(true);
+        debug_cv_.notify_all();  // Wake up any blocked wait_if_paused()
+    }
+
+    // Check if shutdown has been requested
+    bool shutdown_requested() const { return shutdown_requested_.load(); }
 
     // CPU register accessors (debugger convenience)
     uint8_t a() const { return state_.cpu.a; }
@@ -409,6 +421,7 @@ private:
     mutable std::mutex debug_mutex_;
     std::condition_variable debug_cv_;
     std::atomic<bool> paused_{false};
+    std::atomic<bool> shutdown_requested_{false};  // For clean server shutdown
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
 
     // Break key state (true when Break is held, CPU halted)

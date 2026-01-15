@@ -78,3 +78,28 @@ export interface AddressRange {
     start: number;
     end: number;
 }
+
+/**
+ * Mask for comparing 6502 P (processor status) register.
+ *
+ * Bits 4 and 5 are excluded because they don't represent real CPU state:
+ * - Bit 5: Unused, always reads as 1 when pushed to stack
+ * - Bit 4: B flag, only meaningful when P is pushed (distinguishes BRK from IRQ)
+ *
+ * Different emulators store these bits differently, but the difference
+ * doesn't affect emulation correctness.
+ */
+export const P_STATUS_MASK = 0b11001111;  // 0xCF - excludes bits 4 and 5
+
+/** Server status types */
+export enum ServerStatusType {
+    READY = 'SERVER_STATUS_READY',
+    SHUTTING_DOWN = 'SERVER_STATUS_SHUTTING_DOWN',
+}
+
+/** Server status event from WatchServerStatus stream */
+export interface ServerStatusEvent {
+    status: ServerStatusType;
+    message: string;
+    shutdownGraceMs: number;
+}

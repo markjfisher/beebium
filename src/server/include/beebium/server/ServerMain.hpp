@@ -25,6 +25,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -46,8 +47,25 @@ enum class WaitMode {
 
 std::atomic<bool> g_running{true};
 
+// Function pointers for signal handler to interrupt blocking waits.
+// These are set before the main loop starts and cleared on shutdown.
+std::function<void()> g_request_machine_shutdown;
+std::function<void()> g_request_pacing_stop;
+std::function<void()> g_notify_clients_shutdown;
+
 void signal_handler(int /*signal*/) {
     g_running = false;
+    // Notify connected clients that shutdown is starting
+    if (g_notify_clients_shutdown) {
+        g_notify_clients_shutdown();
+    }
+    // Interrupt any blocked wait_if_paused() or wait_for_tick()
+    if (g_request_machine_shutdown) {
+        g_request_machine_shutdown();
+    }
+    if (g_request_pacing_stop) {
+        g_request_pacing_stop();
+    }
 }
 
 std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
@@ -532,11 +550,22 @@ int server_main(int argc, char* argv[]) {
             std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
         }
 
+        // Set up shutdown callbacks so signal handler can interrupt blocked waits
+        // and notify clients of impending shutdown
+        g_request_machine_shutdown = [&machine]() { machine.request_shutdown(); };
+        g_request_pacing_stop = [&pacing_clock]() { pacing_clock.request_stop(); };
+        g_notify_clients_shutdown = [&server]() { server.notify_shutdown(5000); };
+
         // Main emulation loop
         constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
         while (g_running) {
             // Block if debugger has paused execution
             machine.wait_if_paused();
+
+            // Check if shutdown was requested during wait
+            if (machine.shutdown_requested()) {
+                break;
+            }
 
             // Run cycles
             machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
@@ -546,6 +575,11 @@ int server_main(int argc, char* argv[]) {
                 pacing_clock.wait_for_tick();
             }
         }
+
+        // Clean up shutdown callbacks
+        g_request_machine_shutdown = nullptr;
+        g_request_pacing_stop = nullptr;
+        g_notify_clients_shutdown = nullptr;
 
         if (use_pacing) {
             pacing_clock.stop();

@@ -16,6 +16,10 @@
 #include "system.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+
 namespace beebium::service {
 
 /// gRPC service implementation for SystemService
@@ -35,8 +39,24 @@ public:
         const GetSystemInfoRequest* request,
         SystemInfo* response) override;
 
+    grpc::Status WatchServerStatus(
+        grpc::ServerContext* context,
+        const WatchServerStatusRequest* request,
+        grpc::ServerWriter<ServerStatusEvent>* writer) override;
+
+    /// Notify all watchers that shutdown is imminent.
+    /// Called from signal handler or shutdown path.
+    /// Thread-safe: can be called from any thread.
+    void notify_shutdown(uint32_t grace_ms = 5000);
+
 private:
     MachineType& machine_;
+
+    // Shutdown notification state
+    mutable std::mutex watchers_mutex_;
+    std::condition_variable shutdown_cv_;
+    std::atomic<bool> shutdown_signaled_{false};
+    std::atomic<uint32_t> shutdown_grace_ms_{5000};
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -60,6 +80,48 @@ grpc::Status SystemServiceImpl<MachineType>::GetSystemInfo(
     response->set_machine_display_name(std::string(Memory::MACHINE_DISPLAY_NAME));
 
     return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
+    grpc::ServerContext* context,
+    const WatchServerStatusRequest* /*request*/,
+    grpc::ServerWriter<ServerStatusEvent>* writer) {
+
+    // Send READY event immediately upon subscription
+    ServerStatusEvent ready_event;
+    ready_event.set_status(SERVER_STATUS_READY);
+    ready_event.set_message("Server ready");
+    if (!writer->Write(ready_event)) {
+        // Client disconnected before we could send READY
+        return grpc::Status::OK;
+    }
+
+    // Wait for either shutdown signal or client disconnect
+    {
+        std::unique_lock<std::mutex> lock(watchers_mutex_);
+        shutdown_cv_.wait(lock, [this, context] {
+            return shutdown_signaled_.load() || context->IsCancelled();
+        });
+    }
+
+    // If shutdown was signaled (and client still connected), send shutdown event
+    if (shutdown_signaled_.load() && !context->IsCancelled()) {
+        ServerStatusEvent shutdown_event;
+        shutdown_event.set_status(SERVER_STATUS_SHUTTING_DOWN);
+        shutdown_event.set_message("Server shutting down");
+        shutdown_event.set_shutdown_grace_ms(shutdown_grace_ms_.load());
+        writer->Write(shutdown_event);
+    }
+
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+void SystemServiceImpl<MachineType>::notify_shutdown(uint32_t grace_ms) {
+    shutdown_grace_ms_.store(grace_ms);
+    shutdown_signaled_.store(true);
+    shutdown_cv_.notify_all();
 }
 
 } // namespace beebium::service

@@ -85,11 +85,9 @@ public:
         timer_thread_ = std::thread(&PacingClock::timer_loop, this);
     }
 
-    /// Stop the pacing clock. Joins the timer thread.
-    void stop() {
-        if (!running_) {
-            return;
-        }
+    /// Request the pacing clock to stop (signal-safe, non-blocking).
+    /// Unblocks any waiting emulation thread. Call stop() later to join thread.
+    void request_stop() {
         running_ = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -97,9 +95,15 @@ public:
         }
         cv_.notify_all();
         pause_cv_.notify_all();
-        if (timer_thread_.joinable()) {
-            timer_thread_.join();
+    }
+
+    /// Stop the pacing clock. Joins the timer thread.
+    void stop() {
+        if (!timer_thread_.joinable()) {
+            return;
         }
+        request_stop();
+        timer_thread_.join();
     }
 
     /// Check if the clock is running.

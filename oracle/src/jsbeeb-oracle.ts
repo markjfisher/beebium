@@ -6,6 +6,7 @@
  */
 
 import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState } from './types.js';
+import { P_STATUS_MASK } from './types.js';
 
 // jsbeeb imports - using relative path to sibling repo
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
@@ -42,13 +43,24 @@ export class JsbeebOracle {
 
     /**
      * Reset the machine to initial state.
-     * jsbeeb's reset() immediately sets PC to the reset vector value (0xD9CD for MOS 1.20)
-     * without simulating the 7-cycle reset sequence. This is different from Beebium which
-     * simulates the full reset sequence.
+     *
+     * Note: jsbeeb's reset() has a bug - it doesn't simulate the 6502's 7-cycle reset
+     * sequence which performs three "fake" stack pushes (reads instead of writes) that
+     * decrement SP. On real hardware and in Beebium, SP ends up at 0xFD after reset
+     * (0x00 → 0xFF → 0xFE → 0xFD). jsbeeb leaves SP at 0x00.
+     *
+     * We correct SP here to ensure stack operations use the same memory addresses in
+     * both emulators, enabling meaningful memory comparison during differential testing.
+     *
+     * See: https://www.pagetable.com/?p=410 for details on the 6502 reset sequence.
      */
     reset(): void {
         if (!this.machine) throw new Error("Machine not initialized");
         this.processor.reset(true);
+
+        // Fix jsbeeb's incorrect SP initialization (see comment above)
+        this.processor.s = 0xFD;
+
         this.cycleCount = 0;
     }
 
@@ -101,7 +113,10 @@ export class JsbeebOracle {
      */
     async runUntilAddress(address: number, timeoutSeconds: number = 10): Promise<void> {
         if (!this.machine) throw new Error("Machine not initialized");
+        const startCycles = this.processor.currentCycles;
         await this.machine.runUntilAddress(address, timeoutSeconds);
+        const endCycles = this.processor.currentCycles;
+        this.cycleCount += endCycles - startCycles;
     }
 
     /**
@@ -114,6 +129,9 @@ export class JsbeebOracle {
 
     /**
      * Get current CPU register state.
+     *
+     * Values are normalized for comparison with Beebium:
+     * - P has bits 4-5 masked out (these don't represent real CPU state)
      */
     getCpuState(): CpuState {
         const p = this.processor;
@@ -123,7 +141,7 @@ export class JsbeebOracle {
             y: p.y,
             sp: p.s,
             pc: p.pc,
-            p: p.p.asByte(),
+            p: p.p.asByte() & P_STATUS_MASK,  // Normalize: exclude bits 4-5
         };
     }
 
