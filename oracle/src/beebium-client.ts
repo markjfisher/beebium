@@ -324,10 +324,16 @@ export class BeebiumClient {
     }
 
     /**
-     * Add a breakpoint.
+     * Add a breakpoint at the specified address.
+     *
+     * The address is adjusted internally to account for Beebium's PC representation.
+     * Beebium's internal PC points to the next byte to fetch, not the current instruction.
+     * When getCpuState() normalizes PC by subtracting 1, breakpoints need +1 to align.
      */
     async addBreakpoint(address: number): Promise<number> {
-        const response = await this.call<any>('AddBreakpoint', { address });
+        // Adjust for PC normalization: internal PC is 1 ahead of instruction address
+        const internalAddress = (address + 1) & 0xFFFF;
+        const response = await this.call<any>('AddBreakpoint', { address: internalAddress });
         return response.id;
     }
 

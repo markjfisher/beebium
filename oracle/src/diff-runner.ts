@@ -79,7 +79,7 @@ export class DiffRunner {
         address: number,
         maxInstructions: number = 1_000_000
     ): Promise<ComparisonResult> {
-        // Add breakpoint to Beebium
+        // Add breakpoint to Beebium (client handles PC offset internally)
         const bpId = await this.beebium.addBreakpoint(address);
 
         try {
@@ -90,16 +90,19 @@ export class DiffRunner {
             await this.beebium.run();
 
             // Wait for Beebium to stop (hit breakpoint)
+            // Boot to BASIC takes ~6M cycles = 3 seconds at 2MHz, give plenty of margin
+            const timeoutMs = 30000;
             let state = await this.beebium.getState();
             const startTime = Date.now();
-            while (state.isRunning && Date.now() - startTime < 10000) {
-                await new Promise(r => setTimeout(r, 10));
+            while (state.isRunning && Date.now() - startTime < timeoutMs) {
+                await new Promise(r => setTimeout(r, 50));
                 state = await this.beebium.getState();
             }
 
             if (state.isRunning) {
+                const cpu = await this.beebium.getCpuState();
                 await this.beebium.stop();
-                throw new Error("Beebium did not hit breakpoint in time");
+                throw new Error(`Beebium did not hit breakpoint at $${address.toString(16).toUpperCase()} in ${timeoutMs}ms (currently at PC=$${cpu.pc.toString(16).toUpperCase()})`);
             }
 
             return this.compareState();

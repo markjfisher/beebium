@@ -272,10 +272,26 @@ public:
         ++sequence_;
     }
 
-    // Execute for the given number of cycles
+    // Execute for the given number of cycles, or until paused (e.g., by breakpoint)
     void run(uint64_t cycles) {
         const uint64_t target = state_.cycle_count + cycles;
-        while (state_.cycle_count < target) {
+
+        // Fast path when no debug callback is registered
+        if (!on_instruction_) {
+            while (state_.cycle_count < target && !paused_.load()) {
+                step();
+            }
+            return;
+        }
+
+        // Debug path: check instruction callback at each instruction boundary
+        while (state_.cycle_count < target && !paused_.load()) {
+            // Call callback at instruction boundary (before fetch)
+            if (M6502_IsAboutToExecute(&state_.cpu)) {
+                if (!on_instruction_(state_.cpu.pc.w, state_.cycle_count)) {
+                    return;  // Callback requested stop
+                }
+            }
             step();
         }
     }

@@ -71,7 +71,7 @@ describe('BeebiumClient with ServerFixture', () => {
     let client: BeebiumClient;
 
     beforeAll(async () => {
-        fixture = new ServerFixture({ port: 50051, timeout: 10000 });
+        fixture = new ServerFixture({ timeout: 10000 });
         try {
             client = await fixture.start();
         } catch (err) {
@@ -142,7 +142,7 @@ describe('DiffRunner with ServerFixture', () => {
         await oracle.initialize('B-DFS1.2');
 
         // Start Beebium server
-        fixture = new ServerFixture({ port: 50052, timeout: 10000 });
+        fixture = new ServerFixture({ timeout: 10000 });
         client = await fixture.start();
 
         runner = new DiffRunner(oracle, client);
