@@ -322,6 +322,15 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Reset(
     std::lock_guard<std::mutex> lock(mutex_);
 
     machine_.reset();
+
+    // Complete the 7-cycle reset sequence so PC contains the actual
+    // reset vector value. The 6502 reads the reset vector from $FFFC/$FFFD
+    // during cycles 4-6.
+    machine_.run(7);
+
+    // Leave machine paused at first instruction for debugger control
+    machine_.pause();
+
     halt_reason_.clear();
     response->set_success(true);
     return grpc::Status::OK;

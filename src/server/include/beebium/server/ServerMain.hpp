@@ -29,6 +29,7 @@
 #include <limits>
 #include <map>
 #include <string>
+#include <unistd.h>  // for isatty()
 #include <vector>
 
 namespace beebium::server {
@@ -38,9 +39,9 @@ namespace {
 constexpr uint16_t DEFAULT_GRPC_PORT = 0xBEEB;  // 48875
 
 enum class WaitMode {
-    None,    // Start immediately
-    Console, // Wait for RETURN on console
-    Grpc     // Wait for Run() RPC
+    None,   // Start immediately
+    Cli,    // Wait for RETURN on console
+    Api     // Wait for Run() RPC
 };
 
 std::atomic<bool> g_running{true};
@@ -117,12 +118,12 @@ constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
 // Parse --wait argument value
 WaitMode parse_wait_arg(const std::string& value) {
-    if (value == "console") {
-        return WaitMode::Console;
-    } else if (value == "grpc") {
-        return WaitMode::Grpc;
+    if (value == "cli") {
+        return WaitMode::Cli;
+    } else if (value == "api") {
+        return WaitMode::Api;
     } else {
-        throw std::runtime_error("Invalid --wait value: " + value + " (expected 'console' or 'grpc')");
+        throw std::runtime_error("Invalid --wait value: " + value + " (expected 'cli' or 'api')");
     }
 }
 
@@ -160,9 +161,9 @@ void print_usage(const char* program_name) {
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
               << "                           with --screen-mode and --auto-boot)\n"
-              << "  --wait=<mode>            Wait before starting emulation:\n"
-              << "                           console - wait for RETURN keypress\n"
-              << "                           grpc    - wait for Run() RPC\n"
+              << "  --wait[=<mode>]          Wait before starting emulation:\n"
+              << "                           cli - wait for RETURN keypress (default if TTY)\n"
+              << "                           api - wait for Run() RPC (default if not TTY)\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -270,8 +271,11 @@ int server_main(int argc, char* argv[]) {
                 std::cerr << "Error: --links must be 0-255\n";
                 return 1;
             }
+        } else if (arg == "--wait") {
+            // Bare --wait: use TTY detection to choose default
+            wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
         } else if (arg.rfind("--wait=", 0) == 0) {
-            // --wait=console or --wait=grpc
+            // --wait=cli or --wait=api
             std::string wait_value = arg.substr(7);  // Skip "--wait="
             wait_mode = parse_wait_arg(wait_value);
         } else {
@@ -486,7 +490,7 @@ int server_main(int argc, char* argv[]) {
 
         // Handle wait mode for controlled startup
         switch (wait_mode) {
-            case WaitMode::Console:
+            case WaitMode::Cli:
                 // Wait for user to press RETURN before starting emulation
                 // "Now press RETURN." is a reference to Roger McGough's electronic poem
                 // from the original BBC Micro Welcome cassette.
@@ -495,10 +499,17 @@ int server_main(int argc, char* argv[]) {
                 std::cout << "\n";
                 break;
 
-            case WaitMode::Grpc:
-                // Start in paused state, waiting for Run() RPC
+            case WaitMode::Api:
+                // Complete the reset sequence (7 cycles) so PC contains the
+                // actual reset vector value, then pause before first instruction.
+                // The 6502 reset sequence reads the reset vector from $FFFC/$FFFD
+                // during cycles 4-6, loading PC with the entry point address.
+                machine.run(7);
                 machine.pause();
-                std::cout << "Waiting for Run() RPC to start emulation...\n";
+                std::cout << "Paused at first instruction (PC=$"
+                          << std::hex << std::uppercase
+                          << machine.state().cpu.pc.w
+                          << std::dec << "). Waiting for Run() RPC...\n";
                 break;
 
             case WaitMode::None:

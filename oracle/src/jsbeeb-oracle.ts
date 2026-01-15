@@ -42,6 +42,9 @@ export class JsbeebOracle {
 
     /**
      * Reset the machine to initial state.
+     * jsbeeb's reset() immediately sets PC to the reset vector value (0xD9CD for MOS 1.20)
+     * without simulating the 7-cycle reset sequence. This is different from Beebium which
+     * simulates the full reset sequence.
      */
     reset(): void {
         if (!this.machine) throw new Error("Machine not initialized");

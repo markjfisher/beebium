@@ -272,12 +272,13 @@ export class BeebiumClient {
      * Get complete machine state snapshot.
      */
     async getMachineState(): Promise<MachineState> {
-        const [cpu, systemVia, userVia, crtc, videoUla] = await Promise.all([
+        const [cpu, systemVia, userVia, crtc, videoUla, state] = await Promise.all([
             this.getCpuState(),
             this.getSystemViaState(),
             this.getUserViaState(),
             this.getCrtcState(),
             this.getVideoUlaState(),
+            this.getState(),
         ]);
 
         return {
@@ -286,7 +287,7 @@ export class BeebiumClient {
             userVia,
             crtc,
             videoUla,
-            cycles: this.cycleCount,
+            cycles: state.cycleCount,  // Use actual server cycle count
         };
     }
 

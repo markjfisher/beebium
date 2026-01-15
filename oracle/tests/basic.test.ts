@@ -115,12 +115,12 @@ describe('BeebiumClient with ServerFixture', () => {
     });
 
     it('should step instruction', async () => {
-        const startCpu = await client.getCpuState();
-        await client.stepInstruction(10);
-        const endCpu = await client.getCpuState();
+        const result = await client.stepInstruction(10);
 
-        // PC should have changed after stepping
-        expect(endCpu.pc).not.toBe(startCpu.pc);
+        // Verify step succeeded and executed the requested instructions
+        expect(result.success).toBe(true);
+        expect(result.instructionsExecuted).toBe(10);
+        expect(result.cyclesExecuted).toBeGreaterThan(0);
     });
 
     it('should read memory', async () => {
@@ -154,6 +154,9 @@ describe('DiffRunner with ServerFixture', () => {
 
     it('should compare initial state', async () => {
         // Reset both emulators
+        // Note: jsbeeb sets PC directly to reset vector (0xD9CD), cycles=0
+        // Beebium runs 7-cycle reset sequence, PC=0xD9CE (after opcode fetch), cycles=7
+        // This is an expected divergence due to different reset implementations.
         oracle.reset();
         await client.reset();
 
