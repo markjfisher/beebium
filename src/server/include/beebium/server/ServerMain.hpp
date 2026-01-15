@@ -16,6 +16,8 @@
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/disc/DiscLoader.hpp"
+#include "beebium/disc/DiscControllerRegistry.hpp"
+#include "beebium/disc/DiscControllerSocket.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/RomPaths.hpp"
 
@@ -134,6 +136,14 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
+// Concept to detect machines with pluggable disc controller sockets (Model B)
+// vs built-in disc controllers (Model B+)
+template<typename T>
+concept HasDiscControllerSocket = requires(T& hw) {
+    { hw.disc_socket } -> std::same_as<DiscControllerSocket&>;
+    hw.install_disc_controller(std::unique_ptr<DiscControllerInterface>{});
+};
+
 // Parse --wait argument value
 WaitMode parse_wait_arg(const std::string& value) {
     if (value == "cli") {
@@ -174,14 +184,23 @@ void print_usage(const char* program_name) {
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
               << "  --floppy <drive>:<url>   Load disc image into floppy drive (0 or 1)\n"
-              << "                           Accepts file:// URLs or bare filepaths\n"
-              << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
+              << "                           Accepts file:// URLs or bare filepaths\n";
+
+    // Show --fdc option only for machines with disc controller sockets
+    if constexpr (HasDiscControllerSocket<Memory>) {
+        std::cerr << "  --fdc <type>             Disc controller to install in socket:\n"
+                  << "                           acorn-1770 - Acorn WD1770 controller\n"
+                  << "                           none - leave socket empty (no disc)\n";
+    }
+
+    std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
               << "                           with --screen-mode and --auto-boot)\n"
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
+              << "  --list-fdc               List available disc controllers and exit\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -203,6 +222,10 @@ void print_usage(const char* program_name) {
 
     if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
         std::cerr << "  " << program_name << " --rom 11:              # No DFS (leave slot 11 empty)\n";
+    }
+
+    if constexpr (HasDiscControllerSocket<Memory>) {
+        std::cerr << "  " << program_name << " --fdc acorn-1770        # Install disc controller\n";
     }
 }
 
@@ -238,6 +261,7 @@ int server_main(int argc, char* argv[]) {
     std::map<uint8_t, std::string> rom_slots;  // slot -> filepath
     uint16_t port = DEFAULT_GRPC_PORT;
     std::array<std::string, 2> floppy_filepaths;  // drive 0 and 1
+    std::string fdc_type;  // Disc controller type (for machines with sockets)
 
     // Startup options (keyboard links)
     // -1 means not set; we use int to detect if user specified a value
@@ -259,6 +283,15 @@ int server_main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--info") {
             print_info<MachineType>(argv[0]);
+            return 0;
+        } else if (arg == "--list-fdc") {
+            std::cout << "Available disc controllers:\n";
+            for (const auto& info : DiscControllerRegistry::available()) {
+                std::cout << "  " << info.id << " - " << info.display_name
+                          << " (" << info.fdc_chip << ")\n"
+                          << "      " << info.description << "\n";
+            }
+            std::cout << "  none - No disc controller (leave socket empty)\n";
             return 0;
         } else if (arg == "--mos" && i + 1 < argc) {
             mos_filepath = argv[++i];
@@ -296,6 +329,8 @@ int server_main(int argc, char* argv[]) {
             // --wait=cli or --wait=api
             std::string wait_value = arg.substr(7);  // Skip "--wait="
             wait_mode = parse_wait_arg(wait_value);
+        } else if (arg == "--fdc" && i + 1 < argc) {
+            fdc_type = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -441,7 +476,30 @@ int server_main(int argc, char* argv[]) {
             }
         }
 
-        // Load disc images (Model B+ only)
+        // Install disc controller for machines with sockets (Model B)
+        if constexpr (HasDiscControllerSocket<Memory>) {
+            if (!fdc_type.empty()) {
+                if (fdc_type == "none") {
+                    std::cout << "Disc controller: none (socket empty)\n";
+                    // Do nothing - leave socket empty
+                } else if (auto controller = DiscControllerRegistry::create(fdc_type)) {
+                    auto* info = DiscControllerRegistry::find(fdc_type);
+                    std::cout << "Installing disc controller: " << info->display_name
+                              << " (" << info->fdc_chip << ")\n";
+                    machine.state().memory.install_disc_controller(std::move(controller));
+                } else {
+                    std::cerr << "Error: Unknown disc controller type: " << fdc_type << "\n"
+                              << "Use --list-fdc to see available controllers.\n";
+                    return 1;
+                }
+            }
+            // If --fdc not specified, socket remains empty (no disc controller)
+        } else if (!fdc_type.empty()) {
+            // Model B+ has built-in controller, --fdc option is not applicable
+            std::cerr << "Warning: --fdc option ignored (machine has built-in disc controller)\n";
+        }
+
+        // Load disc images (requires disc controller to be installed first)
         if constexpr (requires { machine.state().memory.disc_drive_0; }) {
             if (!floppy_filepaths[0].empty()) {
                 // Resolve to absolute file:// URL for consistent API behaviour

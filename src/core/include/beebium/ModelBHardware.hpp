@@ -31,9 +31,13 @@
 #include "devices/Rom.hpp"
 #include "devices/Sn76489.hpp"
 #include "devices/VideoUla.hpp"
+#include "disc/Acorn1770DiscController.hpp"
+#include "disc/DiscControllerSocket.hpp"
+#include "disc/DiscDrive.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -145,6 +149,16 @@ public:
     AddressableLatch addressable_latch;
     SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
 
+    // Disc subsystem - drives owned by hardware, persist across controller changes
+    // On real Model B, these drives were external to the optional controller socket
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1"};
+
+    // Disc controller socket at 0xFE80-0xFE9F
+    // On real hardware, this was a physical socket that could be empty or contain
+    // various disc controller boards (8271, WD1770 upgrades, Opus, Watford, etc.)
+    DiscControllerSocket disc_socket;
+
     // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
     struct RomselRegister {
         SidewaysType& sideways;
@@ -165,6 +179,7 @@ public:
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(std::declval<Via6522&>()),
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(std::declval<Via6522&>()),
             make_region<0xFE30, 0xFE3F, Mirror<0x0F>>(std::declval<RomselRegister&>()),
+            make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(std::declval<DiscControllerSocket&>()),
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),
             make_region<0x8000, 0xBFFF>(std::declval<SidewaysType&>()),
             make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())
@@ -243,6 +258,7 @@ public:
         sound_chip.reset();
         addressable_latch.reset();
         sideways.select_bank(0);
+        disc_socket.reset();
     }
 
     // Soft reset (Break key): reset peripherals but preserve System VIA state
@@ -258,6 +274,7 @@ public:
         saa5050.reset();
         sound_chip.reset();
         addressable_latch.reset();
+        disc_socket.reset();
         // Do NOT clear RAM
         // Do NOT reset sideways bank selection
     }
@@ -302,10 +319,16 @@ public:
 
     // Poll NMI status from disc controller (called from Machine::step after clock tick)
     // Returns non-zero if NMI is pending from disc controller.
-    // Model B doesn't have a built-in disc controller (optional add-on).
+    // Model B has an optional disc controller add-on via the disc socket.
     uint8_t poll_nmi() {
-        // Disc controller is an optional add-on for Model B
-        return 0;
+        // Sample NMI state BEFORE ticking the disc controller
+        // This is critical for edge detection to prevent NMI stacking
+        uint8_t nmi = disc_socket.nmi_pending() ? 0x01 : 0x00;
+
+        // Tick the disc controller (1MHz peripheral clock)
+        disc_socket.tick();
+
+        return nmi;
     }
 
     // =========================================================================
@@ -342,6 +365,57 @@ public:
     // Get auto-boot flag from startup options
     bool auto_boot() const {
         return system_via_peripheral.keyboard().auto_boot();
+    }
+
+    // =========================================================================
+    // Disc Controller Management
+    // =========================================================================
+
+    // Install a disc controller into the socket
+    // After installation, drives are automatically attached
+    // @param controller Controller to install (takes ownership)
+    void install_disc_controller(std::unique_ptr<DiscControllerInterface> controller) {
+        disc_socket.install(std::move(controller));
+        disc_socket.attach_drive(0, &disc_drive_0);
+        disc_socket.attach_drive(1, &disc_drive_1);
+    }
+
+    // Convenience method: install Acorn 1770 DFS controller
+    // This is the most common disc controller upgrade for Model B
+    void install_acorn_1770() {
+        install_disc_controller(std::make_unique<Acorn1770DiscController>());
+    }
+
+    // Remove installed disc controller
+    // @return Previously installed controller, or nullptr if socket was empty
+    std::unique_ptr<DiscControllerInterface> remove_disc_controller() {
+        return disc_socket.remove();
+    }
+
+    // Check if a disc controller is installed
+    bool has_disc_controller() const {
+        return disc_socket.has_controller();
+    }
+
+    // =========================================================================
+    // Disc Controller Configuration (for DiscService compatibility)
+    // =========================================================================
+
+    // Enable/disable motor spin-up delay
+    // @param enabled true to enable realistic delays, false to skip (fast)
+    void set_spin_up_delay_enabled(bool enabled) {
+        if (auto* ctrl = disc_socket.controller()) {
+            ctrl->set_spin_up_delay_enabled(enabled);
+        }
+    }
+
+    // Check if spin-up delay is enabled
+    // @return true if enabled, false if disabled or no controller
+    bool spin_up_delay_enabled() const {
+        if (auto* ctrl = disc_socket.controller()) {
+            return ctrl->spin_up_delay_enabled();
+        }
+        return false;
     }
 
 public:
@@ -520,6 +594,7 @@ private:
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(system_via),
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(user_via),
             make_region<0xFE30, 0xFE3F, Mirror<0x0F>>(romsel),
+            make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(disc_socket),
             make_region<0x0000, 0x7FFF>(main_ram),
             make_region<0x8000, 0xBFFF>(sideways),
             make_region<0xC000, 0xFFFF>(mos_rom)

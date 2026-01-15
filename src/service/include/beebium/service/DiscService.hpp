@@ -16,6 +16,7 @@
 #include "disc.grpc.pb.h"
 #include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscLoader.hpp"
+#include "beebium/disc/DiscControllerRegistry.hpp"
 
 #include <grpcpp/grpcpp.h>
 #include <concepts>
@@ -29,6 +30,29 @@ concept HasDiscDrives = requires(T& hw) {
     { hw.disc_drive_0 } -> std::same_as<DiscDrive&>;
     { hw.disc_drive_1 } -> std::same_as<DiscDrive&>;
 };
+
+// Concept to detect if hardware has optional disc controller (via socket)
+// Model B has has_disc_controller() method, Model B+ always has controller
+template<typename T>
+concept HasOptionalDiscController = requires(const T& hw) {
+    { hw.has_disc_controller() } -> std::convertible_to<bool>;
+};
+
+// Helper to check if disc controller is present at runtime
+template<typename T>
+bool disc_controller_present(const T& hw) {
+    if constexpr (HasOptionalDiscController<T>) {
+        // Hardware has optional controller (Model B with socket)
+        return hw.has_disc_controller();
+    } else if constexpr (HasDiscDrives<T>) {
+        // Hardware has drives but no has_disc_controller() method (Model B+)
+        // Assume built-in controller is always present
+        return true;
+    } else {
+        // No disc support
+        return false;
+    }
+}
 
 // gRPC service implementation for DiscService
 template<typename MachineType>
@@ -56,6 +80,13 @@ public:
             response->set_error("Machine has no disc controller");
             return grpc::Status::OK;
         } else {
+            // Check if controller is present (Model B+ always, Model B via socket)
+            if (!disc_controller_present(machine_.state().memory)) {
+                response->set_success(false);
+                response->set_error("Machine has no disc controller");
+                return grpc::Status::OK;
+            }
+
             uint32_t drive_num = request->drive();
             if (drive_num > 1) {
                 response->set_success(false);
@@ -164,18 +195,49 @@ public:
         if constexpr (!HasDiscDrives<typename MachineType::Memory>) {
             response->set_has_disc_controller(false);
             response->set_controller_type("");
+            response->set_is_socketed(false);
+            response->set_installed_controller_id("");
             return grpc::Status::OK;
         } else {
-            response->set_has_disc_controller(true);
-            response->set_controller_type("WD1770");
+            using Memory = typename MachineType::Memory;
 
-            // Drive 0
-            fill_drive_status(response->add_drives(), 0,
-                machine_.state().memory.disc_drive_0);
+            // Check if machine has a socket (Model B) or built-in controller (Model B+)
+            constexpr bool is_socketed = HasOptionalDiscController<Memory>;
+            response->set_is_socketed(is_socketed);
 
-            // Drive 1
-            fill_drive_status(response->add_drives(), 1,
-                machine_.state().memory.disc_drive_1);
+            // Check if controller is present (Model B+ always, Model B via socket)
+            bool has_controller = disc_controller_present(machine_.state().memory);
+            response->set_has_disc_controller(has_controller);
+
+            if (has_controller) {
+                if constexpr (is_socketed) {
+                    // Model B with socket - report installed controller
+                    if (auto* ctrl = machine_.state().memory.disc_socket.controller()) {
+                        response->set_controller_type(std::string(ctrl->name()));
+                        // Determine controller ID from name (reverse lookup)
+                        for (const auto& info : DiscControllerRegistry::available()) {
+                            if (info.display_name == ctrl->name()) {
+                                response->set_installed_controller_id(std::string(info.id));
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // Model B+ with built-in controller
+                    response->set_controller_type("WD1770");
+                    response->set_installed_controller_id("");  // Built-in, not from registry
+                }
+
+                // Report drive status (only drives connected to controller)
+                fill_drive_status(response->add_drives(), 0,
+                    machine_.state().memory.disc_drive_0);
+                fill_drive_status(response->add_drives(), 1,
+                    machine_.state().memory.disc_drive_1);
+            } else {
+                response->set_controller_type("");
+                response->set_installed_controller_id("");
+                // Don't report drives if no controller to use them
+            }
 
             return grpc::Status::OK;
         }
@@ -243,7 +305,7 @@ public:
             response->set_error("Machine has no disc controller");
             return grpc::Status::OK;
         } else {
-            machine_.state().memory.disc_controller.set_spin_up_delay_enabled(request->enabled());
+            machine_.state().memory.set_spin_up_delay_enabled(request->enabled());
             response->set_success(true);
             return grpc::Status::OK;
         }
@@ -263,7 +325,78 @@ public:
             response->set_enabled(false);
             return grpc::Status::OK;
         } else {
-            response->set_enabled(machine_.state().memory.disc_controller.spin_up_delay_enabled());
+            response->set_enabled(machine_.state().memory.spin_up_delay_enabled());
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status ListAvailableControllers(
+        grpc::ServerContext* context,
+        const ListAvailableControllersRequest* request,
+        ListAvailableControllersResponse* response) override
+    {
+        (void)context;
+        (void)request;
+        // No locking needed - registry is const
+
+        // Return all available controller types from the registry
+        for (const auto& info : DiscControllerRegistry::available()) {
+            auto* ctrl_info = response->add_controllers();
+            ctrl_info->set_id(std::string(info.id));
+            ctrl_info->set_display_name(std::string(info.display_name));
+            ctrl_info->set_fdc_chip(std::string(info.fdc_chip));
+            ctrl_info->set_description(std::string(info.description));
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status InstallDiscController(
+        grpc::ServerContext* context,
+        const InstallDiscControllerRequest* request,
+        InstallDiscControllerResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasOptionalDiscController<Memory>) {
+            // Machine has built-in controller (Model B+) - can't change
+            response->set_success(false);
+            response->set_error("Machine has built-in disc controller (not socketed)");
+            return grpc::Status::OK;
+        } else {
+            const std::string& controller_id = request->controller_id();
+
+            // Empty string or "none" removes the controller
+            if (controller_id.empty() || controller_id == "none") {
+                machine_.state().memory.disc_socket.remove();
+                response->set_success(true);
+                response->set_controller_type("");
+                return grpc::Status::OK;
+            }
+
+            // Validate controller ID
+            if (!DiscControllerRegistry::is_valid(controller_id)) {
+                response->set_success(false);
+                response->set_error("Unknown disc controller type: " + controller_id);
+                return grpc::Status::OK;
+            }
+
+            // Create and install the controller
+            auto controller = DiscControllerRegistry::create(controller_id);
+            if (!controller) {
+                response->set_success(false);
+                response->set_error("Failed to create disc controller: " + controller_id);
+                return grpc::Status::OK;
+            }
+
+            std::string controller_name(controller->name());
+            machine_.state().memory.install_disc_controller(std::move(controller));
+
+            response->set_success(true);
+            response->set_controller_type(controller_name);
             return grpc::Status::OK;
         }
     }

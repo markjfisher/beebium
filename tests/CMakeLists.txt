@@ -41,6 +41,16 @@ add_executable(test_wd1770 test_wd1770.cpp)
 target_link_libraries(test_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_wd1770)
 
+# Disc controller socket tests
+add_executable(test_disc_controller_socket test_disc_controller_socket.cpp)
+target_link_libraries(test_disc_controller_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_controller_socket)
+
+# Acorn 1770 disc controller tests
+add_executable(test_acorn_1770_controller test_acorn_1770_controller.cpp)
+target_link_libraries(test_acorn_1770_controller PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_acorn_1770_controller)
+
 # Memory histogram tests
 add_executable(test_memory_histogram test_memory_histogram.cpp)
 target_link_libraries(test_memory_histogram PRIVATE beebium_core Catch2::Catch2WithMain)

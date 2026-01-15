@@ -621,6 +621,21 @@ public:
         return system_via_peripheral.keyboard().auto_boot();
     }
 
+    // =========================================================================
+    // Disc Controller Configuration
+    // =========================================================================
+
+    // Enable/disable motor spin-up delay
+    // @param enabled true to enable realistic delays, false to skip (fast)
+    void set_spin_up_delay_enabled(bool enabled) {
+        disc_controller.set_spin_up_delay_enabled(enabled);
+    }
+
+    // Check if spin-up delay is enabled
+    bool spin_up_delay_enabled() const {
+        return disc_controller.spin_up_delay_enabled();
+    }
+
     // Memory region discovery for debugger
     std::vector<MemoryRegionDescriptor> get_memory_regions() const {
         std::vector<MemoryRegionDescriptor> regions;

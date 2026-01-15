@@ -24,6 +24,12 @@ service DiscService {
 
     // Query spin-up delay configuration
     rpc GetSpinUpDelay(GetSpinUpDelayRequest) returns (GetSpinUpDelayResponse);
+
+    // List available disc controller types (for machines with sockets)
+    rpc ListAvailableControllers(ListAvailableControllersRequest) returns (ListAvailableControllersResponse);
+
+    // Install a disc controller into the socket (machines with sockets only)
+    rpc InstallDiscController(InstallDiscControllerRequest) returns (InstallDiscControllerResponse);
 }
 
 // --- Drive State ---
@@ -74,6 +80,8 @@ message GetDriveStatusResponse {
     bool has_disc_controller = 1;      // False if machine has no disc interface
     string controller_type = 2;        // "WD1770", "8271", or empty
     repeated DriveStatus drives = 3;   // Status of each drive
+    bool is_socketed = 4;              // True if controller can be changed at runtime
+    string installed_controller_id = 5; // CLI id of installed controller (if socketed)
 }
 
 message DriveStatus {
@@ -139,4 +147,35 @@ message GetSpinUpDelayRequest {
 
 message GetSpinUpDelayResponse {
     bool enabled = 1;                  // Current spin-up delay setting
+}
+
+// --- Available Controllers ---
+
+message ListAvailableControllersRequest {
+    // Empty - returns all available controller types
+}
+
+message ListAvailableControllersResponse {
+    repeated DiscControllerTypeInfo controllers = 1;  // Available controller types
+}
+
+// Information about a disc controller type
+message DiscControllerTypeInfo {
+    string id = 1;                     // CLI identifier (e.g., "acorn-1770")
+    string display_name = 2;           // Human-readable name (e.g., "Acorn 1770")
+    string fdc_chip = 3;               // FDC chip name (e.g., "WD1770")
+    string description = 4;            // Brief description
+}
+
+// --- Install Controller ---
+
+message InstallDiscControllerRequest {
+    string controller_id = 1;          // CLI identifier (e.g., "acorn-1770")
+                                       // Use empty string or "none" to remove controller
+}
+
+message InstallDiscControllerResponse {
+    bool success = 1;
+    string error = 2;                  // Error message if !success
+    string controller_type = 3;        // Name of installed controller (e.g., "WD1770")
 }

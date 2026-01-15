@@ -296,6 +296,153 @@ The disc control register (IC17) is a write-only latch that provides:
 
 Since Beebium only emulates Model B+ with WD1770 (the only configuration ever manufactured), reading 0xFE80-0xFE83 returns 0xFF.
 
+## Hardware Integration (Model B)
+
+**Headers:**
+- `src/core/include/beebium/disc/DiscControllerSocket.hpp`
+- `src/core/include/beebium/disc/DiscControllerInterface.hpp`
+- `src/core/include/beebium/disc/Acorn1770DiscController.hpp`
+
+Unlike the Model B+ which has a soldered WD1770, the BBC Model B had a physical socket for optional disc controller upgrades. Beebium models this with a pluggable socket architecture.
+
+### Architecture
+
+```
+ModelBHardware
+    │
+    ├── disc_drive_0, disc_drive_1  (owned by hardware, persist across controller changes)
+    │
+    └── disc_socket (DiscControllerSocket at 0xFE80-0xFE9F)
+            │
+            └── DiscControllerInterface* (optional, runtime-pluggable)
+                    │
+                    ├── Acorn1770DiscController (WD1770 + Acorn control register)
+                    ├── OpusDiscController (future: WD2793)
+                    ├── WatfordDiscController (future)
+                    └── Intel8271DiscController (future)
+```
+
+### Key Design Decisions
+
+1. **Drives owned by hardware** - Drives persist across controller changes. Disc images don't need re-insertion when swapping controllers.
+
+2. **Socket at 0xFE80-0xFE9F (32 bytes)** - Full disc controller region, allowing different controllers to use different address layouts.
+
+3. **Controller includes control register** - The control register is board-specific (Acorn vs Opus vs Watford have different bit layouts), so it's encapsulated within each controller implementation.
+
+4. **Empty socket returns 0xFF** - Open bus behavior when no controller installed.
+
+### DiscControllerSocket
+
+The socket wrapper provides a uniform interface regardless of whether a controller is installed:
+
+```cpp
+class DiscControllerSocket {
+public:
+    uint8_t read(uint16_t offset);   // Returns 0xFF if empty
+    void write(uint16_t offset, uint8_t value);  // Ignored if empty
+    void tick();
+    bool nmi_pending() const;
+
+    void install(std::unique_ptr<DiscControllerInterface> controller);
+    std::unique_ptr<DiscControllerInterface> remove();
+    bool has_controller() const;
+    DiscControllerInterface* controller();
+
+    // Drive management (delegates to controller)
+    void attach_drive(int drive_num, DiscDrive* drive);
+    DiscDrive* attached_drive(int drive_num) const;
+
+    void reset();
+};
+```
+
+### DiscControllerInterface
+
+Abstract interface for pluggable disc controllers:
+
+```cpp
+class DiscControllerInterface {
+public:
+    virtual uint8_t read(uint16_t offset) = 0;
+    virtual void write(uint16_t offset, uint8_t value) = 0;
+    virtual void tick() = 0;
+    virtual bool nmi_pending() const = 0;
+    virtual void reset() = 0;
+
+    virtual void attach_drive(int drive_num, DiscDrive* drive) = 0;
+    virtual void detach_drives() = 0;
+    virtual DiscDrive* attached_drive(int drive_num) const = 0;
+
+    virtual std::string_view name() const = 0;
+    virtual void set_spin_up_delay_enabled(bool enabled) = 0;
+    virtual bool spin_up_delay_enabled() const = 0;
+};
+```
+
+### Acorn1770DiscController
+
+The Acorn 1770 upgrade board wraps a WD1770 FDC with Acorn's control register layout:
+
+| Offset | Read | Write |
+|--------|------|-------|
+| 0x00-0x03 | 0xFF (open bus) | Control register (mirrored) |
+| 0x04 | WD1770 Status | WD1770 Command |
+| 0x05 | WD1770 Track | WD1770 Track |
+| 0x06 | WD1770 Sector | WD1770 Sector |
+| 0x07 | WD1770 Data | WD1770 Data |
+
+Control register bits match the Model B+ layout (see above).
+
+### Command-Line Configuration
+
+Model B accepts the `--fdc` option to install a disc controller at startup:
+
+```bash
+# List available controllers
+beebium-model-b --list-fdc
+
+# Install Acorn 1770 controller
+beebium-model-b --fdc acorn-1770 --floppy 0:game.ssd
+
+# No disc controller (default)
+beebium-model-b --fdc none
+```
+
+### gRPC Configuration
+
+The DiscService provides runtime controller management:
+
+```protobuf
+service DiscService {
+    // List available controller types
+    rpc ListAvailableControllers(ListAvailableControllersRequest)
+        returns (ListAvailableControllersResponse);
+
+    // Install a controller (socketed machines only)
+    rpc InstallDiscController(InstallDiscControllerRequest)
+        returns (InstallDiscControllerResponse);
+
+    // GetDriveStatus reports is_socketed and installed_controller_id
+}
+```
+
+**Example workflow:**
+```python
+# Check if machine supports controller installation
+status = disc_service.GetDriveStatus()
+if status.is_socketed:
+    # List available controllers
+    available = disc_service.ListAvailableControllers()
+    for ctrl in available.controllers:
+        print(f"{ctrl.id}: {ctrl.display_name} ({ctrl.fdc_chip})")
+
+    # Install a controller
+    result = disc_service.InstallDiscController(controller_id="acorn-1770")
+    if result.success:
+        print(f"Installed: {result.controller_type}")
+```
+
 ### NMI Handling
 
 The WD1770 generates NMI via two signals that are OR'd together:
@@ -681,6 +828,7 @@ The following features are not implemented. They may be needed for compatibility
 
 - **Intel 8271**: Required for Model B disc compatibility (uses 0xFE80-0xFE83 for command/status registers, completely different command protocol). Note: The Model B+ was designed to support 8271 but only WD1770 was ever fitted.
 - **WD1772**: Faster step rates (2ms, 3ms, 6ms, 12ms).
+- **Opus WD2793**: Third-party disc controller from Opus Supplies using the WD2793 FDC. Has different control register layout than the Acorn 1770 controller. This is one of several third-party disc controllers for the Model B, confirming the need for the pluggable `DiscControllerSocket` architecture to avoid combinatorial explosion of model variants (model-b-8271, model-b-acorn-1770, model-b-opus-2793, model-b-watford, etc.).
 
 ---
 
