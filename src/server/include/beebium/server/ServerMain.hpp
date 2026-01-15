@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -35,6 +36,12 @@ namespace beebium::server {
 namespace {
 
 constexpr uint16_t DEFAULT_GRPC_PORT = 0xBEEB;  // 48875
+
+enum class WaitMode {
+    None,    // Start immediately
+    Console, // Wait for RETURN on console
+    Grpc     // Wait for Run() RPC
+};
 
 std::atomic<bool> g_running{true};
 
@@ -108,6 +115,17 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
+// Parse --wait argument value
+WaitMode parse_wait_arg(const std::string& value) {
+    if (value == "console") {
+        return WaitMode::Console;
+    } else if (value == "grpc") {
+        return WaitMode::Grpc;
+    } else {
+        throw std::runtime_error("Invalid --wait value: " + value + " (expected 'console' or 'grpc')");
+    }
+}
+
 // Convert a URL or filepath to a canonical file:// URL.
 // If the input is already a URL, returns it unchanged.
 // If it's a filepath, resolves to canonical absolute path (no . or ..) and prepends file://
@@ -142,6 +160,9 @@ void print_usage(const char* program_name) {
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
               << "                           with --screen-mode and --auto-boot)\n"
+              << "  --wait=<mode>            Wait before starting emulation:\n"
+              << "                           console - wait for RETURN keypress\n"
+              << "                           grpc    - wait for Run() RPC\n"
               << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
@@ -207,6 +228,9 @@ int server_main(int argc, char* argv[]) {
     bool screen_mode_set = false;
     bool auto_boot_set = false;
 
+    // Wait mode for controlled startup
+    WaitMode wait_mode = WaitMode::None;
+
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -246,6 +270,10 @@ int server_main(int argc, char* argv[]) {
                 std::cerr << "Error: --links must be 0-255\n";
                 return 1;
             }
+        } else if (arg.rfind("--wait=", 0) == 0) {
+            // --wait=console or --wait=grpc
+            std::string wait_value = arg.substr(7);  // Skip "--wait="
+            wait_mode = parse_wait_arg(wait_value);
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -454,7 +482,29 @@ int server_main(int argc, char* argv[]) {
         beebium::service::Server<MachineType> server(machine, "0.0.0.0", port);
         server.start();
 
-        std::cout << Memory::MACHINE_DISPLAY_NAME << " running. Press Ctrl+C to stop.\n";
+        std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop.\n";
+
+        // Handle wait mode for controlled startup
+        switch (wait_mode) {
+            case WaitMode::Console:
+                // Wait for user to press RETURN before starting emulation
+                // "Now press RETURN." is a reference to Roger McGough's electronic poem
+                // from the original BBC Micro Welcome cassette.
+                std::cout << "Now press RETURN." << std::flush;
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                std::cout << "\n";
+                break;
+
+            case WaitMode::Grpc:
+                // Start in paused state, waiting for Run() RPC
+                machine.pause();
+                std::cout << "Waiting for Run() RPC to start emulation...\n";
+                break;
+
+            case WaitMode::None:
+                // Start immediately
+                break;
+        }
 
         // Check for BEEBIUM_NO_PACING environment variable for debugging
         const char* no_pacing_env = std::getenv("BEEBIUM_NO_PACING");

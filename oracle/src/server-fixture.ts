@@ -56,7 +56,8 @@ export class ServerFixture {
         this.port = options.port ?? DEFAULT_OPTIONS.port;
         this.model = options.model ?? DEFAULT_OPTIONS.model;
         this.timeout = options.timeout ?? DEFAULT_OPTIONS.timeout;
-        this.args = options.args ?? [];
+        // Always use --wait=grpc for controlled startup
+        this.args = ['--wait=grpc', ...(options.args ?? [])];
         this.executablePath = options.executablePath ?? findExecutable(this.model);
     }
 
