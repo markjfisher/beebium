@@ -177,7 +177,7 @@ TEST_CASE("DebuggerControl Reset resets the machine", "[grpc][debugger]") {
 
     REQUIRE(status.ok());
     CHECK(response.success());
-    CHECK(fixture.machine().cycle_count() == 0);
+    CHECK(fixture.machine().cycle_count() == 7);  // Reset runs 7 cycles to complete reset sequence
 }
 
 TEST_CASE("DebuggerControl StepInstruction steps one instruction", "[grpc][debugger]") {

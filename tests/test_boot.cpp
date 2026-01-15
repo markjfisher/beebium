@@ -530,12 +530,14 @@ TEST_CASE("Addressable latch via System VIA", "[boot][latch]") {
     machine.write(0xFE42, 0x0F);
 
     // Write to latch address 6 (CAPS LED), data = 1: 0b1110 = 0x0E
+    // This sets bit 6 in latch. Active-low: bit set = LED off
     machine.write(0xFE40, 0x0E);
-    REQUIRE(machine.memory().addressable_latch.caps_lock_led() == true);
+    REQUIRE(machine.memory().addressable_latch.caps_lock_led() == false);
 
     // Write to latch address 6, data = 0: 0b0110 = 0x06
+    // This clears bit 6 in latch. Active-low: bit clear = LED on
     machine.write(0xFE40, 0x06);
-    REQUIRE(machine.memory().addressable_latch.caps_lock_led() == false);
+    REQUIRE(machine.memory().addressable_latch.caps_lock_led() == true);
 }
 
 TEST_CASE("ROM verification", "[boot][rom]") {

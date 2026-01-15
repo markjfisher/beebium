@@ -90,24 +90,24 @@ TEST_CASE("AddressableLatch LED outputs", "[addressable_latch]") {
 
     SECTION("caps lock LED reflects bit 6") {
         latch.reset();
-        REQUIRE(latch.caps_lock_led() == false);
+        REQUIRE(latch.caps_lock_led() == true);   // Active-low: bit clear = LED on
 
         latch.write(6, true);
-        REQUIRE(latch.caps_lock_led() == true);
+        REQUIRE(latch.caps_lock_led() == false);  // Active-low: bit set = LED off
 
         latch.write(6, false);
-        REQUIRE(latch.caps_lock_led() == false);
+        REQUIRE(latch.caps_lock_led() == true);   // Active-low: bit clear = LED on
     }
 
     SECTION("shift lock LED reflects bit 7") {
         latch.reset();
-        REQUIRE(latch.shift_lock_led() == false);
+        REQUIRE(latch.shift_lock_led() == true);   // Active-low: bit clear = LED on
 
         latch.write(7, true);
-        REQUIRE(latch.shift_lock_led() == true);
+        REQUIRE(latch.shift_lock_led() == false);  // Active-low: bit set = LED off
 
         latch.write(7, false);
-        REQUIRE(latch.shift_lock_led() == false);
+        REQUIRE(latch.shift_lock_led() == true);   // Active-low: bit clear = LED on
     }
 }
 
@@ -151,9 +151,9 @@ TEST_CASE("AddressableLatch reset", "[addressable_latch]") {
         latch.reset();
 
         REQUIRE(latch.screen_base() == 0);
-        REQUIRE(latch.caps_lock_led() == false);
-        REQUIRE(latch.shift_lock_led() == false);
-        REQUIRE(latch.sound_write_enabled() == true);  // Active low
-        REQUIRE(latch.keyboard_enabled() == true);      // Active low
+        REQUIRE(latch.caps_lock_led() == true);   // Active-low: bit clear = LED on
+        REQUIRE(latch.shift_lock_led() == true);  // Active-low: bit clear = LED on
+        REQUIRE(latch.sound_write_enabled() == true);   // Active-low
+        REQUIRE(latch.keyboard_enabled() == true);      // Active-low
     }
 }
