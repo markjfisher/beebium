@@ -61,6 +61,11 @@ public:
     /// Get the port the server is bound to
     uint16_t port() const;
 
+    /// Notify all connected clients that shutdown is imminent.
+    /// Call this from signal handler before stopping the server.
+    /// @param grace_ms Grace period in milliseconds for clients to disconnect
+    void notify_shutdown(uint32_t grace_ms = 5000);
+
 private:
     struct Impl {
         MachineType& machine;
@@ -163,6 +168,10 @@ void Server<MachineType>::start() {
 
     // Create and start gRPC server
     grpc::ServerBuilder builder;
+
+    // Disable SO_REUSEPORT - we want exclusive port binding for each emulator instance
+    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
+
     int selected_port = 0;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials(), &selected_port);
     builder.RegisterService(impl_->video_service.get());
@@ -175,10 +184,21 @@ void Server<MachineType>::start() {
 
     impl_->grpc_server = builder.BuildAndStart();
 
-    // Update port with the actual bound port (important when port 0 was requested)
-    if (selected_port > 0) {
-        impl_->port = static_cast<uint16_t>(selected_port);
+    // Check if server started successfully
+    if (!impl_->grpc_server) {
+        throw std::runtime_error("Failed to start gRPC server on " + server_address);
     }
+
+    // Check if port binding succeeded (selected_port is 0 on failure)
+    if (selected_port <= 0) {
+        impl_->grpc_server->Shutdown();
+        impl_->grpc_server.reset();
+        throw std::runtime_error("Failed to bind to port " + std::to_string(impl_->port) +
+                                 " (port may already be in use)");
+    }
+
+    // Update port with the actual bound port (important when port 0 was requested)
+    impl_->port = static_cast<uint16_t>(selected_port);
 
     impl_->running = true;
 
@@ -226,6 +246,13 @@ std::string Server<MachineType>::address() const {
 template<typename MachineType>
 uint16_t Server<MachineType>::port() const {
     return impl_->port;
+}
+
+template<typename MachineType>
+void Server<MachineType>::notify_shutdown(uint32_t grace_ms) {
+    if (impl_->system_service) {
+        impl_->system_service->notify_shutdown(grace_ms);
+    }
 }
 
 } // namespace service

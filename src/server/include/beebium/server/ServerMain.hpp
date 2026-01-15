@@ -500,11 +500,14 @@ int server_main(int argc, char* argv[]) {
         machine.reset();
 
         // Start gRPC server
-        std::cout << "Starting gRPC server on port " << port << "...\n";
+        std::cout << "Starting gRPC server...\n";
         beebium::service::Server<MachineType> server(machine, "0.0.0.0", port);
         server.start();
 
-        std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop.\n";
+        // Print actual bound port (important when port 0 was requested for dynamic allocation)
+        // Flush immediately so clients parsing stdout can detect the port before we block
+        std::cout << "Listening on port " << server.port() << std::endl;
+        std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
 
         // Handle wait mode for controlled startup
         switch (wait_mode) {

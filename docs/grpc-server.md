@@ -39,7 +39,8 @@ All arguments are optional. By default, the server loads the appropriate MOS ROM
 | `--mos <filepath>` | Machine-specific | Path to MOS ROM |
 | `--rom <slot>:<filepath>` | Slot 15: bbc-basic_2.rom | Load ROM into sideways slot (0-15) |
 | `--rom-dir <dirpath>` | Auto-detected | ROM directory path |
-| `--port <port>` | 48875 | gRPC server port |
+| `--port <port>` | 48875 | gRPC server port (use 0 for dynamic allocation) |
+| `--wait[=mode]` | - | Delay emulation start (see [cli.md](cli.md)) |
 | `--info` | - | Print machine info as JSON and exit |
 | `--help` | - | Show usage |
 
@@ -171,6 +172,50 @@ Response:
 ```
 
 Each element is a bitmask of pressed columns for that row.
+
+### SystemService
+
+Provides system information and server lifecycle events.
+
+**Proto file:** `src/service/proto/system.proto`
+
+#### GetSystemInfo
+
+Returns machine identification.
+
+```bash
+grpcurl -plaintext \
+  -import-path src/service/proto -proto system.proto \
+  localhost:48875 beebium.SystemService/GetSystemInfo
+```
+
+Response:
+```json
+{
+  "machineType": "ModelB",
+  "machineDisplayName": "BBC Model B"
+}
+```
+
+#### WatchServerStatus (Server Streaming)
+
+Subscribe to server lifecycle events. The server sends `SERVER_STATUS_READY` immediately upon subscription, then `SERVER_STATUS_SHUTTING_DOWN` when the server receives a shutdown signal (Ctrl+C or SIGTERM).
+
+```bash
+grpcurl -plaintext \
+  -import-path src/service/proto -proto system.proto \
+  localhost:48875 beebium.SystemService/WatchServerStatus
+```
+
+Events:
+```json
+{"status": "SERVER_STATUS_READY", "message": "Server ready"}
+```
+```json
+{"status": "SERVER_STATUS_SHUTTING_DOWN", "message": "Server shutting down", "shutdownGraceMs": 5000}
+```
+
+Use this to detect server shutdown and cleanly disconnect clients. The `shutdownGraceMs` field indicates how long clients have to finish pending operations before the server terminates.
 
 ## BBC Keyboard Matrix
 
