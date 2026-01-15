@@ -70,6 +70,12 @@ __pycache__/
 dist/
 .venv/
 *.egg
+
+# Node.js (oracle project)
+node_modules/
+oracle/dist/
+oracle/public
+
 /docs/manuals/
 /docs/manuals_text/
 /docs/datasheets/

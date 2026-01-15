@@ -1,0 +1,80 @@
+/**
+ * Shared state types for differential testing between jsbeeb and Beebium.
+ */
+
+/** 6502 CPU register state */
+export interface CpuState {
+    a: number;      // Accumulator (0-255)
+    x: number;      // X index register (0-255)
+    y: number;      // Y index register (0-255)
+    sp: number;     // Stack pointer (0-255)
+    pc: number;     // Program counter (0-65535)
+    p: number;      // Processor status flags (0-255)
+}
+
+/** 6522 VIA state */
+export interface ViaState {
+    ora: number;    // Output Register A
+    orb: number;    // Output Register B
+    ira: number;    // Input Register A
+    irb: number;    // Input Register B
+    ddra: number;   // Data Direction Register A
+    ddrb: number;   // Data Direction Register B
+    t1c: number;    // Timer 1 counter
+    t1l: number;    // Timer 1 latch
+    t2c: number;    // Timer 2 counter
+    t2l: number;    // Timer 2 latch
+    acr: number;    // Auxiliary Control Register
+    pcr: number;    // Peripheral Control Register
+    ifr: number;    // Interrupt Flag Register
+    ier: number;    // Interrupt Enable Register
+    sr: number;     // Shift Register
+    ca1: boolean;   // Control line CA1
+    ca2: boolean;   // Control line CA2
+    cb1: boolean;   // Control line CB1
+    cb2: boolean;   // Control line CB2
+}
+
+/** 6845 CRTC state */
+export interface CrtcState {
+    registers: number[];    // All 18 CRTC registers (R0-R17)
+    addressRegister: number; // Currently selected register
+}
+
+/** Video ULA state */
+export interface VideoUlaState {
+    control: number;        // Control register
+    palette: number[];      // 16-entry palette (logical -> physical)
+}
+
+/** Complete machine state snapshot */
+export interface MachineState {
+    cpu: CpuState;
+    systemVia: ViaState;
+    userVia: ViaState;
+    crtc: CrtcState;
+    videoUla: VideoUlaState;
+    cycles: number;
+}
+
+/** Result of comparing two states */
+export interface ComparisonResult {
+    match: boolean;
+    jsbeebCycles: number;
+    beebiumCycles: number;
+    divergences: Divergence[];
+}
+
+/** A single divergence between emulator states */
+export interface Divergence {
+    component: 'cpu' | 'memory' | 'system_via' | 'user_via' | 'crtc' | 'video_ula';
+    field: string;
+    jsbeebValue: unknown;
+    beebiumValue: unknown;
+}
+
+/** Address range for memory comparison */
+export interface AddressRange {
+    start: number;
+    end: number;
+}

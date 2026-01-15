@@ -1,0 +1,184 @@
+/**
+ * Basic differential tests between jsbeeb and Beebium.
+ */
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { JsbeebOracle, BeebiumClient, DiffRunner, ServerFixture } from '../src/index.js';
+
+describe('JsbeebOracle', () => {
+    let oracle: JsbeebOracle;
+
+    beforeAll(async () => {
+        oracle = new JsbeebOracle();
+        await oracle.initialize('B-DFS1.2');
+    });
+
+    it('should initialize and get CPU state', () => {
+        const cpu = oracle.getCpuState();
+        expect(cpu).toBeDefined();
+        expect(typeof cpu.a).toBe('number');
+        expect(typeof cpu.x).toBe('number');
+        expect(typeof cpu.y).toBe('number');
+        expect(typeof cpu.sp).toBe('number');
+        expect(typeof cpu.pc).toBe('number');
+        expect(typeof cpu.p).toBe('number');
+    });
+
+    it('should get VIA state', () => {
+        const systemVia = oracle.getSystemViaState();
+        expect(systemVia).toBeDefined();
+        expect(typeof systemVia.ora).toBe('number');
+        expect(typeof systemVia.ifr).toBe('number');
+
+        const userVia = oracle.getUserViaState();
+        expect(userVia).toBeDefined();
+    });
+
+    it('should get CRTC state', () => {
+        const crtc = oracle.getCrtcState();
+        expect(crtc).toBeDefined();
+        expect(Array.isArray(crtc.registers)).toBe(true);
+        expect(crtc.registers.length).toBe(18);
+    });
+
+    it('should get Video ULA state', () => {
+        const ula = oracle.getVideoUlaState();
+        expect(ula).toBeDefined();
+        expect(typeof ula.control).toBe('number');
+        expect(Array.isArray(ula.palette)).toBe(true);
+        expect(ula.palette.length).toBe(16);
+    });
+
+    it('should read memory', () => {
+        const mem = oracle.readMemory(0x8000, 16);
+        expect(mem).toBeInstanceOf(Uint8Array);
+        expect(mem.length).toBe(16);
+    });
+
+    it('should step instructions', async () => {
+        const startCpu = oracle.getCpuState();
+        const cycles = await oracle.stepInstructions(10);
+        const endCpu = oracle.getCpuState();
+
+        expect(cycles).toBeGreaterThan(0);
+        // PC should have changed after stepping
+        expect(endCpu.pc).not.toBe(startCpu.pc);
+    });
+});
+
+describe('BeebiumClient with ServerFixture', () => {
+    let fixture: ServerFixture;
+    let client: BeebiumClient;
+
+    beforeAll(async () => {
+        fixture = new ServerFixture({ port: 50051, timeout: 10000 });
+        try {
+            client = await fixture.start();
+        } catch (err) {
+            console.log('Failed to start Beebium server:', err);
+            throw err;
+        }
+    }, 15000);
+
+    afterAll(async () => {
+        await fixture.stop();
+    });
+
+    it('should get execution state', async () => {
+        const state = await client.getState();
+        expect(state).toBeDefined();
+        expect(typeof state.isRunning).toBe('boolean');
+    });
+
+    it('should get CPU state', async () => {
+        const cpu = await client.getCpuState();
+        expect(cpu).toBeDefined();
+        expect(typeof cpu.a).toBe('number');
+        expect(typeof cpu.x).toBe('number');
+        expect(typeof cpu.y).toBe('number');
+        expect(typeof cpu.sp).toBe('number');
+        expect(typeof cpu.pc).toBe('number');
+        expect(typeof cpu.p).toBe('number');
+    });
+
+    it('should get VIA state', async () => {
+        const systemVia = await client.getSystemViaState();
+        expect(systemVia).toBeDefined();
+        expect(typeof systemVia.ora).toBe('number');
+        expect(typeof systemVia.ifr).toBe('number');
+    });
+
+    it('should get CRTC state', async () => {
+        const crtc = await client.getCrtcState();
+        expect(crtc).toBeDefined();
+        expect(Array.isArray(crtc.registers)).toBe(true);
+    });
+
+    it('should step instruction', async () => {
+        const startCpu = await client.getCpuState();
+        await client.stepInstruction(10);
+        const endCpu = await client.getCpuState();
+
+        // PC should have changed after stepping
+        expect(endCpu.pc).not.toBe(startCpu.pc);
+    });
+
+    it('should read memory', async () => {
+        const mem = await client.peekMemory(0x8000, 16);
+        expect(mem).toBeInstanceOf(Uint8Array);
+        expect(mem.length).toBe(16);
+    });
+});
+
+describe('DiffRunner with ServerFixture', () => {
+    let fixture: ServerFixture;
+    let oracle: JsbeebOracle;
+    let client: BeebiumClient;
+    let runner: DiffRunner;
+
+    beforeAll(async () => {
+        // Initialize jsbeeb oracle
+        oracle = new JsbeebOracle();
+        await oracle.initialize('B-DFS1.2');
+
+        // Start Beebium server
+        fixture = new ServerFixture({ port: 50052, timeout: 10000 });
+        client = await fixture.start();
+
+        runner = new DiffRunner(oracle, client);
+    }, 15000);
+
+    afterAll(async () => {
+        await fixture.stop();
+    });
+
+    it('should compare initial state', async () => {
+        // Reset both emulators
+        oracle.reset();
+        await client.reset();
+
+        const result = await runner.compareState();
+        expect(result).toBeDefined();
+        expect(Array.isArray(result.divergences)).toBe(true);
+
+        if (!result.match) {
+            console.log('Initial state divergences:');
+            console.log(DiffRunner.formatResult(result));
+        }
+    });
+
+    it('should step both emulators', async () => {
+        // Reset both emulators
+        oracle.reset();
+        await client.reset();
+
+        // Step a few instructions
+        const result = await runner.stepBoth(10);
+        expect(result).toBeDefined();
+
+        if (!result.match) {
+            console.log('Post-step divergences:');
+            console.log(DiffRunner.formatResult(result));
+        }
+    });
+});

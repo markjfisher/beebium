@@ -1,0 +1,20 @@
+/**
+ * Beebium Test Oracle
+ *
+ * Differential testing framework using jsbeeb as a reference emulator.
+ */
+
+export { JsbeebOracle } from './jsbeeb-oracle.js';
+export { BeebiumClient } from './beebium-client.js';
+export { DiffRunner, type DiffRunnerOptions } from './diff-runner.js';
+export { ServerFixture, createServerFixture, type ServerFixtureOptions } from './server-fixture.js';
+export type {
+    CpuState,
+    ViaState,
+    CrtcState,
+    VideoUlaState,
+    MachineState,
+    ComparisonResult,
+    Divergence,
+    AddressRange,
+} from './types.js';
