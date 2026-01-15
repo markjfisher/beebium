@@ -17,7 +17,7 @@
 #include "beebium/PacingClock.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
-#include "beebium/disc/DiscControllerSocket.hpp"
+#include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/RomPaths.hpp"
 
@@ -135,14 +135,6 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
 
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
-
-// Concept to detect machines with pluggable disc controller sockets (Model B)
-// vs built-in disc controllers (Model B+)
-template<typename T>
-concept HasDiscControllerSocket = requires(T& hw) {
-    { hw.disc_socket } -> std::same_as<DiscControllerSocket&>;
-    hw.install_disc_controller(std::unique_ptr<DiscControllerInterface>{});
-};
 
 // Parse --wait argument value
 WaitMode parse_wait_arg(const std::string& value) {
@@ -486,7 +478,7 @@ int server_main(int argc, char* argv[]) {
                     auto* info = DiscControllerRegistry::find(fdc_type);
                     std::cout << "Installing disc controller: " << info->display_name
                               << " (" << info->fdc_chip << ")\n";
-                    machine.state().memory.install_disc_controller(std::move(controller));
+                    machine.state().memory.install_disc_controller(std::move(controller), fdc_type);
                 } else {
                     std::cerr << "Error: Unknown disc controller type: " << fdc_type << "\n"
                               << "Use --list-fdc to see available controllers.\n";

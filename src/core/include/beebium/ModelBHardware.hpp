@@ -159,6 +159,9 @@ public:
     // various disc controller boards (8271, WD1770 upgrades, Opus, Watford, etc.)
     DiscControllerSocket disc_socket;
 
+    // Registry ID of installed controller (empty if no controller or unknown)
+    std::string installed_controller_id_;
+
     // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
     struct RomselRegister {
         SidewaysType& sideways;
@@ -374,27 +377,37 @@ public:
     // Install a disc controller into the socket
     // After installation, drives are automatically attached
     // @param controller Controller to install (takes ownership)
-    void install_disc_controller(std::unique_ptr<DiscControllerInterface> controller) {
+    // @param controller_id Registry ID of the controller (for querying later)
+    void install_disc_controller(std::unique_ptr<DiscControllerInterface> controller,
+                                 std::string_view controller_id = "") {
         disc_socket.install(std::move(controller));
         disc_socket.attach_drive(0, &disc_drive_0);
         disc_socket.attach_drive(1, &disc_drive_1);
+        installed_controller_id_ = controller_id;
     }
 
     // Convenience method: install Acorn 1770 DFS controller
     // This is the most common disc controller upgrade for Model B
     void install_acorn_1770() {
-        install_disc_controller(std::make_unique<Acorn1770DiscController>());
+        install_disc_controller(std::make_unique<Acorn1770DiscController>(), "acorn-1770");
     }
 
     // Remove installed disc controller
     // @return Previously installed controller, or nullptr if socket was empty
     std::unique_ptr<DiscControllerInterface> remove_disc_controller() {
+        installed_controller_id_.clear();
         return disc_socket.remove();
     }
 
     // Check if a disc controller is installed
     bool has_disc_controller() const {
         return disc_socket.has_controller();
+    }
+
+    // Get registry ID of installed controller
+    // @return Controller ID (e.g., "acorn-1770"), or empty if none installed
+    std::string_view installed_controller_id() const {
+        return installed_controller_id_;
     }
 
     // =========================================================================

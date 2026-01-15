@@ -439,3 +439,176 @@ TEST_CASE("DiscService InsertDisc replaces existing disc", "[grpc][disc]") {
         CHECK(response.disc().write_protected());  // New disc has different options
     }
 }
+
+// ============================================================================
+// ListAvailableControllers tests
+// ============================================================================
+
+TEST_CASE("DiscService ListAvailableControllers returns available controllers", "[grpc][disc]") {
+    DiscTestFixtureBPlus fixture;
+
+    grpc::ClientContext context;
+    beebium::ListAvailableControllersRequest request;
+    beebium::ListAvailableControllersResponse response;
+
+    auto status = fixture.stub().ListAvailableControllers(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.controllers_size() >= 1);
+
+    // Verify acorn-1770 is in the list
+    bool found_acorn_1770 = false;
+    for (int i = 0; i < response.controllers_size(); ++i) {
+        const auto& ctrl = response.controllers(i);
+        if (ctrl.id() == "acorn-1770") {
+            found_acorn_1770 = true;
+            CHECK(ctrl.display_name() == "Acorn 1770");
+            CHECK(ctrl.fdc_chip() == "WD1770");
+            CHECK_FALSE(ctrl.description().empty());
+        }
+    }
+    CHECK(found_acorn_1770);
+}
+
+// ============================================================================
+// InstallDiscController tests
+// ============================================================================
+
+TEST_CASE("DiscService InstallDiscController works on Model B (socketed)", "[grpc][disc]") {
+    DiscTestFixtureModelB fixture;
+
+    // Initially no controller
+    {
+        grpc::ClientContext context;
+        beebium::GetDriveStatusRequest request;
+        beebium::GetDriveStatusResponse response;
+        fixture.stub().GetDriveStatus(&context, request, &response);
+
+        CHECK_FALSE(response.has_disc_controller());
+        CHECK(response.is_socketed());
+        CHECK(response.installed_controller_id().empty());
+    }
+
+    // Install acorn-1770 controller
+    {
+        grpc::ClientContext context;
+        beebium::InstallDiscControllerRequest request;
+        request.set_controller_id("acorn-1770");
+        beebium::InstallDiscControllerResponse response;
+
+        auto status = fixture.stub().InstallDiscController(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK(response.success());
+        CHECK(response.controller_type() == "Acorn 1770");
+    }
+
+    // Verify controller is installed
+    {
+        grpc::ClientContext context;
+        beebium::GetDriveStatusRequest request;
+        beebium::GetDriveStatusResponse response;
+        fixture.stub().GetDriveStatus(&context, request, &response);
+
+        CHECK(response.has_disc_controller());
+        CHECK(response.controller_type() == "Acorn 1770");
+        CHECK(response.is_socketed());
+        CHECK(response.installed_controller_id() == "acorn-1770");
+        CHECK(response.drives_size() == 2);
+    }
+}
+
+TEST_CASE("DiscService InstallDiscController with 'none' removes controller", "[grpc][disc]") {
+    DiscTestFixtureModelB fixture;
+
+    // Install controller first
+    {
+        grpc::ClientContext context;
+        beebium::InstallDiscControllerRequest request;
+        request.set_controller_id("acorn-1770");
+        beebium::InstallDiscControllerResponse response;
+        fixture.stub().InstallDiscController(&context, request, &response);
+        REQUIRE(response.success());
+    }
+
+    // Remove controller with "none"
+    {
+        grpc::ClientContext context;
+        beebium::InstallDiscControllerRequest request;
+        request.set_controller_id("none");
+        beebium::InstallDiscControllerResponse response;
+
+        auto status = fixture.stub().InstallDiscController(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK(response.success());
+        CHECK(response.controller_type().empty());
+    }
+
+    // Verify controller is removed
+    {
+        grpc::ClientContext context;
+        beebium::GetDriveStatusRequest request;
+        beebium::GetDriveStatusResponse response;
+        fixture.stub().GetDriveStatus(&context, request, &response);
+
+        CHECK_FALSE(response.has_disc_controller());
+        CHECK(response.is_socketed());
+        CHECK(response.installed_controller_id().empty());
+    }
+}
+
+TEST_CASE("DiscService InstallDiscController fails with unknown controller", "[grpc][disc]") {
+    DiscTestFixtureModelB fixture;
+
+    grpc::ClientContext context;
+    beebium::InstallDiscControllerRequest request;
+    request.set_controller_id("nonexistent-controller");
+    beebium::InstallDiscControllerResponse response;
+
+    auto status = fixture.stub().InstallDiscController(&context, request, &response);
+
+    REQUIRE(status.ok());
+    CHECK_FALSE(response.success());
+    CHECK(response.error().find("Unknown") != std::string::npos);
+}
+
+TEST_CASE("DiscService InstallDiscController fails on Model B+ (not socketed)", "[grpc][disc]") {
+    DiscTestFixtureBPlus fixture;
+
+    grpc::ClientContext context;
+    beebium::InstallDiscControllerRequest request;
+    request.set_controller_id("acorn-1770");
+    beebium::InstallDiscControllerResponse response;
+
+    auto status = fixture.stub().InstallDiscController(&context, request, &response);
+
+    REQUIRE(status.ok());
+    CHECK_FALSE(response.success());
+    CHECK(response.error().find("not socketed") != std::string::npos);
+}
+
+TEST_CASE("DiscService GetDriveStatus reports is_socketed correctly", "[grpc][disc]") {
+    SECTION("Model B+ is not socketed") {
+        DiscTestFixtureBPlus fixture;
+
+        grpc::ClientContext context;
+        beebium::GetDriveStatusRequest request;
+        beebium::GetDriveStatusResponse response;
+        fixture.stub().GetDriveStatus(&context, request, &response);
+
+        CHECK_FALSE(response.is_socketed());
+        CHECK(response.installed_controller_id().empty());  // Built-in, not from registry
+    }
+
+    SECTION("Model B is socketed") {
+        DiscTestFixtureModelB fixture;
+
+        grpc::ClientContext context;
+        beebium::GetDriveStatusRequest request;
+        beebium::GetDriveStatusResponse response;
+        fixture.stub().GetDriveStatus(&context, request, &response);
+
+        CHECK(response.is_socketed());
+    }
+}

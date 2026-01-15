@@ -14,45 +14,21 @@
 #define BEEBIUM_SERVICE_DISC_SERVICE_HPP
 
 #include "disc.grpc.pb.h"
+#include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 
 #include <grpcpp/grpcpp.h>
-#include <concepts>
 #include <mutex>
 
 namespace beebium::service {
 
-// Concept to detect if a hardware type has disc drives
-template<typename T>
-concept HasDiscDrives = requires(T& hw) {
-    { hw.disc_drive_0 } -> std::same_as<DiscDrive&>;
-    { hw.disc_drive_1 } -> std::same_as<DiscDrive&>;
-};
-
-// Concept to detect if hardware has optional disc controller (via socket)
-// Model B has has_disc_controller() method, Model B+ always has controller
-template<typename T>
-concept HasOptionalDiscController = requires(const T& hw) {
-    { hw.has_disc_controller() } -> std::convertible_to<bool>;
-};
-
-// Helper to check if disc controller is present at runtime
-template<typename T>
-bool disc_controller_present(const T& hw) {
-    if constexpr (HasOptionalDiscController<T>) {
-        // Hardware has optional controller (Model B with socket)
-        return hw.has_disc_controller();
-    } else if constexpr (HasDiscDrives<T>) {
-        // Hardware has drives but no has_disc_controller() method (Model B+)
-        // Assume built-in controller is always present
-        return true;
-    } else {
-        // No disc support
-        return false;
-    }
-}
+// Import concepts from beebium namespace
+using beebium::HasDiscDrives;
+using beebium::HasDiscControllerSocket;
+using beebium::HasOptionalDiscController;
+using beebium::disc_controller_present;
 
 // gRPC service implementation for DiscService
 template<typename MachineType>
@@ -214,13 +190,8 @@ public:
                     // Model B with socket - report installed controller
                     if (auto* ctrl = machine_.state().memory.disc_socket.controller()) {
                         response->set_controller_type(std::string(ctrl->name()));
-                        // Determine controller ID from name (reverse lookup)
-                        for (const auto& info : DiscControllerRegistry::available()) {
-                            if (info.display_name == ctrl->name()) {
-                                response->set_installed_controller_id(std::string(info.id));
-                                break;
-                            }
-                        }
+                        response->set_installed_controller_id(
+                            std::string(machine_.state().memory.installed_controller_id()));
                     }
                 } else {
                     // Model B+ with built-in controller
@@ -393,7 +364,7 @@ public:
             }
 
             std::string controller_name(controller->name());
-            machine_.state().memory.install_disc_controller(std::move(controller));
+            machine_.state().memory.install_disc_controller(std::move(controller), controller_id);
 
             response->set_success(true);
             response->set_controller_type(controller_name);
