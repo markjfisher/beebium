@@ -272,6 +272,66 @@ TEST_CASE("Via6522 timer 1 PB7 toggle", "[via][timer][t1][pb7]") {
     }
 }
 
+TEST_CASE("Via6522 T1 PB7 output appears on port_b.p with DDRB bit 7 = 0", "[via][timer][t1][pb7]") {
+    Via6522 via;
+
+    // Enable T1 output to PB7 (ACR bit 7 = 1) and continuous mode
+    via.write(Via6522::REG_ACR, 0xC0);
+
+    // DDRB bit 7 = 0 (all inputs) - T1 should still output to PB7
+    via.write(Via6522::REG_DDRB, 0x00);
+
+    SECTION("PB7 on port_b.p is low when timer starts") {
+        via.write(Via6522::REG_T1LL, 5);
+        via.write(Via6522::REG_T1CH, 0);  // Start timer - PB7 should go low
+        via.update_phi2_trailing_edge();
+
+        REQUIRE(via.state().t1_pb7 == 0);
+        // Key test: port_b.p bit 7 should be low even though DDRB bit 7 = 0
+        REQUIRE((via.port_b().p & 0x80) == 0x00);
+    }
+
+    SECTION("PB7 on port_b.p toggles to high on timeout") {
+        via.write(Via6522::REG_T1LL, 2);
+        via.write(Via6522::REG_T1CH, 0);
+
+        // Run until timeout
+        for (int i = 0; i < 5; i++) {
+            via.update_phi2_trailing_edge();
+            via.update_phi2_leading_edge();
+        }
+
+        REQUIRE(via.state().t1_pb7 == 0x80);
+        // Key test: port_b.p bit 7 should be high even though DDRB bit 7 = 0
+        REQUIRE((via.port_b().p & 0x80) == 0x80);
+    }
+}
+
+TEST_CASE("Via6522 T1 PB7 output overrides DDRB when ACR bit 7 set", "[via][timer][t1][pb7]") {
+    Via6522 via;
+
+    // DDRB bit 7 = 0 (input)
+    via.write(Via6522::REG_DDRB, 0x00);
+
+    SECTION("Without T1 output mode, PB7 is input (pulled high)") {
+        via.write(Via6522::REG_ACR, 0x00);  // T1 output disabled
+        via.update_phi2_trailing_edge();
+
+        // PB7 should be pulled high (input)
+        REQUIRE((via.port_b().p & 0x80) == 0x80);
+    }
+
+    SECTION("With T1 output mode, PB7 is driven by T1") {
+        via.write(Via6522::REG_ACR, 0xC0);  // T1 output enabled + continuous
+        via.write(Via6522::REG_T1LL, 5);
+        via.write(Via6522::REG_T1CH, 0);  // Start timer - PB7 goes low
+        via.update_phi2_trailing_edge();
+
+        // PB7 should be low (T1 output overrides DDR)
+        REQUIRE((via.port_b().p & 0x80) == 0x00);
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Timer 2 tests
 //////////////////////////////////////////////////////////////////////////////

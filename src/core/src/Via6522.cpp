@@ -531,13 +531,22 @@ void Via6522::update_port_pins() {
         uint8_t out_a = state_.port_a.or_;
         uint8_t out_b = state_.port_b.or_;
 
+        // T1 PB7 output mode overrides DDRB bit 7 and uses t1_pb7 state.
+        // Per 6522 datasheet and Stardot thread t=16081, when ACR bit 7 is set,
+        // PB7 outputs the T1 toggle state regardless of DDRB bit 7.
+        uint8_t ddrb = state_.port_b.ddr;
+        if (state_.acr.bits.t1_output_pb7) {
+            ddrb |= 0x80;  // Force PB7 as output regardless of DDRB
+            out_b = (out_b & 0x7F) | state_.t1_pb7;  // Use T1 state for PB7
+        }
+
         // Call peripheral to get input pin states
         uint8_t in_a = peripheral_->update_port_a(out_a, state_.port_a.ddr);
-        uint8_t in_b = peripheral_->update_port_b(out_b, state_.port_b.ddr);
+        uint8_t in_b = peripheral_->update_port_b(out_b, ddrb);
 
         // Combine: output pins from OR, input pins from peripheral
         state_.port_a.p = (out_a & state_.port_a.ddr) | (in_a & ~state_.port_a.ddr);
-        state_.port_b.p = (out_b & state_.port_b.ddr) | (in_b & ~state_.port_b.ddr);
+        state_.port_b.p = (out_b & ddrb) | (in_b & ~ddrb);
 
         // Update control lines
         peripheral_->update_control_lines(
@@ -545,8 +554,15 @@ void Via6522::update_port_pins() {
             state_.port_b.c1, state_.port_b.c2);
     } else {
         // No peripheral: inputs pulled high
+        // Apply same T1 PB7 override
+        uint8_t ddrb = state_.port_b.ddr;
+        uint8_t orb = state_.port_b.or_;
+        if (state_.acr.bits.t1_output_pb7) {
+            ddrb |= 0x80;
+            orb = (orb & 0x7F) | state_.t1_pb7;
+        }
         state_.port_a.p = state_.port_a.or_ | ~state_.port_a.ddr;
-        state_.port_b.p = state_.port_b.or_ | ~state_.port_b.ddr;
+        state_.port_b.p = orb | ~ddrb;
     }
 }
 

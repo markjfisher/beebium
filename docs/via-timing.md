@@ -327,6 +327,8 @@ The IFR flags for these lines will be set when transitions occur on the external
 ## References
 
 - [Stardot Forum: VIA Emulation Quality](https://stardot.org.uk/forums/viewtopic.php?t=16138)
+- [Stardot Forum: VIA Initialization and PB7 Behavior](https://stardot.org.uk/forums/viewtopic.php?t=16081) - Discussion of ORB/DDRB initialization differences between emulators; T1 PB7 output behavior when configured as input (relevant to Snapper); comparison of MAME, b-em, jsbeeb, and beebem 6522 implementations
+- [Stardot Forum: VIA/IRQ Timing Validation](https://stardot.org.uk/forums/viewtopic.php?t=25427) - Discussion of using "Nightshade" and other timing-sensitive software to validate VIA+CPU interrupt timing accuracy; includes test program for measuring variable interrupt latency
 - [jsbeeb VIA Tests](https://github.com/mattgodbolt/jsbeeb/blob/master/tests/integration/via.js) - Hardware-validated timing tests by @scarybeasts
 - MOS 6522 Versatile Interface Adapter Datasheet
 - BBC Microcomputer Service Manual
