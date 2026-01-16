@@ -171,9 +171,23 @@ public:
 
     RomselRegister romsel{sideways};
 
+    // FRED/JIM I/O region (0xFC00-0xFDFF)
+    // These are 1MHz expansion bus regions. When no hardware is connected,
+    // the 74LS245 transceiver actively drives 0xFF onto the data bus.
+    // TODO: Expand to a socket pattern supporting pluggable devices
+    // (speech synthesizers, music co-processors, etc.)
+    struct FredJimRegion {
+        uint8_t read(uint16_t) const { return 0xFF; }
+        void write(uint16_t, uint8_t) {}
+    };
+
+    FredJimRegion fred_jim_;
+
     // Memory map type (deduced from make_memory_map)
+    // Note: FRED/JIM overlay MOS ROM (first match wins)
     using MemoryMapType = decltype(
         MemoryMap{
+            make_region<0xFC00, 0xFDFF>(std::declval<FredJimRegion&>()),   // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(std::declval<Crtc6845&>()),
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(std::declval<VideoUla&>()),
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(std::declval<Via6522&>()),
@@ -182,7 +196,7 @@ public:
             make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(std::declval<DiscControllerSocket&>()),
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),
             make_region<0x8000, 0xBFFF>(std::declval<SidewaysType&>()),
-            make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())
+            make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())       // MOS ROM (occluded by I/O regions)
         }
     );
 
@@ -496,6 +510,26 @@ public:
     }
 
     // =========================================================================
+    // Open Bus Configuration
+    // =========================================================================
+
+    // Configure open bus behavior mode for unmapped address reads.
+    // Default is Accurate mode which returns:
+    //   - 0xFF for FRED/JIM (74LS245 transceiver)
+    //   - 0x00 for slow 1MHz regions (pull-downs)
+    //   - Last bus value for fast 2MHz regions (capacitance)
+    //
+    // Use JsbeebCompat mode for differential testing against jsbeeb.
+    void set_open_bus_mode(OpenBusMode mode) {
+        memory_map_.set_open_bus_mode(mode);
+    }
+
+    // Get current open bus behavior mode
+    OpenBusMode open_bus_mode() const {
+        return memory_map_.open_bus_mode();
+    }
+
+    // =========================================================================
     // Memory Region Discovery (for debugger)
     // =========================================================================
 
@@ -661,8 +695,9 @@ private:
 
     MemoryMapType make_memory_map() {
         // Order matters: first match wins
-        // I/O regions before ROM regions to handle overlap at 0xFExx
+        // I/O regions overlay MOS ROM at 0xFC00-0xFEFF
         return MemoryMap{
+            make_region<0xFC00, 0xFDFF>(fred_jim_),            // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(crtc),
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula),
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(system_via),
@@ -671,7 +706,7 @@ private:
             make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(disc_socket),
             make_region<0x0000, 0x7FFF>(main_ram),
             make_region<0x8000, 0xBFFF>(sideways),
-            make_region<0xC000, 0xFFFF>(mos_rom)
+            make_region<0xC000, 0xFFFF>(mos_rom)               // MOS ROM (occluded by I/O regions)
         };
     }
 };

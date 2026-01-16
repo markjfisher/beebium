@@ -91,6 +91,67 @@ constexpr uint8_t stretch_cycles(uint64_t cycle_count) {
     return 1 + static_cast<uint8_t>(cycle_count & 1);
 }
 
+// Open Bus Behavior Modes
+//
+// When reading from an unmapped address, the value returned depends on the
+// bus speed and hardware characteristics:
+//
+// Accurate mode (default):
+//   - Slow 1MHz regions: Pull-down resistors discharge bus to 0x00
+//   - Fast 2MHz regions: Capacitance holds previous bus value
+//   - FRED/JIM (0xFC00-0xFDFF): 74LS245 transceiver actively drives 0xFF
+//
+// JsbeebCompat mode:
+//   - All unmapped addresses return 0xFF (matches jsbeeb Uint8Array default)
+//   - Useful for differential testing against jsbeeb
+//
+// AllZero mode:
+//   - All unmapped addresses return 0x00
+//   - Alternative compatibility mode for some emulators
+//
+enum class OpenBusMode {
+    Accurate,       // Bus tracking: slow→0x00, fast→last_bus_value, FRED/JIM→0xFF
+    JsbeebCompat,   // Return 0xFF for all unmapped (matches jsbeeb Uint8Array default)
+    AllZero         // Return 0x00 for all unmapped
+};
+
+/// Returns the appropriate value for reading from an unmapped address.
+///
+/// The returned value depends on the bus speed characteristics at the given address
+/// and the configured open bus mode:
+///
+/// In Accurate mode:
+/// - FRED/JIM (0xFC00-0xFDFF): 74LS245 transceiver actively drives 0xFF
+/// - Other 1MHz regions: Pull-down resistors discharge bus to 0x00
+/// - Fast 2MHz regions: Capacitance holds previous bus value
+///
+/// @param addr The unmapped address being read
+/// @param last_bus_value The last value driven on the data bus (for fast cycles)
+/// @param mode The open bus behavior mode
+/// @return Value based on mode and bus speed characteristics
+constexpr uint8_t unmapped_read_value(uint16_t addr, uint8_t last_bus_value, OpenBusMode mode) {
+    switch (mode) {
+        case OpenBusMode::Accurate:
+            // FRED/JIM: 74LS245 transceiver actively drives 0xFF
+            if (addr >= 0xFC00 && addr < 0xFE00) {
+                return 0xFF;
+            }
+            // Slow 1MHz: pull-downs discharge to 0x00
+            if (is_1mhz_access(addr)) {
+                return 0x00;
+            }
+            // Fast 2MHz: capacitance holds previous bus value
+            return last_bus_value;
+
+        case OpenBusMode::JsbeebCompat:
+            return 0xFF;  // jsbeeb's Uint8Array default
+
+        case OpenBusMode::AllZero:
+            return 0x00;
+    }
+    return 0xFF;  // Fallback for exhaustiveness
+}
+
 } // namespace beebium
 
 #endif // BEEBIUM_BUS_STRETCHING_HPP

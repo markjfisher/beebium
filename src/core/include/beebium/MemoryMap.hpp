@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "BusStretching.hpp"
+
 #include <cstdint>
 #include <concepts>
 #include <tuple>
@@ -77,17 +79,19 @@ constexpr auto make_region(Device& device) {
 
 namespace detail {
 
-// Recursive dispatch for read
+// Recursive dispatch for read with open bus behavior
 template<size_t I, typename Tuple>
-uint8_t dispatch_read(const Tuple& regions, uint16_t addr) {
+uint8_t dispatch_read(const Tuple& regions, uint16_t addr,
+                      uint8_t last_bus_value, OpenBusMode mode) {
     if constexpr (I < std::tuple_size_v<Tuple>) {
         const auto& region = std::get<I>(regions);
         if (region.contains(addr)) {
             return region.read(addr);
         }
-        return dispatch_read<I + 1>(regions, addr);
+        return dispatch_read<I + 1>(regions, addr, last_bus_value, mode);
     } else {
-        return 0xFF;  // Unmapped address
+        // Unmapped address: return value based on bus speed and mode
+        return unmapped_read_value(addr, last_bus_value, mode);
     }
 }
 
@@ -109,25 +113,58 @@ void dispatch_write(Tuple& regions, uint16_t addr, uint8_t value) {
 
 // MemoryMap: variadic template composing multiple region bindings
 // First matching region wins (order in constructor determines priority)
+//
+// The memory map tracks the last value on the data bus for accurate open bus
+// emulation. When reading from unmapped addresses, the returned value depends
+// on the bus speed characteristics (1MHz vs 2MHz) and the configured mode.
 template<typename... RegionBindings>
 class MemoryMap {
     std::tuple<RegionBindings...> regions_;
+
+    // Last value driven on the data bus (for open bus emulation).
+    // Marked mutable because tracking is internal bookkeeping, not observable state.
+    mutable uint8_t last_bus_value_ = 0xFF;
+
+    // Open bus behavior mode (configurable for compatibility testing)
+    OpenBusMode open_bus_mode_ = OpenBusMode::Accurate;
 
 public:
     explicit MemoryMap(RegionBindings... regions)
         : regions_{std::move(regions)...} {}
 
+    // Read from memory, tracking bus value for open bus emulation.
+    // For unmapped addresses, the returned value depends on bus speed and mode.
     uint8_t read(uint16_t addr) const {
-        return detail::dispatch_read<0>(regions_, addr);
+        uint8_t value = detail::dispatch_read<0>(regions_, addr, last_bus_value_, open_bus_mode_);
+        last_bus_value_ = value;
+        return value;
     }
 
+    // Write to memory, updating the bus value.
+    // The CPU drives the data bus during writes, which affects subsequent open bus reads.
     void write(uint16_t addr, uint8_t value) {
+        last_bus_value_ = value;
         detail::dispatch_write<0>(regions_, addr, value);
     }
 
     // Allow read-only access for debugging/inspection
     uint8_t operator[](uint16_t addr) const {
         return read(addr);
+    }
+
+    // Configure open bus behavior mode
+    void set_open_bus_mode(OpenBusMode mode) {
+        open_bus_mode_ = mode;
+    }
+
+    // Get current open bus behavior mode
+    OpenBusMode open_bus_mode() const {
+        return open_bus_mode_;
+    }
+
+    // Get last bus value (for debugging/testing)
+    uint8_t last_bus_value() const {
+        return last_bus_value_;
     }
 };
 
