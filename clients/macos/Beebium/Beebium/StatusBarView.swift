@@ -16,6 +16,7 @@ import SwiftUI
 struct StatusBarView: View {
     @ObservedObject var systemClient: SystemClient
     @ObservedObject var indicatorClient: IndicatorClient
+    @ObservedObject var keyboardMappingManager: KeyboardMappingManager
 
     /// Display order for indicators (keyboard LEDs first, then drives)
     private let indicatorOrder = [
@@ -42,6 +43,17 @@ struct StatusBarView: View {
 
             Spacer()
 
+            // Keyboard mapping name
+            if let mappingName = keyboardMappingManager.activeMapping?.name {
+                HStack(spacing: 3) {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 10))
+                    Text(mappingName)
+                        .font(.system(size: 11, design: .default))
+                }
+                .foregroundColor(.secondary)
+            }
+
             // Machine name on right
             if systemClient.isLoaded {
                 Text(systemClient.machineDisplayName)
@@ -58,8 +70,12 @@ struct StatusBarView: View {
 #if DEBUG
 struct StatusBarView_Previews: PreviewProvider {
     static var previews: some View {
-        StatusBarView(systemClient: SystemClient(), indicatorClient: IndicatorClient())
-            .frame(width: 600)
+        StatusBarView(
+            systemClient: SystemClient(),
+            indicatorClient: IndicatorClient(),
+            keyboardMappingManager: KeyboardMappingManager()
+        )
+        .frame(width: 600)
     }
 }
 #endif

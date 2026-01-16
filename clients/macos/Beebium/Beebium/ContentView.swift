@@ -17,7 +17,6 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var videoClient = VideoClient()
     @StateObject private var keyboardClient = KeyboardClient()
-    @StateObject private var keyboardMappingManager = KeyboardMappingManager()
     @StateObject private var systemClient = SystemClient()
     @StateObject private var indicatorClient = IndicatorClient()
     @StateObject private var discClient = DiscClient()
@@ -25,6 +24,7 @@ struct ContentView: View {
     @StateObject private var audioMixerState = AudioMixerState()
     @Binding var showStatusBar: Bool
     @Binding var showSidebar: Bool
+    @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -63,7 +63,11 @@ struct ContentView: View {
 
                 // Status bar at bottom
                 if showStatusBar {
-                    StatusBarView(systemClient: systemClient, indicatorClient: indicatorClient)
+                    StatusBarView(
+                        systemClient: systemClient,
+                        indicatorClient: indicatorClient,
+                        keyboardMappingManager: keyboardMappingManager
+                    )
                 }
             }
             .frame(minWidth: 320, minHeight: 240)
@@ -200,7 +204,11 @@ struct ContentView: View {
 #if DEBUG
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView(showStatusBar: .constant(true), showSidebar: .constant(true))
+        ContentView(
+            showStatusBar: .constant(true),
+            showSidebar: .constant(true),
+            keyboardMappingManager: KeyboardMappingManager()
+        )
     }
 }
 #endif

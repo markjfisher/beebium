@@ -17,6 +17,7 @@ struct BeebiumApp: App {
     @AppStorage("showStatusBar") private var showStatusBar = true
     @AppStorage("showSidebar") private var showSidebar = true
     @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
+    @StateObject private var keyboardMappingManager = KeyboardMappingManager()
 
     init() {
         NSLog("[BeebiumApp] Starting...")
@@ -24,7 +25,11 @@ struct BeebiumApp: App {
 
     var body: some Scene {
         WindowGroup("Beebium") {
-            ContentView(showStatusBar: $showStatusBar, showSidebar: $showSidebar)
+            ContentView(
+                showStatusBar: $showStatusBar,
+                showSidebar: $showSidebar,
+                keyboardMappingManager: keyboardMappingManager
+            )
         }
         .windowToolbarStyle(.unified)
         .commands {
@@ -47,6 +52,20 @@ struct BeebiumApp: App {
                         }
                     }
                     .keyboardShortcut(mode.shortcutKey, modifiers: .command)
+                }
+            }
+            CommandGroup(after: .textEditing) {
+                Divider()
+                if let target = keyboardMappingManager.toggleTargetMapping {
+                    Button("Switch to \(target.name) Keyboard Mapping") {
+                        keyboardMappingManager.toggleToDefaultLogical()
+                    }
+                    .keyboardShortcut("k", modifiers: .command)
+                } else {
+                    Button("Switch to Previous Keyboard Mapping") {
+                    }
+                    .keyboardShortcut("k", modifiers: .command)
+                    .disabled(true)
                 }
             }
         }

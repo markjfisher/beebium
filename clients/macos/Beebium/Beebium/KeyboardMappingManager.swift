@@ -23,12 +23,22 @@ import AppKit
 @MainActor
 final class KeyboardMappingManager: ObservableObject {
 
+    /// Well-known UUID for the default logical mapping
+    static let defaultLogicalMappingID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     /// All available mappings (built-in + user-defined)
     @Published private(set) var mappings: [KeyboardMapping] = []
+
+    /// The previously active mapping (for toggle feature)
+    @Published private(set) var previousMapping: KeyboardMapping?
 
     /// The currently active mapping
     @Published var activeMapping: KeyboardMapping? {
         didSet {
+            // Track previous mapping for toggle feature
+            if let old = oldValue, old.id != activeMapping?.id {
+                previousMapping = old
+            }
             // Reset session overrides when mapping changes
             capsLockSyncOverride = nil
             disabledKeysOverride = nil
@@ -201,6 +211,34 @@ final class KeyboardMappingManager: ObservableObject {
 
     // MARK: - Mapping Management
 
+    /// The mapping that Cmd-K would switch to (nil if no valid target)
+    var toggleTargetMapping: KeyboardMapping? {
+        guard let current = activeMapping else { return nil }
+
+        if current.id == Self.defaultLogicalMappingID {
+            return previousMapping
+        } else {
+            return mappings.first(where: { $0.id == Self.defaultLogicalMappingID })
+        }
+    }
+
+    /// Toggle between current mapping and default logical (or previous mapping)
+    func toggleToDefaultLogical() {
+        guard let current = activeMapping else { return }
+
+        if current.id == Self.defaultLogicalMappingID {
+            // Currently on default logical, switch back to previous
+            if let previous = previousMapping {
+                activeMapping = previous
+            }
+        } else {
+            // Switch to default logical
+            if let defaultLogical = mappings.first(where: { $0.id == Self.defaultLogicalMappingID }) {
+                activeMapping = defaultLogical
+            }
+        }
+    }
+
     /// Clone an existing mapping with a new name
     func cloneMapping(_ mapping: KeyboardMapping, newName: String) -> KeyboardMapping {
         let uniqueName = makeUniqueName(newName)
@@ -282,10 +320,36 @@ final class KeyboardMappingManager: ObservableObject {
     }
 
     private static func createBuiltInMappings() -> [KeyboardMapping] {
-        return [
-            KeyboardMapping.createDefaultLogical(),
-            KeyboardMapping.createThrust()
-        ]
+        guard let mappingsDirURL = Bundle.main.url(forResource: "KeyboardMappings", withExtension: nil) else {
+            fatalError("KeyboardMappings directory not found in bundle")
+        }
+
+        do {
+            let fileURLs = try FileManager.default.contentsOfDirectory(
+                at: mappingsDirURL,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            ).filter { $0.pathExtension == "json" }
+
+            var mappings: [KeyboardMapping] = []
+            for fileURL in fileURLs {
+                let data = try Data(contentsOf: fileURL)
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    print("[KeyboardMappingManager] Skipping invalid JSON: \(fileURL.lastPathComponent)")
+                    continue
+                }
+                let mapping = KeyboardMapping(json: json, isBuiltIn: true)
+                mappings.append(mapping)
+            }
+
+            return mappings.sorted { lhs, rhs in
+                if lhs.id == defaultLogicalMappingID { return true }
+                if rhs.id == defaultLogicalMappingID { return false }
+                return lhs.name < rhs.name
+            }
+        } catch {
+            fatalError("Failed to load built-in keyboard mappings: \(error)")
+        }
     }
 
     // MARK: - Errors

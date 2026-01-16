@@ -148,8 +148,10 @@ final class KeyboardClient: ObservableObject {
 
         // Resolve the input using the active mapping
         guard let resolved = mapping.resolve(input, cache: manager.bbcKeyCache) else {
-            // Key not mapped - play system alert
-            signalUnmappedKey()
+            // Key not mapped - play system alert (unless it's a host modifier key)
+            if !MacKeyCode.isHostModifierKey(input.keyCode) {
+                signalUnmappedKey()
+            }
             return
         }
 

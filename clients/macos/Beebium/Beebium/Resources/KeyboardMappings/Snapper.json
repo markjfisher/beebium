@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "id": "00000000-0000-0000-0000-000000000003",
+  "name": "Snapper",
+  "characterMapping": true,
+  "synchronizeCapsLock": false,
+  "keyMappings": [
+    {
+      "macOS": { "keyCode": 39 },
+      "bbc": { "keyName": ":", "action": "Up" }
+    },
+    {
+      "macOS": { "keyCode": 44 },
+      "bbc": { "keyName": "/", "action": "Down" }
+    },
+    {
+      "macOS": { "keyCode": 6 },
+      "bbc": { "keyName": "Z", "action": "Left" }
+    },
+    {
+      "macOS": { "keyCode": 7 },
+      "bbc": { "keyName": "X", "action": "Right" }
+    },
+    {
+      "macOS": { "keyCode": 111, "option": true },
+      "bbc": { "keyName": "Break", "disabled": false }
+    }
+  ]
+}

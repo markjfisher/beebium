@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "00000000-0000-0000-0000-000000000001",
-  "name": "Logical (Default)",
+  "name": "Logical",
   "characterMapping": true,
   "synchronizeCapsLock": true,
   "keyMappings": [
@@ -88,7 +88,7 @@
     {
       "macOS": { "keyCode": 111, "option": true },
       "windows": { "VKCode": 123, "alt": true },
-      "bbc": { "keyName": "Break", "disabled": true }
+      "bbc": { "keyName": "Break", "disabled": false }
     },
     {
       "macOS": { "keyCode": 105 },

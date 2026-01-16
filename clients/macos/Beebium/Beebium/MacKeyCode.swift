@@ -93,6 +93,22 @@ enum MacKeyCode {
     static let rightControl: UInt16 = 0x3E
     static let function: UInt16 = 0x3F
 
+    /// Host modifier keys that should not trigger unmapped key sounds.
+    /// These are macOS modifier keys used for host shortcuts (Cmd-K, etc.)
+    /// and should be silently ignored when unmapped.
+    static let hostModifierKeys: Set<UInt16> = [
+        shift, rightShift,
+        control, rightControl,
+        option, rightOption,
+        command, rightCommand,
+        function
+    ]
+
+    /// Check if a key code is a host modifier key
+    static func isHostModifierKey(_ keyCode: UInt16) -> Bool {
+        hostModifierKeys.contains(keyCode)
+    }
+
     // MARK: - Function Keys
 
     static let f1: UInt16 = 0x7A
