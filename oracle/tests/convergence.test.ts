@@ -542,29 +542,49 @@ describe('State Convergence', () => {
             const sync = await runner.synchronizeAfterReset();
             console.log(`Synchronized at PC=$${sync.syncPc.toString(16).toUpperCase()}`);
 
-            // Step to just before the divergence (177,441 instructions after sync)
-            // The divergence is at instruction 177,442
-            const targetInstruction = 177440;
+            // Step to instruction 177589 (one before the divergence at 177590)
+            const targetInstruction = 177589;
             console.log(`Stepping to instruction ${targetInstruction}...`);
-
             await runner.stepBoth(targetInstruction);
 
-            const jsbeebState = oracle.getState();
-            const beebiumState = await client.getMachineState();
-
+            const jsState0 = oracle.getState();
+            const beeState0 = await client.getMachineState();
             console.log(`\nAt instruction ${targetInstruction}:`);
-            console.log(`  jsbeeb PC=$${jsbeebState.cpu.pc.toString(16).toUpperCase()}`);
-            console.log(`  beebium PC=$${beebiumState.cpu.pc.toString(16).toUpperCase()}`);
+            console.log(`  jsbeeb: PC=$${jsState0.cpu.pc.toString(16).toUpperCase()}, cycles=${jsState0.cycles}`);
+            console.log(`  beebium: PC=$${beeState0.cpu.pc.toString(16).toUpperCase()}, cycles=${beeState0.cycles}`);
 
-            // Step one more instruction to get to $DD13
+            // Capture VIA and CPU state
+            const jsIFR = oracle.readMemory(0xFE4D, 1)[0];
+            const beeIFR = (await client.peekMemory(0xFE4D, 1))[0];
+            const jsIER = oracle.readMemory(0xFE4E, 1)[0];
+            const beeIER = (await client.peekMemory(0xFE4E, 1))[0];
+
+            console.log(`\nVIA state before divergence:`);
+            console.log(`  IFR: jsbeeb=0x${jsIFR.toString(16).padStart(2,'0')} beebium=0x${beeIFR.toString(16).padStart(2,'0')}`);
+            console.log(`  IER: jsbeeb=0x${jsIER.toString(16).padStart(2,'0')} beebium=0x${beeIER.toString(16).padStart(2,'0')}`);
+            console.log(`  CPU P (status): jsbeeb=0x${jsState0.cpu.p.toString(16).padStart(2,'0')} beebium=0x${beeState0.cpu.p.toString(16).padStart(2,'0')}`);
+            console.log(`  I flag: jsbeeb=${(jsState0.cpu.p & 0x04) ? 1 : 0} beebium=${(beeState0.cpu.p & 0x04) ? 1 : 0}`);
+            console.log(`  IRQ would fire: jsbeeb=${(jsIFR & jsIER & 0x7F) ? 'YES' : 'NO'} beebium=${(beeIFR & beeIER & 0x7F) ? 'YES' : 'NO'}`);
+
+            // Get video timing state
+            const videoState = oracle.getVideoTimingState();
+            console.log(`\njsbeeb Video state:`);
+            console.log(`  inVsync=${videoState.inVsync}, vpulseCounter=${videoState.vpulseCounter}, vpulseWidth=${videoState.vpulseWidth}`);
+            console.log(`  horizCounter=${videoState.horizCounter}, vertCounter=${videoState.vertCounter}`);
+            console.log(`  doEvenFrameLogic=${videoState.doEvenFrameLogic}, frameCount=${videoState.frameCount}`);
+
+            // Step one more instruction
             await runner.stepBoth(1);
             const js1 = oracle.getState();
             const bee1 = await client.getMachineState();
-            console.log(`\nAfter step 1: jsbeeb PC=$${js1.cpu.pc.toString(16).toUpperCase()}, beebium PC=$${bee1.cpu.pc.toString(16).toUpperCase()}`);
+            console.log(`\nAfter step (instruction ${targetInstruction + 1}):`);
+            console.log(`  jsbeeb: PC=$${js1.cpu.pc.toString(16).toUpperCase()}, cycles=${js1.cycles}`);
+            console.log(`  beebium: PC=$${bee1.cpu.pc.toString(16).toUpperCase()}, cycles=${bee1.cycles}`);
 
-            // If we're at $DD13, capture VIA state before executing the BCC
-            if (js1.cpu.pc === 0xDD13 || bee1.cpu.pc === 0xDD13) {
-                console.log('\n=== VIA State Just Before BCC at $DD13 ===\n');
+            // Capture VIA state at divergence point (was $DD13, now $EB4F with real Video)
+            const divergeAddr = js1.cpu.pc === bee1.cpu.pc ? js1.cpu.pc : Math.min(js1.cpu.pc, bee1.cpu.pc);
+            if (divergeAddr === 0xEB4F || divergeAddr === 0xDD13 || js1.cpu.pc === bee1.cpu.pc) {
+                console.log(`\n=== VIA State at divergence (PC=$${divergeAddr.toString(16).toUpperCase()}) ===\n`);
 
                 // Read VIA registers directly
                 // System VIA IFR at $FE4D
@@ -625,6 +645,29 @@ describe('State Convergence', () => {
                     const match = jsb === beeb ? '' : ' <-- DIFFERS!';
                     console.log(`  Bit ${i} (${ifrBits[i]}): jsbeeb=${jsb} beebium=${beeb}${match}`);
                 }
+
+                // Get detailed video timing state from jsbeeb
+                const videoState = oracle.getVideoTimingState();
+                console.log('\n=== jsbeeb Video Timing State ===');
+                console.log(`  inVsync: ${videoState.inVsync}`);
+                console.log(`  vpulseCounter: ${videoState.vpulseCounter}`);
+                console.log(`  vpulseWidth: ${videoState.vpulseWidth}`);
+                console.log(`  horizCounter: ${videoState.horizCounter}`);
+                console.log(`  vertCounter: ${videoState.vertCounter}`);
+                console.log(`  doEvenFrameLogic: ${videoState.doEvenFrameLogic}`);
+                console.log(`  frameCount: ${videoState.frameCount}`);
+                console.log(`  hadVsyncThisRow: ${videoState.hadVsyncThisRow}`);
+
+                // Calculate isVsyncPoint for jsbeeb's current state
+                const isInterlace = !!(oracle.getCrtcState().registers[8] & 1);
+                const halfR0 = oracle.getCrtcState().registers[0] >>> 1;
+                const halfR0Hit = videoState.horizCounter === halfR0;
+                const isVsyncPoint = !isInterlace || !videoState.doEvenFrameLogic || halfR0Hit;
+                console.log(`  isVsyncPoint calculation:`);
+                console.log(`    isInterlace (R8 & 1): ${isInterlace}`);
+                console.log(`    halfR0 (R0 >>> 1): ${halfR0}`);
+                console.log(`    halfR0Hit (horizCounter === halfR0): ${halfR0Hit}`);
+                console.log(`    isVsyncPoint (!interlace || !doEvenFrameLogic || halfR0Hit): ${isVsyncPoint}`);
             } else {
                 console.log('\nNot at $DD13 - may need to adjust instruction count');
                 console.log('Stepping a few more to find divergence...');

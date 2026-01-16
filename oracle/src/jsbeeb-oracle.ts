@@ -5,7 +5,7 @@
  * and synchronized execution during differential testing.
  */
 
-import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState } from './types.js';
+import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState, VideoTimingState } from './types.js';
 import { P_STATUS_MASK } from './types.js';
 
 // jsbeeb imports - using relative path to sibling repo
@@ -13,18 +13,65 @@ import { P_STATUS_MASK } from './types.js';
 import { TestMachine } from '../../jsbeeb/tests/test-machine.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
 import * as fdc from '../../jsbeeb/src/fdc.js';
+// @ts-expect-error - jsbeeb doesn't have TypeScript definitions
+import { Video } from '../../jsbeeb/src/video.js';
+// @ts-expect-error - jsbeeb doesn't have TypeScript definitions
+import { fake6502 } from '../../jsbeeb/src/fake6502.js';
+// @ts-expect-error - jsbeeb doesn't have TypeScript definitions
+import { findModel } from '../../jsbeeb/src/models.js';
 
 export class JsbeebOracle {
     private machine: TestMachine | null = null;
     private cycleCount: number = 0;
+    private realVideo: boolean = false;
 
     /**
      * Initialize the oracle with the specified BBC model.
      * @param model - Model name (default: "B-DFS1.2")
+     * @param useRealVideo - Use real Video class instead of FakeVideo for accurate vsync timing
      */
-    async initialize(model: string = "B-DFS1.2"): Promise<void> {
-        this.machine = new TestMachine(model);
-        await this.machine.initialise();
+    async initialize(model: string = "B-DFS1.2", useRealVideo: boolean = true): Promise<void> {
+        this.realVideo = useRealVideo;
+
+        if (useRealVideo) {
+            // Create real Video instance with dummy framebuffer for headless operation
+            // Video needs: isMaster, fb32 (framebuffer), paint_ext (optional callback)
+            const modelInfo = findModel(model);
+            const isMaster = modelInfo.isMaster || false;
+
+            // Create a dummy 1024x625 framebuffer (standard BBC output size)
+            const fb32 = new Uint32Array(1024 * 625);
+
+            // Create Video with no-op paint callback (headless mode)
+            const video = new Video(isMaster, fb32, () => {});
+
+            // Create processor with real video
+            // Use fake6502 with video option to create a custom Cpu6502
+            const processor = fake6502(modelInfo, { video });
+
+            // Create a TestMachine-like wrapper
+            this.machine = {
+                processor,
+                async initialise() {
+                    await processor.initialise();
+                },
+                async runFor(cycles: number) {
+                    let left = cycles;
+                    while (left > 0) {
+                        const todo = Math.min(left, 100000);
+                        processor.execute(todo);
+                        left -= todo;
+                    }
+                },
+            } as TestMachine;
+
+            await this.machine.initialise();
+        } else {
+            // Use standard TestMachine with FakeVideo
+            this.machine = new TestMachine(model);
+            await this.machine.initialise();
+        }
+
         this.cycleCount = 0;
     }
 
@@ -209,6 +256,24 @@ export class JsbeebOracle {
             palette: video.actualPal
                 ? Array.from({ length: 16 }, (_, i) => video.actualPal[i] ?? 0)
                 : new Array(16).fill(0),
+        };
+    }
+
+    /**
+     * Get detailed video timing state for debugging vsync issues.
+     * This exposes internal jsbeeb video state not visible through registers.
+     */
+    getVideoTimingState(): VideoTimingState {
+        const video = this.processor.video;
+        return {
+            inVsync: video.inVSync ?? false,
+            vpulseCounter: video.vpulseCounter ?? 0,
+            vpulseWidth: (video.regs[3] ?? 0) >>> 4,
+            horizCounter: video.horizCounter ?? 0,
+            vertCounter: video.vertCounter ?? 0,
+            doEvenFrameLogic: video.doEvenFrameLogic ?? false,
+            frameCount: video.frameCount ?? 0,
+            hadVsyncThisRow: video.hadVSyncThisRow ?? false,
         };
     }
 

@@ -47,6 +47,18 @@ export interface VideoUlaState {
     palette: number[];      // 16-entry palette (logical -> physical)
 }
 
+/** Video timing state for debugging vsync issues */
+export interface VideoTimingState {
+    inVsync: boolean;           // Currently in vsync
+    vpulseCounter: number;      // Vsync pulse counter
+    vpulseWidth: number;        // Vsync pulse width from R3
+    horizCounter: number;       // Horizontal character counter
+    vertCounter: number;        // Vertical character counter
+    doEvenFrameLogic: boolean;  // Even frame interlace logic active
+    frameCount: number;         // Frame counter
+    hadVsyncThisRow: boolean;   // Already had vsync in this character row
+}
+
 /** Complete machine state snapshot */
 export interface MachineState {
     cpu: CpuState;

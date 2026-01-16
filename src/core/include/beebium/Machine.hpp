@@ -216,22 +216,26 @@ public:
             cpu_binding_.tick_falling();
         }
 
-        // Tick VIAs only if they weren't pre-ticked by CPU for 1MHz access
-        if (!cpu_binding_.vias_pre_ticked()) {
-            if (is_rising) {
+        // Tick order matters for same-cycle vsync detection:
+        // - On rising edge: VIA ticks (no video)
+        // - On falling edge: Video ticks FIRST (updates vsync), then VIA (detects edge)
+        // This matches jsbeeb where setVBlankInt() is called from video.polltime()
+        // and immediately triggers VIA CA1 edge detection on the same cycle.
+        if (is_rising) {
+            // Rising edge: VIA only
+            if (!cpu_binding_.vias_pre_ticked()) {
                 state_.memory.system_via.tick_rising();
                 state_.memory.user_via.tick_rising();
-            } else {
-                state_.memory.system_via.tick_falling();
-                state_.memory.user_via.tick_falling();
             }
-        }
-
-        // Always tick video
-        if (!is_rising) {
+        } else {
+            // Falling edge: Video first (updates vsync), then VIA (detects edge)
             const auto video_rate = video_binding_.clock_rate();
             if (video_rate == ClockRate::Rate_2MHz || (state_.cycle_count & 1) == 0) {
                 video_binding_.tick_falling();
+            }
+            if (!cpu_binding_.vias_pre_ticked()) {
+                state_.memory.system_via.tick_falling();
+                state_.memory.user_via.tick_falling();
             }
         }
 

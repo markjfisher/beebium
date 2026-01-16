@@ -880,7 +880,8 @@ TEST_CASE("Crtc6845 interlace: odd/even field tracking", "[crtc6845][interlace][
 }
 
 // Test interlace VSYNC timing
-// In interlace mode, VSYNC should trigger at R7 for odd fields
+// In interlace mode, VSYNC triggers at half-scanline position on even frame logic frames.
+// This matches jsbeeb's isVsyncPoint = !isInterlace || !doEvenFrameLogic || halfR0Hit
 TEST_CASE("Crtc6845 interlace: VSYNC at R7", "[crtc6845][interlace][phase2]") {
     Crtc6845 crtc;
     crtc.reset();
@@ -889,17 +890,27 @@ TEST_CASE("Crtc6845 interlace: VSYNC at R7", "[crtc6845][interlace][phase2]") {
     const int chars_per_line = 64;
     const int scanlines_per_row = 10;
     const int vsync_row = 28;  // R7
+    const int half_scanline = 32;  // R0/2 = 63/2 = 31, but column reaches 32
 
-    // Advance to row 28 (R7) - VSYNC should trigger somewhere in this row
+    // Advance to row 28 (R7) at column 0
     tick_n(crtc, vsync_row * scanlines_per_row * chars_per_line);
 
-    // VSYNC should now be active (triggered at start of R7 row)
+    // At this point, we've passed R6 (row 25) so doEvenFrameLogic is now true
+    // (because frameCount went from 0 to 1).
+    // VSYNC can only trigger at half-scanline position (column 31-32).
     auto out = crtc.tick();
     REQUIRE(crtc.row() == vsync_row);
+    // VSYNC should NOT be active yet - we're at column 1, not half-scanline
+    REQUIRE(out.vsync == 0);
+
+    // Advance to half-scanline position (column 32)
+    tick_n(crtc, half_scanline - 2);  // -2 because we already ticked once, and tick() below
+    out = crtc.tick();
+    // Now VSYNC should be active (we're at the half-scanline interlace point)
     REQUIRE(out.vsync == 1);
 
     // VSYNC width is 2 scanlines (R3 high nibble = 2)
-    // After 2 scanlines, VSYNC should end
+    // After 2 scanlines from vsync start, VSYNC should end at next half-scanline
     tick_n(crtc, 2 * chars_per_line - 1);
     out = crtc.tick();
     REQUIRE(out.vsync == 0);

@@ -183,9 +183,12 @@ public:
         (void)cb1;
         (void)cb2;
 
-        // CA1: VSYNC from CRTC (directly connected)
-        // Pass through the VSYNC state we've stored
-        ca1 = vsync_ ? 0 : 1;  // Active low
+        // CA1: VSYNC from CRTC
+        // jsbeeb convention: CA1 high when vsync active, low when inactive.
+        // With PCR bit 0 = 0 (negative edge detection), interrupt fires when
+        // CA1 goes high→low, which occurs when vsync ENDS.
+        // This matches jsbeeb's setVBlankInt(inVSync) behavior.
+        ca1 = vsync_ ? 1 : 0;
 
         // CA2: Keyboard matrix interrupt
         // The MOS configures CA2 for POSITIVE edge detection (PCR bits 1-3 = 0b010).

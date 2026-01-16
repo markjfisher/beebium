@@ -158,14 +158,21 @@ public:
             hsync_counter_ = 0;
         }
 
-        // Handle vertical sync (on interlace point)
-        if (row_ == registers_[R7_VSYNC_POS] && vsync_counter_ < 0 && !had_vsync_this_row_) {
-            vsync_counter_ = 0;
-            had_vsync_this_row_ = true;
+        // Handle vertical sync END first, then START (order matters!)
+        // If vsync ends, vsync_counter_ becomes -1, allowing a new vsync to start on the same tick.
+        // This matches jsbeeb's order where inVSync=false is set before the start check.
+
+        // Vsync END (only at valid interlace point)
+        // Vsync counter is incremented per scanline in end_of_scanline()
+        if (vsync_counter_ >= 0 && vsync_counter_ >= vsync_width() && is_vsync_point()) {
+            vsync_counter_ = -1;
         }
 
-        if (vsync_counter_ >= 0) {
-            // Check end of vsync at each scanline
+        // Vsync START (only at valid interlace point)
+        // In interlace mode, vsync start is delayed to half-scanline on even frames
+        if (row_ == registers_[R7_VSYNC_POS] && vsync_counter_ < 0 && !had_vsync_this_row_ && is_vsync_point()) {
+            vsync_counter_ = 0;
+            had_vsync_this_row_ = true;
         }
 
         // Build output
@@ -262,6 +269,13 @@ public:
         return (registers_[R8_INTERLACE] & 0x03) == 0x03;
     }
 
+    // Check if interlace sync mode is enabled (R8 bit 0)
+    // This includes both "interlace sync" (R8=1) and "interlace sync and video" (R8=3)
+    // Used for vsync timing - see Motorola 6845 datasheet figure 13
+    bool is_interlace_sync() const {
+        return (registers_[R8_INTERLACE] & 1) != 0;
+    }
+
     // Current position (for debugging)
     uint8_t column() const { return column_; }
     uint8_t row() const { return row_; }
@@ -299,19 +313,41 @@ public:
         had_vsync_this_row_ = false;
         field_count_ = 0;
         odd_field_ = true;
+        frame_count_ = 0;
+        do_even_frame_logic_ = false;  // Matches jsbeeb initial state
         prev_lightpen_ = false;
         fast_clock_ = false;
     }
 
 private:
+    // Check if current position is valid for vsync start/end in interlace mode
+    // In interlace sync mode, vsync transitions only occur at specific points:
+    // - Non-interlace mode: any character position is valid
+    // - Interlace odd frame: any character position is valid
+    // - Interlace even frame: only valid at half-scanline (column == R0/2)
+    // This implements 312.5 scanline frames per Motorola 6845 datasheet figure 13.
+    // See jsbeeb video.js:603-650 for reference implementation.
+    //
+    // Matches jsbeeb's isVsyncPoint calculation (video.js:616):
+    //   const isVsyncPoint = !isInterlace || !this.doEvenFrameLogic || halfR0Hit;
+    // When doEvenFrameLogic is true, vsync can only start/end at half-scanline.
+    bool is_vsync_point() const {
+        if (!is_interlace_sync()) {
+            return true;  // Non-interlace: any position is valid
+        }
+
+        if (!do_even_frame_logic_) {
+            return true;  // !doEvenFrameLogic: any position is valid
+        }
+
+        // Even frame logic active: only valid at half-scanline
+        return column_ == (registers_[R0_HTOTAL] / 2);
+    }
+
     void end_of_scanline() {
-        // Handle vsync counter
+        // Increment vsync counter per scanline (end check happens in tick() for interlace timing)
         if (vsync_counter_ >= 0) {
             ++vsync_counter_;
-            // vsync_width() already returns 16 when register value is 0
-            if (vsync_counter_ >= vsync_width()) {
-                vsync_counter_ = -1;
-            }
         }
 
         // Check for end of character row
@@ -345,7 +381,8 @@ private:
         // end_of_frame() can reset v_display_ to true for the new frame.
         // With R6=0, this allows the first scanline to display before v_display
         // is cleared at the end of that scanline.
-        if (row_ == registers_[R6_VDISPLAYED] && v_display_) {
+        const bool r6_hit = (row_ == registers_[R6_VDISPLAYED]);
+        if (r6_hit && v_display_) {
             v_display_ = false;
             // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
             // In interlace mode, this triggers twice per frame (once per field).
@@ -353,6 +390,15 @@ private:
             field_count_ += interlace_sync_and_video() ? 1 : 2;
             // Toggle field for interlace mode
             odd_field_ = !odd_field_;
+            // Increment frame count (matches jsbeeb's frameCount++)
+            ++frame_count_;
+        }
+
+        // Update doEvenFrameLogic at R6 or R7 hit (matches jsbeeb video.js:771-772)
+        // This quirk means even frame interlace logic activates when either R6 or R7 is seen.
+        const bool r7_hit = (row_ == registers_[R7_VSYNC_POS]);
+        if (r6_hit || r7_hit) {
+            do_even_frame_logic_ = (frame_count_ & 1) != 0;
         }
 
         // Check for vertical adjust period
@@ -407,6 +453,8 @@ private:
         v_display_ = true;
         in_vadj_ = false;
         had_vsync_this_row_ = false;
+        // Note: do_even_frame_logic_ is NOT updated here - it's updated at R6/R7 hit
+        // to match jsbeeb's behavior where doEvenFrameLogic changes at those points.
     }
 
     // Register masks (write masks for each register)
@@ -459,6 +507,15 @@ private:
 
     // Field tracking for interlace mode
     bool odd_field_ = true;  // Odd field (first) or even field (second)
+
+    // Frame counter for interlace timing (matches jsbeeb's frameCount)
+    // Incremented at R6 hit (when v_display_ goes false)
+    uint32_t frame_count_ = 0;
+
+    // Even frame logic flag for vsync timing (matches jsbeeb's doEvenFrameLogic)
+    // When true, vsync can only start/end at half-scanline position (column == R0/2)
+    // Updated at R6 and R7 hits based on frame_count_ parity
+    bool do_even_frame_logic_ = false;
 
     // Light pen
     bool prev_lightpen_ = false;
