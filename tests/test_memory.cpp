@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/ModelBHardware.hpp>
 #include <beebium/Via6522.hpp>
+#include <beebium/devices/ConfigurableSlot.hpp>  // for SlotType
 #include <array>
 
 using namespace beebium;
@@ -26,20 +27,21 @@ TEST_CASE("ModelBHardware initialization", "[memory][init]") {
         }
     }
 
-    SECTION("ROM areas return 0x00 initially (unloaded ROMs)") {
-        // Paged ROM area (bank 0 - basic_rom, unloaded)
-        REQUIRE(hw.read(0x8000) == 0x00);
+    SECTION("Empty sideways slots return 0xFF") {
+        // Default bank 0 maps to socket 0 (IC52), which is empty by default
+        // Empty slots return 0xFF (bus pull-ups on real hardware)
+        REQUIRE(hw.read(0x8000) == 0xFF);
 
-        // MOS area (excluding I/O at 0xFE00-0xFEFF)
-        for (uint16_t addr = 0xC000; addr < 0xFE00; ++addr) {
-            REQUIRE(hw.read(addr) == 0x00);  // Unloaded ROM is zero
-        }
+        // Bank 2 also maps to socket 2 (IC100), which is empty
+        hw.write(0xFE30, 2);
+        REQUIRE(hw.read(0x8000) == 0xFF);
     }
 
-    SECTION("Empty banks return 0xFF") {
-        // Bank 2 is not populated, should return 0xFF
-        hw.write(0xFE30, 2);  // Select bank 2
-        REQUIRE(hw.read(0x8000) == 0xFF);
+    SECTION("MOS ROM returns 0x00 initially (unloaded)") {
+        // MOS area (excluding I/O at 0xFE00-0xFEFF)
+        for (uint16_t addr = 0xC000; addr < 0xFE00; ++addr) {
+            REQUIRE(hw.read(addr) == 0x00);  // Unloaded MOS ROM is zero
+        }
     }
 
     SECTION("Default ROM bank is 0") {
@@ -98,17 +100,20 @@ TEST_CASE("ModelBHardware ROM is read-only", "[memory][rom]") {
         REQUIRE(hw.read(0xC000) == 0x42);
     }
 
-    // Load some test data into ROM bank 0 (basic_rom)
+    // Load some test data into BASIC ROM (socket 3, slots 3/7/11/15)
     std::array<uint8_t, 16384> rom_data;
     std::fill(rom_data.begin(), rom_data.end(), 0x24);
     hw.load_basic(rom_data.data(), rom_data.size());
 
-    SECTION("Paged ROM can be read") {
+    SECTION("Paged ROM can be read at correct slot") {
+        // BASIC is at socket 3, accessed via slots 3, 7, 11, or 15
+        hw.write(0xFE30, 15);  // Select slot 15 (socket 3)
         REQUIRE(hw.read(0x8000) == 0x24);
         REQUIRE(hw.read(0xBFFF) == 0x24);
     }
 
     SECTION("Writes to paged ROM are ignored") {
+        hw.write(0xFE30, 15);  // Select slot 15 (socket 3)
         hw.write(0x8000, 0x00);
         REQUIRE(hw.read(0x8000) == 0x24);
     }
@@ -117,50 +122,87 @@ TEST_CASE("ModelBHardware ROM is read-only", "[memory][rom]") {
 TEST_CASE("ModelBHardware ROM bank switching", "[memory][rom][banking]") {
     ModelBHardware hw;
 
-    // Load different data into ROM banks (bank 0 = basic, bank 1 = dfs)
+    // Load different data into ROM sockets:
+    // - BASIC goes to socket 3 (IC101, slots 3/7/11/15)
+    // - DFS goes to socket 1 (IC88, slots 1/5/9/13)
     std::array<uint8_t, 16384> basic_data, dfs_data;
-    std::fill(basic_data.begin(), basic_data.end(), 0x00);
-    std::fill(dfs_data.begin(), dfs_data.end(), 0x11);
+    std::fill(basic_data.begin(), basic_data.end(), 0xBA);  // 0xBA for BASIC
+    std::fill(dfs_data.begin(), dfs_data.end(), 0xDF);      // 0xDF for DFS
 
     hw.load_basic(basic_data.data(), basic_data.size());
     hw.load_dfs(dfs_data.data(), dfs_data.size());
 
-    SECTION("Default bank is 0 (basic)") {
-        REQUIRE(hw.read(0x8000) == 0x00);
+    SECTION("Default bank is 0 (socket 0 is empty)") {
+        // Default bank 0 maps to socket 0 (IC52), which is empty
+        REQUIRE(hw.read(0x8000) == 0xFF);  // Empty socket returns 0xFF
     }
 
-    SECTION("Switch to bank 1 (dfs) via sideways") {
-        hw.sideways.select_bank(1);
-        REQUIRE(hw.sideways.selected_bank() == 1);
-        REQUIRE(hw.read(0x8000) == 0x11);
-    }
-
-    SECTION("Empty bank returns 0xFF") {
-        hw.sideways.select_bank(15);  // Bank 15 is not populated
+    SECTION("BASIC at slot 15 (socket 3)") {
+        hw.sideways.select_bank(15);
         REQUIRE(hw.sideways.selected_bank() == 15);
-        REQUIRE(hw.read(0x8000) == 0xFF);
+        REQUIRE(hw.read(0x8000) == 0xBA);
+    }
+
+    SECTION("DFS at slot 13 (socket 1)") {
+        hw.sideways.select_bank(13);
+        REQUIRE(hw.sideways.selected_bank() == 13);
+        REQUIRE(hw.read(0x8000) == 0xDF);
+    }
+
+    SECTION("Socket aliasing - BASIC at slots 3, 7, 11, 15") {
+        // All these slots map to socket 3 (IC101)
+        for (uint8_t slot : {3, 7, 11, 15}) {
+            hw.write(0xFE30, slot);
+            REQUIRE(hw.read(0x8000) == 0xBA);
+        }
+    }
+
+    SECTION("Socket aliasing - DFS at slots 1, 5, 9, 13") {
+        // All these slots map to socket 1 (IC88)
+        for (uint8_t slot : {1, 5, 9, 13}) {
+            hw.write(0xFE30, slot);
+            REQUIRE(hw.read(0x8000) == 0xDF);
+        }
+    }
+
+    SECTION("Empty sockets return 0xFF (IC52 and IC100)") {
+        // Socket 0 (IC52): slots 0, 4, 8, 12
+        for (uint8_t slot : {0, 4, 8, 12}) {
+            hw.write(0xFE30, slot);
+            REQUIRE(hw.read(0x8000) == 0xFF);
+        }
+        // Socket 2 (IC100): slots 2, 6, 10, 14
+        for (uint8_t slot : {2, 6, 10, 14}) {
+            hw.write(0xFE30, slot);
+            REQUIRE(hw.read(0x8000) == 0xFF);
+        }
     }
 
     SECTION("ROMSEL write switches bank") {
-        // Writing to ROMSEL (0xFE30) should switch ROM bank
-        hw.write(0xFE30, 1);
-        REQUIRE(hw.sideways.selected_bank() == 1);
-        REQUIRE(hw.read(0x8000) == 0x11);
-
-        // Switching to empty bank
         hw.write(0xFE30, 15);
         REQUIRE(hw.sideways.selected_bank() == 15);
-        REQUIRE(hw.read(0x8000) == 0xFF);
+        REQUIRE(hw.read(0x8000) == 0xBA);  // BASIC
+
+        hw.write(0xFE30, 13);
+        REQUIRE(hw.sideways.selected_bank() == 13);
+        REQUIRE(hw.read(0x8000) == 0xDF);  // DFS
     }
 
-    SECTION("Sideways RAM at bank 4 is writable") {
-        hw.write(0xFE30, 4);  // Select bank 4 (sideways RAM)
+    SECTION("Sideways RAM is writable when configured") {
+        // Configure socket 0 (IC52, slots 0/4/8/12) as RAM
+        hw.configure_slot(0, SlotType::Ram);
+
+        hw.write(0xFE30, 0);  // Select slot 0 (maps to socket 0)
         hw.write(0x8000, 0x42);
         REQUIRE(hw.read(0x8000) == 0x42);
 
-        // Switch back to ROM and verify it's different
-        hw.write(0xFE30, 0);
-        REQUIRE(hw.read(0x8000) == 0x00);  // Basic ROM
+        // Verify aliased slots also see the same RAM
+        hw.write(0xFE30, 4);  // Slot 4 also maps to socket 0
+        REQUIRE(hw.read(0x8000) == 0x42);
+
+        // Switch to a different socket (BASIC at slot 15 = socket 3)
+        hw.write(0xFE30, 15);
+        REQUIRE(hw.read(0x8000) == 0xBA);  // BASIC ROM
     }
 }
 
@@ -226,17 +268,31 @@ TEST_CASE("ModelBHardware direct device access", "[memory][devices]") {
         REQUIRE((hw.read(0xFE41) & 0xFF) != 0);
     }
 
-    SECTION("Can access sideways directly") {
-        // Load data into basic_rom (bank 0) via direct access
+    SECTION("Can access sideways directly via load_basic") {
+        // Load data via load_basic (goes to socket 3, slots 3/7/11/15)
         uint8_t data[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-        hw.basic_rom.load(data, 4);
-        hw.sideways.select_bank(0);
+        hw.load_basic(data, 4);
+        hw.sideways.select_bank(15);  // Select slot 15 (socket 3, BASIC)
+        REQUIRE(hw.read(0x8000) == 0xAA);
+
+        // Aliased slots should see same data
+        hw.sideways.select_bank(3);
         REQUIRE(hw.read(0x8000) == 0xAA);
     }
 
-    SECTION("Can write to sideways_ram directly") {
-        hw.sideways_ram.write(0x100, 0x42);
-        hw.sideways.select_bank(4);  // Select sideways RAM bank
+    SECTION("Can write to sideways RAM directly") {
+        // Configure socket 0 (IC52, slots 0/4/8/12) as RAM
+        hw.configure_slot(0, SlotType::Ram);
+
+        // Write via sideways.write_bank (direct access)
+        hw.sideways.write_bank(0, 0x100, 0x42);
+
+        // Select slot 0 and verify via memory map
+        hw.sideways.select_bank(0);
+        REQUIRE(hw.read(0x8100) == 0x42);
+
+        // Verify aliased slot 4 also sees the data
+        hw.sideways.select_bank(4);
         REQUIRE(hw.read(0x8100) == 0x42);
     }
 }

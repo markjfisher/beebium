@@ -483,13 +483,14 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // Check what BASIC slot was found
     uint8_t basic_slot = machine.read(0x024B);
     INFO("basicROMNumber = " << (int)basic_slot);
-    INFO("ROM type slot 0 = " << (int)machine.read(0x02A1));
+    INFO("ROM type slot 15 = " << (int)machine.read(0x02B0));
 
-    // BASIC should be in slot 0 (where we loaded it)
-    REQUIRE(basic_slot == 0x00);
+    // BASIC should be in slot 15 (IC101/socket 3 in aliased model)
+    // The MOS scans from slot 15 downwards, and BASIC is loaded at slot 15
+    REQUIRE(basic_slot == 0x0F);
 
-    // ROM type for slot 0 should indicate language ROM
-    REQUIRE(machine.read(0x02A1) != 0x00);
+    // ROM type for slot 15 should indicate language ROM
+    REQUIRE(machine.read(0x02B0) != 0x00);
 
     // =========================================================================
     // §16 Check for speech system

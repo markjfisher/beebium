@@ -38,18 +38,29 @@ function registerCleanupHandlers() {
     });
 }
 
+export interface RomSlot {
+    /** Sideways ROM slot number (0-15) */
+    slot: number;
+    /** ROM filename (resolved relative to ROM directory) or absolute path */
+    filepath: string;
+}
+
 export interface ServerFixtureOptions {
     /** Path to beebium-model-b executable */
     executablePath?: string;
     /** Model type: 'B' or 'B+' (default: 'B') */
     model?: 'B' | 'B+';
+    /** Disc controller to install (Model B only): 'acorn-1770' or 'none' */
+    fdc?: 'acorn-1770' | 'none';
+    /** Sideways ROMs to load */
+    roms?: RomSlot[];
     /** Additional command-line arguments */
     args?: string[];
     /** Connection timeout in ms (default: 5000) */
     timeout?: number;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ServerFixtureOptions, 'executablePath' | 'args'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ServerFixtureOptions, 'executablePath' | 'args' | 'fdc' | 'roms'>> = {
     model: 'B',
     timeout: 5000,
 };
@@ -117,18 +128,46 @@ export class ServerFixture {
     private port: number = 0;
     private readonly model: 'B' | 'B+';
     private readonly timeout: number;
-    private readonly args: string[];
+    private readonly fdc?: 'acorn-1770' | 'none';
+    private readonly roms: RomSlot[];
+    private readonly extraArgs: string[];
     private readonly executablePath: string;
 
     constructor(options: ServerFixtureOptions = {}) {
         this.model = options.model ?? DEFAULT_OPTIONS.model;
         this.timeout = options.timeout ?? DEFAULT_OPTIONS.timeout;
-        // Always use --wait=api for controlled startup via gRPC
-        this.args = ['--wait=api', ...(options.args ?? [])];
+        this.fdc = options.fdc;
+        this.roms = options.roms ?? [];
+        this.extraArgs = options.args ?? [];
         this.executablePath = options.executablePath ?? findExecutable(this.model);
 
         // Ensure cleanup handlers are registered
         registerCleanupHandlers();
+    }
+
+    /**
+     * Build command-line arguments for the server.
+     */
+    private buildArgs(): string[] {
+        const args: string[] = [
+            '--port', '0',      // Dynamic port allocation
+            '--wait=api',       // Controlled startup via gRPC
+        ];
+
+        // Disc controller (Model B only - has socket)
+        if (this.fdc) {
+            args.push('--fdc', this.fdc);
+        }
+
+        // Sideways ROMs
+        for (const rom of this.roms) {
+            args.push('--rom', `${rom.slot}:${rom.filepath}`);
+        }
+
+        // Extra user-provided args
+        args.push(...this.extraArgs);
+
+        return args;
     }
 
     /**
@@ -141,11 +180,7 @@ export class ServerFixture {
             throw new Error('Server already running');
         }
 
-        // Use --port 0 for dynamic allocation - server will print actual port
-        const args = [
-            '--port', '0',
-            ...this.args,
-        ];
+        const args = this.buildArgs();
 
         // Server needs to run from the beebium directory to find ROMs
         const cwd = this.executablePath.includes('beebium')

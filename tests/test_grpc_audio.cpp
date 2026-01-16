@@ -55,7 +55,7 @@ public:
         auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
         auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
         std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
-        std::copy(basic.begin(), basic.end(), machine_.state().memory.basic_rom.data());
+        machine_.state().memory.load_basic(basic.data(), basic.size());
 #endif
 
         // Enable video and audio output

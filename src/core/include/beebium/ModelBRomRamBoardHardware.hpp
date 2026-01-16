@@ -24,7 +24,7 @@
 #include "SystemViaPeripheral.hpp"
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
-#include "devices/AliasedBankedMemory.hpp"
+#include "devices/ConfigurableBankedMemory.hpp"
 #include "devices/Crtc6845.hpp"
 #include "devices/Ram.hpp"
 #include "devices/Rom.hpp"
@@ -33,7 +33,6 @@
 #include "disc/Acorn1770DiscController.hpp"
 #include "disc/DiscControllerSocket.hpp"
 #include "disc/DiscDrive.hpp"
-#include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
 #include <cstdint>
 #include <memory>
@@ -42,60 +41,36 @@
 
 namespace beebium {
 
-// BBC Model B hardware configuration using AliasedBankedMemory for accurate
-// ROM socket emulation.
+// BBC Model B with ROM/RAM expansion board providing 16 independent sideways slots.
 //
-// This struct holds all hardware devices and provides:
-// - Memory-mapped access via the memory_map
-// - Direct access to devices for clocking and configuration
-// - Dependency injection for VIA peripherals
+// This configuration emulates a Model B fitted with a third-party ROM/RAM board
+// (such as Watford Electronics or similar) that provides:
+// - Full 4-bit ROMSEL decoding (16 independent slots, no aliasing)
+// - Each slot can be configured as ROM or RAM at runtime
 //
-// Memory Map:
-//   0x0000-0x7FFF: 32KB RAM
-//   0x8000-0xBFFF: 16KB Paged ROM (4 sockets with 4-way aliasing via ROMSEL at 0xFE30)
-//   0xC000-0xFBFF: 16KB MOS ROM (minus I/O region)
-//   0xFC00-0xFDFF: Reserved / External I/O (FRED/JIM)
-//   0xFE00-0xFEFF: SHEILA (I/O devices)
-//     0xFE00-0xFE07: CRTC (6845)
-//     0xFE08-0xFE0F: Serial ACIA
-//     0xFE10-0xFE1F: Serial ULA
-//     0xFE20-0xFE2F: Video ULA
-//     0xFE30-0xFE3F: Paging registers (ROMSEL)
-//     0xFE40-0xFE5F: System VIA (16 regs, mirrored)
-//     0xFE60-0xFE7F: User VIA (16 regs, mirrored)
-//     0xFE80-0xFE9F: Disc controller
-//     0xFEA0-0xFEBF: Econet
-//     0xFEC0-0xFEDF: A/D converter
-//     0xFEE0-0xFEFF: Tube
+// Default jsbeeb-style layout:
+//   Slots 0-7:  Sideways RAM (8 x 16KB banks)
+//   Slots 8-12: Empty (available for user ROMs)
+//   Slot 13:    ADFS ROM
+//   Slot 14:    DFS ROM
+//   Slot 15:    BASIC ROM
 //
-// Sideways ROM Socket Configuration (4 physical sockets, 4-way aliasing):
-//   The Model B has 4 physical ROM sockets with partial address decoding
-//   (2 bits), so each socket appears at 4 slot numbers:
+// Unlike stock Model B (which has 4-way aliasing), each slot here is independent.
 //
-//   | Socket | IC    | Slots        | Default Content |
-//   |--------|-------|--------------|-----------------|
-//   |   0    | IC52  | 0, 4, 8, 12  | Empty           |
-//   |   1    | IC88  | 1, 5, 9, 13  | DFS ROM         |
-//   |   2    | IC100 | 2, 6, 10, 14 | Empty           |
-//   |   3    | IC101 | 3, 7, 11, 15 | BASIC ROM       |
-//
-//   MOS searches for language ROM at slot 15, which due to aliasing accesses
-//   socket 3 (IC101) where BASIC is installed.
-//
-class ModelBHardware {
+class ModelBRomRamBoardHardware {
 public:
     // Machine identification and region names (compile-time constants)
-    static constexpr std::string_view MACHINE_TYPE = "ModelB";
-    static constexpr std::string_view MACHINE_DISPLAY_NAME = "BBC Model B";
+    static constexpr std::string_view MACHINE_TYPE = "ModelBRomRamBoard";
+    static constexpr std::string_view MACHINE_DISPLAY_NAME = "BBC Model B with ROM/RAM Board";
     static constexpr std::string_view REGION_MAIN_RAM = "main_ram";
     static constexpr std::string_view REGION_MOS_ROM = "mos_rom";
 
     // Default ROM filenames for this machine
     static constexpr std::string_view DEFAULT_MOS_ROM = "acorn-mos_1_20.rom";
     static constexpr std::string_view DEFAULT_LANGUAGE_ROM = "bbc-basic_2.rom";
-    static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;  // Maps to socket 3 (IC101)
-    static constexpr std::string_view DEFAULT_DFS_ROM = "acorn-dfs_1_00.rom";
-    static constexpr uint8_t DEFAULT_DFS_SLOT = 13;       // Maps to socket 1 (IC88)
+    static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;
+    static constexpr std::string_view DEFAULT_DFS_ROM = "acorn-dfs_2_26.rom";
+    static constexpr uint8_t DEFAULT_DFS_SLOT = 14;
 
     // Default pacing configuration for this machine
     static constexpr PacingConfig default_pacing_config() {
@@ -110,10 +85,9 @@ public:
     Ram<32768> main_ram;
     Rom<16384> mos_rom;
 
-    // Sideways ROM sockets using AliasedBankedMemory
-    // 4 physical sockets with 4-way aliasing (2-bit partial decode)
-    using SidewaysType = AliasedBankedMemory;
-    SidewaysType sideways;
+    // Sideways ROM/RAM using ConfigurableBankedMemory (16 independent slots)
+    using SidewaysType = ConfigurableBankedMemory;
+    SidewaysType sideways{ConfigurableBankedMemory::Layout::JsbeebStyle};
 
     Via6522 system_via;
     Via6522 user_via;
@@ -130,7 +104,6 @@ public:
     Saa5050 saa5050;
 
     // Video output queue (optional - only created if video output is enabled)
-    // Call enable_video_output() to activate
     std::optional<OutputQueue<PixelBatch>> video_output;
 
     // Sound hardware
@@ -146,20 +119,17 @@ public:
     AddressableLatch addressable_latch;
     SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
 
-    // Disc subsystem - drives owned by hardware, persist across controller changes
-    // On real Model B, these drives were external to the optional controller socket
+    // Disc subsystem
     DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0"};
     DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1"};
 
     // Disc controller socket at 0xFE80-0xFE9F
-    // On real hardware, this was a physical socket that could be empty or contain
-    // various disc controller boards (8271, WD1770 upgrades, Opus, Watford, etc.)
     DiscControllerSocket disc_socket;
 
-    // Registry ID of installed controller (empty if no controller or unknown)
+    // Registry ID of installed controller
     std::string installed_controller_id_;
 
-    // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
+    // ROMSEL register wrapper
     struct RomselRegister {
         SidewaysType& sideways;
 
@@ -171,7 +141,7 @@ public:
 
     RomselRegister romsel{sideways};
 
-    // Memory map type (deduced from make_memory_map)
+    // Memory map type
     using MemoryMapType = decltype(
         MemoryMap{
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(std::declval<Crtc6845&>()),
@@ -186,47 +156,32 @@ public:
         }
     );
 
-    // Default constructor - uses internal system_via_peripheral
-    ModelBHardware()
+    // Default constructor
+    ModelBRomRamBoardHardware()
         : system_via()
         , user_via()
         , memory_map_(make_memory_map())
         , irq_aggregator_(make_irq_aggregator())
     {
-        // Connect internal peripheral to system VIA
         system_via.set_peripheral(&system_via_peripheral);
-        // Connect sound chip to system VIA peripheral
         system_via_peripheral.set_sound_chip(&sound_chip);
-        // Start the indicators consumer thread
         indicators.start();
-
-        // Configure default socket types (stock Model B: all ROM sockets)
-        // Socket 0 (IC52): Empty by default
-        // Socket 1 (IC88): ROM (DFS)
-        // Socket 2 (IC100): Empty by default
-        // Socket 3 (IC101): ROM (BASIC)
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
     }
 
-    // Constructor with custom peripherals (for testing or alternative configurations)
-    ModelBHardware(ViaPeripheral& system_peripheral, ViaPeripheral& user_peripheral)
+    // Constructor with custom peripherals (for testing)
+    ModelBRomRamBoardHardware(ViaPeripheral& system_peripheral, ViaPeripheral& user_peripheral)
         : system_via(system_peripheral)
         , user_via(user_peripheral)
         , memory_map_(make_memory_map())
         , irq_aggregator_(make_irq_aggregator())
     {
-        // Configure default socket types
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
     }
 
-    // Destructor - stops indicator consumer thread
-    ~ModelBHardware() {
+    ~ModelBRomRamBoardHardware() {
         indicators.stop();
     }
 
-    // MemoryMappedDevice interface (delegates to memory_map)
+    // MemoryMappedDevice interface
     uint8_t read(uint16_t addr) {
         return memory_map_.read(addr);
     }
@@ -235,29 +190,20 @@ public:
         memory_map_.write(addr, value);
     }
 
-    // Side-effect-free read for debugger inspection.
-    // Uses peek() for VIAs to avoid clearing interrupt flags.
     uint8_t peek(uint16_t addr) const {
-        // VIA regions need special handling to avoid side effects
         if (addr >= 0xFE40 && addr <= 0xFE5F) {
             return system_via.peek(addr & 0x0F);
         }
         if (addr >= 0xFE60 && addr <= 0xFE7F) {
             return user_via.peek(addr & 0x0F);
         }
-        // All other regions have no read side effects
         return memory_map_.read(addr);
     }
 
-    // Video memory access - reads from currently configured video RAM.
-    // For Model B, this is always main RAM (no shadow RAM).
-    // Used by VideoBinding for screen rendering.
     uint8_t peek_video(uint16_t addr) const {
         return main_ram.read(addr);
     }
 
-    // Power-on reset: clear RAM and reset all devices including System VIA
-    // This is the original reset() behavior, equivalent to powering off and on.
     void reset() {
         main_ram.clear();
         system_via.reset();
@@ -271,13 +217,7 @@ public:
         disc_socket.reset();
     }
 
-    // Soft reset (Break key): reset peripherals but preserve System VIA state
-    // The System VIA's preserved IER allows MOS to detect this as a warm reset.
-    // Does NOT clear RAM - allows variables and programs to survive.
-    // Note: Hardware does NOT distinguish Ctrl-Break from Break - MOS checks
-    // the keyboard matrix during reset and clears VIA config if Ctrl is held.
     void soft_reset() {
-        // Do NOT reset system_via - this is how MOS detects soft vs hard reset
         user_via.reset();
         crtc.reset();
         video_ula.reset();
@@ -285,106 +225,70 @@ public:
         sound_chip.reset();
         addressable_latch.reset();
         disc_socket.reset();
-        // Do NOT clear RAM
-        // Do NOT reset sideways bank selection
     }
 
-    // Enable video output with optional custom queue capacity
     void enable_video_output(size_t capacity = OutputQueue<PixelBatch>::DEFAULT_CAPACITY) {
         video_output.emplace(capacity);
     }
 
-    // Disable video output and free queue memory
     void disable_video_output() {
         video_output.reset();
     }
 
-    // Check if video output is enabled
     bool video_output_enabled() const {
         return video_output.has_value();
     }
 
-    // Enable audio output with optional custom buffer capacity
     void enable_audio_output(size_t capacity = AudioBuffer::DEFAULT_CAPACITY) {
         if (!audio_buffer) {
             audio_buffer.emplace(capacity);
         }
     }
 
-    // Disable audio output and free buffer memory
     void disable_audio_output() {
         audio_buffer.reset();
     }
 
-    // Check if audio output is enabled
     bool audio_output_enabled() const {
         return audio_buffer.has_value();
     }
 
-    // Poll IRQ status from VIAs (called from Machine::step after clock tick)
-    // Returns IRQ mask (bit 0 = system VIA, bit 1 = user VIA)
     uint8_t poll_irq() {
         return irq_aggregator_.poll();
     }
 
-    // Poll NMI status from disc controller (called from Machine::step after clock tick)
-    // Returns non-zero if NMI is pending from disc controller.
-    // Model B has an optional disc controller add-on via the disc socket.
     uint8_t poll_nmi() {
-        // Sample NMI state BEFORE ticking the disc controller
-        // This is critical for edge detection to prevent NMI stacking
         uint8_t nmi = disc_socket.nmi_pending() ? 0x01 : 0x00;
-
-        // Tick the disc controller (1MHz peripheral clock)
         disc_socket.tick();
-
         return nmi;
     }
 
-    // =========================================================================
-    // Startup Options (keyboard links)
-    // =========================================================================
-
-    // Set raw startup options byte (all 8 keyboard links)
+    // Startup Options
     void set_startup_options(uint8_t options) {
         system_via_peripheral.keyboard().set_startup_options(options);
     }
 
-    // Get raw startup options byte
     uint8_t startup_options() const {
         return system_via_peripheral.keyboard().startup_options();
     }
 
-    // Set boot screen mode (0-7) - modifies bits 0-2 of startup options
-    // Call before reset() to boot into specified mode
     void set_screen_mode(uint8_t mode) {
         system_via_peripheral.keyboard().set_screen_mode(mode);
     }
 
-    // Get current screen mode from startup options
     uint8_t screen_mode() const {
         return system_via_peripheral.keyboard().screen_mode();
     }
 
-    // Set auto-boot flag - modifies bit 3 of startup options
-    // When enabled, reverses SHIFT-BREAK action
     void set_auto_boot(bool enabled) {
         system_via_peripheral.keyboard().set_auto_boot(enabled);
     }
 
-    // Get auto-boot flag from startup options
     bool auto_boot() const {
         return system_via_peripheral.keyboard().auto_boot();
     }
 
-    // =========================================================================
     // Disc Controller Management
-    // =========================================================================
-
-    // Install a disc controller into the socket
-    // After installation, drives are automatically attached
-    // @param controller Controller to install (takes ownership)
-    // @param controller_id Registry ID of the controller (for querying later)
     void install_disc_controller(std::unique_ptr<DiscControllerInterface> controller,
                                  std::string_view controller_id = "") {
         disc_socket.install(std::move(controller));
@@ -393,44 +297,29 @@ public:
         installed_controller_id_ = controller_id;
     }
 
-    // Convenience method: install Acorn 1770 DFS controller
-    // This is the most common disc controller upgrade for Model B
     void install_acorn_1770() {
         install_disc_controller(std::make_unique<Acorn1770DiscController>(), "acorn-1770");
     }
 
-    // Remove installed disc controller
-    // @return Previously installed controller, or nullptr if socket was empty
     std::unique_ptr<DiscControllerInterface> remove_disc_controller() {
         installed_controller_id_.clear();
         return disc_socket.remove();
     }
 
-    // Check if a disc controller is installed
     bool has_disc_controller() const {
         return disc_socket.has_controller();
     }
 
-    // Get registry ID of installed controller
-    // @return Controller ID (e.g., "acorn-1770"), or empty if none installed
     std::string_view installed_controller_id() const {
         return installed_controller_id_;
     }
 
-    // =========================================================================
-    // Disc Controller Configuration (for DiscService compatibility)
-    // =========================================================================
-
-    // Enable/disable motor spin-up delay
-    // @param enabled true to enable realistic delays, false to skip (fast)
     void set_spin_up_delay_enabled(bool enabled) {
         if (auto* ctrl = disc_socket.controller()) {
             ctrl->set_spin_up_delay_enabled(enabled);
         }
     }
 
-    // Check if spin-up delay is enabled
-    // @return true if enabled, false if disabled or no controller
     bool spin_up_delay_enabled() const {
         if (auto* ctrl = disc_socket.controller()) {
             return ctrl->spin_up_delay_enabled();
@@ -438,93 +327,65 @@ public:
         return false;
     }
 
-    // =========================================================================
-    // ROM Loading (socket-based for Model B)
-    // =========================================================================
-
-    // Load MOS ROM
+    // ROM Loading
     void load_mos(const uint8_t* data, size_t size) {
         mos_rom.load(data, size);
     }
 
-    // Load BASIC ROM into socket 3 (IC101, visible at slots 3/7/11/15)
     void load_basic(const uint8_t* data, size_t size) {
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
-        sideways.load_rom_to_socket(AliasedBankedMemory::SOCKET_IC101, data, size);
-        sideways.set_socket_image_name(AliasedBankedMemory::SOCKET_IC101, DEFAULT_LANGUAGE_ROM);
+        sideways.configure_slot(DEFAULT_LANGUAGE_SLOT, SlotType::Rom);
+        sideways.load_rom(DEFAULT_LANGUAGE_SLOT, data, size);
+        sideways.set_slot_image_name(DEFAULT_LANGUAGE_SLOT, DEFAULT_LANGUAGE_ROM);
     }
 
-    // Load DFS ROM into socket 1 (IC88, visible at slots 1/5/9/13)
     void load_dfs(const uint8_t* data, size_t size) {
-        sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
-        sideways.load_rom_to_socket(AliasedBankedMemory::SOCKET_IC88, data, size);
-        sideways.set_socket_image_name(AliasedBankedMemory::SOCKET_IC88, DEFAULT_DFS_ROM);
+        sideways.configure_slot(DEFAULT_DFS_SLOT, SlotType::Rom);
+        sideways.load_rom(DEFAULT_DFS_SLOT, data, size);
+        sideways.set_slot_image_name(DEFAULT_DFS_SLOT, DEFAULT_DFS_ROM);
     }
 
-    // Load ROM into a specific socket (0-3)
-    // Socket mapping: 0=IC52, 1=IC88, 2=IC100, 3=IC101
-    void load_rom_to_socket(uint8_t socket_idx, const uint8_t* data, size_t size,
-                           std::string_view image_name = "") {
-        sideways.configure_socket(socket_idx, SlotType::Rom);
-        sideways.load_rom_to_socket(socket_idx, data, size);
+    // Load ROM into a specific slot
+    void load_rom_to_slot(uint8_t slot, const uint8_t* data, size_t size,
+                         std::string_view image_name = "") {
+        sideways.configure_slot(slot, SlotType::Rom);
+        sideways.load_rom(slot, data, size);
         if (!image_name.empty()) {
-            sideways.set_socket_image_name(socket_idx, image_name);
+            sideways.set_slot_image_name(slot, image_name);
         }
     }
 
-    // Configure a socket's type (Empty, Rom, or Ram)
-    // Note: This uses socket index (0-3), not slot number (0-15)
-    void configure_socket(uint8_t socket_idx, SlotType type) {
-        sideways.configure_socket(socket_idx, type);
-    }
-
-    // Configure a socket by slot number (aliasing handled automatically)
-    // Multiple slots map to the same socket due to partial address decoding:
-    //   Slots 0,4,8,12 -> Socket 0 (IC52)
-    //   Slots 1,5,9,13 -> Socket 1 (IC88)
-    //   Slots 2,6,10,14 -> Socket 2 (IC100)
-    //   Slots 3,7,11,15 -> Socket 3 (IC101)
+    // Configure a slot's type
     void configure_slot(uint8_t slot, SlotType type) {
         sideways.configure_slot(slot, type);
     }
 
-    // Load ROM by slot number (aliasing handled automatically)
+    // Load ROM by slot number
     void load_rom(uint8_t slot, const uint8_t* data, size_t size) {
-        uint8_t socket_idx = AliasedBankedMemory::slot_to_socket(slot);
-        sideways.configure_socket(socket_idx, SlotType::Rom);
+        sideways.configure_slot(slot, SlotType::Rom);
         sideways.load_rom(slot, data, size);
     }
 
-    // =========================================================================
-    // Memory Region Discovery (for debugger)
-    // =========================================================================
-
+    // Memory region discovery
     std::vector<MemoryRegionDescriptor> get_memory_regions() const {
         std::vector<MemoryRegionDescriptor> regions;
 
-        // Main RAM (0x0000-0x7FFF)
         regions.push_back({
             REGION_MAIN_RAM,
-            0x0000,  // base_address
+            0x0000,
             32768,
             RegionFlags::Readable | RegionFlags::Writable | RegionFlags::Populated
         });
 
-        // MOS ROM (0xC000-0xFFFF)
         regions.push_back({
             REGION_MOS_ROM,
-            0xC000,  // base_address
+            0xC000,
             16384,
             RegionFlags::Readable | RegionFlags::Populated
         });
 
-        // Sideways banks (bank_0 through bank_15, all mapped at 0x8000-0xBFFF)
-        // Note: Due to aliasing, banks 0/4/8/12, 1/5/9/13, 2/6/10/14, 3/7/11/15
-        // each share the same physical socket.
         for (uint8_t bank = 0; bank < 16; ++bank) {
             RegionFlags flags = RegionFlags::Readable;
 
-            // Check if slot is RAM (writable)
             if (sideways.bank_type(bank) == SlotType::Ram) {
                 flags = flags | RegionFlags::Writable;
             }
@@ -535,11 +396,10 @@ public:
             if (bank == sideways.selected_bank()) {
                 flags = flags | RegionFlags::Active;
             }
-            // Bank names are generated as "bank_0", "bank_1", etc.
-            // We use a static array for the string_views
+
             regions.push_back({
                 bank_names_[bank],
-                0x8000,  // base_address (all banks share same address range)
+                0x8000,
                 16384,
                 flags
             });
@@ -548,23 +408,19 @@ public:
         return regions;
     }
 
-    // Region access - side-effect free read (uses absolute address)
     uint8_t peek_region(std::string_view name, uint32_t address) const {
         if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
             if (address < 0x8000) {
                 return main_ram.read(static_cast<uint16_t>(address));
             }
             return 0xFF;
         }
         if (name == REGION_MOS_ROM) {
-            // MOS ROM: 0xC000-0xFFFF
             if (address >= 0xC000) {
                 return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
             }
             return 0xFF;
         }
-        // Check for bank_N pattern (0x8000-0xBFFF)
         if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
             uint8_t bank = parse_bank_number(name);
             if (bank < 16 && address >= 0x8000 && address < 0xC000) {
@@ -574,23 +430,19 @@ public:
         return 0xFF;
     }
 
-    // Region access - normal read (may have side effects, uses absolute address)
     uint8_t read_region(std::string_view name, uint32_t address) {
         if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
             if (address < 0x8000) {
                 return main_ram.read(static_cast<uint16_t>(address));
             }
             return 0xFF;
         }
         if (name == REGION_MOS_ROM) {
-            // MOS ROM: 0xC000-0xFFFF
             if (address >= 0xC000) {
                 return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
             }
             return 0xFF;
         }
-        // Check for bank_N pattern (0x8000-0xBFFF)
         if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
             uint8_t bank = parse_bank_number(name);
             if (bank < 16 && address >= 0x8000 && address < 0xC000) {
@@ -600,20 +452,16 @@ public:
         return 0xFF;
     }
 
-    // Region access - write (uses absolute address)
     void write_region(std::string_view name, uint32_t address, uint8_t value) {
         if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
             if (address < 0x8000) {
                 main_ram.write(static_cast<uint16_t>(address), value);
             }
             return;
         }
-        // MOS ROM is read-only, ignore writes
         if (name == REGION_MOS_ROM) {
             return;
         }
-        // Check for bank_N pattern (0x8000-0xBFFF)
         if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
             uint8_t bank = parse_bank_number(name);
             if (bank < 16 && address >= 0x8000 && address < 0xC000) {
@@ -623,7 +471,6 @@ public:
     }
 
 private:
-    // Static bank names for string_view references
     static constexpr std::string_view bank_names_[16] = {
         "bank_0", "bank_1", "bank_2", "bank_3",
         "bank_4", "bank_5", "bank_6", "bank_7",
@@ -631,21 +478,18 @@ private:
         "bank_12", "bank_13", "bank_14", "bank_15"
     };
 
-    // Parse bank number from "bank_N" string
     static uint8_t parse_bank_number(std::string_view name) {
         if (name.size() < 6) return 255;
         if (name.size() == 6) {
-            // Single digit: bank_0 through bank_9
             char c = name[5];
             if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
         } else if (name.size() == 7) {
-            // Two digits: bank_10 through bank_15
             if (name[5] == '1') {
                 char c = name[6];
                 if (c >= '0' && c <= '5') return static_cast<uint8_t>(10 + (c - '0'));
             }
         }
-        return 255;  // Invalid
+        return 255;
     }
 
 private:
@@ -660,8 +504,6 @@ private:
     }
 
     MemoryMapType make_memory_map() {
-        // Order matters: first match wins
-        // I/O regions before ROM regions to handle overlap at 0xFExx
         return MemoryMap{
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(crtc),
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula),

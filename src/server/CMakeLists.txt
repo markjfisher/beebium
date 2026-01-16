@@ -26,6 +26,7 @@ endfunction()
 # Model-specific executables
 add_beebium_server(beebium-model-b main_model_b.cpp)
 add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
+add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 
 # Copy ROMs to build output directory for development
 set(ROM_OUTPUT_DIR "${CMAKE_BINARY_DIR}/roms")
@@ -42,7 +43,7 @@ add_custom_command(TARGET beebium-model-b POST_BUILD
 )
 
 # Install rules
-install(TARGETS beebium-model-b beebium-model-b-plus
+install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram
     RUNTIME DESTINATION bin
 )
 install(DIRECTORY ${BEEBIUM_ROM_DIR}/

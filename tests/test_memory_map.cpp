@@ -472,25 +472,29 @@ TEST_CASE("ModelBHardware", "[memory_map][integration]") {
     }
 
     SECTION("ROMSEL at 0xFE30 switches sideways banks") {
-        // Load different data into banks 0 (basic) and 1 (dfs)
-        uint8_t basic_data[4] = {0x00, 0x00, 0x00, 0x00};
-        uint8_t dfs_data[4] = {0x11, 0x11, 0x11, 0x11};
+        // With aliased model:
+        // - BASIC loads to socket 3 (IC101), visible at slots 3/7/11/15
+        // - DFS loads to socket 1 (IC88), visible at slots 1/5/9/13
+        // - Socket 0 (IC52, slots 0/4/8/12) is empty
+        // - Socket 2 (IC100, slots 2/6/10/14) is empty
+        uint8_t basic_data[4] = {0xBA, 0xBA, 0xBA, 0xBA};
+        uint8_t dfs_data[4] = {0xDF, 0xDF, 0xDF, 0xDF};
         hw.load_basic(basic_data, 4);
         hw.load_dfs(dfs_data, 4);
 
-        // Default is bank 0 (basic)
-        REQUIRE(hw.read(0x8000) == 0x00);
+        // Default is bank 0 (socket 0 = IC52, empty)
+        REQUIRE(hw.read(0x8000) == 0xFF);
 
-        // Switch to bank 1 (dfs) via ROMSEL
-        hw.write(0xFE30, 0x01);
-        REQUIRE(hw.read(0x8000) == 0x11);
+        // Switch to slot 15 (socket 3, BASIC) via ROMSEL
+        hw.write(0xFE30, 15);
+        REQUIRE(hw.read(0x8000) == 0xBA);
 
-        // Switch back to bank 0 (basic)
-        hw.write(0xFE30, 0x00);
-        REQUIRE(hw.read(0x8000) == 0x00);
+        // Switch to slot 13 (socket 1, DFS)
+        hw.write(0xFE30, 13);
+        REQUIRE(hw.read(0x8000) == 0xDF);
 
-        // Empty bank (bank 2) returns 0xFF
-        hw.write(0xFE30, 0x02);
+        // Empty socket (slot 0 -> socket 0) returns 0xFF
+        hw.write(0xFE30, 0);
         REQUIRE(hw.read(0x8000) == 0xFF);
     }
 

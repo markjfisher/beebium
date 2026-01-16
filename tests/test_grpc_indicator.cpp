@@ -62,7 +62,7 @@ public:
         auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
         auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
         std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
-        std::copy(basic.begin(), basic.end(), machine_.state().memory.basic_rom.data());
+        machine_.state().memory.load_basic(basic.data(), basic.size());
 #endif
         machine_.reset();
 
@@ -100,7 +100,7 @@ public:
         auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_2_0.rom");
         auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
         std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
-        std::copy(basic.begin(), basic.end(), machine_.state().memory.basic_rom.data());
+        machine_.state().memory.load_basic(basic.data(), basic.size());
 #endif
         machine_.reset();
 
@@ -696,8 +696,8 @@ TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][i
         auto basic = load_rom(basic_filepath.string());
         auto dfs = load_rom(dfs_filepath.string());
         std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
-        std::copy(basic.begin(), basic.end(), machine.state().memory.basic_rom.data());
-        std::copy(dfs.begin(), dfs.end(), machine.state().memory.dfs_rom.data());
+        machine.state().memory.load_basic(basic.data(), basic.size());
+        machine.state().memory.load_dfs(dfs.data(), dfs.size());
     }
 
     // Load and insert disc image

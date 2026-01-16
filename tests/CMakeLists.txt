@@ -16,6 +16,21 @@ add_executable(test_memory test_memory.cpp)
 target_link_libraries(test_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_memory)
 
+# Configurable slot tests
+add_executable(test_configurable_slot test_configurable_slot.cpp)
+target_link_libraries(test_configurable_slot PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_configurable_slot)
+
+# Aliased banked memory tests (Model B 4-socket ROM configuration)
+add_executable(test_aliased_banked_memory test_aliased_banked_memory.cpp)
+target_link_libraries(test_aliased_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_aliased_banked_memory)
+
+# Configurable banked memory tests (ROM/RAM board 16-slot configuration)
+add_executable(test_configurable_banked_memory test_configurable_banked_memory.cpp)
+target_link_libraries(test_configurable_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_configurable_banked_memory)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -383,4 +398,15 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
     )
     catch_discover_tests(test_grpc_audio)
+
+    # Sideways service tests
+    add_executable(test_grpc_sideways test_grpc_sideways.cpp)
+    target_link_libraries(test_grpc_sideways PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_sideways PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_grpc_sideways)
 endif()

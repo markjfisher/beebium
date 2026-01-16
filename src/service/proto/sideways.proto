@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package beebium;
+
+// Sideways ROM/RAM management service.
+//
+// Provides query and configuration of sideways ROM/RAM slots.
+// Supports both aliased (Model B with 4 sockets) and non-aliased
+// (ROM/RAM board with 16 independent slots) configurations.
+service SidewaysService {
+    // Query slot/socket configuration and current state
+    rpc GetSlotStatus(GetSlotStatusRequest) returns (GetSlotStatusResponse);
+
+    // Configure a slot (empty/rom/ram) with optional image data
+    rpc ConfigureSlot(ConfigureSlotRequest) returns (ConfigureSlotResponse);
+
+    // Read slot contents (for debugging/inspection)
+    rpc ReadSlotData(ReadSlotDataRequest) returns (ReadSlotDataResponse);
+
+    // Subscribe to slot/bank selection events
+    rpc SubscribeEvents(SubscribeEventsRequest) returns (stream SidewaysEvent);
+}
+
+// --- Slot Types ---
+
+enum SidewaysSlotType {
+    SIDEWAYS_SLOT_TYPE_EMPTY = 0;   // Returns 0xFF, ignores writes
+    SIDEWAYS_SLOT_TYPE_ROM = 1;     // Returns data, ignores writes
+    SIDEWAYS_SLOT_TYPE_RAM = 2;     // Returns data, accepts writes
+}
+
+// --- Get Slot Status ---
+
+message GetSlotStatusRequest {
+    // Empty - returns status of all slots/sockets
+}
+
+message GetSlotStatusResponse {
+    bool has_aliasing = 1;              // True for Model B (4 sockets with aliasing)
+    uint32 num_physical_slots = 2;      // 4 for Model B, 16 for ROM/RAM board
+    repeated SocketStatus sockets = 3;  // Physical sockets/slots
+    uint32 selected_bank = 4;           // Currently selected ROMSEL bank (0-15)
+}
+
+// Status of a physical socket (or independent slot for ROM/RAM board)
+message SocketStatus {
+    uint32 socket_index = 1;            // Physical socket/slot number
+    repeated uint32 aliased_slots = 2;  // Slot numbers that map here (e.g., [0,4,8,12])
+                                        // For non-aliased, contains only socket_index
+    SidewaysSlotType type = 3;                  // empty/rom/ram
+    bool populated = 4;                 // Has content loaded
+    string image_name = 5;              // Source filename/name if loaded
+    string socket_label = 6;            // Physical label (e.g., "IC52", "IC88") for Model B
+}
+
+// --- Configure Slot ---
+
+message ConfigureSlotRequest {
+    uint32 slot = 1;                    // Slot number (0-15), maps to socket on Model B
+    SidewaysSlotType type = 2;                  // empty/rom/ram
+    oneof image {
+        string url = 3;                 // URL to load (file:// for local)
+        bytes data = 4;                 // Raw image data (max 16384 bytes)
+    }
+    // For type=rom, image is optional (empty ROM if not specified)
+    // For type=ram, image is optional (uninitialised RAM if not specified)
+    // For type=empty, image is ignored
+}
+
+message ConfigureSlotResponse {
+    bool success = 1;
+    string error = 2;                   // Error message if !success
+    uint32 actual_socket = 3;           // Physical socket that was configured (for aliased)
+    string image_name = 4;              // Parsed name from ROM header (if applicable)
+}
+
+// --- Read Slot Data ---
+
+message ReadSlotDataRequest {
+    uint32 slot = 1;                    // Slot number (0-15)
+    uint32 offset = 2;                  // Offset within slot (0-16383)
+    uint32 length = 3;                  // Number of bytes to read (max 16384)
+}
+
+message ReadSlotDataResponse {
+    bool success = 1;
+    string error = 2;
+    bytes data = 3;                     // Requested data
+    SidewaysSlotType type = 4;                  // Current slot type
+}
+
+// --- Events ---
+
+message SubscribeEventsRequest {
+    uint32 min_interval_ms = 1;         // Minimum interval between updates (0 = immediate)
+}
+
+message SidewaysEvent {
+    uint64 timestamp_cycles = 1;        // Emulator cycle count
+    oneof event {
+        SlotConfiguredEvent slot_configured = 2;
+        BankSelectedEvent bank_selected = 3;
+    }
+}
+
+message SlotConfiguredEvent {
+    uint32 slot = 1;                    // Logical slot number (0-15)
+    uint32 socket = 2;                  // Physical socket number
+    SidewaysSlotType type = 3;
+    string image_name = 4;
+}
+
+message BankSelectedEvent {
+    uint32 bank = 1;                    // ROMSEL value (0-15)
+    uint32 socket = 2;                  // Physical socket being accessed
+}

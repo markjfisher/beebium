@@ -15,6 +15,7 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
+#include "beebium/devices/ConfigurableSlot.hpp"  // for SlotType enum
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
@@ -136,6 +137,74 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
 // Sentinel value to mark a slot as explicitly empty
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 
+// Sideways slot configuration (for --sideways argument)
+enum class SidewaysSlotType { Empty, Rom, Ram };
+
+struct SidewaysConfig {
+    uint8_t slot;
+    SidewaysSlotType type;
+    std::string image_filepath;  // Optional: filepath for ROM or pre-loaded RAM
+};
+
+// Parse --sideways argument: SLOT:TYPE[:IMAGE]
+// Examples:
+//   15:rom:bbc-basic_2.rom  - ROM with image
+//   4:ram                    - Empty RAM
+//   4:ram:preload.bin        - RAM with pre-loaded image
+//   2:empty                  - Empty slot
+SidewaysConfig parse_sideways_arg(const std::string& arg) {
+    SidewaysConfig config{};
+
+    // Find first colon (slot:type...)
+    auto first_colon = arg.find(':');
+    if (first_colon == std::string::npos) {
+        throw std::runtime_error("Invalid --sideways format: " + arg +
+            " (expected SLOT:TYPE[:IMAGE])");
+    }
+
+    // Parse slot number
+    std::string slot_str = arg.substr(0, first_colon);
+    int slot = std::stoi(slot_str);
+    if (slot < 0 || slot > 15) {
+        throw std::runtime_error("Invalid slot number: " + slot_str + " (must be 0-15)");
+    }
+    config.slot = static_cast<uint8_t>(slot);
+
+    // Find second colon (type:image...) or end
+    std::string remainder = arg.substr(first_colon + 1);
+    auto second_colon = remainder.find(':');
+
+    std::string type_str;
+    if (second_colon == std::string::npos) {
+        type_str = remainder;
+        // No image path
+    } else {
+        type_str = remainder.substr(0, second_colon);
+        config.image_filepath = remainder.substr(second_colon + 1);
+    }
+
+    // Parse type
+    if (type_str == "empty") {
+        config.type = SidewaysSlotType::Empty;
+        if (!config.image_filepath.empty()) {
+            throw std::runtime_error("--sideways: 'empty' type cannot have image path");
+        }
+    } else if (type_str == "rom") {
+        config.type = SidewaysSlotType::Rom;
+        if (config.image_filepath.empty()) {
+            throw std::runtime_error("--sideways: 'rom' type requires image path");
+        }
+    } else if (type_str == "ram") {
+        config.type = SidewaysSlotType::Ram;
+        // image_filepath is optional for RAM (pre-loaded battery-backed RAM)
+    } else {
+        throw std::runtime_error("Invalid --sideways type: " + type_str +
+            " (expected 'empty', 'rom', or 'ram')");
+    }
+
+    return config;
+}
+
 // Parse --wait argument value
 WaitMode parse_wait_arg(const std::string& value) {
     if (value == "cli") {
@@ -171,8 +240,13 @@ void print_usage(const char* program_name) {
               << "\n"
               << "Optional:\n"
               << "  --mos <filepath>         MOS ROM filepath (default: " << Memory::DEFAULT_MOS_ROM << ")\n"
-              << "  --rom <slot>:<filepath>  Load ROM into sideways slot (0-15)\n"
-              << "  --rom <slot>:            Leave slot empty (overrides default)\n"
+              << "  --sideways SLOT:TYPE[:IMAGE]\n"
+              << "                           Configure sideways slot (0-15):\n"
+              << "                           SLOT:rom:IMAGE - ROM with image file\n"
+              << "                           SLOT:ram[:IMAGE] - RAM (optional pre-load)\n"
+              << "                           SLOT:empty - Empty slot\n"
+              << "  --rom <slot>:<filepath>  (deprecated) Alias for --sideways SLOT:rom:IMAGE\n"
+              << "  --rom <slot>:            (deprecated) Alias for --sideways SLOT:empty\n"
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
               << "  --floppy <drive>:<url>   Load disc image into floppy drive (0 or 1)\n"
@@ -250,7 +324,8 @@ int server_main(int argc, char* argv[]) {
 
     std::string mos_filepath;
     std::string rom_dirpath;
-    std::map<uint8_t, std::string> rom_slots;  // slot -> filepath
+    std::map<uint8_t, std::string> rom_slots;  // slot -> filepath (deprecated --rom)
+    std::vector<SidewaysConfig> sideways_configs;  // slot configurations (--sideways)
     uint16_t port = DEFAULT_GRPC_PORT;
     std::array<std::string, 2> floppy_filepaths;  // drive 0 and 1
     std::string fdc_type;  // Disc controller type (for machines with sockets)
@@ -287,9 +362,22 @@ int server_main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--mos" && i + 1 < argc) {
             mos_filepath = argv[++i];
+        } else if (arg == "--sideways" && i + 1 < argc) {
+            auto config = parse_sideways_arg(argv[++i]);
+            sideways_configs.push_back(config);
         } else if (arg == "--rom" && i + 1 < argc) {
+            // Deprecated: convert to sideways config
             auto [slot, filepath] = parse_rom_arg(argv[++i]);
-            // Empty filepath means explicitly leave slot empty (override default)
+            SidewaysConfig config;
+            config.slot = slot;
+            if (filepath.empty()) {
+                config.type = SidewaysSlotType::Empty;
+            } else {
+                config.type = SidewaysSlotType::Rom;
+                config.image_filepath = filepath;
+            }
+            sideways_configs.push_back(config);
+            // Also keep in rom_slots for compatibility with existing logic
             rom_slots[slot] = filepath.empty() ? EMPTY_SLOT_MARKER : filepath;
         } else if (arg == "--rom-dir" && i + 1 < argc) {
             rom_dirpath = argv[++i];
@@ -445,26 +533,51 @@ int server_main(int argc, char* argv[]) {
                         break;
                 }
             } else {
-                // Model B ROM sockets
-                switch (slot) {
-                    case 15: case 0:  // BASIC
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.basic_rom.data());
-                        loaded = true;
-                        break;
-                    case 1:  // DFS
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.dfs_rom.data());
-                        loaded = true;
-                        break;
-                    default:
-                        break;
-                }
+                // Model B with AliasedBankedMemory (4 sockets, 4-way aliasing)
+                // Slots map to physical sockets via bottom 2 bits:
+                //   Socket 0 (IC52):  slots 0, 4, 8, 12
+                //   Socket 1 (IC88):  slots 1, 5, 9, 13  (DFS)
+                //   Socket 2 (IC100): slots 2, 6, 10, 14
+                //   Socket 3 (IC101): slots 3, 7, 11, 15 (BASIC)
+                machine.state().memory.load_rom(slot, rom_data.data(), rom_data.size());
+                loaded = true;
             }
 
             if (!loaded) {
                 std::cerr << "Warning: Slot " << static_cast<int>(slot)
                           << " is not a valid ROM socket for this machine, ROM ignored\n";
+            }
+        }
+
+        // Process sideways configs for RAM and empty slots (--sideways)
+        // ROM types are already handled via rom_slots above
+        for (const auto& config : sideways_configs) {
+            if (config.type == SidewaysSlotType::Rom) {
+                // Already handled via rom_slots loop above
+                continue;
+            }
+
+            // Model B with AliasedBankedMemory
+            if constexpr (requires { machine.state().memory.configure_slot(0, SlotType::Empty); }) {
+                if (config.type == SidewaysSlotType::Empty) {
+                    std::cout << "Slot " << static_cast<int>(config.slot) << ": configured as empty\n";
+                    machine.state().memory.configure_slot(config.slot, SlotType::Empty);
+                } else if (config.type == SidewaysSlotType::Ram) {
+                    std::cout << "Slot " << static_cast<int>(config.slot) << ": configured as RAM";
+                    machine.state().memory.configure_slot(config.slot, SlotType::Ram);
+
+                    // Optionally load pre-initialised data into RAM
+                    if (!config.image_filepath.empty()) {
+                        auto ram_path = RomPaths::find_rom(config.image_filepath);
+                        auto ram_data = load_file(ram_path);
+                        std::cout << " (pre-loaded from " << ram_path << ")";
+                        machine.state().memory.load_rom(config.slot, ram_data.data(), ram_data.size());
+                    }
+                    std::cout << "\n";
+                }
+            } else {
+                // Model B+ doesn't support dynamic slot configuration
+                std::cerr << "Warning: --sideways RAM/empty not supported on this machine type\n";
             }
         }
 

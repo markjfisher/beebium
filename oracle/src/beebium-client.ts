@@ -317,6 +317,22 @@ export class BeebiumClient {
     }
 
     /**
+     * Side-effect-free read from a specific memory region.
+     * Useful for reading ROM banks that aren't currently selected.
+     * @param regionName - Region name (e.g., "bank_0", "bank_15", "main_ram")
+     * @param address - Absolute address within the region's mapped range
+     * @param length - Number of bytes to read
+     */
+    async peekRegion(regionName: string, address: number, length: number = 1): Promise<Uint8Array> {
+        const response = await this.call<any>('PeekRegion', {
+            region_name: regionName,
+            address,
+            length,
+        });
+        return new Uint8Array(response.data);
+    }
+
+    /**
      * Write memory.
      */
     async writeMemory(address: number, data: Uint8Array): Promise<void> {

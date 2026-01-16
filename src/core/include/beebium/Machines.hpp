@@ -17,14 +17,20 @@
 #include "CpuPolicy.hpp"
 #include "ModelBHardware.hpp"
 #include "ModelBPlusHardware.hpp"
+#include "ModelBRomRamBoardHardware.hpp"
 
 namespace beebium {
 
 // Convenience type aliases for common machine configurations.
 // New configurations can be created by composing policies.
 
-// BBC Model B: NMOS 6502 + Model B hardware (32KB RAM)
+// BBC Model B: NMOS 6502 + Model B hardware (32KB RAM, 4-socket aliased sideways)
 using ModelB = Machine<Nmos6502, ModelBHardware>;
+
+// BBC Model B with ROM/RAM Board: NMOS 6502 + Model B hardware with 16-slot expansion
+// Features: 16 independent sideways slots (no aliasing), jsbeeb-style layout
+//   Slots 0-7: RAM, Slots 8-12: empty, Slot 13: ADFS, Slot 14: DFS, Slot 15: BASIC
+using ModelBRomRamBoard = Machine<Nmos6502, ModelBRomRamBoardHardware>;
 
 // BBC Model B+ 64K: NMOS 6502 + Model B+ hardware (64KB RAM with shadow/ANDY)
 using ModelBPlus = Machine<Nmos6502, ModelBPlusHardware>;
