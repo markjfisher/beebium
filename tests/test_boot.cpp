@@ -522,6 +522,70 @@ TEST_CASE("CRTC and Video ULA register access", "[boot][io]") {
     }
 }
 
+// ===========================================================================
+// Integration test: CRTC R12/R13 readability through memory map
+// ===========================================================================
+// From docs/empirical-databus-behaviour.md:
+// "Contrary to some documentation, CRTC registers R12 and R13 (screen start address)
+// **are readable** on BBC hardware. The BBC uses an S-type 6845 (Hitachi HD6845S or
+// compatible)."
+//
+// Test: ?&FE00=12:P.?&FE01 returns 40 in MODE 7 (the screen start address high byte).
+
+TEST_CASE("CRTC R12/R13 readable after Mode 7 boot", "[crtc][boot][integration]") {
+    if (!roms_available()) {
+        SKIP("ROM files not available at " BEEBIUM_ROM_DIR);
+    }
+
+    const auto rom_dir = std::filesystem::path(BEEBIUM_ROM_DIR);
+    ModelB machine;
+
+    auto mos = load_rom(rom_dir / "acorn-mos_1_20.rom");
+    auto basic = load_rom(rom_dir / "bbc-basic_2.rom");
+    machine.memory().load_mos(mos.data(), mos.size());
+    machine.memory().load_basic(basic.data(), basic.size());
+
+    machine.reset();
+
+    // Complete reset sequence
+    while (!M6502_IsAboutToExecute(&machine.cpu())) {
+        machine.step();
+    }
+
+    // Boot to Mode 7 BASIC prompt (2M instructions is sufficient)
+    for (int i = 0; i < 2000000; ++i) {
+        machine.step_instruction();
+    }
+
+    // Verify we're in Mode 7
+    uint8_t current_mode = machine.read(0x0355);
+    REQUIRE(current_mode == 7);
+
+    // Mode 7 uses CRTC bit 13 (0x2000) as teletext mode flag.
+    // R12 = 0x28 (40 decimal) sets bit 13 when shifted: 0x28 << 8 = 0x2800
+    // R13 = 0x00 (screen starts at character 0)
+    //
+    // This matches BASIC test: ?&FE00=12:P.?&FE01 returns 40
+
+    // Select R12 (screen start high)
+    machine.write(0xFE00, 12);
+    uint8_t r12 = machine.read(0xFE01);
+
+    // Select R13 (screen start low)
+    machine.write(0xFE00, 13);
+    uint8_t r13 = machine.read(0xFE01);
+
+    INFO("R12 = " << std::hex << (int)r12 << ", R13 = " << (int)r13);
+
+    // Mode 7: R12 = 0x28 (sets teletext flag bit 13)
+    REQUIRE(r12 == 0x28);
+    REQUIRE(r13 == 0x00);
+
+    // Verify screen_start accessor matches
+    uint16_t screen_start = machine.memory().crtc.screen_start();
+    REQUIRE(screen_start == 0x2800);
+}
+
 TEST_CASE("Addressable latch via System VIA", "[boot][latch]") {
     ModelB machine;
     machine.reset();
