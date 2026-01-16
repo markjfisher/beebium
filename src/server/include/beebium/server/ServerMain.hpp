@@ -365,6 +365,10 @@ int server_main(int argc, char* argv[]) {
         } else if (arg == "--sideways" && i + 1 < argc) {
             auto config = parse_sideways_arg(argv[++i]);
             sideways_configs.push_back(config);
+            // Also add ROM types to rom_slots for centralized ROM loading
+            if (config.type == SidewaysSlotType::Rom) {
+                rom_slots[config.slot] = config.image_filepath;
+            }
         } else if (arg == "--rom" && i + 1 < argc) {
             // Deprecated: convert to sideways config
             auto [slot, filepath] = parse_rom_arg(argv[++i]);

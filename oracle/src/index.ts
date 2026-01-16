@@ -7,7 +7,7 @@
 export { JsbeebOracle } from './jsbeeb-oracle.js';
 export { BeebiumClient, ServerStatusWatcher } from './beebium-client.js';
 export { DiffRunner, type DiffRunnerOptions } from './diff-runner.js';
-export { ServerFixture, createServerFixture, type ServerFixtureOptions, type RomSlot } from './server-fixture.js';
+export { ServerFixture, createServerFixture, type ServerFixtureOptions, type RomSlot, type SidewaysConfig } from './server-fixture.js';
 export { ServerStatusType } from './types.js';
 export type {
     CpuState,
@@ -19,4 +19,6 @@ export type {
     Divergence,
     AddressRange,
     ServerStatusEvent,
+    CycleDiffChange,
+    PcDivergence,
 } from './types.js';

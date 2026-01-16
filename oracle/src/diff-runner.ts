@@ -14,6 +14,8 @@ import type {
     ComparisonResult,
     Divergence,
     AddressRange,
+    CycleDiffChange,
+    PcDivergence,
 } from './types.js';
 import { JsbeebOracle } from './jsbeeb-oracle.js';
 import { BeebiumClient } from './beebium-client.js';
@@ -299,6 +301,164 @@ export class DiffRunner {
         }
 
         return divergences;
+    }
+
+    /**
+     * Bisect to find where cycle difference changes.
+     * Uses exponential probing followed by binary search.
+     *
+     * @param maxInstructions - Maximum instructions to search
+     * @param onProgress - Callback for progress updates
+     * @returns Array of points where cycle difference changed
+     */
+    async findCycleDifferenceChanges(
+        maxInstructions: number = 700_000,
+        onProgress?: (instruction: number, cycleDiff: number) => void
+    ): Promise<CycleDiffChange[]> {
+        const changes: CycleDiffChange[] = [];
+        let lastCycleDiff = 0;
+        let position = 0;
+
+        // Exponential probing to find regions of interest
+        const checkpoints = [
+            100, 500, 1000, 2000, 5000, 10000, 20000, 50000,
+            100000, 150000, 200000, 250000, 300000, 350000,
+            400000, 450000, 500000, 550000, 600000, 650000, 700000
+        ].filter(c => c <= maxInstructions);
+
+        for (const checkpoint of checkpoints) {
+            const toStep = checkpoint - position;
+            if (toStep > 0) {
+                await this.stepBoth(toStep);
+                position = checkpoint;
+            }
+
+            const jsbeebState = this.jsbeeb.getState();
+            const beebiumState = await this.beebium.getMachineState();
+            const cycleDiff = beebiumState.cycles - jsbeebState.cycles;
+
+            if (onProgress) {
+                onProgress(position, cycleDiff);
+            }
+
+            if (cycleDiff !== lastCycleDiff) {
+                changes.push({
+                    approximateInstruction: checkpoint,
+                    previousDiff: lastCycleDiff,
+                    newDiff: cycleDiff,
+                    delta: cycleDiff - lastCycleDiff,
+                    jsbeebCycles: jsbeebState.cycles,
+                    beebiumCycles: beebiumState.cycles,
+                    jsbeebPc: jsbeebState.cpu.pc,
+                    beebiumPc: beebiumState.cpu.pc,
+                });
+            }
+
+            lastCycleDiff = cycleDiff;
+        }
+
+        return changes;
+    }
+
+    /**
+     * Find where both emulators' PCs first diverge.
+     * Steps instruction-by-instruction from current position.
+     *
+     * @param maxInstructions - Maximum instructions to check
+     * @param onProgress - Callback for progress updates (called every 1000 instructions)
+     * @returns Divergence info or null if no divergence found
+     */
+    async findFirstPcDivergence(
+        maxInstructions: number = 50_000,
+        onProgress?: (instruction: number, pc: number, cycleDiff: number) => void
+    ): Promise<PcDivergence | null> {
+        for (let i = 0; i < maxInstructions; i++) {
+            // Get state BEFORE stepping
+            const jsbeebBefore = this.jsbeeb.getCpuState();
+            const beebiumBefore = await this.beebium.getCpuState();
+
+            // Step both by 1 instruction
+            await this.stepBoth(1);
+
+            // Get state AFTER stepping
+            const jsbeebAfter = this.jsbeeb.getCpuState();
+            const beebiumAfter = await this.beebium.getCpuState();
+
+            // Compare PCs
+            if (jsbeebAfter.pc !== beebiumAfter.pc) {
+                const mem = this.jsbeeb.readMemory(jsbeebBefore.pc, 8);
+                return {
+                    instruction: i + 1,
+                    jsbeebBefore,
+                    beebiumBefore,
+                    jsbeebAfter,
+                    beebiumAfter,
+                    memoryAtPc: mem,
+                    cycleDiff: (await this.beebium.getMachineState()).cycles - this.jsbeeb.getCycles(),
+                };
+            }
+
+            // Progress callback
+            if (onProgress && (i + 1) % 1000 === 0) {
+                const jsState = this.jsbeeb.getState();
+                const beeState = await this.beebium.getMachineState();
+                onProgress(i + 1, jsState.cpu.pc, beeState.cycles - jsState.cycles);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Synchronize both emulators after reset.
+     * Steps past initialization differences so both are at the same instruction.
+     *
+     * After reset:
+     * - jsbeeb: PC=$D9CD (reset vector), has executed 0 cycles
+     * - Beebium: May be at different state due to reset sequence simulation
+     *
+     * This method steps both until they reach a known sync point.
+     */
+    async synchronizeAfterReset(): Promise<{ syncPc: number; jsbeebCycles: number; beebiumCycles: number }> {
+        // Step jsbeeb to execute first instruction
+        await this.jsbeeb.stepInstructions(1);
+
+        // Step Beebium to execute first instruction
+        await this.beebium.stepInstruction(1);
+
+        const jsbeebState = this.jsbeeb.getCpuState();
+        const beebiumState = await this.beebium.getCpuState();
+
+        // If PCs match, we're synchronized
+        if (jsbeebState.pc === beebiumState.pc) {
+            return {
+                syncPc: jsbeebState.pc,
+                jsbeebCycles: this.jsbeeb.getCycles(),
+                beebiumCycles: (await this.beebium.getMachineState()).cycles,
+            };
+        }
+
+        // Otherwise, step until PCs match (up to 10 instructions)
+        for (let i = 0; i < 10; i++) {
+            if (jsbeebState.pc < beebiumState.pc) {
+                await this.jsbeeb.stepInstructions(1);
+            } else {
+                await this.beebium.stepInstruction(1);
+            }
+
+            const js = this.jsbeeb.getCpuState();
+            const bee = await this.beebium.getCpuState();
+
+            if (js.pc === bee.pc) {
+                return {
+                    syncPc: js.pc,
+                    jsbeebCycles: this.jsbeeb.getCycles(),
+                    beebiumCycles: (await this.beebium.getMachineState()).cycles,
+                };
+            }
+        }
+
+        throw new Error('Failed to synchronize emulators after reset');
     }
 
     /**

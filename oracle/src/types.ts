@@ -103,3 +103,47 @@ export interface ServerStatusEvent {
     message: string;
     shutdownGraceMs: number;
 }
+
+/**
+ * Record of a point where cycle difference between emulators changed.
+ * Used by findCycleDifferenceChanges() for coarse bisection.
+ */
+export interface CycleDiffChange {
+    /** Approximate instruction count where change was detected */
+    approximateInstruction: number;
+    /** Cycle difference before this change */
+    previousDiff: number;
+    /** Cycle difference after this change */
+    newDiff: number;
+    /** Change in cycle difference (newDiff - previousDiff) */
+    delta: number;
+    /** jsbeeb cycle count at this point */
+    jsbeebCycles: number;
+    /** Beebium cycle count at this point */
+    beebiumCycles: number;
+    /** jsbeeb PC at this point */
+    jsbeebPc: number;
+    /** Beebium PC at this point */
+    beebiumPc: number;
+}
+
+/**
+ * Detailed information about where PCs first diverged.
+ * Used by findFirstPcDivergence() for fine-grained analysis.
+ */
+export interface PcDivergence {
+    /** Instruction number where divergence occurred */
+    instruction: number;
+    /** jsbeeb CPU state before the diverging instruction */
+    jsbeebBefore: CpuState;
+    /** Beebium CPU state before the diverging instruction */
+    beebiumBefore: CpuState;
+    /** jsbeeb CPU state after the diverging instruction */
+    jsbeebAfter: CpuState;
+    /** Beebium CPU state after the diverging instruction */
+    beebiumAfter: CpuState;
+    /** Memory bytes at PC where divergence occurred (for disassembly) */
+    memoryAtPc: Uint8Array;
+    /** Cycle difference at point of divergence */
+    cycleDiff: number;
+}

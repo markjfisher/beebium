@@ -121,25 +121,25 @@ struct Via6522State {
     uint8_t sr = 0;      // Shift register
 
     // Timer 1
-    // Default latch values: 51962 cycles = ~52ms at 1MHz (~19.2Hz)
-    // These are arbitrary power-on defaults - the MOS will immediately
-    // reprogram Timer 1 during initialization. The values are chosen
-    // to be non-zero to avoid immediate timeout before MOS sets them.
-    uint8_t t1ll = 250;       // T1 latch low  (0xFA)
-    uint8_t t1lh = 202;       // T1 latch high (0xCA) -> 0xCAFA = 51962
-    uint16_t t1  = 0;         // T1 counter
+    // Per 6522 datasheet: T1/T2 counters and latches are NOT cleared at reset.
+    // Values are undefined. We match jsbeeb's choices (0x1FFFE internally,
+    // which is 0xFFFE in 16-bit) for differential testing compatibility.
+    uint8_t t1ll = 0xFE;      // T1 latch low  (matches jsbeeb 0x1FFFE & 0xFF)
+    uint8_t t1lh = 0xFF;      // T1 latch high (matches jsbeeb 0x1FFFE >> 8 & 0xFF)
+    uint16_t t1  = 0xFFFE;    // T1 counter (matches jsbeeb 0x1FFFE & 0xFFFF)
     bool t1_reload  = false;  // T1 needs reload
-    bool t1_pending = false;  // T1 is active and can generate IRQ
+    bool t1_pending = false;  // T1 is active and can generate IRQ (false = jsbeeb t1hit=true)
     bool t1_timeout = false;  // T1 timed out this cycle
     bool t1_started = false;  // T1CH was just written (new timer started)
-    uint8_t t1_pb7  = 0;      // PB7 output state from T1
+    uint8_t t1_pb7  = 0x80;   // PB7 output state from T1 (jsbeeb: t1_pb7=1, we use 0x80 for bit 7)
 
     // Timer 2
-    uint8_t t2ll = 0;         // T2 latch low
-    uint8_t t2lh = 0;         // T2 latch high
-    uint16_t t2  = 0;         // T2 counter
+    // Same rationale as T1 - match jsbeeb's undefined value choices
+    uint8_t t2ll = 0xFE;      // T2 latch low  (matches jsbeeb)
+    uint8_t t2lh = 0xFF;      // T2 latch high (matches jsbeeb)
+    uint16_t t2  = 0xFFFE;    // T2 counter (matches jsbeeb)
     bool t2_reload  = false;  // T2 needs reload
-    bool t2_pending = false;  // T2 is active and can generate IRQ
+    bool t2_pending = false;  // T2 is active and can generate IRQ (false = jsbeeb t2hit=true)
     bool t2_timeout = false;  // T2 timed out this cycle
     bool t2_count   = true;   // T2 counting enabled
 

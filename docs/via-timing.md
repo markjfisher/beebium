@@ -278,6 +278,52 @@ Our test suite validates these behaviors:
 | D | 5 | T2 pulse counting mode |
 | E | 7 | Integrated CPU+VIA timing |
 
+## Reset Behavior
+
+Per the [MOS 6522 datasheet](http://archive.6502.org/datasheets/mos_6522_preliminary_nov_1977.pdf):
+
+> "Reset clears all R6522 internal registers to logic 0 (except T1 and T2 latches and counters and the Shift Register)"
+
+### Registers Cleared at Reset
+
+| Register | Value After Reset |
+|----------|-------------------|
+| ORA, ORB | 0x00 |
+| DDRA, DDRB | 0x00 |
+| IFR | 0x00 |
+| IER | 0x00 |
+| ACR | 0x00 |
+| PCR | 0x00 |
+
+### Registers NOT Cleared at Reset (Undefined)
+
+The datasheet explicitly excludes these registers from clearing, meaning their values are undefined:
+
+| Register | Beebium Value | Rationale |
+|----------|---------------|-----------|
+| T1 counter | 0xFFFE | Matches jsbeeb for differential testing |
+| T1 latch | 0xFFFE | Matches jsbeeb for differential testing |
+| T2 counter | 0xFFFE | Matches jsbeeb for differential testing |
+| T2 latch | 0xFFFE | Matches jsbeeb for differential testing |
+| Shift Register | 0x00 | Both jsbeeb and Beebium use 0 (technically incorrect but consistent) |
+
+### Differential Testing Compatibility
+
+Where the datasheet specifies undefined values, Beebium matches jsbeeb's choices to minimize divergence during differential testing. jsbeeb uses an internal 17-bit counter representation (0x1FFFE) for timers; the lower 16 bits (0xFFFE) are used in Beebium.
+
+The timer `_pending` flags are initialized to `false`, equivalent to jsbeeb's `t1hit = t2hit = true`, preventing spurious timer interrupts before MOS initializes the timers.
+
+### Control Lines at Reset
+
+The CA1, CA2, CB1, CB2 control lines are inputs (except when configured as outputs via PCR). Their state after reset depends on external hardware, not the VIA itself. In the BBC Micro:
+
+- **CA1**: Connected to vertical sync (negative edge triggers interrupt)
+- **CA2**: Connected to keyboard (positive edge triggers interrupt)
+- **CB1**: Connected to A/D conversion complete
+- **CB2**: Connected to light pen strobe
+
+The IFR flags for these lines will be set when transitions occur on the external signals, not at reset.
+
 ## References
 
 - [Stardot Forum: VIA Emulation Quality](https://stardot.org.uk/forums/viewtopic.php?t=16138)

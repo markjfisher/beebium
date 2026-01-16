@@ -45,14 +45,29 @@ export interface RomSlot {
     filepath: string;
 }
 
+/**
+ * Sideways slot configuration for B-RomRam model.
+ * Matches the --sideways CLI format: slot:type[:filepath]
+ */
+export interface SidewaysConfig {
+    /** Slot number (0-15) */
+    slot: number;
+    /** Slot type: 'rom', 'ram', or 'empty' */
+    type: 'rom' | 'ram' | 'empty';
+    /** Filepath for ROM, or optional pre-load content for RAM */
+    filepath?: string;
+}
+
 export interface ServerFixtureOptions {
     /** Path to beebium-model-b executable */
     executablePath?: string;
-    /** Model type: 'B' or 'B+' (default: 'B') */
-    model?: 'B' | 'B+';
-    /** Disc controller to install (Model B only): 'acorn-1770' or 'none' */
+    /** Model type: 'B', 'B+', or 'B-RomRam' (default: 'B') */
+    model?: 'B' | 'B+' | 'B-RomRam';
+    /** Disc controller to install (Model B and B-RomRam only): 'acorn-1770' or 'none' */
     fdc?: 'acorn-1770' | 'none';
-    /** Sideways ROMs to load */
+    /** Sideways slot configuration (B-RomRam only) */
+    sideways?: SidewaysConfig[];
+    /** Legacy sideways ROMs to load (use sideways for B-RomRam) */
     roms?: RomSlot[];
     /** Additional command-line arguments */
     args?: string[];
@@ -60,7 +75,7 @@ export interface ServerFixtureOptions {
     timeout?: number;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ServerFixtureOptions, 'executablePath' | 'args' | 'fdc' | 'roms'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ServerFixtureOptions, 'executablePath' | 'args' | 'fdc' | 'roms' | 'sideways'>> = {
     model: 'B',
     timeout: 5000,
 };
@@ -71,8 +86,8 @@ const PORT_REGEX = /Listening on port (\d+)/;
 /**
  * Finds the Beebium server executable.
  */
-function findExecutable(model: 'B' | 'B+'): string {
-    const suffix = model === 'B+' ? '-plus' : '';
+function findExecutable(model: 'B' | 'B+' | 'B-RomRam'): string {
+    const suffix = model === 'B+' ? '-plus' : model === 'B-RomRam' ? '-romram' : '';
     return `/Users/rjs/Code/beebium/build/src/server/beebium-model-b${suffix}`;
 }
 
@@ -126,9 +141,10 @@ export class ServerFixture {
     private process: ChildProcess | null = null;
     private client: BeebiumClient | null = null;
     private port: number = 0;
-    private readonly model: 'B' | 'B+';
+    private readonly model: 'B' | 'B+' | 'B-RomRam';
     private readonly timeout: number;
     private readonly fdc?: 'acorn-1770' | 'none';
+    private readonly sideways: SidewaysConfig[];
     private readonly roms: RomSlot[];
     private readonly extraArgs: string[];
     private readonly executablePath: string;
@@ -137,6 +153,7 @@ export class ServerFixture {
         this.model = options.model ?? DEFAULT_OPTIONS.model;
         this.timeout = options.timeout ?? DEFAULT_OPTIONS.timeout;
         this.fdc = options.fdc;
+        this.sideways = options.sideways ?? [];
         this.roms = options.roms ?? [];
         this.extraArgs = options.args ?? [];
         this.executablePath = options.executablePath ?? findExecutable(this.model);
@@ -154,12 +171,26 @@ export class ServerFixture {
             '--wait=api',       // Controlled startup via gRPC
         ];
 
-        // Disc controller (Model B only - has socket)
+        // Disc controller (Model B and B-RomRam have socket)
         if (this.fdc) {
             args.push('--fdc', this.fdc);
         }
 
-        // Sideways ROMs
+        // Sideways slot configuration (B-RomRam model)
+        for (const slot of this.sideways) {
+            if (slot.type === 'empty') {
+                args.push('--sideways', `${slot.slot}:empty`);
+            } else if (slot.type === 'ram') {
+                args.push('--sideways', slot.filepath
+                    ? `${slot.slot}:ram:${slot.filepath}`
+                    : `${slot.slot}:ram`);
+            } else {
+                // ROM requires a filepath
+                args.push('--sideways', `${slot.slot}:rom:${slot.filepath}`);
+            }
+        }
+
+        // Legacy sideways ROMs (Model B)
         for (const rom of this.roms) {
             args.push('--rom', `${rom.slot}:${rom.filepath}`);
         }

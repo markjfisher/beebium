@@ -13,12 +13,15 @@ describe('State Convergence', () => {
 
     beforeAll(async () => {
         // Both configured with WD1770 disc controller + DFS + ADFS:
-        // - jsbeeb B1770: WD1770 controller, DFS 2.26, ADFS 1.30 (ROMs loaded top-down from slot 15)
-        // - Beebium Model B: Acorn 1770 controller, DFS in slot 1, ADFS in slot 4
+        // - jsbeeb B1770: WD1770 controller, DFS 2.26, ADFS 1.30, sideways RAM in slots 0-7
+        // - Beebium B-RomRam: 16-slot ROM/RAM board with identical layout
         //
-        // Model B has ROM sockets at slots 0, 1, 4, 15 only.
-        // jsbeeb loads ROMs into different slots, but both machines boot into DFS.
-        // The same DFS ROM (verified by checksum) should produce identical behavior.
+        // B-RomRam model provides JsbeebStyle default layout:
+        //   Slots 0-7: Sideways RAM
+        //   Slots 8-12: Empty
+        //   Slot 13: ADFS ROM
+        //   Slot 14: DFS ROM
+        //   Slot 15: BASIC ROM
         oracle = new JsbeebOracle();
         await oracle.initialize('B1770');
 
@@ -26,11 +29,14 @@ describe('State Convergence', () => {
         const romDir = '/Users/rjs/Code/beebium/roms';
         fixture = new ServerFixture({
             timeout: 10000,
-            model: 'B',
+            model: 'B-RomRam',
             fdc: 'acorn-1770',
-            roms: [
-                { slot: 1, filepath: `${romDir}/acorn-dfs_2_26.rom` },
-                { slot: 4, filepath: `${romDir}/acorn-adfs_1_30.rom` },
+            sideways: [
+                // Default JsbeebStyle already provides slots 0-7 as RAM
+                // Override slot 13 and 14 with our ROMs (same as jsbeeb)
+                { slot: 13, type: 'rom', filepath: `${romDir}/acorn-adfs_1_30.rom` },
+                { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
+                // Slot 15 has BASIC by default
             ],
         });
         client = await fixture.start();
@@ -378,4 +384,269 @@ describe('State Convergence', () => {
 
         expect(true).toBe(true);
     }, 30000);
+
+    describe('Cycle-by-cycle bisection', () => {
+        it('finds where cycle difference accumulates (using reusable tool)', async () => {
+            // Reset both emulators
+            oracle.reset();
+            await client.reset();
+
+            console.log('\n=== Cycle Difference Accumulation Analysis ===\n');
+            console.log('Using DiffRunner.findCycleDifferenceChanges() to track cycle drift...\n');
+
+            // Use the reusable bisection tool
+            const changes = await runner.findCycleDifferenceChanges(
+                600_000,
+                (instruction, cycleDiff) => {
+                    console.log(`  ${instruction.toLocaleString()} instructions, cycle diff: ${cycleDiff}`);
+                }
+            );
+
+            // Report findings
+            const jsbeebFinal = oracle.getState();
+            const beebiumFinal = await client.getMachineState();
+
+            console.log(`\nFinal state:`);
+            console.log(`  jsbeeb: PC=$${jsbeebFinal.cpu.pc.toString(16).toUpperCase()}, cycles=${jsbeebFinal.cycles}`);
+            console.log(`  beebium: PC=$${beebiumFinal.cpu.pc.toString(16).toUpperCase()}, cycles=${beebiumFinal.cycles}`);
+            console.log(`  Total cycle difference: ${beebiumFinal.cycles - jsbeebFinal.cycles}`);
+
+            if (changes.length > 0) {
+                console.log(`\n${changes.length} point(s) where cycle difference changed:`);
+                for (const change of changes) {
+                    console.log(`  At ~${change.approximateInstruction.toLocaleString()}: ${change.previousDiff} -> ${change.newDiff} (delta: ${change.delta})`);
+                    console.log(`    jsbeeb PC=$${change.jsbeebPc.toString(16).toUpperCase()}, beebium PC=$${change.beebiumPc.toString(16).toUpperCase()}`);
+                }
+            } else {
+                console.log('\nCycle difference was constant throughout boot!');
+                console.log('This means the difference comes from initial state, not execution divergence.');
+            }
+
+            expect(true).toBe(true);
+        }, 300000);
+
+        it('finds first PC divergence (using reusable tool)', async () => {
+            // Reset both emulators
+            oracle.reset();
+            await client.reset();
+
+            console.log('\n=== Fine-Grained PC Divergence Search ===\n');
+            console.log('Using DiffRunner.findFirstPcDivergence() to find where PCs first differ...\n');
+
+            // Use the reusable bisection tool
+            const divergence = await runner.findFirstPcDivergence(
+                50_000,
+                (instruction, pc, cycleDiff) => {
+                    console.log(`  ${instruction.toLocaleString()} instructions, PC=$${pc.toString(16).toUpperCase()}, cycle diff=${cycleDiff}`);
+                }
+            );
+
+            if (divergence) {
+                console.log(`\nPC DIVERGENCE at instruction ${divergence.instruction}:`);
+                console.log(`  Before step:`);
+                console.log(`    jsbeeb: PC=$${divergence.jsbeebBefore.pc.toString(16).toUpperCase().padStart(4,'0')} A=$${divergence.jsbeebBefore.a.toString(16).padStart(2,'0')} X=$${divergence.jsbeebBefore.x.toString(16).padStart(2,'0')} Y=$${divergence.jsbeebBefore.y.toString(16).padStart(2,'0')} P=$${divergence.jsbeebBefore.p.toString(16).padStart(2,'0')}`);
+                console.log(`    beebium: PC=$${divergence.beebiumBefore.pc.toString(16).toUpperCase().padStart(4,'0')} A=$${divergence.beebiumBefore.a.toString(16).padStart(2,'0')} X=$${divergence.beebiumBefore.x.toString(16).padStart(2,'0')} Y=$${divergence.beebiumBefore.y.toString(16).padStart(2,'0')} P=$${divergence.beebiumBefore.p.toString(16).padStart(2,'0')}`);
+                console.log(`  After step:`);
+                console.log(`    jsbeeb: PC=$${divergence.jsbeebAfter.pc.toString(16).toUpperCase().padStart(4,'0')} A=$${divergence.jsbeebAfter.a.toString(16).padStart(2,'0')} X=$${divergence.jsbeebAfter.x.toString(16).padStart(2,'0')} Y=$${divergence.jsbeebAfter.y.toString(16).padStart(2,'0')} P=$${divergence.jsbeebAfter.p.toString(16).padStart(2,'0')}`);
+                console.log(`    beebium: PC=$${divergence.beebiumAfter.pc.toString(16).toUpperCase().padStart(4,'0')} A=$${divergence.beebiumAfter.a.toString(16).padStart(2,'0')} X=$${divergence.beebiumAfter.x.toString(16).padStart(2,'0')} Y=$${divergence.beebiumAfter.y.toString(16).padStart(2,'0')} P=$${divergence.beebiumAfter.p.toString(16).padStart(2,'0')}`);
+
+                // Show memory at divergence point
+                console.log(`  Memory at PC=$${divergence.jsbeebBefore.pc.toString(16).toUpperCase()}: ${Array.from(divergence.memoryAtPc).map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
+
+                // Decode flags
+                const jsN = (divergence.jsbeebAfter.p & 0x80) ? 1 : 0;
+                const jsV = (divergence.jsbeebAfter.p & 0x40) ? 1 : 0;
+                const jsZ = (divergence.jsbeebAfter.p & 0x02) ? 1 : 0;
+                const jsC = (divergence.jsbeebAfter.p & 0x01) ? 1 : 0;
+                const beeN = (divergence.beebiumAfter.p & 0x80) ? 1 : 0;
+                const beeV = (divergence.beebiumAfter.p & 0x40) ? 1 : 0;
+                const beeZ = (divergence.beebiumAfter.p & 0x02) ? 1 : 0;
+                const beeC = (divergence.beebiumAfter.p & 0x01) ? 1 : 0;
+                console.log(`  Flags: jsbeeb: N=${jsN} V=${jsV} Z=${jsZ} C=${jsC}`);
+                console.log(`         beebium: N=${beeN} V=${beeV} Z=${beeZ} C=${beeC}`);
+                console.log(`  Cycle difference: ${divergence.cycleDiff}`);
+            } else {
+                console.log(`\nNo PC divergence found in first 50,000 instructions.`);
+                console.log('Both emulators execute the same code path.');
+                console.log('Cycle difference must come from cycle counting, not branching.');
+            }
+
+            expect(true).toBe(true);
+        }, 600000);  // 10 minute timeout for instruction-by-instruction stepping
+
+        it('finds divergence after synchronizing initial state', async () => {
+            // Reset both emulators
+            oracle.reset();
+            await client.reset();
+
+            console.log('\n=== PC Divergence Search After Synchronization ===\n');
+            console.log('Using DiffRunner.synchronizeAfterReset() to align initial state...\n');
+
+            // Synchronize both emulators past initialization differences
+            let initialCycleOffset = 0;
+            try {
+                const sync = await runner.synchronizeAfterReset();
+                console.log(`Synchronized at PC=$${sync.syncPc.toString(16).toUpperCase()}`);
+                console.log(`  jsbeeb cycles: ${sync.jsbeebCycles}`);
+                console.log(`  beebium cycles: ${sync.beebiumCycles}`);
+                initialCycleOffset = sync.beebiumCycles - sync.jsbeebCycles;
+                console.log(`  Initial cycle offset: ${initialCycleOffset}\n`);
+            } catch (e) {
+                console.log(`Synchronization failed: ${e}`);
+                console.log('Continuing with unsynchronized state...\n');
+            }
+
+            // Search for PC divergence through the full boot sequence (700K instructions)
+            const maxInstructions = 700_000;
+            const divergence = await runner.findFirstPcDivergence(
+                maxInstructions,
+                (instruction, pc, cycleDiff) => {
+                    if (instruction % 50000 === 0) {
+                        const adjustedDiff = cycleDiff - initialCycleOffset;
+                        console.log(`  ${instruction.toLocaleString()} instructions, PC=$${pc.toString(16).toUpperCase()}, cycle diff=${cycleDiff} (adjusted: ${adjustedDiff})`);
+                    }
+                }
+            );
+
+            if (divergence) {
+                console.log(`\nPC DIVERGENCE at instruction ${divergence.instruction}:`);
+                console.log(`  Before: jsbeeb PC=$${divergence.jsbeebBefore.pc.toString(16).toUpperCase()} beebium PC=$${divergence.beebiumBefore.pc.toString(16).toUpperCase()}`);
+                console.log(`  After:  jsbeeb PC=$${divergence.jsbeebAfter.pc.toString(16).toUpperCase()} beebium PC=$${divergence.beebiumAfter.pc.toString(16).toUpperCase()}`);
+                console.log(`  Memory: ${Array.from(divergence.memoryAtPc).map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
+                console.log(`  Cycle diff: ${divergence.cycleDiff} (adjusted: ${divergence.cycleDiff - initialCycleOffset})`);
+            } else {
+                const jsbeebFinal = oracle.getState();
+                const beebiumFinal = await client.getMachineState();
+                const finalDiff = beebiumFinal.cycles - jsbeebFinal.cycles;
+                const adjustedDiff = finalDiff - initialCycleOffset;
+
+                console.log(`\nNo PC divergence found in ${maxInstructions.toLocaleString()} instructions after sync.`);
+                console.log('Both emulators execute identical code paths!');
+                console.log(`\nFinal state:`);
+                console.log(`  jsbeeb: PC=$${jsbeebFinal.cpu.pc.toString(16).toUpperCase()}, cycles=${jsbeebFinal.cycles}`);
+                console.log(`  beebium: PC=$${beebiumFinal.cpu.pc.toString(16).toUpperCase()}, cycles=${beebiumFinal.cycles}`);
+                console.log(`  Total cycle difference: ${finalDiff} (adjusted for reset: ${adjustedDiff})`);
+            }
+
+            expect(true).toBe(true);
+        }, 1200000);  // 20 minute timeout for full boot
+
+        it('captures VIA state at divergence point ($DD13)', async () => {
+            // Reset both emulators
+            oracle.reset();
+            await client.reset();
+
+            console.log('\n=== VIA State at Divergence Point ===\n');
+
+            // Synchronize first
+            const sync = await runner.synchronizeAfterReset();
+            console.log(`Synchronized at PC=$${sync.syncPc.toString(16).toUpperCase()}`);
+
+            // Step to just before the divergence (177,441 instructions after sync)
+            // The divergence is at instruction 177,442
+            const targetInstruction = 177440;
+            console.log(`Stepping to instruction ${targetInstruction}...`);
+
+            await runner.stepBoth(targetInstruction);
+
+            const jsbeebState = oracle.getState();
+            const beebiumState = await client.getMachineState();
+
+            console.log(`\nAt instruction ${targetInstruction}:`);
+            console.log(`  jsbeeb PC=$${jsbeebState.cpu.pc.toString(16).toUpperCase()}`);
+            console.log(`  beebium PC=$${beebiumState.cpu.pc.toString(16).toUpperCase()}`);
+
+            // Step one more instruction to get to $DD13
+            await runner.stepBoth(1);
+            const js1 = oracle.getState();
+            const bee1 = await client.getMachineState();
+            console.log(`\nAfter step 1: jsbeeb PC=$${js1.cpu.pc.toString(16).toUpperCase()}, beebium PC=$${bee1.cpu.pc.toString(16).toUpperCase()}`);
+
+            // If we're at $DD13, capture VIA state before executing the BCC
+            if (js1.cpu.pc === 0xDD13 || bee1.cpu.pc === 0xDD13) {
+                console.log('\n=== VIA State Just Before BCC at $DD13 ===\n');
+
+                // Read VIA registers directly
+                // System VIA IFR at $FE4D
+                const jsIFR = oracle.readMemory(0xFE4D, 1)[0];
+                const beeIFR = (await client.peekMemory(0xFE4D, 1))[0];
+                console.log(`System VIA IFR ($FE4D):`);
+                console.log(`  jsbeeb:  0x${jsIFR.toString(16).padStart(2, '0')} = ${jsIFR.toString(2).padStart(8, '0')}`);
+                console.log(`  beebium: 0x${beeIFR.toString(16).padStart(2, '0')} = ${beeIFR.toString(2).padStart(8, '0')}`);
+
+                // System VIA IER at $FE4E
+                const jsIER = oracle.readMemory(0xFE4E, 1)[0];
+                const beeIER = (await client.peekMemory(0xFE4E, 1))[0];
+                console.log(`\nSystem VIA IER ($FE4E):`);
+                console.log(`  jsbeeb:  0x${jsIER.toString(16).padStart(2, '0')} = ${jsIER.toString(2).padStart(8, '0')}`);
+                console.log(`  beebium: 0x${beeIER.toString(16).padStart(2, '0')} = ${beeIER.toString(2).padStart(8, '0')}`);
+
+                // MOS workspace at $0279 (used in the AND mask)
+                const jsMask = oracle.readMemory(0x0279, 1)[0];
+                const beeMask = (await client.peekMemory(0x0279, 1))[0];
+                console.log(`\nMOS mask ($0279):`);
+                console.log(`  jsbeeb:  0x${jsMask.toString(16).padStart(2, '0')}`);
+                console.log(`  beebium: 0x${beeMask.toString(16).padStart(2, '0')}`);
+
+                // Calculate what the code computes
+                const jsMasked = jsIFR & jsMask & jsIER;
+                const beeMasked = beeIFR & beeMask & beeIER;
+                console.log(`\nMasked result (IFR & $0279 & IER):`);
+                console.log(`  jsbeeb:  0x${jsMasked.toString(16).padStart(2, '0')} = ${jsMasked.toString(2).padStart(8, '0')}`);
+                console.log(`  beebium: 0x${beeMasked.toString(16).padStart(2, '0')} = ${beeMasked.toString(2).padStart(8, '0')}`);
+
+                // After two RORs, bit 1 of masked result ends up in Carry
+                const jsCarry = (jsMasked >> 1) & 1;
+                const beeCarry = (beeMasked >> 1) & 1;
+                console.log(`\nAfter 2x ROR, Carry would be (bit 1 of masked):`);
+                console.log(`  jsbeeb:  ${jsCarry} (BCC ${jsCarry ? 'not taken' : 'TAKEN'})`);
+                console.log(`  beebium: ${beeCarry} (BCC ${beeCarry ? 'not taken' : 'TAKEN'})`);
+
+                // Decode IFR bits
+                // BBC Micro System VIA control line assignments:
+                //   CA1 = vertical sync (active low)
+                //   CA2 = keyboard (directly from keyboard matrix)
+                //   CB1 = A/D conversion complete
+                //   CB2 = light pen strobe
+                console.log('\n=== IFR Bit Meanings ===');
+                const ifrBits = [
+                    'CA2 interrupt (keyboard)',
+                    'CA1 interrupt (vertical sync)',
+                    'Shift register',
+                    'CB2 interrupt (light pen)',
+                    'CB1 interrupt (A/D complete)',
+                    'Timer 2',
+                    'Timer 1',
+                    'IRQ active'
+                ];
+                for (let i = 0; i < 8; i++) {
+                    const jsb = (jsIFR >> i) & 1;
+                    const beeb = (beeIFR >> i) & 1;
+                    const match = jsb === beeb ? '' : ' <-- DIFFERS!';
+                    console.log(`  Bit ${i} (${ifrBits[i]}): jsbeeb=${jsb} beebium=${beeb}${match}`);
+                }
+            } else {
+                console.log('\nNot at $DD13 - may need to adjust instruction count');
+                console.log('Stepping a few more to find divergence...');
+
+                // Step a few more
+                for (let i = 0; i < 5; i++) {
+                    const jsBefore = oracle.getCpuState();
+                    const beeBefore = await client.getCpuState();
+                    await runner.stepBoth(1);
+                    const jsAfter = oracle.getCpuState();
+                    const beeAfter = await client.getCpuState();
+
+                    console.log(`  Step ${i + 1}: jsbeeb $${jsBefore.pc.toString(16).toUpperCase()}->${jsAfter.pc.toString(16).toUpperCase()}, beebium $${beeBefore.pc.toString(16).toUpperCase()}->${beeAfter.pc.toString(16).toUpperCase()}`);
+
+                    if (jsAfter.pc !== beeAfter.pc) {
+                        console.log(`  ^ PC DIVERGENCE detected!`);
+                        break;
+                    }
+                }
+            }
+
+            expect(true).toBe(true);
+        }, 600000);
+    });
 });

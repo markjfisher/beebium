@@ -60,12 +60,16 @@ public:
     }
 
     // Initialize jsbeeb-style layout: slots 0-7 RAM, 8-15 ROM
+    // Empty slots are filled with 0x00 to match jsbeeb's Uint8Array default,
+    // enabling cycle-accurate differential testing.
     void init_jsbeeb_layout() {
         for (uint8_t i = 0; i < 8; ++i) {
             slots_[i].set_type(SlotType::Ram);
+            std::memset(slots_[i].data(), 0x00, ConfigurableSlot::size);
         }
         for (uint8_t i = 8; i < 16; ++i) {
             slots_[i].set_type(SlotType::Rom);
+            std::memset(slots_[i].data(), 0x00, ConfigurableSlot::size);
         }
     }
 
