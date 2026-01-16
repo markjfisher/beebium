@@ -38,9 +38,14 @@ TEST_CASE("ModelBHardware initialization", "[memory][init]") {
     }
 
     SECTION("MOS ROM returns 0x00 initially (unloaded)") {
-        // MOS area (excluding I/O at 0xFE00-0xFEFF)
-        for (uint16_t addr = 0xC000; addr < 0xFE00; ++addr) {
+        // MOS ROM area (excluding I/O overlay at 0xFC00-0xFEFF)
+        // Lower MOS ROM: 0xC000-0xFBFF
+        for (uint16_t addr = 0xC000; addr < 0xFC00; ++addr) {
             REQUIRE(hw.read(addr) == 0x00);  // Unloaded MOS ROM is zero
+        }
+        // Upper MOS ROM (vector page): 0xFF00-0xFFFF
+        for (uint16_t addr = 0xFF00; addr != 0x0000; ++addr) {  // Wrap-around at 0xFFFF
+            REQUIRE(hw.read(addr) == 0x00);
         }
     }
 
@@ -91,8 +96,9 @@ TEST_CASE("ModelBHardware ROM is read-only", "[memory][rom]") {
 
     SECTION("MOS ROM can be read") {
         REQUIRE(hw.read(0xC000) == 0x42);
-        // Note: 0xFExx is I/O region, not MOS ROM
-        REQUIRE(hw.read(0xFDFF) == 0x42);
+        // Note: 0xFC00-0xFEFF is I/O region (FRED/JIM/SHEILA), not MOS ROM
+        REQUIRE(hw.read(0xFBFF) == 0x42);  // Last address before I/O overlay
+        REQUIRE(hw.read(0xFF00) == 0x42);  // First address after I/O overlay (vector page)
     }
 
     SECTION("Writes to MOS ROM are ignored") {

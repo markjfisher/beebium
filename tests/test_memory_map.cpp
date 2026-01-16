@@ -533,3 +533,210 @@ TEST_CASE("ModelBHardware", "[memory_map][integration]") {
 TEST_CASE("ModelBHardware satisfies MemoryMappedDevice", "[memory_map][concepts]") {
     STATIC_REQUIRE(MemoryMappedDevice<ModelBHardware>);
 }
+
+// =============================================================================
+// Open Bus Behavior Tests
+// =============================================================================
+
+TEST_CASE("unmapped_read_value function", "[memory_map][open_bus]") {
+    SECTION("FRED/JIM (0xFC00-0xFDFF) always returns 0xFF in Accurate mode") {
+        // FRED region
+        REQUIRE(unmapped_read_value(0xFC00, 0x42, OpenBusMode::Accurate) == 0xFF);
+        REQUIRE(unmapped_read_value(0xFCFF, 0x42, OpenBusMode::Accurate) == 0xFF);
+        // JIM region
+        REQUIRE(unmapped_read_value(0xFD00, 0x42, OpenBusMode::Accurate) == 0xFF);
+        REQUIRE(unmapped_read_value(0xFDFF, 0x42, OpenBusMode::Accurate) == 0xFF);
+    }
+
+    SECTION("Slow 1MHz regions return 0x00 in Accurate mode") {
+        // CRTC/ACIA region (0xFE00-0xFE1F is 1MHz)
+        REQUIRE(unmapped_read_value(0xFE00, 0x42, OpenBusMode::Accurate) == 0x00);
+        REQUIRE(unmapped_read_value(0xFE1F, 0x42, OpenBusMode::Accurate) == 0x00);
+
+        // System VIA region (0xFE40-0xFE5F is 1MHz)
+        REQUIRE(unmapped_read_value(0xFE40, 0x42, OpenBusMode::Accurate) == 0x00);
+        REQUIRE(unmapped_read_value(0xFE5F, 0x42, OpenBusMode::Accurate) == 0x00);
+
+        // User VIA region (0xFE60-0xFE7F is 1MHz)
+        REQUIRE(unmapped_read_value(0xFE60, 0x42, OpenBusMode::Accurate) == 0x00);
+        REQUIRE(unmapped_read_value(0xFE7F, 0x42, OpenBusMode::Accurate) == 0x00);
+
+        // ADC region (0xFEC0-0xFEDF is 1MHz)
+        REQUIRE(unmapped_read_value(0xFEC0, 0x42, OpenBusMode::Accurate) == 0x00);
+        REQUIRE(unmapped_read_value(0xFEDF, 0x42, OpenBusMode::Accurate) == 0x00);
+    }
+
+    SECTION("Fast 2MHz regions return last bus value in Accurate mode") {
+        // Video ULA region (0xFE20-0xFE3F is fast)
+        REQUIRE(unmapped_read_value(0xFE20, 0x42, OpenBusMode::Accurate) == 0x42);
+        REQUIRE(unmapped_read_value(0xFE3F, 0xAB, OpenBusMode::Accurate) == 0xAB);
+
+        // Disc controller region (0xFE80-0xFE9F is fast)
+        REQUIRE(unmapped_read_value(0xFE80, 0xCD, OpenBusMode::Accurate) == 0xCD);
+        REQUIRE(unmapped_read_value(0xFE9F, 0xEF, OpenBusMode::Accurate) == 0xEF);
+
+        // Econet region (0xFEA0-0xFEBF is fast)
+        REQUIRE(unmapped_read_value(0xFEA0, 0x12, OpenBusMode::Accurate) == 0x12);
+
+        // Tube region (0xFEE0-0xFEFF is fast)
+        REQUIRE(unmapped_read_value(0xFEE0, 0x34, OpenBusMode::Accurate) == 0x34);
+        REQUIRE(unmapped_read_value(0xFEFF, 0x56, OpenBusMode::Accurate) == 0x56);
+    }
+
+    SECTION("JsbeebCompat mode always returns 0xFF") {
+        // FRED/JIM
+        REQUIRE(unmapped_read_value(0xFC00, 0x42, OpenBusMode::JsbeebCompat) == 0xFF);
+        // Slow 1MHz
+        REQUIRE(unmapped_read_value(0xFE40, 0x42, OpenBusMode::JsbeebCompat) == 0xFF);
+        // Fast 2MHz
+        REQUIRE(unmapped_read_value(0xFE80, 0x42, OpenBusMode::JsbeebCompat) == 0xFF);
+        // Normal RAM range (unmapped)
+        REQUIRE(unmapped_read_value(0x5000, 0x42, OpenBusMode::JsbeebCompat) == 0xFF);
+    }
+
+    SECTION("AllZero mode always returns 0x00") {
+        // FRED/JIM
+        REQUIRE(unmapped_read_value(0xFC00, 0x42, OpenBusMode::AllZero) == 0x00);
+        // Slow 1MHz
+        REQUIRE(unmapped_read_value(0xFE40, 0x42, OpenBusMode::AllZero) == 0x00);
+        // Fast 2MHz
+        REQUIRE(unmapped_read_value(0xFE80, 0x42, OpenBusMode::AllZero) == 0x00);
+        // Normal RAM range (unmapped)
+        REQUIRE(unmapped_read_value(0x5000, 0x42, OpenBusMode::AllZero) == 0x00);
+    }
+}
+
+TEST_CASE("MemoryMap open bus modes", "[memory_map][open_bus]") {
+    Ram<256> ram;
+
+    // Create a memory map with a gap for testing unmapped reads
+    auto memory = MemoryMap{
+        make_region<0x0000, 0x00FF>(ram)
+    };
+
+    SECTION("Default mode is Accurate") {
+        REQUIRE(memory.open_bus_mode() == OpenBusMode::Accurate);
+    }
+
+    SECTION("Mode can be changed") {
+        memory.set_open_bus_mode(OpenBusMode::JsbeebCompat);
+        REQUIRE(memory.open_bus_mode() == OpenBusMode::JsbeebCompat);
+
+        memory.set_open_bus_mode(OpenBusMode::AllZero);
+        REQUIRE(memory.open_bus_mode() == OpenBusMode::AllZero);
+
+        memory.set_open_bus_mode(OpenBusMode::Accurate);
+        REQUIRE(memory.open_bus_mode() == OpenBusMode::Accurate);
+    }
+}
+
+TEST_CASE("MemoryMap bus value tracking", "[memory_map][open_bus]") {
+    Ram<256> ram;
+
+    auto memory = MemoryMap{
+        make_region<0x0000, 0x00FF>(ram)
+    };
+
+    SECTION("Initial bus value is 0xFF") {
+        REQUIRE(memory.last_bus_value() == 0xFF);
+    }
+
+    SECTION("Read updates bus value") {
+        ram.write(0x10, 0x42);
+        memory.read(0x10);
+        REQUIRE(memory.last_bus_value() == 0x42);
+    }
+
+    SECTION("Write updates bus value") {
+        memory.write(0x20, 0xAB);
+        REQUIRE(memory.last_bus_value() == 0xAB);
+    }
+
+    SECTION("Fast unmapped read returns last bus value in Accurate mode") {
+        // First, put a known value on the bus via a write
+        memory.write(0x30, 0x81);
+        REQUIRE(memory.last_bus_value() == 0x81);
+
+        // Read from unmapped fast 2MHz address (Tube region)
+        uint8_t value = memory.read(0xFEE0);
+        REQUIRE(value == 0x81);
+        REQUIRE(memory.last_bus_value() == 0x81);
+    }
+
+    SECTION("Slow unmapped read returns 0x00 in Accurate mode") {
+        // Put a value on the bus
+        memory.write(0x30, 0x81);
+
+        // Read from unmapped slow 1MHz address (VIA region)
+        uint8_t value = memory.read(0xFE60);
+        REQUIRE(value == 0x00);
+        REQUIRE(memory.last_bus_value() == 0x00);
+    }
+
+    SECTION("FRED/JIM unmapped read returns 0xFF in Accurate mode") {
+        // Put a value on the bus
+        memory.write(0x30, 0x81);
+
+        // Read from FRED
+        uint8_t value = memory.read(0xFC00);
+        REQUIRE(value == 0xFF);
+        REQUIRE(memory.last_bus_value() == 0xFF);
+    }
+}
+
+TEST_CASE("MemoryMap Tube detection sequence simulation", "[memory_map][open_bus]") {
+    // This test simulates the MOS ROM's Tube detection sequence
+    Ram<256> ram;
+
+    auto memory = MemoryMap{
+        make_region<0x0000, 0x00FF>(ram)
+    };
+
+    SECTION("Tube detection with accurate mode") {
+        // MOS writes 0x81 to Tube register, then reads it back
+        // With no Tube hardware, the fast bus should return the last written value
+
+        // STA $FEE0 - Write 0x81 to Tube address
+        memory.write(0xFEE0, 0x81);
+        REQUIRE(memory.last_bus_value() == 0x81);
+
+        // LDA $FEE0 - Read back from Tube address
+        uint8_t value = memory.read(0xFEE0);
+
+        // Fast 2MHz unmapped should return last bus value
+        REQUIRE(value == 0x81);
+    }
+
+    SECTION("Tube detection with JsbeebCompat mode") {
+        memory.set_open_bus_mode(OpenBusMode::JsbeebCompat);
+
+        // STA $FEE0
+        memory.write(0xFEE0, 0x81);
+
+        // LDA $FEE0 - In JsbeebCompat, always returns 0xFF
+        uint8_t value = memory.read(0xFEE0);
+        REQUIRE(value == 0xFF);
+    }
+}
+
+TEST_CASE("ModelBHardware open bus configuration", "[memory_map][open_bus][integration]") {
+    ModelBHardware hw;
+
+    SECTION("Default mode is Accurate") {
+        REQUIRE(hw.open_bus_mode() == OpenBusMode::Accurate);
+    }
+
+    SECTION("Mode can be changed via hardware accessor") {
+        hw.set_open_bus_mode(OpenBusMode::JsbeebCompat);
+        REQUIRE(hw.open_bus_mode() == OpenBusMode::JsbeebCompat);
+    }
+
+    SECTION("FRED/JIM (0xFC00-0xFDFF) returns 0xFF") {
+        // FRED/JIM I/O regions overlay the MOS ROM and return 0xFF
+        // when no expansion hardware is connected (74LS245 transceiver behavior)
+        REQUIRE(hw.read(0xFC00) == 0xFF);
+        REQUIRE(hw.read(0xFCFF) == 0xFF);
+        REQUIRE(hw.read(0xFD00) == 0xFF);
+        REQUIRE(hw.read(0xFDFF) == 0xFF);
+    }
+}
