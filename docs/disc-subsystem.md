@@ -330,7 +330,7 @@ ModelBHardware
 
 3. **Controller includes control register** - The control register is board-specific (Acorn vs Opus vs Watford have different bit layouts), so it's encapsulated within each controller implementation.
 
-4. **Empty socket returns 0xFF** - Open bus behavior when no controller installed.
+4. **Empty socket returns 0xFF** - Open bus behaviour when no controller installed.
 
 ### DiscControllerSocket
 
