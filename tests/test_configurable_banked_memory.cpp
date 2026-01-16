@@ -63,7 +63,7 @@ TEST_CASE("ConfigurableBankedMemory jsbeeb layout", "[configurable_memory][layou
     SECTION("ROM slots ignore writes") {
         mem.select_bank(15);
         mem.write(0x1000, 0x42);
-        REQUIRE(mem.read(0x1000) == 0xFF);  // ROM was not loaded, returns 0xFF
+        REQUIRE(mem.read(0x1000) == 0x00);  // ROM was not loaded, returns 0x00 (jsbeeb Uint8Array default)
     }
 
     SECTION("init_jsbeeb_layout can be called after construction") {
