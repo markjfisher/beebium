@@ -39,6 +39,11 @@ final class KeyboardMTKView: MTKView {
     // MARK: - Keyboard Events
 
     override func keyDown(with event: NSEvent) {
+        // Ignore keys pressed while Command is held - these are host shortcuts
+        if event.modifierFlags.contains(.command) {
+            return
+        }
+
         // Ignore macOS key repeat - BBC MOS handles its own auto-repeat
         if event.isARepeat {
             return
