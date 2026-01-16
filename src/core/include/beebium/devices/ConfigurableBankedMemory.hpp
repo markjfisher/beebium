@@ -60,8 +60,18 @@ public:
     }
 
     // Initialize jsbeeb-style layout: slots 0-7 RAM, 8-15 ROM
-    // Empty slots are filled with 0x00 to match jsbeeb's Uint8Array default,
-    // enabling cycle-accurate differential testing.
+    //
+    // Empty slots are filled with 0x00 to match jsbeeb's current Uint8Array
+    // default, enabling cycle-accurate differential testing.
+    //
+    // NOTE: jsbeeb's 0x00 for empty ROM slots is technically incorrect.
+    // Real BBC hardware has 6.8K pull-down resistors on the data bus, but
+    // sideways ROM reads are fast 2MHz accesses where capacitance holds the
+    // previous bus value (typically 0xFE-0xFF). Returning 0x00 is slow 1MHz
+    // behaviour. See docs/empirical-databus-behaviour.md for details.
+    //
+    // This function intentionally matches jsbeeb's actual behaviour (not
+    // correct hardware behaviour) until jsbeeb is fixed upstream.
     void init_jsbeeb_layout() {
         for (uint8_t i = 0; i < 8; ++i) {
             slots_[i].set_type(SlotType::Ram);
