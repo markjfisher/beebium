@@ -128,32 +128,46 @@ struct IndicatorView: View {
         Double(value) / 255.0
     }
 
-    /// Outline color: darker and more saturated than fill (like macOS traffic light buttons)
+    /// Compute a perceptually darker outline color using CIE LAB color space.
+    ///
+    /// Simple RGB or HSB darkening (e.g., multiplying brightness by 0.8) produces
+    /// inconsistent results across hues: green appears to darken less than red due
+    /// to how human vision perceives different wavelengths.
+    ///
+    /// By converting to LAB and reducing the L (lightness) component by a fixed amount,
+    /// we achieve perceptually uniform darkening regardless of hue. The a and b components
+    /// (which encode chromaticity) are preserved, maintaining the color's hue and saturation.
     private var outlineColor: Color {
-        // Convert to NSColor to access HSB components
         let nsColor = NSColor(color)
-        var hue: CGFloat = 0
-        var saturation: CGFloat = 0
-        var brightness: CGFloat = 0
-        var alpha: CGFloat = 0
 
-        // Get HSB components (convert to calibrated RGB color space first)
-        if let calibrated = nsColor.usingColorSpace(.sRGB) {
-            calibrated.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        } else {
-            // Fallback if conversion fails
+        // Access LAB color space via Core Graphics (NSColorSpace doesn't expose it directly)
+        guard let cgLabSpace = CGColorSpace(name: CGColorSpace.genericLab),
+              let nsLabSpace = NSColorSpace(cgColorSpace: cgLabSpace) else {
             return color.opacity(0.6)
         }
 
-        // Adjust: ~12% less brightness, ~10% more saturation, clamped to [0, 1]
-        let adjustedBrightness = min(1, max(0, brightness * 0.88))
-        let adjustedSaturation = min(1, max(0, saturation * 1.10 + 0.05))
+        guard let labColor = nsColor.usingColorSpace(nsLabSpace) else {
+            return color.opacity(0.6)
+        }
 
-        return Color(
-            hue: Double(hue),
-            saturation: Double(adjustedSaturation),
-            brightness: Double(adjustedBrightness)
-        )
+        // Extract LAB components: L (lightness 0-100), a and b (chromaticity)
+        var components = [CGFloat](repeating: 0, count: 4)
+        labColor.getComponents(&components)
+        let L = components[0]
+        let a = components[1]
+        let b = components[2]
+
+        // Reduce lightness by a fixed perceptual amount (20 units in LAB space)
+        // This provides consistent perceived contrast across all indicator colors
+        let darkerL = max(0, L - 20)
+
+        // Create darker color in LAB and convert back to sRGB
+        let darkerLab = NSColor(colorSpace: nsLabSpace, components: [darkerL, a, b, 1.0], count: 4)
+        guard let darkerRGB = darkerLab.usingColorSpace(NSColorSpace.sRGB) else {
+            return color.opacity(0.6)
+        }
+
+        return Color(nsColor: darkerRGB)
     }
 }
 

@@ -69,13 +69,15 @@ public:
     // @param indicators Pointer to Indicators instance
     // @param indicator_name Name for the activity LED (e.g., "floppy-0-activity-led")
     // @param label Human-readable label (e.g., "Floppy 0")
-    DiscDrive(Indicators& indicators, const std::string& indicator_name, const std::string& label)
+    // @param color LED color as wavelength (e.g., "568nm") - default green
+    DiscDrive(Indicators& indicators, const std::string& indicator_name, const std::string& label,
+              const std::string& color = "568nm")
         : indicators_(&indicators)
     {
         activity_led_id_ = indicators_->register_indicator(
             indicator_name,
             std::make_unique<PassthroughFilter>(),
-            {{"label", label}, {"color", "590nm"}, {"shape", "rectangular"}}
+            {{"label", label}, {"color", color}, {"shape", "rectangular"}}
         );
     }
 

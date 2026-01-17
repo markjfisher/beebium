@@ -120,8 +120,8 @@ public:
     SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
 
     // Disc subsystem
-    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0"};
-    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1"};
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
 
     // Disc controller socket at 0xFE80-0xFE9F
     DiscControllerSocket disc_socket;

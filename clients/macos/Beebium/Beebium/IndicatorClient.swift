@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import Foundation
 import GRPC
 import SwiftUI
@@ -271,13 +272,109 @@ final class IndicatorClient: ObservableObject {
     }
 
     /// Parse wavelength color: "625nm"
+    /// Converts wavelength to RGB, then normalizes perceptual brightness using LAB color space
+    /// so all indicator colors appear equally bright regardless of hue.
     private func parseWavelengthColor(_ wavelength: String) -> Color {
         guard let value = Double(wavelength.replacingOccurrences(of: "nm", with: "")) else {
             return .gray
         }
 
         let (r, g, b) = wavelengthToRGB(value)
-        return Color(red: r, green: g, blue: b)
+        let targetL = targetLightnessForWavelength(value)
+        return normalizePerceptualBrightness(r: r, g: g, b: b, targetLightness: targetL)
+    }
+
+    /// Compute target LAB lightness for a wavelength, compensating for Helmholtz-Kohlrausch effect.
+    ///
+    /// The Helmholtz-Kohlrausch (H-K) effect causes saturated colors to appear brighter than
+    /// their measured luminance would suggest. This effect varies by hue: red and blue show
+    /// a strong H-K effect (appearing brighter), while green/yellow show a weaker effect.
+    ///
+    /// To achieve perceptually uniform brightness across different LED colors, we apply a
+    /// compensation curve that adjusts the target LAB lightness based on wavelength:
+    /// - Colors with strong H-K effect (red, blue) use lower L values
+    /// - Colors with weak H-K effect (green, yellow, amber) use higher L values
+    ///
+    /// The control points were tuned by visual comparison of indicator LEDs at different
+    /// wavelengths displayed simultaneously on screen.
+    private func targetLightnessForWavelength(_ lambda: Double) -> CGFloat {
+        // Control points tuned by visual inspection to achieve perceptually equal brightness.
+        // Linear interpolation between points for intermediate wavelengths.
+        struct ControlPoint {
+            let wavelength: Double
+            let lightness: CGFloat
+        }
+
+        let controlPoints: [ControlPoint] = [
+            ControlPoint(wavelength: 380, lightness: 60),  // violet (strong H-K effect)
+            ControlPoint(wavelength: 480, lightness: 65),  // blue (strong H-K effect)
+            ControlPoint(wavelength: 520, lightness: 75),  // cyan-green (weak H-K effect)
+            ControlPoint(wavelength: 568, lightness: 75),  // green (weak H-K effect)
+            ControlPoint(wavelength: 590, lightness: 80),  // amber (weak H-K effect)
+            ControlPoint(wavelength: 625, lightness: 65),  // red (strong H-K effect)
+            ControlPoint(wavelength: 780, lightness: 60),  // deep red (strong H-K effect)
+        ]
+
+        // Find surrounding control points and interpolate
+        for i in 0..<(controlPoints.count - 1) {
+            let p1 = controlPoints[i]
+            let p2 = controlPoints[i + 1]
+            if lambda >= p1.wavelength && lambda <= p2.wavelength {
+                let t = (lambda - p1.wavelength) / (p2.wavelength - p1.wavelength)
+                return p1.lightness + CGFloat(t) * (p2.lightness - p1.lightness)
+            }
+        }
+
+        // Outside range - use nearest endpoint
+        if lambda < controlPoints.first!.wavelength {
+            return controlPoints.first!.lightness
+        }
+        return controlPoints.last!.lightness
+    }
+
+    /// Normalize perceptual brightness using CIE LAB color space.
+    ///
+    /// LAB separates lightness (L) from chromaticity (a, b), allowing us to adjust
+    /// perceived brightness while preserving the hue and saturation of the color.
+    /// This is used to apply Helmholtz-Kohlrausch compensation: we set L to the
+    /// target value from the H-K compensation curve while keeping a and b unchanged.
+    ///
+    /// - Parameters:
+    ///   - r, g, b: RGB components (0.0-1.0)
+    ///   - targetLightness: Target L value in LAB space (0-100), from H-K compensation curve
+    /// - Returns: Color with adjusted perceptual brightness
+    private func normalizePerceptualBrightness(r: Double, g: Double, b: Double, targetLightness: CGFloat) -> Color {
+        // Access LAB color space via Core Graphics (NSColorSpace doesn't expose it directly)
+        guard let cgLabSpace = CGColorSpace(name: CGColorSpace.genericLab),
+              let nsLabSpace = NSColorSpace(cgColorSpace: cgLabSpace) else {
+            return Color(red: r, green: g, blue: b)
+        }
+
+        // Create NSColor in sRGB space
+        let nsColor = NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+
+        // Convert to LAB color space
+        guard let labColor = nsColor.usingColorSpace(nsLabSpace) else {
+            return Color(red: r, green: g, blue: b)
+        }
+
+        // Get LAB components (preserving a and b chromaticity)
+        var components = [CGFloat](repeating: 0, count: 4)
+        labColor.getComponents(&components)
+        let a = components[1]
+        let bComponent = components[2]
+
+        // Create new color with target lightness, preserving a and b (chromaticity)
+        let normalizedLab = NSColor(
+            colorSpace: nsLabSpace,
+            components: [targetLightness, a, bComponent, 1.0],
+            count: 4
+        )
+        guard let normalizedRGB = normalizedLab.usingColorSpace(NSColorSpace.sRGB) else {
+            return Color(red: r, green: g, blue: b)
+        }
+
+        return Color(nsColor: normalizedRGB)
     }
 
     /// Approximate visible spectrum wavelength to RGB

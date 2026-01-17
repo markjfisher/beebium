@@ -195,8 +195,8 @@ public:
 
     // Disc controller (WD1770 built-in on Model B+)
     WD1770 disc_controller;
-    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0"};
-    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1"};
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
 
 private:
     // B+ specific paging registers
