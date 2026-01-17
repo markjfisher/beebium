@@ -208,8 +208,44 @@ export class JsbeebOracle {
 
     /**
      * Extract VIA state from a jsbeeb VIA object.
+     *
+     * Timer value normalization:
+     *
+     * jsbeeb stores timers in a "doubled" internal format (via.js:71 initializes
+     * to 0x1FFFE). The internal counter decrements by 2 per 1MHz tick. When the
+     * CPU reads the timer, jsbeeb converts via: ((t1c + 1) >>> 1) & 0xFF.
+     *
+     * Beebium stores timers as 16-bit values and reports the "effective" value
+     * via effective_t1(), which is (t1 - 1) - predicting what the counter will
+     * be after the current cycle's decrement at PHI2 trailing edge.
+     *
+     * To normalize for comparison, we extract jsbeeb's internal value masked to
+     * 16 bits, then subtract 1 to match Beebium's effective value semantic:
+     *
+     *   jsbeeb internal 0x1FFFE → masked 0xFFFE → effective 0xFFFD
+     *   Beebium internal 0xFFFE → effective 0xFFFD
+     *
+     * This ensures both report the same value for the same underlying timer state.
+     *
+     * Latch value normalization:
+     *
+     * Timer 1 has a 16-bit latch, Timer 2 only has an 8-bit latch (the 6522
+     * doesn't latch T2CH). jsbeeb stores both in doubled format. We normalize:
+     *   - t1l: mask to 16 bits and convert from doubled format
+     *   - t2l: mask to 8 bits (only low byte is meaningful)
      */
     private extractViaState(via: any): ViaState {
+        // Extract and normalize timer counters to match Beebium's effective value
+        // (what the CPU would read, including the pending decrement)
+        const t1c = ((via.t1c & 0xFFFF) - 1) & 0xFFFF;
+        const t2c = ((via.t2c & 0xFFFF) - 1) & 0xFFFF;
+
+        // Normalize latches:
+        // - t1l: convert from doubled format to 16-bit
+        // - t2l: only low 8 bits are meaningful (6522 doesn't latch T2CH)
+        const t1l = via.t1l & 0xFFFF;
+        const t2l = via.t2l & 0xFF;  // Only low byte - T2 has 8-bit latch
+
         return {
             ora: via.ora,
             orb: via.orb,
@@ -217,10 +253,10 @@ export class JsbeebOracle {
             irb: via.irb,
             ddra: via.ddra,
             ddrb: via.ddrb,
-            t1c: via.t1c & 0xFFFF,
-            t1l: via.t1l & 0xFFFF,
-            t2c: via.t2c & 0xFFFF,
-            t2l: via.t2l & 0xFFFF,
+            t1c,
+            t1l,
+            t2c,
+            t2l,
             acr: via.acr,
             pcr: via.pcr,
             ifr: via.ifr,

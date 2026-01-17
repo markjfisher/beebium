@@ -12,7 +12,21 @@ export interface CpuState {
     p: number;      // Processor status flags (0-255)
 }
 
-/** 6522 VIA state */
+/**
+ * 6522 VIA state.
+ *
+ * Timer value normalization:
+ * The t1c and t2c fields report the "effective" timer value - what the CPU
+ * would read if it accessed the timer register at this moment. This includes
+ * the pending decrement that will occur at the trailing edge of the current
+ * cycle. Both jsbeeb and Beebium wrappers normalize to this convention,
+ * despite having different internal representations:
+ *
+ *   - jsbeeb uses doubled internal counters; wrapper applies ((t1c & 0xFFFF) - 1) & 0xFFFF
+ *   - Beebium reports effective_t1() which is already (internal - 1)
+ *
+ * See jsbeeb-oracle.ts extractViaState() for full normalization details.
+ */
 export interface ViaState {
     ora: number;    // Output Register A
     orb: number;    // Output Register B
@@ -20,10 +34,10 @@ export interface ViaState {
     irb: number;    // Input Register B
     ddra: number;   // Data Direction Register A
     ddrb: number;   // Data Direction Register B
-    t1c: number;    // Timer 1 counter
-    t1l: number;    // Timer 1 latch
-    t2c: number;    // Timer 2 counter
-    t2l: number;    // Timer 2 latch
+    t1c: number;    // Timer 1 counter (effective value, normalized)
+    t1l: number;    // Timer 1 latch (16-bit)
+    t2c: number;    // Timer 2 counter (effective value, normalized)
+    t2l: number;    // Timer 2 latch (8-bit only - 6522 doesn't latch T2CH)
     acr: number;    // Auxiliary Control Register
     pcr: number;    // Peripheral Control Register
     ifr: number;    // Interrupt Flag Register
