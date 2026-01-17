@@ -154,7 +154,7 @@ TEST_CASE("ConfigurableSlot type switching", "[configurable_slot][type]") {
         REQUIRE(slot.is_ram());
     }
 
-    SECTION("Can switch from ROM to RAM") {
+    SECTION("Switching from ROM to RAM clears data to 0x00") {
         slot.set_type(SlotType::Rom);
         std::array<uint8_t, 16384> data;
         data.fill(0x42);
@@ -162,35 +162,35 @@ TEST_CASE("ConfigurableSlot type switching", "[configurable_slot][type]") {
 
         slot.set_type(SlotType::Ram);
 
-        // Data should be preserved
-        REQUIRE(slot.read(0x0000) == 0x42);
+        // Data is cleared to 0x00 (matches real hardware power-on state)
+        REQUIRE(slot.read(0x0000) == 0x00);
 
-        // But now writable
+        // Now writable
         slot.write(0x0000, 0xAA);
         REQUIRE(slot.read(0x0000) == 0xAA);
     }
 
-    SECTION("Can switch from RAM to ROM") {
+    SECTION("Switching from RAM to ROM clears data to 0xFF") {
         slot.set_type(SlotType::Ram);
         slot.write(0x0000, 0x42);
 
         slot.set_type(SlotType::Rom);
 
-        // Data should be preserved
-        REQUIRE(slot.read(0x0000) == 0x42);
+        // Data is cleared to 0xFF (unpopulated socket behavior)
+        REQUIRE(slot.read(0x0000) == 0xFF);
 
-        // But now read-only
+        // Now read-only
         slot.write(0x0000, 0xAA);
-        REQUIRE(slot.read(0x0000) == 0x42);
+        REQUIRE(slot.read(0x0000) == 0xFF);
     }
 
-    SECTION("Switching to Empty still allows reading internal data") {
+    SECTION("Switching to Empty clears data to 0xFF") {
         slot.set_type(SlotType::Ram);
         slot.write(0x0000, 0x42);
 
         slot.set_type(SlotType::Empty);
 
-        // Empty always returns 0xFF regardless of internal data
+        // Empty clears data and returns 0xFF
         REQUIRE(slot.read(0x0000) == 0xFF);
     }
 }

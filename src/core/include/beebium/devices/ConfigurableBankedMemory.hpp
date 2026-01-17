@@ -26,16 +26,9 @@ namespace beebium {
 // addresses a unique slot. This is typical of third-party expansion boards
 // like those from Watford Electronics or modern replacements.
 //
-// Common configurations:
-//
-// jsbeeb-style layout:
-//   Slots 0-7: RAM (sideways RAM banks)
-//   Slot 8-12: Empty or user ROMs
-//   Slot 13: ADFS ROM
-//   Slot 14: DFS ROM
-//   Slot 15: BASIC ROM
-//
-// Each slot can be configured as Empty, Rom, or Ram at runtime.
+// All slots start as Empty (returning 0xFF). Configure via configure_slot()
+// or load_rom_to_slot(). For differential testing with jsbeeb, configure
+// slots 0-7 as RAM via CLI or API.
 //
 class ConfigurableBankedMemory {
     std::array<ConfigurableSlot, 16> slots_;
@@ -45,43 +38,8 @@ public:
     static constexpr size_t num_banks = 16;
     static constexpr size_t bank_size = 16384;
 
+    // Default constructor: all slots Empty (return 0xFF)
     ConfigurableBankedMemory() = default;
-
-    // Initialize with a specific layout
-    enum class Layout {
-        AllEmpty,    // All slots empty (default)
-        JsbeebStyle  // Slots 0-7 RAM, 8-15 ROM
-    };
-
-    explicit ConfigurableBankedMemory(Layout layout) {
-        if (layout == Layout::JsbeebStyle) {
-            init_jsbeeb_layout();
-        }
-    }
-
-    // Initialize jsbeeb-style layout: slots 0-7 RAM, 8-15 ROM
-    //
-    // Empty slots are filled with 0x00 to match jsbeeb's current Uint8Array
-    // default, enabling cycle-accurate differential testing.
-    //
-    // NOTE: jsbeeb's 0x00 for empty ROM slots is technically incorrect.
-    // Real BBC hardware has 6.8K pull-down resistors on the data bus, but
-    // sideways ROM reads are fast 2MHz accesses where capacitance holds the
-    // previous bus value (typically 0xFE-0xFF). Returning 0x00 is slow 1MHz
-    // behaviour. See docs/empirical-databus-behaviour.md for details.
-    //
-    // This function intentionally matches jsbeeb's actual behaviour (not
-    // correct hardware behaviour) until jsbeeb is fixed upstream.
-    void init_jsbeeb_layout() {
-        for (uint8_t i = 0; i < 8; ++i) {
-            slots_[i].set_type(SlotType::Ram);
-            std::memset(slots_[i].data(), 0x00, ConfigurableSlot::size);
-        }
-        for (uint8_t i = 8; i < 16; ++i) {
-            slots_[i].set_type(SlotType::Rom);
-            std::memset(slots_[i].data(), 0x00, ConfigurableSlot::size);
-        }
-    }
 
     // MemoryMappedDevice interface
     uint8_t read(uint16_t offset) const {

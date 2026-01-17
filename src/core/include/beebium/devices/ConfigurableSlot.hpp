@@ -79,8 +79,14 @@ public:
 
     void set_type(SlotType type) {
         type_ = type;
-        // When changing to Empty, optionally clear data
-        // For now, preserve data to allow inspecting previous contents
+        // Initialize data appropriately for the new type:
+        // - RAM: 0x00 (matches real hardware power-on state and jsbeeb Uint8Array default)
+        // - ROM/Empty: 0xFF (matches unpopulated socket / open bus behavior)
+        if (type == SlotType::Ram) {
+            data_.fill(0x00);
+        } else {
+            data_.fill(0xFF);
+        }
     }
 
     // Check if slot has been populated (non-0xFF content for Rom, any data for Ram)

@@ -48,12 +48,9 @@ namespace beebium {
 // - Full 4-bit ROMSEL decoding (16 independent slots, no aliasing)
 // - Each slot can be configured as ROM or RAM at runtime
 //
-// Default jsbeeb-style layout:
-//   Slots 0-7:  Sideways RAM (8 x 16KB banks)
-//   Slots 8-12: Empty (available for user ROMs)
-//   Slot 13:    ADFS ROM
-//   Slot 14:    DFS ROM
-//   Slot 15:    BASIC ROM
+// All slots start as Empty (returning 0xFF). Slots are configured via:
+// - CLI options: --sideways 0:ram, --sideways 15:rom:basic.rom
+// - API: configure_slot(), load_rom_to_slot()
 //
 // Unlike stock Model B (which has 4-way aliasing), each slot here is independent.
 //
@@ -86,8 +83,9 @@ public:
     Rom<16384> mos_rom;
 
     // Sideways ROM/RAM using ConfigurableBankedMemory (16 independent slots)
+    // All slots start Empty - configure via CLI or API
     using SidewaysType = ConfigurableBankedMemory;
-    SidewaysType sideways{ConfigurableBankedMemory::Layout::JsbeebStyle};
+    SidewaysType sideways{};
 
     Via6522 system_via;
     Via6522 user_via;

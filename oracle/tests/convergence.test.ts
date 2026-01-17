@@ -32,8 +32,16 @@ describe('State Convergence', () => {
             model: 'B-RomRam',
             fdc: 'acorn-1770',
             sideways: [
-                // Default JsbeebStyle already provides slots 0-7 as RAM
-                // Override slot 13 and 14 with our ROMs (same as jsbeeb)
+                // Configure slots 0-7 as RAM to match jsbeeb SWRAM layout
+                { slot: 0, type: 'ram' },
+                { slot: 1, type: 'ram' },
+                { slot: 2, type: 'ram' },
+                { slot: 3, type: 'ram' },
+                { slot: 4, type: 'ram' },
+                { slot: 5, type: 'ram' },
+                { slot: 6, type: 'ram' },
+                { slot: 7, type: 'ram' },
+                // Configure ROM slots 13-14 with our ROMs (same as jsbeeb)
                 { slot: 13, type: 'rom', filepath: `${romDir}/acorn-adfs_1_30.rom` },
                 { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
                 // Slot 15 has BASIC by default

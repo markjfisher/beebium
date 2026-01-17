@@ -39,43 +39,54 @@ TEST_CASE("ConfigurableBankedMemory initialization", "[configurable_memory][init
     }
 }
 
-TEST_CASE("ConfigurableBankedMemory jsbeeb layout", "[configurable_memory][layout]") {
-    ConfigurableBankedMemory mem(ConfigurableBankedMemory::Layout::JsbeebStyle);
+TEST_CASE("ConfigurableBankedMemory slot configuration", "[configurable_memory][config]") {
+    ConfigurableBankedMemory mem;
 
-    SECTION("Slots 0-7 are RAM") {
-        for (uint8_t i = 0; i < 8; ++i) {
-            REQUIRE(mem.slot(i).type() == SlotType::Ram);
-        }
-    }
-
-    SECTION("Slots 8-15 are ROM") {
-        for (uint8_t i = 8; i < 16; ++i) {
-            REQUIRE(mem.slot(i).type() == SlotType::Rom);
-        }
-    }
-
-    SECTION("RAM slots are writable") {
+    SECTION("Configured RAM slots are writable and start at 0x00") {
+        mem.configure_slot(0, SlotType::Ram);
         mem.select_bank(0);
+
+        // RAM starts cleared to 0x00
+        REQUIRE(mem.read(0x1000) == 0x00);
+
+        // Can write and read back
         mem.write(0x1000, 0x42);
         REQUIRE(mem.read(0x1000) == 0x42);
     }
 
-    SECTION("ROM slots ignore writes") {
+    SECTION("Configured ROM slots ignore writes") {
+        mem.configure_slot(15, SlotType::Rom);
         mem.select_bank(15);
+
+        // ROM starts at 0xFF (unpopulated)
+        REQUIRE(mem.read(0x1000) == 0xFF);
+
+        // Writes are ignored
         mem.write(0x1000, 0x42);
-        REQUIRE(mem.read(0x1000) == 0x00);  // ROM was not loaded, returns 0x00 (jsbeeb Uint8Array default)
+        REQUIRE(mem.read(0x1000) == 0xFF);
     }
 
-    SECTION("init_jsbeeb_layout can be called after construction") {
-        ConfigurableBankedMemory mem2;
-        mem2.init_jsbeeb_layout();
-
+    SECTION("Configure multiple slots for jsbeeb-compatible layout") {
+        // Configure slots 0-7 as RAM (matches jsbeeb SWRAM)
         for (uint8_t i = 0; i < 8; ++i) {
-            REQUIRE(mem2.slot(i).type() == SlotType::Ram);
+            mem.configure_slot(i, SlotType::Ram);
+        }
+        // Configure slots 8-15 as ROM
+        for (uint8_t i = 8; i < 16; ++i) {
+            mem.configure_slot(i, SlotType::Rom);
+        }
+
+        // Verify slot types
+        for (uint8_t i = 0; i < 8; ++i) {
+            REQUIRE(mem.slot(i).type() == SlotType::Ram);
         }
         for (uint8_t i = 8; i < 16; ++i) {
-            REQUIRE(mem2.slot(i).type() == SlotType::Rom);
+            REQUIRE(mem.slot(i).type() == SlotType::Rom);
         }
+
+        // Verify RAM slots start at 0x00
+        mem.select_bank(0);
+        REQUIRE(mem.read(0x0000) == 0x00);
     }
 }
 
@@ -303,22 +314,27 @@ TEST_CASE("ConfigurableBankedMemory slot metadata", "[configurable_memory][metad
 }
 
 TEST_CASE("ConfigurableBankedMemory typical ROM/RAM board configuration", "[configurable_memory][typical]") {
-    ConfigurableBankedMemory mem(ConfigurableBankedMemory::Layout::JsbeebStyle);
+    ConfigurableBankedMemory mem;
 
-    // Load ROMs into typical positions
+    // Configure slots 0-7 as RAM (typical SWRAM configuration)
+    for (uint8_t i = 0; i < 8; ++i) {
+        mem.configure_slot(i, SlotType::Ram);
+    }
+
+    // Load ROMs into typical positions (use load_rom_to_slot which sets type)
     std::array<uint8_t, 16384> basic_data;
     basic_data.fill(0xBA);
-    mem.load_rom(15, basic_data.data(), basic_data.size());
+    mem.load_rom_to_slot(15, basic_data.data(), basic_data.size());
     mem.set_slot_image_name(15, "bbc-basic_2.rom");
 
     std::array<uint8_t, 16384> dfs_data;
     dfs_data.fill(0xDF);
-    mem.load_rom(14, dfs_data.data(), dfs_data.size());
+    mem.load_rom_to_slot(14, dfs_data.data(), dfs_data.size());
     mem.set_slot_image_name(14, "acorn-dfs_2_26.rom");
 
     std::array<uint8_t, 16384> adfs_data;
     adfs_data.fill(0xAD);
-    mem.load_rom(13, adfs_data.data(), adfs_data.size());
+    mem.load_rom_to_slot(13, adfs_data.data(), adfs_data.size());
     mem.set_slot_image_name(13, "acorn-adfs_1_30.rom");
 
     SECTION("BASIC at slot 15") {
