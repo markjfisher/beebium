@@ -401,3 +401,134 @@ TEST_CASE("AliasedBankedMemory typical BBC Model B configuration", "[aliased_mem
         REQUIRE(mem.read(0x0000) == 0xBA);
     }
 }
+
+// =============================================================================
+// Unified ROM Loading API Tests
+// =============================================================================
+
+TEST_CASE("AliasedBankedMemory load_sideways_rom", "[aliased_memory][unified_api]") {
+    AliasedBankedMemory mem;
+
+    std::array<uint8_t, 16384> rom_data;
+    rom_data.fill(0x42);
+
+    SECTION("Configures socket as ROM and loads data via slot number") {
+        // Socket 3 starts as Empty
+        REQUIRE(mem.socket(3).type() == SlotType::Empty);
+
+        // Load via slot 15 (maps to socket 3)
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());
+
+        // Socket 3 should now be ROM with our data
+        REQUIRE(mem.socket(3).type() == SlotType::Rom);
+        mem.select_bank(15);
+        REQUIRE(mem.read(0x0000) == 0x42);
+    }
+
+    SECTION("Data visible from all aliased slots") {
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());
+
+        // All slots mapping to socket 3 see the same data
+        mem.select_bank(3);
+        REQUIRE(mem.read(0x0000) == 0x42);
+
+        mem.select_bank(7);
+        REQUIRE(mem.read(0x0000) == 0x42);
+
+        mem.select_bank(11);
+        REQUIRE(mem.read(0x0000) == 0x42);
+
+        mem.select_bank(15);
+        REQUIRE(mem.read(0x0000) == 0x42);
+    }
+
+    SECTION("Loading to different slots affects their respective sockets") {
+        std::array<uint8_t, 16384> dfs_data;
+        dfs_data.fill(0xDF);
+
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());  // Slot 15 -> Socket 3
+        mem.load_sideways_rom(13, dfs_data.data(), dfs_data.size()); // Slot 13 -> Socket 1
+
+        REQUIRE(mem.socket(3).type() == SlotType::Rom);
+        REQUIRE(mem.socket(1).type() == SlotType::Rom);
+
+        mem.select_bank(15);
+        REQUIRE(mem.read(0x0000) == 0x42);
+
+        mem.select_bank(13);
+        REQUIRE(mem.read(0x0000) == 0xDF);
+    }
+}
+
+TEST_CASE("AliasedBankedMemory load_sideways_data", "[aliased_memory][unified_api]") {
+    AliasedBankedMemory mem;
+
+    std::array<uint8_t, 16384> data;
+    data.fill(0x99);
+
+    SECTION("Loads data WITHOUT changing socket type") {
+        // Configure socket 0 as RAM first
+        mem.configure_socket(0, SlotType::Ram);
+        REQUIRE(mem.socket(0).type() == SlotType::Ram);
+
+        // Load data via slot 0 - type should remain RAM
+        mem.load_sideways_data(0, data.data(), data.size());
+
+        REQUIRE(mem.socket(0).type() == SlotType::Ram);
+        mem.select_bank(0);
+        REQUIRE(mem.read(0x0000) == 0x99);
+    }
+}
+
+TEST_CASE("AliasedBankedMemory configure_slot_as_ram", "[aliased_memory][unified_api]") {
+    AliasedBankedMemory mem;
+
+    SECTION("Configures underlying socket as RAM") {
+        mem.configure_slot_as_ram(15);  // Slot 15 -> Socket 3
+
+        REQUIRE(mem.socket(3).type() == SlotType::Ram);
+
+        // All aliased slots are now RAM
+        REQUIRE(mem.bank_type(3) == SlotType::Ram);
+        REQUIRE(mem.bank_type(7) == SlotType::Ram);
+        REQUIRE(mem.bank_type(11) == SlotType::Ram);
+        REQUIRE(mem.bank_type(15) == SlotType::Ram);
+
+        // Can write and read back
+        mem.select_bank(15);
+        mem.write(0x0000, 0x55);
+        REQUIRE(mem.read(0x0000) == 0x55);
+    }
+}
+
+TEST_CASE("AliasedBankedMemory configure_slot_as_empty", "[aliased_memory][unified_api]") {
+    AliasedBankedMemory mem;
+
+    SECTION("Configures underlying socket as empty") {
+        // First load something
+        std::array<uint8_t, 16384> data;
+        data.fill(0x42);
+        mem.load_sideways_rom(15, data.data(), data.size());
+
+        // Now make it empty via slot
+        mem.configure_slot_as_empty(7);  // Slot 7 -> Socket 3
+
+        REQUIRE(mem.socket(3).type() == SlotType::Empty);
+        mem.select_bank(15);
+        REQUIRE(mem.read(0x0000) == 0xFF);
+    }
+}
+
+TEST_CASE("AliasedBankedMemory is_slot_loadable", "[aliased_memory][unified_api]") {
+    SECTION("All 16 slots are loadable (they alias to 4 sockets)") {
+        for (uint8_t i = 0; i < 16; ++i) {
+            REQUIRE(AliasedBankedMemory::is_slot_loadable(i) == true);
+        }
+    }
+}
+
+TEST_CASE("AliasedBankedMemory supports_slot_configuration", "[aliased_memory][unified_api]") {
+    SECTION("Returns true for AliasedBankedMemory") {
+        REQUIRE(AliasedBankedMemory::supports_slot_configuration() == true);
+    }
+}

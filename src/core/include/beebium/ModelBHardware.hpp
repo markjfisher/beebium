@@ -510,6 +510,40 @@ public:
     }
 
     // =========================================================================
+    // Unified ROM Loading API (forwards to sideways member)
+    // =========================================================================
+
+    // Load ROM data into a slot, automatically configuring as ROM type.
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
+        sideways.load_sideways_rom(slot, data, len);
+    }
+
+    // Load data into a slot WITHOUT changing slot type.
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
+        sideways.load_sideways_data(slot, data, len);
+    }
+
+    // Check if a slot can have ROM loaded
+    static constexpr bool is_slot_loadable(uint8_t slot) {
+        return AliasedBankedMemory::is_slot_loadable(slot);
+    }
+
+    // Configure a slot as writable RAM
+    void configure_slot_as_ram(uint8_t slot) {
+        sideways.configure_slot_as_ram(slot);
+    }
+
+    // Configure a slot as empty
+    void configure_slot_as_empty(uint8_t slot) {
+        sideways.configure_slot_as_empty(slot);
+    }
+
+    // Indicates this memory type supports runtime slot configuration
+    static constexpr bool supports_slot_configuration() {
+        return AliasedBankedMemory::supports_slot_configuration();
+    }
+
+    // =========================================================================
     // Open Bus Configuration
     // =========================================================================
 

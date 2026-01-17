@@ -152,6 +152,43 @@ public:
 
     // Trait to indicate this memory type does not have aliasing
     static constexpr bool has_aliasing = false;
+
+    // =========================================================================
+    // Unified ROM Loading API
+    // =========================================================================
+
+    // Load ROM data into a slot, automatically configuring as ROM type.
+    // This is the primary method for loading ROMs - it encapsulates the
+    // configure + load pattern to avoid the bug where load is called without
+    // first setting the slot type.
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
+        configure_slot(slot, SlotType::Rom);
+        load_rom(slot, data, len);
+    }
+
+    // Load data into a slot WITHOUT changing slot type.
+    // Used for pre-initializing RAM with saved state (e.g., battery-backed RAM).
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
+        if (slot < num_banks) {
+            slots_[slot].load(data, len);
+        }
+    }
+
+    // Check if a slot can have ROM loaded (all slots are loadable)
+    static constexpr bool is_slot_loadable(uint8_t slot) { return slot < num_banks; }
+
+    // Configure a slot as writable RAM
+    void configure_slot_as_ram(uint8_t slot) {
+        configure_slot(slot, SlotType::Ram);
+    }
+
+    // Configure a slot as empty
+    void configure_slot_as_empty(uint8_t slot) {
+        configure_slot(slot, SlotType::Empty);
+    }
+
+    // Indicates this memory type supports runtime slot configuration
+    static constexpr bool supports_slot_configuration() { return true; }
 };
 
 } // namespace beebium

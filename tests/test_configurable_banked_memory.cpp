@@ -313,6 +313,129 @@ TEST_CASE("ConfigurableBankedMemory slot metadata", "[configurable_memory][metad
     }
 }
 
+// =============================================================================
+// Unified ROM Loading API Tests
+// =============================================================================
+
+TEST_CASE("ConfigurableBankedMemory load_sideways_rom", "[configurable_memory][unified_api]") {
+    ConfigurableBankedMemory mem;
+
+    std::array<uint8_t, 16384> rom_data;
+    rom_data.fill(0x42);
+
+    SECTION("Configures slot as ROM and loads data in one call") {
+        // Slot starts as Empty
+        REQUIRE(mem.slot(15).type() == SlotType::Empty);
+
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());
+
+        // Now it's ROM with our data
+        REQUIRE(mem.slot(15).type() == SlotType::Rom);
+        mem.select_bank(15);
+        REQUIRE(mem.read(0x0000) == 0x42);
+        REQUIRE(mem.read(0x3FFF) == 0x42);
+    }
+
+    SECTION("Works for all 16 slots") {
+        for (uint8_t i = 0; i < 16; ++i) {
+            std::array<uint8_t, 16384> data;
+            data.fill(i);
+            mem.load_sideways_rom(i, data.data(), data.size());
+
+            REQUIRE(mem.slot(i).type() == SlotType::Rom);
+            mem.select_bank(i);
+            REQUIRE(mem.read(0x0000) == i);
+        }
+    }
+}
+
+TEST_CASE("ConfigurableBankedMemory load_sideways_data", "[configurable_memory][unified_api]") {
+    ConfigurableBankedMemory mem;
+
+    std::array<uint8_t, 16384> data;
+    data.fill(0x99);
+
+    SECTION("Loads data WITHOUT changing slot type") {
+        // Configure as RAM first
+        mem.configure_slot(5, SlotType::Ram);
+        REQUIRE(mem.slot(5).type() == SlotType::Ram);
+
+        // Load data - type should remain RAM
+        mem.load_sideways_data(5, data.data(), data.size());
+
+        REQUIRE(mem.slot(5).type() == SlotType::Ram);
+        mem.select_bank(5);
+        REQUIRE(mem.read(0x0000) == 0x99);
+    }
+
+    SECTION("Use case: pre-load battery-backed RAM content") {
+        mem.configure_slot(0, SlotType::Ram);
+        mem.load_sideways_data(0, data.data(), data.size());
+
+        // Can still write (it's RAM)
+        mem.select_bank(0);
+        mem.write(0x0000, 0xAA);
+        REQUIRE(mem.read(0x0000) == 0xAA);
+        // Original data at other addresses
+        REQUIRE(mem.read(0x0001) == 0x99);
+    }
+}
+
+TEST_CASE("ConfigurableBankedMemory configure_slot_as_ram", "[configurable_memory][unified_api]") {
+    ConfigurableBankedMemory mem;
+
+    SECTION("Configures slot as writable RAM") {
+        mem.configure_slot_as_ram(7);
+
+        REQUIRE(mem.slot(7).type() == SlotType::Ram);
+
+        // RAM starts at 0x00
+        mem.select_bank(7);
+        REQUIRE(mem.read(0x0000) == 0x00);
+
+        // Can write
+        mem.write(0x0000, 0x55);
+        REQUIRE(mem.read(0x0000) == 0x55);
+    }
+}
+
+TEST_CASE("ConfigurableBankedMemory configure_slot_as_empty", "[configurable_memory][unified_api]") {
+    ConfigurableBankedMemory mem;
+
+    SECTION("Configures slot as empty (returns 0xFF)") {
+        // First load something
+        std::array<uint8_t, 16384> data;
+        data.fill(0x42);
+        mem.load_sideways_rom(3, data.data(), data.size());
+
+        // Now make it empty
+        mem.configure_slot_as_empty(3);
+
+        REQUIRE(mem.slot(3).type() == SlotType::Empty);
+        mem.select_bank(3);
+        REQUIRE(mem.read(0x0000) == 0xFF);
+    }
+}
+
+TEST_CASE("ConfigurableBankedMemory is_slot_loadable", "[configurable_memory][unified_api]") {
+    SECTION("All 16 slots are loadable") {
+        for (uint8_t i = 0; i < 16; ++i) {
+            REQUIRE(ConfigurableBankedMemory::is_slot_loadable(i) == true);
+        }
+    }
+
+    SECTION("Slots >= 16 are not loadable") {
+        REQUIRE(ConfigurableBankedMemory::is_slot_loadable(16) == false);
+        REQUIRE(ConfigurableBankedMemory::is_slot_loadable(255) == false);
+    }
+}
+
+TEST_CASE("ConfigurableBankedMemory supports_slot_configuration", "[configurable_memory][unified_api]") {
+    SECTION("Returns true for ConfigurableBankedMemory") {
+        REQUIRE(ConfigurableBankedMemory::supports_slot_configuration() == true);
+    }
+}
+
 TEST_CASE("ConfigurableBankedMemory typical ROM/RAM board configuration", "[configurable_memory][typical]") {
     ConfigurableBankedMemory mem;
 

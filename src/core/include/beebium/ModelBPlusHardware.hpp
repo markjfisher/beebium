@@ -618,6 +618,58 @@ public:
     }
 
     // =========================================================================
+    // Unified ROM Loading API
+    // =========================================================================
+
+    // Load ROM data into a slot, mapping to the appropriate physical ROM device.
+    // Model B+ has 6 ROM sockets, each covering a pair of slots:
+    //   IC71 (slots 0,1,14,15): BASIC/language ROM
+    //   IC68 (slots 10,11): DFS ROM
+    //   IC62 (slots 8,9): User ROM
+    //   IC57 (slots 6,7): User ROM
+    //   IC44 (slots 4,5): User ROM
+    //   IC35 (slots 2,3): User ROM
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
+        // All B+ ROM sockets are 16KB
+        constexpr size_t rom_size = 16384;
+        size_t copy_len = std::min(len, rom_size);
+        switch (slot) {
+            case 0: case 1: case 14: case 15: std::copy_n(data, copy_len, basic_rom.data()); break;
+            case 10: case 11: std::copy_n(data, copy_len, dfs_rom.data()); break;
+            case 8: case 9: std::copy_n(data, copy_len, rom_ic62.data()); break;
+            case 6: case 7: std::copy_n(data, copy_len, rom_ic57.data()); break;
+            case 4: case 5: std::copy_n(data, copy_len, rom_ic44.data()); break;
+            case 2: case 3: std::copy_n(data, copy_len, rom_ic35.data()); break;
+            default: break;  // Invalid slot for B+
+        }
+    }
+
+    // Load data into a slot WITHOUT changing slot type.
+    // For B+ this is the same as load_sideways_rom since slots are fixed ROM.
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
+        load_sideways_rom(slot, data, len);
+    }
+
+    // Check if a slot can have ROM loaded.
+    // B+ has slots in pairs; slots 12 and 13 are not present (would require 32K ROM in IC71).
+    static constexpr bool is_slot_loadable(uint8_t slot) {
+        // Valid slots: 0,1,2,3,4,5,6,7,8,9,10,11,14,15
+        return slot <= 11 || slot >= 14;
+    }
+
+    // B+ does not support runtime slot configuration - all slots are fixed ROM
+    void configure_slot_as_ram(uint8_t /*slot*/) {
+        // No-op: B+ cannot configure slots as RAM
+    }
+
+    void configure_slot_as_empty(uint8_t /*slot*/) {
+        // No-op: B+ slots are always ROM
+    }
+
+    // Indicates this memory type does NOT support runtime slot configuration
+    static constexpr bool supports_slot_configuration() { return false; }
+
+    // =========================================================================
     // Startup Options (keyboard links)
     // =========================================================================
 

@@ -15,7 +15,6 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
-#include "beebium/devices/ConfigurableSlot.hpp"  // for SlotType enum
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
@@ -134,8 +133,9 @@ std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
     return {static_cast<uint8_t>(drive), url_or_filepath};
 }
 
-// Sentinel value to mark a slot as explicitly empty
+// Sentinel values to mark slots that should not have default ROMs loaded
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
+constexpr const char* RAM_SLOT_MARKER = "\x01RAM\x01";
 
 // Sideways slot configuration (for --sideways argument)
 enum class SidewaysSlotType { Empty, Rom, Ram };
@@ -365,9 +365,14 @@ int server_main(int argc, char* argv[]) {
         } else if (arg == "--sideways" && i + 1 < argc) {
             auto config = parse_sideways_arg(argv[++i]);
             sideways_configs.push_back(config);
-            // Also add ROM types to rom_slots for centralized ROM loading
+            // Add ALL slot types to rom_slots to prevent default ROM loading
+            // This ensures --sideways 15:empty or --sideways 15:ram prevents BASIC from loading
             if (config.type == SidewaysSlotType::Rom) {
                 rom_slots[config.slot] = config.image_filepath;
+            } else if (config.type == SidewaysSlotType::Empty) {
+                rom_slots[config.slot] = EMPTY_SLOT_MARKER;
+            } else if (config.type == SidewaysSlotType::Ram) {
+                rom_slots[config.slot] = RAM_SLOT_MARKER;
             }
         } else if (arg == "--rom" && i + 1 < argc) {
             // Deprecated: convert to sideways config
@@ -472,15 +477,32 @@ int server_main(int argc, char* argv[]) {
         std::copy(mos_data.begin(), mos_data.end(),
                   machine.state().memory.mos_rom.data());
 
-        // Load sideways ROMs
-        for (const auto& [slot, filepath] : rom_slots) {
-            // Skip slots explicitly marked as empty
-            if (filepath == EMPTY_SLOT_MARKER) {
-                std::cout << "Slot " << static_cast<int>(slot) << ": empty (no ROM loaded)\n";
+        // Process all slot configurations using the unified API
+        // This single loop handles ROM, RAM, and Empty slots
+        for (const auto& [slot, marker_or_filepath] : rom_slots) {
+            // Handle empty slots
+            if (marker_or_filepath == EMPTY_SLOT_MARKER) {
+                std::cout << "Slot " << static_cast<int>(slot) << ": empty\n";
+                if constexpr (Memory::supports_slot_configuration()) {
+                    machine.state().memory.configure_slot_as_empty(slot);
+                }
                 continue;
             }
 
-            auto rom_path = RomPaths::find_rom(filepath);
+            // Handle RAM slots
+            if (marker_or_filepath == RAM_SLOT_MARKER) {
+                std::cout << "Slot " << static_cast<int>(slot) << ": RAM";
+                if constexpr (Memory::supports_slot_configuration()) {
+                    machine.state().memory.configure_slot_as_ram(slot);
+                } else {
+                    std::cerr << "\nWarning: RAM slots not supported on this machine type\n";
+                }
+                std::cout << "\n";
+                continue;
+            }
+
+            // Regular ROM loading - use unified API
+            auto rom_path = RomPaths::find_rom(marker_or_filepath);
             std::cout << "Loading ROM into slot " << static_cast<int>(slot) << ": " << rom_path << "\n";
             auto rom_data = load_file(rom_path);
 
@@ -489,99 +511,20 @@ int server_main(int argc, char* argv[]) {
                           << " bytes, expected 16384\n";
             }
 
-            // Load ROM into appropriate socket based on machine type
-            // Model B+ has 6 ROM sockets, each covering a pair of slots:
-            //   IC71 (slots 1/15): BASIC/language ROM
-            //   IC68 (slots 10/11): DFS ROM
-            //   IC62 (slots 8/9): User ROM
-            //   IC57 (slots 6/7): User ROM
-            //   IC44 (slots 4/5): User ROM
-            //   IC35 (slots 2/3): User ROM
-            // Model B has simpler ROM sockets at slots 0, 1, 4, 15
-            bool loaded = false;
-
-            // Model B+ specific ROM sockets (IC71 has different slot mapping than Model B)
-            if constexpr (requires { machine.state().memory.rom_ic62; }) {
-                switch (slot) {
-                    case 15: case 14: case 1: case 0:  // IC71 - BASIC (link S13 selects slot pair)
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.basic_rom.data());
-                        loaded = true;
-                        break;
-                    case 11: case 10:  // IC68 - DFS
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.dfs_rom.data());
-                        loaded = true;
-                        break;
-                    case 9: case 8:    // IC62 - User ROM
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.rom_ic62.data());
-                        loaded = true;
-                        break;
-                    case 7: case 6:    // IC57 - User ROM
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.rom_ic57.data());
-                        loaded = true;
-                        break;
-                    case 5: case 4:    // IC44 - User ROM
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.rom_ic44.data());
-                        loaded = true;
-                        break;
-                    case 3: case 2:    // IC35 - User ROM
-                        std::copy(rom_data.begin(), rom_data.end(),
-                                  machine.state().memory.rom_ic35.data());
-                        loaded = true;
-                        break;
-                    default:
-                        break;
-                }
-            } else {
-                // Model B with AliasedBankedMemory (4 sockets, 4-way aliasing)
-                // Slots map to physical sockets via bottom 2 bits:
-                //   Socket 0 (IC52):  slots 0, 4, 8, 12
-                //   Socket 1 (IC88):  slots 1, 5, 9, 13  (DFS)
-                //   Socket 2 (IC100): slots 2, 6, 10, 14
-                //   Socket 3 (IC101): slots 3, 7, 11, 15 (BASIC)
-                machine.state().memory.load_rom(slot, rom_data.data(), rom_data.size());
-                loaded = true;
-            }
-
-            if (!loaded) {
-                std::cerr << "Warning: Slot " << static_cast<int>(slot)
-                          << " is not a valid ROM socket for this machine, ROM ignored\n";
-            }
+            // Unified API handles slot type configuration and loading together
+            machine.state().memory.load_sideways_rom(slot, rom_data.data(), rom_data.size());
         }
 
-        // Process sideways configs for RAM and empty slots (--sideways)
-        // ROM types are already handled via rom_slots above
+        // Handle RAM slots with pre-loaded images
+        // These are processed after rom_slots to ensure the slot is already configured as RAM
         for (const auto& config : sideways_configs) {
-            if (config.type == SidewaysSlotType::Rom) {
-                // Already handled via rom_slots loop above
-                continue;
-            }
-
-            // Model B with AliasedBankedMemory
-            if constexpr (requires { machine.state().memory.configure_slot(0, SlotType::Empty); }) {
-                if (config.type == SidewaysSlotType::Empty) {
-                    std::cout << "Slot " << static_cast<int>(config.slot) << ": configured as empty\n";
-                    machine.state().memory.configure_slot(config.slot, SlotType::Empty);
-                } else if (config.type == SidewaysSlotType::Ram) {
-                    std::cout << "Slot " << static_cast<int>(config.slot) << ": configured as RAM";
-                    machine.state().memory.configure_slot(config.slot, SlotType::Ram);
-
-                    // Optionally load pre-initialised data into RAM
-                    if (!config.image_filepath.empty()) {
-                        auto ram_path = RomPaths::find_rom(config.image_filepath);
-                        auto ram_data = load_file(ram_path);
-                        std::cout << " (pre-loaded from " << ram_path << ")";
-                        machine.state().memory.load_rom(config.slot, ram_data.data(), ram_data.size());
-                    }
-                    std::cout << "\n";
-                }
-            } else {
-                // Model B+ doesn't support dynamic slot configuration
-                std::cerr << "Warning: --sideways RAM/empty not supported on this machine type\n";
+            if (config.type == SidewaysSlotType::Ram && !config.image_filepath.empty()) {
+                auto ram_path = RomPaths::find_rom(config.image_filepath);
+                auto ram_data = load_file(ram_path);
+                std::cout << "Pre-loading RAM slot " << static_cast<int>(config.slot)
+                          << " from " << ram_path << "\n";
+                // Use load_sideways_data to load without changing slot type
+                machine.state().memory.load_sideways_data(config.slot, ram_data.data(), ram_data.size());
             }
         }
 
