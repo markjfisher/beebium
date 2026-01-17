@@ -414,4 +414,19 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
     )
     catch_discover_tests(test_grpc_sideways)
+
+    # Server main helper function tests
+    add_executable(test_server_main test_server_main.cpp)
+    target_include_directories(test_server_main PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/server/include
+    )
+    target_link_libraries(test_server_main PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_server_main PRIVATE
+        BEEBIUM_VERSION="${PROJECT_VERSION}"
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_server_main)
 endif()

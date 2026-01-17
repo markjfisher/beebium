@@ -31,6 +31,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string>
 #include <unistd.h>  // for isatty()
 #include <vector>
@@ -231,6 +232,35 @@ std::string to_absolute_file_url(const std::string& url_or_filepath) {
 
 } // anonymous namespace
 
+// Configuration struct for server initialization
+// Aggregates all parsed command-line arguments
+template<typename MachineType>
+struct ServerConfig {
+    // ROM configuration
+    std::string mos_filepath;
+    std::string rom_dirpath;
+    std::map<uint8_t, std::string> rom_slots;
+    std::vector<SidewaysConfig> sideways_configs;
+
+    // Network
+    uint16_t port = DEFAULT_GRPC_PORT;
+
+    // Disc configuration
+    std::array<std::string, 2> floppy_filepaths;
+    std::string fdc_type;
+
+    // Startup options (keyboard links)
+    // -1 means not set; we use int to detect if user specified a value
+    int screen_mode = -1;
+    bool auto_boot = false;
+    int raw_links = -1;
+    bool screen_mode_set = false;
+    bool auto_boot_set = false;
+
+    // Wait mode for controlled startup
+    WaitMode wait_mode = WaitMode::None;
+};
+
 template<typename MachineType>
 void print_usage(const char* program_name) {
     using Memory = typename MachineType::Memory;
@@ -318,30 +348,13 @@ void print_info(const char* program_name) {
     std::cout << "\n}\n";
 }
 
+// Parse command-line arguments into a ServerConfig struct.
+// Returns:
+//   - std::nullopt on success (continue execution)
+//   - 0 for --help, --info, --list-fdc (exit successfully)
+//   - 1 for errors (exit with error)
 template<typename MachineType>
-int server_main(int argc, char* argv[]) {
-    using Memory = typename MachineType::Memory;
-
-    std::string mos_filepath;
-    std::string rom_dirpath;
-    std::map<uint8_t, std::string> rom_slots;  // slot -> filepath (deprecated --rom)
-    std::vector<SidewaysConfig> sideways_configs;  // slot configurations (--sideways)
-    uint16_t port = DEFAULT_GRPC_PORT;
-    std::array<std::string, 2> floppy_filepaths;  // drive 0 and 1
-    std::string fdc_type;  // Disc controller type (for machines with sockets)
-
-    // Startup options (keyboard links)
-    // -1 means not set; we use int to detect if user specified a value
-    int screen_mode = -1;
-    bool auto_boot = false;
-    int raw_links = -1;  // -1 means not set
-    bool screen_mode_set = false;
-    bool auto_boot_set = false;
-
-    // Wait mode for controlled startup
-    WaitMode wait_mode = WaitMode::None;
-
-    // Parse arguments
+std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineType>& config) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -361,65 +374,65 @@ int server_main(int argc, char* argv[]) {
             std::cout << "  none - No disc controller (leave socket empty)\n";
             return 0;
         } else if (arg == "--mos" && i + 1 < argc) {
-            mos_filepath = argv[++i];
+            config.mos_filepath = argv[++i];
         } else if (arg == "--sideways" && i + 1 < argc) {
-            auto config = parse_sideways_arg(argv[++i]);
-            sideways_configs.push_back(config);
+            auto sideways_config = parse_sideways_arg(argv[++i]);
+            config.sideways_configs.push_back(sideways_config);
             // Add ALL slot types to rom_slots to prevent default ROM loading
             // This ensures --sideways 15:empty or --sideways 15:ram prevents BASIC from loading
-            if (config.type == SidewaysSlotType::Rom) {
-                rom_slots[config.slot] = config.image_filepath;
-            } else if (config.type == SidewaysSlotType::Empty) {
-                rom_slots[config.slot] = EMPTY_SLOT_MARKER;
-            } else if (config.type == SidewaysSlotType::Ram) {
-                rom_slots[config.slot] = RAM_SLOT_MARKER;
+            if (sideways_config.type == SidewaysSlotType::Rom) {
+                config.rom_slots[sideways_config.slot] = sideways_config.image_filepath;
+            } else if (sideways_config.type == SidewaysSlotType::Empty) {
+                config.rom_slots[sideways_config.slot] = EMPTY_SLOT_MARKER;
+            } else if (sideways_config.type == SidewaysSlotType::Ram) {
+                config.rom_slots[sideways_config.slot] = RAM_SLOT_MARKER;
             }
         } else if (arg == "--rom" && i + 1 < argc) {
             // Deprecated: convert to sideways config
             auto [slot, filepath] = parse_rom_arg(argv[++i]);
-            SidewaysConfig config;
-            config.slot = slot;
+            SidewaysConfig sideways_config;
+            sideways_config.slot = slot;
             if (filepath.empty()) {
-                config.type = SidewaysSlotType::Empty;
+                sideways_config.type = SidewaysSlotType::Empty;
             } else {
-                config.type = SidewaysSlotType::Rom;
-                config.image_filepath = filepath;
+                sideways_config.type = SidewaysSlotType::Rom;
+                sideways_config.image_filepath = filepath;
             }
-            sideways_configs.push_back(config);
+            config.sideways_configs.push_back(sideways_config);
             // Also keep in rom_slots for compatibility with existing logic
-            rom_slots[slot] = filepath.empty() ? EMPTY_SLOT_MARKER : filepath;
+            config.rom_slots[slot] = filepath.empty() ? EMPTY_SLOT_MARKER : filepath;
         } else if (arg == "--rom-dir" && i + 1 < argc) {
-            rom_dirpath = argv[++i];
+            config.rom_dirpath = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
-            port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            config.port = static_cast<uint16_t>(std::stoi(argv[++i]));
         } else if (arg == "--floppy" && i + 1 < argc) {
             auto [drive, filepath] = parse_floppy_arg(argv[++i]);
-            floppy_filepaths[drive] = filepath;
+            config.floppy_filepaths[drive] = filepath;
         } else if (arg == "--screen-mode" && i + 1 < argc) {
-            screen_mode = std::stoi(argv[++i]);
-            if (screen_mode < 0 || screen_mode > 7) {
+            config.screen_mode = std::stoi(argv[++i]);
+            if (config.screen_mode < 0 || config.screen_mode > 7) {
                 std::cerr << "Error: --screen-mode must be 0-7\n";
                 return 1;
             }
-            screen_mode_set = true;
+            config.screen_mode_set = true;
         } else if (arg == "--auto-boot") {
-            auto_boot = true;
-            auto_boot_set = true;
+            config.auto_boot = true;
+            config.auto_boot_set = true;
         } else if (arg == "--links" && i + 1 < argc) {
-            raw_links = std::stoi(argv[++i]);
-            if (raw_links < 0 || raw_links > 255) {
+            config.raw_links = std::stoi(argv[++i]);
+            if (config.raw_links < 0 || config.raw_links > 255) {
                 std::cerr << "Error: --links must be 0-255\n";
                 return 1;
             }
         } else if (arg == "--wait") {
             // Bare --wait: use TTY detection to choose default
-            wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
+            config.wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
         } else if (arg.rfind("--wait=", 0) == 0) {
             // --wait=cli or --wait=api
             std::string wait_value = arg.substr(7);  // Skip "--wait="
-            wait_mode = parse_wait_arg(wait_value);
+            config.wait_mode = parse_wait_arg(wait_value);
         } else if (arg == "--fdc" && i + 1 < argc) {
-            fdc_type = argv[++i];
+            config.fdc_type = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -427,9 +440,301 @@ int server_main(int argc, char* argv[]) {
         }
     }
 
-    // Validate startup options: --links is mutually exclusive with semantic options
-    if (raw_links >= 0 && (screen_mode_set || auto_boot_set)) {
-        std::cerr << "Error: --links cannot be combined with --screen-mode or --auto-boot\n";
+    return std::nullopt;  // Success, continue execution
+}
+
+// Validate configuration for consistency.
+// Returns error message if invalid, nullopt if valid.
+template<typename MachineType>
+std::optional<std::string> validate_config(const ServerConfig<MachineType>& config) {
+    // --links is mutually exclusive with semantic options
+    if (config.raw_links >= 0 && (config.screen_mode_set || config.auto_boot_set)) {
+        return "--links cannot be combined with --screen-mode or --auto-boot";
+    }
+
+    return std::nullopt;  // Valid
+}
+
+// Load MOS ROM and sideways ROMs into machine memory.
+// Applies defaults to config where not specified.
+// Throws on file I/O errors.
+template<typename MachineType>
+void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
+    using Memory = typename MachineType::Memory;
+
+    // Apply default MOS ROM if not specified
+    if (config.mos_filepath.empty()) {
+        config.mos_filepath = std::string(Memory::DEFAULT_MOS_ROM);
+    }
+
+    // Load default language ROM into default slot unless overridden
+    if (config.rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT) == config.rom_slots.end()) {
+        config.rom_slots[Memory::DEFAULT_LANGUAGE_SLOT] = std::string(Memory::DEFAULT_LANGUAGE_ROM);
+    }
+
+    // Load default DFS ROM if machine has one and slot not overridden
+    if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+        if (config.rom_slots.find(Memory::DEFAULT_DFS_SLOT) == config.rom_slots.end()) {
+            config.rom_slots[Memory::DEFAULT_DFS_SLOT] = std::string(Memory::DEFAULT_DFS_ROM);
+        }
+    }
+
+    // Load MOS ROM
+    auto mos_path = RomPaths::find_rom(config.mos_filepath);
+    std::cout << "Loading MOS ROM: " << mos_path << "\n";
+    auto mos_data = load_file(mos_path);
+    if (mos_data.size() != 16384) {
+        std::cerr << "Warning: MOS ROM is " << mos_data.size()
+                  << " bytes, expected 16384\n";
+    }
+
+    // Load MOS ROM into machine
+    std::copy(mos_data.begin(), mos_data.end(),
+              machine.state().memory.mos_rom.data());
+
+    // Process all slot configurations using the unified API
+    // This single loop handles ROM, RAM, and Empty slots
+    for (const auto& [slot, marker_or_filepath] : config.rom_slots) {
+        // Handle empty slots
+        if (marker_or_filepath == EMPTY_SLOT_MARKER) {
+            std::cout << "Slot " << static_cast<int>(slot) << ": empty\n";
+            if constexpr (Memory::supports_slot_configuration()) {
+                machine.state().memory.configure_slot_as_empty(slot);
+            }
+            continue;
+        }
+
+        // Handle RAM slots
+        if (marker_or_filepath == RAM_SLOT_MARKER) {
+            std::cout << "Slot " << static_cast<int>(slot) << ": RAM";
+            if constexpr (Memory::supports_slot_configuration()) {
+                machine.state().memory.configure_slot_as_ram(slot);
+            } else {
+                std::cerr << "\nWarning: RAM slots not supported on this machine type\n";
+            }
+            std::cout << "\n";
+            continue;
+        }
+
+        // Regular ROM loading - use unified API
+        auto rom_path = RomPaths::find_rom(marker_or_filepath);
+        std::cout << "Loading ROM into slot " << static_cast<int>(slot) << ": " << rom_path << "\n";
+        auto rom_data = load_file(rom_path);
+
+        if (rom_data.size() != 16384) {
+            std::cerr << "Warning: ROM is " << rom_data.size()
+                      << " bytes, expected 16384\n";
+        }
+
+        // Unified API handles slot type configuration and loading together
+        machine.state().memory.load_sideways_rom(slot, rom_data.data(), rom_data.size());
+    }
+
+    // Handle RAM slots with pre-loaded images
+    // These are processed after rom_slots to ensure the slot is already configured as RAM
+    for (const auto& sideways_config : config.sideways_configs) {
+        if (sideways_config.type == SidewaysSlotType::Ram && !sideways_config.image_filepath.empty()) {
+            auto ram_path = RomPaths::find_rom(sideways_config.image_filepath);
+            auto ram_data = load_file(ram_path);
+            std::cout << "Pre-loading RAM slot " << static_cast<int>(sideways_config.slot)
+                      << " from " << ram_path << "\n";
+            // Use load_sideways_data to load without changing slot type
+            machine.state().memory.load_sideways_data(sideways_config.slot, ram_data.data(), ram_data.size());
+        }
+    }
+}
+
+// Install disc controller for machines with sockets.
+// Returns exit code on error, nullopt on success.
+template<typename MachineType>
+std::optional<int> install_disc_controller(MachineType& machine, const ServerConfig<MachineType>& config) {
+    using Memory = typename MachineType::Memory;
+
+    if constexpr (HasDiscControllerSocket<Memory>) {
+        if (!config.fdc_type.empty()) {
+            if (config.fdc_type == "none") {
+                std::cout << "Disc controller: none (socket empty)\n";
+                // Do nothing - leave socket empty
+            } else if (auto controller = DiscControllerRegistry::create(config.fdc_type)) {
+                auto* info = DiscControllerRegistry::find(config.fdc_type);
+                std::cout << "Installing disc controller: " << info->display_name
+                          << " (" << info->fdc_chip << ")\n";
+                machine.state().memory.install_disc_controller(std::move(controller), config.fdc_type);
+            } else {
+                std::cerr << "Error: Unknown disc controller type: " << config.fdc_type << "\n"
+                          << "Use --list-fdc to see available controllers.\n";
+                return 1;
+            }
+        }
+        // If --fdc not specified, socket remains empty (no disc controller)
+    } else if (!config.fdc_type.empty()) {
+        // Model B+ has built-in controller, --fdc option is not applicable
+        std::cerr << "Warning: --fdc option ignored (machine has built-in disc controller)\n";
+    }
+
+    return std::nullopt;
+}
+
+// Load disc images into floppy drives.
+// Throws on error.
+template<typename MachineType>
+void load_disc_images(MachineType& machine, const ServerConfig<MachineType>& config) {
+    if constexpr (requires { machine.state().memory.disc_drive_0; }) {
+        if (!config.floppy_filepaths[0].empty()) {
+            // Resolve to absolute file:// URL for consistent API behaviour
+            auto source_url = to_absolute_file_url(config.floppy_filepaths[0]);
+            std::cout << "Loading disc into floppy 0: " << source_url << "\n";
+            auto result = load_disc_from_url(source_url);
+            if (!result) {
+                throw std::runtime_error("Failed to load disc: " + result.error);
+            }
+            if (result.image->is_write_protected()) {
+                std::cout << "  (write-protected)\n";
+            }
+            machine.state().memory.disc_drive_0.insert(std::move(result.image), source_url);
+        }
+
+        if (!config.floppy_filepaths[1].empty()) {
+            // Resolve to absolute file:// URL for consistent API behaviour
+            auto source_url = to_absolute_file_url(config.floppy_filepaths[1]);
+            std::cout << "Loading disc into floppy 1: " << source_url << "\n";
+            auto result = load_disc_from_url(source_url);
+            if (!result) {
+                throw std::runtime_error("Failed to load disc: " + result.error);
+            }
+            if (result.image->is_write_protected()) {
+                std::cout << "  (write-protected)\n";
+            }
+            machine.state().memory.disc_drive_1.insert(std::move(result.image), source_url);
+        }
+    }
+}
+
+// Apply startup options (keyboard links) to machine.
+// Must be called before machine.reset().
+template<typename MachineType>
+void apply_startup_options(MachineType& machine, const ServerConfig<MachineType>& config) {
+    if (config.raw_links >= 0) {
+        // Raw byte overrides everything
+        machine.state().memory.set_startup_options(static_cast<uint8_t>(config.raw_links));
+        std::cout << "Startup links: 0x" << std::hex << config.raw_links << std::dec << "\n";
+    } else {
+        // Apply semantic options (modifies specific bits, preserves others)
+        if (config.screen_mode_set) {
+            machine.state().memory.set_screen_mode(static_cast<uint8_t>(config.screen_mode));
+            std::cout << "Startup screen mode: " << config.screen_mode << "\n";
+        }
+        if (config.auto_boot_set) {
+            machine.state().memory.set_auto_boot(config.auto_boot);
+            std::cout << "Auto-boot: " << (config.auto_boot ? "enabled" : "disabled") << "\n";
+        }
+    }
+}
+
+// Handle wait mode for controlled startup.
+// Must be called after machine.reset() and before the main emulation loop.
+template<typename MachineType>
+void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
+    switch (wait_mode) {
+        case WaitMode::Cli:
+            // Wait for user to press RETURN before starting emulation
+            // "Now press RETURN." is a reference to Roger McGough's electronic poem
+            // from the original BBC Micro Welcome cassette.
+            std::cout << "Now press RETURN." << std::flush;
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            std::cout << "\n";
+            break;
+
+        case WaitMode::Api:
+            // Complete the reset sequence (7 cycles) so PC contains the
+            // actual reset vector value, then pause before first instruction.
+            // The 6502 reset sequence reads the reset vector from $FFFC/$FFFD
+            // during cycles 4-6, loading PC with the entry point address.
+            machine.run(7);
+            machine.pause();
+            std::cout << "Paused at first instruction (PC=$"
+                      << std::hex << std::uppercase
+                      << machine.state().cpu.pc.w
+                      << std::dec << "). Waiting for Run() RPC...\n";
+            break;
+
+        case WaitMode::None:
+            // Start immediately
+            break;
+    }
+}
+
+// Run the main emulation loop with pacing.
+// This function blocks until g_running becomes false (signal handler sets it).
+// Sets up shutdown callbacks for clean signal handling.
+template<typename MachineType>
+void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
+    using Memory = typename MachineType::Memory;
+
+    // Check for BEEBIUM_NO_PACING environment variable for debugging
+    const char* no_pacing_env = std::getenv("BEEBIUM_NO_PACING");
+    bool use_pacing = (no_pacing_env == nullptr);
+
+    // Create and start pacing clock with machine-specific configuration
+    PacingClock pacing_clock(Memory::default_pacing_config());
+
+    if (use_pacing) {
+        pacing_clock.start();
+        std::cout << "Pacing: " << Memory::default_pacing_config().pacing_hz << " Hz, "
+                  << Memory::default_pacing_config().cycles_per_tick() << " cycles/tick\n";
+    } else {
+        std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
+    }
+
+    // Set up shutdown callbacks so signal handler can interrupt blocked waits
+    // and notify clients of impending shutdown
+    g_request_machine_shutdown = [&machine]() { machine.request_shutdown(); };
+    g_request_pacing_stop = [&pacing_clock]() { pacing_clock.request_stop(); };
+    g_notify_clients_shutdown = [&server]() { server.notify_shutdown(5000); };
+
+    // Main emulation loop
+    constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
+    while (g_running) {
+        // Block if debugger has paused execution
+        machine.wait_if_paused();
+
+        // Check if shutdown was requested during wait
+        if (machine.shutdown_requested()) {
+            break;
+        }
+
+        // Run cycles
+        machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
+
+        // Wait for next tick (pacing clock handles timing)
+        if (use_pacing) {
+            pacing_clock.wait_for_tick();
+        }
+    }
+
+    // Clean up shutdown callbacks
+    g_request_machine_shutdown = nullptr;
+    g_request_pacing_stop = nullptr;
+    g_notify_clients_shutdown = nullptr;
+
+    if (use_pacing) {
+        pacing_clock.stop();
+    }
+}
+
+template<typename MachineType>
+int server_main(int argc, char* argv[]) {
+    using Memory = typename MachineType::Memory;
+
+    // Parse arguments into config struct
+    ServerConfig<MachineType> config;
+    if (auto exit_code = parse_arguments<MachineType>(argc, argv, config)) {
+        return *exit_code;
+    }
+
+    // Validate configuration
+    if (auto error = validate_config<MachineType>(config)) {
+        std::cerr << "Error: " << *error << "\n";
         return 1;
     }
 
@@ -439,148 +744,24 @@ int server_main(int argc, char* argv[]) {
 
     try {
         // Set ROM directory if specified
-        if (!rom_dirpath.empty()) {
-            RomPaths::set_rom_directory(rom_dirpath);
-        }
-
-        // Use default MOS ROM if not specified
-        if (mos_filepath.empty()) {
-            mos_filepath = std::string(Memory::DEFAULT_MOS_ROM);
-        }
-
-        // Load default language ROM into default slot unless overridden
-        if (rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT) == rom_slots.end()) {
-            rom_slots[Memory::DEFAULT_LANGUAGE_SLOT] = std::string(Memory::DEFAULT_LANGUAGE_ROM);
-        }
-
-        // Load default DFS ROM if machine has one and slot not overridden
-        if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
-            if (rom_slots.find(Memory::DEFAULT_DFS_SLOT) == rom_slots.end()) {
-                rom_slots[Memory::DEFAULT_DFS_SLOT] = std::string(Memory::DEFAULT_DFS_ROM);
-            }
-        }
-
-        // Load MOS ROM
-        auto mos_path = RomPaths::find_rom(mos_filepath);
-        std::cout << "Loading MOS ROM: " << mos_path << "\n";
-        auto mos_data = load_file(mos_path);
-        if (mos_data.size() != 16384) {
-            std::cerr << "Warning: MOS ROM is " << mos_data.size()
-                      << " bytes, expected 16384\n";
+        if (!config.rom_dirpath.empty()) {
+            RomPaths::set_rom_directory(config.rom_dirpath);
         }
 
         // Create and initialize machine
         std::cout << "Initializing " << Memory::MACHINE_DISPLAY_NAME << "...\n";
         MachineType machine;
 
-        // Load MOS ROM into machine
-        std::copy(mos_data.begin(), mos_data.end(),
-                  machine.state().memory.mos_rom.data());
+        // Load ROMs
+        load_roms(machine, config);
 
-        // Process all slot configurations using the unified API
-        // This single loop handles ROM, RAM, and Empty slots
-        for (const auto& [slot, marker_or_filepath] : rom_slots) {
-            // Handle empty slots
-            if (marker_or_filepath == EMPTY_SLOT_MARKER) {
-                std::cout << "Slot " << static_cast<int>(slot) << ": empty\n";
-                if constexpr (Memory::supports_slot_configuration()) {
-                    machine.state().memory.configure_slot_as_empty(slot);
-                }
-                continue;
-            }
-
-            // Handle RAM slots
-            if (marker_or_filepath == RAM_SLOT_MARKER) {
-                std::cout << "Slot " << static_cast<int>(slot) << ": RAM";
-                if constexpr (Memory::supports_slot_configuration()) {
-                    machine.state().memory.configure_slot_as_ram(slot);
-                } else {
-                    std::cerr << "\nWarning: RAM slots not supported on this machine type\n";
-                }
-                std::cout << "\n";
-                continue;
-            }
-
-            // Regular ROM loading - use unified API
-            auto rom_path = RomPaths::find_rom(marker_or_filepath);
-            std::cout << "Loading ROM into slot " << static_cast<int>(slot) << ": " << rom_path << "\n";
-            auto rom_data = load_file(rom_path);
-
-            if (rom_data.size() != 16384) {
-                std::cerr << "Warning: ROM is " << rom_data.size()
-                          << " bytes, expected 16384\n";
-            }
-
-            // Unified API handles slot type configuration and loading together
-            machine.state().memory.load_sideways_rom(slot, rom_data.data(), rom_data.size());
+        // Install disc controller
+        if (auto exit_code = install_disc_controller(machine, config)) {
+            return *exit_code;
         }
 
-        // Handle RAM slots with pre-loaded images
-        // These are processed after rom_slots to ensure the slot is already configured as RAM
-        for (const auto& config : sideways_configs) {
-            if (config.type == SidewaysSlotType::Ram && !config.image_filepath.empty()) {
-                auto ram_path = RomPaths::find_rom(config.image_filepath);
-                auto ram_data = load_file(ram_path);
-                std::cout << "Pre-loading RAM slot " << static_cast<int>(config.slot)
-                          << " from " << ram_path << "\n";
-                // Use load_sideways_data to load without changing slot type
-                machine.state().memory.load_sideways_data(config.slot, ram_data.data(), ram_data.size());
-            }
-        }
-
-        // Install disc controller for machines with sockets (Model B)
-        if constexpr (HasDiscControllerSocket<Memory>) {
-            if (!fdc_type.empty()) {
-                if (fdc_type == "none") {
-                    std::cout << "Disc controller: none (socket empty)\n";
-                    // Do nothing - leave socket empty
-                } else if (auto controller = DiscControllerRegistry::create(fdc_type)) {
-                    auto* info = DiscControllerRegistry::find(fdc_type);
-                    std::cout << "Installing disc controller: " << info->display_name
-                              << " (" << info->fdc_chip << ")\n";
-                    machine.state().memory.install_disc_controller(std::move(controller), fdc_type);
-                } else {
-                    std::cerr << "Error: Unknown disc controller type: " << fdc_type << "\n"
-                              << "Use --list-fdc to see available controllers.\n";
-                    return 1;
-                }
-            }
-            // If --fdc not specified, socket remains empty (no disc controller)
-        } else if (!fdc_type.empty()) {
-            // Model B+ has built-in controller, --fdc option is not applicable
-            std::cerr << "Warning: --fdc option ignored (machine has built-in disc controller)\n";
-        }
-
-        // Load disc images (requires disc controller to be installed first)
-        if constexpr (requires { machine.state().memory.disc_drive_0; }) {
-            if (!floppy_filepaths[0].empty()) {
-                // Resolve to absolute file:// URL for consistent API behaviour
-                auto source_url = to_absolute_file_url(floppy_filepaths[0]);
-                std::cout << "Loading disc into floppy 0: " << source_url << "\n";
-                auto result = load_disc_from_url(source_url);
-                if (!result) {
-                    throw std::runtime_error("Failed to load disc: " + result.error);
-                }
-                if (result.image->is_write_protected()) {
-                    std::cout << "  (write-protected)\n";
-                }
-                machine.state().memory.disc_drive_0.insert(std::move(result.image), source_url);
-            }
-
-            if (!floppy_filepaths[1].empty()) {
-                // Resolve to absolute file:// URL for consistent API behaviour
-                auto source_url = to_absolute_file_url(floppy_filepaths[1]);
-                std::cout << "Loading disc into floppy 1: " << source_url << "\n";
-                auto result = load_disc_from_url(source_url);
-                if (!result) {
-                    throw std::runtime_error("Failed to load disc: " + result.error);
-                }
-                if (result.image->is_write_protected()) {
-                    std::cout << "  (write-protected)\n";
-                }
-                machine.state().memory.disc_drive_1.insert(std::move(result.image), source_url);
-            }
-        }
+        // Load disc images
+        load_disc_images(machine, config);
 
         // Enable video output
         machine.state().memory.enable_video_output();
@@ -588,30 +769,15 @@ int server_main(int argc, char* argv[]) {
         // Enable audio output
         machine.state().memory.enable_audio_output();
 
-        // Apply startup options (keyboard links) before reset
-        // These must be set before reset() as the MOS reads them during initialization
-        if (raw_links >= 0) {
-            // Raw byte overrides everything
-            machine.state().memory.set_startup_options(static_cast<uint8_t>(raw_links));
-            std::cout << "Startup links: 0x" << std::hex << raw_links << std::dec << "\n";
-        } else {
-            // Apply semantic options (modifies specific bits, preserves others)
-            if (screen_mode_set) {
-                machine.state().memory.set_screen_mode(static_cast<uint8_t>(screen_mode));
-                std::cout << "Startup screen mode: " << screen_mode << "\n";
-            }
-            if (auto_boot_set) {
-                machine.state().memory.set_auto_boot(auto_boot);
-                std::cout << "Auto-boot: " << (auto_boot ? "enabled" : "disabled") << "\n";
-            }
-        }
+        // Apply startup options before reset
+        apply_startup_options(machine, config);
 
         // Reset machine
         machine.reset();
 
         // Start gRPC server
         std::cout << "Starting gRPC server...\n";
-        beebium::service::Server<MachineType> server(machine, "0.0.0.0", port);
+        beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
         server.start();
 
         // Print actual bound port (important when port 0 was requested for dynamic allocation)
@@ -619,84 +785,11 @@ int server_main(int argc, char* argv[]) {
         std::cout << "Listening on port " << server.port() << std::endl;
         std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
 
-        // Handle wait mode for controlled startup
-        switch (wait_mode) {
-            case WaitMode::Cli:
-                // Wait for user to press RETURN before starting emulation
-                // "Now press RETURN." is a reference to Roger McGough's electronic poem
-                // from the original BBC Micro Welcome cassette.
-                std::cout << "Now press RETURN." << std::flush;
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                std::cout << "\n";
-                break;
+        // Handle wait mode
+        handle_wait_mode(machine, config.wait_mode);
 
-            case WaitMode::Api:
-                // Complete the reset sequence (7 cycles) so PC contains the
-                // actual reset vector value, then pause before first instruction.
-                // The 6502 reset sequence reads the reset vector from $FFFC/$FFFD
-                // during cycles 4-6, loading PC with the entry point address.
-                machine.run(7);
-                machine.pause();
-                std::cout << "Paused at first instruction (PC=$"
-                          << std::hex << std::uppercase
-                          << machine.state().cpu.pc.w
-                          << std::dec << "). Waiting for Run() RPC...\n";
-                break;
-
-            case WaitMode::None:
-                // Start immediately
-                break;
-        }
-
-        // Check for BEEBIUM_NO_PACING environment variable for debugging
-        const char* no_pacing_env = std::getenv("BEEBIUM_NO_PACING");
-        bool use_pacing = (no_pacing_env == nullptr);
-
-        // Create and start pacing clock with machine-specific configuration
-        PacingClock pacing_clock(Memory::default_pacing_config());
-
-        if (use_pacing) {
-            pacing_clock.start();
-            std::cout << "Pacing: " << Memory::default_pacing_config().pacing_hz << " Hz, "
-                      << Memory::default_pacing_config().cycles_per_tick() << " cycles/tick\n";
-        } else {
-            std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
-        }
-
-        // Set up shutdown callbacks so signal handler can interrupt blocked waits
-        // and notify clients of impending shutdown
-        g_request_machine_shutdown = [&machine]() { machine.request_shutdown(); };
-        g_request_pacing_stop = [&pacing_clock]() { pacing_clock.request_stop(); };
-        g_notify_clients_shutdown = [&server]() { server.notify_shutdown(5000); };
-
-        // Main emulation loop
-        constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
-        while (g_running) {
-            // Block if debugger has paused execution
-            machine.wait_if_paused();
-
-            // Check if shutdown was requested during wait
-            if (machine.shutdown_requested()) {
-                break;
-            }
-
-            // Run cycles
-            machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
-
-            // Wait for next tick (pacing clock handles timing)
-            if (use_pacing) {
-                pacing_clock.wait_for_tick();
-            }
-        }
-
-        // Clean up shutdown callbacks
-        g_request_machine_shutdown = nullptr;
-        g_request_pacing_stop = nullptr;
-        g_notify_clients_shutdown = nullptr;
-
-        if (use_pacing) {
-            pacing_clock.stop();
-        }
+        // Run main emulation loop (blocks until shutdown)
+        run_emulation_loop(machine, server);
 
         std::cout << "\nShutting down...\n";
         server.stop();
