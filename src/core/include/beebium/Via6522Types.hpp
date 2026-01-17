@@ -121,9 +121,18 @@ struct Via6522State {
     uint8_t sr = 0;      // Shift register
 
     // Timer 1
+    //
     // Per 6522 datasheet: T1/T2 counters and latches are NOT cleared at reset.
-    // Values are undefined. We match jsbeeb's choices (0x1FFFE internally,
-    // which is 0xFFFE in 16-bit) for differential testing compatibility.
+    // Values are undefined (whatever was in the latches before reset).
+    //
+    // We match jsbeeb's arbitrary choice of 0x1FFFE (their internal doubled
+    // format, which displays as 0xFFFE when masked to 16 bits) for differential
+    // testing compatibility. This is not from any datasheet or empirical
+    // measurement - it's simply a convenient value that avoids immediate timer
+    // underflow while still being clearly "not initialized by software".
+    //
+    // Reference: jsbeeb via.js:71 - this.t1c = this.t1l = this.t2c = this.t2l = 0x1fffe;
+    //
     uint8_t t1ll = 0xFE;      // T1 latch low  (matches jsbeeb 0x1FFFE & 0xFF)
     uint8_t t1lh = 0xFF;      // T1 latch high (matches jsbeeb 0x1FFFE >> 8 & 0xFF)
     uint16_t t1  = 0xFFFE;    // T1 counter (matches jsbeeb 0x1FFFE & 0xFFFF)
@@ -133,8 +142,7 @@ struct Via6522State {
     bool t1_started = false;  // T1CH was just written (new timer started)
     uint8_t t1_pb7  = 0x80;   // PB7 output state from T1 (jsbeeb: t1_pb7=1, we use 0x80 for bit 7)
 
-    // Timer 2
-    // Same rationale as T1 - match jsbeeb's undefined value choices
+    // Timer 2 - same rationale as T1
     uint8_t t2ll = 0xFE;      // T2 latch low  (matches jsbeeb)
     uint8_t t2lh = 0xFF;      // T2 latch high (matches jsbeeb)
     uint16_t t2  = 0xFFFE;    // T2 counter (matches jsbeeb)

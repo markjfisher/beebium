@@ -102,7 +102,10 @@ constexpr uint8_t stretch_cycles(uint64_t cycle_count) {
 //   - FRED/JIM (0xFC00-0xFDFF): 74LS245 transceiver actively drives 0xFF
 //
 // JsbeebCompat mode:
-//   - All unmapped addresses return 0xFF (matches jsbeeb Uint8Array default)
+//   - All unmapped addresses return 0xFF
+//   - Matches jsbeeb's explicit 0xFF fill for empty ROM slots (6502.js:599-601)
+//   - Note: jsbeeb's Uint8Array default is 0x00, but empty ROM slots are
+//     explicitly filled with 0xFF for correct open bus behavior
 //   - Useful for differential testing against jsbeeb
 //
 // AllZero mode:
@@ -111,7 +114,7 @@ constexpr uint8_t stretch_cycles(uint64_t cycle_count) {
 //
 enum class OpenBusMode {
     Accurate,       // Bus tracking: slow→0x00, fast→last_bus_value, FRED/JIM→0xFF
-    JsbeebCompat,   // Return 0xFF for all unmapped (matches jsbeeb Uint8Array default)
+    JsbeebCompat,   // Return 0xFF for all unmapped (matches jsbeeb empty ROM slot fill)
     AllZero         // Return 0x00 for all unmapped
 };
 
@@ -144,7 +147,7 @@ constexpr uint8_t unmapped_read_value(uint16_t addr, uint8_t last_bus_value, Ope
             return last_bus_value;
 
         case OpenBusMode::JsbeebCompat:
-            return 0xFF;  // jsbeeb's Uint8Array default
+            return 0xFF;  // Matches jsbeeb's 0xFF fill for empty ROM slots
 
         case OpenBusMode::AllZero:
             return 0x00;
