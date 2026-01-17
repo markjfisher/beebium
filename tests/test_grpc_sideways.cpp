@@ -22,6 +22,7 @@
 #include "beebium/service/Server.hpp"
 
 #include "sideways.grpc.pb.h"
+#include "debugger.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
 #include <fstream>
@@ -94,6 +95,7 @@ public:
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         sideways_stub_ = beebium::SidewaysService::NewStub(channel_);
+        debugger_stub_ = beebium::DebuggerControl::NewStub(channel_);
     }
 
     ~RomRamBoardSidewaysFixture() {
@@ -102,12 +104,14 @@ public:
 
     beebium::ModelBRomRamBoard& machine() { return machine_; }
     beebium::SidewaysService::Stub& sideways() { return *sideways_stub_; }
+    beebium::DebuggerControl::Stub& debugger() { return *debugger_stub_; }
 
 private:
     beebium::ModelBRomRamBoard machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelBRomRamBoard>> server_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<beebium::SidewaysService::Stub> sideways_stub_;
+    std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
 };
 
 } // anonymous namespace
@@ -434,5 +438,136 @@ TEST_CASE("SidewaysService empty slot returns 0xFF", "[grpc][sideways]") {
     // All bytes should be 0xFF
     for (char c : read_response.data()) {
         CHECK(static_cast<uint8_t>(c) == 0xFF);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// DebuggerControl PeekRegion Tests (ROM/RAM Board)
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("DebuggerControl PeekRegion returns BASIC ROM data for bank_15", "[grpc][debugger][peek_region]") {
+    RomRamBoardSidewaysFixture fixture;
+
+    // BASIC ROM was loaded in fixture constructor via load_basic()
+    // PeekRegion for "bank_15" at address 0x8000 should return BASIC ROM data
+
+    grpc::ClientContext context;
+    beebium::RegionAccessRequest request;
+    beebium::RegionAccessResponse response;
+
+    request.set_region_name("bank_15");
+    request.set_address(0x8000);
+    request.set_length(16);
+
+    auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.data().size() == 16);
+
+    // BBC BASIC II starts with 0xC9 (CMP immediate opcode)
+    // This is the same check used in the oracle tests
+    CHECK(static_cast<uint8_t>(response.data()[0]) == 0xC9);
+}
+
+TEST_CASE("DebuggerControl PeekRegion returns DFS ROM data for bank_13", "[grpc][debugger][peek_region]") {
+    RomRamBoardSidewaysFixture fixture;
+
+    // The fixture loads BASIC but doesn't load DFS by default
+    // Let's load DFS into slot 13 first
+#ifdef BEEBIUM_ROM_DIR
+    auto dfs = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-dfs_2_26.rom");
+    fixture.machine().state().memory.load_sideways_rom(13, dfs.data(), dfs.size());
+#endif
+
+    grpc::ClientContext context;
+    beebium::RegionAccessRequest request;
+    beebium::RegionAccessResponse response;
+
+    request.set_region_name("bank_13");
+    request.set_address(0x8000);
+    request.set_length(16);
+
+    auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.data().size() == 16);
+
+    // DFS 2.26 ROM header has specific signature bytes
+    // If DFS loaded correctly, first byte should not be 0xFF
+    CHECK(static_cast<uint8_t>(response.data()[0]) != 0xFF);
+}
+
+TEST_CASE("DebuggerControl PeekRegion returns empty slot data for unconfigured bank", "[grpc][debugger][peek_region]") {
+    RomRamBoardSidewaysFixture fixture;
+
+    // Slot 0 should be empty by default in the fixture (only BASIC is loaded to slot 15)
+    grpc::ClientContext context;
+    beebium::RegionAccessRequest request;
+    beebium::RegionAccessResponse response;
+
+    request.set_region_name("bank_0");
+    request.set_address(0x8000);
+    request.set_length(16);
+
+    auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.data().size() == 16);
+
+    // Empty slot should return 0xFF for all bytes
+    for (char c : response.data()) {
+        CHECK(static_cast<uint8_t>(c) == 0xFF);
+    }
+}
+
+TEST_CASE("DebuggerControl PeekRegion returns error for invalid region name", "[grpc][debugger][peek_region][validation]") {
+    RomRamBoardSidewaysFixture fixture;
+
+    SECTION("unknown region name returns INVALID_ARGUMENT") {
+        grpc::ClientContext context;
+        beebium::RegionAccessRequest request;
+        beebium::RegionAccessResponse response;
+
+        request.set_region_name("typo_in_region_name");
+        request.set_address(0x8000);
+        request.set_length(16);
+
+        auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+        REQUIRE(!status.ok());
+        CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+        CHECK(status.error_message().find("unknown region") != std::string::npos);
+    }
+
+    SECTION("empty region name returns INVALID_ARGUMENT") {
+        grpc::ClientContext context;
+        beebium::RegionAccessRequest request;
+        beebium::RegionAccessResponse response;
+
+        // Don't set region_name - it will be empty
+        request.set_address(0x8000);
+        request.set_length(16);
+
+        auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+        REQUIRE(!status.ok());
+        CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+        // Error message shows empty string was passed: "unknown region: ''"
+        CHECK(status.error_message().find("unknown region") != std::string::npos);
+    }
+
+    SECTION("bank_16 (out of range) returns INVALID_ARGUMENT") {
+        grpc::ClientContext context;
+        beebium::RegionAccessRequest request;
+        beebium::RegionAccessResponse response;
+
+        request.set_region_name("bank_16");
+        request.set_address(0x8000);
+        request.set_length(16);
+
+        auto status = fixture.debugger().PeekRegion(&context, request, &response);
+
+        REQUIRE(!status.ok());
+        CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
     }
 }

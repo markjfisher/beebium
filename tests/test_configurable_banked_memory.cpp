@@ -436,6 +436,34 @@ TEST_CASE("ConfigurableBankedMemory supports_slot_configuration", "[configurable
     }
 }
 
+TEST_CASE("ConfigurableBankedMemory peek_bank after load_sideways_rom", "[configurable_memory][unified_api]") {
+    ConfigurableBankedMemory mem;
+
+    std::array<uint8_t, 16384> rom_data;
+    rom_data.fill(0x42);
+    rom_data[0] = 0xAA;
+    rom_data[1] = 0xBB;
+    rom_data[2] = 0xCC;
+
+    SECTION("peek_bank returns loaded ROM data") {
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());
+
+        // peek_bank should return the loaded data
+        REQUIRE(mem.peek_bank(15, 0) == 0xAA);
+        REQUIRE(mem.peek_bank(15, 1) == 0xBB);
+        REQUIRE(mem.peek_bank(15, 2) == 0xCC);
+        REQUIRE(mem.peek_bank(15, 100) == 0x42);
+    }
+
+    SECTION("peek_bank works regardless of selected bank") {
+        mem.load_sideways_rom(15, rom_data.data(), rom_data.size());
+        mem.select_bank(0);  // Select a different bank
+
+        // Should still read from bank 15
+        REQUIRE(mem.peek_bank(15, 0) == 0xAA);
+    }
+}
+
 TEST_CASE("ConfigurableBankedMemory typical ROM/RAM board configuration", "[configurable_memory][typical]") {
     ConfigurableBankedMemory mem;
 

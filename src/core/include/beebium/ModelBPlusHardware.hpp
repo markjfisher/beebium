@@ -776,120 +776,78 @@ public:
         return regions;
     }
 
-    // Region access - side-effect free read (uses absolute address)
+    /// Find a region descriptor by name.
+    /// @returns pointer to descriptor, or nullptr if not found.
+    const MemoryRegionDescriptor* find_region(std::string_view name) const {
+        if (name == REGION_MAIN_RAM) {
+            static const MemoryRegionDescriptor desc{
+                REGION_MAIN_RAM, 0x0000, 0x8000, RegionFlags::Readable | RegionFlags::Writable | RegionFlags::Populated
+            };
+            return &desc;
+        }
+        if (name == REGION_SHADOW_RAM) {
+            static const MemoryRegionDescriptor desc{
+                REGION_SHADOW_RAM, 0x3000, 0x5000, RegionFlags::Readable | RegionFlags::Writable | RegionFlags::Populated
+            };
+            return &desc;
+        }
+        if (name == REGION_ANDY_RAM) {
+            static const MemoryRegionDescriptor desc{
+                REGION_ANDY_RAM, 0x8000, 0x3000, RegionFlags::Readable | RegionFlags::Writable | RegionFlags::Populated
+            };
+            return &desc;
+        }
+        if (name == REGION_MOS_ROM) {
+            static const MemoryRegionDescriptor desc{
+                REGION_MOS_ROM, 0xC000, 0x4000, RegionFlags::Readable | RegionFlags::Populated
+            };
+            return &desc;
+        }
+        if (name.size() >= 6 && name.substr(0, 5) == "bank_") {
+            uint8_t bank = parse_bank_number(name);
+            if (bank < 16) {
+                return &bank_descriptors_[bank];
+            }
+        }
+        return nullptr;
+    }
+
+    /// Check if a region name is valid for this machine type.
+    bool has_region(std::string_view name) const {
+        return find_region(name) != nullptr;
+    }
+
+    /// Read from a named memory region without side effects.
+    /// @throws std::invalid_argument for unknown region name or out-of-bounds address.
     uint8_t peek_region(std::string_view name, uint32_t address) const {
-        if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
-            if (address < 0x8000) {
-                return main_ram.read(static_cast<uint16_t>(address));
-            }
-            return 0xFF;
+        const auto* region = find_region(name);
+        if (!region) {
+            throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
         }
-        if (name == REGION_SHADOW_RAM) {
-            // Shadow RAM: 0x3000-0x7FFF
-            if (address >= 0x3000 && address < 0x8000) {
-                return shadow_ram.read(static_cast<uint16_t>(address - 0x3000));
-            }
-            return 0xFF;
-        }
-        if (name == REGION_ANDY_RAM) {
-            // ANDY RAM: 0x8000-0xAFFF
-            if (address >= 0x8000 && address < 0xB000) {
-                return andy_ram.read(static_cast<uint16_t>(address - 0x8000));
-            }
-            return 0xFF;
-        }
-        if (name == REGION_MOS_ROM) {
-            // MOS ROM: 0xC000-0xFFFF
-            if (address >= 0xC000) {
-                return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
-            }
-            return 0xFF;
-        }
-        // Check for bank_N pattern (0x8000-0xBFFF)
-        if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
-            uint8_t bank = parse_bank_number(name);
-            if (bank < 16 && address >= 0x8000 && address < 0xC000) {
-                return sideways.peek_bank(bank, static_cast<uint16_t>(address - 0x8000));
-            }
-        }
-        return 0xFF;
+        validate_region_address(*region, address);
+        return peek_region_unchecked(name, address);
     }
 
-    // Region access - normal read (may have side effects, uses absolute address)
+    /// Read from a named memory region (may have side effects).
+    /// @throws std::invalid_argument for unknown region name or out-of-bounds address.
     uint8_t read_region(std::string_view name, uint32_t address) {
-        if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
-            if (address < 0x8000) {
-                return main_ram.read(static_cast<uint16_t>(address));
-            }
-            return 0xFF;
+        const auto* region = find_region(name);
+        if (!region) {
+            throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
         }
-        if (name == REGION_SHADOW_RAM) {
-            // Shadow RAM: 0x3000-0x7FFF
-            if (address >= 0x3000 && address < 0x8000) {
-                return shadow_ram.read(static_cast<uint16_t>(address - 0x3000));
-            }
-            return 0xFF;
-        }
-        if (name == REGION_ANDY_RAM) {
-            // ANDY RAM: 0x8000-0xAFFF
-            if (address >= 0x8000 && address < 0xB000) {
-                return andy_ram.read(static_cast<uint16_t>(address - 0x8000));
-            }
-            return 0xFF;
-        }
-        if (name == REGION_MOS_ROM) {
-            // MOS ROM: 0xC000-0xFFFF
-            if (address >= 0xC000) {
-                return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
-            }
-            return 0xFF;
-        }
-        // Check for bank_N pattern (0x8000-0xBFFF)
-        if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
-            uint8_t bank = parse_bank_number(name);
-            if (bank < 16 && address >= 0x8000 && address < 0xC000) {
-                return sideways.read_bank(bank, static_cast<uint16_t>(address - 0x8000));
-            }
-        }
-        return 0xFF;
+        validate_region_address(*region, address);
+        return read_region_unchecked(name, address);
     }
 
-    // Region access - write (uses absolute address)
+    /// Write to a named memory region.
+    /// @throws std::invalid_argument for unknown region name or out-of-bounds address.
     void write_region(std::string_view name, uint32_t address, uint8_t value) {
-        if (name == REGION_MAIN_RAM) {
-            // Main RAM: 0x0000-0x7FFF
-            if (address < 0x8000) {
-                main_ram.write(static_cast<uint16_t>(address), value);
-            }
-            return;
+        const auto* region = find_region(name);
+        if (!region) {
+            throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
         }
-        if (name == REGION_SHADOW_RAM) {
-            // Shadow RAM: 0x3000-0x7FFF
-            if (address >= 0x3000 && address < 0x8000) {
-                shadow_ram.write(static_cast<uint16_t>(address - 0x3000), value);
-            }
-            return;
-        }
-        if (name == REGION_ANDY_RAM) {
-            // ANDY RAM: 0x8000-0xAFFF
-            if (address >= 0x8000 && address < 0xB000) {
-                andy_ram.write(static_cast<uint16_t>(address - 0x8000), value);
-            }
-            return;
-        }
-        // MOS ROM is read-only, ignore writes
-        if (name == REGION_MOS_ROM) {
-            return;
-        }
-        // Check for bank_N pattern (0x8000-0xBFFF)
-        if (name.substr(0, 5) == "bank_" && name.size() <= 7) {
-            uint8_t bank = parse_bank_number(name);
-            if (bank < 16 && address >= 0x8000 && address < 0xC000) {
-                sideways.write_bank(bank, static_cast<uint16_t>(address - 0x8000), value);
-            }
-        }
+        validate_region_address(*region, address);
+        write_region_unchecked(name, address, value);
     }
 
 private:
@@ -916,6 +874,64 @@ private:
             }
         }
         return 255;  // Invalid
+    }
+
+    // Static descriptors for bank regions (all have same base/size)
+    static constexpr auto bank_descriptors_ = make_bank_descriptors(bank_names_);
+
+    // Unchecked accessors - caller must validate region and address first
+    uint8_t peek_region_unchecked(std::string_view name, uint32_t address) const {
+        if (name == REGION_MAIN_RAM) {
+            return main_ram.read(static_cast<uint16_t>(address));
+        }
+        if (name == REGION_SHADOW_RAM) {
+            return shadow_ram.read(static_cast<uint16_t>(address - 0x3000));
+        }
+        if (name == REGION_ANDY_RAM) {
+            return andy_ram.read(static_cast<uint16_t>(address - 0x8000));
+        }
+        if (name == REGION_MOS_ROM) {
+            return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
+        }
+        uint8_t bank = parse_bank_number(name);
+        return sideways.peek_bank(bank, static_cast<uint16_t>(address - 0x8000));
+    }
+
+    uint8_t read_region_unchecked(std::string_view name, uint32_t address) {
+        if (name == REGION_MAIN_RAM) {
+            return main_ram.read(static_cast<uint16_t>(address));
+        }
+        if (name == REGION_SHADOW_RAM) {
+            return shadow_ram.read(static_cast<uint16_t>(address - 0x3000));
+        }
+        if (name == REGION_ANDY_RAM) {
+            return andy_ram.read(static_cast<uint16_t>(address - 0x8000));
+        }
+        if (name == REGION_MOS_ROM) {
+            return mos_rom.read(static_cast<uint16_t>(address - 0xC000));
+        }
+        uint8_t bank = parse_bank_number(name);
+        return sideways.read_bank(bank, static_cast<uint16_t>(address - 0x8000));
+    }
+
+    void write_region_unchecked(std::string_view name, uint32_t address, uint8_t value) {
+        if (name == REGION_MAIN_RAM) {
+            main_ram.write(static_cast<uint16_t>(address), value);
+            return;
+        }
+        if (name == REGION_SHADOW_RAM) {
+            shadow_ram.write(static_cast<uint16_t>(address - 0x3000), value);
+            return;
+        }
+        if (name == REGION_ANDY_RAM) {
+            andy_ram.write(static_cast<uint16_t>(address - 0x8000), value);
+            return;
+        }
+        if (name == REGION_MOS_ROM) {
+            return;  // ROM is read-only, silently ignore
+        }
+        uint8_t bank = parse_bank_number(name);
+        sideways.write_bank(bank, static_cast<uint16_t>(address - 0x8000), value);
     }
 
 private:

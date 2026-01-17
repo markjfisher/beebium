@@ -514,16 +514,20 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::PeekRegion(
     uint32_t address = request->address();
     uint32_t length = request->length();
 
-    std::string data;
-    data.reserve(length);
+    try {
+        std::string data;
+        data.reserve(length);
 
-    for (uint32_t i = 0; i < length; ++i) {
-        data.push_back(static_cast<char>(
-            machine_.memory().peek_region(region_name, address + i)));
+        for (uint32_t i = 0; i < length; ++i) {
+            data.push_back(static_cast<char>(
+                machine_.memory().peek_region(region_name, address + i)));
+        }
+
+        response->set_data(std::move(data));
+        return grpc::Status::OK;
+    } catch (const std::invalid_argument& e) {
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
     }
-
-    response->set_data(std::move(data));
-    return grpc::Status::OK;
 }
 
 template<typename MachineType>
@@ -538,16 +542,20 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ReadRegion(
     uint32_t address = request->address();
     uint32_t length = request->length();
 
-    std::string data;
-    data.reserve(length);
+    try {
+        std::string data;
+        data.reserve(length);
 
-    for (uint32_t i = 0; i < length; ++i) {
-        data.push_back(static_cast<char>(
-            machine_.memory().read_region(region_name, address + i)));
+        for (uint32_t i = 0; i < length; ++i) {
+            data.push_back(static_cast<char>(
+                machine_.memory().read_region(region_name, address + i)));
+        }
+
+        response->set_data(std::move(data));
+        return grpc::Status::OK;
+    } catch (const std::invalid_argument& e) {
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, e.what());
     }
-
-    response->set_data(std::move(data));
-    return grpc::Status::OK;
 }
 
 template<typename MachineType>
@@ -562,13 +570,19 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WriteRegion(
     uint32_t address = request->address();
     const std::string& data = request->data();
 
-    for (size_t i = 0; i < data.size(); ++i) {
-        machine_.memory().write_region(region_name, address + static_cast<uint32_t>(i),
-            static_cast<uint8_t>(data[i]));
-    }
+    try {
+        for (size_t i = 0; i < data.size(); ++i) {
+            machine_.memory().write_region(region_name, address + static_cast<uint32_t>(i),
+                static_cast<uint8_t>(data[i]));
+        }
 
-    response->set_success(true);
-    return grpc::Status::OK;
+        response->set_success(true);
+        return grpc::Status::OK;
+    } catch (const std::invalid_argument& e) {
+        response->set_success(false);
+        response->set_error(e.what());
+        return grpc::Status::OK;
+    }
 }
 
 template<typename MachineType>

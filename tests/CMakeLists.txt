@@ -31,6 +31,11 @@ add_executable(test_configurable_banked_memory test_configurable_banked_memory.c
 target_link_libraries(test_configurable_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_configurable_banked_memory)
 
+# Model B ROM/RAM Board hardware tests
+add_executable(test_model_b_romram_hardware test_model_b_romram_hardware.cpp)
+target_link_libraries(test_model_b_romram_hardware PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_model_b_romram_hardware)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
