@@ -325,7 +325,7 @@ export class BeebiumClient {
      */
     async peekRegion(regionName: string, address: number, length: number = 1): Promise<Uint8Array> {
         const response = await this.call<any>('PeekRegion', {
-            region_name: regionName,
+            regionName,  // proto-loader with keepCase: false converts region_name to regionName
             address,
             length,
         });
