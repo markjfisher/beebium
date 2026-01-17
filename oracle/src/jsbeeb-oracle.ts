@@ -63,6 +63,26 @@ export class JsbeebOracle {
                         left -= todo;
                     }
                 },
+                async runUntilAddress(targetAddr: number, secs: number = 120) {
+                    let hit = false;
+                    const hook = processor.debugInstruction.add((addr: number) => {
+                        if (addr === targetAddr) {
+                            hit = true;
+                            return true;
+                        }
+                    });
+                    // Run for up to secs seconds (2MHz = 2M cycles/sec)
+                    let left = secs * 2 * 1000 * 1000;
+                    while (left > 0 && !hit) {
+                        const todo = Math.min(left, 100000);
+                        processor.execute(todo);
+                        left -= todo;
+                    }
+                    hook.remove();
+                    if (!hit) {
+                        throw new Error(`did not hit address $${targetAddr.toString(16).toUpperCase()} in ${secs} seconds`);
+                    }
+                },
             } as TestMachine;
 
             await this.machine.initialise();
