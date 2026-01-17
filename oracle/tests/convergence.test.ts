@@ -339,6 +339,12 @@ describe('State Convergence', () => {
         oracle.reset();
         await client.reset();
 
+        // Debug: Read first 16 bytes of slot 15 (should be BASIC ROM header)
+        const slot15Data = await client.peekRegion('bank_15', 0x8000, 16);
+        console.log('\n=== Debug: BASIC ROM header (slot 15, $8000-$800F) ===');
+        console.log('Bytes:', Array.from(slot15Data).map(b => b.toString(16).padStart(2, '0')).join(' '));
+        console.log('Expected BASIC header starts with: 00 00 00 4c xx xx (C) or similar');
+
         console.log('\n=== ROM Slot Header Comparison (Diagnosing Cycle Difference) ===\n');
         console.log('Checking what each emulator returns for unpopulated/empty ROM slots.');
         console.log('MOS enumeration behavior depends on ROM header bytes at $8006-$8008.\n');
