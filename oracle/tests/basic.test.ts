@@ -71,7 +71,15 @@ describe('BeebiumClient with ServerFixture', () => {
     let client: BeebiumClient;
 
     beforeAll(async () => {
-        fixture = new ServerFixture({ timeout: 10000 });
+        const romDir = '/Users/rjs/Code/beebium/roms';
+        fixture = new ServerFixture({
+            timeout: 10000,
+            model: 'B-RomRam',
+            fdc: 'acorn-1770',
+            sideways: [
+                { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
+            ],
+        });
         try {
             client = await fixture.start();
         } catch (err) {
@@ -141,8 +149,16 @@ describe('DiffRunner with ServerFixture', () => {
         oracle = new JsbeebOracle();
         await oracle.initialize('B-DFS1.2');
 
-        // Start Beebium server
-        fixture = new ServerFixture({ timeout: 10000 });
+        // Start Beebium server with matching ROM config
+        const romDir = '/Users/rjs/Code/beebium/roms';
+        fixture = new ServerFixture({
+            timeout: 10000,
+            model: 'B-RomRam',
+            fdc: 'acorn-1770',
+            sideways: [
+                { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
+            ],
+        });
         client = await fixture.start();
 
         runner = new DiffRunner(oracle, client);

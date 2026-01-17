@@ -9,7 +9,15 @@ describe('Breakpoint Debug', () => {
     let client: BeebiumClient;
 
     beforeAll(async () => {
-        fixture = new ServerFixture({ timeout: 10000 });
+        const romDir = '/Users/rjs/Code/beebium/roms';
+        fixture = new ServerFixture({
+            timeout: 10000,
+            model: 'B-RomRam',
+            fdc: 'acorn-1770',
+            sideways: [
+                { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
+            ],
+        });
         client = await fixture.start();
     }, 30000);
 

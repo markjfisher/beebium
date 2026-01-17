@@ -12,7 +12,14 @@ describe('Server Status', () => {
     let client: BeebiumClient;
 
     beforeAll(async () => {
-        fixture = new ServerFixture();
+        const romDir = '/Users/rjs/Code/beebium/roms';
+        fixture = new ServerFixture({
+            model: 'B-RomRam',
+            fdc: 'acorn-1770',
+            sideways: [
+                { slot: 14, type: 'rom', filepath: `${romDir}/acorn-dfs_2_26.rom` },
+            ],
+        });
         await fixture.start();
         client = BeebiumClient.connect(`localhost:${fixture.port}`);
     });
