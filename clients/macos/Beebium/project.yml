@@ -25,7 +25,10 @@ targets:
       - path: Beebium
         excludes:
           - "**/*.xcassets"
+          - Resources/KeyboardMappings
       - path: Beebium/Assets.xcassets
+      - path: Beebium/Resources/KeyboardMappings
+        type: folder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.beebium.Beebium
