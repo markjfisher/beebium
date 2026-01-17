@@ -80,8 +80,19 @@ struct IndicatorView: View {
     /// Color of the indicator
     let color: Color
 
+    /// BBC key name this indicator relates to (enables click interaction)
+    let relatedKey: String?
+
+    /// Callback when indicator is tapped (only if relatedKey is set)
+    var onTap: (() -> Void)?
+
     /// Size of the indicator circle
     var size: CGFloat = 12
+
+    /// Whether this indicator is interactive (has a related key)
+    private var isInteractive: Bool {
+        relatedKey != nil && onTap != nil
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -103,6 +114,13 @@ struct IndicatorView: View {
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isInteractive {
+                onTap?()
+            }
+        }
+        .help(isInteractive ? "Click to toggle \(label)" : label)
     }
 
     /// Convert 0-255 value to 0.0-1.0 fill fraction
@@ -143,18 +161,18 @@ struct IndicatorView: View {
 struct IndicatorView_Previews: PreviewProvider {
     static var previews: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Show different fill levels
-            IndicatorView(value: 0, label: "CAPS LOCK", color: .red)
-            IndicatorView(value: 64, label: "CAPS LOCK", color: .red)
-            IndicatorView(value: 128, label: "CAPS LOCK", color: .red)
-            IndicatorView(value: 192, label: "CAPS LOCK", color: .red)
-            IndicatorView(value: 255, label: "CAPS LOCK", color: .red)
+            // Show different fill levels (with related key - clickable)
+            IndicatorView(value: 0, label: "CAPS LOCK", color: .red, relatedKey: "Caps Lock")
+            IndicatorView(value: 64, label: "CAPS LOCK", color: .red, relatedKey: "Caps Lock")
+            IndicatorView(value: 128, label: "CAPS LOCK", color: .red, relatedKey: "Caps Lock")
+            IndicatorView(value: 192, label: "CAPS LOCK", color: .red, relatedKey: "Caps Lock")
+            IndicatorView(value: 255, label: "CAPS LOCK", color: .red, relatedKey: "Caps Lock")
 
             Divider()
 
-            // Drive indicators in orange
-            IndicatorView(value: 0, label: "Drive 0", color: .orange)
-            IndicatorView(value: 255, label: "Drive 0", color: .orange)
+            // Drive indicators in orange (no related key - not clickable)
+            IndicatorView(value: 0, label: "Drive 0", color: .orange, relatedKey: nil)
+            IndicatorView(value: 255, label: "Drive 0", color: .orange, relatedKey: nil)
         }
         .padding()
         .background(.bar)

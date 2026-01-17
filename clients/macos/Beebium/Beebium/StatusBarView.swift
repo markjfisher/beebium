@@ -10,12 +10,14 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import SwiftUI
 
 /// Status bar displayed at the bottom of the main window
 struct StatusBarView: View {
     @ObservedObject var systemClient: SystemClient
     @ObservedObject var indicatorClient: IndicatorClient
+    @ObservedObject var keyboardClient: KeyboardClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
 
     /// Display order for indicators (keyboard LEDs first, then drives)
@@ -35,7 +37,9 @@ struct StatusBarView: View {
                         IndicatorView(
                             value: indicatorClient.values[name] ?? 0,
                             label: meta.label,
-                            color: meta.color
+                            color: meta.color,
+                            relatedKey: meta.relatedKey,
+                            onTap: meta.relatedKey != nil ? { handleIndicatorTap(name: name, keyName: meta.relatedKey) } : nil
                         )
                     }
                 }
@@ -65,6 +69,18 @@ struct StatusBarView: View {
         .padding(.horizontal, 8)
         .background(.bar)
     }
+
+    private func handleIndicatorTap(name: String, keyName: String?) {
+        guard let keyName = keyName else { return }
+
+        // Special case: Caps Lock with sync enabled
+        if name == "caps-lock-led" && keyboardMappingManager.isCapsLockSyncEnabled {
+            NSSound.beep()
+            return
+        }
+
+        keyboardClient.tapKeyByName(keyName)
+    }
 }
 
 #if DEBUG
@@ -73,6 +89,7 @@ struct StatusBarView_Previews: PreviewProvider {
         StatusBarView(
             systemClient: SystemClient(),
             indicatorClient: IndicatorClient(),
+            keyboardClient: KeyboardClient(),
             keyboardMappingManager: KeyboardMappingManager()
         )
         .frame(width: 600)

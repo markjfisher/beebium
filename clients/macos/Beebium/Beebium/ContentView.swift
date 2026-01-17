@@ -66,6 +66,7 @@ struct ContentView: View {
                     StatusBarView(
                         systemClient: systemClient,
                         indicatorClient: indicatorClient,
+                        keyboardClient: keyboardClient,
                         keyboardMappingManager: keyboardMappingManager
                     )
                 }

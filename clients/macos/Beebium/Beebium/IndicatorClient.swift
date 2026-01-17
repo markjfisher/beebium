@@ -19,6 +19,7 @@ struct IndicatorMetadata {
     let name: String
     let label: String
     let color: Color
+    let relatedKey: String?  // BBC key name this indicator relates to (e.g., "Caps Lock", "Shift Lock")
 }
 
 /// BBC Caps Lock LED state for synchronization purposes.
@@ -98,11 +99,14 @@ final class IndicatorClient: ObservableObject {
                 let label = info.metadata["label"] ?? info.name
                 let colorString = info.metadata["color"] ?? ""
                 let color = colorFromMetadata(colorString)
+                let relatedKeyString = info.metadata["related_key"] ?? ""
+                let relatedKey = relatedKeyString.isEmpty ? nil : relatedKeyString
 
                 newMetadata[info.name] = IndicatorMetadata(
                     name: info.name,
                     label: label,
-                    color: color
+                    color: color,
+                    relatedKey: relatedKey
                 )
             }
 

@@ -283,6 +283,24 @@ final class KeyboardClient: ObservableObject {
         }
     }
 
+    // MARK: - Key Tap by Name
+
+    /// Tap a BBC key by its logical name (e.g., "Shift Lock", "Caps Lock").
+    /// Performs a complete keydown-keyup press cycle with appropriate delay.
+    func tapKeyByName(_ name: String) {
+        guard let manager = mappingManager,
+              let entry = manager.bbcKeyCache.lookup(name: name) else {
+            print("[KeyboardClient] Key not found: \(name)")
+            return
+        }
+        Task {
+            await sendKeyDown(ikNumber: entry.ikNumber)
+            // Wait 50ms for MOS keyboard scan (same as Caps Lock sync)
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            await sendKeyUp(ikNumber: entry.ikNumber)
+        }
+    }
+
     // MARK: - Private gRPC Methods
 
     private func sendKeyDown(ikNumber: UInt8) async {
