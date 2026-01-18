@@ -50,6 +50,13 @@ enum class WaitMode {
     Api     // Wait for Run() RPC
 };
 
+enum class OutputFormat {
+    Auto,    // Detect based on isatty(STDOUT_FILENO)
+    Pretty,  // Human-friendly formatted output
+    Tsv,     // Tab-separated values with header
+    Jsonl    // JSON Lines (one object per line)
+};
+
 // Exit codes following sysexits.h conventions
 namespace ExitCode {
     constexpr int OK = 0;           // Success
@@ -66,6 +73,7 @@ struct GlobalConfig {
     std::string subcommand_name;    // Empty = default to "start"
     int subcommand_argv_start = 1;  // Index where subcommand args begin
     bool help_requested = false;    // --help before subcommand
+    OutputFormat output_format = OutputFormat::Auto;  // --format option
 };
 
 // Forward declaration for subcommand base class
@@ -332,12 +340,29 @@ std::string to_absolute_file_url(const std::string& url_or_filepath) {
     return "file://" + canonical_path.string();
 }
 
+// Resolve Auto format to actual format based on TTY detection
+OutputFormat resolve_output_format(OutputFormat format) {
+    if (format == OutputFormat::Auto) {
+        return isatty(STDOUT_FILENO) ? OutputFormat::Pretty : OutputFormat::Tsv;
+    }
+    return format;
+}
+
+// Parse --format argument value
+OutputFormat parse_format_arg(const std::string& value) {
+    if (value == "pretty") return OutputFormat::Pretty;
+    if (value == "tsv") return OutputFormat::Tsv;
+    if (value == "jsonl") return OutputFormat::Jsonl;
+    throw std::runtime_error("Invalid --format value: " + value +
+                             " (expected 'pretty', 'tsv', or 'jsonl')");
+}
+
 // Parse global arguments that appear before the subcommand.
 // Returns:
 //   - std::nullopt on success (continue with subcommand dispatch)
 //   - ExitCode::USAGE for errors
 std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& global) {
-    // Scan arguments looking for --help/-h before subcommand, or identify subcommand
+    // Scan arguments looking for global options or subcommand
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
 
@@ -348,6 +373,29 @@ std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& 
             continue;
         }
 
+        // Check for --format option
+        if (arg == "--format" && i + 1 < argc) {
+            try {
+                global.output_format = parse_format_arg(argv[++i]);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
+            continue;
+        }
+
+        // Check for --format=value form
+        if (arg.rfind("--format=", 0) == 0) {
+            std::string format_value(arg.substr(9));  // Skip "--format="
+            try {
+                global.output_format = parse_format_arg(format_value);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
+            continue;
+        }
+
         // First non-option argument is the subcommand
         if (!arg.empty() && arg[0] != '-') {
             global.subcommand_name = std::string(arg);
@@ -355,7 +403,7 @@ std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& 
             return std::nullopt;  // Success
         }
 
-        // Argument starting with '-' but not --help: this is a subcommand option.
+        // Argument starting with '-' but not a recognized global option: this is a subcommand option.
         // Stop parsing global args and let the default subcommand handle it.
         // (This enables "beebium --port 8080" to work as "beebium start --port 8080")
         global.subcommand_argv_start = i;  // Subcommand-specific args start here
@@ -991,32 +1039,65 @@ public:
             return ExitCode::USAGE;
         }
 
-        std::cout << "Available disc controllers:\n";
-        for (const auto& info : DiscControllerRegistry::available()) {
-            std::cout << "  " << info.id << " - " << info.display_name
-                      << " (" << info.fdc_chip << ")\n"
-                      << "      " << info.description << "\n";
+        // Resolve format based on TTY detection
+        OutputFormat format = resolve_output_format(global.output_format);
+
+        switch (format) {
+            case OutputFormat::Pretty:
+                std::cout << "Available disc controllers:\n";
+                for (const auto& info : DiscControllerRegistry::available()) {
+                    std::cout << "  " << info.id << " - " << info.display_name
+                              << " (" << info.fdc_chip << ")\n"
+                              << "      " << info.description << "\n";
+                }
+                std::cout << "  none - No disc controller (leave socket empty)\n";
+                break;
+
+            case OutputFormat::Tsv:
+                std::cout << "id\tdisplay_name\tfdc_chip\tdescription\n";
+                for (const auto& info : DiscControllerRegistry::available()) {
+                    std::cout << info.id << "\t" << info.display_name << "\t"
+                              << info.fdc_chip << "\t" << info.description << "\n";
+                }
+                std::cout << "none\tNo controller\t-\tLeave socket empty (no disc)\n";
+                break;
+
+            case OutputFormat::Jsonl:
+                for (const auto& info : DiscControllerRegistry::available()) {
+                    std::cout << "{\"id\":\"" << info.id
+                              << "\",\"display_name\":\"" << info.display_name
+                              << "\",\"fdc_chip\":\"" << info.fdc_chip
+                              << "\",\"description\":\"" << info.description << "\"}\n";
+                }
+                std::cout << "{\"id\":\"none\",\"display_name\":\"No controller\","
+                          << "\"fdc_chip\":\"-\",\"description\":\"Leave socket empty (no disc)\"}\n";
+                break;
+
+            case OutputFormat::Auto:
+                // Should not reach here after resolve_output_format
+                break;
         }
-        std::cout << "  none - No disc controller (leave socket empty)\n";
         return ExitCode::OK;
     }
 };
 
-// DescribeMachine subcommand - output JSON machine info
+// DescribeMachine subcommand - output machine info
 template<typename MachineType>
 class DescribeMachineSubcommand : public Subcommand<MachineType> {
 public:
     std::string_view name() const override { return "describe-machine"; }
-    std::string_view description() const override { return "Output machine information as JSON"; }
+    std::string_view description() const override { return "Output machine information"; }
 
     void help(const char* program_name) const override {
         std::cerr << "Usage: " << program_name << " describe-machine\n"
                   << "\n"
-                  << "Outputs machine information in JSON format for programmatic use.\n"
+                  << "Outputs machine information for programmatic use.\n"
                   << "Includes machine type, default ROMs, and version information.\n";
     }
 
     int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
+
         // Handle --help for this subcommand
         if (global.help_requested) {
             help(argv[0]);
@@ -1036,7 +1117,57 @@ public:
             return ExitCode::USAGE;
         }
 
-        print_info<MachineType>(argv[0]);
+        // Resolve format based on TTY detection
+        OutputFormat format = resolve_output_format(global.output_format);
+
+        switch (format) {
+            case OutputFormat::Pretty:
+                std::cout << "Machine:        " << Memory::MACHINE_DISPLAY_NAME << "\n"
+                          << "Executable:     " << argv[0] << "\n"
+                          << "Version:        " << BEEBIUM_VERSION << "\n"
+                          << "MOS ROM:        " << Memory::DEFAULT_MOS_ROM << "\n"
+                          << "Language ROM:   " << Memory::DEFAULT_LANGUAGE_ROM
+                          << " (slot " << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT) << ")\n";
+                if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+                    std::cout << "DFS ROM:        " << Memory::DEFAULT_DFS_ROM
+                              << " (slot " << static_cast<int>(Memory::DEFAULT_DFS_SLOT) << ")\n";
+                }
+                break;
+
+            case OutputFormat::Tsv:
+                std::cout << "key\tvalue\n"
+                          << "machine_type\t" << Memory::MACHINE_TYPE << "\n"
+                          << "display_name\t" << Memory::MACHINE_DISPLAY_NAME << "\n"
+                          << "executable\t" << argv[0] << "\n"
+                          << "version\t" << BEEBIUM_VERSION << "\n"
+                          << "default_mos_rom\t" << Memory::DEFAULT_MOS_ROM << "\n"
+                          << "default_language_rom\t" << Memory::DEFAULT_LANGUAGE_ROM << "\n"
+                          << "default_language_slot\t" << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT) << "\n";
+                if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+                    std::cout << "default_dfs_rom\t" << Memory::DEFAULT_DFS_ROM << "\n"
+                              << "default_dfs_slot\t" << static_cast<int>(Memory::DEFAULT_DFS_SLOT) << "\n";
+                }
+                break;
+
+            case OutputFormat::Jsonl:
+                std::cout << "{\"executable\":\"" << argv[0]
+                          << "\",\"machine_type\":\"" << Memory::MACHINE_TYPE
+                          << "\",\"display_name\":\"" << Memory::MACHINE_DISPLAY_NAME
+                          << "\",\"version\":\"" << BEEBIUM_VERSION
+                          << "\",\"default_mos_rom\":\"" << Memory::DEFAULT_MOS_ROM
+                          << "\",\"default_language_rom\":\"" << Memory::DEFAULT_LANGUAGE_ROM
+                          << "\",\"default_language_slot\":" << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT);
+                if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+                    std::cout << ",\"default_dfs_rom\":\"" << Memory::DEFAULT_DFS_ROM
+                              << "\",\"default_dfs_slot\":" << static_cast<int>(Memory::DEFAULT_DFS_SLOT);
+                }
+                std::cout << "}\n";
+                break;
+
+            case OutputFormat::Auto:
+                // Should not reach here after resolve_output_format
+                break;
+        }
         return ExitCode::OK;
     }
 };
@@ -1122,7 +1253,11 @@ void print_global_help(const char* program_name) {
               << "Beebium " << BEEBIUM_VERSION << " - " << Memory::MACHINE_DISPLAY_NAME << " emulator server\n"
               << "\n"
               << "Global options:\n"
-              << "  --help, -h    Show this help message\n"
+              << "  --help, -h          Show this help message\n"
+              << "  --format <format>   Output format for data commands:\n"
+              << "                      pretty - human-friendly (default if TTY)\n"
+              << "                      tsv    - tab-separated values (default if not TTY)\n"
+              << "                      jsonl  - JSON Lines (one JSON object per line)\n"
               << "\n"
               << "Subcommands:\n";
 

@@ -523,3 +523,125 @@ TEST_CASE("parse_int: context appears in error message", "[cli][parse_int]") {
         REQUIRE(msg.find("--port") != std::string::npos);
     }
 }
+
+// ============================================================================
+// OutputFormat and --format option tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: default output_format is Auto", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Auto);
+}
+
+TEST_CASE("parse_global_arguments: --format pretty sets output_format", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format", "pretty", "list-fdcs"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Pretty);
+    REQUIRE(global.subcommand_name == "list-fdcs");
+}
+
+TEST_CASE("parse_global_arguments: --format tsv sets output_format", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format", "tsv", "list-fdcs"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Tsv);
+    REQUIRE(global.subcommand_name == "list-fdcs");
+}
+
+TEST_CASE("parse_global_arguments: --format jsonl sets output_format", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format", "jsonl", "list-fdcs"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Jsonl);
+    REQUIRE(global.subcommand_name == "list-fdcs");
+}
+
+TEST_CASE("parse_global_arguments: --format=pretty works", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format=pretty", "describe-machine"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Pretty);
+    REQUIRE(global.subcommand_name == "describe-machine");
+}
+
+TEST_CASE("parse_global_arguments: --format=tsv works", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format=tsv", "describe-machine"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Tsv);
+}
+
+TEST_CASE("parse_global_arguments: --format=jsonl works", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format=jsonl", "describe-machine"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.output_format == OutputFormat::Jsonl);
+}
+
+TEST_CASE("parse_global_arguments: invalid --format returns USAGE", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format", "invalid", "list-fdcs"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_global_arguments: invalid --format=value returns USAGE", "[cli][parse_global_arguments][format]") {
+    ArgvHelper args{"beebium", "--format=xml", "list-fdcs"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("resolve_output_format: Pretty returns Pretty", "[cli][resolve_output_format]") {
+    REQUIRE(resolve_output_format(OutputFormat::Pretty) == OutputFormat::Pretty);
+}
+
+TEST_CASE("resolve_output_format: Tsv returns Tsv", "[cli][resolve_output_format]") {
+    REQUIRE(resolve_output_format(OutputFormat::Tsv) == OutputFormat::Tsv);
+}
+
+TEST_CASE("resolve_output_format: Jsonl returns Jsonl", "[cli][resolve_output_format]") {
+    REQUIRE(resolve_output_format(OutputFormat::Jsonl) == OutputFormat::Jsonl);
+}
+
+TEST_CASE("parse_format_arg: valid values", "[cli][parse_format_arg]") {
+    REQUIRE(parse_format_arg("pretty") == OutputFormat::Pretty);
+    REQUIRE(parse_format_arg("tsv") == OutputFormat::Tsv);
+    REQUIRE(parse_format_arg("jsonl") == OutputFormat::Jsonl);
+}
+
+TEST_CASE("parse_format_arg: invalid value throws", "[cli][parse_format_arg]") {
+    REQUIRE_THROWS_AS(parse_format_arg("invalid"), std::runtime_error);
+    REQUIRE_THROWS_AS(parse_format_arg("json"), std::runtime_error);  // Not jsonl
+    REQUIRE_THROWS_AS(parse_format_arg("PRETTY"), std::runtime_error);  // Case sensitive
+}

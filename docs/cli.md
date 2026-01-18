@@ -22,6 +22,33 @@ If no subcommand is specified, `start` is assumed.
 | Option | Description |
 |--------|-------------|
 | `--help`, `-h` | Show global help message |
+| `--format <format>` | Output format for data commands (see below) |
+
+### Output Formats
+
+The `--format` option controls output formatting for data commands (`list-fdcs`, `describe-machine`):
+
+| Format | Description | Auto-selected when |
+|--------|-------------|-------------------|
+| `pretty` | Human-friendly formatted output | stdout is TTY |
+| `tsv` | Tab-separated values with header row | stdout is not TTY |
+| `jsonl` | JSON Lines (one JSON object per line) | Never (explicit only) |
+
+If `--format` is not specified, the format is auto-detected based on whether stdout is a TTY:
+- **TTY (interactive terminal)**: Uses `pretty` format
+- **Not TTY (piped/redirected)**: Uses `tsv` format
+
+Examples:
+```bash
+# Auto-detect format (pretty in terminal, tsv when piped)
+beebium-model-b list-fdcs
+beebium-model-b list-fdcs | cat     # tsv output
+
+# Explicit format
+beebium-model-b --format pretty list-fdcs
+beebium-model-b --format tsv describe-machine
+beebium-model-b --format jsonl list-fdcs
+```
 
 ## Integer Formats
 
@@ -124,34 +151,66 @@ List available disc controllers that can be installed in machines with a disc co
 beebium-model-b list-fdcs
 ```
 
+Output varies by format (see [Output Formats](#output-formats)):
+
+**`--format pretty`** (default for TTY):
+```
+Available disc controllers:
+  acorn-1770 - Acorn 1770 (WD1770)
+      Standard Acorn disc controller upgrade for BBC Model B
+  none - No disc controller (leave socket empty)
+```
+
+**`--format tsv`** (default for non-TTY):
+```
+id	display_name	fdc_chip	description
+acorn-1770	Acorn 1770	WD1770	Standard Acorn disc controller upgrade for BBC Model B
+none	No controller	-	Leave socket empty (no disc)
+```
+
+**`--format jsonl`**:
+```
+{"id":"acorn-1770","display_name":"Acorn 1770","fdc_chip":"WD1770","description":"Standard Acorn disc controller upgrade for BBC Model B"}
+{"id":"none","display_name":"No controller","fdc_chip":"-","description":"Leave socket empty (no disc)"}
+```
+
 ### describe-machine
 
-Output machine information as JSON for programmatic use.
+Output machine information for programmatic use.
 
 ```bash
 beebium-model-b describe-machine
 ```
 
-Output:
-```json
-{
-  "executable": "beebium-model-b",
-  "machine_type": "ModelB",
-  "display_name": "BBC Model B",
-  "version": "0.1.0",
-  "default_mos_rom": "acorn-mos_1_20.rom",
-  "default_language_rom": "bbc-basic_2.rom",
-  "default_language_slot": 15
-}
+Output varies by format (see [Output Formats](#output-formats)):
+
+**`--format pretty`** (default for TTY):
+```
+Machine:        BBC Model B
+Executable:     beebium-model-b
+Version:        0.1.0
+MOS ROM:        acorn-mos_1_20.rom
+Language ROM:   bbc-basic_2.rom (slot 15)
 ```
 
-Model B+ also includes DFS information:
-```json
-{
-  "default_dfs_rom": "acorn-dfs_2_26.rom",
-  "default_dfs_slot": 11
-}
+**`--format tsv`** (default for non-TTY):
 ```
+key	value
+machine_type	ModelB
+display_name	BBC Model B
+executable	beebium-model-b
+version	0.1.0
+default_mos_rom	acorn-mos_1_20.rom
+default_language_rom	bbc-basic_2.rom
+default_language_slot	15
+```
+
+**`--format jsonl`**:
+```
+{"executable":"beebium-model-b","machine_type":"ModelB","display_name":"BBC Model B","version":"0.1.0","default_mos_rom":"acorn-mos_1_20.rom","default_language_rom":"bbc-basic_2.rom","default_language_slot":15}
+```
+
+Model B+ also includes DFS information (`default_dfs_rom`, `default_dfs_slot`).
 
 ### help
 
@@ -220,8 +279,14 @@ beebium-model-b start --links 0xff
 # List available disc controllers
 beebium-model-b list-fdcs
 
-# Get machine info as JSON
+# Get machine info
 beebium-model-b describe-machine
+
+# Output formats (auto-detected by default)
+beebium-model-b --format pretty list-fdcs    # Human-friendly
+beebium-model-b --format tsv describe-machine # Tab-separated
+beebium-model-b --format jsonl list-fdcs     # JSON Lines
+beebium-model-b list-fdcs | cat               # Auto-selects tsv (piped)
 
 # Install disc controller (Model B only)
 beebium-model-b start --fdc acorn-1770
