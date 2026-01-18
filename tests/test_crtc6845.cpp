@@ -868,10 +868,17 @@ TEST_CASE("Crtc6845 interlace: odd/even field tracking", "[crtc6845][interlace][
     REQUIRE(out.odd_field == 0);
 
     // Complete one full frame (31 rows + 2 v_adjust scanlines)
-    // From row 25, need 6 more rows + 2 v_adjust scanlines
-    const int remaining_rows = 6;
+    // We're at row 25, column 1 after the odd_field check tick.
+    // To reach end_of_frame, we need:
+    //   - Complete row 25: 63 (finish scanline 0) + 9*64 (scanlines 1-9) = 639 ticks
+    //   - Complete rows 26-31: 6 rows * 10 scanlines * 64 chars = 3840 ticks
+    //   - Complete 2 vadj scanlines: 2 * 64 = 128 ticks
+    //   Total: 639 + 3840 + 128 = 4607 ticks
+    // Equivalently: (7 rows * 10 scanlines + 2 vadj) * 64 - 1 = 72*64 - 1 = 4607
+    const int complete_rows = 7;  // rows 25-31 (inclusive)
     const int v_adjust = 2;
-    tick_n(crtc, (remaining_rows * scanlines_per_row + v_adjust) * chars_per_line);
+    // Subtract 1 because we're at column 1, not column 0
+    tick_n(crtc, (complete_rows * scanlines_per_row + v_adjust) * chars_per_line - 1);
 
     // At start of new frame, odd_field should still be 0 (even field frame)
     out = crtc.tick();

@@ -158,19 +158,32 @@ public:
             hsync_counter_ = 0;
         }
 
-        // Handle vertical sync END first, then START (order matters!)
-        // If vsync ends, vsync_counter_ becomes -1, allowing a new vsync to start on the same tick.
-        // This matches jsbeeb's order where inVSync=false is set before the start check.
+        // Handle vertical sync START and END with same-tick restart prevention
+        //
+        // Vsync width handling:
+        // - Per Hitachi 6845 datasheet, R3 high nibble = 0 means 16 scanlines
+        // - Use >= comparison to handle counter increments properly
+        // - !vsync_ending check (from b2) prevents same-tick restart in degenerate cases
 
         // Vsync END (only at valid interlace point)
-        // Vsync counter is incremented per scanline in end_of_scanline()
-        if (vsync_counter_ >= 0 && vsync_counter_ >= vsync_width() && is_vsync_point()) {
+        // Uses mapped vsync_width() which converts 0 -> 16 per 6845 datasheet
+        const bool vsync_ending = (vsync_counter_ >= 0 &&
+                                   vsync_counter_ >= vsync_width() &&
+                                   is_vsync_point());
+        if (vsync_ending) {
             vsync_counter_ = -1;
         }
 
         // Vsync START (only at valid interlace point)
         // In interlace mode, vsync start is delayed to half-scanline on even frames
-        if (row_ == registers_[R7_VSYNC_POS] && vsync_counter_ < 0 && !had_vsync_this_row_ && is_vsync_point()) {
+        // Note: vsync_starting is computed AFTER vsync_counter_ is set to -1
+        //
+        // Note: The `!vsync_ending` check (from b2) is omitted here because it breaks
+        // interlace video rendering in Mode 7. The `had_vsync_this_row_` flag alone
+        // is sufficient to prevent same-tick restart in most cases.
+        const bool vsync_starting = (row_ == registers_[R7_VSYNC_POS] && vsync_counter_ < 0 &&
+                                     !had_vsync_this_row_ && is_vsync_point());
+        if (vsync_starting) {
             vsync_counter_ = 0;
             had_vsync_this_row_ = true;
         }
@@ -231,6 +244,43 @@ public:
         // Advance character address (wrap at 14-bit boundary)
         char_addr_ = (char_addr_ + 1) & 0x3FFF;
 
+        // B2-style vadj check delay (one tick after column == 1)
+        // This implements the Hitachi 6845's latching behavior for end of frame detection
+        if (check_vadj_) {
+            check_vadj_ = false;
+            if (end_of_main_latched_) {
+                if (vadj_counter_ == registers_[R5_VTOTAL_ADJ]) {
+                    end_of_vadj_latched_ = true;
+                }
+                ++vadj_counter_;
+                vadj_counter_ &= 0x1F;
+            }
+        }
+
+        // B2-style end-of-main latching (at column 1)
+        // This is critical for degenerate state handling: with R0=0, column never
+        // reaches 1, so end_of_main_latched_ is never set, and frames don't end.
+        // This allows row to increment past R7, preventing vsync restart.
+        if (column_ == 1) {
+            if (row_ == registers_[R4_VTOTAL]) {
+                // In interlace mode, use halved comparison for raster matching.
+                // This is required because raster increments by 2 in interlace mode,
+                // so in even field (raster = 1,3,5,...,19) it never exactly equals
+                // R9 (e.g., 18). Using halved comparison: (17>>1)=8, (19>>1)=9, (18>>1)=9.
+                bool raster_match;
+                if (interlace_sync_and_video()) {
+                    raster_match = (raster_ >> 1) == ((registers_[R9_MAX_SCANLINE] & 0x1F) >> 1);
+                } else {
+                    raster_match = (raster_ == (registers_[R9_MAX_SCANLINE] & 0x1F));
+                }
+                if (raster_match) {
+                    end_of_main_latched_ = true;
+                    vadj_counter_ = 0;
+                }
+            }
+            check_vadj_ = true;
+        }
+
         // Handle end of horizontal line
         if (column_ == registers_[R0_HTOTAL]) {
             end_of_scanline();
@@ -256,6 +306,7 @@ public:
 
     uint8_t max_scanline() const { return registers_[R9_MAX_SCANLINE] & 0x1F; }
     uint8_t hsync_width() const { return registers_[R3_SYNC_WIDTH] & 0x0F; }
+
     // VSYNC width: 0 means 16 scanlines (per Hitachi 6845 datasheet)
     uint8_t vsync_width() const {
         uint8_t w = (registers_[R3_SYNC_WIDTH] >> 4) & 0x0F;
@@ -311,6 +362,14 @@ public:
         v_display_ = true;
         in_vadj_ = false;
         had_vsync_this_row_ = false;
+        // B2-style latching state
+        end_of_main_latched_ = false;
+        end_of_vadj_latched_ = false;
+        end_of_frame_latched_ = false;
+        check_vadj_ = false;
+        first_scanline_ = true;
+        in_dummy_raster_ = false;
+        // Other state
         field_count_ = 0;
         odd_field_ = true;
         frame_count_ = 0;
@@ -345,6 +404,8 @@ private:
     }
 
     void end_of_scanline() {
+        first_scanline_ = false;
+
         // Increment vsync counter per scanline (end check happens in tick() for interlace timing)
         if (vsync_counter_ >= 0) {
             ++vsync_counter_;
@@ -382,7 +443,7 @@ private:
         // With R6=0, this allows the first scanline to display before v_display
         // is cleared at the end of that scanline.
         const bool r6_hit = (row_ == registers_[R6_VDISPLAYED]);
-        if (r6_hit && v_display_) {
+        if (r6_hit && !first_scanline_ && v_display_) {
             v_display_ = false;
             // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
             // In interlace mode, this triggers twice per frame (once per field).
@@ -401,24 +462,42 @@ private:
             do_even_frame_logic_ = (frame_count_ & 1) != 0;
         }
 
-        // Check for vertical adjust period
-        if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
-            if (registers_[R5_VTOTAL_ADJ] > 0) {
-                in_vadj_ = true;
-                vadj_counter_ = 0;
+        // B2-style latching for vadj entry
+        // Enter vadj when end_of_main has been latched but vadj hasn't ended yet
+        if (end_of_main_latched_ && !end_of_vadj_latched_) {
+            in_vadj_ = true;
+        }
+
+        bool do_end_of_frame = false;
+
+        // Check for end_of_frame_latched (interlace dummy raster case)
+        if (end_of_frame_latched_) {
+            do_end_of_frame = true;
+        }
+
+        // Check for vadj completion
+        if (end_of_vadj_latched_) {
+            in_vadj_ = false;
+
+            // In interlace mode with even frame logic, add a dummy raster
+            if (is_interlace_sync() && do_even_frame_logic_) {
+                in_dummy_raster_ = true;
+                end_of_frame_latched_ = true;
             } else {
-                end_of_frame();
+                do_end_of_frame = true;
             }
         }
 
-        if (in_vadj_) {
-            ++vadj_counter_;
-            // Use > not >= because vadj_counter is incremented on the same
-            // end_of_scanline call that enters v_adjust, so we need one extra count
-            if (vadj_counter_ > registers_[R5_VTOTAL_ADJ]) {
-                in_vadj_ = false;
-                end_of_frame();
-            }
+        if (do_end_of_frame) {
+            // Clear all latches
+            end_of_main_latched_ = false;
+            end_of_vadj_latched_ = false;
+            end_of_frame_latched_ = false;
+            in_dummy_raster_ = false;
+
+            // B2 calls EndOfRow before EndOfFrame at frame end
+            end_of_row();
+            end_of_frame();
         }
 
         // Reset character address to start of line
@@ -438,6 +517,8 @@ private:
 
     void end_of_frame() {
         row_ = 0;
+        first_scanline_ = true;
+
         // In interlace mode, start at raster 0 (odd field) or 1 (even field)
         if (interlace_sync_and_video()) {
             raster_ = odd_field_ ? 0 : 1;
@@ -445,16 +526,23 @@ private:
             raster_ = 0;
         }
 
-        // Reload start address
-        line_addr_ = screen_start();
-        next_line_addr_ = line_addr_;
+        // Reload start address (matches b2)
+        next_line_addr_ = screen_start();
+        line_addr_ = next_line_addr_;
         char_addr_ = line_addr_;
 
         v_display_ = true;
+        h_display_ = false;  // B2 sets hdisp = false at frame start
         in_vadj_ = false;
-        had_vsync_this_row_ = false;
-        // Note: do_even_frame_logic_ is NOT updated here - it's updated at R6/R7 hit
-        // to match jsbeeb's behavior where doEvenFrameLogic changes at those points.
+
+        // B2: reset do_even_frame_logic when vsync is not active at frame start
+        if (vsync_counter_ < 0) {
+            do_even_frame_logic_ = false;
+        }
+
+        // Note: had_vsync_this_row_ is NOT cleared here - only in end_of_row().
+        // This matches b2 (crtc.cpp:317) and prevents vsync from immediately restarting
+        // in degenerate cases (R4=0) where end_of_frame() is called every tick.
     }
 
     // Register masks (write masks for each register)
@@ -501,6 +589,16 @@ private:
     bool v_display_ = true;
     bool in_vadj_ = false;
     bool had_vsync_this_row_ = false;
+
+    // B2-style frame end latching (required for correct degenerate state behavior)
+    // The real 6845 latches end-of-frame state, which requires column to advance
+    // past 0 before the latch can be set. This prevents rapid frame cycling when R0=0.
+    bool end_of_main_latched_ = false;   // Set at column==1 when row==R4 && raster==R9
+    bool end_of_vadj_latched_ = false;   // Set when vadj_counter == R5
+    bool end_of_frame_latched_ = false;  // For interlace dummy raster
+    bool check_vadj_ = false;            // One-tick delay for vadj check
+    bool first_scanline_ = true;         // First scanline of frame (for R6 hit logic)
+    bool in_dummy_raster_ = false;       // Interlace dummy raster state
 
     // Field counter for cursor blink timing (always increments at 50Hz field rate)
     uint8_t field_count_ = 0;
