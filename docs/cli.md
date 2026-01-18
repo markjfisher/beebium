@@ -12,30 +12,68 @@ The Beebium emulator runs as a headless gRPC server. This document covers all co
 ## Usage
 
 ```bash
-beebium-model-b [options]
-beebium-model-b-plus [options]
+<executable> [global-options] <subcommand> [subcommand-options]
 ```
 
-## Options
+If no subcommand is specified, `start` is assumed.
 
-### ROM Configuration
+## Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--help`, `-h` | Show global help message |
+
+## Integer Formats
+
+All integer arguments accept multiple formats:
+
+| Format | Prefix | Example | Value |
+|--------|--------|---------|-------|
+| Decimal | (none) | `48875` | 48875 |
+| Hexadecimal | `0x` or `0X` | `0xBEEB` | 48875 |
+| Binary | `0b` or `0B` | `0b1010` | 10 |
+| Octal | `0o` or `0O` | `0o377` | 255 |
+
+This applies to `--port`, `--screen-mode`, `--links`, slot numbers in `--sideways`, and drive numbers in `--floppy`.
+
+## Subcommands
+
+### start
+
+Start the emulator server. This is the default subcommand.
+
+```bash
+beebium-model-b start [options]
+beebium-model-b [options]           # Equivalent (start is default)
+```
+
+#### ROM Configuration
 
 | Option | Description |
 |--------|-------------|
 | `--mos <filepath>` | Path to MOS ROM (default: machine-specific) |
-| `--rom <slot>:<filepath>` | Load ROM into sideways slot 0-15 |
-| `--rom <slot>:` | Leave slot empty (overrides default) |
+| `--sideways <slot>:<type>[:<image>]` | Configure sideways slot (see below) |
 | `--rom-dir <dirpath>` | ROM directory (auto-detected if not specified) |
 
-### Disc Configuration
+The `--sideways` option supports three slot types:
+- `SLOT:rom:IMAGE` - Load ROM image file into slot
+- `SLOT:ram[:IMAGE]` - Configure as RAM (optionally pre-load from file)
+- `SLOT:empty` - Leave slot empty
+
+#### Disc Configuration
 
 | Option | Description |
 |--------|-------------|
-| `--floppy <drive>:<url>` | Load disc image into drive 0 or 1 |
+| `--floppy <drive>:<filepath\|url>` | Load disc image into drive 0 or 1 |
+| `--fdc <type>` | Disc controller to install (Model B only) |
 
-The `--floppy` option accepts file paths or `file://` URLs. Paths are resolved to canonical absolute paths.
+The `--floppy` option accepts file paths (most common) or `file://` URLs.
 
-### Network
+Disc controller types for `--fdc`:
+- `acorn-1770` - Acorn WD1770 controller
+- `none` - Leave socket empty (no disc)
+
+#### Network
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -50,12 +88,7 @@ Listening on port 54321
 
 Scripts can parse the `Listening on port <N>` line to discover the allocated port.
 
-If the port is already in use, the server exits with an error:
-```
-Error: Failed to bind to port 48875 (port may already be in use)
-```
-
-### Startup Control
+#### Startup Control
 
 | Option | Description |
 |--------|-------------|
@@ -65,38 +98,15 @@ Error: Failed to bind to port 48875 (port may already be in use)
 
 The `--wait` option allows clients to connect and set up before emulation begins.
 
-#### `--wait` (bare)
-
-Auto-detects mode based on whether stdin is a TTY:
+**`--wait` (bare)**: Auto-detects mode based on whether stdin is a TTY:
 - **TTY detected**: Uses `cli` mode (waits for RETURN)
 - **No TTY**: Uses `api` mode (waits for Run() RPC)
 
-#### `--wait=cli`
+**`--wait=cli`**: Waits for the user to press RETURN on the console before starting emulation.
 
-Waits for the user to press RETURN on the console before starting emulation. The server prints:
+**`--wait=api`**: Pauses the machine immediately after the 6502 reset sequence completes (7 cycles). Call `DebuggerControl/Run` to start emulation.
 
-```
-Now press RETURN.
-```
-
-Useful for interactive debugging or ensuring the server is fully initialized before manual testing.
-
-#### `--wait=api`
-
-Pauses the machine immediately after the 6502 reset sequence completes (7 cycles). The CPU is at the first instruction (PC points to the reset vector address, typically $D9CD for MOS 1.20). The server prints:
-
-```
-Paused at first instruction (PC=$D9CD). Waiting for Run() RPC...
-```
-
-Call `DebuggerControl/Run` to start emulation. This mode is designed for:
-- Automated testing (connect, configure, then start)
-- Debugger frontends that need to set breakpoints before execution
-- Differential testing (both emulators start from identical states)
-
-### Startup Options (Keyboard Links)
-
-The BBC Micro reads DIP switches (keyboard links) during reset to configure startup behavior.
+#### Startup Options (Keyboard Links)
 
 | Option | Description |
 |--------|-------------|
@@ -106,47 +116,20 @@ The BBC Micro reads DIP switches (keyboard links) during reset to configure star
 
 `--links` is mutually exclusive with `--screen-mode` and `--auto-boot`.
 
-### Information
+### list-fdcs
 
-| Option | Description |
-|--------|-------------|
-| `--info` | Print machine information as JSON and exit |
-| `--help` | Show usage information |
-
-## Examples
+List available disc controllers that can be installed in machines with a disc controller socket.
 
 ```bash
-# Basic usage with defaults
-./beebium-model-b
-
-# Load a game disc and auto-boot
-./beebium-model-b --floppy 0:elite.ssd --auto-boot
-
-# Replace BASIC with Forth
-./beebium-model-b --rom 15:forth.rom
-
-# Multiple ROMs
-./beebium-model-b --rom 14:dfs.rom --rom 13:viewsheet.rom
-
-# Remove default DFS on Model B+ (leave slot 11 empty)
-./beebium-model-b-plus --rom 11:
-
-# Dynamic port for testing
-./beebium-model-b --port 0
-
-# Wait for API control (automated testing)
-./beebium-model-b --wait=api --port 0
-
-# Start in Mode 0 instead of Mode 7
-./beebium-model-b --screen-mode 0
+beebium-model-b list-fdcs
 ```
 
-## Machine Discovery
+### describe-machine
 
-The `--info` flag outputs machine information as JSON:
+Output machine information as JSON for programmatic use.
 
 ```bash
-./beebium-model-b --info
+beebium-model-b describe-machine
 ```
 
 Output:
@@ -168,6 +151,86 @@ Model B+ also includes DFS information:
   "default_dfs_rom": "acorn-dfs_2_26.rom",
   "default_dfs_slot": 11
 }
+```
+
+### help
+
+Show help for a subcommand.
+
+```bash
+beebium-model-b help                # Global help
+beebium-model-b help start          # Start subcommand help
+beebium-model-b help list-fdcs      # List-fdcs subcommand help
+```
+
+## Exit Codes
+
+Exit codes follow sysexits.h conventions:
+
+| Code | Name | Description |
+|------|------|-------------|
+| 0 | OK | Success |
+| 64 | USAGE | Command line usage error |
+| 65 | DATAERR | Data format error |
+| 66 | NOINPUT | Cannot open input file |
+| 70 | SOFTWARE | Internal software error |
+| 74 | IOERR | I/O error |
+| 78 | CONFIG | Configuration error |
+
+## Examples
+
+```bash
+# Basic usage with defaults
+beebium-model-b
+beebium-model-b start
+
+# Load a game disc and auto-boot
+beebium-model-b start --floppy 0:elite.ssd --auto-boot
+
+# Replace BASIC with Forth
+beebium-model-b start --sideways 15:rom:forth.rom
+
+# Multiple ROMs
+beebium-model-b start --sideways 14:rom:dfs.rom --sideways 13:rom:viewsheet.rom
+
+# Configure slot as RAM
+beebium-model-b start --sideways 4:ram
+
+# Remove default DFS on Model B+ (leave slot 11 empty)
+beebium-model-b-plus start --sideways 11:empty
+
+# Dynamic port for testing
+beebium-model-b start --port 0
+
+# Use default port in hex (0xBEEB = 48875)
+beebium-model-b start --port 0xbeeb
+
+# Wait for API control (automated testing)
+beebium-model-b start --wait=api --port 0
+
+# Start in Mode 0 instead of Mode 7
+beebium-model-b start --screen-mode 0
+
+# Screen mode in binary (0b101 = 5)
+beebium-model-b start --screen-mode 0b101
+
+# Keyboard links in hex (0xff = 255)
+beebium-model-b start --links 0xff
+
+# List available disc controllers
+beebium-model-b list-fdcs
+
+# Get machine info as JSON
+beebium-model-b describe-machine
+
+# Install disc controller (Model B only)
+beebium-model-b start --fdc acorn-1770
+
+# Help variants
+beebium-model-b --help              # Global help
+beebium-model-b help                # Global help
+beebium-model-b help start          # Start subcommand help
+beebium-model-b start --help        # Start subcommand help
 ```
 
 ## Environment Variables

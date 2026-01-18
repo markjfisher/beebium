@@ -429,4 +429,18 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
     )
     catch_discover_tests(test_server_main)
+
+    # CLI subcommand architecture tests
+    add_executable(test_cli test_cli.cpp)
+    target_include_directories(test_cli PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/server/include
+    )
+    target_link_libraries(test_cli PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_cli PRIVATE
+        BEEBIUM_VERSION="${PROJECT_VERSION}"
+    )
+    catch_discover_tests(test_cli)
 endif()

@@ -16,6 +16,7 @@
 #include <beebium/server/ServerMain.hpp>
 #include <beebium/Machines.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 using namespace beebium::server;
 using MachineType = beebium::ModelB;
@@ -63,24 +64,26 @@ TEST_CASE("parse_arguments: -h returns exit code 0", "[server_main][parse_argume
     REQUIRE(*result == 0);
 }
 
-TEST_CASE("parse_arguments: --info returns exit code 0", "[server_main][parse_arguments]") {
+TEST_CASE("parse_arguments: --info is now unknown (use describe-machine subcommand)", "[server_main][parse_arguments]") {
     ArgvHelper args{"beebium", "--info"};
     ServerConfig<MachineType> config;
 
     auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
 
+    // --info was replaced by describe-machine subcommand
     REQUIRE(result.has_value());
-    REQUIRE(*result == 0);
+    REQUIRE(*result == 1);
 }
 
-TEST_CASE("parse_arguments: --list-fdc returns exit code 0", "[server_main][parse_arguments]") {
+TEST_CASE("parse_arguments: --list-fdc is now unknown (use list-fdcs subcommand)", "[server_main][parse_arguments]") {
     ArgvHelper args{"beebium", "--list-fdc"};
     ServerConfig<MachineType> config;
 
     auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
 
+    // --list-fdc was replaced by list-fdcs subcommand
     REQUIRE(result.has_value());
-    REQUIRE(*result == 0);
+    REQUIRE(*result == 1);
 }
 
 TEST_CASE("parse_arguments: unknown argument returns exit code 1", "[server_main][parse_arguments]") {
@@ -193,6 +196,59 @@ TEST_CASE("parse_arguments: --floppy for drive 1", "[server_main][parse_argument
     REQUIRE(config.floppy_filepaths[1] == "backup.ssd");
 }
 
+// Tests for colon completion (shell tab completion support)
+
+TEST_CASE("parse_arguments: --floppy with split filepath (colon completion)", "[server_main][parse_arguments]") {
+    // Simulates: --floppy 0: game.ssd (space after colon from tab completion)
+    ArgvHelper args{"beebium", "--floppy", "0:", "game.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0] == "game.ssd");
+}
+
+TEST_CASE("parse_arguments: --sideways with split filepath (colon completion)", "[server_main][parse_arguments]") {
+    // Simulates: --sideways 15:rom: forth.rom (space after colon from tab completion)
+    ArgvHelper args{"beebium", "--sideways", "15:rom:", "forth.rom"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 15);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Rom);
+    REQUIRE(config.sideways_configs[0].image_filepath == "forth.rom");
+}
+
+TEST_CASE("parse_arguments: --floppy colon completion doesn't consume options", "[server_main][parse_arguments]") {
+    // --floppy 0: followed by --port should NOT consume --port
+    // This results in an error because "0:" has no filepath
+    ArgvHelper args{"beebium", "--floppy", "0:", "--port", "8080"};
+    ServerConfig<MachineType> config;
+
+    // Should throw because "0:" has no filepath and next arg starts with -
+    REQUIRE_THROWS_WITH(
+        parse_arguments<MachineType>(args.argc(), args.data(), config),
+        Catch::Matchers::ContainsSubstring("filepath required")
+    );
+}
+
+TEST_CASE("parse_arguments: --sideways colon completion with following option", "[server_main][parse_arguments]") {
+    // --sideways 15:empty followed by --port should work (empty doesn't need completion)
+    ArgvHelper args{"beebium", "--sideways", "15:empty", "--port", "8080"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Empty);
+    REQUIRE(config.port == 8080);
+}
+
 TEST_CASE("parse_arguments: --screen-mode sets screen_mode", "[server_main][parse_arguments]") {
     ArgvHelper args{"beebium", "--screen-mode", "4"};
     ServerConfig<MachineType> config;
@@ -275,29 +331,15 @@ TEST_CASE("parse_arguments: --fdc sets fdc_type", "[server_main][parse_arguments
     REQUIRE(config.fdc_type == "acorn-1770");
 }
 
-TEST_CASE("parse_arguments: deprecated --rom with filepath", "[server_main][parse_arguments]") {
+TEST_CASE("parse_arguments: --rom is now unknown argument", "[server_main][parse_arguments]") {
     ArgvHelper args{"beebium", "--rom", "15:forth.rom"};
     ServerConfig<MachineType> config;
 
     auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
 
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.sideways_configs.size() == 1);
-    REQUIRE(config.sideways_configs[0].slot == 15);
-    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Rom);
-    REQUIRE(config.rom_slots[15] == "forth.rom");
-}
-
-TEST_CASE("parse_arguments: deprecated --rom with empty (clear slot)", "[server_main][parse_arguments]") {
-    ArgvHelper args{"beebium", "--rom", "11:"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_arguments<MachineType>(args.argc(), args.data(), config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.sideways_configs.size() == 1);
-    REQUIRE(config.sideways_configs[0].slot == 11);
-    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Empty);
+    // --rom was removed; should be treated as unknown argument
+    REQUIRE(result.has_value());
+    REQUIRE(*result == 1);
 }
 
 TEST_CASE("parse_arguments: multiple options combined", "[server_main][parse_arguments]") {
@@ -397,12 +439,12 @@ TEST_CASE("validate_config: both --screen-mode and --auto-boot without --links r
 // ============================================================================
 
 #ifdef BEEBIUM_ROM_DIR
-// Helper to set up config to avoid loading non-existent default DFS ROM
-// The test environment may not have acorn-dfs_1_00.rom, so we clear the default DFS slot
-void setup_test_config(ServerConfig<MachineType>& config) {
-    using Memory = MachineType::Memory;
-    // Clear the default DFS slot so we don't try to load non-existent ROM
-    config.rom_slots[Memory::DEFAULT_DFS_SLOT] = EMPTY_SLOT_MARKER;
+// Helper to set up config for testing
+// For machines with a default DFS (like Model B+), this would clear the DFS slot
+// to avoid loading a ROM that might not exist in the test environment.
+// Model B has no default DFS since it has no FDC by default.
+void setup_test_config(ServerConfig<MachineType>& /*config*/) {
+    // Model B has no default DFS ROM, so nothing to clear
 }
 
 TEST_CASE("load_roms: applies default MOS ROM when not specified", "[server_main][load_roms]") {

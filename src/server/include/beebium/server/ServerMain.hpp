@@ -31,8 +31,10 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unistd.h>  // for isatty()
 #include <vector>
 
@@ -46,6 +48,47 @@ enum class WaitMode {
     None,   // Start immediately
     Cli,    // Wait for RETURN on console
     Api     // Wait for Run() RPC
+};
+
+// Exit codes following sysexits.h conventions
+namespace ExitCode {
+    constexpr int OK = 0;           // Success
+    constexpr int USAGE = 64;       // Command line usage error (EX_USAGE)
+    constexpr int DATAERR = 65;     // Data format error (EX_DATAERR)
+    constexpr int NOINPUT = 66;     // Cannot open input file (EX_NOINPUT)
+    constexpr int SOFTWARE = 70;    // Internal software error (EX_SOFTWARE)
+    constexpr int IOERR = 74;       // I/O error (EX_IOERR)
+    constexpr int CONFIG = 78;      // Configuration error (EX_CONFIG)
+}
+
+// Configuration parsed from global (pre-subcommand) arguments
+struct GlobalConfig {
+    std::string subcommand_name;    // Empty = default to "start"
+    int subcommand_argv_start = 1;  // Index where subcommand args begin
+    bool help_requested = false;    // --help before subcommand
+};
+
+// Forward declaration for subcommand base class
+template<typename MachineType> class Subcommand;
+
+// Abstract base class for subcommands
+template<typename MachineType>
+class Subcommand {
+public:
+    virtual ~Subcommand() = default;
+
+    // Subcommand identifier (e.g., "start", "list-fdcs")
+    virtual std::string_view name() const = 0;
+
+    // Short description for help listing
+    virtual std::string_view description() const = 0;
+
+    // Print subcommand-specific help
+    virtual void help(const char* program_name) const = 0;
+
+    // Execute the subcommand
+    // Returns exit code
+    virtual int invoke(int argc, char* argv[], const GlobalConfig& global) const = 0;
 };
 
 std::atomic<bool> g_running{true};
@@ -88,50 +131,109 @@ std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
     return data;
 }
 
-// Parse "slot:filepath" format, returns (slot, filepath)
-// Empty filepath (e.g., "11:") means explicitly leave slot empty
-std::pair<uint8_t, std::string> parse_rom_arg(const std::string& arg) {
-    auto colon_pos = arg.find(':');
-    if (colon_pos == std::string::npos) {
-        throw std::runtime_error("Invalid --rom format: " + arg + " (expected slot:filepath or slot: for empty)");
-    }
-    std::string slot_str = arg.substr(0, colon_pos);
-    std::string filepath = arg.substr(colon_pos + 1);
-
-    int slot = std::stoi(slot_str);
-    if (slot < 0 || slot > 15) {
-        throw std::runtime_error("Invalid slot number: " + slot_str + " (must be 0-15)");
+// Parse an integer from a string with support for multiple bases.
+// Supported formats:
+//   - Decimal (no prefix): "123", "0", "255"
+//   - Binary (0b prefix): "0b1010", "0B1111"
+//   - Octal (0o prefix): "0o17", "0O377"
+//   - Hexadecimal (0x prefix): "0xff", "0XBE", "0xBEEB"
+// Throws std::runtime_error on invalid input.
+int parse_int(const std::string& str, const std::string& context = "") {
+    if (str.empty()) {
+        throw std::runtime_error("Empty integer value" + (context.empty() ? "" : " for " + context));
     }
 
-    return {static_cast<uint8_t>(slot), filepath};
+    std::string_view sv = str;
+    int base = 10;
+    size_t start = 0;
+
+    // Check for base prefix
+    if (sv.length() >= 2 && sv[0] == '0') {
+        char prefix = static_cast<char>(std::tolower(static_cast<unsigned char>(sv[1])));
+        if (prefix == 'b') {
+            base = 2;
+            start = 2;
+        } else if (prefix == 'o') {
+            base = 8;
+            start = 2;
+        } else if (prefix == 'x') {
+            base = 16;
+            start = 2;
+        }
+    }
+
+    if (start >= sv.length()) {
+        throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
+    }
+
+    // Parse the number
+    std::string digits(sv.substr(start));
+    char* end = nullptr;
+    long value = std::strtol(digits.c_str(), &end, base);
+
+    // Check for parsing errors
+    if (end == digits.c_str() || *end != '\0') {
+        throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
+    }
+
+    // Check for overflow
+    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+        throw std::runtime_error("Integer overflow: " + str + (context.empty() ? "" : " for " + context));
+    }
+
+    return static_cast<int>(value);
 }
 
-// Parse "drive:url" format for floppy drives, returns (drive, url_or_filepath)
-// Note: URL can contain colons, so we only split on the first colon if followed by a digit
-std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
-    // Check if first character is a digit (drive number)
-    if (arg.empty() || !std::isdigit(arg[0])) {
-        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:url)");
+// Complete a colon-terminated argument value with the next argv element.
+// This enables shell tab completion for arguments like "--floppy 0: game.ssd"
+// where the shell inserts a space after tab-completing the filepath.
+//
+// If value ends with ':' and next argv exists and doesn't look like an option,
+// appends the next argv to value and advances i to consume it.
+//
+// Example: "--floppy 0:" followed by "game.ssd" becomes "0:game.ssd"
+// Example: "--sideways 15:rom:" followed by "forth.rom" becomes "15:rom:forth.rom"
+void complete_colon_arg(std::string& value, int& i, int argc, char* argv[]) {
+    if (value.empty() || value.back() != ':') {
+        return;  // Doesn't end with colon, no completion needed
     }
 
+    int next_i = i + 1;
+    if (next_i >= argc) {
+        return;  // No next argument available
+    }
+
+    std::string_view next_arg = argv[next_i];
+    if (next_arg.empty() || next_arg[0] == '-') {
+        return;  // Next arg looks like an option, not a continuation
+    }
+
+    // Append next arg to value and consume it
+    value += std::string(next_arg);
+    i = next_i;
+}
+
+// Parse "drive:filepath" or "drive:url" format for floppy drives
+// Returns (drive, filepath_or_url)
+std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
     auto colon_pos = arg.find(':');
-    if (colon_pos == std::string::npos) {
-        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:url)");
+    if (colon_pos == std::string::npos || colon_pos == 0) {
+        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:filepath)");
     }
 
     std::string drive_str = arg.substr(0, colon_pos);
-    std::string url_or_filepath = arg.substr(colon_pos + 1);
+    std::string filepath_or_url = arg.substr(colon_pos + 1);
 
-    int drive = std::stoi(drive_str);
+    int drive = parse_int(drive_str, "--floppy drive");
     if (drive < 0 || drive > 1) {
         throw std::runtime_error("Invalid floppy drive number: " + drive_str + " (must be 0 or 1)");
     }
 
-    if (url_or_filepath.empty()) {
-        throw std::runtime_error("Invalid --floppy format: " + arg + " (URL or filepath required)");
+    if (filepath_or_url.empty()) {
+        throw std::runtime_error("Invalid --floppy format: " + arg + " (filepath required)");
     }
 
-    return {static_cast<uint8_t>(drive), url_or_filepath};
+    return {static_cast<uint8_t>(drive), filepath_or_url};
 }
 
 // Sentinel values to mark slots that should not have default ROMs loaded
@@ -165,7 +267,7 @@ SidewaysConfig parse_sideways_arg(const std::string& arg) {
 
     // Parse slot number
     std::string slot_str = arg.substr(0, first_colon);
-    int slot = std::stoi(slot_str);
+    int slot = parse_int(slot_str, "--sideways slot");
     if (slot < 0 || slot > 15) {
         throw std::runtime_error("Invalid slot number: " + slot_str + " (must be 0-15)");
     }
@@ -230,6 +332,41 @@ std::string to_absolute_file_url(const std::string& url_or_filepath) {
     return "file://" + canonical_path.string();
 }
 
+// Parse global arguments that appear before the subcommand.
+// Returns:
+//   - std::nullopt on success (continue with subcommand dispatch)
+//   - ExitCode::USAGE for errors
+std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& global) {
+    // Scan arguments looking for --help/-h before subcommand, or identify subcommand
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg = argv[i];
+
+        // Check for help flag before subcommand
+        if (arg == "--help" || arg == "-h") {
+            global.help_requested = true;
+            // Continue scanning to see if there's a subcommand after --help
+            continue;
+        }
+
+        // First non-option argument is the subcommand
+        if (!arg.empty() && arg[0] != '-') {
+            global.subcommand_name = std::string(arg);
+            global.subcommand_argv_start = i + 1;
+            return std::nullopt;  // Success
+        }
+
+        // Argument starting with '-' but not --help: this is a subcommand option.
+        // Stop parsing global args and let the default subcommand handle it.
+        // (This enables "beebium --port 8080" to work as "beebium start --port 8080")
+        global.subcommand_argv_start = i;  // Subcommand-specific args start here
+        return std::nullopt;
+    }
+
+    // No subcommand found, will default to "start"
+    global.subcommand_argv_start = argc;  // No subcommand-specific args
+    return std::nullopt;
+}
+
 } // anonymous namespace
 
 // Configuration struct for server initialization
@@ -275,12 +412,10 @@ void print_usage(const char* program_name) {
               << "                           SLOT:rom:IMAGE - ROM with image file\n"
               << "                           SLOT:ram[:IMAGE] - RAM (optional pre-load)\n"
               << "                           SLOT:empty - Empty slot\n"
-              << "  --rom <slot>:<filepath>  (deprecated) Alias for --sideways SLOT:rom:IMAGE\n"
-              << "  --rom <slot>:            (deprecated) Alias for --sideways SLOT:empty\n"
               << "  --rom-dir <dirpath>      ROM directory (auto-detected if not specified)\n"
               << "  --port <port>            gRPC port (default: " << DEFAULT_GRPC_PORT << ")\n"
-              << "  --floppy <drive>:<url>   Load disc image into floppy drive (0 or 1)\n"
-              << "                           Accepts file:// URLs or bare filepaths\n";
+              << "  --floppy <drive>:<filepath|url>\n"
+              << "                           Load disc image into floppy drive (0 or 1)\n";
 
     // Show --fdc option only for machines with disc controller sockets
     if constexpr (HasDiscControllerSocket<Memory>) {
@@ -296,8 +431,6 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
-              << "  --list-fdc               List available disc controllers and exit\n"
-              << "  --info                   Show machine information and exit\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -312,16 +445,16 @@ void print_usage(const char* program_name) {
 
     std::cerr << "\n"
               << "Examples:\n"
-              << "  " << program_name << "                           # Use all defaults\n"
-              << "  " << program_name << " --rom 15:forth.rom        # Replace BASIC with Forth\n"
-              << "  " << program_name << " --floppy 0:game.ssd       # Load disc image in floppy 0\n";
+              << "  " << program_name << "                                  # Use all defaults\n"
+              << "  " << program_name << " --sideways 15:rom:forth.rom      # Replace BASIC with Forth\n"
+              << "  " << program_name << " --floppy 0:game.ssd              # Load disc image in floppy 0\n";
 
     if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
-        std::cerr << "  " << program_name << " --rom 11:              # No DFS (leave slot 11 empty)\n";
+        std::cerr << "  " << program_name << " --sideways 11:empty             # No DFS (leave slot 11 empty)\n";
     }
 
     if constexpr (HasDiscControllerSocket<Memory>) {
-        std::cerr << "  " << program_name << " --fdc acorn-1770        # Install disc controller\n";
+        std::cerr << "  " << program_name << " --fdc acorn-1770               # Install disc controller\n";
     }
 }
 
@@ -348,35 +481,26 @@ void print_info(const char* program_name) {
     std::cout << "\n}\n";
 }
 
-// Parse command-line arguments into a ServerConfig struct.
+// Parse command-line arguments for the 'start' subcommand into a ServerConfig struct.
 // Returns:
 //   - std::nullopt on success (continue execution)
-//   - 0 for --help, --info, --list-fdc (exit successfully)
-//   - 1 for errors (exit with error)
+//   - ExitCode::OK for --help (exit successfully)
+//   - ExitCode::USAGE or ExitCode::CONFIG for errors
 template<typename MachineType>
-std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineType>& config) {
-    for (int i = 1; i < argc; ++i) {
+std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index,
+                                          ServerConfig<MachineType>& config) {
+    for (int i = start_index; i < argc; ++i) {
         std::string arg = argv[i];
 
         if (arg == "--help" || arg == "-h") {
             print_usage<MachineType>(argv[0]);
-            return 0;
-        } else if (arg == "--info") {
-            print_info<MachineType>(argv[0]);
-            return 0;
-        } else if (arg == "--list-fdc") {
-            std::cout << "Available disc controllers:\n";
-            for (const auto& info : DiscControllerRegistry::available()) {
-                std::cout << "  " << info.id << " - " << info.display_name
-                          << " (" << info.fdc_chip << ")\n"
-                          << "      " << info.description << "\n";
-            }
-            std::cout << "  none - No disc controller (leave socket empty)\n";
-            return 0;
+            return ExitCode::OK;
         } else if (arg == "--mos" && i + 1 < argc) {
             config.mos_filepath = argv[++i];
         } else if (arg == "--sideways" && i + 1 < argc) {
-            auto sideways_config = parse_sideways_arg(argv[++i]);
+            std::string value = argv[++i];
+            complete_colon_arg(value, i, argc, argv);
+            auto sideways_config = parse_sideways_arg(value);
             config.sideways_configs.push_back(sideways_config);
             // Add ALL slot types to rom_slots to prevent default ROM loading
             // This ensures --sideways 15:empty or --sideways 15:ram prevents BASIC from loading
@@ -387,42 +511,45 @@ std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineT
             } else if (sideways_config.type == SidewaysSlotType::Ram) {
                 config.rom_slots[sideways_config.slot] = RAM_SLOT_MARKER;
             }
-        } else if (arg == "--rom" && i + 1 < argc) {
-            // Deprecated: convert to sideways config
-            auto [slot, filepath] = parse_rom_arg(argv[++i]);
-            SidewaysConfig sideways_config;
-            sideways_config.slot = slot;
-            if (filepath.empty()) {
-                sideways_config.type = SidewaysSlotType::Empty;
-            } else {
-                sideways_config.type = SidewaysSlotType::Rom;
-                sideways_config.image_filepath = filepath;
-            }
-            config.sideways_configs.push_back(sideways_config);
-            // Also keep in rom_slots for compatibility with existing logic
-            config.rom_slots[slot] = filepath.empty() ? EMPTY_SLOT_MARKER : filepath;
         } else if (arg == "--rom-dir" && i + 1 < argc) {
             config.rom_dirpath = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
-            config.port = static_cast<uint16_t>(std::stoi(argv[++i]));
+            try {
+                config.port = static_cast<uint16_t>(parse_int(argv[++i], "--port"));
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--floppy" && i + 1 < argc) {
-            auto [drive, filepath] = parse_floppy_arg(argv[++i]);
+            std::string value = argv[++i];
+            complete_colon_arg(value, i, argc, argv);
+            auto [drive, filepath] = parse_floppy_arg(value);
             config.floppy_filepaths[drive] = filepath;
         } else if (arg == "--screen-mode" && i + 1 < argc) {
-            config.screen_mode = std::stoi(argv[++i]);
+            try {
+                config.screen_mode = parse_int(argv[++i], "--screen-mode");
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
             if (config.screen_mode < 0 || config.screen_mode > 7) {
                 std::cerr << "Error: --screen-mode must be 0-7\n";
-                return 1;
+                return ExitCode::USAGE;
             }
             config.screen_mode_set = true;
         } else if (arg == "--auto-boot") {
             config.auto_boot = true;
             config.auto_boot_set = true;
         } else if (arg == "--links" && i + 1 < argc) {
-            config.raw_links = std::stoi(argv[++i]);
+            try {
+                config.raw_links = parse_int(argv[++i], "--links");
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
             if (config.raw_links < 0 || config.raw_links > 255) {
                 std::cerr << "Error: --links must be 0-255\n";
-                return 1;
+                return ExitCode::USAGE;
             }
         } else if (arg == "--wait") {
             // Bare --wait: use TTY detection to choose default
@@ -436,7 +563,7 @@ std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineT
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
-            return 1;
+            return ExitCode::USAGE;
         }
     }
 
@@ -722,84 +849,431 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     }
 }
 
+// ============================================================================
+// Concrete subcommand implementations
+// ============================================================================
+
+// Forward declarations for subcommand dispatch
 template<typename MachineType>
-int server_main(int argc, char* argv[]) {
-    using Memory = typename MachineType::Memory;
+const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands();
 
-    // Parse arguments into config struct
-    ServerConfig<MachineType> config;
-    if (auto exit_code = parse_arguments<MachineType>(argc, argv, config)) {
-        return *exit_code;
+template<typename MachineType>
+void print_global_help(const char* program_name);
+
+// Start subcommand - starts the emulator server (default)
+template<typename MachineType>
+class StartSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "start"; }
+    std::string_view description() const override { return "Start the emulator server (default)"; }
+
+    void help(const char* program_name) const override {
+        print_usage<MachineType>(program_name);
     }
 
-    // Validate configuration
-    if (auto error = validate_config<MachineType>(config)) {
-        std::cerr << "Error: " << *error << "\n";
-        return 1;
-    }
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
 
-    // Set up signal handler
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
-
-    try {
-        // Set ROM directory if specified
-        if (!config.rom_dirpath.empty()) {
-            RomPaths::set_rom_directory(config.rom_dirpath);
+        // Handle --help for this subcommand
+        if (global.help_requested) {
+            print_usage<MachineType>(argv[0]);
+            return ExitCode::OK;
         }
 
-        // Create and initialize machine
-        std::cout << "Initializing " << Memory::MACHINE_DISPLAY_NAME << "...\n";
-        MachineType machine;
-
-        // Load ROMs
-        load_roms(machine, config);
-
-        // Install disc controller
-        if (auto exit_code = install_disc_controller(machine, config)) {
+        // Parse subcommand-specific arguments
+        ServerConfig<MachineType> config;
+        if (auto exit_code = parse_start_arguments<MachineType>(argc, argv, global.subcommand_argv_start, config)) {
             return *exit_code;
         }
 
-        // Load disc images
-        load_disc_images(machine, config);
+        // Validate configuration
+        if (auto error = validate_config<MachineType>(config)) {
+            std::cerr << "Error: " << *error << "\n";
+            return ExitCode::CONFIG;
+        }
 
-        // Enable video output
-        machine.state().memory.enable_video_output();
+        // Set up signal handler
+        std::signal(SIGINT, signal_handler);
+        std::signal(SIGTERM, signal_handler);
 
-        // Enable audio output
-        machine.state().memory.enable_audio_output();
+        try {
+            // Set ROM directory if specified
+            if (!config.rom_dirpath.empty()) {
+                RomPaths::set_rom_directory(config.rom_dirpath);
+            }
 
-        // Apply startup options before reset
-        apply_startup_options(machine, config);
+            // Create and initialize machine
+            std::cout << "Initializing " << Memory::MACHINE_DISPLAY_NAME << "...\n";
+            MachineType machine;
 
-        // Reset machine
-        machine.reset();
+            // Load ROMs
+            load_roms(machine, config);
 
-        // Start gRPC server
-        std::cout << "Starting gRPC server...\n";
-        beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
-        server.start();
+            // Install disc controller
+            if (auto exit_code = install_disc_controller(machine, config)) {
+                return *exit_code;
+            }
 
-        // Print actual bound port (important when port 0 was requested for dynamic allocation)
-        // Flush immediately so clients parsing stdout can detect the port before we block
-        std::cout << "Listening on port " << server.port() << std::endl;
-        std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
+            // Load disc images
+            load_disc_images(machine, config);
 
-        // Handle wait mode
-        handle_wait_mode(machine, config.wait_mode);
+            // Enable video output
+            machine.state().memory.enable_video_output();
 
-        // Run main emulation loop (blocks until shutdown)
-        run_emulation_loop(machine, server);
+            // Enable audio output
+            machine.state().memory.enable_audio_output();
 
-        std::cout << "\nShutting down...\n";
-        server.stop();
+            // Apply startup options before reset
+            apply_startup_options(machine, config);
 
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
-        return 1;
+            // Reset machine
+            machine.reset();
+
+            // Start gRPC server
+            std::cout << "Starting gRPC server...\n";
+            beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
+            server.start();
+
+            // Print actual bound port (important when port 0 was requested for dynamic allocation)
+            // Flush immediately so clients parsing stdout can detect the port before we block
+            std::cout << "Listening on port " << server.port() << std::endl;
+            std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
+
+            // Handle wait mode
+            handle_wait_mode(machine, config.wait_mode);
+
+            // Run main emulation loop (blocks until shutdown)
+            run_emulation_loop(machine, server);
+
+            std::cout << "\nShutting down...\n";
+            server.stop();
+
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::SOFTWARE;
+        }
+
+        return ExitCode::OK;
+    }
+};
+
+// ListFdcs subcommand - list available disc controllers
+template<typename MachineType>
+class ListFdcsSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "list-fdcs"; }
+    std::string_view description() const override { return "List available disc controllers"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " list-fdcs\n"
+                  << "\n"
+                  << "Lists all disc controllers that can be installed in machines\n"
+                  << "with a disc controller socket (e.g., Model B).\n";
     }
 
-    return 0;
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help for this subcommand
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Check for subcommand-specific --help
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            // Unknown argument
+            std::cerr << "Unknown argument: " << arg << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        std::cout << "Available disc controllers:\n";
+        for (const auto& info : DiscControllerRegistry::available()) {
+            std::cout << "  " << info.id << " - " << info.display_name
+                      << " (" << info.fdc_chip << ")\n"
+                      << "      " << info.description << "\n";
+        }
+        std::cout << "  none - No disc controller (leave socket empty)\n";
+        return ExitCode::OK;
+    }
+};
+
+// DescribeMachine subcommand - output JSON machine info
+template<typename MachineType>
+class DescribeMachineSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "describe-machine"; }
+    std::string_view description() const override { return "Output machine information as JSON"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " describe-machine\n"
+                  << "\n"
+                  << "Outputs machine information in JSON format for programmatic use.\n"
+                  << "Includes machine type, default ROMs, and version information.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help for this subcommand
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Check for subcommand-specific --help
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            // Unknown argument
+            std::cerr << "Unknown argument: " << arg << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        print_info<MachineType>(argv[0]);
+        return ExitCode::OK;
+    }
+};
+
+// Help subcommand - shows help for other subcommands
+template<typename MachineType>
+class HelpSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "help"; }
+    std::string_view description() const override { return "Show help for a subcommand"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " help [subcommand]\n"
+                  << "\n"
+                  << "Shows help for the specified subcommand, or global help if none specified.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override;  // Defined after get_subcommands
+};
+
+// ============================================================================
+// Subcommand registry and dispatch
+// ============================================================================
+
+// Get the singleton registry of all subcommands
+template<typename MachineType>
+const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
+    static auto cmds = []() {
+        std::vector<std::unique_ptr<Subcommand<MachineType>>> v;
+        v.push_back(std::make_unique<StartSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
+        v.push_back(std::make_unique<HelpSubcommand<MachineType>>());
+        return v;
+    }();
+    return cmds;
+}
+
+// HelpSubcommand::invoke implementation (needs get_subcommands)
+template<typename MachineType>
+int HelpSubcommand<MachineType>::invoke(int argc, char* argv[], const GlobalConfig& global) const {
+    // Check for target subcommand name in arguments
+    std::string target_name;
+    for (int i = global.subcommand_argv_start; i < argc; ++i) {
+        std::string_view arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            // help --help shows help for the help command
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+        if (!arg.empty() && arg[0] != '-') {
+            target_name = std::string(arg);
+            break;
+        }
+    }
+
+    if (target_name.empty()) {
+        // No target: show global help
+        print_global_help<MachineType>(argv[0]);
+        return ExitCode::OK;
+    }
+
+    // Find and show help for the target subcommand
+    for (const auto& cmd : get_subcommands<MachineType>()) {
+        if (cmd->name() == target_name) {
+            cmd->help(argv[0]);
+            return ExitCode::OK;
+        }
+    }
+
+    std::cerr << "Unknown subcommand: " << target_name << "\n";
+    print_global_help<MachineType>(argv[0]);
+    return ExitCode::USAGE;
+}
+
+// Print global help (lists all subcommands)
+template<typename MachineType>
+void print_global_help(const char* program_name) {
+    using Memory = typename MachineType::Memory;
+
+    std::cerr << "Usage: " << program_name << " [global-options] <subcommand> [subcommand-options]\n"
+              << "\n"
+              << "Beebium " << BEEBIUM_VERSION << " - " << Memory::MACHINE_DISPLAY_NAME << " emulator server\n"
+              << "\n"
+              << "Global options:\n"
+              << "  --help, -h    Show this help message\n"
+              << "\n"
+              << "Subcommands:\n";
+
+    for (const auto& cmd : get_subcommands<MachineType>()) {
+        std::cerr << "  " << cmd->name();
+        // Pad to align descriptions
+        for (size_t i = cmd->name().length(); i < 18; ++i) {
+            std::cerr << ' ';
+        }
+        std::cerr << cmd->description() << "\n";
+    }
+
+    std::cerr << "\n"
+              << "Use '" << program_name << " <subcommand> --help' for subcommand options.\n"
+              << "Use '" << program_name << " help <subcommand>' for subcommand help.\n"
+              << "\n"
+              << "If no subcommand is specified, 'start' is assumed.\n";
+}
+
+// Dispatch to the appropriate subcommand
+template<typename MachineType>
+int dispatch_subcommand(int argc, char* argv[], const GlobalConfig& global) {
+    // Determine subcommand name (default to "start")
+    std::string subcommand_name = global.subcommand_name;
+    if (subcommand_name.empty()) {
+        // No subcommand specified
+        if (global.help_requested) {
+            // Global --help with no subcommand
+            print_global_help<MachineType>(argv[0]);
+            return ExitCode::OK;
+        }
+        subcommand_name = "start";  // Default subcommand
+    }
+
+    // Find and invoke the subcommand
+    for (const auto& cmd : get_subcommands<MachineType>()) {
+        if (cmd->name() == subcommand_name) {
+            return cmd->invoke(argc, argv, global);
+        }
+    }
+
+    // Unknown subcommand
+    std::cerr << "Unknown subcommand: " << subcommand_name << "\n";
+    print_global_help<MachineType>(argv[0]);
+    return ExitCode::USAGE;
+}
+
+// ============================================================================
+// Main entry point
+// ============================================================================
+
+template<typename MachineType>
+int server_main(int argc, char* argv[]) {
+    // Parse global arguments
+    GlobalConfig global;
+    if (auto exit_code = parse_global_arguments(argc, argv, global)) {
+        return *exit_code;
+    }
+
+    // Dispatch to appropriate subcommand
+    return dispatch_subcommand<MachineType>(argc, argv, global);
+}
+
+// ============================================================================
+// Legacy function for backwards compatibility with tests
+// ============================================================================
+
+// Parse command-line arguments into a ServerConfig struct.
+// This function is provided for backwards compatibility with existing tests.
+// New code should use the subcommand-based architecture.
+// Returns:
+//   - std::nullopt on success (continue execution)
+//   - 0 for --help (exit successfully)
+//   - 1 for errors (exit with error)
+template<typename MachineType>
+std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineType>& config) {
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "--help" || arg == "-h") {
+            print_usage<MachineType>(argv[0]);
+            return 0;
+        } else if (arg == "--mos" && i + 1 < argc) {
+            config.mos_filepath = argv[++i];
+        } else if (arg == "--sideways" && i + 1 < argc) {
+            std::string value = argv[++i];
+            complete_colon_arg(value, i, argc, argv);
+            auto sideways_config = parse_sideways_arg(value);
+            config.sideways_configs.push_back(sideways_config);
+            if (sideways_config.type == SidewaysSlotType::Rom) {
+                config.rom_slots[sideways_config.slot] = sideways_config.image_filepath;
+            } else if (sideways_config.type == SidewaysSlotType::Empty) {
+                config.rom_slots[sideways_config.slot] = EMPTY_SLOT_MARKER;
+            } else if (sideways_config.type == SidewaysSlotType::Ram) {
+                config.rom_slots[sideways_config.slot] = RAM_SLOT_MARKER;
+            }
+        } else if (arg == "--rom-dir" && i + 1 < argc) {
+            config.rom_dirpath = argv[++i];
+        } else if (arg == "--port" && i + 1 < argc) {
+            try {
+                config.port = static_cast<uint16_t>(parse_int(argv[++i], "--port"));
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return 1;
+            }
+        } else if (arg == "--floppy" && i + 1 < argc) {
+            std::string value = argv[++i];
+            complete_colon_arg(value, i, argc, argv);
+            auto [drive, filepath] = parse_floppy_arg(value);
+            config.floppy_filepaths[drive] = filepath;
+        } else if (arg == "--screen-mode" && i + 1 < argc) {
+            try {
+                config.screen_mode = parse_int(argv[++i], "--screen-mode");
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return 1;
+            }
+            if (config.screen_mode < 0 || config.screen_mode > 7) {
+                std::cerr << "Error: --screen-mode must be 0-7\n";
+                return 1;
+            }
+            config.screen_mode_set = true;
+        } else if (arg == "--auto-boot") {
+            config.auto_boot = true;
+            config.auto_boot_set = true;
+        } else if (arg == "--links" && i + 1 < argc) {
+            try {
+                config.raw_links = parse_int(argv[++i], "--links");
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return 1;
+            }
+            if (config.raw_links < 0 || config.raw_links > 255) {
+                std::cerr << "Error: --links must be 0-255\n";
+                return 1;
+            }
+        } else if (arg == "--wait") {
+            config.wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
+        } else if (arg.rfind("--wait=", 0) == 0) {
+            std::string wait_value = arg.substr(7);
+            config.wait_mode = parse_wait_arg(wait_value);
+        } else if (arg == "--fdc" && i + 1 < argc) {
+            config.fdc_type = argv[++i];
+        } else {
+            std::cerr << "Unknown argument: " << arg << "\n";
+            print_usage<MachineType>(argv[0]);
+            return 1;
+        }
+    }
+
+    return std::nullopt;
 }
 
 } // namespace beebium::server

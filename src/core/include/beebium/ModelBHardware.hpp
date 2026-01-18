@@ -91,11 +91,11 @@ public:
     static constexpr std::string_view REGION_MOS_ROM = "mos_rom";
 
     // Default ROM filenames for this machine
+    // Note: Model B has no FDC by default, so no default DFS ROM.
+    // DFS ROM should be loaded when an FDC is installed via --fdc.
     static constexpr std::string_view DEFAULT_MOS_ROM = "acorn-mos_1_20.rom";
     static constexpr std::string_view DEFAULT_LANGUAGE_ROM = "bbc-basic_2.rom";
     static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;  // Maps to socket 3 (IC101)
-    static constexpr std::string_view DEFAULT_DFS_ROM = "acorn-dfs_1_00.rom";
-    static constexpr uint8_t DEFAULT_DFS_SLOT = 13;       // Maps to socket 1 (IC88)
 
     // Default pacing configuration for this machine
     static constexpr PacingConfig default_pacing_config() {
@@ -469,10 +469,12 @@ public:
     }
 
     // Load DFS ROM into socket 1 (IC88, visible at slots 1/5/9/13)
-    void load_dfs(const uint8_t* data, size_t size) {
+    void load_dfs(const uint8_t* data, size_t size, std::string_view image_name = "") {
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
         sideways.load_rom_to_socket(AliasedBankedMemory::SOCKET_IC88, data, size);
-        sideways.set_socket_image_name(AliasedBankedMemory::SOCKET_IC88, DEFAULT_DFS_ROM);
+        if (!image_name.empty()) {
+            sideways.set_socket_image_name(AliasedBankedMemory::SOCKET_IC88, image_name);
+        }
     }
 
     // Load ROM into a specific socket (0-3)
