@@ -388,3 +388,87 @@ if (m_st.column == 1) {
 B2's degenerate behavior is a side effect of its latching mechanism.
 The `!vsync_ending` check in B2 is for OTHER edge cases, not the degenerate R0=0 case.
 Implementing the same latching in beebium achieves correct behavior without needing `!vsync_ending`.
+
+## Display Jumping Regression (2025-01-19)
+
+### Problem Statement
+
+After implementing the B2-style latching mechanism for CA1 detection:
+- **MODE 7**: Display steady, cursor works (CORRECT)
+- **MODE 0-6**: Display jumps up/down by one scanline (REGRESSION)
+- **`*TV 0,1`** (interlace sync ON): Display becomes steady
+- **`*TV 0,0`** (interlace sync OFF): Display jumps again
+- **Master branch**: No issues, all modes display correctly
+
+### Investigation Summary
+
+#### Candidates Tested (All Failed to Fix)
+
+| Test | Change | Result |
+|------|--------|--------|
+| A | Remove `h_display_ = false` from `end_of_frame()` | Still jumps |
+| B | Remove `do_even_frame_logic_ = false` reset from `end_of_frame()` | Still jumps |
+| C | Remove `end_of_row()` call before `end_of_frame()` | Still jumps |
+| D | Remove `!first_scanline_` from R6 hit condition | Still jumps |
+
+#### Other Attempted Fixes
+
+| Fix | Result |
+|-----|--------|
+| Only toggle `odd_field_` in interlace mode | Still jumps |
+| Master + only CA1 fix (remove `had_vsync_this_row_` from `end_of_frame()`) | Display stable BUT CA1 not detected |
+| Master + `!vsync_ending` check | CA1 detected at cycle 35, BUT no image displayed at all |
+
+### Key Insight: The Fixes Are Mutually Exclusive
+
+The latching mechanism is **required** for CA1 detection in degenerate state because:
+1. With R0=0, column never reaches 1, so frames never end
+2. Row increments past R7 before vsync ends
+3. Vsync stays off naturally after ending
+
+But the latching mechanism causes display jumping in non-interlace modes.
+
+Without the latching mechanism:
+- Master's direct `row_ == R4+1` comparison works for normal display
+- But in degenerate state, frames end every scanline, vsync restarts immediately
+- CA1 never sees a falling edge
+
+### The `!vsync_ending` Check Issue
+
+Adding `!vsync_ending` to the vsync start condition:
+- Successfully prevents same-tick restart
+- CA1 is detected at cycle 35
+- BUT: No image is rendered (not even in the active pixel area)
+
+This is too aggressive - it breaks normal vsync operation entirely, not just degenerate state.
+
+### B2 vs Beebium Field Handling Difference
+
+**B2's Approach** (`TVOutput.cpp:132-142`):
+- B2 **derives** odd/even field from horizontal position at vsync start
+- In non-interlace mode, vsync always starts at column ~R0 (end of line)
+- So every field is classified as "odd" - no alternation
+
+**Beebium's Approach**:
+- Beebium **explicitly tracks** `odd_field_` and toggles it at R6 hit
+- This alternation happens even in non-interlace modes
+- May cause display position to alternate between frames
+
+However, making `odd_field_` toggle conditional on interlace mode did NOT fix the jumping.
+
+### Current Status
+
+The `option-b` branch has:
+- CA1 detection working (cycle 35)
+- MODE 7 display stable
+- MODE 0-6 display jumping (regression from master)
+
+### Possible Next Steps
+
+1. **Deeper investigation of frame boundary timing**: The latching mechanism shifts frame end detection to column 1. This timing shift may affect display sync in non-interlace modes.
+
+2. **Frontend investigation**: The jumping might be in how the macOS client processes `odd_field` or vsync timing, not in CRTC logic itself.
+
+3. **Compare tick-by-tick vsync timing**: Detailed comparison between master and option-b to find exactly where the timing diverges.
+
+4. **Hybrid approach**: Use latching only during degenerate state (R0=0 or R4=0), revert to direct comparison for normal operation.
