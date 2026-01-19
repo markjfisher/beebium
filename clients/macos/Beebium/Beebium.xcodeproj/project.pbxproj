@@ -1,0 +1,704 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		02EAA3A16D440CCD12071A3D /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F2683BAFB4C72B6644F473 /* AudioEngine.swift */; };
+		03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */; };
+		03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */ = {isa = PBXBuildFile; fileRef = C9A1A70DB6662E96A6210970 /* KeyboardMappings */; };
+		06B9C1E897D9DB39E8392078 /* SidebarModeContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7386122C0E5009AE250FECD /* SidebarModeContent.swift */; };
+		07C91006D788A614860664BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4635C74CA6E1654868006CA6 /* Assets.xcassets */; };
+		1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C152853E7E4735D1E7994275 /* BBCKeyCache.swift */; };
+		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
+		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
+		3A5F2C41B8468DD7E63EC414 /* audio.proto in Resources */ = {isa = PBXBuildFile; fileRef = A16BD17340EC98E2C5EF1127 /* audio.proto */; };
+		40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */; };
+		42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */; };
+		44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4898953F0003B85113EC0 /* indicator.grpc.swift */; };
+		4AD0CF022E27D94F9FB1FEDC /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB928B6093490D60EECA734 /* MetalKit.framework */; };
+		4CF04CE9A5BFD96B5E1E4590 /* BiquadFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C511516BDB7D578CF5D63867 /* BiquadFilter.swift */; };
+		4CFAD53FAAACED77B5672A4F /* AudioClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */; };
+		4D9536D54F0C9291F5ECD326 /* DiscClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF6562062957B62B8C099A42 /* DiscClient.swift */; };
+		4F522FC6B586A81F9B0C6507 /* indicator.proto in Resources */ = {isa = PBXBuildFile; fileRef = 87E7F7F1255B32F8C85FAFDA /* indicator.proto */; };
+		4F70A7E16C384FDF27FB7DA7 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */; };
+		562B6F36BE2D62D913DB2A32 /* AVFAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9DE8C83B31D707C9E30C491D /* AVFAudio.framework */; };
+		5BFF6217532F7E4126E6A946 /* system.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */; };
+		627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FF930B029ECBBAE243C4D0 /* ContentView.swift */; };
+		6573E0F14063A6C83E3204CA /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86FF568406281481A0E0D88 /* AudioRenderer.swift */; };
+		739F46631A5F30A8209D9623 /* disc.proto in Resources */ = {isa = PBXBuildFile; fileRef = 9141154B5BCF7C71635E62B2 /* disc.proto */; };
+		75BBA7064C85D6CDB3797111 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9849250F602C15283E458A /* StatusBarView.swift */; };
+		7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE550723A13DFA9A20EB302 /* IndicatorView.swift */; };
+		8248344928EA9782B944178F /* SidebarMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992C39260909EB85C84D2C20 /* SidebarMode.swift */; };
+		8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */ = {isa = PBXBuildFile; fileRef = 69144892FD8EBDC0F0D9230E /* video.proto */; };
+		8E648F53A0DD1B04A0E1F08E /* StorageModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */; };
+		94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6041795434C164F849A27B /* KeyInput.swift */; };
+		987BD71FBAD1D69713DD3995 /* KeyboardClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */; };
+		9F0D659309F36B7DD20F0070 /* KeyboardMappingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E27CCAEA2B3295D30B7E900 /* KeyboardMappingManager.swift */; };
+		A005244A2347799984C194E6 /* audio.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0CD29C9A89B375C692C019 /* audio.pb.swift */; };
+		A577F46504594230B85A9932 /* AudioMixerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */; };
+		B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 3C410D45C0D56B52B7405B54 /* Shaders.metal */; };
+		B26B3EEFA493E960103D6527 /* system.proto in Resources */ = {isa = PBXBuildFile; fileRef = 3D27B82F5650277464200982 /* system.proto */; };
+		B778FD3CAB76C7B9AE5B7EF9 /* AudioMixerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */; };
+		BB411BA73F2726E174FF3054 /* AudioRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */; };
+		BE8551008B3836CA24806130 /* KeyboardMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF12022B03E2794E9DDF6B3F /* KeyboardMapping.swift */; };
+		C33A98EC584EB6432A7CE7AD /* Atomics in Frameworks */ = {isa = PBXBuildFile; productRef = CDFCBD9064C78D1ABC230708 /* Atomics */; };
+		C5D7C5C9382566ADEAA92341 /* video.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B269A5937DAC1914CA8BF39 /* video.grpc.swift */; };
+		CBC5ABA53015DE535C5F17A4 /* video.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642BEA30A8664289314B2D9E /* video.pb.swift */; };
+		D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */; };
+		D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */; };
+		D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */; };
+		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
+		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
+		E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */; };
+		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
+		EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */ = {isa = PBXBuildFile; fileRef = DFB1414298AE8F8261138293 /* keyboard.proto */; };
+		EED3FE1B2C84F875665FC6FE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C5792BABD709C954B706793 /* Metal.framework */; };
+		EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */; };
+		F44ED1692215ABF5CE928E87 /* indicator.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 831E41582E1F4F7358C624E8 /* indicator.pb.swift */; };
+		F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */; };
+		F619A0248AEA6D3F17D0EBA9 /* GRPC in Frameworks */ = {isa = PBXBuildFile; productRef = 4C97A19D18727CB09CD95712 /* GRPC */; };
+		F8E43B3F7BBA3554BE190043 /* MacKeyCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8502E9114AB10B2200A2F6F9 /* MacKeyCode.swift */; };
+		FFED4839C8FA82EBD68D55E8 /* SidebarModeToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D2960D8547D7A7D158EABBC0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0F27FC5BE51845CD9EB12356 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CD4FC7598AFEE19E21B401B0;
+			remoteInfo = Beebium;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		03C4898953F0003B85113EC0 /* indicator.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.grpc.swift; sourceTree = "<group>"; };
+		08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClient.swift; sourceTree = "<group>"; };
+		0A9849250F602C15283E458A /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+		2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.grpc.swift; sourceTree = "<group>"; };
+		25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerView.swift; sourceTree = "<group>"; };
+		2CE550723A13DFA9A20EB302 /* IndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorView.swift; sourceTree = "<group>"; };
+		38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClientTests.swift; sourceTree = "<group>"; };
+		3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardClient.swift; sourceTree = "<group>"; };
+		3C410D45C0D56B52B7405B54 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
+		3D27B82F5650277464200982 /* system.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = system.proto; sourceTree = "<group>"; };
+		4635C74CA6E1654868006CA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4DAEE1DC0F503B0F7129CE02 /* BeebiumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeebiumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4E0CD29C9A89B375C692C019 /* audio.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.pb.swift; sourceTree = "<group>"; };
+		58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumApp.swift; sourceTree = "<group>"; };
+		5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerState.swift; sourceTree = "<group>"; };
+		642BEA30A8664289314B2D9E /* video.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.pb.swift; sourceTree = "<group>"; };
+		6595E1ACFB74733DA1DDB653 /* Beebium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Beebium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		69144892FD8EBDC0F0D9230E /* video.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = video.proto; sourceTree = "<group>"; };
+		76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
+		7C5792BABD709C954B706793 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeToolbar.swift; sourceTree = "<group>"; };
+		831E41582E1F4F7358C624E8 /* indicator.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.pb.swift; sourceTree = "<group>"; };
+		8502E9114AB10B2200A2F6F9 /* MacKeyCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeyCode.swift; sourceTree = "<group>"; };
+		86F2683BAFB4C72B6644F473 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
+		87E7F7F1255B32F8C85FAFDA /* indicator.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = indicator.proto; sourceTree = "<group>"; };
+		8B269A5937DAC1914CA8BF39 /* video.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.grpc.swift; sourceTree = "<group>"; };
+		9141154B5BCF7C71635E62B2 /* disc.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = disc.proto; sourceTree = "<group>"; };
+		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
+		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
+		992C39260909EB85C84D2C20 /* SidebarMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMode.swift; sourceTree = "<group>"; };
+		9DE8C83B31D707C9E30C491D /* AVFAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFAudio.framework; path = System/Library/Frameworks/AVFAudio.framework; sourceTree = SDKROOT; };
+		9E27CCAEA2B3295D30B7E900 /* KeyboardMappingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMappingManager.swift; sourceTree = "<group>"; };
+		A16BD17340EC98E2C5EF1127 /* audio.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = audio.proto; sourceTree = "<group>"; };
+		A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorView.swift; sourceTree = "<group>"; };
+		A44DA8D133CDD247497229CA /* disc.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.grpc.swift; sourceTree = "<group>"; };
+		A7386122C0E5009AE250FECD /* SidebarModeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeContent.swift; sourceTree = "<group>"; };
+		AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.grpc.swift; sourceTree = "<group>"; };
+		B86FF568406281481A0E0D88 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
+		B98CF59648104556C3677412 /* KeyboardMTKView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMTKView.swift; sourceTree = "<group>"; };
+		BF12022B03E2794E9DDF6B3F /* KeyboardMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMapping.swift; sourceTree = "<group>"; };
+		C152853E7E4735D1E7994275 /* BBCKeyCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BBCKeyCache.swift; sourceTree = "<group>"; };
+		C511516BDB7D578CF5D63867 /* BiquadFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiquadFilter.swift; sourceTree = "<group>"; };
+		C9A1A70DB6662E96A6210970 /* KeyboardMappings */ = {isa = PBXFileReference; lastKnownFileType = folder; name = KeyboardMappings; path = Beebium/Resources/KeyboardMappings; sourceTree = SOURCE_ROOT; };
+		CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = system.grpc.swift; sourceTree = "<group>"; };
+		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
+		DFB1414298AE8F8261138293 /* keyboard.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = keyboard.proto; sourceTree = "<group>"; };
+		E2FF930B029ECBBAE243C4D0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
+		E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.pb.swift; sourceTree = "<group>"; };
+		F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageModeView.swift; sourceTree = "<group>"; };
+		F8C4007152A43F9E94FB30A5 /* system.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = system.pb.swift; sourceTree = "<group>"; };
+		F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorClient.swift; sourceTree = "<group>"; };
+		FAB928B6093490D60EECA734 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		FEB0459103AA8B2261579315 /* SystemClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemClient.swift; sourceTree = "<group>"; };
+		FF6041795434C164F849A27B /* KeyInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyInput.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0FE4E98B7E5AE216A668985A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F619A0248AEA6D3F17D0EBA9 /* GRPC in Frameworks */,
+				4F70A7E16C384FDF27FB7DA7 /* SwiftProtobuf in Frameworks */,
+				C33A98EC584EB6432A7CE7AD /* Atomics in Frameworks */,
+				EED3FE1B2C84F875665FC6FE /* Metal.framework in Frameworks */,
+				4AD0CF022E27D94F9FB1FEDC /* MetalKit.framework in Frameworks */,
+				562B6F36BE2D62D913DB2A32 /* AVFAudio.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0D33DA1B641373DC03C3B1E3 /* Proto */ = {
+			isa = PBXGroup;
+			children = (
+				A16BD17340EC98E2C5EF1127 /* audio.proto */,
+				9141154B5BCF7C71635E62B2 /* disc.proto */,
+				87E7F7F1255B32F8C85FAFDA /* indicator.proto */,
+				DFB1414298AE8F8261138293 /* keyboard.proto */,
+				3D27B82F5650277464200982 /* system.proto */,
+				69144892FD8EBDC0F0D9230E /* video.proto */,
+			);
+			path = Proto;
+			sourceTree = "<group>";
+		};
+		11FADB3C943C3EAC2EDBEE7A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6595E1ACFB74733DA1DDB653 /* Beebium.app */,
+				4DAEE1DC0F503B0F7129CE02 /* BeebiumTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		302A817E494E35F2A03C8A10 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */,
+				4E0CD29C9A89B375C692C019 /* audio.pb.swift */,
+				A44DA8D133CDD247497229CA /* disc.grpc.swift */,
+				92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */,
+				03C4898953F0003B85113EC0 /* indicator.grpc.swift */,
+				831E41582E1F4F7358C624E8 /* indicator.pb.swift */,
+				2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */,
+				E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */,
+				CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */,
+				F8C4007152A43F9E94FB30A5 /* system.pb.swift */,
+				8B269A5937DAC1914CA8BF39 /* video.grpc.swift */,
+				642BEA30A8664289314B2D9E /* video.pb.swift */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		513A5B641F9FF9A7B5BBAE38 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C9A1A70DB6662E96A6210970 /* KeyboardMappings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		9B94AD8C97BB584FCF9F60EC = {
+			isa = PBXGroup;
+			children = (
+				BBAE7111B52777D0ECF660DB /* Beebium */,
+				F07BCA445DC9C4A1F9AD1711 /* BeebiumTests */,
+				9BF740109BFEF11A1A1AABDA /* Frameworks */,
+				11FADB3C943C3EAC2EDBEE7A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9BF740109BFEF11A1A1AABDA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9DE8C83B31D707C9E30C491D /* AVFAudio.framework */,
+				7C5792BABD709C954B706793 /* Metal.framework */,
+				FAB928B6093490D60EECA734 /* MetalKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		BBAE7111B52777D0ECF660DB /* Beebium */ = {
+			isa = PBXGroup;
+			children = (
+				4635C74CA6E1654868006CA6 /* Assets.xcassets */,
+				94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */,
+				86F2683BAFB4C72B6644F473 /* AudioEngine.swift */,
+				5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */,
+				25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */,
+				B86FF568406281481A0E0D88 /* AudioRenderer.swift */,
+				E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */,
+				C152853E7E4735D1E7994275 /* BBCKeyCache.swift */,
+				58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */,
+				C511516BDB7D578CF5D63867 /* BiquadFilter.swift */,
+				E2FF930B029ECBBAE243C4D0 /* ContentView.swift */,
+				CF6562062957B62B8C099A42 /* DiscClient.swift */,
+				A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */,
+				F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */,
+				2CE550723A13DFA9A20EB302 /* IndicatorView.swift */,
+				3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */,
+				BF12022B03E2794E9DDF6B3F /* KeyboardMapping.swift */,
+				9E27CCAEA2B3295D30B7E900 /* KeyboardMappingManager.swift */,
+				B98CF59648104556C3677412 /* KeyboardMTKView.swift */,
+				FF6041795434C164F849A27B /* KeyInput.swift */,
+				8502E9114AB10B2200A2F6F9 /* MacKeyCode.swift */,
+				76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */,
+				3C410D45C0D56B52B7405B54 /* Shaders.metal */,
+				992C39260909EB85C84D2C20 /* SidebarMode.swift */,
+				A7386122C0E5009AE250FECD /* SidebarModeContent.swift */,
+				82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */,
+				0A9849250F602C15283E458A /* StatusBarView.swift */,
+				F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */,
+				FEB0459103AA8B2261579315 /* SystemClient.swift */,
+				08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */,
+				302A817E494E35F2A03C8A10 /* Generated */,
+				0D33DA1B641373DC03C3B1E3 /* Proto */,
+				513A5B641F9FF9A7B5BBAE38 /* Resources */,
+			);
+			path = Beebium;
+			sourceTree = "<group>";
+		};
+		F07BCA445DC9C4A1F9AD1711 /* BeebiumTests */ = {
+			isa = PBXGroup;
+			children = (
+				38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */,
+			);
+			path = BeebiumTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CD4FC7598AFEE19E21B401B0 /* Beebium */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F11781CD257F7BB931EE007 /* Build configuration list for PBXNativeTarget "Beebium" */;
+			buildPhases = (
+				978EAD3FD93589B3CF237DA5 /* Sources */,
+				3BED9A29463B8A3A7A50D038 /* Resources */,
+				0FE4E98B7E5AE216A668985A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Beebium;
+			packageProductDependencies = (
+				4C97A19D18727CB09CD95712 /* GRPC */,
+				A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */,
+				CDFCBD9064C78D1ABC230708 /* Atomics */,
+			);
+			productName = Beebium;
+			productReference = 6595E1ACFB74733DA1DDB653 /* Beebium.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F1DA1A0A8A2A8A2BFF42B91B /* BeebiumTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3319F29216498C7501559F45 /* Build configuration list for PBXNativeTarget "BeebiumTests" */;
+			buildPhases = (
+				1C5ED7E889B41D5EE31DB6E8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				14C134EAFD294CD782412E5A /* PBXTargetDependency */,
+			);
+			name = BeebiumTests;
+			packageProductDependencies = (
+			);
+			productName = BeebiumTests;
+			productReference = 4DAEE1DC0F503B0F7129CE02 /* BeebiumTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0F27FC5BE51845CD9EB12356 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = D84CD84936927DA6BCE91ED8 /* Build configuration list for PBXProject "Beebium" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9B94AD8C97BB584FCF9F60EC;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				662EA3A25B29FBE9FB9B5E38 /* XCRemoteSwiftPackageReference "grpc-swift" */,
+				42C4BA2703A5FAE9C503A46B /* XCRemoteSwiftPackageReference "swift-atomics" */,
+				B274901FA6E079DA0FB5036A /* XCRemoteSwiftPackageReference "swift-protobuf" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CD4FC7598AFEE19E21B401B0 /* Beebium */,
+				F1DA1A0A8A2A8A2BFF42B91B /* BeebiumTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3BED9A29463B8A3A7A50D038 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				07C91006D788A614860664BB /* Assets.xcassets in Resources */,
+				03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */,
+				3A5F2C41B8468DD7E63EC414 /* audio.proto in Resources */,
+				739F46631A5F30A8209D9623 /* disc.proto in Resources */,
+				4F522FC6B586A81F9B0C6507 /* indicator.proto in Resources */,
+				EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */,
+				B26B3EEFA493E960103D6527 /* system.proto in Resources */,
+				8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1C5ED7E889B41D5EE31DB6E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		978EAD3FD93589B3CF237DA5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4CFAD53FAAACED77B5672A4F /* AudioClient.swift in Sources */,
+				02EAA3A16D440CCD12071A3D /* AudioEngine.swift in Sources */,
+				B778FD3CAB76C7B9AE5B7EF9 /* AudioMixerState.swift in Sources */,
+				A577F46504594230B85A9932 /* AudioMixerView.swift in Sources */,
+				6573E0F14063A6C83E3204CA /* AudioRenderer.swift in Sources */,
+				BB411BA73F2726E174FF3054 /* AudioRingBuffer.swift in Sources */,
+				1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */,
+				42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */,
+				4CF04CE9A5BFD96B5E1E4590 /* BiquadFilter.swift in Sources */,
+				627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */,
+				4D9536D54F0C9291F5ECD326 /* DiscClient.swift in Sources */,
+				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
+				40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */,
+				7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */,
+				94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */,
+				987BD71FBAD1D69713DD3995 /* KeyboardClient.swift in Sources */,
+				DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */,
+				BE8551008B3836CA24806130 /* KeyboardMapping.swift in Sources */,
+				9F0D659309F36B7DD20F0070 /* KeyboardMappingManager.swift in Sources */,
+				F8E43B3F7BBA3554BE190043 /* MacKeyCode.swift in Sources */,
+				D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */,
+				B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */,
+				8248344928EA9782B944178F /* SidebarMode.swift in Sources */,
+				06B9C1E897D9DB39E8392078 /* SidebarModeContent.swift in Sources */,
+				FFED4839C8FA82EBD68D55E8 /* SidebarModeToolbar.swift in Sources */,
+				75BBA7064C85D6CDB3797111 /* StatusBarView.swift in Sources */,
+				8E648F53A0DD1B04A0E1F08E /* StorageModeView.swift in Sources */,
+				E275D2F57760944D93A67635 /* SystemClient.swift in Sources */,
+				F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */,
+				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,
+				A005244A2347799984C194E6 /* audio.pb.swift in Sources */,
+				22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */,
+				EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */,
+				44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */,
+				F44ED1692215ABF5CE928E87 /* indicator.pb.swift in Sources */,
+				D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */,
+				281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */,
+				5BFF6217532F7E4126E6A946 /* system.grpc.swift in Sources */,
+				EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */,
+				C5D7C5C9382566ADEAA92341 /* video.grpc.swift in Sources */,
+				CBC5ABA53015DE535C5F17A4 /* video.pb.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		14C134EAFD294CD782412E5A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CD4FC7598AFEE19E21B401B0 /* Beebium */;
+			targetProxy = D2960D8547D7A7D158EABBC0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		18DEEA16FE7EA5C9F5CF70CB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedFile;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beebium.Beebium;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		35F22E9F6B07B2395C4BBA29 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedFile;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.beebium.Beebium;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		B3D39E4CC709591512CCB54B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.beebium.BeebiumTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Beebium.app/Contents/MacOS/Beebium";
+			};
+			name = Debug;
+		};
+		C3202202FE032600950B579C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.beebium.BeebiumTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Beebium.app/Contents/MacOS/Beebium";
+			};
+			name = Release;
+		};
+		C7DAFD478336A40F73C1AEE5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D886A4B2F3AF3A51BEFB224A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3319F29216498C7501559F45 /* Build configuration list for PBXNativeTarget "BeebiumTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B3D39E4CC709591512CCB54B /* Debug */,
+				C3202202FE032600950B579C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7F11781CD257F7BB931EE007 /* Build configuration list for PBXNativeTarget "Beebium" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				18DEEA16FE7EA5C9F5CF70CB /* Debug */,
+				35F22E9F6B07B2395C4BBA29 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D84CD84936927DA6BCE91ED8 /* Build configuration list for PBXProject "Beebium" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7DAFD478336A40F73C1AEE5 /* Debug */,
+				D886A4B2F3AF3A51BEFB224A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		42C4BA2703A5FAE9C503A46B /* XCRemoteSwiftPackageReference "swift-atomics" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-atomics";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+		662EA3A25B29FBE9FB9B5E38 /* XCRemoteSwiftPackageReference "grpc-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/grpc/grpc-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.23.0;
+			};
+		};
+		B274901FA6E079DA0FB5036A /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-protobuf";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.28.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4C97A19D18727CB09CD95712 /* GRPC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 662EA3A25B29FBE9FB9B5E38 /* XCRemoteSwiftPackageReference "grpc-swift" */;
+			productName = GRPC;
+		};
+		A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B274901FA6E079DA0FB5036A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
+			productName = SwiftProtobuf;
+		};
+		CDFCBD9064C78D1ABC230708 /* Atomics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 42C4BA2703A5FAE9C503A46B /* XCRemoteSwiftPackageReference "swift-atomics" */;
+			productName = Atomics;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 0F27FC5BE51845CD9EB12356 /* Project object */;
+}

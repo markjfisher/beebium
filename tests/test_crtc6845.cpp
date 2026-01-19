@@ -43,7 +43,6 @@ static Crtc6845::Output tick_n(Crtc6845& crtc, int n) {
 // R3=0x24 (HSYNC width=4, VSYNC width=2), R4=30 (V total), R6=25 (V displayed)
 // R7=27 (VSYNC pos), R9=18 (max scanline)
 static void setup_mode7_timing(Crtc6845& crtc) {
-    // Select and write each register
     crtc.write(0, 0);  crtc.write(1, 63);   // R0: H total = 63 (64 chars)
     crtc.write(0, 1);  crtc.write(1, 40);   // R1: H displayed = 40 chars
     crtc.write(0, 2);  crtc.write(1, 49);   // R2: HSYNC position = 49
@@ -412,6 +411,129 @@ TEST_CASE("Crtc6845 register access", "[crtc6845][registers]") {
         crtc.write(0, 12); crtc.write(1, 0xFF);
         crtc.write(0, 12);
         REQUIRE(crtc.read(1) == 0x3F);  // Masked to 6 bits
+    }
+}
+
+// Helper to set up Mode 4 timings (non-interlace bitmap mode)
+// This is a representative non-interlace mode for cursor blink testing
+static void setup_mode4_timing(Crtc6845& crtc) {
+    crtc.write(0, 0);  crtc.write(1, 63);   // R0: H total = 63 (64 chars)
+    crtc.write(0, 1);  crtc.write(1, 40);   // R1: H displayed = 40 chars
+    crtc.write(0, 2);  crtc.write(1, 49);   // R2: HSYNC position = 49
+    crtc.write(0, 3);  crtc.write(1, 0x24); // R3: HSYNC=4, VSYNC=2
+    crtc.write(0, 4);  crtc.write(1, 38);   // R4: V total = 38 (39 rows)
+    crtc.write(0, 5);  crtc.write(1, 0);    // R5: V adjust = 0
+    crtc.write(0, 6);  crtc.write(1, 32);   // R6: V displayed = 32 rows
+    crtc.write(0, 7);  crtc.write(1, 34);   // R7: VSYNC position = 34
+    crtc.write(0, 8);  crtc.write(1, 0);    // R8: Interlace = 0 (non-interlace)
+    crtc.write(0, 9);  crtc.write(1, 7);    // R9: max scanline = 7 (8 lines/char)
+}
+
+TEST_CASE("Crtc6845 cursor blink rate in non-interlace mode", "[crtc6845][cursor][blink]") {
+    // This test verifies that cursor blink timing is correct in non-interlace modes.
+    //
+    // The cursor blink rate is controlled by field_count_ which is checked against:
+    // - Mode 2: (field_count_ & 0x08) - toggles every 8 fields
+    // - Mode 3: (field_count_ & 0x10) - toggles every 16 fields
+    //
+    // In non-interlace mode, field_count_ increments by 2 per frame to normalize
+    // to a 50Hz field rate (since there's only one field per frame, not two).
+    //
+    // Therefore:
+    // - Mode 2: cursor should toggle every 4 frames (8 / 2 = 4)
+    // - Mode 3: cursor should toggle every 8 frames (16 / 2 = 8)
+    //
+    // If the cursor blinks at twice the correct rate, field_count_ is being
+    // incremented incorrectly (e.g., by 4 instead of 2, or at multiple points).
+
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode4_timing(crtc);
+
+    // Set cursor position to address 0 (visible)
+    crtc.write(0, 14); crtc.write(1, 0);   // R14: cursor high
+    crtc.write(0, 15); crtc.write(1, 0);   // R15: cursor low = 0
+    // Set cursor start=0, end=7 to cover all scanlines
+    crtc.write(0, 10); crtc.write(1, 0x40); // R10: start=0, mode=2 (1/16 field blink)
+    crtc.write(0, 11); crtc.write(1, 7);    // R11: end=7
+
+    const int ticks_per_frame = 39 * 8 * 64;  // Mode 4: 39 rows * 8 scanlines * 64 chars
+
+    SECTION("Mode 2 cursor blinks at 1/16 field rate (every 4 frames in non-interlace)") {
+        // Get initial cursor state at first tick of frame 0
+        // At this point: char_addr_=0, cursor at address 0, so address_match=true
+        auto out = crtc.tick();
+        bool initial_cursor = out.cursor;
+
+        int frames_to_first_toggle = 0;
+        bool found_toggle = false;
+
+        // Run through frames looking for cursor state change
+        // Should toggle after 4 frames (when field_count reaches 8)
+        for (int frame = 0; frame < 16 && !found_toggle; ++frame) {
+            // Tick through remainder of this frame to reach start of next frame
+            // First tick was at address 0. A full frame is ticks_per_frame ticks.
+            // After (ticks_per_frame - 1) more ticks, we complete the frame.
+            // The NEXT tick starts the new frame at address 0.
+            int ticks_remaining = ticks_per_frame - 1;
+            for (int t = 0; t < ticks_remaining; ++t) {
+                crtc.tick();
+            }
+
+            // Now tick once to get to the first character of the next frame (address 0)
+            // This is where we check the cursor output
+            out = crtc.tick();
+
+            if (out.cursor != initial_cursor) {
+                frames_to_first_toggle = frame + 1;
+                found_toggle = true;
+            }
+        }
+
+        REQUIRE(found_toggle);
+        // In non-interlace mode with field_count incrementing by 2,
+        // cursor should toggle after 4 frames (field_count goes 0,2,4,6,8)
+        REQUIRE(frames_to_first_toggle == 4);
+    }
+
+    SECTION("Mode 3 cursor blinks at 1/32 field rate (every 8 frames in non-interlace)") {
+        // Reconfigure for mode 3
+        crtc.reset();
+        setup_mode4_timing(crtc);
+        crtc.write(0, 14); crtc.write(1, 0);
+        crtc.write(0, 15); crtc.write(1, 0);
+        crtc.write(0, 10); crtc.write(1, 0x60); // R10: start=0, mode=3 (1/32 field blink)
+        crtc.write(0, 11); crtc.write(1, 7);
+
+        // Get initial cursor state at first tick of frame 0
+        auto out = crtc.tick();
+        bool initial_cursor = out.cursor;
+
+        int frames_to_first_toggle = 0;
+        bool found_toggle = false;
+
+        // Run through frames looking for cursor state change
+        // Should toggle after 8 frames (when field_count reaches 16)
+        for (int frame = 0; frame < 32 && !found_toggle; ++frame) {
+            // Tick through remainder of this frame to reach start of next frame
+            int ticks_remaining = ticks_per_frame - 1;
+            for (int t = 0; t < ticks_remaining; ++t) {
+                crtc.tick();
+            }
+
+            // Tick once to get to first character of next frame (address 0)
+            out = crtc.tick();
+
+            if (out.cursor != initial_cursor) {
+                frames_to_first_toggle = frame + 1;
+                found_toggle = true;
+            }
+        }
+
+        REQUIRE(found_toggle);
+        // In non-interlace mode with field_count incrementing by 2,
+        // cursor should toggle after 8 frames (field_count goes 0,2,4,6,8,10,12,14,16)
+        REQUIRE(frames_to_first_toggle == 8);
     }
 }
 
