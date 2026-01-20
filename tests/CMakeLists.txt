@@ -279,6 +279,14 @@ target_compile_definitions(test_cursor PRIVATE
 )
 catch_discover_tests(test_cursor)
 
+# Cursor blink timing tests (integration test for blink rate verification)
+add_executable(test_cursor_blink_timing test_cursor_blink_timing.cpp)
+target_link_libraries(test_cursor_blink_timing PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_cursor_blink_timing PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_cursor_blink_timing)
+
 # Keyboard input tests
 add_executable(test_keyboard_input test_keyboard_input.cpp)
 target_link_libraries(test_keyboard_input PRIVATE beebium_core Catch2::Catch2WithMain)

@@ -384,10 +384,10 @@ private:
         const bool r6_hit = (row_ == registers_[R6_VDISPLAYED]);
         if (r6_hit && v_display_) {
             v_display_ = false;
-            // Increment by 2 in non-interlace mode to normalize to 50Hz field rate.
-            // In interlace mode, this triggers twice per frame (once per field).
-            // In non-interlace mode, this triggers once per frame, so we double it.
-            field_count_ += interlace_sync_and_video() ? 1 : 2;
+            // Always increment by 1, matching jsbeeb behavior.
+            // In non-interlace mode, this increments once per frame at 50Hz.
+            // Cursor mode 3 (1/32 rate) uses bit 4, giving 16 frames on/off.
+            ++field_count_;
             // Toggle field for interlace mode
             odd_field_ = !odd_field_;
             // Increment frame count (matches jsbeeb's frameCount++)
