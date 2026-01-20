@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Arcadians",
+  "characterMapping": false,
+  "synchronizeCapsLock": false,
+  "keyMappings": [
+    {
+      "macOS": { "keyCode": 6 },
+      "bbc": { "keyName": "Caps Lock", "action": "Left" }
+    },
+    {
+      "macOS": { "keyCode": 7 },
+      "bbc": { "keyName": "Ctrl", "action": "Right" }
+    },
+    {
+      "macOS": { "keyCode": 36 },
+      "bbc": { "keyName": "Return", "action": "Fire" }
+    },
+    {
+      "macOS": { "keyCode": 18 },
+      "bbc": { "keyName": "1", "action": "1-player" }
+    },
+    {
+      "macOS": { "keyCode": 19 },
+      "bbc": { "keyName": "2", "action": "2-player" }
+    },
+    {
+      "macOS": { "keyCode": 53 },
+      "bbc": { "keyName": "Escape", "action": "Menu", "disabled": false }
+    },
+    {
+      "macOS": { "keyCode": 12 },
+      "bbc": { "keyName": "Q", "action": "Quiet" }
+    },
+    {
+      "macOS": { "keyCode": 1 },
+      "bbc": { "keyName": "S", "action": "Sound" }
+    },
+    {
+      "macOS": { "keyCode": 111, "option": true },
+      "bbc": { "keyName": "Break", "disabled": false }
+    }
+  ]
+}
