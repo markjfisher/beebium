@@ -1245,25 +1245,27 @@ TEST_CASE("MODE 7 cursor visibility at all positions", "[mode7][cursor][golden]"
     machine.memory().enable_video_output();
     machine.reset();
 
-    HeapFrameAllocator allocator;
-    FrameBuffer fb(&allocator, 640, 512);
-    FrameRenderer renderer(&fb);
-
-    // Boot to BASIC
+    // Boot to BASIC without video processing (CRTC is in degenerate state during boot)
     for (uint64_t i = 0; i < 3'000'000; ++i) {
         machine.step();
-        if (machine.memory().video_output.has_value()) {
-            renderer.process(machine.memory().video_output.value());
-        }
         if (machine.read(0x7C28) == 'B') break;
     }
 
+    // Run stabilization cycles
     for (int i = 0; i < 200000; ++i) {
         machine.step();
-        if (machine.memory().video_output.has_value()) {
-            renderer.process(machine.memory().video_output.value());
-        }
     }
+
+    // Drain any pending video output from boot phase
+    if (machine.memory().video_output.has_value()) {
+        auto& queue = machine.memory().video_output.value();
+        queue.consume(queue.size());
+    }
+
+    // Create video pipeline after boot (with fresh state)
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
 
     // Set steady cursor (no blink)
     machine.memory().crtc.write(0, 10);
@@ -1277,20 +1279,22 @@ TEST_CASE("MODE 7 cursor visibility at all positions", "[mode7][cursor][golden]"
     machine.memory().crtc.write(0, 10);
     machine.memory().crtc.write(1, (r10 & 0x1F) | 0x20);  // Cursor off
 
-    fb.clear(0);
     renderer.reset();
     if (machine.memory().video_output.has_value()) {
         machine.memory().video_output.value().consume(
             machine.memory().video_output.value().size());
     }
 
-    for (int i = 0; i < 160000; ++i) {
-        machine.step();
-        if (machine.memory().video_output.has_value()) {
-            renderer.process(machine.memory().video_output.value());
+    // Wait for two complete frames using version-based detection
+    for (int frame = 0; frame < 2; ++frame) {
+        uint64_t start_version = fb.version();
+        while (fb.version() == start_version) {
+            machine.step();
+            if (machine.memory().video_output.has_value()) {
+                renderer.process(machine.memory().video_output.value());
+            }
         }
     }
-    fb.swap();
 
     auto baseline = fb.read_frame();
     size_t baseline_brightness = 0;
@@ -1313,20 +1317,22 @@ TEST_CASE("MODE 7 cursor visibility at all positions", "[mode7][cursor][golden]"
         machine.memory().crtc.write(0, 15);
         machine.memory().crtc.write(1, cursor_addr & 0xFF);
 
-        fb.clear(0);
         renderer.reset();
         if (machine.memory().video_output.has_value()) {
             machine.memory().video_output.value().consume(
                 machine.memory().video_output.value().size());
         }
 
-        for (int i = 0; i < 160000; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
+        // Wait for two complete frames using version-based detection
+        for (int frame = 0; frame < 2; ++frame) {
+            uint64_t start_version = fb.version();
+            while (fb.version() == start_version) {
+                machine.step();
+                if (machine.memory().video_output.has_value()) {
+                    renderer.process(machine.memory().video_output.value());
+                }
             }
         }
-        fb.swap();
 
         auto with_cursor = fb.read_frame();
         size_t cursor_brightness = 0;

@@ -442,6 +442,14 @@ private:
         const bool is_degenerate_state = (registers_[R0_HTOTAL] == 0);
 
         if (!is_degenerate_state) {
+            // CATCHUP CHECK: If row_ has run away past R4+1 (can happen when
+            // transitioning from degenerate state where row_ increments freely),
+            // force end_of_frame() to reset CRTC state. Without this, v_display_
+            // stays FALSE forever and no pixels are rendered.
+            if (row_ > registers_[R4_VTOTAL] + 1) {
+                end_of_frame();
+            }
+
             // NORMAL STATE: Standard frame end detection
             // Check for vertical adjust period
             if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {

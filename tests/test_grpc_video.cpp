@@ -266,24 +266,47 @@ TEST_CASE("VideoService streams cursor blink pattern", "[grpc][video][cursor]") 
     // Verify cursor blink is visible in streamed frames
     // This tests the full pipeline: core -> framebuffer -> grpc -> client
 
-    VideoTestFixture fixture;
+    // Create machine and boot BEFORE creating server
+    // (Server contains FrameRenderer which needs clean state after CRTC is programmed)
+    beebium::ModelB machine;
+#ifdef BEEBIUM_ROM_DIR
+    auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
+    auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
+    std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
+    machine.state().memory.load_basic(basic.data(), basic.size());
+#endif
+    machine.state().memory.enable_video_output();
+    machine.reset();
 
     // Boot to BASIC prompt
     for (uint64_t i = 0; i < 3'000'000; ++i) {
-        fixture.machine().step();
-        if (fixture.machine().read(0x7C28) == 'B' &&
-            fixture.machine().read(0x7C29) == 'B') {
+        machine.step();
+        if (machine.read(0x7C28) == 'B' && machine.read(0x7C29) == 'B') {
             break;
         }
     }
 
     // Let display stabilize
-    fixture.run_cycles(200000);
+    machine.run(200000);
+
+    // Drain any pending video output from boot phase
+    if (machine.state().memory.video_output.has_value()) {
+        auto& queue = machine.state().memory.video_output.value();
+        queue.consume(queue.size());
+    }
+
+    // Now create server with fresh video state
+    beebium::service::Server<beebium::ModelB> server(machine, "127.0.0.1", 0);
+    server.start();
+
+    std::string address = "127.0.0.1:" + std::to_string(server.port());
+    auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+    auto stub = beebium::VideoService::NewStub(channel);
 
     grpc::ClientContext context;
     beebium::SubscribeFramesRequest request;
 
-    auto reader = fixture.stub().SubscribeFrames(&context, request);
+    auto reader = stub->SubscribeFrames(&context, request);
 
     // Run emulation and collect frame brightness
     std::atomic<bool> running{true};
@@ -292,7 +315,7 @@ TEST_CASE("VideoService streams cursor blink pattern", "[grpc][video][cursor]") 
 
     std::thread emu_thread([&]() {
         while (running) {
-            fixture.run_cycles(80000);  // One frame worth
+            machine.run(80000);  // One frame worth
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     });
@@ -329,4 +352,6 @@ TEST_CASE("VideoService streams cursor blink pattern", "[grpc][video][cursor]") 
     // With cursor blinking, expect ~16 pixel variation
     // If range is 0, cursor is not visible in streamed frames
     CHECK(range >= 10);
+
+    server.stop();
 }

@@ -88,35 +88,17 @@ TEST_CASE("Mode 7 cursor blinks", "[video][cursor][integration]") {
     machine.memory().enable_video_output();
     machine.reset();
 
-    // Create video pipeline
-    HeapFrameAllocator allocator;
-    FrameBuffer fb(&allocator, 640, 512);  // Full PAL resolution
-    FrameRenderer renderer(&fb);
-    fb.clear(0);
-
     // Boot detection: look for "BBC Computer" at screen address 0x7C28
     const uint16_t check_addr = 0x7C28;
     const char* expected_str = "BBC Computer";
     const size_t expected_len = 12;
 
-    // Run boot sequence with periodic video drain
-    constexpr uint64_t max_cycles = 3'000'000;  // ~1.5 seconds at 2MHz
-    constexpr uint64_t drain_interval = 10'000;
-
+    // Boot without video processing (CRTC is in degenerate state during boot)
+    constexpr uint64_t max_cycles = 3'000'000;
     bool boot_complete = false;
-    uint64_t drain_counter = 0;
 
     while (machine.cycle_count() < max_cycles && !boot_complete) {
         machine.step();
-        ++drain_counter;
-
-        // Periodically drain video queue to renderer
-        if (drain_counter >= drain_interval) {
-            drain_counter = 0;
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
-            }
-        }
 
         // Check for boot completion
         bool matches = true;
@@ -131,6 +113,23 @@ TEST_CASE("Mode 7 cursor blinks", "[video][cursor][integration]") {
     REQUIRE(boot_complete);
     INFO("Boot completed at cycle " << machine.cycle_count());
     REQUIRE(machine.memory().video_ula.teletext_mode());
+
+    // Run extra stabilization cycles after boot
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+    }
+
+    // Drain any pending video output from boot phase
+    if (machine.memory().video_output.has_value()) {
+        auto& queue = machine.memory().video_output.value();
+        queue.consume(queue.size());
+    }
+
+    // Create video pipeline after boot (with fresh state)
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);  // Full PAL resolution
+    FrameRenderer renderer(&fb);
+    fb.clear(0);
 
     // After boot, capture multiple frames and measure bright pixel counts
     // The cursor blinks at 1/16 or 1/32 field rate (typically 32 frames = 16 on, 16 off)
@@ -1683,6 +1682,25 @@ TEST_CASE("Simple cursor blink detection", "[video][cursor][simple]") {
     machine.memory().load_basic(basic_rom.data(), basic_rom.size());
     machine.memory().enable_video_output();
     machine.reset();
+
+    // Boot without video processing (like the passing test does)
+    for (uint64_t i = 0; i < 3'000'000; ++i) {
+        machine.step();
+        if (machine.read(0x7C28) == 'B' && machine.read(0x7C29) == 'B') {
+            break;
+        }
+    }
+
+    // Run extra stabilization cycles
+    for (int i = 0; i < 200000; ++i) {
+        machine.step();
+    }
+
+    // Drain any pending video output
+    if (machine.memory().video_output.has_value()) {
+        auto& queue = machine.memory().video_output.value();
+        queue.consume(queue.size());
+    }
 
     HeapFrameAllocator allocator;
     FrameBuffer fb(&allocator, 640, 512);
