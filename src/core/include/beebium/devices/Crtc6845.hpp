@@ -401,25 +401,70 @@ private:
             do_even_frame_logic_ = (frame_count_ & 1) != 0;
         }
 
-        // Check for vertical adjust period
-        if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
-            if (registers_[R5_VTOTAL_ADJ] > 0) {
-                in_vadj_ = true;
-                vadj_counter_ = 0;
-            } else {
-                end_of_frame();
-            }
-        }
+        // ============================================================================
+        // HYBRID FRAME END DETECTION FOR CA1 INTERRUPT COMPATIBILITY
+        // ============================================================================
+        //
+        // PROBLEM: The System VIA CA1 input is directly connected to the CRTC vsync
+        // output (directly from IC10 at the CRTC, active high on the IC10 output
+        // and active low by the time it gets to the VIA!). A falling edge on CA1
+        // triggers the vsync interrupt that the MOS uses for timing. For CA1 to see
+        // a falling edge, vsync must go high then low - it cannot immediately restart.
+        //
+        // In DEGENERATE CRTC STATE (all registers = 0 after reset):
+        //   - R0=0: Each scanline is 1 character wide, column is always 0
+        //   - R4=0: Vertical total is 1 row, so row cycles 0→1→0 every scanline
+        //   - R7=0: Vsync starts when row=0
+        //   - R9=0: Each row is 1 scanline
+        //   - Result: Frames end every scanline, row resets to 0 before vsync ends
+        //   - When vsync ends after 16 scanlines, row=0=R7, so vsync restarts
+        //   - Vsync is ALWAYS HIGH, CA1 never sees a falling edge, no interrupt!
+        //
+        // SOLUTION: Skip frame end detection when R0=0 (degenerate state).
+        //   - With no frame end, row increments freely: 0→1→2→...→16+
+        //   - By the time vsync ends (after 16 scanlines), row >> R7
+        //   - Vsync start condition (row==R7) is false, vsync stays off
+        //   - CA1 sees the falling edge, interrupt fires correctly
+        //   - MOS then programs proper CRTC values, and normal operation begins
+        //
+        // WHY NOT ALWAYS USE THIS APPROACH?
+        //   - B2 uses a latching mechanism (frame end detected at column==1)
+        //   - We tried implementing B2's latching, but it caused display jumping
+        //     in non-interlace modes (MODE 0-6) due to subtle timing differences
+        //   - The hybrid approach gives correct CA1 behavior in degenerate state
+        //     while maintaining stable display in normal operation
+        //
+        // See oracle/CYCLE_DIFFERENCE_INVESTIGATION.md section "Display Jumping
+        // Regression" for detailed analysis of alternatives tried and why this
+        // hybrid approach was chosen.
+        // ============================================================================
 
-        if (in_vadj_) {
-            ++vadj_counter_;
-            // Use > not >= because vadj_counter is incremented on the same
-            // end_of_scanline call that enters v_adjust, so we need one extra count
-            if (vadj_counter_ > registers_[R5_VTOTAL_ADJ]) {
-                in_vadj_ = false;
-                end_of_frame();
+        const bool is_degenerate_state = (registers_[R0_HTOTAL] == 0);
+
+        if (!is_degenerate_state) {
+            // NORMAL STATE: Standard frame end detection
+            // Check for vertical adjust period
+            if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
+                if (registers_[R5_VTOTAL_ADJ] > 0) {
+                    in_vadj_ = true;
+                    vadj_counter_ = 0;
+                } else {
+                    end_of_frame();
+                }
+            }
+
+            if (in_vadj_) {
+                ++vadj_counter_;
+                // Use > not >= because vadj_counter is incremented on the same
+                // end_of_scanline call that enters v_adjust, so we need one extra count
+                if (vadj_counter_ > registers_[R5_VTOTAL_ADJ]) {
+                    in_vadj_ = false;
+                    end_of_frame();
+                }
             }
         }
+        // DEGENERATE STATE (R0=0): Skip frame end detection entirely.
+        // Row will increment freely past R4, preventing vsync restart.
 
         // Reset character address to start of line
         char_addr_ = line_addr_;

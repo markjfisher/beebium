@@ -6,14 +6,25 @@ Native macOS frontend for the Beebium BBC Micro emulator. Uses Metal for renderi
 
 - macOS 14.0+
 - Xcode 15+ (for building)
+- XcodeGen (`brew install xcodegen`)
 - A running beebium server (`beebium-model-b` or `beebium-model-b-plus`)
 
 ## Building
 
+The Xcode project is generated from `project.yml` using XcodeGen (see [Build System](#build-system) below for details).
+
+### First Time
+
+```bash
+brew install xcodegen
+cd clients/macos/Beebium
+xcodegen generate
+```
+
 ### Command Line
 
 ```bash
-cd /Users/rjs/Code/beebium/clients/macos/Beebium
+cd clients/macos/Beebium
 xcodebuild -scheme Beebium -configuration Debug build
 ```
 
@@ -25,6 +36,8 @@ The built app is located at:
 ### Xcode
 
 ```bash
+cd clients/macos/Beebium
+xcodegen generate   # If project.yml changed or first time
 open Beebium.xcodeproj
 ```
 
@@ -99,13 +112,108 @@ Requires `protoc` and `protoc-gen-grpc-swift`:
 brew install swift-protobuf grpc-swift
 ```
 
-## XcodeGen
+## Build System
 
-The project uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) for project file generation. If you modify `project.yml`:
+### XcodeGen
+
+The Xcode project file (`Beebium.xcodeproj`) is **generated**, not tracked in version control. This is intentional:
+
+- The `project.yml` spec file defines the project structure
+- XcodeGen generates the `.xcodeproj` from this spec
+- This avoids merge conflicts in the notoriously conflict-prone `.pbxproj` format
+- CI regenerates the project on every build, ensuring consistency
+
+**The `.xcodeproj` is in `.gitignore` - do not track it.**
+
+### First-Time Setup
 
 ```bash
+# Install XcodeGen
 brew install xcodegen
+
+# Generate the Xcode project
+cd clients/macos/Beebium
 xcodegen generate
+
+# Now you can open in Xcode or build from command line
+open Beebium.xcodeproj
+```
+
+### After Pulling Changes
+
+If source files were added/removed, regenerate the project:
+
+```bash
+cd clients/macos/Beebium
+xcodegen generate
+```
+
+### project.yml Structure
+
+The `project.yml` file defines:
+
+- **targets**: Beebium app and BeebiumTests
+- **sources**: Swift source files (auto-discovered from directory)
+- **dependencies**: Swift packages (grpc-swift, swift-protobuf)
+- **settings**: Build settings, deployment target, signing
+
+Key sections:
+```yaml
+targets:
+  Beebium:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - Beebium           # All .swift files in this directory
+    dependencies:
+      - package: grpc-swift
+      - package: swift-protobuf
+```
+
+### Adding New Source Files
+
+1. Create the `.swift` file in the `Beebium/` directory
+2. Run `xcodegen generate`
+3. The file is automatically included (sources are directory-based)
+
+### CI Build Process
+
+GitHub Actions (`.github/workflows/ci.yml`) builds the client:
+
+```yaml
+- name: Install XcodeGen
+  run: brew install xcodegen
+
+- name: Generate Xcode project
+  working-directory: clients/macos/Beebium
+  run: xcodegen generate
+
+- name: Build client
+  working-directory: clients/macos/Beebium
+  run: xcodebuild build -scheme Beebium ...
+```
+
+This ensures CI always builds from the spec, not a stale project file.
+
+### Troubleshooting
+
+**"File not found" errors after checkout:**
+```bash
+xcodegen generate  # Regenerate project with current files
+```
+
+**Xcode shows stale file references:**
+```bash
+# Close Xcode, regenerate, reopen
+xcodegen generate
+open Beebium.xcodeproj
+```
+
+**Build fails with missing Swift packages:**
+```bash
+# Xcode should resolve automatically, but if not:
+xcodebuild -resolvePackageDependencies
 ```
 
 ## Display Rendering

@@ -33,7 +33,6 @@ CLAUDE.md
 # IDE and editor files
 .vscode/
 .idea/
-*.xcodeproj/
 *.xcworkspace/
 .vs/
 *.sln
@@ -41,6 +40,10 @@ CLAUDE.md
 
 # LSP and tooling caches
 .cache/
+
+# Xcode user-specific data (project files are tracked)
+xcuserdata/
+*.xcuserstate
 
 # Editor swap/backup files
 *~
