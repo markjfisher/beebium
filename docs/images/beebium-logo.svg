@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="86.933 88.826 322.334 359.809">
-  <rect x="101.159" y="102.523" width="296" height="336" style="stroke-width: 4px;" stroke="black" fill="none" rx="14.535" ry="14.535"/>
+  <rect x="101.159" y="102.523" width="296" height="336" style="stroke-width: 4px;" stroke="black" fill="#EDE8D0" rx="14.535" ry="14.535"/>
   <text style="white-space: pre; stroke-width: 1; font-size: 20px; text-anchor: end;" x="152.044" y="138.955" font-size="20" font-family="Helvetica, Arial, sans-serif" fill="black">32</text>
   <text style="white-space: pre; stroke-width: 1; font-size: 20px; text-anchor: end;" x="152.044" y="164.995" font-size="20" font-family="Helvetica, Arial, sans-serif" fill="black">64</text>
   <text style="white-space: pre; stroke-width: 1; font-size: 20px; text-anchor: end;" x="152.044" y="192.524" font-size="20" font-family="Helvetica, Arial, sans-serif" fill="black">128</text>

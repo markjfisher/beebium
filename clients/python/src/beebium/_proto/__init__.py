@@ -20,6 +20,8 @@ try:
     from beebium._proto import video_pb2, video_pb2_grpc
     from beebium._proto import keyboard_pb2, keyboard_pb2_grpc
     from beebium._proto import debugger_pb2, debugger_pb2_grpc
+    from beebium._proto import system_pb2, system_pb2_grpc
+    from beebium._proto import disc_pb2, disc_pb2_grpc
 except ImportError:
     # Proto files not yet generated
     pass

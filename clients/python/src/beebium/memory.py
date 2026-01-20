@@ -226,13 +226,27 @@ class MemoryWriter(MemoryAccessorBase):
     def __setitem__(self, address: int, value: int) -> None: ...
 
     @overload
+    def __setitem__(self, address: int, value: bytes) -> None: ...
+
+    @overload
     def __setitem__(self, address: slice, value: bytes) -> None: ...
 
     def __setitem__(self, address: int | slice, value: int | bytes) -> None:
         if isinstance(address, int):
-            if not isinstance(value, int) or not (0 <= value <= 255):
-                raise ValueError("single byte write requires int 0-255")
-            self._write_bytes(address, bytes([value]))
+            if isinstance(value, int):
+                if not (0 <= value <= 255):
+                    raise ValueError("single byte write requires int 0-255")
+                self._write_bytes(address, bytes([value]))
+            elif isinstance(value, (bytes, bytearray)):
+                if len(value) != 1:
+                    raise ValueError(
+                        f"single address write requires exactly 1 byte, got {len(value)}"
+                    )
+                self._write_bytes(address, bytes(value))
+            else:
+                raise TypeError(
+                    f"single address write requires int or bytes, not {type(value).__name__}"
+                )
         elif isinstance(address, slice):
             start = address.start or 0
             stop = address.stop
@@ -281,18 +295,33 @@ class MemoryWriter(MemoryAccessorBase):
         self._write_bytes(address, data)
         return len(data)
 
-    def fill(self, start: int, end: int, value: int = 0) -> None:
+    def fill(self, start: int, end: int, value: int | bytes = 0) -> None:
         """Fill a memory range with a value.
 
         Args:
             start: Start address (inclusive).
             end: End address (exclusive).
-            value: The byte value to fill with (default 0).
+            value: The byte value to fill with (default 0). Can be int (0-255)
+                   or a single-byte bytes object.
         """
         length = end - start
         if length <= 0:
             return
-        self._write_bytes(start, bytes([value] * length))
+        if isinstance(value, int):
+            if not (0 <= value <= 255):
+                raise ValueError("fill value must be int 0-255")
+            fill_byte = value
+        elif isinstance(value, (bytes, bytearray)):
+            if len(value) != 1:
+                raise ValueError(
+                    f"fill value must be exactly 1 byte, got {len(value)}"
+                )
+            fill_byte = value[0]
+        else:
+            raise TypeError(
+                f"fill value must be int or bytes, not {type(value).__name__}"
+            )
+        self._write_bytes(start, bytes([fill_byte] * length))
 
 
 # =============================================================================

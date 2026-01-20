@@ -24,11 +24,13 @@ from beebium.connection import Connection
 from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
+from beebium.disc import Disc
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
 from beebium.memory import Memory
 from beebium.server import ServerProcess
 from beebium.sound import Sound
+from beebium.system import System
 from beebium.via import Via, ViaId
 from beebium.video import Video
 from beebium.video_ula import VideoUla
@@ -78,6 +80,8 @@ class Beebium:
         self._video_ula: VideoUla | None = None
         self._addressable_latch: AddressableLatch | None = None
         self._sound: Sound | None = None
+        self._system: System | None = None
+        self._disc: Disc | None = None
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -232,6 +236,20 @@ class Beebium:
         if self._sound is None:
             self._sound = Sound(self._connection.debugger_stub)
         return self._sound
+
+    @property
+    def system(self) -> System:
+        """Access system information and server status."""
+        if self._system is None:
+            self._system = System(self._connection.system_stub)
+        return self._system
+
+    @property
+    def disc(self) -> Disc:
+        """Access floppy disc drive management."""
+        if self._disc is None:
+            self._disc = Disc(self._connection.disc_stub)
+        return self._disc
 
     def close(self) -> None:
         """Close the connection and stop any managed server."""

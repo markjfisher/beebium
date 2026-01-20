@@ -16,7 +16,13 @@ from __future__ import annotations
 
 import grpc
 
-from beebium._proto import debugger_pb2_grpc, keyboard_pb2_grpc, video_pb2_grpc
+from beebium._proto import (
+    debugger_pb2_grpc,
+    disc_pb2_grpc,
+    keyboard_pb2_grpc,
+    system_pb2_grpc,
+    video_pb2_grpc,
+)
 from beebium.exceptions import ConnectionError
 
 
@@ -39,7 +45,9 @@ class Connection:
         self._target = target
         self._channel: grpc.Channel | None = None
         self._debugger_stub: debugger_pb2_grpc.DebuggerControlStub | None = None
+        self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
+        self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
 
         self._connect(timeout)
@@ -61,7 +69,9 @@ class Connection:
 
         # Create service stubs
         self._debugger_stub = debugger_pb2_grpc.DebuggerControlStub(self._channel)
+        self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
+        self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
 
     @property
@@ -95,13 +105,29 @@ class Connection:
             raise ConnectionError("Not connected")
         return self._video_stub
 
+    @property
+    def system_stub(self) -> system_pb2_grpc.SystemServiceStub:
+        """The SystemService stub."""
+        if self._system_stub is None:
+            raise ConnectionError("Not connected")
+        return self._system_stub
+
+    @property
+    def disc_stub(self) -> disc_pb2_grpc.DiscServiceStub:
+        """The DiscService stub."""
+        if self._disc_stub is None:
+            raise ConnectionError("Not connected")
+        return self._disc_stub
+
     def close(self) -> None:
         """Close the connection."""
         if self._channel is not None:
             self._channel.close()
             self._channel = None
             self._debugger_stub = None
+            self._disc_stub = None
             self._keyboard_stub = None
+            self._system_stub = None
             self._video_stub = None
 
     def __enter__(self) -> Connection:

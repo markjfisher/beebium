@@ -53,3 +53,9 @@ class TimeoutError(BeebiumError):
     """An operation timed out."""
 
     pass
+
+
+class DiscError(BeebiumError):
+    """A disc operation failed."""
+
+    pass

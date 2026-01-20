@@ -29,7 +29,10 @@ Beebium is under active development. Current capabilities:
 - Boots MOS 1.20 to BASIC prompt ("BBC Computer 32K")
 - All display modes working (MODE 0-7)
 - Full 6522 VIA emulation with timers and interrupts
+- WD1770 disc controller with SSD/DSD image support (`--floppy 0:game.ssd`)
+- SN76489 sound chip emulation
 - Keyboard input via gRPC
+- Audio output via gRPC
 - macOS frontend with Metal rendering
 
 ## Architecture
@@ -99,7 +102,12 @@ pip install -e clients/python
 
 1. Start the emulator server:
    ```bash
-   ./build/src/server/beebium-model-b --mos path/to/MOS120.rom --basic path/to/BASIC2.rom
+   ./build/src/server/beebium-model-b
+   ```
+
+   To load a disc image:
+   ```bash
+   ./build/src/server/beebium-model-b --floppy 0:game.ssd
    ```
 
 2. Launch the macOS frontend and connect to `localhost:48875`
