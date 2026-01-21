@@ -278,9 +278,9 @@ class TestSingleByteWriteValidation:
         with pytest.raises(ValueError, match="single byte write requires int 0-255"):
             memory.address.bus[0x1000] = 256
 
-    def test_single_byte_write_non_int_raises_valueerror(self, memory):
-        """Writing non-int to single address raises ValueError."""
-        with pytest.raises(ValueError, match="single byte write requires int 0-255"):
+    def test_single_byte_write_non_int_raises_typeerror(self, memory):
+        """Writing non-int/non-bytes to single address raises TypeError."""
+        with pytest.raises(TypeError, match="single address write requires int or bytes"):
             memory.address.bus[0x1000] = "A"
 
 
