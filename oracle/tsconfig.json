@@ -10,11 +10,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "resolveJsonModule": true,
-    "allowJs": true,
-    "paths": {
-      "jsbeeb/*": ["../../jsbeeb/*"]
-    },
-    "baseUrl": "."
+    "allowJs": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

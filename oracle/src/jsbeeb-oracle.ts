@@ -8,17 +8,17 @@
 import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState, VideoTimingState } from './types.js';
 import { P_STATUS_MASK } from './types.js';
 
-// jsbeeb imports - using relative path to sibling repo
+// jsbeeb imports - using relative path to sibling repo (jsbeeb as sibling of beebium)
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
-import { TestMachine } from '../../jsbeeb/tests/test-machine.js';
+import { TestMachine } from '../../../jsbeeb/tests/test-machine.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
-import * as fdc from '../../jsbeeb/src/fdc.js';
+import * as fdc from '../../../jsbeeb/src/fdc.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
-import { Video } from '../../jsbeeb/src/video.js';
+import { Video } from '../../../jsbeeb/src/video.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
-import { fake6502 } from '../../jsbeeb/src/fake6502.js';
+import { fake6502 } from '../../../jsbeeb/src/fake6502.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
-import { findModel } from '../../jsbeeb/src/models.js';
+import { findModel } from '../../../jsbeeb/src/models.js';
 
 export class JsbeebOracle {
     private machine: TestMachine | null = null;
