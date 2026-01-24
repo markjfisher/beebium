@@ -16,11 +16,21 @@ import GRPC
 /// Client for querying system/machine information from beebium-server via gRPC
 @MainActor
 final class SystemClient: ObservableObject {
-    /// Machine display name (e.g., "BBC Model B+ 64K")
+    // MARK: - Machine Identity
+
+    /// Machine UUID (RFC 4122 v4), stable for machine lifetime
+    @Published private(set) var machineUUID: String = ""
+
+    /// User-assignable machine label
+    @Published private(set) var machineName: String = ""
+
+    /// Machine model type identifier (e.g., "ModelBPlus")
+    @Published private(set) var machineType: String = ""
+
+    /// Machine model display name (e.g., "BBC Model B+ 64K")
     @Published private(set) var machineDisplayName: String = ""
 
-    /// Machine type identifier (e.g., "ModelBPlus")
-    @Published private(set) var machineType: String = ""
+    // MARK: - Connection State
 
     /// Whether system info has been successfully loaded
     @Published private(set) var isLoaded: Bool = false
@@ -40,9 +50,32 @@ final class SystemClient: ObservableObject {
     func disconnect() {
         client = nil
         isLoaded = false
-        machineDisplayName = ""
+        machineUUID = ""
+        machineName = ""
         machineType = ""
+        machineDisplayName = ""
         errorMessage = nil
+    }
+
+    /// Set the machine's user-assignable name
+    func setMachineName(_ name: String) {
+        guard let client = client else { return }
+
+        Task { [weak self] in
+            do {
+                var request = Beebium_SetMachineNameRequest()
+                request.name = name
+                let response = try await client.setMachineName(request).response.get()
+
+                await MainActor.run {
+                    self?.updateIdentity(response.identity)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Fetch system information from the server
@@ -55,8 +88,7 @@ final class SystemClient: ObservableObject {
                 let response = try await client.getSystemInfo(request).response.get()
 
                 await MainActor.run {
-                    self?.machineType = response.machineType
-                    self?.machineDisplayName = response.machineDisplayName
+                    self?.updateIdentity(response.identity)
                     self?.isLoaded = true
                     self?.errorMessage = nil
                 }
@@ -67,5 +99,13 @@ final class SystemClient: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Update local identity state from server response
+    private func updateIdentity(_ identity: Beebium_MachineIdentity) {
+        machineUUID = identity.uuid
+        machineName = identity.name
+        machineType = identity.modelType
+        machineDisplayName = identity.modelName
     }
 }

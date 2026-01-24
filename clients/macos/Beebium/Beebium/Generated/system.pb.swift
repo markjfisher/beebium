@@ -20,6 +20,54 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
   typealias Version = _2
 }
 
+/// Server status types
+enum Beebium_ServerStatusType: SwiftProtobuf.Enum, Swift.CaseIterable {
+  typealias RawValue = Int
+
+  /// Server is ready and running normally
+  /// Sent immediately when client subscribes
+  case serverStatusReady // = 0
+
+  /// Server is beginning shutdown sequence
+  /// Clients should finish pending operations and disconnect
+  case serverStatusShuttingDown // = 1
+
+  /// Machine identity has changed (e.g., name was updated)
+  /// The identity field contains the new identity
+  case serverStatusIdentityChanged // = 2
+  case UNRECOGNIZED(Int)
+
+  init() {
+    self = .serverStatusReady
+  }
+
+  init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .serverStatusReady
+    case 1: self = .serverStatusShuttingDown
+    case 2: self = .serverStatusIdentityChanged
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  var rawValue: Int {
+    switch self {
+    case .serverStatusReady: return 0
+    case .serverStatusShuttingDown: return 1
+    case .serverStatusIdentityChanged: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  static let allCases: [Beebium_ServerStatusType] = [
+    .serverStatusReady,
+    .serverStatusShuttingDown,
+    .serverStatusIdentityChanged,
+  ]
+
+}
+
 /// Future: request specific fields, version info, etc.
 struct Beebium_GetSystemInfoRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
@@ -31,25 +79,176 @@ struct Beebium_GetSystemInfoRequest: Sendable {
   init() {}
 }
 
-struct Beebium_SystemInfo: Sendable {
+/// Launch provenance information
+/// Identifies who/what launched the emulator core and when
+struct Beebium_LaunchProvenance: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Machine identification
-  var machineType: String = String()
+  /// Freeform type string identifying the launching client
+  /// Examples: "macos-gui", "python-client", "terminal", "vscode-extension"
+  var type: String = String()
 
-  /// Human-readable name (e.g., "BBC Model B+ 64K")
-  var machineDisplayName: String = String()
+  /// Per-instance UUID (RFC 4122) generated at launch time
+  var instanceUuid: String = String()
+
+  /// Optional version string of the launching client
+  var version: String = String()
+
+  /// Unix timestamp when the core was launched (seconds since epoch)
+  var timestamp: Int64 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
 }
 
+/// Machine identity information
+/// Stable UUID and mutable name for identification and labeling
+struct Beebium_MachineIdentity: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// RFC 4122 v4 UUID, stable for machine lifetime
+  var uuid: String = String()
+
+  /// User-assignable label, mutable via SetMachineName
+  var name: String = String()
+
+  /// Machine model type identifier (e.g., "ModelB", "ModelBPlus")
+  /// Immutable, set at creation
+  var modelType: String = String()
+
+  /// Human-readable model name (e.g., "BBC Model B 32K")
+  /// Immutable, set at creation
+  var modelName: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_SystemInfo: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Launch provenance (who started this core and when)
+  var provenance: Beebium_LaunchProvenance {
+    get {return _provenance ?? Beebium_LaunchProvenance()}
+    set {_provenance = newValue}
+  }
+  /// Returns true if `provenance` has been explicitly set.
+  var hasProvenance: Bool {return self._provenance != nil}
+  /// Clears the value of `provenance`. Subsequent reads from it will return its default value.
+  mutating func clearProvenance() {self._provenance = nil}
+
+  /// Machine identity (UUID and name)
+  var identity: Beebium_MachineIdentity {
+    get {return _identity ?? Beebium_MachineIdentity()}
+    set {_identity = newValue}
+  }
+  /// Returns true if `identity` has been explicitly set.
+  var hasIdentity: Bool {return self._identity != nil}
+  /// Clears the value of `identity`. Subsequent reads from it will return its default value.
+  mutating func clearIdentity() {self._identity = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _provenance: Beebium_LaunchProvenance? = nil
+  fileprivate var _identity: Beebium_MachineIdentity? = nil
+}
+
+struct Beebium_SetMachineNameRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// New name for the machine (must not be empty)
+  var name: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_SetMachineNameResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Updated identity with new name
+  var identity: Beebium_MachineIdentity {
+    get {return _identity ?? Beebium_MachineIdentity()}
+    set {_identity = newValue}
+  }
+  /// Returns true if `identity` has been explicitly set.
+  var hasIdentity: Bool {return self._identity != nil}
+  /// Clears the value of `identity`. Subsequent reads from it will return its default value.
+  mutating func clearIdentity() {self._identity = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _identity: Beebium_MachineIdentity? = nil
+}
+
+/// Future: filter for specific event types
+struct Beebium_WatchServerStatusRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Server status event sent to subscribers
+struct Beebium_ServerStatusEvent: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Type of status event
+  var status: Beebium_ServerStatusType = .serverStatusReady
+
+  /// Optional human-readable message
+  var message: String = String()
+
+  /// For SHUTTING_DOWN: grace period in milliseconds before forced termination
+  /// Clients should disconnect within this time
+  var shutdownGraceMs: UInt32 = 0
+
+  /// For IDENTITY_CHANGED: the updated identity
+  var identity: Beebium_MachineIdentity {
+    get {return _identity ?? Beebium_MachineIdentity()}
+    set {_identity = newValue}
+  }
+  /// Returns true if `identity` has been explicitly set.
+  var hasIdentity: Bool {return self._identity != nil}
+  /// Clears the value of `identity`. Subsequent reads from it will return its default value.
+  mutating func clearIdentity() {self._identity = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _identity: Beebium_MachineIdentity? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate let _protobuf_package = "beebium"
+
+extension Beebium_ServerStatusType: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SERVER_STATUS_READY\0\u{1}SERVER_STATUS_SHUTTING_DOWN\0\u{1}SERVER_STATUS_IDENTITY_CHANGED\0")
+}
 
 extension Beebium_GetSystemInfoRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetSystemInfoRequest"
@@ -70,9 +269,9 @@ extension Beebium_GetSystemInfoRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
   }
 }
 
-extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".SystemInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}machine_type\0\u{3}machine_display_name\0")
+extension Beebium_LaunchProvenance: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".LaunchProvenance"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{3}instance_uuid\0\u{1}version\0\u{1}timestamp\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -80,26 +279,252 @@ extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImple
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.machineType) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.machineDisplayName) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.type) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.instanceUuid) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.version) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.timestamp) }()
       default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.machineType.isEmpty {
-      try visitor.visitSingularStringField(value: self.machineType, fieldNumber: 1)
+    if !self.type.isEmpty {
+      try visitor.visitSingularStringField(value: self.type, fieldNumber: 1)
     }
-    if !self.machineDisplayName.isEmpty {
-      try visitor.visitSingularStringField(value: self.machineDisplayName, fieldNumber: 2)
+    if !self.instanceUuid.isEmpty {
+      try visitor.visitSingularStringField(value: self.instanceUuid, fieldNumber: 2)
+    }
+    if !self.version.isEmpty {
+      try visitor.visitSingularStringField(value: self.version, fieldNumber: 3)
+    }
+    if self.timestamp != 0 {
+      try visitor.visitSingularInt64Field(value: self.timestamp, fieldNumber: 4)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
+  static func ==(lhs: Beebium_LaunchProvenance, rhs: Beebium_LaunchProvenance) -> Bool {
+    if lhs.type != rhs.type {return false}
+    if lhs.instanceUuid != rhs.instanceUuid {return false}
+    if lhs.version != rhs.version {return false}
+    if lhs.timestamp != rhs.timestamp {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_MachineIdentity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".MachineIdentity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}uuid\0\u{1}name\0\u{3}model_type\0\u{3}model_name\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uuid) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.modelType) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.modelName) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uuid.isEmpty {
+      try visitor.visitSingularStringField(value: self.uuid, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if !self.modelType.isEmpty {
+      try visitor.visitSingularStringField(value: self.modelType, fieldNumber: 3)
+    }
+    if !self.modelName.isEmpty {
+      try visitor.visitSingularStringField(value: self.modelName, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_MachineIdentity, rhs: Beebium_MachineIdentity) -> Bool {
+    if lhs.uuid != rhs.uuid {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.modelType != rhs.modelType {return false}
+    if lhs.modelName != rhs.modelName {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SystemInfo"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{3}provenance\0\u{1}identity\0\u{b}machine_type\0\u{b}machine_display_name\0\u{c}\u{1}\u{1}\u{c}\u{2}\u{1}")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._provenance) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._identity) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._provenance {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
+    try { if let v = self._identity {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
   static func ==(lhs: Beebium_SystemInfo, rhs: Beebium_SystemInfo) -> Bool {
-    if lhs.machineType != rhs.machineType {return false}
-    if lhs.machineDisplayName != rhs.machineDisplayName {return false}
+    if lhs._provenance != rhs._provenance {return false}
+    if lhs._identity != rhs._identity {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SetMachineNameRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetMachineNameRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_SetMachineNameRequest, rhs: Beebium_SetMachineNameRequest) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SetMachineNameResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetMachineNameResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}identity\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._identity) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._identity {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_SetMachineNameResponse, rhs: Beebium_SetMachineNameResponse) -> Bool {
+    if lhs._identity != rhs._identity {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_WatchServerStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".WatchServerStatusRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_WatchServerStatusRequest, rhs: Beebium_WatchServerStatusRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_ServerStatusEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ServerStatusEvent"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{1}message\0\u{3}shutdown_grace_ms\0\u{1}identity\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.status) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.shutdownGraceMs) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._identity) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.status != .serverStatusReady {
+      try visitor.visitSingularEnumField(value: self.status, fieldNumber: 1)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
+    }
+    if self.shutdownGraceMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.shutdownGraceMs, fieldNumber: 3)
+    }
+    try { if let v = self._identity {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_ServerStatusEvent, rhs: Beebium_ServerStatusEvent) -> Bool {
+    if lhs.status != rhs.status {return false}
+    if lhs.message != rhs.message {return false}
+    if lhs.shutdownGraceMs != rhs.shutdownGraceMs {return false}
+    if lhs._identity != rhs._identity {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

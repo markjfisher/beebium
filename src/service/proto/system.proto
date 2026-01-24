@@ -8,7 +8,10 @@ service SystemService {
     // Get current system/machine information
     rpc GetSystemInfo(GetSystemInfoRequest) returns (SystemInfo);
 
-    // Subscribe to server status events (shutdown notifications, etc.)
+    // Set the machine's user-assignable name
+    rpc SetMachineName(SetMachineNameRequest) returns (SetMachineNameResponse);
+
+    // Subscribe to server status events (shutdown notifications, identity changes, etc.)
     // Server sends READY immediately upon subscription, then status changes.
     // Stream ends when server shuts down or client disconnects.
     rpc WatchServerStatus(WatchServerStatusRequest) returns (stream ServerStatusEvent);
@@ -35,18 +38,51 @@ message LaunchProvenance {
     int64 timestamp = 4;
 }
 
+// Machine identity information
+// Stable UUID and mutable name for identification and labeling
+message MachineIdentity {
+    // RFC 4122 v4 UUID, stable for machine lifetime
+    string uuid = 1;
+
+    // User-assignable label, mutable via SetMachineName
+    string name = 2;
+
+    // Machine model type identifier (e.g., "ModelB", "ModelBPlus")
+    // Immutable, set at creation
+    string model_type = 3;
+
+    // Human-readable model name (e.g., "BBC Model B 32K")
+    // Immutable, set at creation
+    string model_name = 4;
+}
+
 message SystemInfo {
-    // Machine identification
-    string machine_type = 1;         // Internal type ID (e.g., "ModelB", "ModelBPlus")
-    string machine_display_name = 2; // Human-readable name (e.g., "BBC Model B+ 64K")
+    // Old fields removed - use identity instead
+    reserved 1, 2;
+    reserved "machine_type", "machine_display_name";
 
     // Launch provenance (who started this core and when)
     LaunchProvenance provenance = 3;
 
+    // Machine identity (UUID and name)
+    MachineIdentity identity = 4;
+
     // Future expansion:
-    // uint32 clock_speed_hz = 4;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
-    // string cpu_type = 5;          // Primary CPU (e.g., "6502", "65C02")
-    // string coprocessor_type = 6;  // Second processor if present (e.g., "Z80", "32016")
+    // uint32 clock_speed_hz = 5;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
+    // string cpu_type = 6;          // Primary CPU (e.g., "6502", "65C02")
+    // string coprocessor_type = 7;  // Second processor if present (e.g., "Z80", "32016")
+}
+
+// === SetMachineName RPC ===
+
+message SetMachineNameRequest {
+    // New name for the machine (must not be empty)
+    string name = 1;
+}
+
+message SetMachineNameResponse {
+    // Updated identity with new name
+    MachineIdentity identity = 1;
 }
 
 // === Server Status Streaming ===
@@ -66,6 +102,9 @@ message ServerStatusEvent {
     // For SHUTTING_DOWN: grace period in milliseconds before forced termination
     // Clients should disconnect within this time
     uint32 shutdown_grace_ms = 3;
+
+    // For IDENTITY_CHANGED: the updated identity
+    MachineIdentity identity = 4;
 }
 
 // Server status types
@@ -77,4 +116,8 @@ enum ServerStatusType {
     // Server is beginning shutdown sequence
     // Clients should finish pending operations and disconnect
     SERVER_STATUS_SHUTTING_DOWN = 1;
+
+    // Machine identity has changed (e.g., name was updated)
+    // The identity field contains the new identity
+    SERVER_STATUS_IDENTITY_CHANGED = 2;
 }

@@ -41,6 +41,11 @@ class SystemServiceStub(object):
                 request_serializer=system__pb2.GetSystemInfoRequest.SerializeToString,
                 response_deserializer=system__pb2.SystemInfo.FromString,
                 _registered_method=True)
+        self.SetMachineName = channel.unary_unary(
+                '/beebium.SystemService/SetMachineName',
+                request_serializer=system__pb2.SetMachineNameRequest.SerializeToString,
+                response_deserializer=system__pb2.SetMachineNameResponse.FromString,
+                _registered_method=True)
         self.WatchServerStatus = channel.unary_stream(
                 '/beebium.SystemService/WatchServerStatus',
                 request_serializer=system__pb2.WatchServerStatusRequest.SerializeToString,
@@ -60,8 +65,15 @@ class SystemServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetMachineName(self, request, context):
+        """Set the machine's user-assignable name
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def WatchServerStatus(self, request, context):
-        """Subscribe to server status events (shutdown notifications, etc.)
+        """Subscribe to server status events (shutdown notifications, identity changes, etc.)
         Server sends READY immediately upon subscription, then status changes.
         Stream ends when server shuts down or client disconnects.
         """
@@ -76,6 +88,11 @@ def add_SystemServiceServicer_to_server(servicer, server):
                     servicer.GetSystemInfo,
                     request_deserializer=system__pb2.GetSystemInfoRequest.FromString,
                     response_serializer=system__pb2.SystemInfo.SerializeToString,
+            ),
+            'SetMachineName': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetMachineName,
+                    request_deserializer=system__pb2.SetMachineNameRequest.FromString,
+                    response_serializer=system__pb2.SetMachineNameResponse.SerializeToString,
             ),
             'WatchServerStatus': grpc.unary_stream_rpc_method_handler(
                     servicer.WatchServerStatus,
@@ -112,6 +129,33 @@ class SystemService(object):
             '/beebium.SystemService/GetSystemInfo',
             system__pb2.GetSystemInfoRequest.SerializeToString,
             system__pb2.SystemInfo.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetMachineName(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.SystemService/SetMachineName',
+            system__pb2.SetMachineNameRequest.SerializeToString,
+            system__pb2.SetMachineNameResponse.FromString,
             options,
             channel_credentials,
             insecure,

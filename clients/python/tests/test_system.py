@@ -17,11 +17,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from beebium.system import (
+    MachineIdentity,
     Provenance,
     ServerStatus,
     ServerStatusEvent,
     System,
-    SystemInfo,
 )
 
 
@@ -41,18 +41,39 @@ class MockProvenanceResponse:
         self.timestamp = timestamp
 
 
+class MockIdentityResponse:
+    """Mock identity from proto."""
+
+    def __init__(
+        self,
+        uuid: str = "12345678-1234-1234-1234-123456789abc",
+        name: str = "BBC Model B",
+        model_type: str = "ModelB",
+        model_name: str = "BBC Model B 32K",
+    ):
+        self.uuid = uuid
+        self.name = name
+        self.model_type = model_type
+        self.model_name = model_name
+
+
 class MockSystemInfoResponse:
     """Mock GetSystemInfo response."""
 
     def __init__(
         self,
-        machine_type: str = "ModelB",
-        machine_display_name: str = "BBC Model B 32K",
         provenance: MockProvenanceResponse | None = None,
+        identity: MockIdentityResponse | None = None,
     ):
-        self.machine_type = machine_type
-        self.machine_display_name = machine_display_name
         self.provenance = provenance or MockProvenanceResponse()
+        self.identity = identity or MockIdentityResponse()
+
+
+class MockSetMachineNameResponse:
+    """Mock SetMachineName response."""
+
+    def __init__(self, name: str = "New Name"):
+        self.identity = MockIdentityResponse(name=name)
 
 
 @pytest.fixture
@@ -60,6 +81,7 @@ def mock_stub():
     """Create a mock gRPC stub."""
     stub = MagicMock()
     stub.GetSystemInfo.return_value = MockSystemInfoResponse()
+    stub.SetMachineName.return_value = MockSetMachineNameResponse()
     return stub
 
 
@@ -114,36 +136,105 @@ class TestProvenanceDataclass:
         assert prov1 != prov2
 
 
-class TestSystemInfoDataclass:
-    """Tests for the SystemInfo dataclass."""
+class TestMachineIdentityClass:
+    """Tests for the MachineIdentity class."""
 
-    def test_system_info_has_expected_fields(self):
-        """SystemInfo has machine_type and machine_display_name fields."""
-        info = SystemInfo(machine_type="ModelB", machine_display_name="BBC Model B 32K")
-        assert info.machine_type == "ModelB"
-        assert info.machine_display_name == "BBC Model B 32K"
+    def test_machine_identity_has_expected_properties(self, mock_stub):
+        """MachineIdentity has uuid, name, model_type, model_name, system properties."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="550e8400-e29b-41d4-a716-446655440000",
+            name="My BBC Micro",
+            model_type="ModelB",
+            model_name="BBC Model B 32K",
+            system=system,
+        )
+        assert identity.uuid == "550e8400-e29b-41d4-a716-446655440000"
+        assert identity.name == "My BBC Micro"
+        assert identity.model_type == "ModelB"
+        assert identity.model_name == "BBC Model B 32K"
+        assert identity.system is system
 
-    def test_system_info_is_frozen(self):
-        """SystemInfo is immutable."""
-        info = SystemInfo(machine_type="ModelB", machine_display_name="BBC Model B")
+    def test_uuid_is_readonly(self, mock_stub):
+        """uuid property cannot be assigned."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="u", name="n", model_type="t", model_name="m", system=system
+        )
         with pytest.raises(AttributeError):
-            info.machine_type = "ModelBPlus"
+            identity.uuid = "new-uuid"
+
+    def test_model_type_is_readonly(self, mock_stub):
+        """model_type property cannot be assigned."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="u", name="n", model_type="t", model_name="m", system=system
+        )
+        with pytest.raises(AttributeError):
+            identity.model_type = "new-type"
+
+    def test_model_name_is_readonly(self, mock_stub):
+        """model_name property cannot be assigned."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="u", name="n", model_type="t", model_name="m", system=system
+        )
+        with pytest.raises(AttributeError):
+            identity.model_name = "new-name"
+
+    def test_name_setter_calls_grpc(self, mock_stub):
+        """Setting name calls SetMachineName gRPC."""
+        mock_stub.SetMachineName.return_value = MockSetMachineNameResponse(name="New Name")
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="u", name="Old", model_type="t", model_name="m", system=system
+        )
+        identity.name = "New Name"
+        mock_stub.SetMachineName.assert_called_once()
+        assert identity.name == "New Name"
+
+    def test_repr(self, mock_stub):
+        """__repr__ returns informative string."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="uuid", name="name", model_type="type", model_name="model", system=system
+        )
+        r = repr(identity)
+        assert "uuid" in r
+        assert "name" in r
+        assert "type" in r
+        assert "model" in r
+
+    def test_equality(self, mock_stub):
+        """Two MachineIdentity objects with same values are equal."""
+        system = System(mock_stub)
+        id1 = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
+        id2 = MachineIdentity(uuid="u", name="n", model_type="t", model_name="m", system=system)
+        assert id1 == id2
+
+    def test_inequality(self, mock_stub):
+        """MachineIdentity objects with different values are not equal."""
+        system = System(mock_stub)
+        id1 = MachineIdentity(uuid="u1", name="n", model_type="t", model_name="m", system=system)
+        id2 = MachineIdentity(uuid="u2", name="n", model_type="t", model_name="m", system=system)
+        assert id1 != id2
 
 
 class TestServerStatusEnum:
     """Tests for the ServerStatus enum."""
 
     def test_server_status_values(self):
-        """ServerStatus has READY and SHUTTING_DOWN values."""
+        """ServerStatus has READY, SHUTTING_DOWN, and IDENTITY_CHANGED values."""
         assert ServerStatus.READY.value == "ready"
         assert ServerStatus.SHUTTING_DOWN.value == "shutting_down"
+        assert ServerStatus.IDENTITY_CHANGED.value == "identity_changed"
 
 
 class TestServerStatusEventDataclass:
     """Tests for the ServerStatusEvent dataclass."""
 
     def test_server_status_event_has_expected_fields(self):
-        """ServerStatusEvent has status, message, and shutdown_grace_ms fields."""
+        """ServerStatusEvent has status, message, shutdown_grace_ms, and identity fields."""
         event = ServerStatusEvent(
             status=ServerStatus.SHUTTING_DOWN,
             message="Server shutting down",
@@ -152,6 +243,22 @@ class TestServerStatusEventDataclass:
         assert event.status == ServerStatus.SHUTTING_DOWN
         assert event.message == "Server shutting down"
         assert event.shutdown_grace_ms == 5000
+        assert event.identity is None
+
+    def test_server_status_event_with_identity(self, mock_stub):
+        """ServerStatusEvent can include identity for IDENTITY_CHANGED events."""
+        system = System(mock_stub)
+        identity = MachineIdentity(
+            uuid="u", name="n", model_type="t", model_name="m", system=system
+        )
+        event = ServerStatusEvent(
+            status=ServerStatus.IDENTITY_CHANGED,
+            message="Identity changed",
+            shutdown_grace_ms=0,
+            identity=identity,
+        )
+        assert event.status == ServerStatus.IDENTITY_CHANGED
+        assert event.identity is identity
 
     def test_server_status_event_is_frozen(self):
         """ServerStatusEvent is immutable."""
@@ -162,42 +269,64 @@ class TestServerStatusEventDataclass:
             event.status = ServerStatus.SHUTTING_DOWN
 
 
-class TestSystemFacade:
-    """Tests for the System facade class."""
+class TestSystemIdentityProperty:
+    """Tests for the System.identity property."""
 
-    def test_info_property_returns_system_info(self, system):
-        """info property returns a SystemInfo."""
-        assert isinstance(system.info, SystemInfo)
+    def test_identity_property_returns_machine_identity(self, system, mock_stub):
+        """identity property returns a MachineIdentity object."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
+        identity = system.identity
+        assert isinstance(identity, MachineIdentity)
 
-    def test_info_property_caches_result(self, system, mock_stub):
-        """info property caches the result."""
-        _ = system.info
-        _ = system.info
+    def test_identity_caches_result(self, system, mock_stub):
+        """identity property caches the result."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
+        _ = system.identity
+        _ = system.identity
         mock_stub.GetSystemInfo.assert_called_once()
 
-    def test_machine_type_property(self, system):
-        """machine_type property returns the machine type string."""
-        assert system.machine_type == "ModelB"
+    def test_identity_has_system_reference(self, system, mock_stub):
+        """identity has reference back to the system."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
+        identity = system.identity
+        assert identity.system is system
 
-    def test_machine_display_name_property(self, system):
-        """machine_display_name property returns the display name string."""
-        assert system.machine_display_name == "BBC Model B 32K"
+    def test_identity_fields_match_server_response(self, system, mock_stub):
+        """identity fields match what server returned."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse(
+            identity=MockIdentityResponse(
+                uuid="test-uuid",
+                name="Test Server",
+                model_type="ModelBPlus",
+                model_name="BBC Model B+ 64K",
+            )
+        )
+        identity = system.identity
+        assert identity.uuid == "test-uuid"
+        assert identity.name == "Test Server"
+        assert identity.model_type == "ModelBPlus"
+        assert identity.model_name == "BBC Model B+ 64K"
 
-    def test_provenance_property_returns_provenance(self, system):
+
+class TestSystemProvenanceProperty:
+    """Tests for the System.provenance property."""
+
+    def test_provenance_property_returns_provenance(self, system, mock_stub):
         """provenance property returns a Provenance object."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
         assert isinstance(system.provenance, Provenance)
 
     def test_provenance_property_caches_result(self, system, mock_stub):
         """provenance property caches the result."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
         _ = system.provenance
         _ = system.provenance
-        # GetSystemInfo called once for both info and provenance (they share the RPC)
-        # But since we access provenance twice, it should still only call once per property
-        # Actually provenance makes its own call currently
+        # provenance makes its own GetSystemInfo call
         assert mock_stub.GetSystemInfo.call_count >= 1
 
-    def test_provenance_fields_match_server_response(self, system):
+    def test_provenance_fields_match_server_response(self, system, mock_stub):
         """provenance fields match what server returned."""
+        mock_stub.GetSystemInfo.return_value = MockSystemInfoResponse()
         prov = system.provenance
         assert prov.type == "python-client"
         assert prov.instance_uuid == "550e8400-e29b-41d4-a716-446655440000"

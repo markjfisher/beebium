@@ -56,7 +56,7 @@ public:
         machine_.reset();
 
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
-        server_->start();
+        server_->start({}, {});
 
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
@@ -90,7 +90,7 @@ public:
         machine_.reset();
 
         server_ = std::make_unique<beebium::service::Server<beebium::ModelBRomRamBoard>>(machine_, "127.0.0.1", 0);
-        server_->start();
+        server_->start({}, {});
 
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());

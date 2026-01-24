@@ -121,6 +121,15 @@ export const P_STATUS_MASK = 0b11001111;  // 0xCF - excludes bits 4 and 5
 export enum ServerStatusType {
     READY = 'SERVER_STATUS_READY',
     SHUTTING_DOWN = 'SERVER_STATUS_SHUTTING_DOWN',
+    IDENTITY_CHANGED = 'SERVER_STATUS_IDENTITY_CHANGED',
+}
+
+/** Machine identity from server */
+export interface MachineIdentity {
+    uuid: string;
+    name: string;
+    modelType: string;
+    modelName: string;
 }
 
 /** Server status event from WatchServerStatus stream */
@@ -128,6 +137,7 @@ export interface ServerStatusEvent {
     status: ServerStatusType;
     message: string;
     shutdownGraceMs: number;
+    identity?: MachineIdentity;  // Present for IDENTITY_CHANGED events
 }
 
 /**

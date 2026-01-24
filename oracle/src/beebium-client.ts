@@ -9,7 +9,7 @@ import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState, ServerStatusEvent } from './types.js';
+import type { CpuState, ViaState, CrtcState, VideoUlaState, MachineState, ServerStatusEvent, MachineIdentity } from './types.js';
 import { ServerStatusType, P_STATUS_MASK } from './types.js';
 import { EventEmitter } from 'events';
 
@@ -51,6 +51,7 @@ export interface StepResult {
  *   - 'status': ServerStatusEvent - when server sends a status update
  *   - 'ready': void - when server reports ready status
  *   - 'shutdown': { graceMs: number, message: string } - when server is shutting down
+ *   - 'identityChanged': MachineIdentity - when machine identity changes
  *   - 'error': Error - on stream error
  *   - 'end': void - when stream ends
  */
@@ -62,10 +63,18 @@ export class ServerStatusWatcher extends EventEmitter {
         this.call = call;
 
         call.on('data', (response: any) => {
+            const identity: MachineIdentity | undefined = response.identity ? {
+                uuid: response.identity.uuid || '',
+                name: response.identity.name || '',
+                modelType: response.identity.modelType || '',
+                modelName: response.identity.modelName || '',
+            } : undefined;
+
             const event: ServerStatusEvent = {
                 status: response.status as ServerStatusType,
                 message: response.message || '',
                 shutdownGraceMs: response.shutdownGraceMs || 0,
+                identity,
             };
 
             this.emit('status', event);
@@ -78,6 +87,8 @@ export class ServerStatusWatcher extends EventEmitter {
                     graceMs: event.shutdownGraceMs,
                     message: event.message,
                 });
+            } else if (event.status === ServerStatusType.IDENTITY_CHANGED && identity) {
+                this.emit('identityChanged', identity);
             }
         });
 

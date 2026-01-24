@@ -26,7 +26,9 @@
 #include <grpcpp/grpcpp.h>
 
 #include <chrono>
+#include <cstdio>
 #include <fstream>
+#include <random>
 #include <vector>
 
 namespace {
@@ -44,11 +46,53 @@ std::vector<uint8_t> load_rom(const std::string& filepath) {
     return data;
 }
 
+// Generate a random UUID v4 for testing
+std::string generate_test_uuid() {
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<uint64_t> dis;
+
+    uint64_t a = dis(gen);
+    uint64_t b = dis(gen);
+
+    // Set version 4 (0100) in bits 12-15 of time_hi_and_version
+    a = (a & 0xFFFFFFFFFFFF0FFFULL) | 0x0000000000004000ULL;
+    // Set variant (10) in bits 6-7 of clock_seq_hi_and_reserved
+    b = (b & 0x3FFFFFFFFFFFFFFFULL) | 0x8000000000000000ULL;
+
+    char buf[37];
+    std::snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx",
+             static_cast<uint32_t>(a >> 32),
+             static_cast<uint16_t>(a >> 16),
+             static_cast<uint16_t>(a),
+             static_cast<uint16_t>(b >> 48),
+             static_cast<unsigned long long>(b & 0x0000FFFFFFFFFFFFULL));
+    return std::string(buf);
+}
+
 // Test fixture that sets up a machine and server with system service
 class SystemTestFixture {
 public:
-    explicit SystemTestFixture(beebium::service::Provenance provenance = {})
-        : provenance_(std::move(provenance)) {
+    explicit SystemTestFixture(
+        beebium::service::Provenance provenance = {},
+        beebium::service::MachineIdentity identity = {})
+        : provenance_(std::move(provenance))
+        , identity_(std::move(identity)) {
+
+        // Apply default identity if not provided
+        if (identity_.uuid.empty()) {
+            identity_.uuid = generate_test_uuid();
+        }
+        if (identity_.name.empty()) {
+            identity_.name = "BBC Model B";
+        }
+        if (identity_.model_type.empty()) {
+            identity_.model_type = "ModelB";
+        }
+        if (identity_.model_name.empty()) {
+            identity_.model_name = "BBC Model B";
+        }
+
         // Load ROMs
 #ifdef BEEBIUM_ROM_DIR
         auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
@@ -60,7 +104,7 @@ public:
 
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
-        server_->start(provenance_);
+        server_->start(provenance_, identity_);
 
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
@@ -77,6 +121,7 @@ public:
 
 private:
     beebium::service::Provenance provenance_;
+    beebium::service::MachineIdentity identity_;
     beebium::ModelB machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
@@ -86,37 +131,12 @@ private:
 } // anonymous namespace
 
 //////////////////////////////////////////////////////////////////////////////
-// GetSystemInfo Tests
+// GetSystemInfo Tests (Legacy - verifying old fields are removed)
 //////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("SystemService GetSystemInfo returns machine type", "[grpc][system]") {
-    SystemTestFixture fixture;
-
-    grpc::ClientContext context;
-    beebium::GetSystemInfoRequest request;
-    beebium::SystemInfo response;
-
-    auto status = fixture.system().GetSystemInfo(&context, request, &response);
-
-    REQUIRE(status.ok());
-    CHECK(response.machine_type() == "ModelB");
-    CHECK_FALSE(response.machine_display_name().empty());
-}
-
-TEST_CASE("SystemService GetSystemInfo returns machine display name", "[grpc][system]") {
-    SystemTestFixture fixture;
-
-    grpc::ClientContext context;
-    beebium::GetSystemInfoRequest request;
-    beebium::SystemInfo response;
-
-    auto status = fixture.system().GetSystemInfo(&context, request, &response);
-
-    REQUIRE(status.ok());
-    // ModelB display name should mention "BBC" and "Model B"
-    CHECK(response.machine_display_name().find("BBC") != std::string::npos);
-    CHECK(response.machine_display_name().find("Model B") != std::string::npos);
-}
+// Note: machine_type and machine_display_name fields are now reserved
+// and moved to the identity message. These tests verify the old fields
+// return empty strings (proto3 behavior for reserved fields).
 
 //////////////////////////////////////////////////////////////////////////////
 // Provenance Tests
@@ -242,6 +262,147 @@ TEST_CASE("SystemService GetSystemInfo provenance with empty version", "[grpc][s
 
     REQUIRE(status.ok());
     CHECK(response.provenance().version().empty());
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Machine Identity Tests
+//////////////////////////////////////////////////////////////////////////////
+
+// Helper to validate UUID format (RFC 4122)
+bool is_valid_uuid(const std::string& uuid) {
+    // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
+    if (uuid.length() != 36) return false;
+    for (size_t i = 0; i < uuid.length(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (uuid[i] != '-') return false;
+        } else {
+            if (!std::isxdigit(uuid[i])) return false;
+        }
+    }
+    return true;
+}
+
+TEST_CASE("SystemService GetSystemInfo returns identity", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSystemInfoRequest request;
+    beebium::SystemInfo response;
+
+    auto status = fixture.system().GetSystemInfo(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.has_identity());
+
+    const auto& identity = response.identity();
+    CHECK(is_valid_uuid(identity.uuid()));
+    CHECK_FALSE(identity.name().empty());
+    CHECK(identity.model_type() == "ModelB");
+    CHECK_FALSE(identity.model_name().empty());
+    CHECK(identity.model_name().find("BBC") != std::string::npos);
+    CHECK(identity.model_name().find("Model B") != std::string::npos);
+}
+
+TEST_CASE("SystemService GetSystemInfo identity has stable UUID", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    // First call
+    grpc::ClientContext context1;
+    beebium::GetSystemInfoRequest request1;
+    beebium::SystemInfo response1;
+    REQUIRE(fixture.system().GetSystemInfo(&context1, request1, &response1).ok());
+
+    // Second call
+    grpc::ClientContext context2;
+    beebium::GetSystemInfoRequest request2;
+    beebium::SystemInfo response2;
+    REQUIRE(fixture.system().GetSystemInfo(&context2, request2, &response2).ok());
+
+    // UUID should be identical across calls
+    CHECK(response1.identity().uuid() == response2.identity().uuid());
+}
+
+// Note: machine_type and machine_display_name fields are now reserved in SystemInfo.
+// Reserved fields don't generate accessors in proto3, so there's nothing to test.
+// The identity message (with model_type and model_name) replaces these fields.
+
+TEST_CASE("SystemService SetMachineName changes name", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    // Get initial identity
+    grpc::ClientContext context1;
+    beebium::GetSystemInfoRequest info_request;
+    beebium::SystemInfo info_response;
+    REQUIRE(fixture.system().GetSystemInfo(&context1, info_request, &info_response).ok());
+    auto initial_uuid = info_response.identity().uuid();
+
+    // Change name
+    grpc::ClientContext context2;
+    beebium::SetMachineNameRequest name_request;
+    name_request.set_name("My BBC Micro");
+    beebium::SetMachineNameResponse name_response;
+
+    auto status = fixture.system().SetMachineName(&context2, name_request, &name_response);
+
+    REQUIRE(status.ok());
+    CHECK(name_response.identity().name() == "My BBC Micro");
+    CHECK(name_response.identity().uuid() == initial_uuid);  // UUID unchanged
+}
+
+TEST_CASE("SystemService SetMachineName persists across GetSystemInfo calls", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    // Change name
+    grpc::ClientContext context1;
+    beebium::SetMachineNameRequest name_request;
+    name_request.set_name("Test Server");
+    beebium::SetMachineNameResponse name_response;
+    REQUIRE(fixture.system().SetMachineName(&context1, name_request, &name_response).ok());
+
+    // Verify via GetSystemInfo
+    grpc::ClientContext context2;
+    beebium::GetSystemInfoRequest info_request;
+    beebium::SystemInfo info_response;
+    REQUIRE(fixture.system().GetSystemInfo(&context2, info_request, &info_response).ok());
+
+    CHECK(info_response.identity().name() == "Test Server");
+}
+
+TEST_CASE("SystemService SetMachineName rejects empty name", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetMachineNameRequest request;
+    request.set_name("");  // Empty
+    beebium::SetMachineNameResponse response;
+
+    auto status = fixture.system().SetMachineName(&context, request, &response);
+
+    CHECK_FALSE(status.ok());
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_CASE("SystemService SetMachineName preserves model_type and model_name", "[grpc][system][identity]") {
+    SystemTestFixture fixture;
+
+    // Get initial identity
+    grpc::ClientContext context1;
+    beebium::GetSystemInfoRequest info_request;
+    beebium::SystemInfo info_response;
+    REQUIRE(fixture.system().GetSystemInfo(&context1, info_request, &info_response).ok());
+    auto initial_model_type = info_response.identity().model_type();
+    auto initial_model_name = info_response.identity().model_name();
+
+    // Change name
+    grpc::ClientContext context2;
+    beebium::SetMachineNameRequest name_request;
+    name_request.set_name("New Name");
+    beebium::SetMachineNameResponse name_response;
+    REQUIRE(fixture.system().SetMachineName(&context2, name_request, &name_response).ok());
+
+    // Verify model_type and model_name unchanged
+    CHECK(name_response.identity().model_type() == initial_model_type);
+    CHECK(name_response.identity().model_name() == initial_model_name);
 }
 
 // Note: WatchServerStatus is a streaming RPC that requires special handling

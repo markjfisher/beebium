@@ -49,7 +49,8 @@ public:
 
     /// Start the server (non-blocking)
     /// @param provenance Launch provenance information for this server instance
-    void start(Provenance provenance);
+    /// @param identity Machine identity (UUID and name) for this server instance
+    void start(Provenance provenance, MachineIdentity identity);
 
     /// Stop the server and wait for shutdown
     void stop();
@@ -130,7 +131,7 @@ Server<MachineType>::~Server() {
 }
 
 template<typename MachineType>
-void Server<MachineType>::start(Provenance provenance) {
+void Server<MachineType>::start(Provenance provenance, MachineIdentity identity) {
     if (impl_->running) {
         return;
     }
@@ -159,7 +160,7 @@ void Server<MachineType>::start(Provenance provenance) {
         impl_->machine);
 
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
-        impl_->machine, std::move(provenance));
+        impl_->machine, std::move(provenance), std::move(identity));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
         impl_->machine);

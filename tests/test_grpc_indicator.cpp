@@ -69,7 +69,7 @@ public:
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
             machine_, "127.0.0.1", 0);
-        server_->start();
+        server_->start({}, {});
 
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
@@ -107,7 +107,7 @@ public:
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
             machine_, "127.0.0.1", 0);
-        server_->start();
+        server_->start({}, {});
 
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());

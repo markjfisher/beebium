@@ -62,7 +62,7 @@ public:
 
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
-        server_->start();
+        server_->start({}, {});
 
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
@@ -297,7 +297,7 @@ TEST_CASE("VideoService streams cursor blink pattern", "[grpc][video][cursor]") 
 
     // Now create server with fresh video state
     beebium::service::Server<beebium::ModelB> server(machine, "127.0.0.1", 0);
-    server.start();
+    server.start({}, {});
 
     std::string address = "127.0.0.1:" + std::to_string(server.port());
     auto channel = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());

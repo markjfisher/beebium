@@ -23,6 +23,17 @@ internal protocol Beebium_SystemServiceClientProtocol: GRPCClient {
     _ request: Beebium_GetSystemInfoRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_GetSystemInfoRequest, Beebium_SystemInfo>
+
+  func setMachineName(
+    _ request: Beebium_SetMachineNameRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse>
+
+  func watchServerStatus(
+    _ request: Beebium_WatchServerStatusRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Beebium_ServerStatusEvent) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>
 }
 
 extension Beebium_SystemServiceClientProtocol {
@@ -45,6 +56,47 @@ extension Beebium_SystemServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetSystemInfoInterceptors() ?? []
+    )
+  }
+
+  /// Set the machine's user-assignable name
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetMachineName.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setMachineName(
+    _ request: Beebium_SetMachineNameRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setMachineName.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetMachineNameInterceptors() ?? []
+    )
+  }
+
+  /// Subscribe to server status events (shutdown notifications, identity changes, etc.)
+  /// Server sends READY immediately upon subscription, then status changes.
+  /// Stream ends when server shuts down or client disconnects.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to WatchServerStatus.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  internal func watchServerStatus(
+    _ request: Beebium_WatchServerStatusRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Beebium_ServerStatusEvent) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent> {
+    return self.makeServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? [],
+      handler: handler
     )
   }
 }
@@ -117,6 +169,16 @@ internal protocol Beebium_SystemServiceAsyncClientProtocol: GRPCClient {
     _ request: Beebium_GetSystemInfoRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_GetSystemInfoRequest, Beebium_SystemInfo>
+
+  func makeSetMachineNameCall(
+    _ request: Beebium_SetMachineNameRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse>
+
+  func makeWatchServerStatusCall(
+    _ request: Beebium_WatchServerStatusRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -140,6 +202,30 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetSystemInfoInterceptors() ?? []
     )
   }
+
+  internal func makeSetMachineNameCall(
+    _ request: Beebium_SetMachineNameRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setMachineName.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetMachineNameInterceptors() ?? []
+    )
+  }
+
+  internal func makeWatchServerStatusCall(
+    _ request: Beebium_WatchServerStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent> {
+    return self.makeAsyncServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -153,6 +239,30 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetSystemInfoInterceptors() ?? []
+    )
+  }
+
+  internal func setMachineName(
+    _ request: Beebium_SetMachineNameRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetMachineNameResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setMachineName.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetMachineNameInterceptors() ?? []
+    )
+  }
+
+  internal func watchServerStatus(
+    _ request: Beebium_WatchServerStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Beebium_ServerStatusEvent> {
+    return self.performAsyncServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchServerStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? []
     )
   }
 }
@@ -178,6 +288,12 @@ internal protocol Beebium_SystemServiceClientInterceptorFactoryProtocol: Sendabl
 
   /// - Returns: Interceptors to use when invoking 'getSystemInfo'.
   func makeGetSystemInfoInterceptors() -> [ClientInterceptor<Beebium_GetSystemInfoRequest, Beebium_SystemInfo>]
+
+  /// - Returns: Interceptors to use when invoking 'setMachineName'.
+  func makeSetMachineNameInterceptors() -> [ClientInterceptor<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'watchServerStatus'.
+  func makeWatchServerStatusInterceptors() -> [ClientInterceptor<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>]
 }
 
 internal enum Beebium_SystemServiceClientMetadata {
@@ -186,6 +302,8 @@ internal enum Beebium_SystemServiceClientMetadata {
     fullName: "beebium.SystemService",
     methods: [
       Beebium_SystemServiceClientMetadata.Methods.getSystemInfo,
+      Beebium_SystemServiceClientMetadata.Methods.setMachineName,
+      Beebium_SystemServiceClientMetadata.Methods.watchServerStatus,
     ]
   )
 
@@ -194,6 +312,18 @@ internal enum Beebium_SystemServiceClientMetadata {
       name: "GetSystemInfo",
       path: "/beebium.SystemService/GetSystemInfo",
       type: GRPCCallType.unary
+    )
+
+    internal static let setMachineName = GRPCMethodDescriptor(
+      name: "SetMachineName",
+      path: "/beebium.SystemService/SetMachineName",
+      type: GRPCCallType.unary
+    )
+
+    internal static let watchServerStatus = GRPCMethodDescriptor(
+      name: "WatchServerStatus",
+      path: "/beebium.SystemService/WatchServerStatus",
+      type: GRPCCallType.serverStreaming
     )
   }
 }
@@ -207,6 +337,14 @@ internal protocol Beebium_SystemServiceProvider: CallHandlerProvider {
 
   /// Get current system/machine information
   func getSystemInfo(request: Beebium_GetSystemInfoRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SystemInfo>
+
+  /// Set the machine's user-assignable name
+  func setMachineName(request: Beebium_SetMachineNameRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetMachineNameResponse>
+
+  /// Subscribe to server status events (shutdown notifications, identity changes, etc.)
+  /// Server sends READY immediately upon subscription, then status changes.
+  /// Stream ends when server shuts down or client disconnects.
+  func watchServerStatus(request: Beebium_WatchServerStatusRequest, context: StreamingResponseCallContext<Beebium_ServerStatusEvent>) -> EventLoopFuture<GRPCStatus>
 }
 
 extension Beebium_SystemServiceProvider {
@@ -230,6 +368,24 @@ extension Beebium_SystemServiceProvider {
         userFunction: self.getSystemInfo(request:context:)
       )
 
+    case "SetMachineName":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetMachineNameRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetMachineNameResponse>(),
+        interceptors: self.interceptors?.makeSetMachineNameInterceptors() ?? [],
+        userFunction: self.setMachineName(request:context:)
+      )
+
+    case "WatchServerStatus":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchServerStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ServerStatusEvent>(),
+        interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? [],
+        userFunction: self.watchServerStatus(request:context:)
+      )
+
     default:
       return nil
     }
@@ -250,6 +406,21 @@ internal protocol Beebium_SystemServiceAsyncProvider: CallHandlerProvider, Senda
     request: Beebium_GetSystemInfoRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_SystemInfo
+
+  /// Set the machine's user-assignable name
+  func setMachineName(
+    request: Beebium_SetMachineNameRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetMachineNameResponse
+
+  /// Subscribe to server status events (shutdown notifications, identity changes, etc.)
+  /// Server sends READY immediately upon subscription, then status changes.
+  /// Stream ends when server shuts down or client disconnects.
+  func watchServerStatus(
+    request: Beebium_WatchServerStatusRequest,
+    responseStream: GRPCAsyncResponseStreamWriter<Beebium_ServerStatusEvent>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -280,6 +451,24 @@ extension Beebium_SystemServiceAsyncProvider {
         wrapping: { try await self.getSystemInfo(request: $0, context: $1) }
       )
 
+    case "SetMachineName":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetMachineNameRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetMachineNameResponse>(),
+        interceptors: self.interceptors?.makeSetMachineNameInterceptors() ?? [],
+        wrapping: { try await self.setMachineName(request: $0, context: $1) }
+      )
+
+    case "WatchServerStatus":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchServerStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ServerStatusEvent>(),
+        interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? [],
+        wrapping: { try await self.watchServerStatus(request: $0, responseStream: $1, context: $2) }
+      )
+
     default:
       return nil
     }
@@ -291,6 +480,14 @@ internal protocol Beebium_SystemServiceServerInterceptorFactoryProtocol: Sendabl
   /// - Returns: Interceptors to use when handling 'getSystemInfo'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetSystemInfoInterceptors() -> [ServerInterceptor<Beebium_GetSystemInfoRequest, Beebium_SystemInfo>]
+
+  /// - Returns: Interceptors to use when handling 'setMachineName'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetMachineNameInterceptors() -> [ServerInterceptor<Beebium_SetMachineNameRequest, Beebium_SetMachineNameResponse>]
+
+  /// - Returns: Interceptors to use when handling 'watchServerStatus'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeWatchServerStatusInterceptors() -> [ServerInterceptor<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>]
 }
 
 internal enum Beebium_SystemServiceServerMetadata {
@@ -299,6 +496,8 @@ internal enum Beebium_SystemServiceServerMetadata {
     fullName: "beebium.SystemService",
     methods: [
       Beebium_SystemServiceServerMetadata.Methods.getSystemInfo,
+      Beebium_SystemServiceServerMetadata.Methods.setMachineName,
+      Beebium_SystemServiceServerMetadata.Methods.watchServerStatus,
     ]
   )
 
@@ -307,6 +506,18 @@ internal enum Beebium_SystemServiceServerMetadata {
       name: "GetSystemInfo",
       path: "/beebium.SystemService/GetSystemInfo",
       type: GRPCCallType.unary
+    )
+
+    internal static let setMachineName = GRPCMethodDescriptor(
+      name: "SetMachineName",
+      path: "/beebium.SystemService/SetMachineName",
+      type: GRPCCallType.unary
+    )
+
+    internal static let watchServerStatus = GRPCMethodDescriptor(
+      name: "WatchServerStatus",
+      path: "/beebium.SystemService/WatchServerStatus",
+      type: GRPCCallType.serverStreaming
     )
   }
 }

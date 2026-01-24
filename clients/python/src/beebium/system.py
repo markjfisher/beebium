@@ -17,8 +17,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from beebium._proto import system_pb2, system_pb2_grpc
+
+if TYPE_CHECKING:
+    from typing import Optional
 
 
 class ServerStatus(Enum):
@@ -26,14 +30,7 @@ class ServerStatus(Enum):
 
     READY = "ready"
     SHUTTING_DOWN = "shutting_down"
-
-
-@dataclass(frozen=True)
-class SystemInfo:
-    """Machine identification information."""
-
-    machine_type: str  # "ModelB", "ModelBPlus"
-    machine_display_name: str  # "BBC Model B+ 64K"
+    IDENTITY_CHANGED = "identity_changed"
 
 
 @dataclass(frozen=True)
@@ -49,6 +46,83 @@ class Provenance:
     timestamp: int  # Unix timestamp (seconds since epoch)
 
 
+class MachineIdentity:
+    """Machine identity - UUID and mutable name.
+
+    The `name` property can be read and written. Writing triggers
+    a gRPC call to update the server-side name.
+
+    Attributes:
+        uuid: RFC 4122 v4 UUID, stable for machine lifetime (read-only)
+        name: User-assignable label (read/write)
+        model_type: e.g., "ModelB" (read-only)
+        model_name: e.g., "BBC Model B" (read-only)
+        system: Reference to the parent System object (read-only)
+    """
+
+    def __init__(
+        self,
+        uuid: str,
+        name: str,
+        model_type: str,
+        model_name: str,
+        system: "System",
+    ):
+        self._uuid = uuid
+        self._name = name
+        self._model_type = model_type
+        self._model_name = model_name
+        self._system = system
+
+    @property
+    def uuid(self) -> str:
+        """RFC 4122 v4 UUID, stable for machine lifetime."""
+        return self._uuid
+
+    @property
+    def name(self) -> str:
+        """User-assignable machine label."""
+        return self._name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Set machine name via gRPC."""
+        request = system_pb2.SetMachineNameRequest(name=value)
+        response = self._system._stub.SetMachineName(request)
+        self._name = response.identity.name
+
+    @property
+    def model_type(self) -> str:
+        """Machine model type identifier (immutable)."""
+        return self._model_type
+
+    @property
+    def model_name(self) -> str:
+        """Human-readable model name (immutable)."""
+        return self._model_name
+
+    @property
+    def system(self) -> "System":
+        """Reference to the parent System object."""
+        return self._system
+
+    def __repr__(self) -> str:
+        return (
+            f"MachineIdentity(uuid={self._uuid!r}, name={self._name!r}, "
+            f"model_type={self._model_type!r}, model_name={self._model_name!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MachineIdentity):
+            return NotImplemented
+        return (
+            self._uuid == other._uuid
+            and self._name == other._name
+            and self._model_type == other._model_type
+            and self._model_name == other._model_name
+        )
+
+
 @dataclass(frozen=True)
 class ServerStatusEvent:
     """Server status change event."""
@@ -56,6 +130,7 @@ class ServerStatusEvent:
     status: ServerStatus
     message: str
     shutdown_grace_ms: int  # Grace period for SHUTTING_DOWN
+    identity: "Optional[MachineIdentity]" = None  # For IDENTITY_CHANGED events
 
 
 class System:
@@ -64,18 +139,21 @@ class System:
     Provides access to machine identification and server lifecycle events.
 
     Usage:
-        # Get machine info
-        info = bbc.system.info
-        print(f"Machine: {info.machine_display_name}")
+        # Get machine identity
+        identity = bbc.system.identity
+        print(f"Machine: {identity.model_name}")
+        print(f"Name: {identity.name}")
 
-        # Shortcut properties
-        print(f"Type: {bbc.system.machine_type}")
+        # Change machine name (triggers gRPC call)
+        identity.name = "My BBC Micro"
 
-        # Watch for shutdown
+        # Watch for status changes
         for event in bbc.system.watch_status():
             if event.status == ServerStatus.SHUTTING_DOWN:
                 print(f"Server shutting down in {event.shutdown_grace_ms}ms")
                 break
+            elif event.status == ServerStatus.IDENTITY_CHANGED:
+                print(f"Machine renamed to: {event.identity.name}")
     """
 
     def __init__(self, stub: system_pb2_grpc.SystemServiceStub):
@@ -85,30 +163,27 @@ class System:
             stub: The gRPC stub for the SystemService.
         """
         self._stub = stub
-        self._info_cache: SystemInfo | None = None
+        self._identity_cache: MachineIdentity | None = None
         self._provenance_cache: Provenance | None = None
 
     @property
-    def info(self) -> SystemInfo:
-        """Get system/machine information (cached)."""
-        if self._info_cache is None:
+    def identity(self) -> MachineIdentity:
+        """Get machine identity.
+
+        Returns a MachineIdentity object whose `name` property
+        can be read or written (writing updates the server).
+        """
+        if self._identity_cache is None:
             request = system_pb2.GetSystemInfoRequest()
             response = self._stub.GetSystemInfo(request)
-            self._info_cache = SystemInfo(
-                machine_type=response.machine_type,
-                machine_display_name=response.machine_display_name,
+            self._identity_cache = MachineIdentity(
+                uuid=response.identity.uuid,
+                name=response.identity.name,
+                model_type=response.identity.model_type,
+                model_name=response.identity.model_name,
+                system=self,
             )
-        return self._info_cache
-
-    @property
-    def machine_type(self) -> str:
-        """Machine type identifier (e.g., "ModelB", "ModelBPlus")."""
-        return self.info.machine_type
-
-    @property
-    def machine_display_name(self) -> str:
-        """Human-readable machine name (e.g., "BBC Model B+ 64K")."""
-        return self.info.machine_display_name
+        return self._identity_cache
 
     @property
     def provenance(self) -> Provenance:
@@ -142,16 +217,32 @@ class System:
         for response in self._stub.WatchServerStatus(request):
             if response.status == system_pb2.SERVER_STATUS_READY:
                 status = ServerStatus.READY
+                identity = None
             elif response.status == system_pb2.SERVER_STATUS_SHUTTING_DOWN:
                 status = ServerStatus.SHUTTING_DOWN
+                identity = None
+            elif response.status == system_pb2.SERVER_STATUS_IDENTITY_CHANGED:
+                status = ServerStatus.IDENTITY_CHANGED
+                # Create MachineIdentity from the response
+                identity = MachineIdentity(
+                    uuid=response.identity.uuid,
+                    name=response.identity.name,
+                    model_type=response.identity.model_type,
+                    model_name=response.identity.model_name,
+                    system=self,
+                )
+                # Update cache
+                self._identity_cache = identity
             else:
                 # Unknown status, treat as ready
                 status = ServerStatus.READY
+                identity = None
 
             yield ServerStatusEvent(
                 status=status,
                 message=response.message,
                 shutdown_grace_ms=response.shutdown_grace_ms,
+                identity=identity,
             )
 
     def wait_for_ready(self, timeout: float = 5.0) -> bool:

@@ -100,17 +100,17 @@ message MachineIdentity {
   // Immutable, set at creation
   string model_type = 3;
 
-  // Full display name for UI (e.g., "BBC Model B 32K")
+  // Full model name for UI (e.g., "BBC Model B")
   // Immutable, set at creation
-  string display_name = 4;
+  string model_name = 4;
 }
 
-// Extended SystemInfo response
+// SystemInfo response (old fields removed)
 message SystemInfo {
-  string machine_type = 1;        // Existing
-  string machine_display_name = 2; // Existing
-  LaunchProvenance provenance = 3; // Phase 1
-  MachineIdentity identity = 4;    // NEW
+  reserved 1, 2;
+  reserved "machine_type", "machine_display_name";
+  LaunchProvenance provenance = 3;
+  MachineIdentity identity = 4;
 }
 
 // Rename RPC
@@ -119,27 +119,32 @@ message SetMachineNameRequest {
 }
 
 message SetMachineNameResponse {
-  bool success = 1;
-  string error = 2;  // e.g., "name too long", "invalid characters"
+  MachineIdentity identity = 1;  // Returns updated identity
 }
 
 rpc SetMachineName(SetMachineNameRequest) returns (SetMachineNameResponse);
 ```
 
-### Name Change Notification (Optional)
+### Name Change Notification
 
-For multi-client scenarios, clients may want to be notified when the name changes:
+For multi-client scenarios, clients are notified when the name changes via the existing `WatchServerStatus` stream:
 
 ```protobuf
-message MachineIdentityEvent {
-  MachineIdentity identity = 1;
+enum ServerStatusType {
+  SERVER_STATUS_READY = 0;
+  SERVER_STATUS_SHUTTING_DOWN = 1;
+  SERVER_STATUS_IDENTITY_CHANGED = 2;  // NEW
 }
 
-// Could be part of WatchServerStatus or a dedicated stream
-rpc WatchMachineIdentity(Empty) returns (stream MachineIdentityEvent);
+message ServerStatusEvent {
+  ServerStatusType status = 1;
+  string message = 2;
+  uint32 shutdown_grace_ms = 3;
+  MachineIdentity identity = 4;  // Populated for IDENTITY_CHANGED events
+}
 ```
 
-This is optional for initial implementation—clients can poll `GetSystemInfo` if needed.
+When a client calls `SetMachineName`, all `WatchServerStatus` subscribers receive an `IDENTITY_CHANGED` event containing the updated identity.
 
 ## CLI Interface
 
@@ -211,12 +216,18 @@ Client A: SetMachineName("Print Server")
 
 ## Implementation
 
-### Files to Modify
+### Files Modified
 
-- `src/service/proto/system.proto` - Add `MachineIdentity` message, `SetMachineName` RPC
-- `src/service/include/beebium/service/SystemService.hpp` - Store and report identity
+- `src/service/proto/system.proto` - Add `MachineIdentity` message, `SetMachineName` RPC, extend `ServerStatusType`
+- `src/service/include/beebium/service/SystemService.hpp` - Add `MachineIdentity` struct, `SetMachineName` impl
+- `src/service/include/beebium/service/Server.hpp` - Pass identity to SystemService
 - `src/server/include/beebium/server/ServerMain.hpp` - Add CLI flag parsing, UUID generation
-- `clients/python/src/beebium/system.py` - Expose identity in Python API
+- `clients/python/src/beebium/system.py` - Add `MachineIdentity` class with name property setter
+- `clients/python/src/beebium/__init__.py` - Export `MachineIdentity`, `ServerStatus`, `ServerStatusEvent`
+- `clients/macos/Beebium/Beebium/Generated/system.pb.swift` - Regenerated proto bindings
+- `clients/macos/Beebium/Beebium/SystemClient.swift` - Use identity, add `setMachineName()`
+- `oracle/src/types.ts` - Add `MachineIdentity`, `IDENTITY_CHANGED` status
+- `oracle/src/beebium-client.ts` - Handle identity in `ServerStatusWatcher`
 
 ### C++ Server Side
 
@@ -225,21 +236,28 @@ struct MachineIdentity {
     std::string uuid;
     std::string name;
     std::string model_type;
-    std::string display_name;
+    std::string model_name;
 };
 
 // In SystemService:
 class SystemServiceImpl {
     MachineIdentity identity_;
-    std::mutex identity_mutex_;  // For thread-safe renaming
+    std::mutex watchers_mutex_;  // Protects identity and watchers
 
 public:
     grpc::Status SetMachineName(grpc::ServerContext* context,
                                 const SetMachineNameRequest* request,
                                 SetMachineNameResponse* response) {
-        std::lock_guard<std::mutex> lock(identity_mutex_);
+        std::lock_guard<std::mutex> lock(watchers_mutex_);
         identity_.name = request->name();
-        response->set_success(true);
+        // Populate response with updated identity
+        auto* id = response->mutable_identity();
+        id->set_uuid(identity_.uuid);
+        id->set_name(identity_.name);
+        id->set_model_type(identity_.model_type);
+        id->set_model_name(identity_.model_name);
+        // Notify watchers of identity change
+        notify_identity_changed();
         return grpc::Status::OK;
     }
 };
@@ -248,12 +266,42 @@ public:
 ### Python Client Side
 
 ```python
-@dataclass(frozen=True)
 class MachineIdentity:
-    uuid: str
-    name: str
-    model_type: str
-    display_name: str
+    """Machine identity with mutable name property.
+
+    The name property triggers a gRPC call when set.
+    """
+
+    def __init__(self, uuid: str, name: str, model_type: str,
+                 model_name: str, system: "System"):
+        self._uuid = uuid
+        self._name = name
+        self._model_type = model_type
+        self._model_name = model_name
+        self._system = system
+
+    @property
+    def uuid(self) -> str:
+        return self._uuid
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Set machine name via gRPC."""
+        request = SetMachineNameRequest(name=value)
+        response = self._system._stub.SetMachineName(request)
+        self._name = response.identity.name
+
+    @property
+    def model_type(self) -> str:
+        return self._model_type
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
 class System:
     @property
@@ -264,14 +312,9 @@ class System:
             uuid=info.identity.uuid,
             name=info.identity.name,
             model_type=info.identity.model_type,
-            display_name=info.identity.display_name,
+            model_name=info.identity.model_name,
+            system=self,
         )
-
-    def set_name(self, name: str) -> None:
-        """Rename the machine."""
-        response = self._stub.SetMachineName(SetMachineNameRequest(name=name))
-        if not response.success:
-            raise BeebiumError(response.error)
 ```
 
 ## UI Integration
@@ -335,12 +378,12 @@ def test_machine_identity():
         # Default name derived from model
         assert "Model B" in identity.name
 
-        # Rename works
-        client.system.set_name("Test Server")
-        assert client.system.identity.name == "Test Server"
+        # Rename via property setter (triggers gRPC call)
+        identity.name = "Test Server"
+        assert identity.name == "Test Server"
 
         # UUID unchanged after rename
-        assert client.system.identity.uuid == identity.uuid
+        assert identity.uuid == identity.uuid
 ```
 
 ### Verification Criteria

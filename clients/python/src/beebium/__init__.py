@@ -38,6 +38,12 @@ from beebium.exceptions import (
     ServerStartupError,
     TimeoutError,
 )
+from beebium.system import (
+    MachineIdentity,
+    Provenance,
+    ServerStatus,
+    ServerStatusEvent,
+)
 
 __version__ = "0.1.0"
 
@@ -51,9 +57,13 @@ __all__ = [
     "DebuggerError",
     "DEFAULT_GRPC_PORT",
     "DiscError",
+    "MachineIdentity",
     "MemoryAccessError",
+    "Provenance",
     "ServerNotFoundError",
     "ServerStartupError",
+    "ServerStatus",
+    "ServerStatusEvent",
     "TimeoutError",
     "__version__",
 ]

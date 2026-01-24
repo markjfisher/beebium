@@ -491,6 +491,10 @@ struct ServerConfig {
     std::string provenance_type;
     std::string provenance_uuid;
     std::string provenance_version;
+
+    // Machine identity
+    std::string machine_uuid;
+    std::string machine_name;
 };
 
 template<typename MachineType>
@@ -529,6 +533,8 @@ void print_usage(const char* program_name) {
               << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
               << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
               << "  --provenance-version <v> Provenance version string\n"
+              << "  --machine-uuid <uuid>    Machine identity UUID (RFC 4122, default: auto-generated)\n"
+              << "  --machine-name <name>    Machine name/label (default: from model)\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -664,6 +670,14 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             config.provenance_uuid = argv[++i];
         } else if (arg == "--provenance-version" && i + 1 < argc) {
             config.provenance_version = argv[++i];
+        } else if (arg == "--machine-uuid" && i + 1 < argc) {
+            config.machine_uuid = argv[++i];
+            if (!is_valid_uuid(config.machine_uuid)) {
+                std::cerr << "Error: --machine-uuid must be a valid UUID\n";
+                return ExitCode::USAGE;
+            }
+        } else if (arg == "--machine-name" && i + 1 < argc) {
+            config.machine_name = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -1055,6 +1069,21 @@ public:
                 timestamp
             };
 
+            // Apply identity defaults
+            if (config.machine_uuid.empty()) {
+                config.machine_uuid = generate_uuid_v4();
+            }
+            if (config.machine_name.empty()) {
+                config.machine_name = std::string(Memory::MACHINE_DISPLAY_NAME);
+            }
+
+            beebium::service::MachineIdentity identity{
+                config.machine_uuid,
+                config.machine_name,
+                std::string(Memory::MACHINE_TYPE),
+                std::string(Memory::MACHINE_DISPLAY_NAME)
+            };
+
             // Print provenance details for debugging (before move)
             auto timestamp_seconds = std::chrono::duration_cast<std::chrono::seconds>(
                 provenance.timestamp.time_since_epoch()).count();
@@ -1064,7 +1093,12 @@ public:
                       << ", timestamp=" << timestamp_seconds
                       << std::endl;
 
-            server.start(std::move(provenance));
+            // Print identity details
+            std::cout << "Identity: uuid=" << identity.uuid
+                      << ", name=" << identity.name
+                      << std::endl;
+
+            server.start(std::move(provenance), std::move(identity));
 
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block
