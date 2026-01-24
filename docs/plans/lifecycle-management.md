@@ -31,11 +31,127 @@ See [provenance-reporting.md](provenance-reporting.md) for detailed design.
 
 ---
 
-## Phase 2: Client Connection Tracking
+## Phase 2: Machine Identity
+
+**Goal**: Cores have stable identity (UUID) and human-readable names.
+
+This phase establishes two orthogonal concepts that complement provenance:
+
+| Concept | Purpose | Visible to Users? |
+|---------|---------|-------------------|
+| UUID | Stable identity for reconnection, logs, coordination | No (diagnostics only) |
+| Name | Human meaning ("Teletext Server", "Level 3 Fileserver") | Yes |
+| Provenance | How it was launched | Softly (supporting detail) |
+
+### 2.1 Machine UUID
+
+- **Opaque**: Never shown to users except in diagnostics
+- **Stable**: Remains constant for the lifetime of the machine instance
+- **Generated**: Created at machine startup if not provided via CLI
+- **Used for**:
+  - Reconnection after disconnect
+  - Multi-client coordination
+  - Avoiding ambiguity between machines
+  - Persisted references (templates, history, logs)
+  - Bonjour TXT records
+
+### 2.2 Machine Name (Label)
+
+- **Human-readable**: Descriptive text meaningful to users
+- **Editable**: Can be changed at any time via gRPC
+- **Non-unique**: Multiple machines can have the same name
+- **Contextual**: Describes what the machine is *for*, not what it *is*
+
+Examples:
+- "Level 3 Fileserver"
+- "Print Server"
+- "Teletext Server"
+- "Master 128 – Econet"
+
+### 2.3 Default Naming Strategy
+
+On creation, derive a sensible default from:
+- Model type (e.g., "BBC Model B")
+- Preset if used (e.g., "Model B (DFS)")
+- Role if known (e.g., "Model B – Econet Node")
+
+Users can rename at any time but are not forced to.
+
+### 2.4 Protocol Extension
+
+```protobuf
+// In system.proto
+
+message MachineIdentity {
+  string uuid = 1;           // RFC 4122 UUID, stable for machine lifetime
+  string name = 2;           // Human-readable label
+  string model_type = 3;     // e.g., "ModelB", "Master128"
+  string display_name = 4;   // Full model name for UI (existing field)
+}
+
+message GetSystemInfoResponse {
+  // existing provenance field...
+  MachineIdentity identity = 5;  // NEW
+}
+
+message SetMachineNameRequest {
+  string name = 1;
+}
+
+message SetMachineNameResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+rpc SetMachineName(SetMachineNameRequest) returns (SetMachineNameResponse);
+```
+
+### 2.5 CLI Flags
+
+```
+--machine-uuid <uuid>    Override machine UUID (default: auto-generated)
+--machine-name <name>    Set initial machine name (default: from model)
+```
+
+### 2.6 Name Ownership
+
+The machine name **belongs to the core**, not the frontend:
+- Stored by the core
+- Returned via gRPC
+- Advertised over Bonjour
+- Seen consistently by all connected clients
+
+This ensures:
+- Multi-client setups see the same name
+- Renaming propagates to all clients
+- Headless servers have meaningful names
+
+### 2.7 Renaming Semantics
+
+Renaming a machine:
+- Never changes the UUID
+- Is reflected immediately to all clients
+- Updates Bonjour advertisement
+- Is a machine property, not a per-client preference
+
+### Files to modify:
+- `src/service/proto/system.proto`
+- `src/service/include/beebium/service/SystemService.hpp`
+- `src/server/include/beebium/server/ServerMain.hpp` (CLI flags)
+- `clients/python/src/beebium/system.py`
+
+### Verification:
+- Launch machine, verify UUID is generated and stable
+- Rename via gRPC, verify all clients see new name
+- Verify UUID is included in Bonjour TXT records (Phase 4)
+
+---
+
+## Phase 3: Client Connection Tracking
 
 **Goal**: Cores track connected clients and report connection count.
 
-### 2.1 Protocol Extension
+### 3.1 Protocol Extension
 
 ```protobuf
 message ConnectionInfo {
@@ -53,14 +169,14 @@ message GetSystemInfoResponse {
 rpc GetConnectionInfo(Empty) returns (ConnectionInfo);
 ```
 
-### 2.2 Server-Side Tracking
+### 3.2 Server-Side Tracking
 
 In gRPC Server class:
 - Track active stream counts per service type
 - Increment on stream start, decrement on stream end
 - Expose via SystemService
 
-### 2.3 Connection Events (Optional Stretch)
+### 3.3 Connection Events (Optional Stretch)
 
 ```protobuf
 message ConnectionEvent {
@@ -86,11 +202,11 @@ rpc WatchConnections(Empty) returns (stream ConnectionEvent);
 
 ---
 
-## Phase 3: Graceful Disconnect vs Power Off
+## Phase 4: Graceful Disconnect vs Power Off
 
 **Goal**: Distinguish between "disconnect UI" and "stop machine".
 
-### 3.1 Explicit Shutdown RPC
+### 4.1 Explicit Shutdown RPC
 
 ```protobuf
 enum ShutdownMode {
@@ -111,7 +227,7 @@ message ShutdownResponse {
 rpc RequestShutdown(ShutdownRequest) returns (ShutdownResponse);
 ```
 
-### 3.2 Shutdown Policy
+### 4.2 Shutdown Policy
 
 Server accepts shutdown request if:
 - Provenance allows it (launched by requesting client type), OR
@@ -120,7 +236,7 @@ Server accepts shutdown request if:
 
 If refused, return `accepted = false` with explanation.
 
-### 3.3 Python Client Updates
+### 4.3 Python Client Updates
 
 ```python
 # In Beebium class
@@ -145,11 +261,11 @@ def stop(self, timeout=5.0):
 
 ---
 
-## Phase 4: Service Advertisement (Bonjour/mDNS)
+## Phase 5: Service Advertisement (Bonjour/mDNS)
 
 **Goal**: Cores advertise themselves for discovery.
 
-### 4.1 DNS-SD Service Type
+### 5.1 DNS-SD Service Type
 
 Service type: `_beebium._tcp`
 
@@ -158,7 +274,7 @@ TXT records:
 - `provenance=macos-gui`
 - `version=0.4.1`
 
-### 4.2 Server-Side Advertisement
+### 5.2 Server-Side Advertisement
 
 Add `--advertise` flag (default: off for TTY, on for GUI-launched):
 ```
@@ -171,7 +287,7 @@ Use platform-appropriate library:
 - Linux: Avahi
 - Cross-platform fallback: skip advertisement
 
-### 4.3 Discovery Client Library
+### 5.3 Discovery Client Library
 
 Create `src/discovery/` with:
 - `Discovery.hpp` - abstract interface
@@ -192,11 +308,11 @@ Python bindings via zeroconf library or custom gRPC service.
 
 ---
 
-## Phase 5: macOS Frontend - Machines Menu
+## Phase 6: macOS Frontend - Machines Menu
 
 **Goal**: Implement the Machines menu as designed in menus-and-machines.md.
 
-### 5.1 MachineManager Class (Swift)
+### 6.1 MachineManager Class (Swift)
 
 ```swift
 class MachineManager: ObservableObject {
@@ -225,7 +341,7 @@ class MachineManager: ObservableObject {
 }
 ```
 
-### 5.2 Machines Menu Structure
+### 6.2 Machines Menu Structure
 
 ```
 Machines
@@ -240,7 +356,7 @@ Machines
   └─ Power Off All Local Machines…
 ```
 
-### 5.3 Menu Implementation
+### 6.3 Menu Implementation
 
 Use SwiftUI `Commands` modifier:
 ```swift
@@ -269,11 +385,11 @@ struct BeebiumApp: App {
 
 ---
 
-## Phase 6: Connect Dialog
+## Phase 7: Connect Dialog
 
 **Goal**: File > Connect to Machine… dialog with discovery.
 
-### 6.1 Dialog UI
+### 7.1 Dialog UI
 
 ```swift
 struct ConnectDialog: View {
@@ -287,7 +403,7 @@ struct ConnectDialog: View {
 }
 ```
 
-### 6.2 Recent Connections
+### 7.2 Recent Connections
 
 Store in UserDefaults:
 ```swift
@@ -301,7 +417,7 @@ struct RecentConnection: Codable {
 
 Show in dialog as quick-access list.
 
-### 6.3 Error Handling
+### 7.3 Error Handling
 
 On connection failure:
 - Stay in dialog
@@ -319,11 +435,11 @@ On connection failure:
 
 ---
 
-## Phase 7: Quit Dialog
+## Phase 8: Quit Dialog
 
 **Goal**: Aggregated quit dialog per menus-and-machines.md design.
 
-### 7.1 Dialog Design
+### 8.1 Dialog Design
 
 ```swift
 struct QuitDialog: View {
@@ -338,20 +454,20 @@ struct QuitDialog: View {
 }
 ```
 
-### 7.2 Default Actions
+### 8.2 Default Actions
 
 - Locally-launched: default to Power Off (resource concern)
 - Connected: Disconnect only (cannot power off)
 - Show warning for "Keep Running" about resource usage
 
-### 7.3 "Don't Ask Again" Preference
+### 8.3 "Don't Ask Again" Preference
 
 UserDefaults key: `quitBehavior`:
 - `ask` (default)
 - `alwaysPowerOff`
 - `alwaysKeepRunning`
 
-### 7.4 Trigger Points
+### 8.4 Trigger Points
 
 - `applicationShouldTerminate:` in AppDelegate
 - Show dialog only if locally-launched machines exist
@@ -367,11 +483,11 @@ UserDefaults key: `quitBehavior`:
 
 ---
 
-## Phase 8: New Machine Dialog
+## Phase 9: New Machine Dialog
 
 **Goal**: File > New Machine… with preset selection and configuration.
 
-### 8.1 Preset System
+### 9.1 Preset System
 
 ```swift
 struct MachinePreset: Codable, Identifiable {
@@ -392,7 +508,7 @@ class PresetManager: ObservableObject {
 }
 ```
 
-### 8.2 Dialog Flow
+### 9.2 Dialog Flow
 
 1. Show preset picker (dropdown at top)
 2. Show model info (from selected preset)
@@ -418,27 +534,30 @@ class PresetManager: ObservableObject {
 Phase 1 (Provenance)
     │
     v
-Phase 2 (Connection Tracking)
+Phase 2 (Machine Identity)
     │
     v
-Phase 3 (Shutdown RPC) ──────────────────┐
+Phase 3 (Connection Tracking)
+    │
+    v
+Phase 4 (Shutdown RPC) ──────────────────┐
     │                                     │
     v                                     v
-Phase 4 (Discovery)               Phase 5 (Machines Menu)
+Phase 5 (Discovery)               Phase 6 (Machines Menu)
     │                                     │
     └──────────────┬──────────────────────┘
                    v
-            Phase 6 (Connect Dialog)
+            Phase 7 (Connect Dialog)
                    │
                    v
-            Phase 7 (Quit Dialog)
+            Phase 8 (Quit Dialog)
                    │
                    v
-            Phase 8 (New Machine Dialog)
+            Phase 9 (New Machine Dialog)
 ```
 
-Phases 1-3 are backend/protocol work.
-Phases 4-8 are primarily frontend.
+Phases 1-4 are backend/protocol work.
+Phases 5-9 are primarily frontend.
 Phases can be parallelized where dependencies allow.
 
 ---
