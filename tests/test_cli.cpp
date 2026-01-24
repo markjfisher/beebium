@@ -645,3 +645,133 @@ TEST_CASE("parse_format_arg: invalid value throws", "[cli][parse_format_arg]") {
     REQUIRE_THROWS_AS(parse_format_arg("json"), std::runtime_error);  // Not jsonl
     REQUIRE_THROWS_AS(parse_format_arg("PRETTY"), std::runtime_error);  // Case sensitive
 }
+
+// ============================================================================
+// Provenance CLI option tests
+// ============================================================================
+
+TEST_CASE("parse_start_arguments: --provenance-type sets config", "[cli][parse_start_arguments][provenance]") {
+    ArgvHelper args{"beebium", "start", "--provenance-type", "python-client"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.provenance_type == "python-client");
+}
+
+TEST_CASE("parse_start_arguments: --provenance-uuid sets config", "[cli][parse_start_arguments][provenance]") {
+    ArgvHelper args{"beebium", "start", "--provenance-uuid", "550e8400-e29b-41d4-a716-446655440000"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.provenance_uuid == "550e8400-e29b-41d4-a716-446655440000");
+}
+
+TEST_CASE("parse_start_arguments: --provenance-version sets config", "[cli][parse_start_arguments][provenance]") {
+    ArgvHelper args{"beebium", "start", "--provenance-version", "1.2.3"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.provenance_version == "1.2.3");
+}
+
+TEST_CASE("parse_start_arguments: all provenance options combined", "[cli][parse_start_arguments][provenance]") {
+    ArgvHelper args{"beebium", "start",
+        "--provenance-type", "macos-gui",
+        "--provenance-uuid", "12345678-1234-1234-1234-123456789abc",
+        "--provenance-version", "2.0.0"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.provenance_type == "macos-gui");
+    REQUIRE(config.provenance_uuid == "12345678-1234-1234-1234-123456789abc");
+    REQUIRE(config.provenance_version == "2.0.0");
+}
+
+TEST_CASE("parse_start_arguments: provenance type values", "[cli][parse_start_arguments][provenance]") {
+    SECTION("terminal type") {
+        ArgvHelper args{"beebium", "start", "--provenance-type", "terminal"};
+        ServerConfig<MachineType> config;
+        parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+        REQUIRE(config.provenance_type == "terminal");
+    }
+
+    SECTION("unknown type") {
+        ArgvHelper args{"beebium", "start", "--provenance-type", "unknown"};
+        ServerConfig<MachineType> config;
+        parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+        REQUIRE(config.provenance_type == "unknown");
+    }
+
+    SECTION("typescript-oracle type") {
+        ArgvHelper args{"beebium", "start", "--provenance-type", "typescript-oracle"};
+        ServerConfig<MachineType> config;
+        parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+        REQUIRE(config.provenance_type == "typescript-oracle");
+    }
+}
+
+TEST_CASE("parse_start_arguments: provenance defaults are empty", "[cli][parse_start_arguments][provenance]") {
+    ArgvHelper args{"beebium", "start"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.provenance_type.empty());
+    REQUIRE(config.provenance_uuid.empty());
+    REQUIRE(config.provenance_version.empty());
+}
+
+// ============================================================================
+// UUID validation function tests
+// ============================================================================
+
+TEST_CASE("is_valid_uuid: valid UUIDs", "[cli][uuid]") {
+    REQUIRE(is_valid_uuid("550e8400-e29b-41d4-a716-446655440000"));
+    REQUIRE(is_valid_uuid("12345678-1234-1234-1234-123456789abc"));
+    REQUIRE(is_valid_uuid("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"));
+    REQUIRE(is_valid_uuid("00000000-0000-0000-0000-000000000000"));
+    REQUIRE(is_valid_uuid("abcdef01-2345-6789-abcd-ef0123456789"));
+}
+
+TEST_CASE("is_valid_uuid: invalid UUIDs", "[cli][uuid]") {
+    REQUIRE_FALSE(is_valid_uuid(""));
+    REQUIRE_FALSE(is_valid_uuid("not-a-uuid"));
+    REQUIRE_FALSE(is_valid_uuid("550e8400e29b41d4a716446655440000"));  // No hyphens
+    REQUIRE_FALSE(is_valid_uuid("550e8400-e29b-41d4-a716-44665544000"));   // Too short
+    REQUIRE_FALSE(is_valid_uuid("550e8400-e29b-41d4-a716-4466554400000")); // Too long
+    REQUIRE_FALSE(is_valid_uuid("550e8400-e29b-41d4-a716-44665544000g"));  // Invalid hex char
+    REQUIRE_FALSE(is_valid_uuid("550e8400-e29b-41d4-a71-6446655440000"));  // Wrong position hyphen
+}
+
+TEST_CASE("generate_uuid_v4: generates valid format", "[cli][uuid]") {
+    auto uuid = generate_uuid_v4();
+
+    REQUIRE(uuid.length() == 36);
+    REQUIRE(is_valid_uuid(uuid));
+
+    // Check version 4 indicator (character at position 14 should be '4')
+    REQUIRE(uuid[14] == '4');
+
+    // Check variant (character at position 19 should be 8, 9, a, or b)
+    char variant = uuid[19];
+    REQUIRE((variant == '8' || variant == '9' || variant == 'a' || variant == 'b'));
+}
+
+TEST_CASE("generate_uuid_v4: generates unique values", "[cli][uuid]") {
+    auto uuid1 = generate_uuid_v4();
+    auto uuid2 = generate_uuid_v4();
+    auto uuid3 = generate_uuid_v4();
+
+    REQUIRE(uuid1 != uuid2);
+    REQUIRE(uuid2 != uuid3);
+    REQUIRE(uuid1 != uuid3);
+}

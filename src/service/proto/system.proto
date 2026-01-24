@@ -18,15 +18,35 @@ message GetSystemInfoRequest {
     // Future: request specific fields, version info, etc.
 }
 
+// Launch provenance information
+// Identifies who/what launched the emulator core and when
+message LaunchProvenance {
+    // Freeform type string identifying the launching client
+    // Examples: "macos-gui", "python-client", "terminal", "vscode-extension"
+    string type = 1;
+
+    // Per-instance UUID (RFC 4122) generated at launch time
+    string instance_uuid = 2;
+
+    // Optional version string of the launching client
+    string version = 3;
+
+    // Unix timestamp when the core was launched (seconds since epoch)
+    int64 timestamp = 4;
+}
+
 message SystemInfo {
     // Machine identification
     string machine_type = 1;         // Internal type ID (e.g., "ModelB", "ModelBPlus")
     string machine_display_name = 2; // Human-readable name (e.g., "BBC Model B+ 64K")
 
+    // Launch provenance (who started this core and when)
+    LaunchProvenance provenance = 3;
+
     // Future expansion:
-    // uint32 clock_speed_hz = 3;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
-    // string cpu_type = 4;          // Primary CPU (e.g., "6502", "65C02")
-    // string coprocessor_type = 5;  // Second processor if present (e.g., "Z80", "32016")
+    // uint32 clock_speed_hz = 4;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
+    // string cpu_type = 5;          // Primary CPU (e.g., "6502", "65C02")
+    // string coprocessor_type = 6;  // Second processor if present (e.g., "Z80", "32016")
 }
 
 // === Server Status Streaming ===

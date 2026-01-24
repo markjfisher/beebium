@@ -24,7 +24,10 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <csignal>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -33,6 +36,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
 #include <unistd.h>  // for isatty()
@@ -137,6 +141,44 @@ std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
     }
 
     return data;
+}
+
+// Validate UUID string format (RFC 4122: 8-4-4-4-12 hex digits with hyphens)
+// e.g., "550e8400-e29b-41d4-a716-446655440000"
+bool is_valid_uuid(const std::string& s) {
+    if (s.length() != 36) return false;
+    for (size_t i = 0; i < 36; ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (s[i] != '-') return false;
+        } else {
+            if (!std::isxdigit(static_cast<unsigned char>(s[i]))) return false;
+        }
+    }
+    return true;
+}
+
+// Generate a random UUID v4
+std::string generate_uuid_v4() {
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<uint64_t> dis;
+
+    uint64_t a = dis(gen);
+    uint64_t b = dis(gen);
+
+    // Set version 4 (0100) in bits 12-15 of time_hi_and_version
+    a = (a & 0xFFFFFFFFFFFF0FFFULL) | 0x0000000000004000ULL;
+    // Set variant (10) in bits 6-7 of clock_seq_hi_and_reserved
+    b = (b & 0x3FFFFFFFFFFFFFFFULL) | 0x8000000000000000ULL;
+
+    char buf[37];
+    std::snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx",
+             static_cast<uint32_t>(a >> 32),
+             static_cast<uint16_t>(a >> 16),
+             static_cast<uint16_t>(a),
+             static_cast<uint16_t>(b >> 48),
+             static_cast<unsigned long long>(b & 0x0000FFFFFFFFFFFFULL));
+    return std::string(buf);
 }
 
 // Parse an integer from a string with support for multiple bases.
@@ -444,6 +486,11 @@ struct ServerConfig {
 
     // Wait mode for controlled startup
     WaitMode wait_mode = WaitMode::None;
+
+    // Provenance
+    std::string provenance_type;
+    std::string provenance_uuid;
+    std::string provenance_version;
 };
 
 template<typename MachineType>
@@ -479,6 +526,9 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
+              << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
+              << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
+              << "  --provenance-version <v> Provenance version string\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -608,6 +658,12 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             config.wait_mode = parse_wait_arg(wait_value);
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
+        } else if (arg == "--provenance-type" && i + 1 < argc) {
+            config.provenance_type = argv[++i];
+        } else if (arg == "--provenance-uuid" && i + 1 < argc) {
+            config.provenance_uuid = argv[++i];
+        } else if (arg == "--provenance-version" && i + 1 < argc) {
+            config.provenance_version = argv[++i];
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -940,6 +996,18 @@ public:
             return ExitCode::CONFIG;
         }
 
+        // Apply provenance defaults (protocol specification)
+        if (config.provenance_type.empty()) {
+            config.provenance_type = isatty(STDIN_FILENO) ? "terminal" : "unknown";
+        }
+        if (config.provenance_uuid.empty()) {
+            config.provenance_uuid = generate_uuid_v4();
+        } else if (!is_valid_uuid(config.provenance_uuid)) {
+            std::cerr << "Error: --provenance-uuid must be a valid UUID\n";
+            return ExitCode::USAGE;
+        }
+        auto timestamp = std::chrono::system_clock::now();
+
         // Set up signal handler
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
@@ -980,7 +1048,23 @@ public:
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";
             beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
-            server.start();
+            beebium::service::Provenance provenance{
+                config.provenance_type,
+                config.provenance_uuid,
+                config.provenance_version,
+                timestamp
+            };
+
+            // Print provenance details for debugging (before move)
+            auto timestamp_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                provenance.timestamp.time_since_epoch()).count();
+            std::cout << "Provenance: type=" << provenance.type
+                      << ", uuid=" << provenance.instance_uuid
+                      << ", version=" << (provenance.version.empty() ? "(none)" : provenance.version)
+                      << ", timestamp=" << timestamp_seconds
+                      << std::endl;
+
+            server.start(std::move(provenance));
 
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block

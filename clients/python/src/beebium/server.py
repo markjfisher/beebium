@@ -20,10 +20,12 @@ import signal
 import socket
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 import grpc
 
+import beebium
 from beebium.exceptions import ServerNotFoundError, ServerStartupError
 
 
@@ -62,6 +64,7 @@ class ServerProcess:
         self._server_filepath = self._find_server(server_filepath)
         self._port = port if port != 0 else self._find_free_port()
         self._process: subprocess.Popen[bytes] | None = None
+        self._provenance_instance_uuid = str(uuid.uuid4())
 
     @property
     def port(self) -> int:
@@ -108,6 +111,13 @@ class ServerProcess:
         ]
         if self._basic_filepath:
             cmd.extend(["--basic", str(self._basic_filepath)])
+
+        # Add provenance flags
+        cmd.extend([
+            "--provenance-type", "python-client",
+            "--provenance-uuid", self._provenance_instance_uuid,
+            "--provenance-version", beebium.__version__,
+        ])
 
         # Start the server process
         self._process = subprocess.Popen(

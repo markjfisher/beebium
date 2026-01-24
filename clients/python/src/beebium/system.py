@@ -37,6 +37,19 @@ class SystemInfo:
 
 
 @dataclass(frozen=True)
+class Provenance:
+    """Launch provenance information.
+
+    Identifies who/what launched the emulator core and when.
+    """
+
+    type: str  # e.g., "python-client", "macos-gui", "terminal"
+    instance_uuid: str  # RFC 4122 UUID
+    version: str  # Version of the launching client
+    timestamp: int  # Unix timestamp (seconds since epoch)
+
+
+@dataclass(frozen=True)
 class ServerStatusEvent:
     """Server status change event."""
 
@@ -73,6 +86,7 @@ class System:
         """
         self._stub = stub
         self._info_cache: SystemInfo | None = None
+        self._provenance_cache: Provenance | None = None
 
     @property
     def info(self) -> SystemInfo:
@@ -95,6 +109,25 @@ class System:
     def machine_display_name(self) -> str:
         """Human-readable machine name (e.g., "BBC Model B+ 64K")."""
         return self.info.machine_display_name
+
+    @property
+    def provenance(self) -> Provenance:
+        """Get launch provenance information (cached).
+
+        Returns information about who/what launched this server instance
+        and when it was launched.
+        """
+        if self._provenance_cache is None:
+            request = system_pb2.GetSystemInfoRequest()
+            response = self._stub.GetSystemInfo(request)
+            prov = response.provenance
+            self._provenance_cache = Provenance(
+                type=prov.type,
+                instance_uuid=prov.instance_uuid,
+                version=prov.version,
+                timestamp=prov.timestamp,
+            )
+        return self._provenance_cache
 
     def watch_status(self) -> Iterator[ServerStatusEvent]:
         """Stream server status events.

@@ -423,6 +423,17 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_sideways)
 
+    # System service tests
+    add_executable(test_grpc_system test_grpc_system.cpp)
+    target_link_libraries(test_grpc_system PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_system PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_grpc_system)
+
     # Server main helper function tests
     add_executable(test_server_main test_server_main.cpp)
     target_include_directories(test_server_main PRIVATE

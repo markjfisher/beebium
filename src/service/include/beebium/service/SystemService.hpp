@@ -17,17 +17,28 @@
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <string>
 
 namespace beebium::service {
+
+/// Launch provenance information
+/// Identifies who/what launched the emulator core and when
+struct Provenance {
+    std::string type;
+    std::string instance_uuid;
+    std::string version;
+    std::chrono::system_clock::time_point timestamp;
+};
 
 /// gRPC service implementation for SystemService
 /// Provides machine configuration and identity information
 template<typename MachineType>
 class SystemServiceImpl final : public SystemService::Service {
 public:
-    explicit SystemServiceImpl(MachineType& machine);
+    SystemServiceImpl(MachineType& machine, Provenance provenance);
     ~SystemServiceImpl() override = default;
 
     // Non-copyable
@@ -51,6 +62,7 @@ public:
 
 private:
     MachineType& machine_;
+    Provenance provenance_;
 
     // Shutdown notification state
     mutable std::mutex watchers_mutex_;
@@ -64,8 +76,8 @@ private:
 //////////////////////////////////////////////////////////////////////////////
 
 template<typename MachineType>
-SystemServiceImpl<MachineType>::SystemServiceImpl(MachineType& machine)
-    : machine_(machine) {
+SystemServiceImpl<MachineType>::SystemServiceImpl(MachineType& machine, Provenance provenance)
+    : machine_(machine), provenance_(std::move(provenance)) {
 }
 
 template<typename MachineType>
@@ -78,6 +90,16 @@ grpc::Status SystemServiceImpl<MachineType>::GetSystemInfo(
     using Memory = typename MachineType::Memory;
     response->set_machine_type(std::string(Memory::MACHINE_TYPE));
     response->set_machine_display_name(std::string(Memory::MACHINE_DISPLAY_NAME));
+
+    // Set provenance information
+    auto* prov = response->mutable_provenance();
+    prov->set_type(provenance_.type);
+    prov->set_instance_uuid(provenance_.instance_uuid);
+    prov->set_version(provenance_.version);
+    // Convert time_point to Unix timestamp (seconds since epoch)
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+        provenance_.timestamp.time_since_epoch()).count();
+    prov->set_timestamp(seconds);
 
     return grpc::Status::OK;
 }

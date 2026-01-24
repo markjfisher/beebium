@@ -6,7 +6,11 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { randomUUID } from 'crypto';
 import { BeebiumClient } from './beebium-client.js';
+
+/** Oracle package version - used as provenance version */
+const ORACLE_VERSION = '0.1.0';
 
 // Track all spawned processes for cleanup on exit
 const activeProcesses = new Set<ChildProcess>();
@@ -73,11 +77,17 @@ export interface ServerFixtureOptions {
     args?: string[];
     /** Connection timeout in ms (default: 5000) */
     timeout?: number;
+    /** Override provenance type (default: 'typescript-oracle') */
+    provenanceType?: string;
+    /** Override provenance version (default: ORACLE_VERSION) */
+    provenanceVersion?: string;
 }
 
 const DEFAULT_OPTIONS: Required<Omit<ServerFixtureOptions, 'executablePath' | 'args' | 'fdc' | 'roms' | 'sideways'>> = {
     model: 'B',
     timeout: 5000,
+    provenanceType: 'typescript-oracle',
+    provenanceVersion: ORACLE_VERSION,
 };
 
 /** Regex to parse "Listening on port <N>" from server stdout */
@@ -148,6 +158,9 @@ export class ServerFixture {
     private readonly roms: RomSlot[];
     private readonly extraArgs: string[];
     private readonly executablePath: string;
+    private readonly provenanceType: string;
+    private readonly provenanceVersion: string;
+    private readonly provenanceUuid: string;
 
     constructor(options: ServerFixtureOptions = {}) {
         this.model = options.model ?? DEFAULT_OPTIONS.model;
@@ -157,6 +170,9 @@ export class ServerFixture {
         this.roms = options.roms ?? [];
         this.extraArgs = options.args ?? [];
         this.executablePath = options.executablePath ?? findExecutable(this.model);
+        this.provenanceType = options.provenanceType ?? DEFAULT_OPTIONS.provenanceType;
+        this.provenanceVersion = options.provenanceVersion ?? DEFAULT_OPTIONS.provenanceVersion;
+        this.provenanceUuid = randomUUID();
 
         // Ensure cleanup handlers are registered
         registerCleanupHandlers();
@@ -194,6 +210,13 @@ export class ServerFixture {
         for (const rom of this.roms) {
             args.push('--rom', `${rom.slot}:${rom.filepath}`);
         }
+
+        // Provenance flags
+        args.push(
+            '--provenance-type', this.provenanceType,
+            '--provenance-uuid', this.provenanceUuid,
+            '--provenance-version', this.provenanceVersion
+        );
 
         // Extra user-provided args
         args.push(...this.extraArgs);

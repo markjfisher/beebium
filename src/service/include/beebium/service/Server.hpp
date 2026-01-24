@@ -48,7 +48,8 @@ public:
     Server& operator=(const Server&) = delete;
 
     /// Start the server (non-blocking)
-    void start();
+    /// @param provenance Launch provenance information for this server instance
+    void start(Provenance provenance);
 
     /// Stop the server and wait for shutdown
     void stop();
@@ -129,7 +130,7 @@ Server<MachineType>::~Server() {
 }
 
 template<typename MachineType>
-void Server<MachineType>::start() {
+void Server<MachineType>::start(Provenance provenance) {
     if (impl_->running) {
         return;
     }
@@ -158,7 +159,7 @@ void Server<MachineType>::start() {
         impl_->machine);
 
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
-        impl_->machine);
+        impl_->machine, std::move(provenance));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
         impl_->machine);
