@@ -245,6 +245,18 @@ class System:
                 identity=identity,
             )
 
+    @property
+    def client_count(self) -> int:
+        """Number of clients with active WatchServerStatus streams.
+
+        This count reflects how many clients are currently watching
+        the server status. It does not include clients that are merely
+        connected but not watching.
+        """
+        request = system_pb2.GetSystemInfoRequest()
+        response = self._stub.GetSystemInfo(request)
+        return response.connections.client_count
+
     def wait_for_ready(self, timeout: float = 5.0) -> bool:
         """Block until server sends READY status.
 

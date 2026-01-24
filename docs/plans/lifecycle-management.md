@@ -43,54 +43,7 @@ See [machine-identity.md](machine-identity.md) for detailed design.
 
 **Goal**: Cores track connected clients and report connection count.
 
-### 3.1 Protocol Extension
-
-```protobuf
-message ConnectionInfo {
-  int32 client_count = 1;
-  bool has_video_subscriber = 2;
-  bool has_audio_subscriber = 3;
-}
-
-message GetSystemInfoResponse {
-  // existing fields...
-  ConnectionInfo connections = 4;  // NEW
-}
-
-// Or a dedicated RPC
-rpc GetConnectionInfo(Empty) returns (ConnectionInfo);
-```
-
-### 3.2 Server-Side Tracking
-
-In gRPC Server class:
-- Track active stream counts per service type
-- Increment on stream start, decrement on stream end
-- Expose via SystemService
-
-### 3.3 Connection Events (Optional Stretch)
-
-```protobuf
-message ConnectionEvent {
-  enum Type {
-    CLIENT_CONNECTED = 0;
-    CLIENT_DISCONNECTED = 1;
-  }
-  Type type = 1;
-  int32 client_count = 2;
-}
-
-rpc WatchConnections(Empty) returns (stream ConnectionEvent);
-```
-
-### Files to modify:
-- `src/service/proto/system.proto`
-- `src/service/Server.hpp` / `.cpp` (track connections)
-- `src/service/SystemService.hpp` / `.cpp`
-
-### Verification:
-- Connect two Python clients, verify `client_count == 2`
-- Disconnect one, verify count decrements
+See [client-connection-tracking.md](client-connection-tracking.md) for detailed design.
 
 ---
 

@@ -109,8 +109,10 @@ class ServerProcess:
             "--port",
             str(self._port),
         ]
+        # BASIC ROM is auto-loaded by the server if present in the ROM directory.
+        # If a custom BASIC filepath is provided, configure it via sideways ROM slot 15.
         if self._basic_filepath:
-            cmd.extend(["--basic", str(self._basic_filepath)])
+            cmd.extend(["--sideways", f"15:rom:{self._basic_filepath}"])
 
         # Add provenance flags
         cmd.extend([

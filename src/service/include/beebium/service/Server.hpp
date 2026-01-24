@@ -21,6 +21,7 @@
 #include "beebium/service/SystemService.hpp"
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
+#include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
 
@@ -78,6 +79,9 @@ private:
         // Video rendering infrastructure
         FrameBuffer frame_buffer;
         FrameRenderer frame_renderer{&frame_buffer};
+
+        // Connection tracking (must be declared before services that use it)
+        ConnectionTracker connection_tracker;
 
         std::unique_ptr<VideoServiceImpl> video_service;
         std::unique_ptr<KeyboardServiceImpl> keyboard_service;
@@ -160,7 +164,8 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity)
         impl_->machine);
 
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
-        impl_->machine, std::move(provenance), std::move(identity));
+        impl_->machine, std::move(provenance), std::move(identity),
+        &impl_->connection_tracker);
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
         impl_->machine);

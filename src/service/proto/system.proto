@@ -56,6 +56,13 @@ message MachineIdentity {
     string model_name = 4;
 }
 
+// Connection tracking information
+// Tracks the number of active client connections (WatchServerStatus streams)
+message ConnectionInfo {
+    // Number of clients with active WatchServerStatus streams
+    int32 client_count = 1;
+}
+
 message SystemInfo {
     // Old fields removed - use identity instead
     reserved 1, 2;
@@ -67,10 +74,13 @@ message SystemInfo {
     // Machine identity (UUID and name)
     MachineIdentity identity = 4;
 
+    // Connection tracking (active client count)
+    ConnectionInfo connections = 5;
+
     // Future expansion:
-    // uint32 clock_speed_hz = 5;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
-    // string cpu_type = 6;          // Primary CPU (e.g., "6502", "65C02")
-    // string coprocessor_type = 7;  // Second processor if present (e.g., "Z80", "32016")
+    // uint32 clock_speed_hz = 6;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
+    // string cpu_type = 7;          // Primary CPU (e.g., "6502", "65C02")
+    // string coprocessor_type = 8;  // Second processor if present (e.g., "Z80", "32016")
 }
 
 // === SetMachineName RPC ===

@@ -14,11 +14,13 @@
 #define BEEBIUM_SERVICE_SYSTEM_SERVICE_HPP
 
 #include "system.grpc.pb.h"
+#include "beebium/service/ConnectionTracker.hpp"
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -47,7 +49,8 @@ struct MachineIdentity {
 template<typename MachineType>
 class SystemServiceImpl final : public SystemService::Service {
 public:
-    SystemServiceImpl(MachineType& machine, Provenance provenance, MachineIdentity identity);
+    SystemServiceImpl(MachineType& machine, Provenance provenance, MachineIdentity identity,
+                      ConnectionTracker* connection_tracker);
     ~SystemServiceImpl() override = default;
 
     // Non-copyable
@@ -85,6 +88,7 @@ private:
     MachineType& machine_;
     Provenance provenance_;
     MachineIdentity identity_;
+    ConnectionTracker* connection_tracker_;
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -100,10 +104,12 @@ private:
 
 template<typename MachineType>
 SystemServiceImpl<MachineType>::SystemServiceImpl(
-    MachineType& machine, Provenance provenance, MachineIdentity identity)
+    MachineType& machine, Provenance provenance, MachineIdentity identity,
+    ConnectionTracker* connection_tracker)
     : machine_(machine)
     , provenance_(std::move(provenance))
-    , identity_(std::move(identity)) {
+    , identity_(std::move(identity))
+    , connection_tracker_(connection_tracker) {
 }
 
 template<typename MachineType>
@@ -138,6 +144,10 @@ grpc::Status SystemServiceImpl<MachineType>::GetSystemInfo(
         populate_identity_proto(id);
     }
 
+    // Set connection information
+    auto* conn = response->mutable_connections();
+    conn->set_client_count(connection_tracker_ ? connection_tracker_->client_count() : 0);
+
     return grpc::Status::OK;
 }
 
@@ -171,6 +181,12 @@ grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
     const WatchServerStatusRequest* /*request*/,
     grpc::ServerWriter<ServerStatusEvent>* writer) {
 
+    // Track this connection (RAII guard decrements on any exit path)
+    std::unique_ptr<ConnectionGuard> guard;
+    if (connection_tracker_) {
+        guard = std::make_unique<ConnectionGuard>(*connection_tracker_);
+    }
+
     // Send READY event immediately upon subscription
     ServerStatusEvent ready_event;
     ready_event.set_status(SERVER_STATUS_READY);
@@ -181,9 +197,11 @@ grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
     }
 
     // Wait for events in a loop
+    // Use wait_for with timeout to periodically check for client cancellation,
+    // since context->IsCancelled() doesn't notify the condition variable.
     while (!context->IsCancelled()) {
         std::unique_lock<std::mutex> lock(watchers_mutex_);
-        watchers_cv_.wait(lock, [this, context] {
+        watchers_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, context] {
             return shutdown_signaled_.load() ||
                    identity_changed_.load() ||
                    context->IsCancelled();
