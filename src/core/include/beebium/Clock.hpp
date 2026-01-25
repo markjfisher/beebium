@@ -13,8 +13,9 @@
 #pragma once
 
 #include "ClockBinding.hpp"
-#include <tuple>
+#include <cstddef>
 #include <cstdint>
+#include <tuple>
 
 namespace beebium {
 

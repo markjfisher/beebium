@@ -14,6 +14,8 @@
 #ifndef HEADER_68B8925BC8D24ED7A572AB6FAAB58E41
 #define HEADER_68B8925BC8D24ED7A572AB6FAAB58E41
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
