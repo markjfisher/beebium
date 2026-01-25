@@ -116,7 +116,7 @@ TEST_CASE("MOS boot trace - detect infinite loop", "[boot][trace]") {
     uint64_t instruction_count = 0;
     bool loop_detected = false;
     uint16_t loop_start_pc = 0;
-    uint64_t loop_start_cycle = 0;
+    [[maybe_unused]] uint64_t loop_start_cycle = 0;
 
     // For loop detection: use ProgramCounterHistogram
     ProgramCounterHistogram pc_histogram;
