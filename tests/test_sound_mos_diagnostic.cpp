@@ -36,16 +36,16 @@ using namespace beebium::test;
 #ifdef BEEBIUM_ROM_DIR
 
 // System VIA addresses
-constexpr uint16_t VIA_PORT_B = 0xFE40;  // Port B (addressable latch control)
-constexpr uint16_t VIA_PORT_A = 0xFE41;  // Port A (sound chip data)
+[[maybe_unused]] constexpr uint16_t VIA_PORT_B = 0xFE40;  // Port B (addressable latch control)
+[[maybe_unused]] constexpr uint16_t VIA_PORT_A = 0xFE41;  // Port A (sound chip data)
 constexpr uint16_t VIA_DDRB   = 0xFE42;  // Data Direction Register B
 constexpr uint16_t VIA_DDRA   = 0xFE43;  // Data Direction Register A
-constexpr uint16_t VIA_T1CL   = 0xFE44;  // Timer 1 Counter Low
-constexpr uint16_t VIA_T1CH   = 0xFE45;  // Timer 1 Counter High
+[[maybe_unused]] constexpr uint16_t VIA_T1CL   = 0xFE44;  // Timer 1 Counter Low
+[[maybe_unused]] constexpr uint16_t VIA_T1CH   = 0xFE45;  // Timer 1 Counter High
 constexpr uint16_t VIA_T1LL   = 0xFE46;  // Timer 1 Latch Low
 constexpr uint16_t VIA_T1LH   = 0xFE47;  // Timer 1 Latch High
 constexpr uint16_t VIA_ACR    = 0xFE4B;  // Auxiliary Control Register
-constexpr uint16_t VIA_PCR    = 0xFE4C;  // Peripheral Control Register
+[[maybe_unused]] constexpr uint16_t VIA_PCR    = 0xFE4C;  // Peripheral Control Register
 constexpr uint16_t VIA_IFR    = 0xFE4D;  // Interrupt Flag Register
 constexpr uint16_t VIA_IER    = 0xFE4E;  // Interrupt Enable Register
 
