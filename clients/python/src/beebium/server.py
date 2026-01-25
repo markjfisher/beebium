@@ -130,10 +130,28 @@ class ServerProcess:
 
         # Wait for the server to be ready
         if not self._wait_for_ready(timeout):
+            # Capture any output from the failed server before stopping
+            exit_code = None
+            stdout_output = b""
+            stderr_output = b""
+            if self._process is not None:
+                # Check if process exited
+                exit_code = self._process.poll()
+                if exit_code is not None:
+                    # Process died - read its output
+                    stdout_output, stderr_output = self._process.communicate(timeout=1.0)
             self.stop(timeout=1.0)
-            raise ServerStartupError(
-                f"Server failed to start within {timeout} seconds"
-            )
+
+            # Build detailed error message
+            error_msg = f"Server failed to start within {timeout} seconds"
+            error_msg += f"\nCommand: {' '.join(cmd)}"
+            if exit_code is not None:
+                error_msg += f"\nServer exited with code {exit_code}"
+            if stderr_output:
+                error_msg += f"\nServer stderr:\n{stderr_output.decode('utf-8', errors='replace')}"
+            if stdout_output:
+                error_msg += f"\nServer stdout:\n{stdout_output.decode('utf-8', errors='replace')}"
+            raise ServerStartupError(error_msg)
 
     def stop(self, timeout: float = 5.0) -> None:
         """Stop the server gracefully, then forcefully if needed.
