@@ -80,9 +80,9 @@ TEST_CASE("Integrated: Timer 1 IRQ fires at expected cycle", "[via][cpu][irq][in
     //   STA $FE47    ; Write T1LH (clears T1 flag)
     //   STA $FE45    ; Write T1CH (starts timer with value 4)
     //   CLI          ; Enable interrupts
-    //   NOP          ; \
+    //   NOP          ;  |
     //   NOP          ;  } Wait for IRQ
-    //   NOP          ; /
+    //   NOP          ;  |
     //   ...
     machine.write(0x0400, 0x78);        // SEI
     machine.write(0x0401, 0xA9);        // LDA #$C0
