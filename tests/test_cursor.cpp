@@ -978,7 +978,7 @@ TEST_CASE("Exact reproduction Enter key sequence", "[video][cursor][repro]") {
     // The MOS reads keyboard via OSRDCH/OSBYTE, which polls the keyboard
     // For simplicity, directly set the keyboard buffer location
 
-    auto inject_enter_and_wait = [&machine, &renderer, &fb](int sequence) {
+    auto inject_enter_and_wait = [&machine, &renderer](int sequence) {
         // The MOS stores the last key in &E7, and the keyboard IRQ fills it
         // Actually we need to trigger keyboard processing by injecting via VIA
 
@@ -1447,8 +1447,8 @@ TEST_CASE("Cursor after CRTC register writes", "[video][cursor][diagnostic]") {
 
         machine.memory().crtc.set_cursor_debug_callback(
             [&local_matches, &min_char_addr_on_row, &max_char_addr_on_row, &samples_on_row,
-             cursor_addr, target_row]
-            (uint16_t char_addr, uint16_t cursor_pos, uint16_t, uint8_t row, uint8_t, bool detected) {
+             target_row]
+            (uint16_t char_addr, uint16_t /*cursor_pos*/, uint16_t, uint8_t row, uint8_t, bool detected) {
                 if (detected) {
                     ++local_matches;
                 }
