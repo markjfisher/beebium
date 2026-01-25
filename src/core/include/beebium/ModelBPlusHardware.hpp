@@ -36,6 +36,7 @@
 #include "disc/WD1770.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <vector>

@@ -15,6 +15,7 @@
 #include "DiscImage.hpp"
 #include "DiscGeometry.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
