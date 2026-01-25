@@ -81,13 +81,42 @@ option(BEEBIUM_BUILD_SERVICE "Build gRPC service layer" ON)
 option(BEEBIUM_BUILD_SERVER "Build beebium-server executable" ON)
 
 if(BEEBIUM_BUILD_SERVICE)
-    # Find gRPC and Protobuf (installed via brew or system package manager)
-    find_package(Protobuf CONFIG REQUIRED)
-    find_package(gRPC CONFIG REQUIRED)
+    # Find gRPC and Protobuf
+    # Try CONFIG mode first (macOS Homebrew), fall back to Module mode (Linux apt)
+    find_package(Protobuf CONFIG QUIET)
+    if(NOT Protobuf_FOUND)
+        find_package(Protobuf REQUIRED)
+    endif()
 
-    # Get the protoc and grpc_cpp_plugin executables
-    get_target_property(PROTOC_EXECUTABLE protobuf::protoc LOCATION)
-    get_target_property(GRPC_CPP_PLUGIN gRPC::grpc_cpp_plugin LOCATION)
+    find_package(gRPC CONFIG QUIET)
+    if(NOT gRPC_FOUND)
+        # On Linux, gRPC may need to be found via pkg-config
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(GRPC REQUIRED grpc++ grpc)
+
+        # Create imported target for gRPC if not already defined
+        if(NOT TARGET gRPC::grpc++)
+            add_library(gRPC::grpc++ INTERFACE IMPORTED)
+            set_target_properties(gRPC::grpc++ PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${GRPC_INCLUDE_DIRS}"
+                INTERFACE_LINK_LIBRARIES "${GRPC_LIBRARIES}"
+            )
+        endif()
+    endif()
+
+    # Get the protoc executable
+    if(TARGET protobuf::protoc)
+        get_target_property(PROTOC_EXECUTABLE protobuf::protoc LOCATION)
+    else()
+        find_program(PROTOC_EXECUTABLE protoc REQUIRED)
+    endif()
+
+    # Get the grpc_cpp_plugin executable
+    if(TARGET gRPC::grpc_cpp_plugin)
+        get_target_property(GRPC_CPP_PLUGIN gRPC::grpc_cpp_plugin LOCATION)
+    else()
+        find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
+    endif()
 endif()
 
 # Subdirectories
