@@ -43,7 +43,7 @@ constexpr uint16_t WD1770_DATA = 0xFE87;
 constexpr uint8_t CTRL_DRIVE0 = 0x01;     // Bit 0: Drive 0 select
 constexpr uint8_t CTRL_DRIVE1 = 0x02;     // Bit 1: Drive 1 select
 constexpr uint8_t CTRL_SIDE_SELECT = 0x04; // Bit 2: Side select (0=side0, 1=side1)
-constexpr uint8_t CTRL_DENSITY = 0x08;     // Bit 3: Density (0=double, 1=single)
+[[maybe_unused]] constexpr uint8_t CTRL_DENSITY = 0x08;     // Bit 3: Density (0=double, 1=single)
 constexpr uint8_t CTRL_MOTOR_ON = 0x10;    // Bit 4: Motor on
 constexpr uint8_t CTRL_RESET = 0x20;       // Bit 5: Reset (active low)
 constexpr uint8_t CTRL_NMI_ENABLE = 0x40;  // Bit 6: NMI enable
@@ -55,7 +55,7 @@ constexpr uint8_t STATUS_DRQ = 0x02;
 // WD1770 commands
 constexpr uint8_t CMD_RESTORE = 0x00;
 constexpr uint8_t CMD_READ_SECTOR = 0x80;
-constexpr uint8_t CMD_FORCE_INT = 0xD0;          // Force Interrupt (terminate, no interrupt)
+[[maybe_unused]] constexpr uint8_t CMD_FORCE_INT = 0xD0;          // Force Interrupt (terminate, no interrupt)
 constexpr uint8_t CMD_FORCE_INT_IMMEDIATE = 0xD8;  // Force Interrupt with I3=1 (immediate interrupt)
 
 namespace {
@@ -429,7 +429,6 @@ TEST_CASE("Model B+ ROM scanning checks all slots", "[disc][debug][boot]") {
     INFO("Scanning all sideways slots for ROM headers:");
     std::string slot_report;
     bool slot11_has_valid_header = false;
-    bool slot15_has_basic = false;
 
     // Helper to format hex values
     auto hex_byte = [](uint8_t v) {
@@ -443,8 +442,7 @@ TEST_CASE("Model B+ ROM scanning checks all slots", "[disc][debug][boot]") {
         machine.write(0xFE30, static_cast<uint8_t>(slot));
 
         // Verify ROMSEL was set correctly
-        uint8_t romsel = machine.memory().romsel();
-        bool andy_enabled = (romsel & 0x80) != 0;
+        [[maybe_unused]] uint8_t romsel = machine.memory().romsel();
         uint8_t selected_bank = machine.memory().sideways.selected_bank();
 
         // Read ROM header
@@ -487,9 +485,6 @@ TEST_CASE("Model B+ ROM scanning checks all slots", "[disc][debug][boot]") {
 
         if (slot == 11 && is_service_rom && service_jmp == 0x4C) {
             slot11_has_valid_header = true;
-        }
-        if (slot == 15 && is_language_rom && lang_jmp == 0x4C) {
-            slot15_has_basic = true;
         }
     }
     INFO(slot_report);
@@ -728,7 +723,6 @@ TEST_CASE("ROMSEL bit 7 behavior during boot", "[disc][debug][boot]") {
     std::array<int, 16> slot_exec_count_loop2{};  // Second loop only
     std::vector<uint16_t> slot11_pcs;  // PCs when executing in slot 11
     std::vector<uint8_t> service_calls;  // A register when service entry called
-    int disc_ctrl_accesses = 0;  // Track access to disc controller ($FE80-$FE84)
     std::vector<std::pair<int, uint8_t>> oswrch_calls;  // (instruction#, char) when OSWRCH called from slot 11
     std::vector<std::tuple<uint8_t, uint8_t, uint8_t, int>> dfs_entry_state;  // (service_call, $F4, ROMSEL, instr#) at DFS entry
     int dfb_set_at = -1;  // Instruction number when $0DFB first becomes non-zero
@@ -1333,10 +1327,8 @@ TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]"
     INFO("Waiting for disc access...");
 
     int nmi_handler_count = 0;
-    int status_reads = 0;
     uint16_t last_pc = 0;
     bool prev_nmi_pending = false;
-    int unique_pc_count = 0;
     uint16_t sample_pcs[5] = {0};
     for (uint64_t i = 0; i < 50'000'000; ++i) {  // Extended to 50M cycles (~25 seconds)
         // Sample first few PCs to verify CPU is running
