@@ -47,62 +47,11 @@ See [client-connection-tracking.md](client-connection-tracking.md) for detailed 
 
 ---
 
-## Phase 4: Graceful Disconnect vs Power Off
+## Phase 4: Shutdown RPC
 
-**Goal**: Distinguish between "disconnect UI" and "stop machine".
+**Goal**: Distinguish between "disconnect UI" and "stop machine" via an explicit shutdown RPC.
 
-### 4.1 Explicit Shutdown RPC
-
-```protobuf
-enum ShutdownMode {
-  SHUTDOWN_GRACEFUL = 0;    // Normal shutdown with grace period
-  SHUTDOWN_IMMEDIATE = 1;   // Stop now
-}
-
-message ShutdownRequest {
-  ShutdownMode mode = 1;
-  int32 grace_period_ms = 2;  // 0 = use default (5000ms)
-}
-
-message ShutdownResponse {
-  bool accepted = 1;
-  string message = 2;  // e.g., "Shutdown refused: multiple clients connected"
-}
-
-rpc RequestShutdown(ShutdownRequest) returns (ShutdownResponse);
-```
-
-### 4.2 Shutdown Policy
-
-Server accepts shutdown request if:
-- Provenance allows it (launched by requesting client type), OR
-- `--allow-remote-shutdown` flag was set, OR
-- Only one client connected
-
-If refused, return `accepted = false` with explanation.
-
-### 4.3 Python Client Updates
-
-```python
-# In Beebium class
-def request_shutdown(self, graceful=True, grace_period_ms=5000):
-    """Request server shutdown. Returns (accepted, message)."""
-
-# In ServerProcess
-def stop(self, timeout=5.0):
-    # Try graceful gRPC shutdown first
-    # Fall back to SIGTERM if connection lost
-```
-
-### Files to modify:
-- `src/service/proto/system.proto`
-- `src/service/SystemService.hpp` / `.cpp`
-- `clients/python/src/beebium/system.py`
-- `clients/python/src/beebium/server.py`
-
-### Verification:
-- Python-launched server: `request_shutdown()` succeeds
-- Externally-launched server: `request_shutdown()` returns `accepted=False` (unless allowed)
+See [shutdown-rpc.md](shutdown-rpc.md) for detailed design.
 
 ---
 
