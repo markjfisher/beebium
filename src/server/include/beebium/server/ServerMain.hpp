@@ -111,7 +111,7 @@ std::function<void()> g_request_machine_shutdown;
 std::function<void()> g_request_pacing_stop;
 std::function<void()> g_notify_clients_shutdown;
 
-void signal_handler(int /*signal*/) {
+inline void signal_handler(int /*signal*/) {
     g_running = false;
     // Notify connected clients that shutdown is starting
     if (g_notify_clients_shutdown) {
@@ -126,7 +126,7 @@ void signal_handler(int /*signal*/) {
     }
 }
 
-std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
+inline std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file) {
         throw std::runtime_error("Cannot open file: " + filepath.string());
@@ -145,7 +145,7 @@ std::vector<uint8_t> load_file(const std::filesystem::path& filepath) {
 
 // Validate UUID string format (RFC 4122: 8-4-4-4-12 hex digits with hyphens)
 // e.g., "550e8400-e29b-41d4-a716-446655440000"
-bool is_valid_uuid(const std::string& s) {
+inline bool is_valid_uuid(const std::string& s) {
     if (s.length() != 36) return false;
     for (size_t i = 0; i < 36; ++i) {
         if (i == 8 || i == 13 || i == 18 || i == 23) {
@@ -158,7 +158,7 @@ bool is_valid_uuid(const std::string& s) {
 }
 
 // Generate a random UUID v4
-std::string generate_uuid_v4() {
+inline std::string generate_uuid_v4() {
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<uint64_t> dis;
@@ -243,7 +243,7 @@ int parse_int(const std::string& str, const std::string& context = "") {
 //
 // Example: "--floppy 0:" followed by "game.ssd" becomes "0:game.ssd"
 // Example: "--sideways 15:rom:" followed by "forth.rom" becomes "15:rom:forth.rom"
-void complete_colon_arg(std::string& value, int& i, int argc, char* argv[]) {
+inline void complete_colon_arg(std::string& value, int& i, int argc, char* argv[]) {
     if (value.empty() || value.back() != ':') {
         return;  // Doesn't end with colon, no completion needed
     }
@@ -265,7 +265,7 @@ void complete_colon_arg(std::string& value, int& i, int argc, char* argv[]) {
 
 // Parse "drive:filepath" or "drive:url" format for floppy drives
 // Returns (drive, filepath_or_url)
-std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
+inline std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
     auto colon_pos = arg.find(':');
     if (colon_pos == std::string::npos || colon_pos == 0) {
         throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:filepath)");
@@ -305,7 +305,7 @@ struct SidewaysConfig {
 //   4:ram                    - Empty RAM
 //   4:ram:preload.bin        - RAM with pre-loaded image
 //   2:empty                  - Empty slot
-SidewaysConfig parse_sideways_arg(const std::string& arg) {
+inline SidewaysConfig parse_sideways_arg(const std::string& arg) {
     SidewaysConfig config{};
 
     // Find first colon (slot:type...)
@@ -359,7 +359,7 @@ SidewaysConfig parse_sideways_arg(const std::string& arg) {
 }
 
 // Parse --wait argument value
-WaitMode parse_wait_arg(const std::string& value) {
+inline WaitMode parse_wait_arg(const std::string& value) {
     if (value == "cli") {
         return WaitMode::Cli;
     } else if (value == "api") {
@@ -372,7 +372,7 @@ WaitMode parse_wait_arg(const std::string& value) {
 // Convert a URL or filepath to a canonical file:// URL.
 // If the input is already a URL, returns it unchanged.
 // If it's a filepath, resolves to canonical absolute path (no . or ..) and prepends file://
-std::string to_absolute_file_url(const std::string& url_or_filepath) {
+inline std::string to_absolute_file_url(const std::string& url_or_filepath) {
     // If it's already a URL, return as-is
     if (url_or_filepath.find("://") != std::string::npos) {
         return url_or_filepath;
@@ -383,7 +383,7 @@ std::string to_absolute_file_url(const std::string& url_or_filepath) {
 }
 
 // Resolve Auto format to actual format based on TTY detection
-OutputFormat resolve_output_format(OutputFormat format) {
+inline OutputFormat resolve_output_format(OutputFormat format) {
     if (format == OutputFormat::Auto) {
         return isatty(STDOUT_FILENO) ? OutputFormat::Pretty : OutputFormat::Tsv;
     }
@@ -403,7 +403,7 @@ OutputFormat parse_format_arg(const std::string& value) {
 // Returns:
 //   - std::nullopt on success (continue with subcommand dispatch)
 //   - ExitCode::USAGE for errors
-std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& global) {
+inline std::optional<int> parse_global_arguments(int argc, char* argv[], GlobalConfig& global) {
     // Scan arguments looking for global options or subcommand
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
