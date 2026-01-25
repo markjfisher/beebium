@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
+from beebium.exceptions import ServerNotFoundError
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -161,6 +162,7 @@ def bbc(
     """A fresh BBC Micro instance for each test.
 
     The emulator is reset for each test function.
+    Skips the test if the server executable is not available.
 
     Usage:
         def test_print(bbc):
@@ -168,12 +170,15 @@ def bbc(
             bbc.keyboard.type("PRINT 42")
             bbc.keyboard.press_return()
     """
-    with Beebium.launch(
-        mos_filepath=mos_filepath,
-        basic_filepath=basic_filepath,
-        server_filepath=beebium_server_filepath,
-    ) as instance:
-        yield instance
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+        ) as instance:
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +191,7 @@ def bbc_shared(
 
     Use when tests need to build on each other's state.
     The emulator runs continuously for the module.
+    Skips the test if the server executable is not available.
 
     Usage:
         def test_load_program(bbc_shared):
@@ -195,12 +201,15 @@ def bbc_shared(
             # Assumes previous test loaded the program
             bbc_shared.debugger.run_until(0x1900)
     """
-    with Beebium.launch(
-        mos_filepath=mos_filepath,
-        basic_filepath=basic_filepath,
-        server_filepath=beebium_server_filepath,
-    ) as instance:
-        yield instance
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+        ) as instance:
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
 
 
 @pytest.fixture
