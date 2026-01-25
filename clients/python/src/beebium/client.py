@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import contextlib
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -57,6 +58,7 @@ class Beebium:
         self,
         connection: Connection,
         server: ServerProcess | None = None,
+        instance_uuid: str | None = None,
     ):
         """Create a Beebium client.
 
@@ -65,9 +67,13 @@ class Beebium:
         Args:
             connection: The gRPC connection to the server.
             server: Optional server process being managed.
+            instance_uuid: Optional client instance UUID for shutdown authorization.
+                For clients created via launch(), this is set to the server's
+                provenance UUID, enabling automatic shutdown authorization.
         """
         self._connection = connection
         self._server = server
+        self._instance_uuid = instance_uuid
         self._debugger: Debugger | None = None
         self._cpu: CPU | None = None
         self._keyboard: Keyboard | None = None
@@ -97,11 +103,20 @@ class Beebium:
 
         Raises:
             ConnectionError: If the connection cannot be established.
+
+        Note:
+            Clients created via connect() have a unique instance UUID that
+            generally won't match the server's launch provenance (unless the
+            server was started with --allow-shutdown or only one client connects).
         """
         if target is None:
             target = f"localhost:{beebium.DEFAULT_GRPC_PORT}"
         connection = Connection(target, timeout=timeout)
-        return cls(connection)
+        # Generate a unique instance UUID for this connection.
+        # This won't match the server's provenance unless the server was started
+        # with --allow-shutdown or this is the sole client.
+        instance_uuid = str(uuid.uuid4())
+        return cls(connection, instance_uuid=instance_uuid)
 
     @classmethod
     @contextlib.contextmanager
@@ -143,7 +158,13 @@ class Beebium:
         try:
             server.start(timeout=startup_timeout)
             connection = Connection(server.target, timeout=connection_timeout)
-            client = cls(connection, server=server)
+            # Use the server's provenance UUID so this client is authorized
+            # to request shutdown (matches launch provenance).
+            client = cls(
+                connection,
+                server=server,
+                instance_uuid=server.provenance_instance_uuid,
+            )
             yield client
         finally:
             server.stop()
@@ -241,7 +262,10 @@ class Beebium:
     def system(self) -> System:
         """Access system information and server status."""
         if self._system is None:
-            self._system = System(self._connection.system_stub)
+            self._system = System(
+                self._connection.system_stub,
+                instance_uuid=self._instance_uuid,
+            )
         return self._system
 
     @property
@@ -252,7 +276,25 @@ class Beebium:
         return self._disc
 
     def close(self) -> None:
-        """Close the connection and stop any managed server."""
+        """Close the connection and stop any managed server.
+
+        For managed servers (created via launch()), this first requests
+        graceful shutdown via RPC before falling back to SIGTERM.
+        """
+        # Try graceful RPC shutdown first if we're managing a server
+        if self._server is not None and self._server.is_running:
+            try:
+                # Import here to avoid circular dependency
+                from beebium.system import ShutdownMode
+                response = self.system.request_shutdown(mode=ShutdownMode.GRACEFUL)
+                # If accepted, give it a brief moment to take effect
+                if response.accepted:
+                    import time
+                    time.sleep(0.1)  # Brief wait for graceful shutdown to start
+            except Exception:
+                # If RPC fails, fall back to SIGTERM
+                pass
+
         self._connection.close()
         if self._server is not None:
             self._server.stop()

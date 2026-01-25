@@ -31,6 +31,14 @@ class ServerStatus(Enum):
     READY = "ready"
     SHUTTING_DOWN = "shutting_down"
     IDENTITY_CHANGED = "identity_changed"
+    SHUTDOWN_PROGRESS = "shutdown_progress"
+
+
+class ShutdownMode(Enum):
+    """Shutdown mode for RequestShutdown RPC."""
+
+    GRACEFUL = "graceful"  # Normal: notify clients, wait for subsystems, terminate
+    IMMEDIATE = "immediate"  # Skip coordination, terminate ASAP
 
 
 @dataclass(frozen=True)
@@ -124,6 +132,24 @@ class MachineIdentity:
 
 
 @dataclass(frozen=True)
+class ShutdownResponse:
+    """Response from RequestShutdown RPC."""
+
+    accepted: bool  # Whether the shutdown request was accepted
+    message: str  # Human-readable explanation
+
+
+@dataclass(frozen=True)
+class ShutdownConditionStatus:
+    """Status of a subsystem preparing for shutdown."""
+
+    name: str  # Subsystem name (e.g., "Disc controller")
+    ready: bool  # True if ready for shutdown
+    elapsed_ms: int  # Time since shutdown initiated
+    timeout_ms: int  # Timeout for this condition
+
+
+@dataclass(frozen=True)
 class ServerStatusEvent:
     """Server status change event."""
 
@@ -131,6 +157,7 @@ class ServerStatusEvent:
     message: str
     shutdown_grace_ms: int  # Grace period for SHUTTING_DOWN
     identity: "Optional[MachineIdentity]" = None  # For IDENTITY_CHANGED events
+    shutdown_conditions: "tuple[ShutdownConditionStatus, ...]" = ()  # For SHUTDOWN_PROGRESS
 
 
 class System:
@@ -156,13 +183,21 @@ class System:
                 print(f"Machine renamed to: {event.identity.name}")
     """
 
-    def __init__(self, stub: system_pb2_grpc.SystemServiceStub):
+    def __init__(
+        self,
+        stub: system_pb2_grpc.SystemServiceStub,
+        instance_uuid: str | None = None,
+    ):
         """Create a System interface.
 
         Args:
             stub: The gRPC stub for the SystemService.
+            instance_uuid: Optional client instance UUID for shutdown authorization.
+                If provided, this is sent with RequestShutdown to authorize
+                the request if it matches the server's launch provenance.
         """
         self._stub = stub
+        self._instance_uuid = instance_uuid
         self._identity_cache: MachineIdentity | None = None
         self._provenance_cache: Provenance | None = None
 
@@ -215,12 +250,13 @@ class System:
         """
         request = system_pb2.WatchServerStatusRequest()
         for response in self._stub.WatchServerStatus(request):
+            identity = None
+            conditions: tuple[ShutdownConditionStatus, ...] = ()
+
             if response.status == system_pb2.SERVER_STATUS_READY:
                 status = ServerStatus.READY
-                identity = None
             elif response.status == system_pb2.SERVER_STATUS_SHUTTING_DOWN:
                 status = ServerStatus.SHUTTING_DOWN
-                identity = None
             elif response.status == system_pb2.SERVER_STATUS_IDENTITY_CHANGED:
                 status = ServerStatus.IDENTITY_CHANGED
                 # Create MachineIdentity from the response
@@ -233,16 +269,28 @@ class System:
                 )
                 # Update cache
                 self._identity_cache = identity
+            elif response.status == system_pb2.SERVER_STATUS_SHUTDOWN_PROGRESS:
+                status = ServerStatus.SHUTDOWN_PROGRESS
+                # Parse shutdown condition status
+                conditions = tuple(
+                    ShutdownConditionStatus(
+                        name=c.name,
+                        ready=c.ready,
+                        elapsed_ms=c.elapsed_ms,
+                        timeout_ms=c.timeout_ms,
+                    )
+                    for c in response.shutdown_conditions
+                )
             else:
                 # Unknown status, treat as ready
                 status = ServerStatus.READY
-                identity = None
 
             yield ServerStatusEvent(
                 status=status,
                 message=response.message,
                 shutdown_grace_ms=response.shutdown_grace_ms,
                 identity=identity,
+                shutdown_conditions=conditions,
             )
 
     @property
@@ -277,3 +325,58 @@ class System:
                 return False
 
         return False
+
+    def request_shutdown(
+        self,
+        mode: ShutdownMode = ShutdownMode.GRACEFUL,
+        grace_period_ms: int = 5000,
+    ) -> ShutdownResponse:
+        """Request server shutdown.
+
+        The server will accept the request if any of these conditions are met:
+        - This client's instance UUID matches the server's launch provenance
+        - Only one client is connected (this client owns the server)
+        - Server was started with --allow-shutdown flag
+
+        Args:
+            mode: Shutdown mode (GRACEFUL or IMMEDIATE).
+            grace_period_ms: Grace period in milliseconds for graceful shutdown.
+                Clients watching server status will be notified with this grace period.
+                Only meaningful for GRACEFUL mode. Default is 5000ms.
+
+        Returns:
+            ShutdownResponse with accepted status and message.
+
+        Example:
+            # Request graceful shutdown
+            response = bbc.system.request_shutdown()
+            if response.accepted:
+                print("Shutdown initiated")
+            else:
+                print(f"Shutdown refused: {response.message}")
+
+            # Request immediate shutdown (skip subsystem coordination)
+            response = bbc.system.request_shutdown(mode=ShutdownMode.IMMEDIATE)
+        """
+        # Map Python enum to protobuf enum
+        if mode == ShutdownMode.GRACEFUL:
+            proto_mode = system_pb2.SHUTDOWN_GRACEFUL
+        else:
+            proto_mode = system_pb2.SHUTDOWN_IMMEDIATE
+
+        request = system_pb2.ShutdownRequest(
+            mode=proto_mode,
+            grace_period_ms=grace_period_ms,
+        )
+
+        # Build metadata with instance UUID if available
+        metadata = []
+        if self._instance_uuid:
+            metadata.append(("x-beebium-instance-uuid", self._instance_uuid))
+
+        response = self._stub.RequestShutdown(request, metadata=metadata)
+
+        return ShutdownResponse(
+            accepted=response.accepted,
+            message=response.message,
+        )

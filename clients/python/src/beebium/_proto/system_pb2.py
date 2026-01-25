@@ -24,15 +24,17 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csystem.proto\x12\x07\x62\x65\x65\x62ium\"\x16\n\x14GetSystemInfoRequest\"[\n\x10LaunchProvenance\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x15\n\rinstance_uuid\x18\x02 \x01(\t\x12\x0f\n\x07version\x18\x03 \x01(\t\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\"U\n\x0fMachineIdentity\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x12\n\nmodel_type\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\"&\n\x0e\x43onnectionInfo\x12\x14\n\x0c\x63lient_count\x18\x01 \x01(\x05\"\xc5\x01\n\nSystemInfo\x12-\n\nprovenance\x18\x03 \x01(\x0b\x32\x19.beebium.LaunchProvenance\x12*\n\x08identity\x18\x04 \x01(\x0b\x32\x18.beebium.MachineIdentity\x12,\n\x0b\x63onnections\x18\x05 \x01(\x0b\x32\x17.beebium.ConnectionInfoJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x0cmachine_typeR\x14machine_display_name\"%\n\x15SetMachineNameRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"D\n\x16SetMachineNameResponse\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.beebium.MachineIdentity\"\x1a\n\x18WatchServerStatusRequest\"\x96\x01\n\x11ServerStatusEvent\x12)\n\x06status\x18\x01 \x01(\x0e\x32\x19.beebium.ServerStatusType\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x19\n\x11shutdown_grace_ms\x18\x03 \x01(\r\x12*\n\x08identity\x18\x04 \x01(\x0b\x32\x18.beebium.MachineIdentity*p\n\x10ServerStatusType\x12\x17\n\x13SERVER_STATUS_READY\x10\x00\x12\x1f\n\x1bSERVER_STATUS_SHUTTING_DOWN\x10\x01\x12\"\n\x1eSERVER_STATUS_IDENTITY_CHANGED\x10\x02\x32\xfd\x01\n\rSystemService\x12\x43\n\rGetSystemInfo\x12\x1d.beebium.GetSystemInfoRequest\x1a\x13.beebium.SystemInfo\x12Q\n\x0eSetMachineName\x12\x1e.beebium.SetMachineNameRequest\x1a\x1f.beebium.SetMachineNameResponse\x12T\n\x11WatchServerStatus\x12!.beebium.WatchServerStatusRequest\x1a\x1a.beebium.ServerStatusEvent0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csystem.proto\x12\x07\x62\x65\x65\x62ium\"\x16\n\x14GetSystemInfoRequest\"[\n\x10LaunchProvenance\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x15\n\rinstance_uuid\x18\x02 \x01(\t\x12\x0f\n\x07version\x18\x03 \x01(\t\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\"U\n\x0fMachineIdentity\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x12\n\nmodel_type\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\"&\n\x0e\x43onnectionInfo\x12\x14\n\x0c\x63lient_count\x18\x01 \x01(\x05\"\xc5\x01\n\nSystemInfo\x12-\n\nprovenance\x18\x03 \x01(\x0b\x32\x19.beebium.LaunchProvenance\x12*\n\x08identity\x18\x04 \x01(\x0b\x32\x18.beebium.MachineIdentity\x12,\n\x0b\x63onnections\x18\x05 \x01(\x0b\x32\x17.beebium.ConnectionInfoJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x0cmachine_typeR\x14machine_display_name\"%\n\x15SetMachineNameRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"D\n\x16SetMachineNameResponse\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.beebium.MachineIdentity\"O\n\x0fShutdownRequest\x12#\n\x04mode\x18\x01 \x01(\x0e\x32\x15.beebium.ShutdownMode\x12\x17\n\x0fgrace_period_ms\x18\x02 \x01(\x05\"5\n\x10ShutdownResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"^\n\x17ShutdownConditionStatus\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\r\n\x05ready\x18\x02 \x01(\x08\x12\x12\n\nelapsed_ms\x18\x03 \x01(\x05\x12\x12\n\ntimeout_ms\x18\x04 \x01(\x05\"\x1a\n\x18WatchServerStatusRequest\"\xd5\x01\n\x11ServerStatusEvent\x12)\n\x06status\x18\x01 \x01(\x0e\x32\x19.beebium.ServerStatusType\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x19\n\x11shutdown_grace_ms\x18\x03 \x01(\r\x12*\n\x08identity\x18\x04 \x01(\x0b\x32\x18.beebium.MachineIdentity\x12=\n\x13shutdown_conditions\x18\x05 \x03(\x0b\x32 .beebium.ShutdownConditionStatus*=\n\x0cShutdownMode\x12\x15\n\x11SHUTDOWN_GRACEFUL\x10\x00\x12\x16\n\x12SHUTDOWN_IMMEDIATE\x10\x01*\x95\x01\n\x10ServerStatusType\x12\x17\n\x13SERVER_STATUS_READY\x10\x00\x12\x1f\n\x1bSERVER_STATUS_SHUTTING_DOWN\x10\x01\x12\"\n\x1eSERVER_STATUS_IDENTITY_CHANGED\x10\x02\x12#\n\x1fSERVER_STATUS_SHUTDOWN_PROGRESS\x10\x03\x32\xc5\x02\n\rSystemService\x12\x43\n\rGetSystemInfo\x12\x1d.beebium.GetSystemInfoRequest\x1a\x13.beebium.SystemInfo\x12Q\n\x0eSetMachineName\x12\x1e.beebium.SetMachineNameRequest\x1a\x1f.beebium.SetMachineNameResponse\x12T\n\x11WatchServerStatus\x12!.beebium.WatchServerStatusRequest\x1a\x1a.beebium.ServerStatusEvent0\x01\x12\x46\n\x0fRequestShutdown\x12\x18.beebium.ShutdownRequest\x1a\x19.beebium.ShutdownResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'system_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_SERVERSTATUSTYPE']._serialized_start=759
-  _globals['_SERVERSTATUSTYPE']._serialized_end=871
+  _globals['_SHUTDOWNMODE']._serialized_start=1054
+  _globals['_SHUTDOWNMODE']._serialized_end=1115
+  _globals['_SERVERSTATUSTYPE']._serialized_start=1118
+  _globals['_SERVERSTATUSTYPE']._serialized_end=1267
   _globals['_GETSYSTEMINFOREQUEST']._serialized_start=25
   _globals['_GETSYSTEMINFOREQUEST']._serialized_end=47
   _globals['_LAUNCHPROVENANCE']._serialized_start=49
@@ -47,10 +49,16 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_SETMACHINENAMEREQUEST']._serialized_end=506
   _globals['_SETMACHINENAMERESPONSE']._serialized_start=508
   _globals['_SETMACHINENAMERESPONSE']._serialized_end=576
-  _globals['_WATCHSERVERSTATUSREQUEST']._serialized_start=578
-  _globals['_WATCHSERVERSTATUSREQUEST']._serialized_end=604
-  _globals['_SERVERSTATUSEVENT']._serialized_start=607
-  _globals['_SERVERSTATUSEVENT']._serialized_end=757
-  _globals['_SYSTEMSERVICE']._serialized_start=874
-  _globals['_SYSTEMSERVICE']._serialized_end=1127
+  _globals['_SHUTDOWNREQUEST']._serialized_start=578
+  _globals['_SHUTDOWNREQUEST']._serialized_end=657
+  _globals['_SHUTDOWNRESPONSE']._serialized_start=659
+  _globals['_SHUTDOWNRESPONSE']._serialized_end=712
+  _globals['_SHUTDOWNCONDITIONSTATUS']._serialized_start=714
+  _globals['_SHUTDOWNCONDITIONSTATUS']._serialized_end=808
+  _globals['_WATCHSERVERSTATUSREQUEST']._serialized_start=810
+  _globals['_WATCHSERVERSTATUSREQUEST']._serialized_end=836
+  _globals['_SERVERSTATUSEVENT']._serialized_start=839
+  _globals['_SERVERSTATUSEVENT']._serialized_end=1052
+  _globals['_SYSTEMSERVICE']._serialized_start=1270
+  _globals['_SYSTEMSERVICE']._serialized_end=1595
 # @@protoc_insertion_point(module_scope)

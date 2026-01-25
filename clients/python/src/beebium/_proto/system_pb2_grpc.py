@@ -51,6 +51,11 @@ class SystemServiceStub(object):
                 request_serializer=system__pb2.WatchServerStatusRequest.SerializeToString,
                 response_deserializer=system__pb2.ServerStatusEvent.FromString,
                 _registered_method=True)
+        self.RequestShutdown = channel.unary_unary(
+                '/beebium.SystemService/RequestShutdown',
+                request_serializer=system__pb2.ShutdownRequest.SerializeToString,
+                response_deserializer=system__pb2.ShutdownResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServiceServicer(object):
@@ -81,6 +86,16 @@ class SystemServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RequestShutdown(self, request, context):
+        """Request server shutdown.
+        Returns whether the request was accepted based on shutdown policy.
+        Policy: accept if requester's instance UUID matches launch provenance,
+        or only one client connected, or --allow-shutdown flag was set.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -98,6 +113,11 @@ def add_SystemServiceServicer_to_server(servicer, server):
                     servicer.WatchServerStatus,
                     request_deserializer=system__pb2.WatchServerStatusRequest.FromString,
                     response_serializer=system__pb2.ServerStatusEvent.SerializeToString,
+            ),
+            'RequestShutdown': grpc.unary_unary_rpc_method_handler(
+                    servicer.RequestShutdown,
+                    request_deserializer=system__pb2.ShutdownRequest.FromString,
+                    response_serializer=system__pb2.ShutdownResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -183,6 +203,33 @@ class SystemService(object):
             '/beebium.SystemService/WatchServerStatus',
             system__pb2.WatchServerStatusRequest.SerializeToString,
             system__pb2.ServerStatusEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RequestShutdown(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.SystemService/RequestShutdown',
+            system__pb2.ShutdownRequest.SerializeToString,
+            system__pb2.ShutdownResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -502,6 +502,9 @@ struct ServerConfig {
     // Machine identity
     std::string machine_uuid;
     std::string machine_name;
+
+    // Shutdown policy
+    bool allow_shutdown = false;
 };
 
 template<typename MachineType>
@@ -542,6 +545,7 @@ void print_usage(const char* program_name) {
               << "  --provenance-version <v> Provenance version string\n"
               << "  --machine-uuid <uuid>    Machine identity UUID (RFC 4122, default: auto-generated)\n"
               << "  --machine-name <name>    Machine name/label (default: from model)\n"
+              << "  --allow-shutdown         Allow any client to shut down the server\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -685,6 +689,8 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--machine-name" && i + 1 < argc) {
             config.machine_name = argv[++i];
+        } else if (arg == "--allow-shutdown") {
+            config.allow_shutdown = true;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -1107,7 +1113,18 @@ public:
                       << "', model_name='" << identity.model_name
                       << "'" << std::endl;
 
-            server.start(std::move(provenance), std::move(identity));
+            // Create shutdown callback that stops the emulation loop when RPC shutdown is requested
+            beebium::service::ShutdownPolicyConfig shutdown_policy_config{config.allow_shutdown};
+            auto shutdown_callback = [&machine]() {
+                g_running = false;
+                machine.request_shutdown();
+                // Also interrupt pacing clock if it's waiting (may be nullptr during startup)
+                if (g_request_pacing_stop) {
+                    g_request_pacing_stop();
+                }
+            };
+            server.start(std::move(provenance), std::move(identity),
+                        shutdown_policy_config, std::move(shutdown_callback));
 
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block

@@ -22,6 +22,8 @@
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
+#include "beebium/service/ShutdownCoordinator.hpp"
+#include "beebium/service/ShutdownPolicy.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
 
@@ -48,10 +50,17 @@ public:
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
 
+    /// Callback type for shutdown requests from clients.
+    using ShutdownCallback = std::function<void()>;
+
     /// Start the server (non-blocking)
     /// @param provenance Launch provenance information for this server instance
     /// @param identity Machine identity (UUID and name) for this server instance
-    void start(Provenance provenance, MachineIdentity identity);
+    /// @param policy_config Shutdown policy configuration
+    /// @param shutdown_callback Callback to invoke when client requests shutdown
+    void start(Provenance provenance, MachineIdentity identity,
+               ShutdownPolicyConfig policy_config = {},
+               ShutdownCallback shutdown_callback = nullptr);
 
     /// Stop the server and wait for shutdown
     void stop();
@@ -135,7 +144,9 @@ Server<MachineType>::~Server() {
 }
 
 template<typename MachineType>
-void Server<MachineType>::start(Provenance provenance, MachineIdentity identity) {
+void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
+                                ShutdownPolicyConfig policy_config,
+                                ShutdownCallback shutdown_callback) {
     if (impl_->running) {
         return;
     }
@@ -165,7 +176,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity)
 
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
         impl_->machine, std::move(provenance), std::move(identity),
-        &impl_->connection_tracker);
+        &impl_->connection_tracker, policy_config, nullptr, std::move(shutdown_callback));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
         impl_->machine);

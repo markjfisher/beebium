@@ -53,6 +53,7 @@ set(SERVICE_SOURCES
     src/VideoService.cpp
     src/KeyboardService.cpp
     src/ConnectionTracker.cpp
+    src/ShutdownCoordinator.cpp
 )
 
 # Create the library

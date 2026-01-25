@@ -15,6 +15,12 @@ service SystemService {
     // Server sends READY immediately upon subscription, then status changes.
     // Stream ends when server shuts down or client disconnects.
     rpc WatchServerStatus(WatchServerStatusRequest) returns (stream ServerStatusEvent);
+
+    // Request server shutdown.
+    // Returns whether the request was accepted based on shutdown policy.
+    // Policy: accept if requester's instance UUID matches launch provenance,
+    //         or only one client connected, or --allow-shutdown flag was set.
+    rpc RequestShutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
 message GetSystemInfoRequest {
@@ -95,6 +101,52 @@ message SetMachineNameResponse {
     MachineIdentity identity = 1;
 }
 
+// === Shutdown RPC ===
+
+// Shutdown mode determines how the server terminates
+enum ShutdownMode {
+    // Normal shutdown: notify clients, wait for subsystems, then terminate
+    SHUTDOWN_GRACEFUL = 0;
+
+    // Immediate shutdown: terminate as soon as possible, skip coordination
+    SHUTDOWN_IMMEDIATE = 1;
+}
+
+message ShutdownRequest {
+    // How to shut down
+    ShutdownMode mode = 1;
+
+    // Grace period in milliseconds before forced termination
+    // 0 = use server default (5000ms)
+    // Only meaningful for SHUTDOWN_GRACEFUL
+    int32 grace_period_ms = 2;
+}
+
+message ShutdownResponse {
+    // Whether the shutdown request was accepted
+    bool accepted = 1;
+
+    // Human-readable explanation
+    // On success: "Shutdown initiated"
+    // On failure: "Shutdown refused: multiple clients connected"
+    string message = 2;
+}
+
+// Status of a shutdown condition (subsystem preparing for shutdown)
+message ShutdownConditionStatus {
+    // Name of the subsystem (e.g., "Disc controller", "Audio output")
+    string name = 1;
+
+    // True if this subsystem is ready for shutdown
+    bool ready = 2;
+
+    // Milliseconds elapsed since shutdown was initiated
+    int32 elapsed_ms = 3;
+
+    // Timeout in milliseconds for this condition
+    int32 timeout_ms = 4;
+}
+
 // === Server Status Streaming ===
 
 message WatchServerStatusRequest {
@@ -115,6 +167,9 @@ message ServerStatusEvent {
 
     // For IDENTITY_CHANGED: the updated identity
     MachineIdentity identity = 4;
+
+    // For SHUTDOWN_PROGRESS: status of each subsystem condition
+    repeated ShutdownConditionStatus shutdown_conditions = 5;
 }
 
 // Server status types
@@ -130,4 +185,8 @@ enum ServerStatusType {
     // Machine identity has changed (e.g., name was updated)
     // The identity field contains the new identity
     SERVER_STATUS_IDENTITY_CHANGED = 2;
+
+    // Shutdown is in progress, showing subsystem coordination status
+    // The shutdown_conditions field contains status of each subsystem
+    SERVER_STATUS_SHUTDOWN_PROGRESS = 3;
 }

@@ -15,14 +15,18 @@
 
 #include "system.grpc.pb.h"
 #include "beebium/service/ConnectionTracker.hpp"
+#include "beebium/service/ShutdownPolicy.hpp"
+#include "beebium/service/ShutdownCoordinator.hpp"
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 namespace beebium::service {
 
@@ -49,8 +53,14 @@ struct MachineIdentity {
 template<typename MachineType>
 class SystemServiceImpl final : public SystemService::Service {
 public:
+    /// Callback invoked when shutdown should proceed (after coordination).
+    using ShutdownCallback = std::function<void()>;
+
     SystemServiceImpl(MachineType& machine, Provenance provenance, MachineIdentity identity,
-                      ConnectionTracker* connection_tracker);
+                      ConnectionTracker* connection_tracker,
+                      ShutdownPolicyConfig policy_config = {},
+                      ShutdownCoordinator* shutdown_coordinator = nullptr,
+                      ShutdownCallback shutdown_callback = nullptr);
     ~SystemServiceImpl() override = default;
 
     // Non-copyable
@@ -72,6 +82,11 @@ public:
         const WatchServerStatusRequest* request,
         grpc::ServerWriter<ServerStatusEvent>* writer) override;
 
+    grpc::Status RequestShutdown(
+        grpc::ServerContext* context,
+        const ShutdownRequest* request,
+        ShutdownResponse* response) override;
+
     /// Notify all watchers that shutdown is imminent.
     /// Called from signal handler or shutdown path.
     /// Thread-safe: can be called from any thread.
@@ -85,10 +100,19 @@ private:
     /// Caller must hold identity_mutex_ (unless called from construction).
     void populate_identity_proto(beebium::MachineIdentity* proto) const;
 
+    /// Extract instance UUID from gRPC metadata.
+    static std::string extract_instance_uuid(grpc::ServerContext* context);
+
+    /// Execute shutdown sequence in background thread.
+    void execute_shutdown(ShutdownMode mode, uint32_t grace_ms);
+
     MachineType& machine_;
     Provenance provenance_;
     MachineIdentity identity_;
     ConnectionTracker* connection_tracker_;
+    ShutdownPolicyEvaluator policy_evaluator_;
+    ShutdownCoordinator* shutdown_coordinator_;
+    ShutdownCallback shutdown_callback_;
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -105,11 +129,17 @@ private:
 template<typename MachineType>
 SystemServiceImpl<MachineType>::SystemServiceImpl(
     MachineType& machine, Provenance provenance, MachineIdentity identity,
-    ConnectionTracker* connection_tracker)
+    ConnectionTracker* connection_tracker,
+    ShutdownPolicyConfig policy_config,
+    ShutdownCoordinator* shutdown_coordinator,
+    ShutdownCallback shutdown_callback)
     : machine_(machine)
-    , provenance_(std::move(provenance))
+    , provenance_(provenance)
     , identity_(std::move(identity))
-    , connection_tracker_(connection_tracker) {
+    , connection_tracker_(connection_tracker)
+    , policy_evaluator_(provenance.instance_uuid, policy_config)
+    , shutdown_coordinator_(shutdown_coordinator)
+    , shutdown_callback_(std::move(shutdown_callback)) {
 }
 
 template<typename MachineType>
@@ -247,6 +277,83 @@ template<typename MachineType>
 void SystemServiceImpl<MachineType>::notify_identity_changed() {
     identity_changed_.store(true);
     watchers_cv_.notify_all();
+}
+
+template<typename MachineType>
+std::string SystemServiceImpl<MachineType>::extract_instance_uuid(grpc::ServerContext* context) {
+    auto metadata = context->client_metadata();
+    auto it = metadata.find("x-beebium-instance-uuid");
+    if (it != metadata.end()) {
+        return std::string(it->second.data(), it->second.size());
+    }
+    return "";  // Empty = no match possible
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::RequestShutdown(
+    grpc::ServerContext* context,
+    const ShutdownRequest* request,
+    ShutdownResponse* response) {
+
+    // Check if already shutting down
+    if (shutdown_signaled_.load()) {
+        response->set_accepted(true);
+        response->set_message("Shutdown already in progress");
+        return grpc::Status::OK;
+    }
+
+    // Extract requester's instance UUID from metadata
+    std::string requester_uuid = extract_instance_uuid(context);
+
+    // Get current client count
+    int client_count = connection_tracker_ ? connection_tracker_->client_count() : 0;
+
+    // Evaluate policy
+    auto [accepted, message] = policy_evaluator_.evaluate(requester_uuid, client_count);
+    response->set_accepted(accepted);
+    response->set_message(message);
+
+    if (accepted) {
+        uint32_t grace_ms = request->grace_period_ms();
+        if (grace_ms == 0) {
+            grace_ms = 5000;  // Default grace period
+        }
+
+        // Execute shutdown in background thread
+        std::thread([this, mode = request->mode(), grace_ms] {
+            execute_shutdown(mode, grace_ms);
+        }).detach();
+    }
+
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+void SystemServiceImpl<MachineType>::execute_shutdown(ShutdownMode mode, uint32_t grace_ms) {
+    // Notify watchers that shutdown is starting
+    notify_shutdown(grace_ms);
+
+    if (mode == SHUTDOWN_IMMEDIATE) {
+        // Skip coordination, proceed directly
+        if (shutdown_callback_) {
+            shutdown_callback_();
+        }
+        return;
+    }
+
+    // Graceful: coordinate subsystem shutdown first
+    if (shutdown_coordinator_ && shutdown_coordinator_->has_conditions()) {
+        // TODO: Report progress via WatchServerStatus
+        auto timed_out = shutdown_coordinator_->coordinate_shutdown();
+
+        // Log any timeouts (we proceed anyway)
+        (void)timed_out;  // Suppress unused warning for now
+    }
+
+    // Proceed with actual shutdown
+    if (shutdown_callback_) {
+        shutdown_callback_();
+    }
 }
 
 } // namespace beebium::service

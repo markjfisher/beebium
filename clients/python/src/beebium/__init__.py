@@ -43,6 +43,9 @@ from beebium.system import (
     Provenance,
     ServerStatus,
     ServerStatusEvent,
+    ShutdownConditionStatus,
+    ShutdownMode,
+    ShutdownResponse,
 )
 
 __version__ = "0.1.0"
@@ -64,6 +67,9 @@ __all__ = [
     "ServerStartupError",
     "ServerStatus",
     "ServerStatusEvent",
+    "ShutdownConditionStatus",
+    "ShutdownMode",
+    "ShutdownResponse",
     "TimeoutError",
     "__version__",
 ]

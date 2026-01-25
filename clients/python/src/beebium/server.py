@@ -83,6 +83,15 @@ class ServerProcess:
             return False
         return self._process.poll() is None
 
+    @property
+    def provenance_instance_uuid(self) -> str:
+        """The provenance instance UUID sent to the server at launch.
+
+        Clients using this UUID can be authorized to request server shutdown,
+        as they match the launch provenance.
+        """
+        return self._provenance_instance_uuid
+
     def start(self, timeout: float = 10.0) -> None:
         """Start the server and wait for it to be ready.
 
