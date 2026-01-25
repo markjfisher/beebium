@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/disc/FileDiscImage.hpp>
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 
