@@ -1094,16 +1094,18 @@ public:
             // Print provenance details for debugging (before move)
             auto timestamp_seconds = std::chrono::duration_cast<std::chrono::seconds>(
                 provenance.timestamp.time_since_epoch()).count();
-            std::cout << "Provenance: type=" << provenance.type
-                      << ", uuid=" << provenance.instance_uuid
-                      << ", version=" << (provenance.version.empty() ? "(none)" : provenance.version)
+            std::cout << "Provenance: type='" << provenance.type
+                      << "', uuid=" << provenance.instance_uuid
+                      << ", version=" << (provenance.version.empty() ? "(none)" : "'" + provenance.version + "'")
                       << ", timestamp=" << timestamp_seconds
                       << std::endl;
 
             // Print identity details
             std::cout << "Identity: uuid=" << identity.uuid
-                      << ", name=" << identity.name
-                      << std::endl;
+                      << ", name='" << identity.name
+                      << "', model_type='" << identity.model_type
+                      << "', model_name='" << identity.model_name
+                      << "'" << std::endl;
 
             server.start(std::move(provenance), std::move(identity));
 
