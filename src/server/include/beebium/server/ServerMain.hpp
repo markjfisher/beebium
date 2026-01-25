@@ -44,8 +44,7 @@
 
 namespace beebium::server {
 
-namespace {
-
+// Types used by ServerConfig (must be outside anonymous namespace to avoid -Wsubobject-linkage)
 constexpr uint16_t DEFAULT_GRPC_PORT = 0xBEEB;  // 48875
 
 enum class WaitMode {
@@ -102,6 +101,9 @@ public:
     // Returns exit code
     virtual int invoke(int argc, char* argv[], const GlobalConfig& global) const = 0;
 };
+
+// Anonymous namespace for internal implementation details
+namespace {
 
 std::atomic<bool> g_running{true};
 
@@ -290,7 +292,10 @@ inline std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) 
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 constexpr const char* RAM_SLOT_MARKER = "\x01RAM\x01";
 
+} // anonymous namespace
+
 // Sideways slot configuration (for --sideways argument)
+// Outside anonymous namespace because used by ServerConfig
 enum class SidewaysSlotType { Empty, Rom, Ram };
 
 struct SidewaysConfig {
@@ -298,6 +303,8 @@ struct SidewaysConfig {
     SidewaysSlotType type;
     std::string image_filepath;  // Optional: filepath for ROM or pre-loaded RAM
 };
+
+namespace {
 
 // Parse --sideways argument: SLOT:TYPE[:IMAGE]
 // Examples:
