@@ -135,6 +135,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install gRPC runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgrpc++-dev
+
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
