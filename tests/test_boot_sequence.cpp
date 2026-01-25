@@ -469,7 +469,7 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // When it finds a language ROM, it updates basicROMNumber ($024B)
     bool basic_found = false;
     machine.add_watchpoint(0x024B, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
+        [&](uint16_t, uint8_t /*val*/, bool, uint64_t) {
             // basicROMNumber is written during ROM scan
             // Value 0xFF means no BASIC, 0-15 means BASIC found in that slot
             basic_found = true;
