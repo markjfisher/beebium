@@ -71,11 +71,13 @@ jobs:
 
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
-      VCPKG_INSTALLED_DIR: ${{ github.workspace }}/vcpkg_installed
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set VCPKG_INSTALLED_DIR
+        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
 
       - name: Export GitHub Actions cache variables
         uses: actions/github-script@v7
