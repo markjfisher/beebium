@@ -3,6 +3,9 @@ name: CI
 on:
   push:
   pull_request:
+  schedule:
+    # Run weekly on Monday at 6 AM UTC to keep caches alive (7-day expiry)
+    - cron: '0 6 * * 1'
 
 jobs:
   server-macos:
