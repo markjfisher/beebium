@@ -84,10 +84,11 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
-      - name: Setup vcpkg
+      - name: Setup vcpkg and install dependencies
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          runVcpkgInstall: true
 
       - name: Configure CMake
         run: |
