@@ -73,7 +73,9 @@ jobs:
     runs-on: windows-latest
 
     env:
-      VCPKG_DEFAULT_TRIPLET: x64-windows
+      # Use static triplet so the executable is self-contained (no DLL dependencies)
+      # This is required because the Python integration tests run on a separate job
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
 
     steps:
       - name: Checkout
@@ -93,9 +95,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_installed
-          key: vcpkg-installed-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-installed-${{ runner.os }}-static-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-installed-${{ runner.os }}-
+            vcpkg-installed-${{ runner.os }}-static-
           save-always: true
 
       - name: Setup vcpkg and install dependencies
