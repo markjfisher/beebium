@@ -59,46 +59,7 @@ See [shutdown-rpc.md](shutdown-rpc.md) for detailed design.
 
 **Goal**: Cores advertise themselves for discovery.
 
-### 5.1 DNS-SD Service Type
-
-Service type: `_beebium._tcp`
-
-TXT records:
-- `machine=BBC Model B`
-- `provenance=macos-gui`
-- `version=0.4.1`
-
-### 5.2 Server-Side Advertisement
-
-Add `--advertise` flag (default: off for TTY, on for GUI-launched):
-```
---advertise              Enable mDNS advertisement
---advertise-name <name>  Override advertised name
-```
-
-Use platform-appropriate library:
-- macOS: `dns_sd.h` (built-in)
-- Linux: Avahi
-- Cross-platform fallback: skip advertisement
-
-### 5.3 Discovery Client Library
-
-Create `src/discovery/` with:
-- `Discovery.hpp` - abstract interface
-- `BonjourDiscovery.cpp` - macOS implementation
-- `AvahiDiscovery.cpp` - Linux implementation
-- `NullDiscovery.cpp` - fallback
-
-Python bindings via zeroconf library or custom gRPC service.
-
-### Files to create/modify:
-- `src/discovery/` (new directory)
-- `src/server/ServerMain.hpp` (add `--advertise` handling)
-- `clients/python/src/beebium/discovery.py` (new)
-
-### Verification:
-- Start server with `--advertise`, discover via `dns-sd -B _beebium._tcp`
-- Python: `beebium.discovery.browse()` returns list of machines
+See [service-advertisement.md](service-advertisement.md) for detailed design.
 
 ---
 

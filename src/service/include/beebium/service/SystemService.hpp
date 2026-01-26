@@ -17,6 +17,7 @@
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
+#include <beebium/discovery/Advertiser.hpp>
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
@@ -58,6 +59,8 @@ public:
 
     SystemServiceImpl(MachineType& machine, Provenance provenance, MachineIdentity identity,
                       ConnectionTracker* connection_tracker,
+                      discovery::Advertiser* advertiser = nullptr,
+                      uint16_t server_port = 0,
                       ShutdownPolicyConfig policy_config = {},
                       ShutdownCoordinator* shutdown_coordinator = nullptr,
                       ShutdownCallback shutdown_callback = nullptr);
@@ -87,10 +90,24 @@ public:
         const ShutdownRequest* request,
         ShutdownResponse* response) override;
 
+    grpc::Status GetAdvertisementState(
+        grpc::ServerContext* context,
+        const GetAdvertisementStateRequest* request,
+        GetAdvertisementStateResponse* response) override;
+
+    grpc::Status SetAdvertisement(
+        grpc::ServerContext* context,
+        const SetAdvertisementRequest* request,
+        SetAdvertisementResponse* response) override;
+
     /// Notify all watchers that shutdown is imminent.
     /// Called from signal handler or shutdown path.
     /// Thread-safe: can be called from any thread.
     void notify_shutdown(uint32_t grace_ms = 5000);
+
+    /// Set the server port after it's determined.
+    /// Must be called before advertisement can work correctly.
+    void set_server_port(uint16_t port);
 
 private:
     /// Notify watchers that identity has changed.
@@ -110,9 +127,11 @@ private:
     Provenance provenance_;
     MachineIdentity identity_;
     ConnectionTracker* connection_tracker_;
+    discovery::Advertiser* advertiser_;
     ShutdownPolicyEvaluator policy_evaluator_;
     ShutdownCoordinator* shutdown_coordinator_;
     ShutdownCallback shutdown_callback_;
+    uint16_t server_port_;
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -130,6 +149,8 @@ template<typename MachineType>
 SystemServiceImpl<MachineType>::SystemServiceImpl(
     MachineType& machine, Provenance provenance, MachineIdentity identity,
     ConnectionTracker* connection_tracker,
+    discovery::Advertiser* advertiser,
+    uint16_t server_port,
     ShutdownPolicyConfig policy_config,
     ShutdownCoordinator* shutdown_coordinator,
     ShutdownCallback shutdown_callback)
@@ -137,9 +158,11 @@ SystemServiceImpl<MachineType>::SystemServiceImpl(
     , provenance_(provenance)
     , identity_(std::move(identity))
     , connection_tracker_(connection_tracker)
+    , advertiser_(advertiser)
     , policy_evaluator_(provenance.instance_uuid, policy_config)
     , shutdown_coordinator_(shutdown_coordinator)
-    , shutdown_callback_(std::move(shutdown_callback)) {
+    , shutdown_callback_(std::move(shutdown_callback))
+    , server_port_(server_port) {
 }
 
 template<typename MachineType>
@@ -280,6 +303,11 @@ void SystemServiceImpl<MachineType>::notify_identity_changed() {
 }
 
 template<typename MachineType>
+void SystemServiceImpl<MachineType>::set_server_port(uint16_t port) {
+    server_port_ = port;
+}
+
+template<typename MachineType>
 std::string SystemServiceImpl<MachineType>::extract_instance_uuid(grpc::ServerContext* context) {
     auto metadata = context->client_metadata();
     auto it = metadata.find("x-beebium-instance-uuid");
@@ -354,6 +382,74 @@ void SystemServiceImpl<MachineType>::execute_shutdown(ShutdownMode mode, uint32_
     if (shutdown_callback_) {
         shutdown_callback_();
     }
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::GetAdvertisementState(
+    grpc::ServerContext* /*context*/,
+    const GetAdvertisementStateRequest* /*request*/,
+    GetAdvertisementStateResponse* response) {
+
+    auto* state = response->mutable_state();
+
+    if (advertiser_) {
+        auto adv_state = advertiser_->state();
+        state->set_available(adv_state.available);
+        state->set_enabled(adv_state.advertising);
+        state->set_advertised_name(adv_state.actual_name);
+    } else {
+        // No advertiser configured
+        state->set_available(false);
+        state->set_enabled(false);
+        state->set_advertised_name("");
+    }
+
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::SetAdvertisement(
+    grpc::ServerContext* /*context*/,
+    const SetAdvertisementRequest* request,
+    SetAdvertisementResponse* response) {
+
+    auto* state = response->mutable_state();
+
+    if (!advertiser_) {
+        // No advertiser configured
+        state->set_available(false);
+        state->set_enabled(false);
+        state->set_advertised_name("");
+        return grpc::Status::OK;
+    }
+
+    if (request->enabled()) {
+        // Start advertising
+        // Build ServiceInfo from current identity
+        discovery::ServiceInfo info;
+        {
+            std::lock_guard<std::mutex> lock(watchers_mutex_);
+            info.instance_name = identity_.name;
+        }
+        info.port = server_port_;
+        info.txt_records["uuid"] = identity_.uuid;
+        info.txt_records["model"] = identity_.model_type;
+        info.txt_records["provenance"] = provenance_.type;
+        // Note: Version would need to be passed in; omit for now
+
+        advertiser_->start(info);
+    } else {
+        // Stop advertising
+        advertiser_->stop();
+    }
+
+    // Return current state
+    auto adv_state = advertiser_->state();
+    state->set_available(adv_state.available);
+    state->set_enabled(adv_state.advertising);
+    state->set_advertised_name(adv_state.actual_name);
+
+    return grpc::Status::OK;
 }
 
 } // namespace beebium::service

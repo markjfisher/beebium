@@ -386,3 +386,122 @@ class TestSystemProvenanceVariations:
         prov = system.provenance
         assert prov.type == "typescript-oracle"
         assert prov.version == "0.1.0"
+
+
+class MockAdvertisementState:
+    """Mock advertisement state from proto."""
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        available: bool = True,
+        advertised_name: str = "",
+    ):
+        self.enabled = enabled
+        self.available = available
+        self.advertised_name = advertised_name
+
+
+class MockGetAdvertisementStateResponse:
+    """Mock GetAdvertisementState response."""
+
+    def __init__(self, state: MockAdvertisementState | None = None):
+        self.state = state or MockAdvertisementState()
+
+
+class MockSetAdvertisementResponse:
+    """Mock SetAdvertisement response."""
+
+    def __init__(self, state: MockAdvertisementState | None = None):
+        self.state = state or MockAdvertisementState()
+
+
+class TestAdvertisementState:
+    """Tests for the AdvertisementState dataclass."""
+
+    def test_advertisement_state_has_expected_fields(self):
+        """AdvertisementState has enabled, available, and advertised_name fields."""
+        from beebium.system import AdvertisementState
+
+        state = AdvertisementState(
+            enabled=True,
+            available=True,
+            advertised_name="BBC Model B",
+        )
+        assert state.enabled is True
+        assert state.available is True
+        assert state.advertised_name == "BBC Model B"
+
+    def test_advertisement_state_is_frozen(self):
+        """AdvertisementState is immutable."""
+        from beebium.system import AdvertisementState
+
+        state = AdvertisementState(enabled=False, available=True, advertised_name="")
+        with pytest.raises(AttributeError):
+            state.enabled = True
+
+
+class TestSystemAdvertisementMethods:
+    """Tests for advertisement methods on System."""
+
+    def test_get_advertisement_state(self, mock_stub):
+        """get_advertisement_state returns AdvertisementState."""
+        from beebium.system import AdvertisementState
+
+        mock_stub.GetAdvertisementState.return_value = MockGetAdvertisementStateResponse(
+            MockAdvertisementState(enabled=True, available=True, advertised_name="Test")
+        )
+        system = System(mock_stub)
+
+        state = system.get_advertisement_state()
+        assert isinstance(state, AdvertisementState)
+        assert state.enabled is True
+        assert state.available is True
+        assert state.advertised_name == "Test"
+
+    def test_get_advertisement_state_unavailable(self, mock_stub):
+        """get_advertisement_state handles unavailable mDNS."""
+        mock_stub.GetAdvertisementState.return_value = MockGetAdvertisementStateResponse(
+            MockAdvertisementState(enabled=False, available=False, advertised_name="")
+        )
+        system = System(mock_stub)
+
+        state = system.get_advertisement_state()
+        assert state.enabled is False
+        assert state.available is False
+        assert state.advertised_name == ""
+
+    def test_set_advertisement_enable(self, mock_stub):
+        """set_advertisement enables advertising."""
+        mock_stub.SetAdvertisement.return_value = MockSetAdvertisementResponse(
+            MockAdvertisementState(enabled=True, available=True, advertised_name="My BBC")
+        )
+        system = System(mock_stub)
+
+        state = system.set_advertisement(enabled=True)
+        mock_stub.SetAdvertisement.assert_called_once()
+        assert state.enabled is True
+        assert state.advertised_name == "My BBC"
+
+    def test_set_advertisement_disable(self, mock_stub):
+        """set_advertisement disables advertising."""
+        mock_stub.SetAdvertisement.return_value = MockSetAdvertisementResponse(
+            MockAdvertisementState(enabled=False, available=True, advertised_name="")
+        )
+        system = System(mock_stub)
+
+        state = system.set_advertisement(enabled=False)
+        mock_stub.SetAdvertisement.assert_called_once()
+        assert state.enabled is False
+
+    def test_set_advertisement_returns_unavailable_state(self, mock_stub):
+        """set_advertisement returns unavailable state when mDNS not supported."""
+        mock_stub.SetAdvertisement.return_value = MockSetAdvertisementResponse(
+            MockAdvertisementState(enabled=False, available=False, advertised_name="")
+        )
+        system = System(mock_stub)
+
+        state = system.set_advertisement(enabled=True)
+        # Even though we requested enabled=True, it returns False because unavailable
+        assert state.enabled is False
+        assert state.available is False

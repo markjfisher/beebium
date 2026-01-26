@@ -24,6 +24,7 @@
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
+#include <beebium/discovery/Advertiser.hpp>
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
 
@@ -56,9 +57,11 @@ public:
     /// Start the server (non-blocking)
     /// @param provenance Launch provenance information for this server instance
     /// @param identity Machine identity (UUID and name) for this server instance
+    /// @param enable_advertisement Start mDNS advertisement on startup
     /// @param policy_config Shutdown policy configuration
     /// @param shutdown_callback Callback to invoke when client requests shutdown
     void start(Provenance provenance, MachineIdentity identity,
+               bool enable_advertisement = false,
                ShutdownPolicyConfig policy_config = {},
                ShutdownCallback shutdown_callback = nullptr);
 
@@ -101,6 +104,7 @@ private:
         std::unique_ptr<AudioServiceImpl<MachineType>> audio_service;
         std::unique_ptr<SidewaysServiceImpl<MachineType>> sideways_service;
         std::unique_ptr<grpc::Server> grpc_server;
+        std::unique_ptr<discovery::Advertiser> advertiser;
 
         std::atomic<bool> running{false};
         std::thread render_thread;
@@ -145,11 +149,21 @@ Server<MachineType>::~Server() {
 
 template<typename MachineType>
 void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
+                                bool enable_advertisement,
                                 ShutdownPolicyConfig policy_config,
                                 ShutdownCallback shutdown_callback) {
     if (impl_->running) {
         return;
     }
+
+    // Create advertiser (platform-specific implementation)
+    impl_->advertiser = discovery::create_advertiser();
+
+    // Save identity info before moving (needed for advertisement later)
+    std::string identity_name = identity.name;
+    std::string identity_uuid = identity.uuid;
+    std::string identity_model_type = identity.model_type;
+    std::string provenance_type = provenance.type;
 
     // Create services
     impl_->video_service = std::make_unique<VideoServiceImpl>(impl_->frame_buffer);
@@ -176,7 +190,8 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
 
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
         impl_->machine, std::move(provenance), std::move(identity),
-        &impl_->connection_tracker, policy_config, nullptr, std::move(shutdown_callback));
+        &impl_->connection_tracker, impl_->advertiser.get(), 0,
+        policy_config, nullptr, std::move(shutdown_callback));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
         impl_->machine);
@@ -224,6 +239,20 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     // Update port with the actual bound port (important when port 0 was requested)
     impl_->port = static_cast<uint16_t>(selected_port);
 
+    // Now that we know the actual port, update SystemService
+    impl_->system_service->set_server_port(impl_->port);
+
+    // Start mDNS advertisement if enabled
+    if (enable_advertisement && impl_->advertiser) {
+        discovery::ServiceInfo info;
+        info.instance_name = identity_name;
+        info.port = impl_->port;
+        info.txt_records["uuid"] = identity_uuid;
+        info.txt_records["model"] = identity_model_type;
+        info.txt_records["provenance"] = provenance_type;
+        impl_->advertiser->start(info);
+    }
+
     impl_->running = true;
 
     // Start render thread
@@ -237,6 +266,11 @@ void Server<MachineType>::stop() {
     }
 
     impl_->running = false;
+
+    // Stop mDNS advertisement
+    if (impl_->advertiser) {
+        impl_->advertiser->stop();
+    }
 
     // Stop render thread
     if (impl_->render_thread.joinable()) {

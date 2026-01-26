@@ -56,6 +56,16 @@ class SystemServiceStub(object):
                 request_serializer=system__pb2.ShutdownRequest.SerializeToString,
                 response_deserializer=system__pb2.ShutdownResponse.FromString,
                 _registered_method=True)
+        self.GetAdvertisementState = channel.unary_unary(
+                '/beebium.SystemService/GetAdvertisementState',
+                request_serializer=system__pb2.GetAdvertisementStateRequest.SerializeToString,
+                response_deserializer=system__pb2.GetAdvertisementStateResponse.FromString,
+                _registered_method=True)
+        self.SetAdvertisement = channel.unary_unary(
+                '/beebium.SystemService/SetAdvertisement',
+                request_serializer=system__pb2.SetAdvertisementRequest.SerializeToString,
+                response_deserializer=system__pb2.SetAdvertisementResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServiceServicer(object):
@@ -96,6 +106,20 @@ class SystemServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetAdvertisementState(self, request, context):
+        """Get current mDNS service advertisement state
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetAdvertisement(self, request, context):
+        """Enable or disable mDNS service advertisement at runtime
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -118,6 +142,16 @@ def add_SystemServiceServicer_to_server(servicer, server):
                     servicer.RequestShutdown,
                     request_deserializer=system__pb2.ShutdownRequest.FromString,
                     response_serializer=system__pb2.ShutdownResponse.SerializeToString,
+            ),
+            'GetAdvertisementState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAdvertisementState,
+                    request_deserializer=system__pb2.GetAdvertisementStateRequest.FromString,
+                    response_serializer=system__pb2.GetAdvertisementStateResponse.SerializeToString,
+            ),
+            'SetAdvertisement': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetAdvertisement,
+                    request_deserializer=system__pb2.SetAdvertisementRequest.FromString,
+                    response_serializer=system__pb2.SetAdvertisementResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -230,6 +264,60 @@ class SystemService(object):
             '/beebium.SystemService/RequestShutdown',
             system__pb2.ShutdownRequest.SerializeToString,
             system__pb2.ShutdownResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAdvertisementState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.SystemService/GetAdvertisementState',
+            system__pb2.GetAdvertisementStateRequest.SerializeToString,
+            system__pb2.GetAdvertisementStateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetAdvertisement(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.SystemService/SetAdvertisement',
+            system__pb2.SetAdvertisementRequest.SerializeToString,
+            system__pb2.SetAdvertisementResponse.FromString,
             options,
             channel_credentials,
             insecure,

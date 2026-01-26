@@ -35,6 +35,9 @@ dev = [
 imaging = [
     "Pillow>=10.0.0",
 ]
+discovery = [
+    "zeroconf>=0.131.0",
+]
 
 [project.entry-points.pytest11]
 beebium = "beebium.pytest_plugin"

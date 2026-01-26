@@ -342,6 +342,11 @@ add_executable(test_indicators test_indicators.cpp)
 target_link_libraries(test_indicators PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_indicators)
 
+# Advertiser tests (discovery library)
+add_executable(test_advertiser test_advertiser.cpp)
+target_link_libraries(test_advertiser PRIVATE beebium_discovery Catch2::Catch2WithMain)
+catch_discover_tests(test_advertiser)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests

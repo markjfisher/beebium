@@ -122,6 +122,7 @@ endif()
 # Subdirectories
 add_subdirectory(src/6502)
 add_subdirectory(src/core)
+add_subdirectory(src/discovery)
 
 if(BEEBIUM_BUILD_SERVICE)
     add_subdirectory(src/service)

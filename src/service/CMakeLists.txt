@@ -72,6 +72,7 @@ target_include_directories(beebium_service
 target_link_libraries(beebium_service
     PUBLIC
         beebium_core
+        beebium_discovery
         gRPC::grpc++
         protobuf::libprotobuf
 )

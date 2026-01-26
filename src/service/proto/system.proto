@@ -21,6 +21,12 @@ service SystemService {
     // Policy: accept if requester's instance UUID matches launch provenance,
     //         or only one client connected, or --allow-shutdown flag was set.
     rpc RequestShutdown(ShutdownRequest) returns (ShutdownResponse);
+
+    // Get current mDNS service advertisement state
+    rpc GetAdvertisementState(GetAdvertisementStateRequest) returns (GetAdvertisementStateResponse);
+
+    // Enable or disable mDNS service advertisement at runtime
+    rpc SetAdvertisement(SetAdvertisementRequest) returns (SetAdvertisementResponse);
 }
 
 message GetSystemInfoRequest {
@@ -189,4 +195,40 @@ enum ServerStatusType {
     // Shutdown is in progress, showing subsystem coordination status
     // The shutdown_conditions field contains status of each subsystem
     SERVER_STATUS_SHUTDOWN_PROGRESS = 3;
+}
+
+// === Advertisement RPC ===
+
+// Current state of mDNS service advertisement
+message AdvertisementState {
+    // True if advertisement is currently enabled and active
+    bool enabled = 1;
+
+    // True if platform has mDNS support (Bonjour/Avahi/Windows mDNS)
+    // If false, advertisement cannot be enabled
+    bool available = 2;
+
+    // The actual name being advertised (may differ from identity.name
+    // if DNS-SD resolved a name collision, e.g., "Machine" -> "Machine (2)")
+    // Empty if not currently advertising
+    string advertised_name = 3;
+}
+
+message GetAdvertisementStateRequest {
+    // No parameters needed
+}
+
+message GetAdvertisementStateResponse {
+    AdvertisementState state = 1;
+}
+
+message SetAdvertisementRequest {
+    // True to enable advertisement, false to disable
+    bool enabled = 1;
+}
+
+message SetAdvertisementResponse {
+    // The resulting state after the operation
+    // Note: enabled may be false even if requested true, if mDNS is unavailable
+    AdvertisementState state = 1;
 }

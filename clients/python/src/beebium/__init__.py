@@ -39,6 +39,7 @@ from beebium.exceptions import (
     TimeoutError,
 )
 from beebium.system import (
+    AdvertisementState,
     MachineIdentity,
     Provenance,
     ServerStatus,
@@ -54,6 +55,7 @@ __version__ = "0.1.0"
 DEFAULT_GRPC_PORT = 0xBEEB
 
 __all__ = [
+    "AdvertisementState",
     "Beebium",
     "BeebiumError",
     "ConnectionError",

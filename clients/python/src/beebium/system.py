@@ -150,6 +150,15 @@ class ShutdownConditionStatus:
 
 
 @dataclass(frozen=True)
+class AdvertisementState:
+    """mDNS service advertisement state."""
+
+    enabled: bool  # Currently advertising
+    available: bool  # Platform has mDNS support
+    advertised_name: str  # Actual name being advertised (may differ due to collisions)
+
+
+@dataclass(frozen=True)
 class ServerStatusEvent:
     """Server status change event."""
 
@@ -379,4 +388,58 @@ class System:
         return ShutdownResponse(
             accepted=response.accepted,
             message=response.message,
+        )
+
+    def get_advertisement_state(self) -> AdvertisementState:
+        """Get current mDNS service advertisement state.
+
+        Returns:
+            AdvertisementState with current enabled/available status.
+
+        Example:
+            state = bbc.system.get_advertisement_state()
+            if state.available:
+                if state.enabled:
+                    print(f"Advertising as: {state.advertised_name}")
+                else:
+                    print("Advertisement available but disabled")
+            else:
+                print("mDNS not available on this platform")
+        """
+        request = system_pb2.GetAdvertisementStateRequest()
+        response = self._stub.GetAdvertisementState(request)
+        return AdvertisementState(
+            enabled=response.state.enabled,
+            available=response.state.available,
+            advertised_name=response.state.advertised_name,
+        )
+
+    def set_advertisement(self, enabled: bool) -> AdvertisementState:
+        """Enable or disable mDNS service advertisement.
+
+        Args:
+            enabled: True to start advertising, False to stop.
+
+        Returns:
+            AdvertisementState with resulting state after the operation.
+            Note: enabled may be False even if requested True, if mDNS
+            is not available on the platform.
+
+        Example:
+            # Start advertising
+            state = bbc.system.set_advertisement(enabled=True)
+            if state.enabled:
+                print(f"Now advertising as: {state.advertised_name}")
+            elif not state.available:
+                print("mDNS not available on this platform")
+
+            # Stop advertising
+            bbc.system.set_advertisement(enabled=False)
+        """
+        request = system_pb2.SetAdvertisementRequest(enabled=enabled)
+        response = self._stub.SetAdvertisement(request)
+        return AdvertisementState(
+            enabled=response.state.enabled,
+            available=response.state.available,
+            advertised_name=response.state.advertised_name,
         )

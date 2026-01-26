@@ -505,6 +505,9 @@ struct ServerConfig {
 
     // Shutdown policy
     bool allow_shutdown = false;
+
+    // mDNS advertisement
+    bool advertise = false;
 };
 
 template<typename MachineType>
@@ -546,6 +549,7 @@ void print_usage(const char* program_name) {
               << "  --machine-uuid <uuid>    Machine identity UUID (RFC 4122, default: auto-generated)\n"
               << "  --machine-name <name>    Machine name/label (default: from model)\n"
               << "  --allow-shutdown         Allow any client to shut down the server\n"
+              << "  --advertise              Enable mDNS service advertisement\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -691,6 +695,8 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             config.machine_name = argv[++i];
         } else if (arg == "--allow-shutdown") {
             config.allow_shutdown = true;
+        } else if (arg == "--advertise") {
+            config.advertise = true;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -1124,7 +1130,7 @@ public:
                 }
             };
             server.start(std::move(provenance), std::move(identity),
-                        shutdown_policy_config, std::move(shutdown_callback));
+                        config.advertise, shutdown_policy_config, std::move(shutdown_callback));
 
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block
