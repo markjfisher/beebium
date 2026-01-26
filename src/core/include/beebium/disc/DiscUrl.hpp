@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -125,7 +125,13 @@ inline std::optional<DiscUrl> DiscUrl::parse(std::string_view url) {
 
 inline DiscUrl DiscUrl::from_filepath(const std::filesystem::path& filepath) {
     std::filesystem::path abs_path = std::filesystem::absolute(filepath);
+#ifdef _WIN32
+    // On Windows, construct proper file:///C:/path/to/file URL
+    // Use generic_string() to get forward slashes
+    std::string url = "file:///" + abs_path.generic_string();
+#else
     std::string url = "file://" + abs_path.string();
+#endif
     return DiscUrl(DiscUrlScheme::File, std::move(url), abs_path);
 }
 

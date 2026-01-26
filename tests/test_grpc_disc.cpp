@@ -19,6 +19,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include "beebium/Machines.hpp"
+#include "beebium/disc/DiscUrl.hpp"
 #include "beebium/service/Server.hpp"
 
 #include "disc.grpc.pb.h"
@@ -196,8 +197,8 @@ TEST_CASE("DiscService InsertDisc loads disc from file:// URL", "[grpc][disc]") 
 
     DiscTestFixtureBPlus fixture;
 
-    // Use file:// URL format
-    std::string url = "file://" + disc_path.string();
+    // Use file:// URL format (DiscUrl handles Windows path conversion)
+    std::string url = beebium::DiscUrl::from_filepath(disc_path).url();
 
     grpc::ClientContext context;
     beebium::InsertDiscRequest request;

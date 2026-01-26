@@ -19,92 +19,94 @@
 using namespace beebium;
 
 TEST_CASE("MemoryHistogram basic operations", "[histogram][init]") {
-    MemoryHistogram histogram;
+    // Use heap allocation - MemoryHistogram has 1MB of arrays that exceed Windows stack limit
+    auto histogram = std::make_unique<MemoryHistogram>();
 
     SECTION("Initially all counts are zero") {
-        REQUIRE(histogram.reads(0x0000) == 0);
-        REQUIRE(histogram.writes(0x0000) == 0);
-        REQUIRE(histogram.reads(0xFFFF) == 0);
-        REQUIRE(histogram.writes(0xFFFF) == 0);
-        REQUIRE(histogram.total_reads() == 0);
-        REQUIRE(histogram.total_writes() == 0);
+        REQUIRE(histogram->reads(0x0000) == 0);
+        REQUIRE(histogram->writes(0x0000) == 0);
+        REQUIRE(histogram->reads(0xFFFF) == 0);
+        REQUIRE(histogram->writes(0xFFFF) == 0);
+        REQUIRE(histogram->total_reads() == 0);
+        REQUIRE(histogram->total_writes() == 0);
     }
 
     SECTION("record_read increments read count") {
-        histogram.record_read(0x1234);
-        REQUIRE(histogram.reads(0x1234) == 1);
-        REQUIRE(histogram.writes(0x1234) == 0);
+        histogram->record_read(0x1234);
+        REQUIRE(histogram->reads(0x1234) == 1);
+        REQUIRE(histogram->writes(0x1234) == 0);
 
-        histogram.record_read(0x1234);
-        REQUIRE(histogram.reads(0x1234) == 2);
+        histogram->record_read(0x1234);
+        REQUIRE(histogram->reads(0x1234) == 2);
     }
 
     SECTION("record_write increments write count") {
-        histogram.record_write(0x5678);
-        REQUIRE(histogram.writes(0x5678) == 1);
-        REQUIRE(histogram.reads(0x5678) == 0);
+        histogram->record_write(0x5678);
+        REQUIRE(histogram->writes(0x5678) == 1);
+        REQUIRE(histogram->reads(0x5678) == 0);
 
-        histogram.record_write(0x5678);
-        REQUIRE(histogram.writes(0x5678) == 2);
+        histogram->record_write(0x5678);
+        REQUIRE(histogram->writes(0x5678) == 2);
     }
 
     SECTION("total returns sum of reads and writes") {
-        histogram.record_read(0x1000);
-        histogram.record_read(0x1000);
-        histogram.record_write(0x1000);
-        REQUIRE(histogram.total(0x1000) == 3);
+        histogram->record_read(0x1000);
+        histogram->record_read(0x1000);
+        histogram->record_write(0x1000);
+        REQUIRE(histogram->total(0x1000) == 3);
     }
 
     SECTION("clear resets all counts") {
-        histogram.record_read(0x0000);
-        histogram.record_write(0xFFFF);
-        histogram.clear();
-        REQUIRE(histogram.reads(0x0000) == 0);
-        REQUIRE(histogram.writes(0xFFFF) == 0);
+        histogram->record_read(0x0000);
+        histogram->record_write(0xFFFF);
+        histogram->clear();
+        REQUIRE(histogram->reads(0x0000) == 0);
+        REQUIRE(histogram->writes(0xFFFF) == 0);
     }
 }
 
 TEST_CASE("MemoryHistogram aggregate queries", "[histogram][queries]") {
-    MemoryHistogram histogram;
+    // Use heap allocation - MemoryHistogram has 1MB of arrays that exceed Windows stack limit
+    auto histogram = std::make_unique<MemoryHistogram>();
 
     // Set up some test data
     for (int i = 0; i < 100; ++i) {
-        histogram.record_read(0x1000);
+        histogram->record_read(0x1000);
     }
     for (int i = 0; i < 50; ++i) {
-        histogram.record_write(0x2000);
+        histogram->record_write(0x2000);
     }
-    histogram.record_read(0x3000);
-    histogram.record_write(0x3000);
+    histogram->record_read(0x3000);
+    histogram->record_write(0x3000);
 
     SECTION("total_reads sums all read counts") {
-        REQUIRE(histogram.total_reads() == 101);  // 100 + 1
+        REQUIRE(histogram->total_reads() == 101);  // 100 + 1
     }
 
     SECTION("total_writes sums all write counts") {
-        REQUIRE(histogram.total_writes() == 51);  // 50 + 1
+        REQUIRE(histogram->total_writes() == 51);  // 50 + 1
     }
 
     SECTION("max_reads finds address with most reads") {
-        auto [addr, count] = histogram.max_reads();
+        auto [addr, count] = histogram->max_reads();
         REQUIRE(addr == 0x1000);
         REQUIRE(count == 100);
     }
 
     SECTION("max_writes finds address with most writes") {
-        auto [addr, count] = histogram.max_writes();
+        auto [addr, count] = histogram->max_writes();
         REQUIRE(addr == 0x2000);
         REQUIRE(count == 50);
     }
 
     SECTION("max_total finds address with most total accesses") {
-        auto [addr, count] = histogram.max_total();
+        auto [addr, count] = histogram->max_total();
         REQUIRE(addr == 0x1000);
         REQUIRE(count == 100);
     }
 
     SECTION("active_addresses counts non-zero addresses") {
-        REQUIRE(histogram.active_addresses() == 3);
+        REQUIRE(histogram->active_addresses() == 3);
     }
 }
 
