@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import os
 import shutil
-import signal
 import socket
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -206,19 +206,37 @@ class ServerProcess:
 
         return False
 
+    @staticmethod
+    def _is_executable(filepath: Path) -> bool:
+        """Check if a file is executable (cross-platform)."""
+        if not filepath.exists():
+            return False
+        if sys.platform == "win32":
+            # On Windows, check for common executable extensions
+            return filepath.suffix.lower() in (".exe", ".cmd", ".bat", ".com")
+        else:
+            return os.access(filepath, os.X_OK)
+
+    @staticmethod
+    def _exe_name(name: str) -> str:
+        """Return executable name with platform-appropriate extension."""
+        if sys.platform == "win32" and not name.lower().endswith(".exe"):
+            return name + ".exe"
+        return name
+
     def _find_server(self, path: str | Path | None) -> Path:
-        """Find the beebium-server executable.
+        """Find the beebium-model-b executable.
 
         Search order:
         1. Explicit path argument
         2. BEEBIUM_SERVER environment variable
-        3. PATH lookup for 'beebium-server'
+        3. PATH lookup for 'beebium-model-b'
         4. Common build locations relative to this package
         """
         # 1. Explicit path
         if path is not None:
             explicit = Path(path)
-            if explicit.exists() and os.access(explicit, os.X_OK):
+            if self._is_executable(explicit):
                 return explicit
             raise ServerNotFoundError(f"Server not found at specified path: {path}")
 
@@ -226,36 +244,55 @@ class ServerProcess:
         env_path = os.environ.get("BEEBIUM_SERVER")
         if env_path:
             env_server = Path(env_path)
-            if env_server.exists() and os.access(env_server, os.X_OK):
+            if self._is_executable(env_server):
                 return env_server
             raise ServerNotFoundError(
                 f"BEEBIUM_SERVER points to invalid path: {env_path}"
             )
 
         # 3. PATH lookup
-        which_result = shutil.which("beebium-server")
+        exe_name = self._exe_name("beebium-model-b")
+        which_result = shutil.which(exe_name)
         if which_result:
             return Path(which_result)
 
         # 4. Common build locations
         # Try to find relative to the Python package (assumes in-repo development)
         package_dirpath = Path(__file__).parent
-        candidates = [
-            # clients/python/src/beebium -> build/src/server
-            package_dirpath.parent.parent.parent.parent / "build" / "src" / "server" / "beebium-server",
-            # clients/python/src/beebium -> cmake-build-debug/src/server
-            package_dirpath.parent.parent.parent.parent / "cmake-build-debug" / "src" / "server" / "beebium-server",
-            # clients/python/src/beebium -> cmake-build-release/src/server
-            package_dirpath.parent.parent.parent.parent / "cmake-build-release" / "src" / "server" / "beebium-server",
-        ]
+        repo_root = package_dirpath.parent.parent.parent.parent
 
-        for candidate in candidates:
-            if candidate.exists() and os.access(candidate, os.X_OK):
-                return candidate
+        # Build directory candidates (Unix and Windows)
+        build_dirs = [
+            "build",
+            "cmake-build-debug",
+            "cmake-build-release",
+        ]
+        if sys.platform == "win32":
+            build_dirs.extend([
+                "build-win-x64-release",
+                "build-win-x64-debug",
+                "out/build/x64-Release",
+                "out/build/x64-Debug",
+            ])
+
+        for build_dir in build_dirs:
+            # On Windows with MSVC, executables are in Release/Debug subdirectories
+            if sys.platform == "win32":
+                for config in ["Release", "Debug", ""]:
+                    if config:
+                        candidate = repo_root / build_dir / "src" / "server" / config / exe_name
+                    else:
+                        candidate = repo_root / build_dir / "src" / "server" / exe_name
+                    if self._is_executable(candidate):
+                        return candidate
+            else:
+                candidate = repo_root / build_dir / "src" / "server" / exe_name
+                if self._is_executable(candidate):
+                    return candidate
 
         raise ServerNotFoundError(
-            "beebium-server not found. Set BEEBIUM_SERVER environment variable "
-            "or add beebium-server to PATH."
+            "beebium-model-b not found. Set BEEBIUM_SERVER environment variable "
+            "or add beebium-model-b to PATH."
         )
 
     @staticmethod

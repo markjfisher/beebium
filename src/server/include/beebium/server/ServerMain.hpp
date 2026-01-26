@@ -25,7 +25,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
-#include <csignal>
+#include "beebium/server/Platform.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -39,7 +39,6 @@
 #include <random>
 #include <string>
 #include <string_view>
-#include <unistd.h>  // for isatty()
 #include <vector>
 
 namespace beebium::server {
@@ -54,7 +53,7 @@ enum class WaitMode {
 };
 
 enum class OutputFormat {
-    Auto,    // Detect based on isatty(STDOUT_FILENO)
+    Auto,    // Detect based on platform::is_stdout_tty()
     Pretty,  // Human-friendly formatted output
     Tsv,     // Tab-separated values with header
     Jsonl    // JSON Lines (one object per line)
@@ -107,13 +106,14 @@ namespace {
 
 std::atomic<bool> g_running{true};
 
-// Function pointers for signal handler to interrupt blocking waits.
+// Function pointers for shutdown handler to interrupt blocking waits.
 // These are set before the main loop starts and cleared on shutdown.
 std::function<void()> g_request_machine_shutdown;
 std::function<void()> g_request_pacing_stop;
 std::function<void()> g_notify_clients_shutdown;
 
-inline void signal_handler(int /*signal*/) {
+// Shutdown handler logic invoked by platform::install_shutdown_handler()
+inline void invoke_shutdown() {
     g_running = false;
     // Notify connected clients that shutdown is starting
     if (g_notify_clients_shutdown) {
@@ -392,7 +392,7 @@ inline std::string to_absolute_file_url(const std::string& url_or_filepath) {
 // Resolve Auto format to actual format based on TTY detection
 inline OutputFormat resolve_output_format(OutputFormat format) {
     if (format == OutputFormat::Auto) {
-        return isatty(STDOUT_FILENO) ? OutputFormat::Pretty : OutputFormat::Tsv;
+        return platform::is_stdout_tty() ? OutputFormat::Pretty : OutputFormat::Tsv;
     }
     return format;
 }
@@ -672,7 +672,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--wait") {
             // Bare --wait: use TTY detection to choose default
-            config.wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
+            config.wait_mode = platform::is_stdin_tty() ? WaitMode::Cli : WaitMode::Api;
         } else if (arg.rfind("--wait=", 0) == 0) {
             // --wait=cli or --wait=api
             std::string wait_value = arg.substr(7);  // Skip "--wait="
@@ -1031,7 +1031,7 @@ public:
 
         // Apply provenance defaults (protocol specification)
         if (config.provenance_type.empty()) {
-            config.provenance_type = isatty(STDIN_FILENO) ? "terminal" : "unknown";
+            config.provenance_type = platform::is_stdin_tty() ? "terminal" : "unknown";
         }
         if (config.provenance_uuid.empty()) {
             config.provenance_uuid = generate_uuid_v4();
@@ -1041,9 +1041,8 @@ public:
         }
         auto timestamp = std::chrono::system_clock::now();
 
-        // Set up signal handler
-        std::signal(SIGINT, signal_handler);
-        std::signal(SIGTERM, signal_handler);
+        // Set up shutdown handler (handles SIGINT/SIGTERM on POSIX, console events on Windows)
+        platform::install_shutdown_handler(invoke_shutdown);
 
         try {
             // Set ROM directory if specified
@@ -1545,7 +1544,7 @@ std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineT
                 return 1;
             }
         } else if (arg == "--wait") {
-            config.wait_mode = isatty(STDIN_FILENO) ? WaitMode::Cli : WaitMode::Api;
+            config.wait_mode = platform::is_stdin_tty() ? WaitMode::Cli : WaitMode::Api;
         } else if (arg.rfind("--wait=", 0) == 0) {
             std::string wait_value = arg.substr(7);
             config.wait_mode = parse_wait_arg(wait_value);

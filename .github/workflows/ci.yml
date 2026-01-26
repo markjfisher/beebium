@@ -67,6 +67,53 @@ jobs:
           path: build/src/server/beebium-model-b
           retention-days: 1
 
+  server-windows:
+    name: Build and Test Server (Windows)
+    runs-on: windows-latest
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export GitHub Actions cache variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 'a1a1cbc975d01df4f9bf5c4089edfa9c31ad9831'
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+            -DBEEBIUM_BUILD_TESTS=ON `
+            -DBEEBIUM_BUILD_SERVICE=ON `
+            -DBEEBIUM_BUILD_SERVER=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-server-windows
+          path: build/src/server/Release/beebium-model-b.exe
+          retention-days: 1
+
   gui-client-macos:
     name: Build and Test GUI Client (macOS)
     runs-on: macos-14
@@ -161,4 +208,33 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+        run: uv run --with pytest python -m pytest tests/ -v
+
+  python-integration-windows:
+    name: Test Python Client (Integration Tests - Windows)
+    runs-on: windows-latest
+    needs: server-windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-windows
+          path: build/src/server/Release
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run integration tests
+        working-directory: clients/python
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/Release/beebium-model-b.exe
         run: uv run --with pytest python -m pytest tests/ -v

@@ -33,7 +33,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         $<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
     )
 elseif(MSVC)
-    add_compile_options(/W4)
+    add_compile_options(
+        /W4
+        /permissive-        # Strict conformance mode
+        /Zc:__cplusplus     # Correct __cplusplus macro value
+        /utf-8              # Source and execution charset UTF-8
+    )
 endif()
 
 # Sanitizers for Debug builds
@@ -90,17 +95,26 @@ if(BEEBIUM_BUILD_SERVICE)
 
     find_package(gRPC CONFIG QUIET)
     if(NOT gRPC_FOUND)
-        # On Linux, gRPC may need to be found via pkg-config
-        find_package(PkgConfig REQUIRED)
-        pkg_check_modules(GRPC REQUIRED grpc++ grpc)
-
-        # Create imported target for gRPC if not already defined
-        if(NOT TARGET gRPC::grpc++)
-            add_library(gRPC::grpc++ INTERFACE IMPORTED)
-            set_target_properties(gRPC::grpc++ PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${GRPC_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${GRPC_LIBRARIES}"
+        if(WIN32)
+            # On Windows, gRPC must be found via CONFIG mode (vcpkg)
+            message(FATAL_ERROR
+                "gRPC not found. On Windows, use vcpkg:\n"
+                "  vcpkg install grpc:x64-windows\n"
+                "Then configure with: -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]/scripts/buildsystems/vcpkg.cmake"
             )
+        else()
+            # On Linux, gRPC may need to be found via pkg-config
+            find_package(PkgConfig REQUIRED)
+            pkg_check_modules(GRPC REQUIRED grpc++ grpc)
+
+            # Create imported target for gRPC if not already defined
+            if(NOT TARGET gRPC::grpc++)
+                add_library(gRPC::grpc++ INTERFACE IMPORTED)
+                set_target_properties(gRPC::grpc++ PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${GRPC_INCLUDE_DIRS}"
+                    INTERFACE_LINK_LIBRARIES "${GRPC_LIBRARIES}"
+                )
+            endif()
         endif()
     endif()
 
