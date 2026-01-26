@@ -24,6 +24,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include "beebium/server/Platform.hpp"
 #include <cstdint>
@@ -218,18 +219,20 @@ int parse_int(const std::string& str, const std::string& context = "") {
         throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
     }
 
-    // Parse the number
+    // Parse the number using long long for consistent 64-bit range on all platforms
+    // (Windows has 32-bit long, while Unix has 64-bit long)
     std::string digits(sv.substr(start));
     char* end = nullptr;
-    long value = std::strtol(digits.c_str(), &end, base);
+    errno = 0;
+    long long value = std::strtoll(digits.c_str(), &end, base);
 
     // Check for parsing errors
     if (end == digits.c_str() || *end != '\0') {
         throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
     }
 
-    // Check for overflow
-    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+    // Check for overflow (either strtoll overflow or int range overflow)
+    if (errno == ERANGE || value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
         throw std::runtime_error("Integer overflow: " + str + (context.empty() ? "" : " for " + context));
     }
 
