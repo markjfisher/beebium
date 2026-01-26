@@ -21,7 +21,7 @@ updated_year=()
 for file in $staged_files; do
     # Check file extension
     case "$file" in
-        *.swift|*.h|*.c|*.hpp|*.cpp)
+        *.swift|*.h|*.c|*.hpp|*.cpp|*.py)
             # Skip generated protobuf files
             if [[ "$file" == *"/Generated/"* ]]; then
                 continue
@@ -37,15 +37,19 @@ for file in $staged_files; do
                 missing_copyright+=("$file")
             else
                 # File has copyright notice - check if year needs updating
-                # Match "Copyright © YYYY" or "Copyright (C) YYYY" pattern
-                if grep -qE "Copyright (©|\(C\)) [0-9]{4} Robert Smallshire" "$file" 2>/dev/null; then
+                # Match various copyright patterns:
+                # - "Copyright © YYYY" (C++ with symbol)
+                # - "Copyright (C) YYYY" (C++ with text)
+                # - "Copyright YYYY" (Python style)
+                if grep -qE "Copyright (©|\(C\) )?[0-9]{4} Robert Smallshire" "$file" 2>/dev/null; then
                     # Extract the year from the copyright line
-                    file_year=$(grep -oE "Copyright (©|\(C\)) [0-9]{4}" "$file" | grep -oE "[0-9]{4}" | head -1)
+                    file_year=$(grep -oE "Copyright (©|\(C\) )?[0-9]{4}" "$file" | grep -oE "[0-9]{4}" | head -1)
 
                     if [ -n "$file_year" ] && [ "$file_year" != "$current_year" ]; then
-                        # Update the year in the file
+                        # Update the year in the file (handle all formats)
                         sed -i '' "s/Copyright © $file_year Robert Smallshire/Copyright © $current_year Robert Smallshire/g" "$file"
                         sed -i '' "s/Copyright (C) $file_year Robert Smallshire/Copyright © $current_year Robert Smallshire/g" "$file"
+                        sed -i '' "s/Copyright $file_year Robert Smallshire/Copyright $current_year Robert Smallshire/g" "$file"
 
                         # Re-stage the file with updated year
                         git add "$file"
@@ -76,6 +80,7 @@ if [ ${#missing_copyright[@]} -ne 0 ]; then
     echo ""
     echo "Please add the following notice at the top of each file:"
     echo ""
+    echo "For C/C++/Swift:"
     echo "  // Copyright © $current_year Robert Smallshire <robert@smallshire.org.uk>"
     echo "  //"
     echo "  // This file is part of Beebium."
@@ -87,6 +92,19 @@ if [ ${#missing_copyright[@]} -ne 0 ]; then
     echo "  // FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details."
     echo "  // You should have received a copy of the GNU General Public License along with Beebium."
     echo "  // If not, see <https://www.gnu.org/licenses/>."
+    echo ""
+    echo "For Python:"
+    echo "  # Copyright $current_year Robert Smallshire <robert@smallshire.org.uk>"
+    echo "  #"
+    echo "  # This file is part of Beebium."
+    echo "  #"
+    echo "  # Beebium is free software: you can redistribute it and/or modify it under the terms of the"
+    echo "  # GNU General Public License as published by the Free Software Foundation, either version 3 of the"
+    echo "  # License, or (at your option) any later version. Beebium is distributed in the hope that it will"
+    echo "  # be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or"
+    echo "  # FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details."
+    echo "  # You should have received a copy of the GNU General Public License along with Beebium."
+    echo "  # If not, see <https://www.gnu.org/licenses/>."
     echo ""
     exit 1
 fi
