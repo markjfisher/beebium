@@ -93,6 +93,7 @@ jobs:
           key: vcpkg-installed-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-installed-${{ runner.os }}-
+          save-always: true
 
       - name: Setup vcpkg and install dependencies
         uses: lukka/run-vcpkg@v11
