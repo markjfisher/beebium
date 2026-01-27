@@ -271,7 +271,12 @@ TEST_CASE("IndicatorService GetIndicators conditional fetch returns unchanged wh
 
     // First, trigger a change to make sequence > 0
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    // Wait for indicator to be set (polling with timeout for CI reliability)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "caps-lock-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 
     // Get the current sequence after the change
     uint64_t current_seq;
@@ -318,8 +323,11 @@ TEST_CASE("IndicatorService GetIndicators conditional fetch returns data when se
     fixture.machine().state().memory.addressable_latch.write(6, true);  // Caps Lock LED on
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
 
-    // Wait for consumer thread to process (longer delay for CI reliability)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Wait for indicator value to change (polling with timeout for CI reliability)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "caps-lock-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 
     // Second fetch with old sequence
     {
@@ -343,18 +351,11 @@ TEST_CASE("IndicatorService GetIndicators reflects LED state changes", "[grpc][i
     // Turn on caps lock LED via indicator system
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
 
-    // Wait for consumer thread (longer delay for CI reliability)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-
-    grpc::ClientContext context;
-    beebium::GetIndicatorsRequest request;
-    beebium::GetIndicatorsResponse response;
-
-    auto status = fixture.stub().GetIndicators(&context, request, &response);
-
-    REQUIRE(status.ok());
-    // Value should be non-zero (duty cycle filter may not show full 255)
-    CHECK(response.values().at("caps-lock-led") > 0);
+    // Wait for indicator to be set (polling with timeout for CI reliability)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "caps-lock-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 }
 
 // =============================================================================
@@ -417,7 +418,13 @@ TEST_CASE("IndicatorService Subscribe filters by name", "[grpc][indicator]") {
     // Change both caps lock and floppy LED
     fixture.machine().state().memory.indicators.set("caps-lock-led", 255);
     fixture.machine().state().memory.indicators.set("floppy-0-activity-led", 255);
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    // Wait for the caps-lock indicator to be visible via GetIndicators
+    // (This ensures the consumer thread has processed the update)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "caps-lock-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 
     context.TryCancel();
 
@@ -511,9 +518,13 @@ TEST_CASE("IndicatorService returns correct sequence after rapid updates", "[grp
         // Small delay between updates so consumer can see distinct changes
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
+    // Final value is 255 (i=4, even)
 
-    // Wait for consumer thread to process (longer delay for CI reliability)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Wait for final indicator value to be visible (polling with timeout)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "caps-lock-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
@@ -565,18 +576,11 @@ TEST_CASE("IndicatorService drive LED activates when WD1770 executes command", "
         fixture.machine().step();
     }
 
-    // Wait for indicator consumer thread to process
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-
-    // Verify indicator is now on
-    {
-        grpc::ClientContext ctx;
-        beebium::GetIndicatorsRequest req;
-        beebium::GetIndicatorsResponse resp;
-        auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
-        REQUIRE(status.ok());
-        CHECK(resp.values().at("floppy-0-activity-led") > 0);
-    }
+    // Wait for indicator to turn on (polling with timeout)
+    bool led_on = wait_for_indicator(
+        fixture.stub(), "floppy-0-activity-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(led_on);
 
     // Force Interrupt (0xD0) terminates the command but motor stays on
     // Motor will spin down after ~2 second idle timeout
@@ -588,18 +592,11 @@ TEST_CASE("IndicatorService drive LED activates when WD1770 executes command", "
         fixture.machine().step();
     }
 
-    // Wait for indicator consumer thread to process
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-
-    // Verify indicator is off after idle timeout
-    {
-        grpc::ClientContext ctx;
-        beebium::GetIndicatorsRequest req;
-        beebium::GetIndicatorsResponse resp;
-        auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
-        REQUIRE(status.ok());
-        CHECK(resp.values().at("floppy-0-activity-led") == 0);
-    }
+    // Wait for indicator to turn off (polling with timeout)
+    bool led_off = wait_for_indicator(
+        fixture.stub(), "floppy-0-activity-led",
+        [](uint64_t value) { return value == 0; });
+    REQUIRE(led_off);
 }
 
 // =============================================================================
