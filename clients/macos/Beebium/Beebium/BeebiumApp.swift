@@ -16,7 +16,7 @@ import SwiftUI
 struct BeebiumApp: App {
     @AppStorage("showStatusBar") private var showStatusBar = true
     @AppStorage("showSidebar") private var showSidebar = true
-    @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
+    @FocusedBinding(\.sidebarMode) private var sidebarMode
     @StateObject private var keyboardMappingManager = KeyboardMappingManager()
 
     init() {
@@ -52,6 +52,7 @@ struct BeebiumApp: App {
                         }
                     }
                     .keyboardShortcut(mode.shortcutKey, modifiers: .command)
+                    .disabled(sidebarMode == nil)
                 }
             }
             CommandGroup(after: .textEditing) {

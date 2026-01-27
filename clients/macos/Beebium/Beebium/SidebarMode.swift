@@ -65,3 +65,16 @@ extension SidebarMode: RawRepresentable {
     // Already RawRepresentable via Int, but we need explicit conformance
     // for @AppStorage to work properly
 }
+
+// MARK: - FocusedValue Support
+
+struct SidebarModeFocusedValueKey: FocusedValueKey {
+    typealias Value = Binding<SidebarMode>
+}
+
+extension FocusedValues {
+    var sidebarMode: Binding<SidebarMode>? {
+        get { self[SidebarModeFocusedValueKey.self] }
+        set { self[SidebarModeFocusedValueKey.self] = newValue }
+    }
+}

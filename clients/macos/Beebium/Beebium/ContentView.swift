@@ -25,7 +25,7 @@ struct ContentView: View {
     @Binding var showStatusBar: Bool
     @Binding var showSidebar: Bool
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
-    @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .storage
+    @State private var sidebarMode: SidebarMode = .storage
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
@@ -76,6 +76,7 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("Beebium")
         .animation(.default, value: showSidebar)
+        .focusedValue(\.sidebarMode, $sidebarMode)
         .onAppear {
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager
