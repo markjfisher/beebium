@@ -115,6 +115,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_INSTALLED_DIR="${env:VCPKG_INSTALLED_DIR}" `
             -DVCPKG_MANIFEST_INSTALL=OFF `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DBEEBIUM_BUILD_TESTS=ON `
             -DBEEBIUM_BUILD_SERVICE=ON `
             -DBEEBIUM_BUILD_SERVER=ON
@@ -125,11 +126,14 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
+      - name: Check executable dependencies
+        run: dumpbin /dependents build\src\server\Release\beebium-model-b.exe
+
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-windows
-          path: build/src/server/Release/beebium-model-b.exe
+          path: build/src/server/Release/
           retention-days: 1
 
   gui-client-macos:
