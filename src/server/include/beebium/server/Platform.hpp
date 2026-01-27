@@ -14,6 +14,9 @@
 #define BEEBIUM_SERVER_PLATFORM_HPP
 
 #include <functional>
+#include <optional>
+#include <string>
+#include <cstdlib>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -121,6 +124,25 @@ inline bool is_stdout_tty() {
 }
 
 #endif  // _WIN32
+
+// Cross-platform getenv wrapper (avoids MSVC C4996 warning)
+inline std::optional<std::string> get_env(const char* name) {
+#ifdef _WIN32
+    char* value = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&value, &len, name) == 0 && value != nullptr) {
+        std::string result(value);
+        free(value);
+        return result;
+    }
+    return std::nullopt;
+#else
+    if (const char* value = std::getenv(name)) {
+        return std::string(value);
+    }
+    return std::nullopt;
+#endif
+}
 
 }  // namespace beebium::server::platform
 

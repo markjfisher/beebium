@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -164,18 +164,19 @@ public:
             response->set_error("Machine has no configurable sideways memory");
             return grpc::Status::OK;
         } else {
-            uint32_t slot = request->slot();
-            if (slot > 15) {
+            uint32_t slot_num = request->slot();
+            if (slot_num > 15) {
                 response->set_success(false);
                 response->set_error("Invalid slot number (must be 0-15)");
                 return grpc::Status::OK;
             }
+            uint8_t slot = static_cast<uint8_t>(slot_num);
 
             auto& sideways = machine_.state().memory.sideways;
             beebium::SlotType new_type = proto_to_slot_type(request->type());
 
             // Determine physical socket for response
-            uint32_t actual_socket = slot;
+            uint8_t actual_socket = slot;
             if constexpr (HasAliasedSideways<Memory>) {
                 actual_socket = AliasedBankedMemory::slot_to_socket(slot);
             }
@@ -271,15 +272,16 @@ public:
             response->set_error("Machine has no sideways memory");
             return grpc::Status::OK;
         } else {
-            uint32_t slot = request->slot();
+            uint32_t slot_num = request->slot();
             uint32_t offset = request->offset();
             uint32_t length = request->length();
 
-            if (slot > 15) {
+            if (slot_num > 15) {
                 response->set_success(false);
                 response->set_error("Invalid slot number (must be 0-15)");
                 return grpc::Status::OK;
             }
+            uint8_t slot = static_cast<uint8_t>(slot_num);
 
             if (offset > 16383) {
                 response->set_success(false);

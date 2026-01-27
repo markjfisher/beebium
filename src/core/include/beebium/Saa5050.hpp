@@ -558,8 +558,8 @@ private:
     TeletextCharset m_charset = TeletextCharset::Alpha;
     TeletextCharset m_graphics_charset = TeletextCharset::ContiguousGraphics;
 
-    // Graphics hold state (12-bit expanded font data)
-    uint16_t m_last_graphics_data = 0;
+    // Graphics hold state
+    uint8_t m_last_graphics_data = 0;
 
     // Double height state
     uint8_t m_raster_shift = 0;

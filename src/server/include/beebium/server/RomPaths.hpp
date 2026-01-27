@@ -69,8 +69,8 @@ public:
         }
 
         // 2. Environment variable
-        if (const char* env_dir = std::getenv("BEEBIUM_ROM_DIR")) {
-            std::filesystem::path env_path(env_dir);
+        if (auto env_dir = get_env("BEEBIUM_ROM_DIR")) {
+            std::filesystem::path env_path(*env_dir);
             if (std::filesystem::is_directory(env_path)) {
                 return env_path;
             }
@@ -141,6 +141,25 @@ public:
 
 private:
     static inline std::optional<std::filesystem::path> explicit_rom_dirpath_;
+
+    // Cross-platform getenv wrapper (avoids MSVC C4996 warning)
+    static std::optional<std::string> get_env(const char* name) {
+#ifdef _WIN32
+        char* value = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&value, &len, name) == 0 && value != nullptr) {
+            std::string result(value);
+            free(value);
+            return result;
+        }
+        return std::nullopt;
+#else
+        if (const char* value = std::getenv(name)) {
+            return std::string(value);
+        }
+        return std::nullopt;
+#endif
+    }
 
     // Get the directory containing the executable
     static std::filesystem::path get_executable_directory() {

@@ -336,9 +336,9 @@ private:
     static uint32_t pixel_to_bgra32(VideoDataPixel pixel) {
         // VideoDataPixel: bits 0-3 blue, 4-7 green, 8-11 red
         // BGRA32: bits 0-7 blue, 8-15 green, 16-23 red, 24-31 alpha
-        uint8_t b = (pixel.bits.b << 4) | pixel.bits.b;  // 4-bit to 8-bit
-        uint8_t g = (pixel.bits.g << 4) | pixel.bits.g;
-        uint8_t r = (pixel.bits.r << 4) | pixel.bits.r;
+        auto b = static_cast<uint8_t>((pixel.bits.b << 4) | pixel.bits.b);  // 4-bit to 8-bit
+        auto g = static_cast<uint8_t>((pixel.bits.g << 4) | pixel.bits.g);
+        auto r = static_cast<uint8_t>((pixel.bits.r << 4) | pixel.bits.r);
         return (0xFF << 24) | (r << 16) | (g << 8) | b;
     }
 

@@ -939,8 +939,7 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
-    const char* no_pacing_env = std::getenv("BEEBIUM_NO_PACING");
-    bool use_pacing = (no_pacing_env == nullptr);
+    bool use_pacing = !platform::get_env("BEEBIUM_NO_PACING").has_value();
 
     // Create and start pacing clock with machine-specific configuration
     PacingClock pacing_clock(Memory::default_pacing_config());
