@@ -115,7 +115,6 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_INSTALLED_DIR="${env:VCPKG_INSTALLED_DIR}" `
             -DVCPKG_MANIFEST_INSTALL=OFF `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DBEEBIUM_BUILD_TESTS=ON `
             -DBEEBIUM_BUILD_SERVICE=ON `
             -DBEEBIUM_BUILD_SERVER=ON
