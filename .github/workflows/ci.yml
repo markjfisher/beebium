@@ -34,6 +34,13 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
 
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-server-macos
+          path: build/src/server/beebium-model-b
+          retention-days: 1
+
   server-linux:
     name: Build and Test Server (Linux)
     runs-on: ubuntu-latest
@@ -180,7 +187,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   python-client:
-    name: Test Python Client (Unit Tests)
+    name: Python Client Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -199,8 +206,8 @@ jobs:
         working-directory: clients/python
         run: uv run --with pytest python -m pytest tests/ -v
 
-  python-integration:
-    name: Test Python Client (Integration Tests)
+  python-integration-linux:
+    name: Python Client Integration Tests (Linux)
     runs-on: ubuntu-latest
     needs: server-linux
 
@@ -237,7 +244,7 @@ jobs:
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-windows:
-    name: Test Python Client (Integration Tests - Windows)
+    name: Python Client Integration Tests (Windows)
     runs-on: windows-latest
     needs: server-windows
 
@@ -263,4 +270,36 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/Release/beebium-model-b.exe
+        run: uv run --with pytest python -m pytest tests/ -v
+
+  python-integration-macos:
+    name: Python Client Integration Tests (macOS)
+    runs-on: macos-14
+    needs: server-macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos
+          path: build/src/server
+
+      - name: Make server executable
+        run: chmod +x build/src/server/beebium-model-b
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run integration tests
+        working-directory: clients/python
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
         run: uv run --with pytest python -m pytest tests/ -v
