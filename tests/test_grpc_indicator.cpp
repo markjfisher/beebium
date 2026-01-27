@@ -40,6 +40,28 @@
 
 namespace {
 
+// Helper to wait for an indicator value with timeout (more reliable than fixed sleep)
+template<typename StubType>
+bool wait_for_indicator(StubType& stub, const std::string& indicator_name,
+                        std::function<bool(uint64_t)> predicate,
+                        std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) {
+    auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start < timeout) {
+        grpc::ClientContext context;
+        beebium::GetIndicatorsRequest request;
+        beebium::GetIndicatorsResponse response;
+        auto status = stub.GetIndicators(&context, request, &response);
+        if (status.ok()) {
+            auto it = response.values().find(indicator_name);
+            if (it != response.values().end() && predicate(it->second)) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+}
+
 // Helper to load ROM file
 std::vector<uint8_t> load_rom(const std::string& filepath) {
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
@@ -417,18 +439,18 @@ TEST_CASE("IndicatorService Model B+ disc motor indicator updates", "[grpc][indi
     // Turn on disc motor for drive 0
     fixture.machine().state().memory.disc_drive_0.set_motor(true);
 
-    // Wait for consumer thread (longer delay for CI reliability)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Wait for indicator to become non-zero (polling with timeout for CI reliability)
+    bool indicator_updated = wait_for_indicator(
+        fixture.stub(), "floppy-0-activity-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(indicator_updated);
 
+    // Verify drive 1 is still off
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
     beebium::GetIndicatorsResponse response;
-
     auto status = fixture.stub().GetIndicators(&context, request, &response);
-
     REQUIRE(status.ok());
-    CHECK(response.values().at("floppy-0-activity-led") > 0);
-    // Drive 1 should be off
     CHECK(response.values().at("floppy-1-activity-led") == 0);
 }
 
@@ -439,8 +461,16 @@ TEST_CASE("IndicatorService Model B+ both drives can be active", "[grpc][indicat
     fixture.machine().state().memory.disc_drive_0.set_motor(true);
     fixture.machine().state().memory.disc_drive_1.set_motor(true);
 
-    // Wait for consumer thread (longer delay for CI reliability)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Wait for both indicators to become non-zero (polling with timeout)
+    bool drive0_updated = wait_for_indicator(
+        fixture.stub(), "floppy-0-activity-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(drive0_updated);
+
+    bool drive1_updated = wait_for_indicator(
+        fixture.stub(), "floppy-1-activity-led",
+        [](uint64_t value) { return value > 0; });
+    REQUIRE(drive1_updated);
 
     grpc::ClientContext context;
     beebium::GetIndicatorsRequest request;
