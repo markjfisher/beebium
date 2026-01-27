@@ -28,6 +28,13 @@ add_beebium_server(beebium-model-b main_model_b.cpp)
 add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
 add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 
+# Convenience target to build all server executables (add new models here)
+add_custom_target(beebium-servers DEPENDS
+    beebium-model-b
+    beebium-model-b-plus
+    beebium-model-b-romram
+)
+
 # Copy ROMs to build output directory for development
 set(ROM_OUTPUT_DIR "${CMAKE_BINARY_DIR}/roms")
 file(MAKE_DIRECTORY ${ROM_OUTPUT_DIR})
