@@ -3,8 +3,8 @@
 # Provides DNS-SD (mDNS) service advertisement for network discovery.
 # Platform-specific implementations:
 # - macOS: Bonjour (dns_sd.h)
+# - Windows: windns.h (Windows 10 1903+)
 # - Linux: Avahi (future)
-# - Windows: windns.h (future)
 
 add_library(beebium_discovery STATIC
     src/NullAdvertiser.cpp
@@ -27,6 +27,17 @@ if(APPLE)
     target_compile_definitions(beebium_discovery PRIVATE BEEBIUM_HAS_BONJOUR)
     # dns_sd.h is a system framework on macOS, no extra linking needed
     # The symbols are in libSystem
+elseif(WIN32)
+    # Windows 10 1903+ (SDK 10.0.18362.0) required for DnsServiceRegister
+    target_sources(beebium_discovery PRIVATE
+        src/WindowsAdvertiser.cpp
+    )
+    target_link_libraries(beebium_discovery PRIVATE dnsapi)
+    target_compile_definitions(beebium_discovery PRIVATE
+        BEEBIUM_HAS_WINDOWS_MDNS
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
+    )
 endif()
 
 # Future: Linux (Avahi)
@@ -43,11 +54,3 @@ endif()
 #     endif()
 # endif()
 
-# Future: Windows (windns.h)
-# if(WIN32)
-#     target_sources(beebium_discovery PRIVATE
-#         src/WindowsAdvertiser.cpp
-#     )
-#     target_link_libraries(beebium_discovery PRIVATE dnsapi)
-#     target_compile_definitions(beebium_discovery PRIVATE BEEBIUM_HAS_WINDOWS_MDNS)
-# endif()
