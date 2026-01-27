@@ -81,7 +81,7 @@ grpc::Status KeyboardServiceImpl::GetState(
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Get keyboard matrix state from peripheral
-    for (int row = 0; row < 10; ++row) {
+    for (uint8_t row = 0; row < 10; ++row) {
         response->add_pressed_rows(keyboard_.get_row_state(row));
     }
 

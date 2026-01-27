@@ -38,6 +38,7 @@ elseif(MSVC)
         /permissive-        # Strict conformance mode
         /Zc:__cplusplus     # Correct __cplusplus macro value
         /utf-8              # Source and execution charset UTF-8
+        /wd4324             # Structure padding due to alignas (intentional for cache-line alignment)
     )
 endif()
 
