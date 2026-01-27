@@ -103,8 +103,8 @@ grpc::Status VideoServiceImpl::GetConfig(
     const GetConfigRequest* /*request*/,
     VideoConfig* response) {
 
-    response->set_width(frame_buffer_.width());
-    response->set_height(frame_buffer_.height());
+    response->set_width(static_cast<uint32_t>(frame_buffer_.width()));
+    response->set_height(static_cast<uint32_t>(frame_buffer_.height()));
     response->set_framerate_hz(50);  // PAL
 
     return grpc::Status::OK;

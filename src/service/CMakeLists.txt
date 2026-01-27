@@ -85,4 +85,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         PROPERTIES
         COMPILE_FLAGS "-Wno-unused-parameter -Wno-shadow"
     )
+elseif(MSVC)
+    # Only suppress benign warnings in generated code:
+    # C4100: unreferenced formal parameter
+    # C4127: conditional expression is constant
+    # Note: C4267 (size conversion) is NOT suppressed - better to see these
+    set_source_files_properties(
+        ${PROTO_SRCS}
+        ${GRPC_SRCS}
+        PROPERTIES
+        COMPILE_FLAGS "/wd4100 /wd4127"
+    )
 endif()
