@@ -123,6 +123,9 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Check executable dependencies
         run: dumpbin /dependents build\src\server\Release\beebium-model-b.exe
 
