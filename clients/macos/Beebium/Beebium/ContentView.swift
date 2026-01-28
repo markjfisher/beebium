@@ -26,6 +26,9 @@ struct ContentView: View {
     @Binding var showSidebar: Bool
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
+    @State private var showConnectDialog = false
+    @State private var showNewMachineDialog = false
+    @Environment(\.openWindow) private var openWindow
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
@@ -77,6 +80,9 @@ struct ContentView: View {
         .navigationTitle("Beebium")
         .animation(.default, value: showSidebar)
         .focusedValue(\.sidebarMode, $sidebarMode)
+        .focusedValue(\.showConnectDialog, $showConnectDialog)
+        .focusedValue(\.showNewMachineDialog, $showNewMachineDialog)
+        .focusedValue(\.openNewWindow) { openWindow(id: "main") }
         .onAppear {
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager
@@ -104,6 +110,12 @@ struct ContentView: View {
             systemClient.disconnect()
             keyboardClient.disconnect()
             videoClient.disconnect()
+        }
+        .sheet(isPresented: $showConnectDialog) {
+            ConnectDialog()
+        }
+        .sheet(isPresented: $showNewMachineDialog) {
+            NewMachineDialog()
         }
         .onChange(of: videoClient.connectionState) { newState in
             // Connect clients when video client connects

@@ -24,7 +24,7 @@ struct BeebiumApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Beebium") {
+        WindowGroup("Beebium", id: "main") {
             ContentView(
                 showStatusBar: $showStatusBar,
                 showSidebar: $showSidebar,
@@ -33,6 +33,7 @@ struct BeebiumApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
+            FileCommands()
             CommandGroup(after: .toolbar) {
                 Toggle("Show Status Bar", isOn: $showStatusBar)
                     .keyboardShortcut("/", modifiers: .command)
