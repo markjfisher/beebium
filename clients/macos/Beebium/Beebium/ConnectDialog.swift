@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import AppKit
 import SwiftUI
 
 /// Shared state for the Connect window and pending connections
@@ -59,8 +60,10 @@ struct ConnectWindowContent: View {
             // Buttons
             buttonBar
         }
-        .padding(20)
-        .frame(width: 450, height: 380)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
+        .frame(width: 450)
         .onAppear {
             discoveryClient.startDiscovery()
             recentManager.load()
@@ -216,46 +219,14 @@ struct ConnectWindowContent: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
-            HStack(spacing: 4) {
-                TextField("host:port", text: $address)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: address) { _ in
-                        errorMessage = nil
-                    }
-
-                // Recent connections dropdown
-                if !recentManager.connections.isEmpty {
-                    Menu {
-                        ForEach(recentManager.connections) { recent in
-                            Button {
-                                address = "\(recent.host):\(recent.port)"
-                                errorMessage = nil
-                            } label: {
-                                HStack {
-                                    if !recent.lastSuccessful {
-                                        Image(systemName: "exclamationmark.triangle")
-                                    }
-                                    Text(recent.displayLabel)
-                                    Spacer()
-                                    Text(recent.relativeTimeString)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        Button("Clear Recent Connections") {
-                            recentManager.clear()
-                        }
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .frame(width: 28, height: 22)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 28)
-                    .help("Recent connections")
-                }
+            // Native NSComboBox - editable text field with dropdown
+            ComboBox(
+                text: $address,
+                items: recentManager.connections.map { "\($0.host):\($0.port)" }
+            )
+            .frame(height: 24)
+            .onChange(of: address) { _ in
+                errorMessage = nil
             }
         }
     }
@@ -390,6 +361,63 @@ struct ConnectWindowContent: View {
         windowState.pendingTarget = target
         openWindow(id: "main")
         closeWindow()
+    }
+}
+
+// MARK: - ComboBox (NSComboBox wrapper)
+
+/// SwiftUI wrapper for NSComboBox - an editable text field with a dropdown list
+struct ComboBox: NSViewRepresentable {
+    @Binding var text: String
+    let items: [String]
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let comboBox = NSComboBox()
+        comboBox.isEditable = true
+        comboBox.completes = true
+        comboBox.delegate = context.coordinator
+        comboBox.target = context.coordinator
+        comboBox.action = #selector(Coordinator.comboBoxChanged(_:))
+        return comboBox
+    }
+
+    func updateNSView(_ comboBox: NSComboBox, context: Context) {
+        // Update items
+        comboBox.removeAllItems()
+        comboBox.addItems(withObjectValues: items)
+
+        // Update text if it changed externally
+        if comboBox.stringValue != text {
+            comboBox.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSComboBoxDelegate {
+        var parent: ComboBox
+
+        init(_ parent: ComboBox) {
+            self.parent = parent
+        }
+
+        @objc func comboBoxChanged(_ sender: NSComboBox) {
+            parent.text = sender.stringValue
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else { return }
+            if comboBox.indexOfSelectedItem >= 0 {
+                parent.text = comboBox.itemObjectValue(at: comboBox.indexOfSelectedItem) as? String ?? ""
+            }
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else { return }
+            parent.text = comboBox.stringValue
+        }
     }
 }
 
