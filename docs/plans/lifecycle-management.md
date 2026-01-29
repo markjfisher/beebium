@@ -79,48 +79,43 @@ See [connect-dialog.md](connect-dialog.md) for detailed design.
 
 ---
 
+## Phase 7.5: Settings Infrastructure
+
+**Goal**: Establish the Preferences window skeleton with placeholder panes.
+
+See [settings-infrastructure.md](settings-infrastructure.md) for detailed design.
+
+---
+
+## Phase 7.6: Preset System
+
+**Goal**: Define machine presets and preset management UI.
+
+See [preset-system.md](preset-system.md) for detailed design.
+
+---
+
 ## Phase 8: New Machine Dialog
 
 **Goal**: File > New… with preset selection and configuration.
 
-### 8.1 Preset System
+With the Preset System (Phase 7.6) in place, the New Machine dialog becomes a consumer of `PresetManager`. The dialog:
 
-```swift
-struct MachinePreset: Codable, Identifiable {
-    let id: UUID
-    let name: String
-    let coreExecutable: String  // "beebium-model-b"
-    let configuration: [String: AnyCodable]
-    let isDefault: Bool  // Default presets are read-only
-}
-
-class PresetManager: ObservableObject {
-    @Published var defaultPresets: [MachinePreset] = []
-    @Published var userPresets: [MachinePreset] = []
-
-    func loadDefaultPresets()  // Enumerate core executables
-    func duplicatePreset(_ preset: MachinePreset) -> MachinePreset
-    func deletePreset(_ preset: MachinePreset)
-}
-```
-
-### 8.2 Dialog Flow
-
-1. Show preset picker (dropdown at top)
-2. Show model info (from selected preset)
-3. Show editable configuration (from core's describe-configuration)
+1. Shows preset picker (populated from PresetManager)
+2. Shows model info (from selected preset)
+3. Shows editable configuration (from core's `DescribeConfiguration` RPC)
 4. Cancel / Create buttons
 5. Create launches core with configuration, connects, opens window
 
 ### Files to create/modify:
-- `clients/macos/Beebium/Beebium/PresetManager.swift` (new)
-- `clients/macos/Beebium/Beebium/NewMachineDialog.swift` (new)
-- `clients/macos/Beebium/Beebium/MachineConfigurationView.swift` (new)
+- `clients/macos/Beebium/Beebium/NewMachineDialog.swift` (replace placeholder)
+- `clients/macos/Beebium/Beebium/ConfigurationEditor.swift` (shared with Settings)
 
 ### Verification:
-- Default presets appear from discovered core executables
-- Duplicating preset creates editable copy
-- New Machine creates and connects to core
+- All presets appear in picker (default + user)
+- Selecting preset populates configuration form
+- Modifying configuration doesn't affect stored preset
+- Create launches core and opens window
 
 ---
 
@@ -219,7 +214,8 @@ With no recent states, window shows only presets — still useful for quick laun
 - Window menu additions
 
 ### Dependencies:
-- Phase 8 (New Machine Dialog) for preset system
+- Phase 7.6 (Preset System) for preset data and PresetManager
+- Phase 8 (New Machine Dialog) for machine creation flow
 - State persistence (future) for recent states with thumbnails
 
 ### Verification:
@@ -276,25 +272,33 @@ Phase 5 (Discovery)
     v
 Phase 6 (File Menu Skeleton)
     │
-    ├───────────────────────────────┐
-    v                               v
-Phase 7 (Connect Dialog)    Phase 8 (New Machine Dialog)
-    │                               │
-    └───────────┬───────────────────┘
-                v
-        Phase 9 (Quit Dialog)
-                │
-                v
-        Phase 10 (Welcome Window)
-                │
-                v
-        Phase 11 (Machines Menu) [deferred]
+    ├───────────────────────────────────────────────────┐
+    v                                                   v
+Phase 7 (Connect Dialog)                    Phase 7.5 (Settings Infrastructure)
+    │                                                   │
+    │                                                   v
+    │                                       Phase 7.6 (Preset System)
+    │                                                   │
+    │                                                   v
+    │                                       Phase 8 (New Machine Dialog)
+    │                                                   │
+    └───────────────────────┬───────────────────────────┘
+                            v
+                    Phase 9 (Quit Dialog)
+                            │
+                            v
+                    Phase 10 (Welcome Window)
+                            │
+                            v
+                    Phase 11 (Machines Menu) [deferred]
 ```
 
 Phases 1-5 are backend/protocol work.
 Phases 6-11 are primarily frontend.
-Phases 7 and 8 can be developed in parallel.
-Phase 10 depends on Phase 8's preset system.
+Phase 7 (Connect Dialog) and Phase 7.5-8 (Settings/Presets/New Machine) can be developed in parallel.
+Phase 7.6 (Preset System) requires Phase 7.5 (Settings Infrastructure).
+Phase 8 (New Machine Dialog) requires Phase 7.6 (Preset System).
+Phase 10 (Welcome Window) depends on Phase 7.6's preset system.
 
 ---
 
@@ -305,9 +309,16 @@ Phase 10 depends on Phase 8's preset system.
 - `clients/macos/Beebium/Beebium/FileCommands.swift`
 - `clients/macos/Beebium/Beebium/MachineManager.swift`
 - `clients/macos/Beebium/Beebium/ConnectDialog.swift`
+- `clients/macos/Beebium/Beebium/SettingsView.swift`
+- `clients/macos/Beebium/Beebium/Settings/GeneralSettingsPane.swift`
+- `clients/macos/Beebium/Beebium/Settings/MachinesSettingsPane.swift`
+- `clients/macos/Beebium/Beebium/Settings/KeyboardSettingsPane.swift`
+- `clients/macos/Beebium/Beebium/AppSettings.swift`
+- `clients/macos/Beebium/Beebium/PresetManager.swift`
+- `clients/macos/Beebium/Beebium/MachinePreset.swift`
+- `clients/macos/Beebium/Beebium/ConfigurationEditor.swift`
 - `clients/macos/Beebium/Beebium/QuitDialog.swift`
 - `clients/macos/Beebium/Beebium/NewMachineDialog.swift`
-- `clients/macos/Beebium/Beebium/PresetManager.swift`
 - `clients/macos/Beebium/Beebium/WelcomeWindow.swift`
 - `clients/python/src/beebium/discovery.py`
 
@@ -339,7 +350,12 @@ Phase 10 depends on Phase 8's preset system.
 - File menu skeleton shows all items with correct shortcuts
 - Disabled items are greyed out appropriately
 - Connect dialog discovers machines and allows manual entry
-- New Machine dialog launches cores with selected configuration
+- Settings window opens with ⌘, and shows all panes
+- Presets pane shows default presets from discovered cores
+- Duplicating a preset creates editable user preset
+- User presets persist across app restarts
+- New Machine dialog shows all presets and allows configuration
+- New Machine creates and connects to core
 - Quit dialog shows correct machines and actions
 - Power Off actually terminates cores
 - Welcome window appears on launch, can be re-opened from Window menu
