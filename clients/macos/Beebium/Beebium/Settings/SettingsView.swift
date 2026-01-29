@@ -1,0 +1,59 @@
+// Copyright © 2025 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+import SwiftUI
+
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general
+    case machines
+    case keyboard
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .general: return "General"
+        case .machines: return "Machines"
+        case .keyboard: return "Keyboard"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: return "gearshape"
+        case .machines: return "desktopcomputer"
+        case .keyboard: return "keyboard"
+        }
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettingsPane()
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+
+            MachinesSettingsPane()
+                .tabItem {
+                    Label("Machines", systemImage: "desktopcomputer")
+                }
+
+            KeyboardSettingsPane()
+                .tabItem {
+                    Label("Keyboard", systemImage: "keyboard")
+                }
+        }
+        .frame(width: 450, height: 250)
+    }
+}

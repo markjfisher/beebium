@@ -81,5 +81,10 @@ struct BeebiumApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+
+        // Settings window (singleton, accessed via Cmd+, or Beebium menu)
+        Settings {
+            SettingsView()
+        }
     }
 }

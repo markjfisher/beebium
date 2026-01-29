@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */; };
+		01B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */; };
+		01C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */; };
+		01D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */; };
 		02EAA3A16D440CCD12071A3D /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F2683BAFB4C72B6644F473 /* AudioEngine.swift */; };
 		03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */; };
 		03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */ = {isa = PBXBuildFile; fileRef = C9A1A70DB6662E96A6210970 /* KeyboardMappings */; };
@@ -84,6 +88,10 @@
 
 /* Begin PBXFileReference section */
 		028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMachineDialog.swift; sourceTree = "<group>"; };
+		11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsPane.swift; sourceTree = "<group>"; };
+		11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesSettingsPane.swift; sourceTree = "<group>"; };
+		11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
 		0380D979784116B4110F8904 /* ConnectionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRegistry.swift; sourceTree = "<group>"; };
 		03C4898953F0003B85113EC0 /* indicator.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.grpc.swift; sourceTree = "<group>"; };
 		08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClient.swift; sourceTree = "<group>"; };
@@ -233,6 +241,17 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		21E5F6A7B8C9D0E1F2A3B4C5 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */,
+				11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */,
+				11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */,
+				11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
 		BBAE7111B52777D0ECF660DB /* Beebium */ = {
 			isa = PBXGroup;
 			children = (
@@ -276,6 +295,7 @@
 				302A817E494E35F2A03C8A10 /* Generated */,
 				0D33DA1B641373DC03C3B1E3 /* Proto */,
 				513A5B641F9FF9A7B5BBAE38 /* Resources */,
+				21E5F6A7B8C9D0E1F2A3B4C5 /* Settings */,
 			);
 			path = Beebium;
 			sourceTree = "<group>";
@@ -444,6 +464,10 @@
 				EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */,
 				C5D7C5C9382566ADEAA92341 /* video.grpc.swift in Sources */,
 				CBC5ABA53015DE535C5F17A4 /* video.pb.swift in Sources */,
+				01A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift in Sources */,
+				01B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift in Sources */,
+				01C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift in Sources */,
+				01D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
