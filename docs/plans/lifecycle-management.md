@@ -75,49 +75,7 @@ See [file-menu-skeleton.md](file-menu-skeleton.md) for detailed design.
 
 **Goal**: File > Connect to Machine… dialog with discovery.
 
-### 7.1 Dialog UI
-
-```swift
-struct ConnectDialog: View {
-    @State var discoveredMachines: [DiscoveredMachine] = []
-    @State var selectedMachine: DiscoveredMachine?
-    @State var manualHost: String = "localhost"
-    @State var manualPort: String = "48875"
-    @State var useManual: Bool = false
-
-    // Two modes: discovered list or manual entry
-}
-```
-
-### 7.2 Recent Connections
-
-Store in UserDefaults:
-```swift
-struct RecentConnection: Codable {
-    let host: String
-    let port: Int
-    let displayName: String?
-    let lastUsed: Date
-}
-```
-
-Show in dialog as quick-access list.
-
-### 7.3 Error Handling
-
-On connection failure:
-- Stay in dialog
-- Show inline error: "Couldn't connect to localhost:48875"
-- Allow retry or different selection
-
-### Files to create/modify:
-- `clients/macos/Beebium/Beebium/ConnectDialog.swift` (new)
-- `clients/macos/Beebium/Beebium/RecentConnections.swift` (new)
-
-### Verification:
-- Dialog shows discovered machines
-- Manual entry works
-- Recent connections remembered across app launches
+See [connect-dialog.md](connect-dialog.md) for detailed design.
 
 ---
 

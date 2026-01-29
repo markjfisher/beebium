@@ -18,6 +18,7 @@ struct BeebiumApp: App {
     @AppStorage("showSidebar") private var showSidebar = true
     @FocusedBinding(\.sidebarMode) private var sidebarMode
     @StateObject private var keyboardMappingManager = KeyboardMappingManager()
+    @StateObject private var connectWindowState = ConnectWindowState.shared
 
     init() {
         NSLog("[BeebiumApp] Starting...")
@@ -71,5 +72,12 @@ struct BeebiumApp: App {
                 }
             }
         }
+
+        // Connect window (singleton, non-modal)
+        Window("Connect to Machine", id: "connect") {
+            ConnectWindowContent()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
     }
 }

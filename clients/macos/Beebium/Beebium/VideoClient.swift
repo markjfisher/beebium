@@ -47,8 +47,11 @@ final class VideoClient: ObservableObject {
     private var _channel: GRPCChannel?
     private var streamTask: Task<Void, Never>?
 
-    private let host: String
-    private let port: Int
+    private var host: String
+    private var port: Int
+
+    /// Current connection target
+    @Published private(set) var target: ConnectionTarget
 
     /// Metal renderer for direct frame updates (bypasses SwiftUI update batching)
     weak var renderer: MetalRenderer?
@@ -56,9 +59,19 @@ final class VideoClient: ObservableObject {
     /// Expose the gRPC channel for other clients (e.g., KeyboardClient) to share
     var channel: GRPCChannel? { _channel }
 
-    init(host: String = "127.0.0.1", port: Int = 0xBEEB) {  // 48875
-        self.host = host
-        self.port = port
+    init(target: ConnectionTarget = .localhost) {
+        self.target = target
+        self.host = target.host
+        self.port = target.port
+    }
+
+    /// Reconnect to a different target
+    func reconnect(to newTarget: ConnectionTarget) {
+        disconnect()
+        target = newTarget
+        host = newTarget.host
+        port = newTarget.port
+        connect()
     }
 
     /// Connect to the beebium-server and start streaming frames

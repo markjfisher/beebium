@@ -12,22 +12,393 @@
 
 import SwiftUI
 
-struct ConnectDialog: View {
-    @Environment(\.dismiss) private var dismiss
+/// Shared state for the Connect window and pending connections
+@MainActor
+class ConnectWindowState: ObservableObject {
+    static let shared = ConnectWindowState()
 
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "network")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            Text("Connect to Machine")
-                .font(.headline)
-            Text("This feature will be available in a future update.")
-                .foregroundColor(.secondary)
-            Button("OK") { dismiss() }
-                .keyboardShortcut(.defaultAction)
-        }
-        .padding(40)
-        .frame(minWidth: 300)
+    /// Target for the next window to connect to (set before opening a new window)
+    @Published var pendingTarget: ConnectionTarget?
+
+    private init() {}
+
+    /// Consume the pending target (returns it and clears it)
+    func consumePendingTarget() -> ConnectionTarget? {
+        let target = pendingTarget
+        pendingTarget = nil
+        return target
     }
 }
+
+struct ConnectWindowContent: View {
+    @ObservedObject var windowState = ConnectWindowState.shared
+    @StateObject private var discoveryClient = DiscoveryClient()
+    @ObservedObject private var recentManager = RecentConnectionsManager.shared
+    @ObservedObject private var connectionRegistry = ConnectionRegistry.shared
+    @Environment(\.openWindow) private var openWindow
+
+    // Single address field (the source of truth)
+    @State private var address: String = "localhost:48875"
+
+    // Error state
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Error banner
+            if let error = errorMessage {
+                errorBanner(error)
+            }
+
+            // Discovered machines section
+            discoveredMachinesSection
+
+            // Address field with recent dropdown
+            addressSection
+
+            // Buttons
+            buttonBar
+        }
+        .padding(20)
+        .frame(width: 450, height: 380)
+        .onAppear {
+            discoveryClient.startDiscovery()
+            recentManager.load()
+        }
+        .onDisappear {
+            discoveryClient.stopDiscovery()
+        }
+    }
+
+    // MARK: - Discovered Machines Section
+
+    @ViewBuilder
+    private var discoveredMachinesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Discovered Machines")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            if discoveryClient.machines.isEmpty {
+                emptyDiscoveryView
+            } else {
+                discoveredMachinesList
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var discoveredMachinesList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // This Mac section
+                if !discoveryClient.localMachines.isEmpty {
+                    sectionHeader("This Mac")
+                    ForEach(discoveryClient.localMachines) { machine in
+                        machineRow(machine, showHost: false)
+                    }
+                }
+
+                // Network section
+                if !discoveryClient.remoteMachines.isEmpty {
+                    if !discoveryClient.localMachines.isEmpty {
+                        Spacer().frame(height: 8)
+                    }
+                    sectionHeader("Network")
+                    ForEach(discoveryClient.remoteMachines) { machine in
+                        machineRow(machine, showHost: true)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(height: 160)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func machineRow(_ machine: DiscoveredMachine, showHost: Bool) -> some View {
+        let isSelected = address == "\(machine.host):\(machine.port)"
+        let isConnected = connectionRegistry.isConnected(to: machine.target)
+
+        HStack {
+            // Connection status indicator
+            // Filled = connected, Empty = available
+            Circle()
+                .fill(isConnected ? Color.green : Color.clear)
+                .overlay(Circle().stroke(Color.green, lineWidth: 1.5))
+                .frame(width: 8, height: 8)
+
+            // Machine info
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(machine.instanceName)
+                        .fontWeight(.medium)
+                    Text(friendlyModelName(machine.modelType))
+                        .foregroundColor(.secondary)
+                }
+                .font(.callout)
+
+                if showHost {
+                    Text(machine.displayHost)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Clicking a discovered machine populates the address field
+            address = "\(machine.host):\(machine.port)"
+            errorMessage = nil
+        }
+        .help("\(machine.host):\(machine.port)")
+        .contextMenu {
+            Button("Copy Address") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("\(machine.host):\(machine.port)", forType: .string)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyDiscoveryView: some View {
+        VStack(spacing: 8) {
+            if discoveryClient.isDiscoveryAvailable {
+                Text("No machines found on the local network.")
+                    .foregroundColor(.secondary)
+                Text("Start a machine with the --advertise flag, or enter an address below.")
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Network discovery unavailable.")
+                    .foregroundColor(.secondary)
+                Text("Enter the machine address below.")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Address Section
+
+    @ViewBuilder
+    private var addressSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Address")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 4) {
+                TextField("host:port", text: $address)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: address) { _ in
+                        errorMessage = nil
+                    }
+
+                // Recent connections dropdown
+                if !recentManager.connections.isEmpty {
+                    Menu {
+                        ForEach(recentManager.connections) { recent in
+                            Button {
+                                address = "\(recent.host):\(recent.port)"
+                                errorMessage = nil
+                            } label: {
+                                HStack {
+                                    if !recent.lastSuccessful {
+                                        Image(systemName: "exclamationmark.triangle")
+                                    }
+                                    Text(recent.displayLabel)
+                                    Spacer()
+                                    Text(recent.relativeTimeString)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        Button("Clear Recent Connections") {
+                            recentManager.clear()
+                        }
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .frame(width: 28, height: 22)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 28)
+                    .help("Recent connections")
+                }
+            }
+        }
+    }
+
+    // MARK: - Buttons
+
+    @ViewBuilder
+    private var buttonBar: some View {
+        HStack {
+            Spacer()
+            Button("Cancel") {
+                closeWindow()
+            }
+            .keyboardShortcut(.cancelAction)
+
+            Button("Connect") {
+                connect()
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canConnect)
+        }
+    }
+
+    /// Close the Connect window
+    private func closeWindow() {
+        // Find and close the Connect window by title
+        // TODO: When minimum macOS version is raised to 14.0+, replace with:
+        //   @Environment(\.dismissWindow) private var dismissWindow
+        //   dismissWindow(id: "connect")
+        if let window = NSApp.windows.first(where: { $0.title == "Connect to Machine" }) {
+            window.close()
+        }
+    }
+
+    // MARK: - Error Banner
+
+    @ViewBuilder
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.yellow)
+            Text(message)
+                .font(.callout)
+            Spacer()
+            Button {
+                errorMessage = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(Color.yellow.opacity(0.1))
+        .cornerRadius(6)
+    }
+
+    // MARK: - Helpers
+
+    /// Map internal model identifiers to friendly display names
+    private func friendlyModelName(_ modelType: String) -> String {
+        switch modelType {
+        case "ModelB":
+            return "Model B"
+        case "ModelBPlus":
+            return "Model B+"
+        case "Master128":
+            return "Master 128"
+        case "MasterCompact":
+            return "Master Compact"
+        case "ModelA":
+            return "Model A"
+        default:
+            // Fall back to the raw value, but add spaces before capitals
+            // e.g., "BBCMicroModelB" -> "BBC Micro Model B"
+            return modelType.replacingOccurrences(
+                of: "([a-z])([A-Z])",
+                with: "$1 $2",
+                options: .regularExpression
+            )
+        }
+    }
+
+    // MARK: - Actions
+
+    private var canConnect: Bool {
+        parseAddress() != nil
+    }
+
+    private func parseAddress() -> ConnectionTarget? {
+        let trimmed = address.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Try to parse host:port
+        if let colonIndex = trimmed.lastIndex(of: ":") {
+            let host = String(trimmed[..<colonIndex])
+            let portString = String(trimmed[trimmed.index(after: colonIndex)...])
+            if let port = Int(portString), port >= 1, port <= 65535, !host.isEmpty {
+                return ConnectionTarget(host: host, port: port)
+            }
+        }
+
+        // No colon or invalid port - assume default port
+        if !trimmed.contains(":") {
+            return ConnectionTarget(host: trimmed, port: 48875)
+        }
+
+        return nil
+    }
+
+    private func connect() {
+        guard let target = parseAddress() else {
+            errorMessage = "Invalid address format. Use host:port (e.g., localhost:48875)"
+            return
+        }
+
+        // If already connected, just activate the existing window
+        if connectionRegistry.activateWindow(for: target) {
+            closeWindow()
+            return
+        }
+
+        // Find display name if this matches a discovered machine
+        let displayName = discoveryClient.machines.first {
+            $0.host == target.host && $0.port == target.port
+        }?.instanceName
+
+        // Save to recent connections
+        recentManager.addSuccessful(host: target.host, port: target.port, displayName: displayName)
+
+        // Set pending target and open a new window
+        windowState.pendingTarget = target
+        openWindow(id: "main")
+        closeWindow()
+    }
+}
+
+// MARK: - Preview
+
+#if DEBUG
+struct ConnectWindowContent_Previews: PreviewProvider {
+    static var previews: some View {
+        ConnectWindowContent()
+    }
+}
+#endif

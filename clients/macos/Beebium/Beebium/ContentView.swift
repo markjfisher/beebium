@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var sidebarMode: SidebarMode = .storage
     @State private var showConnectDialog = false
     @State private var showNewMachineDialog = false
+    @State private var currentWindow: NSWindow?
     @Environment(\.openWindow) private var openWindow
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -101,9 +102,17 @@ struct ContentView: View {
                 )
             }
 
-            videoClient.connect()
+            // Check for pending connection target (set by Connect dialog)
+            if let target = ConnectWindowState.shared.consumePendingTarget() {
+                videoClient.reconnect(to: target)
+            } else {
+                videoClient.connect()
+            }
         }
         .onDisappear {
+            // Unregister connection when window closes
+            ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+
             audioClient.disconnect()
             discClient.disconnect()
             indicatorClient.disconnect()
@@ -111,8 +120,12 @@ struct ContentView: View {
             keyboardClient.disconnect()
             videoClient.disconnect()
         }
-        .sheet(isPresented: $showConnectDialog) {
-            ConnectDialog()
+        .background(WindowAccessor(window: $currentWindow))
+        .onChange(of: showConnectDialog) { show in
+            if show {
+                openWindow(id: "connect")
+                showConnectDialog = false  // Reset the trigger
+            }
         }
         .sheet(isPresented: $showNewMachineDialog) {
             NewMachineDialog()
@@ -126,6 +139,14 @@ struct ContentView: View {
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
 
+                // Register this connection
+                if let window = currentWindow {
+                    ConnectionRegistry.shared.register(
+                        address: videoClient.target.address,
+                        window: window
+                    )
+                }
+
                 // Load keyboard mappings from core
                 Task {
                     await keyboardClient.loadKeyMappings()
@@ -138,12 +159,18 @@ struct ContentView: View {
                     bbcState: indicatorClient.capsLockState
                 )
             } else if case .disconnected = newState {
+                // Unregister this connection
+                ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+
                 audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
                 keyboardClient.disconnect()
                 systemClient.disconnect()
             } else if case .error = newState {
+                // Unregister this connection
+                ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+
                 audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
@@ -172,6 +199,13 @@ struct ContentView: View {
         }
     }
 
+    /// Connect to a different machine target
+    private func connectTo(_ target: ConnectionTarget) {
+        // Reconnect video client to new target
+        // The onChange handler will automatically cascade to other clients
+        videoClient.reconnect(to: target)
+    }
+
     @ViewBuilder
     private var statusOverlay: some View {
         VStack(spacing: 16) {
@@ -186,7 +220,7 @@ struct ContentView: View {
             case .connecting:
                 ProgressView()
                     .scaleEffect(1.5)
-                Text("Connecting to beebium-server...")
+                Text("Connecting to \(videoClient.target.address)...")
                     .font(.headline)
 
             case .connected:
@@ -226,3 +260,26 @@ struct ContentView_Previews: PreviewProvider {
     }
 }
 #endif
+
+// MARK: - Window Accessor
+
+/// Helper view to capture the NSWindow reference
+struct WindowAccessor: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.window = view.window
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if self.window !== nsView.window {
+                self.window = nsView.window
+            }
+        }
+    }
+}
