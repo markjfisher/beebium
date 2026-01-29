@@ -72,9 +72,27 @@ struct SidebarModeFocusedValueKey: FocusedValueKey {
     typealias Value = Binding<SidebarMode>
 }
 
+struct ShowSidebarFocusedValueKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
+struct ShowStatusBarFocusedValueKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var sidebarMode: Binding<SidebarMode>? {
         get { self[SidebarModeFocusedValueKey.self] }
         set { self[SidebarModeFocusedValueKey.self] = newValue }
+    }
+
+    var showSidebar: Binding<Bool>? {
+        get { self[ShowSidebarFocusedValueKey.self] }
+        set { self[ShowSidebarFocusedValueKey.self] = newValue }
+    }
+
+    var showStatusBar: Binding<Bool>? {
+        get { self[ShowStatusBarFocusedValueKey.self] }
+        set { self[ShowStatusBarFocusedValueKey.self] = newValue }
     }
 }

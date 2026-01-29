@@ -14,8 +14,8 @@ import SwiftUI
 
 @main
 struct BeebiumApp: App {
-    @AppStorage("showStatusBar") private var showStatusBar = true
-    @AppStorage("showSidebar") private var showSidebar = true
+    @FocusedBinding(\.showStatusBar) private var showStatusBar
+    @FocusedBinding(\.showSidebar) private var showSidebar
     @FocusedBinding(\.sidebarMode) private var sidebarMode
     @StateObject private var keyboardMappingManager = KeyboardMappingManager()
     @StateObject private var connectWindowState = ConnectWindowState.shared
@@ -27,8 +27,6 @@ struct BeebiumApp: App {
     var body: some Scene {
         WindowGroup("Beebium", id: "main") {
             ContentView(
-                showStatusBar: $showStatusBar,
-                showSidebar: $showSidebar,
                 keyboardMappingManager: keyboardMappingManager
             )
         }
@@ -36,20 +34,24 @@ struct BeebiumApp: App {
         .commands {
             FileCommands()
             CommandGroup(after: .toolbar) {
-                Toggle("Show Status Bar", isOn: $showStatusBar)
-                    .keyboardShortcut("/", modifiers: .command)
+                Button(showStatusBar == true ? "Hide Status Bar" : "Show Status Bar") {
+                    showStatusBar?.toggle()
+                }
+                .keyboardShortcut("/", modifiers: .command)
+                .disabled(showStatusBar == nil)
             }
             CommandGroup(before: .sidebar) {
-                Button(showSidebar ? "Hide Sidebar" : "Show Sidebar") {
-                    withAnimation { showSidebar.toggle() }
+                Button(showSidebar == true ? "Hide Sidebar" : "Show Sidebar") {
+                    withAnimation { showSidebar?.toggle() }
                 }
                 .keyboardShortcut("s", modifiers: [.control, .command])
+                .disabled(showSidebar == nil)
             }
             CommandGroup(after: .sidebar) {
                 ForEach(SidebarMode.allCases) { mode in
                     Button(mode.label) {
                         sidebarMode = mode
-                        if !showSidebar {
+                        if showSidebar == false {
                             withAnimation { showSidebar = true }
                         }
                     }

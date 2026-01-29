@@ -22,8 +22,8 @@ struct ContentView: View {
     @StateObject private var discClient = DiscClient()
     @StateObject private var audioClient = AudioClient()
     @StateObject private var audioMixerState = AudioMixerState()
-    @Binding var showStatusBar: Bool
-    @Binding var showSidebar: Bool
+    @State private var showStatusBar: Bool = true
+    @State private var showSidebar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
     @State private var showConnectDialog = false
@@ -81,6 +81,8 @@ struct ContentView: View {
         .navigationTitle("Beebium")
         .animation(.default, value: showSidebar)
         .focusedValue(\.sidebarMode, $sidebarMode)
+        .focusedValue(\.showSidebar, $showSidebar)
+        .focusedValue(\.showStatusBar, $showStatusBar)
         .focusedValue(\.showConnectDialog, $showConnectDialog)
         .focusedValue(\.showNewMachineDialog, $showNewMachineDialog)
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
@@ -253,8 +255,6 @@ struct ContentView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView(
-            showStatusBar: .constant(true),
-            showSidebar: .constant(true),
             keyboardMappingManager: KeyboardMappingManager()
         )
     }
