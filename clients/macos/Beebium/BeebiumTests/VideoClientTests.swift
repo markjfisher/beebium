@@ -38,10 +38,13 @@ final class VideoClientTests: XCTestCase {
     }
 
     @MainActor
-    func testCustomHostAndPort() async {
-        let client = VideoClient(host: "192.168.1.100", port: 8080)
+    func testCustomTarget() async {
+        let target = ConnectionTarget(host: "192.168.1.100", port: 8080)
+        let client = VideoClient(target: target)
 
         // Just verify it can be created with custom parameters
         XCTAssertEqual(client.connectionState, .disconnected)
+        XCTAssertEqual(client.target.host, "192.168.1.100")
+        XCTAssertEqual(client.target.port, 8080)
     }
 }
