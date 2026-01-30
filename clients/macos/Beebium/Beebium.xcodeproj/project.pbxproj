@@ -7,10 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		01A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */; };
-		01B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */; };
-		01C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */; };
-		01D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */; };
+		02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */; };
 		02EAA3A16D440CCD12071A3D /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F2683BAFB4C72B6644F473 /* AudioEngine.swift */; };
 		03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */; };
 		03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */ = {isa = PBXBuildFile; fileRef = C9A1A70DB6662E96A6210970 /* KeyboardMappings */; };
@@ -18,9 +15,12 @@
 		07C91006D788A614860664BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4635C74CA6E1654868006CA6 /* Assets.xcassets */; };
 		1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */; };
 		1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C152853E7E4735D1E7994275 /* BBCKeyCache.swift */; };
+		1F9774ADF4454EEA179ED3EA /* KeyboardSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */; };
 		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
 		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
+		2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */; };
 		3A5F2C41B8468DD7E63EC414 /* audio.proto in Resources */ = {isa = PBXBuildFile; fileRef = A16BD17340EC98E2C5EF1127 /* audio.proto */; };
+		3B3122E1626E09ABEAC4315B /* ConfigurationSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */; };
 		40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */; };
 		42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */; };
 		44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4898953F0003B85113EC0 /* indicator.grpc.swift */; };
@@ -33,12 +33,14 @@
 		4F70A7E16C384FDF27FB7DA7 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */; };
 		562B6F36BE2D62D913DB2A32 /* AVFAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9DE8C83B31D707C9E30C491D /* AVFAudio.framework */; };
 		5BFF6217532F7E4126E6A946 /* system.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */; };
+		6115EAB5B469DD1B9242F92E /* GeneralSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C4FBFCE12BD6DED30E2E24 /* GeneralSettingsPane.swift */; };
 		627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FF930B029ECBBAE243C4D0 /* ContentView.swift */; };
 		6573E0F14063A6C83E3204CA /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86FF568406281481A0E0D88 /* AudioRenderer.swift */; };
 		739F46631A5F30A8209D9623 /* disc.proto in Resources */ = {isa = PBXBuildFile; fileRef = 9141154B5BCF7C71635E62B2 /* disc.proto */; };
 		75BBA7064C85D6CDB3797111 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9849250F602C15283E458A /* StatusBarView.swift */; };
 		7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE550723A13DFA9A20EB302 /* IndicatorView.swift */; };
 		8248344928EA9782B944178F /* SidebarMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992C39260909EB85C84D2C20 /* SidebarMode.swift */; };
+		82E5C63F1FAF9D28F87F09BA /* MachinePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28ED949DB593C8353954F7B1 /* MachinePreset.swift */; };
 		8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */ = {isa = PBXBuildFile; fileRef = 69144892FD8EBDC0F0D9230E /* video.proto */; };
 		8E648F53A0DD1B04A0E1F08E /* StorageModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */; };
 		94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6041795434C164F849A27B /* KeyInput.swift */; };
@@ -59,6 +61,7 @@
 		D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */; };
 		D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */; };
 		D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */; };
+		D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */; };
 		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
 		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
@@ -88,10 +91,6 @@
 
 /* Begin PBXFileReference section */
 		028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMachineDialog.swift; sourceTree = "<group>"; };
-		11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsPane.swift; sourceTree = "<group>"; };
-		11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesSettingsPane.swift; sourceTree = "<group>"; };
-		11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
 		0380D979784116B4110F8904 /* ConnectionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRegistry.swift; sourceTree = "<group>"; };
 		03C4898953F0003B85113EC0 /* indicator.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.grpc.swift; sourceTree = "<group>"; };
 		08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClient.swift; sourceTree = "<group>"; };
@@ -99,6 +98,7 @@
 		1031975F4050BF5875549DFA /* FileCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCommands.swift; sourceTree = "<group>"; };
 		2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.grpc.swift; sourceTree = "<group>"; };
 		25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerView.swift; sourceTree = "<group>"; };
+		28ED949DB593C8353954F7B1 /* MachinePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinePreset.swift; sourceTree = "<group>"; };
 		2CE550723A13DFA9A20EB302 /* IndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorView.swift; sourceTree = "<group>"; };
 		38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClientTests.swift; sourceTree = "<group>"; };
 		3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardClient.swift; sourceTree = "<group>"; };
@@ -106,21 +106,26 @@
 		3D27B82F5650277464200982 /* system.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = system.proto; sourceTree = "<group>"; };
 		42858282A95435EEDFA1413F /* ConnectDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectDialog.swift; sourceTree = "<group>"; };
 		4635C74CA6E1654868006CA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		4DAEE1DC0F503B0F7129CE02 /* BeebiumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeebiumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E0CD29C9A89B375C692C019 /* audio.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.pb.swift; sourceTree = "<group>"; };
 		58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumApp.swift; sourceTree = "<group>"; };
 		5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerState.swift; sourceTree = "<group>"; };
+		5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSchema.swift; sourceTree = "<group>"; };
+		5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
 		642BEA30A8664289314B2D9E /* video.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.pb.swift; sourceTree = "<group>"; };
 		6595E1ACFB74733DA1DDB653 /* Beebium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Beebium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		69144892FD8EBDC0F0D9230E /* video.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = video.proto; sourceTree = "<group>"; };
 		76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		7C5792BABD709C954B706793 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesSettingsPane.swift; sourceTree = "<group>"; };
 		82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeToolbar.swift; sourceTree = "<group>"; };
 		831E41582E1F4F7358C624E8 /* indicator.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.pb.swift; sourceTree = "<group>"; };
 		8502E9114AB10B2200A2F6F9 /* MacKeyCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeyCode.swift; sourceTree = "<group>"; };
 		86F2683BAFB4C72B6644F473 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
 		87E7F7F1255B32F8C85FAFDA /* indicator.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = indicator.proto; sourceTree = "<group>"; };
 		8B269A5937DAC1914CA8BF39 /* video.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.grpc.swift; sourceTree = "<group>"; };
+		8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
 		9141154B5BCF7C71635E62B2 /* disc.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = disc.proto; sourceTree = "<group>"; };
 		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 		A7386122C0E5009AE250FECD /* SidebarModeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeContent.swift; sourceTree = "<group>"; };
 		AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.grpc.swift; sourceTree = "<group>"; };
 		B5B19F4DD5A21B41C2CF9630 /* RecentConnections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentConnections.swift; sourceTree = "<group>"; };
+		B6C4FBFCE12BD6DED30E2E24 /* GeneralSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsPane.swift; sourceTree = "<group>"; };
 		B86FF568406281481A0E0D88 /* AudioRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRenderer.swift; sourceTree = "<group>"; };
 		B98CF59648104556C3677412 /* KeyboardMTKView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMTKView.swift; sourceTree = "<group>"; };
 		BF12022B03E2794E9DDF6B3F /* KeyboardMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMapping.swift; sourceTree = "<group>"; };
@@ -213,12 +219,33 @@
 			path = Generated;
 			sourceTree = "<group>";
 		};
+		4D4D1EC2A954B34D9692BAC7 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				B6C4FBFCE12BD6DED30E2E24 /* GeneralSettingsPane.swift */,
+				5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */,
+				7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */,
+				4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
 		513A5B641F9FF9A7B5BBAE38 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 				C9A1A70DB6662E96A6210970 /* KeyboardMappings */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		5353E11520D70E76E4C80AB1 /* Presets */ = {
+			isa = PBXGroup;
+			children = (
+				5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */,
+				28ED949DB593C8353954F7B1 /* MachinePreset.swift */,
+				8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */,
+			);
+			path = Presets;
 			sourceTree = "<group>";
 		};
 		9B94AD8C97BB584FCF9F60EC = {
@@ -239,17 +266,6 @@
 				FAB928B6093490D60EECA734 /* MetalKit.framework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		21E5F6A7B8C9D0E1F2A3B4C5 /* Settings */ = {
-			isa = PBXGroup;
-			children = (
-				11B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift */,
-				11D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift */,
-				11C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift */,
-				11A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift */,
-			);
-			path = Settings;
 			sourceTree = "<group>";
 		};
 		BBAE7111B52777D0ECF660DB /* Beebium */ = {
@@ -293,9 +309,10 @@
 				FEB0459103AA8B2261579315 /* SystemClient.swift */,
 				08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */,
 				302A817E494E35F2A03C8A10 /* Generated */,
+				5353E11520D70E76E4C80AB1 /* Presets */,
 				0D33DA1B641373DC03C3B1E3 /* Proto */,
 				513A5B641F9FF9A7B5BBAE38 /* Resources */,
-				21E5F6A7B8C9D0E1F2A3B4C5 /* Settings */,
+				4D4D1EC2A954B34D9692BAC7 /* Settings */,
 			);
 			path = Beebium;
 			sourceTree = "<group>";
@@ -425,6 +442,7 @@
 				1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */,
 				42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */,
 				4CF04CE9A5BFD96B5E1E4590 /* BiquadFilter.swift in Sources */,
+				3B3122E1626E09ABEAC4315B /* ConfigurationSchema.swift in Sources */,
 				E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */,
 				EEC1DCADCCF584AB8BC8DD01 /* ConnectionRegistry.swift in Sources */,
 				627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */,
@@ -433,6 +451,7 @@
 				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
 				4DD0F4094D0E603CFF35DF6C /* FileCommands.swift in Sources */,
 				B41DE38A258D6C2E68314C5D /* FocusedDialogKeys.swift in Sources */,
+				6115EAB5B469DD1B9242F92E /* GeneralSettingsPane.swift in Sources */,
 				40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */,
 				7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */,
 				94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */,
@@ -440,10 +459,15 @@
 				DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */,
 				BE8551008B3836CA24806130 /* KeyboardMapping.swift in Sources */,
 				9F0D659309F36B7DD20F0070 /* KeyboardMappingManager.swift in Sources */,
+				1F9774ADF4454EEA179ED3EA /* KeyboardSettingsPane.swift in Sources */,
 				F8E43B3F7BBA3554BE190043 /* MacKeyCode.swift in Sources */,
+				82E5C63F1FAF9D28F87F09BA /* MachinePreset.swift in Sources */,
+				2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */,
 				D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */,
 				1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */,
+				D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */,
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
+				02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */,
 				B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */,
 				8248344928EA9782B944178F /* SidebarMode.swift in Sources */,
 				06B9C1E897D9DB39E8392078 /* SidebarModeContent.swift in Sources */,
@@ -464,10 +488,6 @@
 				EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */,
 				C5D7C5C9382566ADEAA92341 /* video.grpc.swift in Sources */,
 				CBC5ABA53015DE535C5F17A4 /* video.pb.swift in Sources */,
-				01A1B2C3D4E5F6A1B2C3D4E5 /* SettingsView.swift in Sources */,
-				01B2C3D4E5F6A1B2C3D4E5F6 /* GeneralSettingsPane.swift in Sources */,
-				01C3D4E5F6A1B2C3D4E5F6A1 /* MachinesSettingsPane.swift in Sources */,
-				01D4E5F6A1B2C3D4E5F6A1B2 /* KeyboardSettingsPane.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

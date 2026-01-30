@@ -138,6 +138,16 @@ TEST_CASE("parse_global_arguments: help subcommand", "[cli][parse_global_argumen
     REQUIRE(global.subcommand_name == "help");
 }
 
+TEST_CASE("parse_global_arguments: describe-config subcommand", "[cli][parse_global_arguments]") {
+    ArgvHelper args{"beebium", "describe-config"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "describe-config");
+}
+
 TEST_CASE("parse_global_arguments: unknown option passes through to default subcommand", "[cli][parse_global_arguments]") {
     ArgvHelper args{"beebium", "--unknown-global"};
     GlobalConfig global;
@@ -327,6 +337,17 @@ TEST_CASE("dispatch_subcommand: help returns OK", "[cli][dispatch_subcommand]") 
     REQUIRE(result == ExitCode::OK);
 }
 
+TEST_CASE("dispatch_subcommand: describe-config returns OK", "[cli][dispatch_subcommand]") {
+    ArgvHelper args{"beebium", "describe-config"};
+    GlobalConfig global;
+    global.subcommand_name = "describe-config";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
 TEST_CASE("dispatch_subcommand: unknown subcommand returns USAGE", "[cli][dispatch_subcommand]") {
     ArgvHelper args{"beebium", "unknown-command"};
     GlobalConfig global;
@@ -404,7 +425,7 @@ TEST_CASE("GlobalConfig: default values", "[cli][GlobalConfig]") {
 TEST_CASE("get_subcommands: returns correct number of subcommands", "[cli][get_subcommands]") {
     const auto& cmds = get_subcommands<MachineType>();
 
-    REQUIRE(cmds.size() == 4);
+    REQUIRE(cmds.size() == 5);
 }
 
 TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcommands]") {
@@ -418,6 +439,7 @@ TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcomman
     REQUIRE(std::find(names.begin(), names.end(), "start") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "list-fdcs") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "describe-machine") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "describe-config") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "help") != names.end());
 }
 
@@ -859,4 +881,68 @@ TEST_CASE("parse_start_arguments: identity and provenance combined", "[cli][pars
     REQUIRE(config.provenance_uuid == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     REQUIRE(config.machine_uuid == "11111111-2222-3333-4444-555555555555");
     REQUIRE(config.machine_name == "Test Server");
+}
+
+// ============================================================================
+// describe-config subcommand tests
+// ============================================================================
+
+TEST_CASE("describe-config: subcommand is registered", "[cli][describe-config]") {
+    const auto& cmds = get_subcommands<MachineType>();
+
+    bool found = false;
+    for (const auto& cmd : cmds) {
+        if (cmd->name() == "describe-config") {
+            found = true;
+            break;
+        }
+    }
+
+    REQUIRE(found);
+}
+
+TEST_CASE("describe-config: has non-empty description", "[cli][describe-config]") {
+    const auto& cmds = get_subcommands<MachineType>();
+
+    for (const auto& cmd : cmds) {
+        if (cmd->name() == "describe-config") {
+            REQUIRE_FALSE(cmd->description().empty());
+            return;
+        }
+    }
+    FAIL("describe-config subcommand not found");
+}
+
+TEST_CASE("describe-config: --help returns OK", "[cli][describe-config]") {
+    ArgvHelper args{"beebium", "describe-config", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "describe-config";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("describe-config: returns OK with no arguments", "[cli][describe-config]") {
+    ArgvHelper args{"beebium", "describe-config"};
+    GlobalConfig global;
+    global.subcommand_name = "describe-config";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("describe-config: unknown argument returns USAGE", "[cli][describe-config]") {
+    ArgvHelper args{"beebium", "describe-config", "--unknown"};
+    GlobalConfig global;
+    global.subcommand_name = "describe-config";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
 }

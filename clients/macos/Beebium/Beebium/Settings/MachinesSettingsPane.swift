@@ -13,16 +13,80 @@
 import SwiftUI
 
 struct MachinesSettingsPane: View {
+    @StateObject private var presetManager = PresetManager.shared
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if presetManager.isDiscovering {
+                ProgressView("Discovering machine cores...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if presetManager.defaultPresets.isEmpty {
+                emptyStateView
+            } else {
+                presetListView
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task {
+            await presetManager.discoverCores()
+        }
+    }
+
+    private var emptyStateView: some View {
         VStack(spacing: 12) {
-            Image(systemName: "desktopcomputer")
+            Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
-            Text("Machines")
+            Text("No Machine Cores Found")
                 .font(.headline)
-            Text("Machine presets will be managed here.")
-                .foregroundColor(.secondary)
+            if let error = presetManager.discoveryError {
+                Text(error)
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+            } else {
+                Text("Reinstall Beebium to restore default cores.")
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var presetListView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Default Presets")
+                .font(.headline)
+
+            ForEach(presetManager.defaultPresets) { preset in
+                PresetRow(preset: preset)
+            }
+
+            Spacer()
+        }
+    }
+}
+
+struct PresetRow: View {
+    let preset: MachinePreset
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "desktopcomputer")
+                .font(.title2)
+                .foregroundColor(.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preset.name)
+                    .font(.body)
+                if let description = preset.modelDescription {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
     }
 }

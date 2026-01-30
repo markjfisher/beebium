@@ -1323,6 +1323,55 @@ public:
     }
 };
 
+// DescribeConfiguration subcommand - output configuration schema as JSON
+template<typename MachineType>
+class DescribeConfigurationSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "describe-config"; }
+    std::string_view description() const override { return "Output configuration schema as JSON"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " describe-config\n"
+                  << "\n"
+                  << "Outputs JSON describing the machine's configurable options.\n"
+                  << "This is used by frontends to dynamically build configuration UI.\n"
+                  << "\n"
+                  << "Output is always JSON regardless of --format option.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
+
+        // Handle --help for this subcommand
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Check for subcommand-specific --help
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            // Unknown argument
+            std::cerr << "Unknown argument: " << arg << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Always output JSON regardless of format (this is a schema for programmatic use)
+        std::cout << "{\n"
+                  << "  \"model_name\": \"" << Memory::MACHINE_DISPLAY_NAME << "\",\n"
+                  << "  \"model_description\": \"" << Memory::MACHINE_DESCRIPTION << "\",\n"
+                  << "  \"options\": []\n"
+                  << "}\n";
+
+        return ExitCode::OK;
+    }
+};
+
 // Help subcommand - shows help for other subcommands
 template<typename MachineType>
 class HelpSubcommand : public Subcommand<MachineType> {
@@ -1351,6 +1400,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<StartSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DescribeConfigurationSubcommand<MachineType>>());
         v.push_back(std::make_unique<HelpSubcommand<MachineType>>());
         return v;
     }();
