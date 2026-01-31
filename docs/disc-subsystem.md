@@ -826,9 +826,34 @@ The following features are not implemented. They may be needed for compatibility
 
 ### Future Hardware
 
+#### Acorn Controllers
+
 - **Intel 8271**: Required for Model B disc compatibility (uses 0xFE80-0xFE83 for command/status registers, completely different command protocol). Note: The Model B+ was designed to support 8271 but only WD1770 was ever fitted.
 - **WD1772**: Faster step rates (2ms, 3ms, 6ms, 12ms).
-- **Opus WD2793**: Third-party disc controller from Opus Supplies using the WD2793 FDC. Has different control register layout than the Acorn 1770 controller. This is one of several third-party disc controllers for the Model B, confirming the need for the pluggable `DiscControllerSocket` architecture to avoid combinatorial explosion of model variants (model-b-8271, model-b-acorn-1770, model-b-opus-2793, model-b-watford, etc.).
+
+#### Opus Controllers
+
+Opus Supplies produced four different FDC boards for the BBC Micro, each using a different controller chip and requiring specific ROM versions:
+
+| Controller | Chip | Compatible ROMs |
+|------------|------|-----------------|
+| Opus DDOS (8272) | Intel 8272A | DDOS 3.00, 3.05 |
+| Opus DDOS (2791) | WD2791 | DDOS 3.12, 3.15, 3.16, EDOS 0.4 |
+| Opus DDOS (2793) | WD2793 | DDOS 3.35, 3.36 |
+| Opus DDOS (1770) | WD1770 | DDOS 3.45, 3.46 |
+
+The WD2791 and WD2793 are predecessors to the WD1770, with slightly different register layouts and timing characteristics. EDOS was a separate filing system from Opus that also used the WD2791.
+
+#### Solidisk Controllers
+
+- **Solidisk 1770 FDC**: WD1770-based controller, typically used with Solidisk DDFS ROM.
+- **Solidisk DFDC**: Unique dual-controller board containing both an Intel 8271 and WD1770 with a physical switch to select between them. This allowed users to run both single-density (8271-compatible) and double-density (1770) software on the same machine. The DFDC presents an interesting emulation challenge — effectively two mutually-exclusive controllers sharing the same drives.
+
+#### Other Third-Party Controllers
+
+- **Watford DDFS**: WD1770-based with support for 4 drives.
+
+The variety of third-party disc controllers confirms the need for the pluggable `DiscControllerSocket` architecture to avoid combinatorial explosion of model variants (model-b-8271, model-b-acorn-1770, model-b-opus-2793, model-b-watford, model-b-solidisk-dfdc, etc.).
 
 ---
 
