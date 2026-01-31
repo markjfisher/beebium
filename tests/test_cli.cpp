@@ -946,3 +946,159 @@ TEST_CASE("describe-config: unknown argument returns USAGE", "[cli][describe-con
 
     REQUIRE(result == ExitCode::USAGE);
 }
+
+// ============================================================================
+// --preset option tests
+// ============================================================================
+
+#ifndef BEEBIUM_TEST_ASSETS_DIR
+#error "BEEBIUM_TEST_ASSETS_DIR must be defined"
+#endif
+
+namespace {
+    std::filesystem::path presets_dirpath() {
+        return std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR) / "presets";
+    }
+}
+
+TEST_CASE("parse_start_arguments: --preset sets preset_filepath", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "minimal.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.preset_filepath.has_value());
+    REQUIRE(config.preset_filepath->filename() == "minimal.preset.beebium");
+}
+
+TEST_CASE("parse_start_arguments: --preset applies fdc_socket_id", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "acorn-1770");
+}
+
+TEST_CASE("parse_start_arguments: --preset applies floppy_drives", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0] == "file:///tmp/test.ssd");
+    REQUIRE(config.floppy_filepaths[1].empty());  // Explicit null in preset
+}
+
+TEST_CASE("parse_start_arguments: CLI --fdc overrides preset fdc", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str(), "--fdc", "none"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "none");  // CLI overrides preset's "acorn-1770"
+}
+
+TEST_CASE("parse_start_arguments: CLI --floppy overrides preset floppy", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str(),
+                    "--floppy", "0:file:///other/disc.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0] == "file:///other/disc.ssd");  // CLI overrides preset
+}
+
+TEST_CASE("parse_start_arguments: --preset before other options", "[cli][parse_start_arguments][preset]") {
+    // Preset comes first, then CLI options override
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str(),
+                    "--fdc", "none", "--floppy", "1:file:///drive1.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "none");  // CLI override
+    REQUIRE(config.floppy_filepaths[0] == "file:///tmp/test.ssd");  // From preset
+    REQUIRE(config.floppy_filepaths[1] == "file:///drive1.ssd");  // CLI override
+}
+
+TEST_CASE("parse_start_arguments: --preset after other options", "[cli][parse_start_arguments][preset]") {
+    // CLI options before --preset still override (first pass finds preset regardless of position)
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--fdc", "none", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "none");  // CLI overrides preset
+}
+
+TEST_CASE("parse_start_arguments: --preset with nonexistent file returns error", "[cli][parse_start_arguments][preset]") {
+    ArgvHelper args{"beebium", "start", "--preset", "/nonexistent/path.preset.beebium"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("parse_start_arguments: --preset with invalid JSON returns error", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "invalid.json";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("parse_start_arguments: preset without storage section leaves defaults", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "minimal.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type.empty());  // Not set by preset
+    REQUIRE(config.floppy_filepaths[0].empty());
+    REQUIRE(config.floppy_filepaths[1].empty());
+}
+
+TEST_CASE("parse_start_arguments: --preset with wrong model returns CONFIG error", "[cli][parse_start_arguments][preset]") {
+    auto preset_path = presets_dirpath() / "wrong_model.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::CONFIG);
+}
+
+TEST_CASE("parse_start_arguments: --preset with matching model succeeds", "[cli][parse_start_arguments][preset]") {
+    // The storage.preset.beebium has model: "model-b" which matches MachineType (ModelB)
+    auto preset_path = presets_dirpath() / "storage.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "acorn-1770");
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Storage Test Preset",
+  "model": "ModelB",
+  "storage": {
+    "fdc_socket": {
+      "id": "acorn-1770",
+      "mode": "1770"
+    },
+    "floppy_drives": [
+      { "drive": 0, "image_uri": "file:///tmp/test.ssd" },
+      { "drive": 1, "image_uri": null }
+    ],
+    "cassette": {
+      "image_uri": "file:///tmp/test.uef"
+    }
+  }
+}

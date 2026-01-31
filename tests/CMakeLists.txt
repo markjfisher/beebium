@@ -447,6 +447,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_server_main PRIVATE
         beebium_service
+        nlohmann_json::nlohmann_json
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_server_main PRIVATE
@@ -462,10 +463,27 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_cli PRIVATE
         beebium_service
+        nlohmann_json::nlohmann_json
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_cli PRIVATE
         BEEBIUM_VERSION="${PROJECT_VERSION}"
+        BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
     )
     catch_discover_tests(test_cli)
+
+    # Preset loader tests
+    add_executable(test_preset_loader test_preset_loader.cpp)
+    target_include_directories(test_preset_loader PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/server/include
+    )
+    target_link_libraries(test_preset_loader PRIVATE
+        beebium_service
+        nlohmann_json::nlohmann_json
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_preset_loader PRIVATE
+        BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+    )
+    catch_discover_tests(test_preset_loader)
 endif()

@@ -1,0 +1,7 @@
+{
+  "name": "Wrong Model Preset",
+  "model": "master-128",
+  "storage": {
+    "fdc_socket": { "id": "acorn-1770" }
+  }
+}

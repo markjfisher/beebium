@@ -1,0 +1,10 @@
+{
+  "name": "Relative Paths Preset",
+  "storage": {
+    "fdc_socket": { "id": "acorn-1770" },
+    "floppy_drives": [
+      { "drive": 0, "image_uri": "game.ssd" },
+      { "drive": 1, "image_uri": "../discs/other.ssd" }
+    ]
+  }
+}

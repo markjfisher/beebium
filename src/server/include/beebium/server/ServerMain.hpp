@@ -19,6 +19,7 @@
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/service/Server.hpp"
+#include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/RomPaths.hpp"
 
 #include <array>
@@ -511,6 +512,9 @@ struct ServerConfig {
 
     // mDNS advertisement
     bool advertise = false;
+
+    // Preset file path
+    std::optional<std::filesystem::path> preset_filepath;
 };
 
 template<typename MachineType>
@@ -521,6 +525,8 @@ void print_usage(const char* program_name) {
               << "Machine: " << Memory::MACHINE_DISPLAY_NAME << "\n"
               << "\n"
               << "Optional:\n"
+              << "  --preset <filepath>      Load configuration from preset file\n"
+              << "                           (CLI options override preset values)\n"
               << "  --mos <filepath>         MOS ROM filepath (default: " << Memory::DEFAULT_MOS_ROM << ")\n"
               << "  --sideways SLOT:TYPE[:IMAGE]\n"
               << "                           Configure sideways slot (0-15):\n"
@@ -603,18 +609,85 @@ void print_info(const char* program_name) {
     std::cout << "\n}\n";
 }
 
+// Apply preset configuration to ServerConfig.
+// Preset values provide defaults that can be overridden by CLI arguments.
+template<typename MachineType>
+void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset) {
+    if (preset.storage) {
+        const auto& storage = *preset.storage;
+
+        // FDC socket
+        if (storage.fdc_socket_id && config.fdc_type.empty()) {
+            config.fdc_type = *storage.fdc_socket_id;
+        }
+        // Note: fdc_socket_mode stored for future use
+
+        // Floppy drives
+        for (const auto& [drive, uri_opt] : storage.floppy_drives) {
+            if (drive < config.floppy_filepaths.size() && config.floppy_filepaths[drive].empty()) {
+                if (uri_opt) {
+                    config.floppy_filepaths[drive] = *uri_opt;
+                }
+                // nullopt means empty drive - leave as empty string (default)
+            }
+        }
+
+        // Cassette - future enhancement
+    }
+}
+
 // Parse command-line arguments for the 'start' subcommand into a ServerConfig struct.
 // Returns:
 //   - std::nullopt on success (continue execution)
 //   - ExitCode::OK for --help (exit successfully)
 //   - ExitCode::USAGE or ExitCode::CONFIG for errors
+//
+// Preset merge semantics: If --preset is specified, the preset file is loaded first
+// and its values populate the config. Then CLI arguments are parsed and can override
+// any preset value. This allows presets to provide defaults while CLI provides overrides.
 template<typename MachineType>
 std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index,
                                           ServerConfig<MachineType>& config) {
+    using Memory = typename MachineType::Memory;
+
+    // First pass: find --preset and load it before other options
+    // This allows CLI options to override preset values
+    for (int i = start_index; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--preset" && i + 1 < argc) {
+            config.preset_filepath = argv[i + 1];
+            auto result = load_preset(*config.preset_filepath);
+            if (!result) {
+                std::cerr << "Error: " << result.error << "\n";
+                return ExitCode::NOINPUT;
+            }
+
+            // Validate model compatibility if preset specifies a model
+            if (result.config->model) {
+                std::string_view preset_model = *result.config->model;
+                std::string_view machine_type = Memory::MACHINE_TYPE;
+                if (preset_model != machine_type) {
+                    std::cerr << "Error: Preset is for model '" << preset_model
+                              << "' but this executable is '" << machine_type << "'\n";
+                    return ExitCode::CONFIG;
+                }
+            }
+
+            // Apply preset as baseline configuration
+            apply_preset(config, *result.config);
+            break;
+        }
+    }
+
+    // Second pass: parse all CLI arguments (including --preset which we skip now)
     for (int i = start_index; i < argc; ++i) {
         std::string arg = argv[i];
 
-        if (arg == "--help" || arg == "-h") {
+        if (arg == "--preset" && i + 1 < argc) {
+            // Already handled in first pass, skip
+            ++i;
+            continue;
+        } else if (arg == "--help" || arg == "-h") {
             print_usage<MachineType>(argv[0]);
             return ExitCode::OK;
         } else if (arg == "--mos" && i + 1 < argc) {

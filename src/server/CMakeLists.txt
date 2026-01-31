@@ -20,6 +20,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
     target_link_libraries(${TARGET_NAME}
         PRIVATE
             beebium_service
+            nlohmann_json::nlohmann_json
     )
 endfunction()
 

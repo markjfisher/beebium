@@ -1,0 +1,11 @@
+{
+  "name": "Unknown Keys Preset",
+  "model": "model-b",
+  "future_feature": {
+    "some": "data"
+  },
+  "storage": {
+    "fdc_socket": { "id": "acorn-1770" },
+    "unknown_storage_key": true
+  }
+}
