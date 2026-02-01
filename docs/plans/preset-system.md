@@ -15,7 +15,7 @@ This phase builds on:
 ## Design Principles
 
 1. **Uniform discovery**: All presets are `.preset.beebium` files—bare machine defaults and configured variants alike
-2. **Implementation detail hidden**: Users see "Available Machines", not "executables vs preset files"
+2. **Implementation detail hidden**: Users see "Built-in Machine Presets", not "executables vs preset files"
 3. **User presets are copies**: Users duplicate system presets and modify; system presets are immutable
 4. **Configuration comes from cores**: Cores self-describe their configuration schema via CLI
 5. **Presets are portable**: Stored as JSON, can be shared between users
@@ -61,7 +61,19 @@ presets/
 
 ### User Presets
 
-User presets live in `~/Library/Application Support/Beebium/presets/` and can be edited or deleted.
+User presets are stored in platform-specific locations following OS conventions:
+
+| Platform | Location |
+|----------|----------|
+| macOS    | `~/Library/Application Support/Beebium/presets/` |
+| Linux    | `$XDG_CONFIG_HOME/beebium/presets/` (defaults to `~/.config/beebium/presets/`) |
+| Windows  | `%APPDATA%\Beebium\presets\` |
+
+**Note**: These directories are hidden by default on all platforms. Users interact with presets by name through the application UI, not by navigating to filesystem paths. The hidden directory is purely a storage backend.
+
+**Environment variable override**: Set `BEEBIUM_USER_PRESETS_DIRPATH` to use a custom location for user presets. This is useful for advanced users, portable installations, or unusual setups.
+
+User presets can be edited or deleted through the application UI.
 
 ## Preset Lifecycle
 
@@ -207,8 +219,10 @@ class PresetManager: ObservableObject {
 2. `Beebium.app/Contents/Resources/presets/` (app bundle, production)
 3. `~/Code/beebium/build/src/server/presets/` (development fallback)
 
-**User presets**:
-1. `~/Library/Application Support/Beebium/presets/`
+**User presets** (platform-specific, can be overridden with `BEEBIUM_USER_PRESETS_DIRPATH`):
+- macOS: `~/Library/Application Support/Beebium/presets/`
+- Linux: `$XDG_CONFIG_HOME/beebium/presets/` (defaults to `~/.config/beebium/presets/`)
+- Windows: `%APPDATA%\Beebium\presets\`
 
 ### Discovery Process
 
@@ -299,40 +313,89 @@ Executables follow the pattern `beebium-{model}`:
 - `beebium-model-b-plus`
 - `beebium-master-128`
 
+### Preset IDs
+
+**The filename (minus extension) is the preset ID.** This provides a CLI-friendly identifier without spaces or special characters.
+
+| Filename | Preset ID | Display Name |
+|----------|-----------|--------------|
+| `model-b.preset.beebium` | `model-b` | BBC Model B |
+| `model-b-with-acorn-dfs.preset.beebium` | `model-b-with-acorn-dfs` | BBC Model B with Acorn DFS |
+| `my-elite-setup.preset.beebium` | `my-elite-setup` | My Elite Setup |
+
+The `name` field inside the preset file is purely for display purposes. The filename/ID is the stable identifier used for CLI operations and internal references.
+
+**ID generation for user presets**: When a user creates a preset named "My Elite Setup", the application:
+1. Slugifies the name → `my-elite-setup`
+2. Saves as `my-elite-setup.preset.beebium`
+3. Stores the original name in the `name` field for display
+
+**Slug rules**: Preset IDs (filenames) must be valid slugs:
+- Lowercase letters, numbers, and hyphens only
+- No spaces or special characters
+- Start with a letter or number
+- The UI enforces these constraints during preset creation
+
 ## User Preset Storage
 
 ### File Location
 
+User presets are stored in platform-specific directories (see [User Presets](#user-presets) above):
+
 ```
-~/Library/Application Support/Beebium/
-└── presets/
-    ├── My Custom Model B.json
-    ├── Elite Setup.json
-    └── Testing Config.json
+# macOS
+~/Library/Application Support/Beebium/presets/
+├── my-custom-model-b.preset.beebium
+├── elite-setup.preset.beebium
+└── testing-config.preset.beebium
+
+# Linux
+~/.config/beebium/presets/
+├── my-custom-model-b.preset.beebium
+├── elite-setup.preset.beebium
+└── testing-config.preset.beebium
+
+# Windows
+%APPDATA%\Beebium\presets\
+├── my-custom-model-b.preset.beebium
+├── elite-setup.preset.beebium
+└── testing-config.preset.beebium
 ```
 
 ### File Format
 
+User preset files use the same JSON format as system presets:
+
 ```json
 {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "My Custom Model B",
-    "coreExecutablePath": "/Applications/Beebium.app/Contents/MacOS/cores/beebium-model-b",
-    "configuration": {
-        "os_rom": "MOS120",
-        "basic_rom": "BASIC2",
-        "dfs_rom": "WatfordDFS",
-        "disc0": "/Users/me/Discs/Elite.ssd"
+    "description": "Model B configured for Elite with Watford DFS",
+    "model": "model-b",
+    "release_date": "1981-12",
+    "storage": {
+        "fdc_socket": { "id": "watford-1770" }
     },
-    "isDefault": false,
-    "modelName": "BBC Model B",
-    "modelDescription": "The original BBC Microcomputer with 32KB RAM"
+    "sideways_bank": {
+        "slots": [
+            { "slot": 14, "type": "rom", "image": "watford-dfs.rom" }
+        ]
+    }
 }
 ```
 
+The `name` field is the display name shown in the UI. The filename (ID) is derived from the name when the preset is created.
+
 ### File Naming
 
-Preset files are named after the preset name with `.json` extension. Invalid filename characters are replaced with underscores.
+Preset files are named with a slugified ID and `.preset.beebium` extension:
+- Display name: "My Custom Model B"
+- Filename: `my-custom-model-b.preset.beebium`
+
+Slugification rules:
+- Convert to lowercase
+- Replace spaces and special characters with hyphens
+- Remove consecutive hyphens
+- Ensure uniqueness (append `-2`, `-3`, etc. if needed)
 
 ## Settings UI (Machines Pane)
 
@@ -343,7 +406,7 @@ Preset files are named after the preset name with `.json` extension. Invalid fil
 │  Machine Presets                                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Available Machines                                             │
+│  Built-in Machine Presets                                             │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ 🖥️  BBC Model B                                      [Dup] ││
 │  │     The original BBC Microcomputer with 32KB RAM            ││
@@ -365,7 +428,7 @@ Preset files are named after the preset name with `.json` extension. Invalid fil
 │  │     ⚠️ Requires coprocessor support (not yet implemented)   ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
-│  My Presets                                                     │
+│  My Machine Presets                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ 🖥️  Elite Setup                            [Edit] [Delete] ││
 │  │     BBC Model B • Custom configuration                      ││
@@ -380,7 +443,7 @@ Preset files are named after the preset name with `.json` extension. Invalid fil
 ```
 
 Note: System presets (bare machines + bundled configurations) are shown together in
-"Available Machines". The distinction between a bare executable and a configured preset
+"Built-in Machine Presets". The distinction between a bare executable and a configured preset
 is an implementation detail hidden from users.
 
 ### Interactions
@@ -391,6 +454,32 @@ is an implementation detail hidden from users.
 | Edit | Click [Edit] button | Opens edit sheet for configuration |
 | Delete | Click [Delete] button | Confirmation alert, then removes preset |
 | Refresh | Automatic on pane open | Re-scans for core executables |
+| Import | File > Import Preset... | Copies a `.preset.beebium` file into user presets directory |
+| Export | Right-click > Export... | Saves preset to user-chosen location for sharing |
+| Reveal | Right-click > Show in Finder | Opens the presets directory in the system file browser |
+
+### Preset Management
+
+Since preset directories are hidden by default on all platforms, the application provides UI for all common operations:
+
+**Creating presets**: Users create presets by duplicating a built-in preset and modifying it. The "Duplicate" action:
+1. Prompts for a name (e.g., "My Elite Setup")
+2. Generates a slug ID (e.g., `my-elite-setup`)
+3. Creates `my-elite-setup.preset.beebium` in the user presets directory
+4. Opens the preset editor
+
+**Import**: The "Import Preset..." menu item or drag-and-drop allows users to add presets from external sources:
+- Validates the preset file is valid JSON with required fields
+- Copies the file to the user presets directory
+- Handles name conflicts by appending numbers (e.g., `elite-setup-2.preset.beebium`)
+
+**Export**: Right-clicking a preset and selecting "Export..." allows users to save a copy for sharing:
+- Opens a save dialog
+- Exports to the chosen location (outside the managed presets directory)
+
+**Reveal in Finder/Explorer**: For power users who want direct filesystem access:
+- Right-click any preset and select "Show in Finder" (macOS), "Show in Files" (Linux), or "Show in Explorer" (Windows)
+- Opens the user presets directory in the system file browser
 
 ### Edit Sheet
 
@@ -492,6 +581,36 @@ The key difference from Settings:
 | `clients/macos/Beebium/Beebium/BeebiumApp.swift` | Add PresetManager to environment |
 
 ## CLI Interface
+
+### Using Presets from the Command Line
+
+Presets can be specified by ID (filename without extension) when launching an emulator:
+
+```bash
+# Launch with a system preset
+beebium-model-b --preset model-b-with-acorn-dfs
+
+# Launch with a user preset
+beebium-model-b --preset my-elite-setup
+
+# List available presets for this model
+beebium-model-b --list-presets
+```
+
+The `--list-presets` flag outputs preset information in a human-readable format:
+
+```
+System presets:
+  model-b                    BBC Model B
+  model-b-with-acorn-dfs     BBC Model B with Acorn DFS
+  model-b-with-watford-dfs   BBC Model B with Watford DFS
+
+User presets:
+  my-elite-setup             My Elite Setup
+  testing-config             Testing Config
+```
+
+For machine-readable output (e.g., for scripts), use `--list-presets --json`.
 
 ### describe-preset-schema Subcommand
 
@@ -658,7 +777,7 @@ If a preset references a disc image that no longer exists:
 
 2. **Uniform preset discovery**: All machine configurations are preset files. Bare machine defaults (model-b.preset.beebium) are generated at build time. This simplifies client logic—one discovery mechanism for all presets.
 
-3. **No visual distinction**: Users see "Available Machines" with no indication whether a machine is a bare executable or a configured preset. This is an implementation detail.
+3. **No visual distinction**: Users see "Built-in Machine Presets" with no indication whether a machine is a bare executable or a configured preset. This is an implementation detail.
 
 4. **Sorting by era**: Presets are sorted chronologically by `release_date` (format: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`), then by natural alphanumeric name. Missing date components default to `00` for sorting.
 
@@ -680,14 +799,16 @@ If a preset references a disc image that no longer exists:
 
 1. **Preset icons**: Should presets have custom icons? Could use model icon for all, or allow bundled presets to specify custom icons.
 
-2. **Preset export/import**: Should there be explicit Export/Import buttons, or is drag-and-drop of `.preset.beebium` files sufficient?
+2. **Preset validation**: How strict should validation be? Allow launching with missing ROM paths (core will error), or block in the UI?
 
-3. **Preset validation**: How strict should validation be? Allow launching with missing ROM paths (core will error), or block in the UI?
+3. **Recent configurations**: When user launches from New Machine with modifications (without saving as preset), should this be remembered as "last used configuration" per model?
 
-4. **Recent configurations**: When user launches from New Machine with modifications (without saving as preset), should this be remembered as "last used configuration" per model?
+4. **Core executable versioning**: If a core updates and its configuration schema changes, how do we migrate existing user presets? Probably best to leave unknown keys and let users update manually.
 
-5. **Core executable versioning**: If a core updates and its configuration schema changes, how do we migrate existing user presets? Probably best to leave unknown keys and let users update manually.
+## Resolved Questions
 
-6. **Build-time generation**: Should bare preset files be generated by CMake, or committed to the repository? CMake generation ensures consistency with executables but adds complexity.
+1. **Preset export/import**: Yes, explicit Import/Export menu items plus drag-and-drop support. "Show in Finder/Explorer" for direct access.
+
+2. **Build-time generation**: CMake generates bare preset files at build time. This ensures consistency with executables.
 
 See the main [lifecycle-management.md](lifecycle-management.md) for the overall phase roadmap.
