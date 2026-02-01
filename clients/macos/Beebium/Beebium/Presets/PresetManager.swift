@@ -46,19 +46,19 @@ class PresetManager: ObservableObject {
 
         for executablePath in executables {
             NSLog("[PresetManager] Querying: \(executablePath)")
-            let (schema, error) = await fetchConfigurationSchema(from: executablePath)
+            let (schema, error) = await fetchPresetSchema(from: executablePath)
             if let schema = schema {
                 let preset = MachinePreset(
                     id: UUID(),
-                    name: schema.modelName,
+                    name: schema.model.name,
                     coreExecutablePath: executablePath,
                     isDefault: true,
-                    modelName: schema.modelName,
-                    modelDescription: schema.modelDescription,
+                    modelName: schema.model.name,
+                    modelDescription: schema.model.description,
                     configuration: [:]
                 )
                 discovered.append(preset)
-                NSLog("[PresetManager] Discovered: \(schema.modelName)")
+                NSLog("[PresetManager] Discovered: \(schema.model.name)")
             } else {
                 let filename = URL(fileURLWithPath: executablePath).lastPathComponent
                 configFailures.append(filename)
@@ -119,12 +119,12 @@ class PresetManager: ObservableObject {
         return (executables, nil)
     }
 
-    /// Invoke `describe-config` on a server executable and parse the JSON response.
+    /// Invoke `describe-preset-schema` on a server executable and parse the JSON response.
     /// Returns (schema, errorMessage) - errorMessage is nil on success.
-    private func fetchConfigurationSchema(from executablePath: String) async -> (ConfigurationSchema?, String?) {
+    private func fetchPresetSchema(from executablePath: String) async -> (PresetSchema?, String?) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = ["describe-config"]
+        process.arguments = ["describe-preset-schema"]
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -146,7 +146,7 @@ class PresetManager: ObservableObject {
             }
 
             let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let schema = try JSONDecoder().decode(ConfigurationSchema.self, from: data)
+            let schema = try JSONDecoder().decode(PresetSchema.self, from: data)
             return (schema, nil)
         } catch {
             NSLog("[PresetManager] Failed to query \(executablePath): \(error)")

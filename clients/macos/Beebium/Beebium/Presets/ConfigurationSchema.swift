@@ -12,45 +12,34 @@
 
 import Foundation
 
-/// Schema describing a machine's configurable options, returned by `describe-configuration` CLI.
-struct ConfigurationSchema: Codable {
-    let modelName: String
-    let modelDescription: String?
-    let options: [ConfigOption]
+/// Root schema returned by `describe-preset-schema` CLI.
+///
+/// Contains machine identification and configuration sections that describe
+/// the machine's capabilities (storage, networking, coprocessor, etc.).
+struct PresetSchema: Codable {
+    let schemaVersion: Int
+    let model: ModelInfo
+    let sections: [SchemaSection]
 
     enum CodingKeys: String, CodingKey {
-        case modelName = "model_name"
-        case modelDescription = "model_description"
-        case options
+        case schemaVersion = "schema_version"
+        case model, sections
     }
 }
 
-/// A single configurable option within a configuration schema.
-struct ConfigOption: Codable, Identifiable {
-    let key: String
-    let label: String
-    let description: String?
-    let type: ConfigType
-    let defaultValue: String
-    let choices: [String]?
-    let required: Bool
-    let fileFilter: String?
-
-    var id: String { key }
-
-    enum CodingKeys: String, CodingKey {
-        case key, label, description, type
-        case defaultValue = "default_value"
-        case choices, required
-        case fileFilter = "file_filter"
-    }
+/// Machine identification information.
+struct ModelInfo: Codable {
+    let id: String
+    let name: String
+    let description: String
 }
 
-/// Type of a configuration option, determining the UI to display.
-enum ConfigType: String, Codable {
-    case string
-    case integer
-    case boolean
-    case filePath = "file_path"
-    case choice
+/// A configuration section describing a domain of machine capabilities.
+///
+/// The `type` field identifies the section kind (e.g., "storage", "coprocessor").
+/// Additional fields vary by section type and can be decoded on-demand.
+struct SchemaSection: Codable {
+    let type: String
+    // Additional fields (builtin, fdc_socket, floppy_drives, etc.) are
+    // decoded on-demand when building configuration UI for that section.
 }
