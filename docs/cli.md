@@ -63,6 +63,18 @@ All integer arguments accept multiple formats:
 
 This applies to `--port`, `--screen-mode`, `--links`, slot numbers in `--sideways`, and drive numbers in `--floppy`.
 
+## Subcommand Naming
+
+**Design principle**: All subcommand names must include at least one verb. This ensures commands clearly communicate their action.
+
+| Good | Bad | Reason |
+|------|-----|--------|
+| `list-presets` | `presets` | Verb "list" indicates action |
+| `describe-machine` | `machine-info` | Verb "describe" indicates action |
+| `report-presets-dirpath` | `presets-dir` | Verb "report" indicates action |
+| `create-preset` | `new-preset` | "new" is an adjective, not a verb |
+| `delete-preset` | `preset-remove` | Verb should come first |
+
 ## Subcommands
 
 ### start
@@ -211,6 +223,120 @@ default_language_slot	15
 ```
 
 Model B+ also includes DFS information (`default_dfs_rom`, `default_dfs_slot`).
+
+### describe-preset-schema
+
+Output the configuration schema for presets. Used by GUIs to build dynamic configuration UIs.
+
+```bash
+beebium-model-b describe-preset-schema
+```
+
+Output is JSON describing the model and available configuration sections. See [preset-system.md](plans/preset-system.md) for schema details.
+
+### Preset Management Subcommands
+
+These subcommands manage preset files. GUIs invoke these rather than implementing preset logic directly, ensuring consistent behavior across all clients.
+
+#### list-presets
+
+List available presets for this model.
+
+```bash
+beebium-model-b list-presets [--json]
+```
+
+**Default output** (human-readable):
+```
+Built-in presets:
+  model-b                    BBC Model B
+  model-b-with-acorn-dfs     BBC Model B with Acorn DFS
+
+User presets:
+  my-elite-setup             My Elite Setup
+```
+
+**`--json` output**:
+```json
+{"presets":[{"id":"model-b","name":"BBC Model B","source":"system"},{"id":"my-elite-setup","name":"My Elite Setup","source":"user"}]}
+```
+
+#### show-preset
+
+Output the contents of a preset file.
+
+```bash
+beebium-model-b show-preset <id>
+```
+
+Outputs the preset JSON to stdout. Useful for inspection or piping to editors.
+
+#### report-presets-dirpath
+
+Report the directory path where user presets are stored.
+
+```bash
+beebium-model-b report-presets-dirpath
+```
+
+Output (platform-specific):
+```
+/Users/alice/Library/Application Support/Beebium/presets
+```
+
+This path can be overridden with the `BEEBIUM_USER_PRESETS_DIRPATH` environment variable.
+
+#### create-preset
+
+Create a new user preset.
+
+```bash
+beebium-model-b create-preset --name "My Elite Setup" [--from <source-id>]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--name <name>` | Display name for the preset (required) |
+| `--from <id>` | Source preset to copy configuration from (optional) |
+
+The preset ID is derived by slugifying the name. Outputs the created preset ID on success:
+```
+my-elite-setup
+```
+
+If `--from` is omitted, creates a minimal preset for the model.
+
+#### delete-preset
+
+Delete a user preset.
+
+```bash
+beebium-model-b delete-preset <id>
+```
+
+Only user presets can be deleted. Attempting to delete a system preset returns an error.
+
+#### import-preset
+
+Import a preset file into the user presets directory.
+
+```bash
+beebium-model-b import-preset <filepath>
+```
+
+Validates the preset file and copies it to the user presets directory. Handles ID conflicts by appending numbers (e.g., `elite-setup-2`).
+
+Outputs the imported preset ID on success.
+
+#### export-preset
+
+Export a preset to a specified path.
+
+```bash
+beebium-model-b export-preset <id> --output <filepath>
+```
+
+Copies the preset file to the specified location. Works with both system and user presets.
 
 ### help
 

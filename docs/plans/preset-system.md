@@ -588,19 +588,19 @@ Presets can be specified by ID (filename without extension) when launching an em
 
 ```bash
 # Launch with a system preset
-beebium-model-b --preset model-b-with-acorn-dfs
+beebium-model-b start --preset model-b-with-acorn-dfs
 
 # Launch with a user preset
-beebium-model-b --preset my-elite-setup
+beebium-model-b start --preset my-elite-setup
 
 # List available presets for this model
-beebium-model-b --list-presets
+beebium-model-b list-presets
 ```
 
-The `--list-presets` flag outputs preset information in a human-readable format:
+The `list-presets` subcommand outputs preset information in a human-readable format:
 
 ```
-System presets:
+Built-in presets:
   model-b                    BBC Model B
   model-b-with-acorn-dfs     BBC Model B with Acorn DFS
   model-b-with-watford-dfs   BBC Model B with Watford DFS
@@ -610,7 +610,26 @@ User presets:
   testing-config             Testing Config
 ```
 
-For machine-readable output (e.g., for scripts), use `--list-presets --json`.
+For machine-readable output (e.g., for scripts), use `list-presets --json`.
+
+### Preset Management Subcommands
+
+GUIs and other clients invoke these subcommands rather than implementing preset management logic directly. This ensures consistent behavior across all clients.
+
+```bash
+# Query
+beebium-model-b list-presets [--json]
+beebium-model-b show-preset <id>
+beebium-model-b report-presets-dirpath
+
+# Mutate
+beebium-model-b create-preset --name "My Elite Setup" [--from <source-id>]
+beebium-model-b delete-preset <id>
+beebium-model-b import-preset <filepath>
+beebium-model-b export-preset <id> --output <filepath>
+```
+
+See [cli.md](../cli.md) for full documentation of each subcommand.
 
 ### describe-preset-schema Subcommand
 
