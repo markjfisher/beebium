@@ -87,7 +87,7 @@ public:
             identity_.name = "BBC Model B";
         }
         if (identity_.model_type.empty()) {
-            identity_.model_type = "ModelB";
+            identity_.model_type = "model-b";
         }
         if (identity_.model_name.empty()) {
             identity_.model_name = "BBC Model B";
@@ -297,7 +297,7 @@ TEST_CASE("SystemService GetSystemInfo returns identity", "[grpc][system][identi
     const auto& identity = response.identity();
     CHECK(is_valid_uuid(identity.uuid()));
     CHECK_FALSE(identity.name().empty());
-    CHECK(identity.model_type() == "ModelB");
+    CHECK(identity.model_type() == "model-b");
     CHECK_FALSE(identity.model_name().empty());
     CHECK(identity.model_name().find("BBC") != std::string::npos);
     CHECK(identity.model_name().find("Model B") != std::string::npos);

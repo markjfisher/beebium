@@ -91,7 +91,7 @@ TEST_CASE("load_preset: valid storage section", "[preset][load_preset]") {
     REQUIRE(result.success());
     REQUIRE(result.config.has_value());
     REQUIRE(result.config->name == "Storage Test Preset");
-    REQUIRE(result.config->model == "ModelB");
+    REQUIRE(result.config->model == "model-b");
 
     REQUIRE(result.config->storage.has_value());
     const auto& storage = *result.config->storage;

@@ -85,7 +85,7 @@ namespace beebium {
 class ModelBHardware {
 public:
     // Machine identification and region names (compile-time constants)
-    static constexpr std::string_view MACHINE_TYPE = "ModelB";
+    static constexpr std::string_view MACHINE_TYPE = "model-b";
     static constexpr std::string_view MACHINE_DISPLAY_NAME = "BBC Model B";
     static constexpr std::string_view MACHINE_DESCRIPTION = "The original BBC Microcomputer with 32KB RAM";
     static constexpr std::string_view REGION_MAIN_RAM = "main_ram";

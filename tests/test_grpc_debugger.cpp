@@ -608,7 +608,7 @@ TEST_CASE("DebuggerControl GetMemoryRegions returns regions for ModelB", "[grpc]
     auto status = fixture.debugger().GetMemoryRegions(&context, request, &response);
 
     REQUIRE(status.ok());
-    CHECK(response.machine_type() == "ModelB");
+    CHECK(response.machine_type() == "model-b");
 
     // ModelB should have: main_ram, mos_rom, bank_0 through bank_15
     REQUIRE(response.regions_size() >= 18);

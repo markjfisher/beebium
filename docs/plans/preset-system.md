@@ -30,9 +30,9 @@ This phase builds on:
 │    Find beebium-model-b, beebium-master-128, etc.               │
 │                     │                                           │
 │                     ▼                                           │
-│    Query Configuration Schema                                   │
-│    ─────────────────────────                                    │
-│    gRPC DescribeConfiguration → schema + defaults               │
+│    Query Preset Schema                                          │
+│    ──────────────────                                           │
+│    CLI describe-preset-schema → JSON schema with sections       │
 │                     │                                           │
 │                     ▼                                           │
 │    Generate Default Presets                                     │
@@ -81,37 +81,31 @@ enum ConfigValue: Codable, Hashable {
 
 ### Configuration Schema
 
-Cores describe their configurable options via gRPC. This enables the frontend to render appropriate UI without hardcoding knowledge of each model's options.
+Cores describe their configurable options via the `describe-preset-schema` CLI subcommand. This enables the frontend to render appropriate UI without hardcoding knowledge of each model's options.
 
-```protobuf
-// In system.proto
+```bash
+beebium-model-b describe-preset-schema
+```
 
-message DescribeConfigurationRequest {}
+Output is JSON with a sectioned structure:
 
-message DescribeConfigurationResponse {
-    string model_name = 1;           // "BBC Model B"
-    string model_description = 2;     // "The original BBC Microcomputer..."
-    repeated ConfigOption options = 3;
-}
-
-message ConfigOption {
-    string key = 1;                   // "os_rom", "disc0", "tube_enabled"
-    string label = 2;                 // "Operating System ROM"
-    string description = 3;           // "Select the MOS ROM version"
-    ConfigType type = 4;
-    string default_value = 5;
-    repeated string choices = 6;      // For CHOICE type
-    bool required = 7;
-}
-
-enum ConfigType {
-    STRING = 0;
-    INTEGER = 1;
-    BOOLEAN = 2;
-    FILE_PATH = 3;
-    CHOICE = 4;
+```json
+{
+  "schema_version": 1,
+  "model": {
+    "id": "model-b",
+    "name": "BBC Model B",
+    "description": "The original BBC Microcomputer with 32KB RAM"
+  },
+  "sections": [
+    { "type": "storage", "builtin": {...}, "fdc_socket": {...}, "floppy_drives": [...] },
+    { "type": "sideways_bank", ... },
+    { "type": "coprocessor", ... }
+  ]
 }
 ```
+
+See [preset-schema/overview.md](plans/preset-schema/overview.md) for the full schema specification.
 
 ### PresetManager
 
@@ -142,7 +136,7 @@ class PresetManager: ObservableObject {
     private func saveUserPresets()
 
     // Core communication
-    func fetchConfigurationSchema(for executablePath: String) async throws -> ConfigurationSchema
+    func fetchPresetSchema(for executablePath: String) async throws -> ConfigurationSchema
 }
 ```
 
@@ -173,7 +167,7 @@ func discoverCoreExecutables() async {
 
     // 3. For each executable, query its configuration
     for executable in executables {
-        if let schema = try? await fetchConfigurationSchema(for: executable.path) {
+        if let schema = try? await fetchPresetSchema(for: executable.path) {
             let preset = MachinePreset(
                 id: UUID(),
                 name: schema.modelName,
@@ -386,56 +380,43 @@ The key difference from Settings:
 
 | File | Changes |
 |------|---------|
-| `src/service/proto/system.proto` | Add `DescribeConfiguration` RPC |
-| `src/service/SystemService.hpp` / `.cpp` | Implement `DescribeConfiguration` |
+| `src/server/include/beebium/server/ServerMain.hpp` | Implement `describe-preset-schema` CLI subcommand |
+| `clients/macos/Beebium/Beebium/Presets/ConfigurationSchema.swift` | Define schema types matching JSON output |
+| `clients/macos/Beebium/Beebium/Presets/PresetManager.swift` | Invoke CLI and parse schema |
 | `clients/macos/Beebium/Beebium/BeebiumApp.swift` | Add PresetManager to environment |
 
-## Protocol Changes
+## CLI Interface
 
-### system.proto Additions
+### describe-preset-schema Subcommand
 
-```protobuf
-service System {
-    // Existing RPCs...
+Cores expose their configuration schema via CLI rather than gRPC. This allows schema introspection without starting a server.
 
-    // Configuration introspection
-    rpc DescribeConfiguration(DescribeConfigurationRequest)
-        returns (DescribeConfigurationResponse);
-}
+```bash
+beebium-model-b describe-preset-schema
+```
 
-message DescribeConfigurationRequest {}
+Output is JSON (see [preset-schema/overview.md](plans/preset-schema/overview.md) for full specification):
 
-message DescribeConfigurationResponse {
-    string model_name = 1;
-    string model_description = 2;
-    repeated ConfigOption options = 3;
-}
-
-message ConfigOption {
-    string key = 1;
-    string label = 2;
-    string description = 3;
-    ConfigType type = 4;
-    string default_value = 5;
-    repeated string choices = 6;  // For CHOICE type
-    bool required = 7;
-    ConfigConstraints constraints = 8;  // Optional bounds, etc.
-}
-
-enum ConfigType {
-    CONFIG_TYPE_STRING = 0;
-    CONFIG_TYPE_INTEGER = 1;
-    CONFIG_TYPE_BOOLEAN = 2;
-    CONFIG_TYPE_FILE_PATH = 3;
-    CONFIG_TYPE_CHOICE = 4;
-}
-
-message ConfigConstraints {
-    optional int64 min_value = 1;  // For INTEGER
-    optional int64 max_value = 2;  // For INTEGER
-    optional string file_filter = 3;  // For FILE_PATH (e.g., "ssd,dsd")
+```json
+{
+  "schema_version": 1,
+  "model": {
+    "id": "model-b",
+    "name": "BBC Model B",
+    "description": "The original BBC Microcomputer with 32KB RAM"
+  },
+  "sections": [
+    {
+      "type": "storage",
+      "builtin": { "cassette": true, "fdc": null },
+      "fdc_socket": { "options": [...] },
+      "floppy_drives": [...]
+    }
+  ]
 }
 ```
+
+The macOS client invokes this subcommand for each discovered executable and parses the JSON to build its preset list.
 
 ## Testing
 

@@ -286,27 +286,25 @@ struct ConnectWindowContent: View {
 
     // MARK: - Helpers
 
-    /// Map internal model identifiers to friendly display names
+    /// Map internal model identifiers to friendly display names.
+    /// Model IDs match the executable suffix (e.g., beebium-model-b → "model-b").
     private func friendlyModelName(_ modelType: String) -> String {
         switch modelType {
-        case "ModelB":
+        case "model-b":
             return "Model B"
-        case "ModelBPlus":
+        case "model-b-plus":
             return "Model B+"
-        case "Master128":
+        case "model-b-romram":
+            return "Model B (ROM/RAM)"
+        case "master-128":
             return "Master 128"
-        case "MasterCompact":
+        case "master-compact":
             return "Master Compact"
-        case "ModelA":
+        case "model-a":
             return "Model A"
         default:
-            // Fall back to the raw value, but add spaces before capitals
-            // e.g., "BBCMicroModelB" -> "BBC Micro Model B"
-            return modelType.replacingOccurrences(
-                of: "([a-z])([A-Z])",
-                with: "$1 $2",
-                options: .regularExpression
-            )
+            // Fall back to the raw value with hyphens replaced by spaces and title-cased
+            return modelType.replacingOccurrences(of: "-", with: " ").capitalized
         }
     }
 

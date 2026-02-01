@@ -1159,7 +1159,7 @@ TEST_CASE("describe-preset-schema: has model info", "[cli][describe-preset-schem
     REQUIRE(json["model"].contains("description"));
 
     // Model B specific values
-    REQUIRE(json["model"]["id"].get<std::string>() == "ModelB");
+    REQUIRE(json["model"]["id"].get<std::string>() == "model-b");
     REQUIRE(json["model"]["name"].get<std::string>() == "BBC Model B");
     REQUIRE_FALSE(json["model"]["description"].get<std::string>().empty());
 }
@@ -1391,6 +1391,6 @@ TEST_CASE("describe-preset-schema: Model B+ model info is correct", "[cli][descr
     auto output = capture_describe_preset_schema_output<ModelBPlus>();
     auto json = nlohmann::json::parse(output);
 
-    REQUIRE(json["model"]["id"].get<std::string>() == "ModelBPlus");
+    REQUIRE(json["model"]["id"].get<std::string>() == "model-b-plus");
     REQUIRE(json["model"]["name"].get<std::string>() == "BBC Model B+ 64K");
 }

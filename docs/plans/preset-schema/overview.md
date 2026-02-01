@@ -108,7 +108,7 @@ These use primitive types (boolean, integer, enum, file_path) and render with st
 Frontend discovers core executables and invokes CLI:
 
 ```bash
-beebium-model-b describe-config
+beebium-model-b describe-preset-schema
 ```
 
 Core outputs JSON schema describing its configuration options.

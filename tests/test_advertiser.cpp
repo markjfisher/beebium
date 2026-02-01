@@ -87,7 +87,7 @@ TEST_CASE("BonjourAdvertiser can start and stop", "[advertiser][macos]") {
     info.instance_name = "Beebium Test";
     info.port = 48875;
     info.txt_records["uuid"] = "test-uuid-1234";
-    info.txt_records["model"] = "ModelB";
+    info.txt_records["model"] = "model-b";
 
     SECTION("Start advertising") {
         bool result = advertiser->start(info);
@@ -165,7 +165,7 @@ TEST_CASE("WindowsAdvertiser can start and stop", "[advertiser][windows]") {
     info.instance_name = "Beebium Test";
     info.port = 48875;
     info.txt_records["uuid"] = "test-uuid-1234";
-    info.txt_records["model"] = "ModelB";
+    info.txt_records["model"] = "model-b";
 
     SECTION("Start advertising") {
         bool result = advertiser->start(info);

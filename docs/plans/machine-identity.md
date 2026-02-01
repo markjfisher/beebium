@@ -96,7 +96,7 @@ message MachineIdentity {
   // Human-readable label, editable
   string name = 2;
 
-  // Machine type (e.g., "ModelB", "Master128")
+  // Machine type (e.g., "model-b", "master-128")
   // Immutable, set at creation
   string model_type = 3;
 

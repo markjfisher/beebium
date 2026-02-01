@@ -1,6 +1,6 @@
 {
   "name": "Storage Test Preset",
-  "model": "ModelB",
+  "model": "model-b",
   "storage": {
     "fdc_socket": {
       "id": "acorn-1770",
