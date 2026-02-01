@@ -44,6 +44,11 @@ add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
 add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 
 # Generate bare preset files for each model (with historical release dates)
+# TODO: Replace with post-build commands once create-preset subcommand is implemented:
+#   add_custom_command(TARGET beebium-model-b POST_BUILD
+#       COMMAND beebium-model-b create-preset --name "BBC Model B" --output "${PRESETS_OUTPUT_DIR}/model-b.preset.beebium"
+#   )
+# This ensures presets are created using the same code path as user presets.
 generate_bare_preset("model-b" "1981-12")
 generate_bare_preset("model-b-plus" "1985-06")
 generate_bare_preset("model-b-romram" "1984")

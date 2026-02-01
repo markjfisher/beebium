@@ -288,23 +288,29 @@ This path can be overridden with the `BEEBIUM_USER_PRESETS_DIRPATH` environment 
 
 #### create-preset
 
-Create a new user preset.
+Create a new preset.
 
 ```bash
-beebium-model-b create-preset --name "My Elite Setup" [--from <source-id>]
+beebium-model-b create-preset --name "My Elite Setup" [--from <source-id>] [--output <path>]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--name <name>` | Display name for the preset (required) |
 | `--from <id>` | Source preset to copy configuration from (optional) |
+| `--output <path>` | Write preset to specified path instead of user presets directory |
 
-The preset ID is derived by slugifying the name. Outputs the created preset ID on success:
+The preset ID is derived by slugifying the name. Outputs the created preset ID (or path if `--output` used) on success:
 ```
 my-elite-setup
 ```
 
-If `--from` is omitted, creates a minimal preset for the model.
+If `--from` is omitted, creates a minimal "bare" preset for the model containing just the model ID, name, and release date.
+
+**Build system usage**: CMake uses `create-preset --output` to generate bare preset files at build time:
+```bash
+beebium-model-b create-preset --name "BBC Model B" --output presets/model-b.preset.beebium
+```
 
 #### delete-preset
 

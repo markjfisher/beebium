@@ -40,10 +40,18 @@ presets/
 └── master-aiv.preset.beebium
 ```
 
-**Bare presets** are minimal files generated at build time, one per executable:
+**Bare presets** are minimal files generated at build time, one per executable. CMake invokes `create-preset --output` as a post-build step:
+
+```bash
+beebium-model-b create-preset --name "BBC Model B" --output presets/model-b.preset.beebium
+```
+
+This ensures preset files are created using the same code path as user presets, with the executable providing its own model ID, name, and release date:
+
 ```json
 {
   "model": "model-b",
+  "name": "BBC Model B",
   "release_date": "1981-12"
 }
 ```
