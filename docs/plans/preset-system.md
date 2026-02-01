@@ -14,40 +14,85 @@ This phase builds on:
 
 ## Design Principles
 
-1. **Discoverable defaults**: Default presets are auto-discovered from available core executables
-2. **User presets are copies**: Users duplicate defaults and modify; defaults are immutable
-3. **Configuration comes from cores**: Cores self-describe their configuration schema via gRPC
-4. **Presets are portable**: Stored as JSON, can be shared between users
-5. **Separation of concerns**: PresetManager is application-level; New Machine dialog just consumes it
+1. **Uniform discovery**: All presets are `.preset.beebium` files—bare machine defaults and configured variants alike
+2. **Implementation detail hidden**: Users see "Available Machines", not "executables vs preset files"
+3. **User presets are copies**: Users duplicate system presets and modify; system presets are immutable
+4. **Configuration comes from cores**: Cores self-describe their configuration schema via CLI
+5. **Presets are portable**: Stored as JSON, can be shared between users
+6. **Separation of concerns**: PresetManager is application-level; New Machine dialog just consumes it
+
+## Preset Categories
+
+### System Presets
+
+System presets ship with the software and live in `$BEEBIUM_SERVERS_DIRPATH/presets/`:
+
+```
+presets/
+├── model-b.preset.beebium              # bare (generated at build time)
+├── model-b-plus.preset.beebium         # bare (generated at build time)
+├── model-b-romram.preset.beebium       # bare (generated at build time)
+├── model-b-with-acorn-dfs.preset.beebium
+├── model-b-with-watford-dfs.preset.beebium
+├── master-128.preset.beebium           # bare (generated at build time)
+├── master-512.preset.beebium
+├── master-turbo.preset.beebium
+└── master-aiv.preset.beebium
+```
+
+**Bare presets** are minimal files generated at build time, one per executable:
+```json
+{
+  "model": "model-b",
+  "release_date": "1981-12"
+}
+```
+
+**Configured presets** add specific hardware configurations:
+```json
+{
+  "name": "BBC Master 512",
+  "description": "Master 128 with internal 80186 coprocessor for DOS compatibility",
+  "model": "master-128",
+  "release_date": "1986-10",
+  "coprocessor": { "type": "master512" }
+}
+```
+
+### User Presets
+
+User presets live in `~/Library/Application Support/Beebium/presets/` and can be edited or deleted.
 
 ## Preset Lifecycle
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│    Core Executable Discovery                                    │
-│    ─────────────────────────                                    │
-│    Find beebium-model-b, beebium-master-128, etc.               │
+│    1. Find Server Directory                                     │
+│       $BEEBIUM_SERVERS_DIRPATH or fallback                      │
 │                     │                                           │
 │                     ▼                                           │
-│    Query Preset Schema                                          │
-│    ──────────────────                                           │
-│    CLI describe-preset-schema → JSON schema with sections       │
+│    2. Discover System Presets                                   │
+│       Glob: presets/*.preset.beebium                            │
+│       Parse: model, release_date, config sections               │
 │                     │                                           │
 │                     ▼                                           │
-│    Generate Default Presets                                     │
-│    ────────────────────────                                     │
-│    One preset per core executable with default values           │
+│    3. Resolve Executables                                       │
+│       For each preset's model field:                            │
+│         Find beebium-{model} executable                         │
+│         Query describe-preset-schema for name/description       │
+│         Skip preset if executable not found                     │
+│         Disable preset if features not yet implemented          │
 │                     │                                           │
 │                     ▼                                           │
-│    Load User Presets                                            │
-│    ─────────────────                                            │
-│    From ~/Library/Application Support/Beebium/presets/          │
+│    4. Load User Presets                                         │
+│       From ~/Library/Application Support/Beebium/presets/       │
+│       Same parsing, same executable resolution                  │
 │                     │                                           │
 │                     ▼                                           │
-│    PresetManager Ready                                          │
-│    ───────────────────                                          │
-│    [Default Presets] + [User Presets] available                 │
+│    5. Merge & Sort                                              │
+│       [System Presets] + [User Presets]                         │
+│       Sort by release_date, then natural sort by name           │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -62,12 +107,25 @@ struct MachinePreset: Codable, Identifiable, Hashable {
     var name: String
     let coreExecutablePath: String  // Path to beebium-model-b, etc.
     var configuration: [String: ConfigValue]
-    let isDefault: Bool  // True for auto-discovered presets
+    let source: Source  // Where this preset came from
     var iconName: String?  // SF Symbol or custom icon
+    var releaseDate: String?  // "YYYY", "YYYY-MM", or "YYYY-MM-DD"
 
-    // Derived from core's DescribeConfiguration
+    // Derived from core's describe-preset-schema
     var modelName: String  // "BBC Model B", "BBC Master 128"
     var modelDescription: String?  // Brief description for UI
+
+    // State flags
+    var isEnabled: Bool  // False if preset uses unsupported features
+    var disabledReason: String?  // Why preset is disabled
+
+    enum Source: Codable, Hashable {
+        case systemPreset   // From $BEEBIUM_SERVERS_DIRPATH/presets/
+        case userPreset     // From ~/Library/Application Support/...
+    }
+
+    var isEditable: Bool { source == .userPreset }
+    var isSystemProvided: Bool { source == .systemPreset }
 }
 
 enum ConfigValue: Codable, Hashable {
@@ -140,72 +198,106 @@ class PresetManager: ObservableObject {
 }
 ```
 
-## Core Executable Discovery
+## Preset Discovery
 
 ### Search Locations
 
-1. **App bundle**: `Beebium.app/Contents/MacOS/cores/`
-2. **User support**: `~/Library/Application Support/Beebium/cores/`
-3. **System-wide**: `/usr/local/bin/` (for development)
-4. **Custom paths**: From Advanced settings (future)
+**System presets**:
+1. `$BEEBIUM_SERVERS_DIRPATH/presets/` (environment variable)
+2. `Beebium.app/Contents/Resources/presets/` (app bundle, production)
+3. `~/Code/beebium/build/src/server/presets/` (development fallback)
+
+**User presets**:
+1. `~/Library/Application Support/Beebium/presets/`
 
 ### Discovery Process
 
 ```swift
-func discoverCoreExecutables() async {
-    var executables: [URL] = []
+func discoverPresets() async {
+    var systemPresets: [MachinePreset] = []
+    var userPresets: [MachinePreset] = []
 
-    // 1. App bundle cores
-    if let bundleCores = Bundle.main.url(forResource: "cores",
-                                          withExtension: nil) {
-        executables += findExecutables(in: bundleCores)
-    }
-
-    // 2. User support directory
-    let userCores = applicationSupportURL.appendingPathComponent("cores")
-    executables += findExecutables(in: userCores)
-
-    // 3. For each executable, query its configuration
-    for executable in executables {
-        if let schema = try? await fetchPresetSchema(for: executable.path) {
-            let preset = MachinePreset(
-                id: UUID(),
-                name: schema.modelName,
-                coreExecutablePath: executable.path,
-                configuration: schema.defaults,
-                isDefault: true,
-                modelName: schema.modelName,
-                modelDescription: schema.modelDescription
-            )
-            defaultPresets.append(preset)
+    // 1. Find system presets
+    let systemPresetsDir = presetsDirectory()
+    for presetFile in findPresetFiles(in: systemPresetsDir) {
+        if let preset = await loadPreset(from: presetFile, source: .systemPreset) {
+            systemPresets.append(preset)
         }
     }
+
+    // 2. Find user presets
+    let userPresetsDir = applicationSupportURL.appendingPathComponent("presets")
+    for presetFile in findPresetFiles(in: userPresetsDir) {
+        if let preset = await loadPreset(from: presetFile, source: .userPreset) {
+            userPresets.append(preset)
+        }
+    }
+
+    // 3. Sort by release date, then name
+    let allPresets = systemPresets + userPresets
+    self.presets = allPresets.sorted { comparePresets($0, $1) }
 }
 
-private func findExecutables(in directory: URL) -> [URL] {
-    // Find files matching pattern "beebium-*" that are executable
-    let fm = FileManager.default
-    guard let contents = try? fm.contentsOfDirectory(
-        at: directory,
-        includingPropertiesForKeys: [.isExecutableKey]
-    ) else { return [] }
-
-    return contents.filter { url in
-        url.lastPathComponent.hasPrefix("beebium-") &&
-        (try? url.resourceValues(forKeys: [.isExecutableKey]).isExecutable) == true
+private func loadPreset(from url: URL, source: Source) async -> MachinePreset? {
+    // Parse JSON
+    guard let data = try? Data(contentsOf: url),
+          let json = try? JSONDecoder().decode(PresetFile.self, from: data) else {
+        NSLog("[PresetManager] Skipping invalid preset: \(url.lastPathComponent)")
+        return nil
     }
+
+    // Find matching executable
+    let executablePath = serversDirpath() + "/beebium-\(json.model)"
+    guard FileManager.default.isExecutableFile(atPath: executablePath) else {
+        NSLog("[PresetManager] Skipping preset (no executable): \(json.model)")
+        return nil
+    }
+
+    // Query executable for schema
+    let (schema, _) = await fetchPresetSchema(from: executablePath)
+    guard let schema = schema else { return nil }
+
+    // Build preset
+    return MachinePreset(
+        id: UUID(),
+        name: json.name ?? schema.model.name,
+        coreExecutablePath: executablePath,
+        source: source,
+        releaseDate: json.releaseDate,
+        modelName: schema.model.name,
+        modelDescription: json.description ?? schema.model.description,
+        isEnabled: checkFeatureSupport(json, schema),
+        ...
+    )
+}
+
+private func findPresetFiles(in directory: URL) -> [URL] {
+    let fm = FileManager.default
+    guard let contents = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+    else { return [] }
+    return contents.filter { $0.pathExtension == "beebium" && $0.lastPathComponent.contains(".preset.") }
 }
 ```
 
-### Naming Convention
+### File Naming Convention
 
-Core executables follow the pattern `beebium-<model>`:
+Preset files use `.preset.beebium` extension:
+- `model-b.preset.beebium` — bare Model B
+- `model-b-with-acorn-dfs.preset.beebium` — Model B with Acorn DFS
+- `master-512.preset.beebium` — Master 512 configuration
+
+The `model` field inside the file determines which executable to use:
+```json
+{
+  "model": "model-b",
+  "release_date": "1981-12"
+}
+```
+
+Executables follow the pattern `beebium-{model}`:
 - `beebium-model-b`
 - `beebium-model-b-plus`
 - `beebium-master-128`
-- `beebium-master-compact`
-
-The human-readable model name comes from the core's `DescribeConfiguration` response, not the executable name.
 
 ## User Preset Storage
 
@@ -251,19 +343,29 @@ Preset files are named after the preset name with `.json` extension. Invalid fil
 │  Machine Presets                                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  Default Presets                                                │
+│  Available Machines                                             │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ 🖥️  BBC Model B                                      [Dup] ││
 │  │     The original BBC Microcomputer with 32KB RAM            ││
+│  │                                                             ││
+│  │ 🖥️  BBC Model B with Acorn DFS                       [Dup] ││
+│  │     Model B with Acorn 1770 FDC and DFS ROM                 ││
 │  │                                                             ││
 │  │ 🖥️  BBC Model B+                                     [Dup] ││
 │  │     Enhanced Model B with 64KB RAM and built-in DFS         ││
 │  │                                                             ││
 │  │ 🖥️  BBC Master 128                                   [Dup] ││
 │  │     The flagship BBC Micro with 128KB RAM                   ││
+│  │                                                             ││
+│  │ 🖥️  BBC Master 512                                   [Dup] ││
+│  │     Master 128 with 80186 coprocessor for DOS               ││
+│  │                                                             ││
+│  │ 🖥️  BBC Master Turbo                          [Dup] (disabled)│
+│  │     Master 128 with 65C102 second processor                 ││
+│  │     ⚠️ Requires coprocessor support (not yet implemented)   ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
-│  Your Presets                                                   │
+│  My Presets                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │ 🖥️  Elite Setup                            [Edit] [Delete] ││
 │  │     BBC Model B • Custom configuration                      ││
@@ -272,10 +374,14 @@ Preset files are named after the preset name with `.json` extension. Invalid fil
 │  │     BBC Master 128 • Custom configuration                   ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
-│  No user presets yet. Duplicate a default preset to get started.│
+│  No user presets yet. Duplicate an available machine to start. │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Note: System presets (bare machines + bundled configurations) are shown together in
+"Available Machines". The distinction between a bare executable and a configured preset
+is an implementation detail hidden from users.
 
 ### Interactions
 
@@ -534,9 +640,11 @@ If a user preset references a configuration key that no longer exists in the cor
 
 ### Duplicate Preset Names
 
-User preset names must be unique within user presets:
-- If user tries to save with existing name, show error
-- Suggest appending number: "My Preset" → "My Preset 2"
+Duplicate names can occur when system and user presets share a name, or when importing presets:
+- All presets with the same name are shown
+- Duplicates are disambiguated with `(2)`, `(3)` suffixes in display
+- When creating a new user preset, the UI disallows duplicate names
+- When importing a preset with a duplicate name, append a number: "Elite" → "Elite (2)"
 
 ### Invalid File Paths in Presets
 
@@ -546,28 +654,40 @@ If a preset references a disc image that no longer exists:
 
 ## Design Decisions
 
-1. **Presets are JSON, not plist**: JSON is more portable and easier to share. Users can hand-edit if needed.
+1. **Presets are JSON, not plist**: JSON is more portable and easier to share. Users can hand-edit if needed. File extension is `.preset.beebium`.
 
-2. **Default presets are ephemeral**: They're regenerated from core discovery each launch. This ensures they always match the installed cores.
+2. **Uniform preset discovery**: All machine configurations are preset files. Bare machine defaults (model-b.preset.beebium) are generated at build time. This simplifies client logic—one discovery mechanism for all presets.
 
-3. **User presets own their configuration**: Rather than storing only deltas from defaults, user presets store complete configuration. This makes them independent of default preset changes.
+3. **No visual distinction**: Users see "Available Machines" with no indication whether a machine is a bare executable or a configured preset. This is an implementation detail.
 
-4. **Configuration schema comes from cores**: The frontend doesn't hardcode knowledge of what options each model supports. This allows new core versions to add options without frontend changes.
+4. **Sorting by era**: Presets are sorted chronologically by `release_date` (format: `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`), then by natural alphanumeric name. Missing date components default to `00` for sorting.
 
-5. **File paths are stored absolute**: Relative paths would be ambiguous. We accept that presets with paths may not be portable between machines, but that's acceptable for disc images (users can browse to new location).
+5. **User presets own their configuration**: Rather than storing only deltas from defaults, user presets store complete configuration. This makes them independent of system preset changes.
 
-6. **PresetManager is a singleton**: There's one canonical set of presets for the app. Both Settings and New Machine dialog reference the same manager.
+6. **Configuration schema comes from cores**: The frontend doesn't hardcode knowledge of what options each model supports. This allows new core versions to add options without frontend changes.
+
+7. **File paths are stored absolute**: Relative paths would be ambiguous. We accept that presets with paths may not be portable between machines, but that's acceptable for disc images (users can browse to new location).
+
+8. **PresetManager is a singleton**: There's one canonical set of presets for the app. Both Settings and New Machine dialog reference the same manager.
+
+9. **Duplicate names**: All presets with the same name are shown, disambiguated with `(2)`, `(3)` suffixes. The UI disallows creating new user presets with duplicate names.
+
+10. **Unsupported features**: Presets using unimplemented features (e.g., coprocessor) are shown but disabled, with explanation.
+
+11. **Broken presets**: Invalid JSON or missing `model` field → skip silently (log warning).
 
 ## Open Questions
 
-1. **Preset icons**: Should presets have custom icons? Default presets could show the BBC Micro model; user presets could show a custom icon or the model icon with a badge.
+1. **Preset icons**: Should presets have custom icons? Could use model icon for all, or allow bundled presets to specify custom icons.
 
-2. **Preset export/import**: Should there be explicit Export/Import buttons, or is drag-and-drop of `.json` files sufficient?
+2. **Preset export/import**: Should there be explicit Export/Import buttons, or is drag-and-drop of `.preset.beebium` files sufficient?
 
 3. **Preset validation**: How strict should validation be? Allow launching with missing ROM paths (core will error), or block in the UI?
 
 4. **Recent configurations**: When user launches from New Machine with modifications (without saving as preset), should this be remembered as "last used configuration" per model?
 
 5. **Core executable versioning**: If a core updates and its configuration schema changes, how do we migrate existing user presets? Probably best to leave unknown keys and let users update manually.
+
+6. **Build-time generation**: Should bare preset files be generated by CMake, or committed to the repository? CMake generation ensures consistency with executables but adds complexity.
 
 See the main [lifecycle-management.md](lifecycle-management.md) for the overall phase roadmap.
