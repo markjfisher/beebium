@@ -427,7 +427,7 @@ TEST_CASE("GlobalConfig: default values", "[cli][GlobalConfig]") {
 TEST_CASE("get_subcommands: returns correct number of subcommands", "[cli][get_subcommands]") {
     const auto& cmds = get_subcommands<MachineType>();
 
-    REQUIRE(cmds.size() == 5);
+    REQUIRE(cmds.size() == 12);
 }
 
 TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcommands]") {
@@ -442,6 +442,13 @@ TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcomman
     REQUIRE(std::find(names.begin(), names.end(), "list-fdcs") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "describe-machine") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "describe-preset-schema") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "list-presets") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "show-preset") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "report-presets-dirpath") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "create-preset") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "delete-preset") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "import-preset") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "export-preset") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "help") != names.end());
 }
 
@@ -1393,4 +1400,402 @@ TEST_CASE("describe-preset-schema: Model B+ model info is correct", "[cli][descr
 
     REQUIRE(json["model"]["id"].get<std::string>() == "model-b-plus");
     REQUIRE(json["model"]["name"].get<std::string>() == "BBC Model B+ 64K");
+}
+
+// ============================================================================
+// list-presets subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: list-presets subcommand", "[cli][parse_global_arguments][list-presets]") {
+    ArgvHelper args{"beebium", "list-presets"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "list-presets");
+}
+
+TEST_CASE("dispatch_subcommand: list-presets returns OK", "[cli][dispatch_subcommand][list-presets]") {
+    ArgvHelper args{"beebium", "list-presets"};
+    GlobalConfig global;
+    global.subcommand_name = "list-presets";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: list-presets --json returns OK", "[cli][dispatch_subcommand][list-presets]") {
+    ArgvHelper args{"beebium", "list-presets", "--json"};
+    GlobalConfig global;
+    global.subcommand_name = "list-presets";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: list-presets --help returns OK", "[cli][dispatch_subcommand][list-presets]") {
+    ArgvHelper args{"beebium", "list-presets", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "list-presets";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: list-presets with unknown arg returns USAGE", "[cli][dispatch_subcommand][list-presets]") {
+    ArgvHelper args{"beebium", "list-presets", "--unknown"};
+    GlobalConfig global;
+    global.subcommand_name = "list-presets";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+// ============================================================================
+// show-preset subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: show-preset subcommand", "[cli][parse_global_arguments][show-preset]") {
+    ArgvHelper args{"beebium", "show-preset", "test-id"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "show-preset");
+}
+
+TEST_CASE("dispatch_subcommand: show-preset without ID returns USAGE", "[cli][dispatch_subcommand][show-preset]") {
+    ArgvHelper args{"beebium", "show-preset"};
+    GlobalConfig global;
+    global.subcommand_name = "show-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: show-preset with nonexistent ID returns NOINPUT", "[cli][dispatch_subcommand][show-preset]") {
+    ArgvHelper args{"beebium", "show-preset", "nonexistent-preset-12345"};
+    GlobalConfig global;
+    global.subcommand_name = "show-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("dispatch_subcommand: show-preset --help returns OK", "[cli][dispatch_subcommand][show-preset]") {
+    ArgvHelper args{"beebium", "show-preset", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "show-preset";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+// ============================================================================
+// report-presets-dirpath subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: report-presets-dirpath subcommand", "[cli][parse_global_arguments][report-presets-dirpath]") {
+    ArgvHelper args{"beebium", "report-presets-dirpath"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "report-presets-dirpath");
+}
+
+TEST_CASE("dispatch_subcommand: report-presets-dirpath returns OK", "[cli][dispatch_subcommand][report-presets-dirpath]") {
+    ArgvHelper args{"beebium", "report-presets-dirpath"};
+    GlobalConfig global;
+    global.subcommand_name = "report-presets-dirpath";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: report-presets-dirpath --help returns OK", "[cli][dispatch_subcommand][report-presets-dirpath]") {
+    ArgvHelper args{"beebium", "report-presets-dirpath", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "report-presets-dirpath";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: report-presets-dirpath with unknown arg returns USAGE", "[cli][dispatch_subcommand][report-presets-dirpath]") {
+    ArgvHelper args{"beebium", "report-presets-dirpath", "--unknown"};
+    GlobalConfig global;
+    global.subcommand_name = "report-presets-dirpath";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+// ============================================================================
+// create-preset subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: create-preset subcommand", "[cli][parse_global_arguments][create-preset]") {
+    ArgvHelper args{"beebium", "create-preset", "--name", "Test"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "create-preset");
+}
+
+TEST_CASE("dispatch_subcommand: create-preset without --name returns USAGE", "[cli][dispatch_subcommand][create-preset]") {
+    ArgvHelper args{"beebium", "create-preset"};
+    GlobalConfig global;
+    global.subcommand_name = "create-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: create-preset --help returns OK", "[cli][dispatch_subcommand][create-preset]") {
+    ArgvHelper args{"beebium", "create-preset", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "create-preset";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: create-preset --from nonexistent returns NOINPUT", "[cli][dispatch_subcommand][create-preset]") {
+    ArgvHelper args{"beebium", "create-preset", "--name", "Test", "--from", "nonexistent-12345"};
+    GlobalConfig global;
+    global.subcommand_name = "create-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::NOINPUT);
+}
+
+// ============================================================================
+// delete-preset subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: delete-preset subcommand", "[cli][parse_global_arguments][delete-preset]") {
+    ArgvHelper args{"beebium", "delete-preset", "test-id"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "delete-preset");
+}
+
+TEST_CASE("dispatch_subcommand: delete-preset without ID returns USAGE", "[cli][dispatch_subcommand][delete-preset]") {
+    ArgvHelper args{"beebium", "delete-preset"};
+    GlobalConfig global;
+    global.subcommand_name = "delete-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: delete-preset with nonexistent ID returns NOINPUT", "[cli][dispatch_subcommand][delete-preset]") {
+    ArgvHelper args{"beebium", "delete-preset", "nonexistent-preset-12345"};
+    GlobalConfig global;
+    global.subcommand_name = "delete-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("dispatch_subcommand: delete-preset --help returns OK", "[cli][dispatch_subcommand][delete-preset]") {
+    ArgvHelper args{"beebium", "delete-preset", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "delete-preset";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+// ============================================================================
+// import-preset subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: import-preset subcommand", "[cli][parse_global_arguments][import-preset]") {
+    ArgvHelper args{"beebium", "import-preset", "/path/to/preset.preset.beebium"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "import-preset");
+}
+
+TEST_CASE("dispatch_subcommand: import-preset without filepath returns USAGE", "[cli][dispatch_subcommand][import-preset]") {
+    ArgvHelper args{"beebium", "import-preset"};
+    GlobalConfig global;
+    global.subcommand_name = "import-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: import-preset with nonexistent file returns NOINPUT", "[cli][dispatch_subcommand][import-preset]") {
+    ArgvHelper args{"beebium", "import-preset", "/nonexistent/path/to/preset.preset.beebium"};
+    GlobalConfig global;
+    global.subcommand_name = "import-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("dispatch_subcommand: import-preset --help returns OK", "[cli][dispatch_subcommand][import-preset]") {
+    ArgvHelper args{"beebium", "import-preset", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "import-preset";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: import-preset with invalid JSON returns DATAERR", "[cli][dispatch_subcommand][import-preset]") {
+    // Create a temporary file with invalid JSON
+    auto temp_filepath = std::filesystem::temp_directory_path() / "invalid-test.preset.beebium";
+    {
+        std::ofstream f(temp_filepath);
+        f << "{ not valid json }";
+    }
+
+    ArgvHelper args{"beebium", "import-preset", temp_filepath.string().c_str()};
+    GlobalConfig global;
+    global.subcommand_name = "import-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    std::filesystem::remove(temp_filepath);
+
+    REQUIRE(result == ExitCode::DATAERR);
+}
+
+TEST_CASE("dispatch_subcommand: import-preset with wrong model returns DATAERR", "[cli][dispatch_subcommand][import-preset]") {
+    // Create a temporary file with a different model
+    auto temp_filepath = std::filesystem::temp_directory_path() / "wrong-model-test.preset.beebium";
+    {
+        std::ofstream f(temp_filepath);
+        f << R"({"model": "wrong-model-12345", "name": "Wrong Model Test"})";
+    }
+
+    ArgvHelper args{"beebium", "import-preset", temp_filepath.string().c_str()};
+    GlobalConfig global;
+    global.subcommand_name = "import-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    std::filesystem::remove(temp_filepath);
+
+    REQUIRE(result == ExitCode::DATAERR);
+}
+
+// ============================================================================
+// export-preset subcommand tests
+// ============================================================================
+
+TEST_CASE("parse_global_arguments: export-preset subcommand", "[cli][parse_global_arguments][export-preset]") {
+    ArgvHelper args{"beebium", "export-preset", "test-id", "--output", "/path/to/output.preset.beebium"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "export-preset");
+}
+
+TEST_CASE("dispatch_subcommand: export-preset without ID returns USAGE", "[cli][dispatch_subcommand][export-preset]") {
+    ArgvHelper args{"beebium", "export-preset", "--output", "/tmp/out.preset.beebium"};
+    GlobalConfig global;
+    global.subcommand_name = "export-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: export-preset without --output returns USAGE", "[cli][dispatch_subcommand][export-preset]") {
+    ArgvHelper args{"beebium", "export-preset", "test-id"};
+    GlobalConfig global;
+    global.subcommand_name = "export-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: export-preset with nonexistent preset returns NOINPUT", "[cli][dispatch_subcommand][export-preset]") {
+    ArgvHelper args{"beebium", "export-preset", "nonexistent-preset-12345", "--output", "/tmp/out.preset.beebium"};
+    GlobalConfig global;
+    global.subcommand_name = "export-preset";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::NOINPUT);
+}
+
+TEST_CASE("dispatch_subcommand: export-preset --help returns OK", "[cli][dispatch_subcommand][export-preset]") {
+    ArgvHelper args{"beebium", "export-preset", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "export-preset";
+    global.subcommand_argv_start = 2;
+    global.help_requested = true;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
 }

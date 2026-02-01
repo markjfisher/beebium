@@ -486,4 +486,24 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
     )
     catch_discover_tests(test_preset_loader)
+
+    # Preset paths utility tests
+    add_executable(test_preset_paths test_preset_paths.cpp)
+    target_include_directories(test_preset_paths PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/server/include
+    )
+    target_link_libraries(test_preset_paths PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_preset_paths)
+
+    # Preset subcommand integration tests
+    add_executable(test_preset_subcommands test_preset_subcommands.cpp)
+    target_link_libraries(test_preset_subcommands PRIVATE
+        Catch2::Catch2WithMain
+    )
+    # Integration tests depend on executables being built
+    add_dependencies(test_preset_subcommands beebium-servers)
+    catch_discover_tests(test_preset_subcommands)
 endif()

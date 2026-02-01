@@ -20,6 +20,7 @@
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/PresetLoader.hpp"
+#include "beebium/server/PresetPaths.hpp"
 #include "beebium/server/RomPaths.hpp"
 
 #include <nlohmann/json.hpp>
@@ -1505,6 +1506,673 @@ public:
     }
 };
 
+// ListPresets subcommand - list available presets for this model
+template<typename MachineType>
+class ListPresetsSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "list-presets"; }
+    std::string_view description() const override { return "List available presets for this model"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " list-presets [--json]\n"
+                  << "\n"
+                  << "Lists presets compatible with this machine model.\n"
+                  << "\n"
+                  << "Options:\n"
+                  << "  --json    Output machine-readable JSON\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
+
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        bool json_output = false;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (arg == "--json") {
+                json_output = true;
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        // Get model ID for this executable
+        std::string_view model_id = Memory::MACHINE_TYPE;
+
+        // Collect presets from system and user directories
+        struct PresetEntry {
+            std::string id;
+            std::string name;
+            std::string source;  // "system" or "user"
+        };
+        std::vector<PresetEntry> system_presets;
+        std::vector<PresetEntry> user_presets;
+
+        // List system presets
+        if (auto system_dir = PresetPaths::get_system_presets_dirpath()) {
+            for (const auto& preset_id : PresetPaths::list_presets_in_directory(*system_dir)) {
+                auto filepath = *system_dir / (preset_id + std::string(PresetPaths::PRESET_EXTENSION));
+                auto result = load_preset(filepath);
+                if (result) {
+                    // Filter by model
+                    if (result.config->model && *result.config->model != model_id) {
+                        continue;  // Skip presets for other models
+                    }
+                    system_presets.push_back({preset_id, result.config->name, "system"});
+                }
+            }
+        }
+
+        // List user presets
+        auto user_dir = PresetPaths::get_user_presets_dirpath();
+        if (std::filesystem::is_directory(user_dir)) {
+            for (const auto& preset_id : PresetPaths::list_presets_in_directory(user_dir)) {
+                auto filepath = user_dir / (preset_id + std::string(PresetPaths::PRESET_EXTENSION));
+                auto result = load_preset(filepath);
+                if (result) {
+                    // Filter by model
+                    if (result.config->model && *result.config->model != model_id) {
+                        continue;  // Skip presets for other models
+                    }
+                    user_presets.push_back({preset_id, result.config->name, "user"});
+                }
+            }
+        }
+
+        // Output
+        if (json_output) {
+            nlohmann::json output;
+            output["presets"] = nlohmann::json::array();
+            for (const auto& p : system_presets) {
+                output["presets"].push_back({{"id", p.id}, {"name", p.name}, {"source", p.source}});
+            }
+            for (const auto& p : user_presets) {
+                output["presets"].push_back({{"id", p.id}, {"name", p.name}, {"source", p.source}});
+            }
+            std::cout << output.dump() << "\n";
+        } else {
+            // Human-readable output
+            std::cout << "Built-in presets:\n";
+            if (system_presets.empty()) {
+                std::cout << "  (none)\n";
+            } else {
+                for (const auto& p : system_presets) {
+                    std::cout << "  " << p.id;
+                    // Pad for alignment
+                    for (size_t i = p.id.size(); i < 26; ++i) {
+                        std::cout << ' ';
+                    }
+                    std::cout << p.name << "\n";
+                }
+            }
+            std::cout << "\nUser presets:\n";
+            if (user_presets.empty()) {
+                std::cout << "  (none)\n";
+            } else {
+                for (const auto& p : user_presets) {
+                    std::cout << "  " << p.id;
+                    // Pad for alignment
+                    for (size_t i = p.id.size(); i < 26; ++i) {
+                        std::cout << ' ';
+                    }
+                    std::cout << p.name << "\n";
+                }
+            }
+        }
+
+        return ExitCode::OK;
+    }
+};
+
+// ShowPreset subcommand - output preset file contents
+template<typename MachineType>
+class ShowPresetSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "show-preset"; }
+    std::string_view description() const override { return "Output preset file contents"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " show-preset <id>\n"
+                  << "\n"
+                  << "Outputs the JSON contents of the specified preset file.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        std::string preset_id;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (!arg.empty() && arg[0] != '-') {
+                if (preset_id.empty()) {
+                    preset_id = std::string(arg);
+                } else {
+                    std::cerr << "Too many arguments\n";
+                    help(argv[0]);
+                    return ExitCode::USAGE;
+                }
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (preset_id.empty()) {
+            std::cerr << "Error: preset ID required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Find preset file
+        auto filepath = PresetPaths::find_preset_filepath(preset_id);
+        if (!filepath) {
+            std::cerr << "Error: preset not found: " << preset_id << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        // Read and output file contents
+        std::ifstream file(*filepath);
+        if (!file) {
+            std::cerr << "Error: cannot read preset file: " << filepath->string() << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        std::cout << file.rdbuf();
+        return ExitCode::OK;
+    }
+};
+
+// ReportPresetsDirpath subcommand - report user presets directory
+template<typename MachineType>
+class ReportPresetsDirpathSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "report-presets-dirpath"; }
+    std::string_view description() const override { return "Report user presets directory path"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " report-presets-dirpath\n"
+                  << "\n"
+                  << "Outputs the directory path where user presets are stored.\n"
+                  << "This path can be overridden with the BEEBIUM_USER_PRESETS_DIRPATH\n"
+                  << "environment variable.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Check for subcommand-specific --help
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        std::cout << PresetPaths::get_user_presets_dirpath().string() << "\n";
+        return ExitCode::OK;
+    }
+};
+
+// CreatePreset subcommand - create a new preset
+template<typename MachineType>
+class CreatePresetSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "create-preset"; }
+    std::string_view description() const override { return "Create a new preset"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " create-preset --name <name> [options]\n"
+                  << "\n"
+                  << "Creates a new preset for this machine model.\n"
+                  << "\n"
+                  << "Options:\n"
+                  << "  --name <name>     Display name for the preset (required)\n"
+                  << "  --from <id>       Source preset to copy configuration from\n"
+                  << "  --output <path>   Write to specified path instead of user directory\n"
+                  << "\n"
+                  << "The preset ID is derived by slugifying the name.\n"
+                  << "Outputs the created preset ID (or path if --output used).\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
+
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        std::string preset_name;
+        std::string from_id;
+        std::string output_filepath;
+
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (arg == "--name" && i + 1 < argc) {
+                preset_name = argv[++i];
+            } else if (arg == "--from" && i + 1 < argc) {
+                from_id = argv[++i];
+            } else if (arg == "--output" && i + 1 < argc) {
+                output_filepath = argv[++i];
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (preset_name.empty()) {
+            std::cerr << "Error: --name is required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Build preset JSON
+        nlohmann::ordered_json preset;
+        preset["model"] = Memory::MACHINE_TYPE;
+        preset["name"] = preset_name;
+
+        // If --from is specified, copy configuration from source preset
+        if (!from_id.empty()) {
+            auto source_path = PresetPaths::find_preset_filepath(from_id);
+            if (!source_path) {
+                std::cerr << "Error: source preset not found: " << from_id << "\n";
+                return ExitCode::NOINPUT;
+            }
+
+            std::ifstream source_file(*source_path);
+            if (!source_file) {
+                std::cerr << "Error: cannot read source preset: " << source_path->string() << "\n";
+                return ExitCode::NOINPUT;
+            }
+
+            try {
+                nlohmann::json source_json = nlohmann::json::parse(source_file);
+                // Copy configuration sections (excluding name and model)
+                for (auto& [key, value] : source_json.items()) {
+                    if (key != "name" && key != "model") {
+                        preset[key] = value;
+                    }
+                }
+            } catch (const nlohmann::json::parse_error& e) {
+                std::cerr << "Error: invalid JSON in source preset: " << e.what() << "\n";
+                return ExitCode::DATAERR;
+            }
+        }
+
+        // Determine output path
+        std::filesystem::path target_filepath;
+        std::string preset_id;
+
+        if (!output_filepath.empty()) {
+            target_filepath = output_filepath;
+            // For --output, just output the path
+            preset_id = output_filepath;
+        } else {
+            // Create in user presets directory
+            if (!PresetPaths::ensure_user_presets_dirpath_exists()) {
+                std::cerr << "Error: cannot create user presets directory\n";
+                return ExitCode::IOERR;
+            }
+
+            // Generate unique ID
+            preset_id = PresetPaths::generate_unique_preset_id(PresetPaths::slugify(preset_name));
+            target_filepath = PresetPaths::get_user_presets_dirpath() /
+                              (preset_id + std::string(PresetPaths::PRESET_EXTENSION));
+        }
+
+        // Write preset file
+        std::ofstream output_file(target_filepath);
+        if (!output_file) {
+            std::cerr << "Error: cannot write preset file: " << target_filepath.string() << "\n";
+            return ExitCode::IOERR;
+        }
+
+        output_file << preset.dump(2) << "\n";
+        output_file.close();
+
+        if (!output_file) {
+            std::cerr << "Error: failed to write preset file: " << target_filepath.string() << "\n";
+            return ExitCode::IOERR;
+        }
+
+        // Output the created preset ID (or path)
+        std::cout << preset_id << "\n";
+        return ExitCode::OK;
+    }
+};
+
+// DeletePreset subcommand - delete a user preset
+template<typename MachineType>
+class DeletePresetSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "delete-preset"; }
+    std::string_view description() const override { return "Delete a user preset"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " delete-preset <id>\n"
+                  << "\n"
+                  << "Deletes a user preset. System presets cannot be deleted.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        std::string preset_id;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (!arg.empty() && arg[0] != '-') {
+                if (preset_id.empty()) {
+                    preset_id = std::string(arg);
+                } else {
+                    std::cerr << "Too many arguments\n";
+                    help(argv[0]);
+                    return ExitCode::USAGE;
+                }
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (preset_id.empty()) {
+            std::cerr << "Error: preset ID required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Find preset file
+        auto filepath = PresetPaths::find_preset_filepath(preset_id);
+        if (!filepath) {
+            std::cerr << "Error: preset not found: " << preset_id << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        // Check if it's a system preset
+        if (PresetPaths::is_system_preset(*filepath)) {
+            std::cerr << "Error: cannot delete system preset: " << preset_id << "\n";
+            return ExitCode::USAGE;
+        }
+
+        // Delete the file
+        std::error_code ec;
+        if (!std::filesystem::remove(*filepath, ec)) {
+            std::cerr << "Error: cannot delete preset file: " << filepath->string();
+            if (ec) {
+                std::cerr << " (" << ec.message() << ")";
+            }
+            std::cerr << "\n";
+            return ExitCode::IOERR;
+        }
+
+        return ExitCode::OK;
+    }
+};
+
+// ImportPreset subcommand - import a preset file into user directory
+template<typename MachineType>
+class ImportPresetSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "import-preset"; }
+    std::string_view description() const override { return "Import a preset file into user directory"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " import-preset <filepath>\n"
+                  << "\n"
+                  << "Imports a preset file into the user presets directory.\n"
+                  << "The preset's model field must match this executable's model.\n"
+                  << "Outputs the imported preset ID.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        using Memory = typename MachineType::Memory;
+
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        std::filesystem::path source_filepath;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (!arg.empty() && arg[0] != '-') {
+                if (source_filepath.empty()) {
+                    source_filepath = std::string(arg);
+                } else {
+                    std::cerr << "Too many arguments\n";
+                    help(argv[0]);
+                    return ExitCode::USAGE;
+                }
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (source_filepath.empty()) {
+            std::cerr << "Error: filepath required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Verify source file exists
+        if (!std::filesystem::exists(source_filepath)) {
+            std::cerr << "Error: file not found: " << source_filepath.string() << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        // Read and parse the preset file
+        std::ifstream input_file(source_filepath);
+        if (!input_file) {
+            std::cerr << "Error: cannot read file: " << source_filepath.string() << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        nlohmann::json preset;
+        try {
+            input_file >> preset;
+        } catch (const nlohmann::json::exception& e) {
+            std::cerr << "Error: invalid JSON: " << e.what() << "\n";
+            return ExitCode::DATAERR;
+        }
+
+        // Verify model field matches this executable
+        if (!preset.contains("model") || !preset["model"].is_string()) {
+            std::cerr << "Error: preset missing 'model' field\n";
+            return ExitCode::DATAERR;
+        }
+
+        std::string preset_model = preset["model"].get<std::string>();
+        if (preset_model != Memory::MACHINE_TYPE) {
+            std::cerr << "Error: preset model '" << preset_model << "' does not match this executable's model '"
+                      << Memory::MACHINE_TYPE << "'\n";
+            return ExitCode::DATAERR;
+        }
+
+        // Determine ID from filename
+        std::string filename = source_filepath.stem().string();
+        // Remove .preset suffix if present
+        if (filename.size() > 7 && filename.substr(filename.size() - 7) == ".preset") {
+            filename = filename.substr(0, filename.size() - 7);
+        }
+        std::string preset_id = PresetPaths::slugify(filename);
+        if (preset_id.empty()) {
+            // Fall back to using name field if present
+            if (preset.contains("name") && preset["name"].is_string()) {
+                preset_id = PresetPaths::slugify(preset["name"].get<std::string>());
+            }
+        }
+        if (preset_id.empty()) {
+            preset_id = "imported-preset";
+        }
+
+        // Ensure user presets directory exists
+        if (!PresetPaths::ensure_user_presets_dirpath_exists()) {
+            std::cerr << "Error: cannot create user presets directory\n";
+            return ExitCode::IOERR;
+        }
+
+        // Generate unique ID to avoid conflicts
+        preset_id = PresetPaths::generate_unique_preset_id(preset_id);
+
+        // Write to user presets directory
+        std::filesystem::path target_filepath = PresetPaths::get_user_presets_dirpath() /
+                                                (preset_id + std::string(PresetPaths::PRESET_EXTENSION));
+
+        std::ofstream output_file(target_filepath);
+        if (!output_file) {
+            std::cerr << "Error: cannot write preset file: " << target_filepath.string() << "\n";
+            return ExitCode::IOERR;
+        }
+
+        output_file << preset.dump(2) << "\n";
+        output_file.close();
+
+        if (!output_file) {
+            std::cerr << "Error: failed to write preset file: " << target_filepath.string() << "\n";
+            return ExitCode::IOERR;
+        }
+
+        std::cout << preset_id << "\n";
+        return ExitCode::OK;
+    }
+};
+
+// ExportPreset subcommand - export a preset to a file
+template<typename MachineType>
+class ExportPresetSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "export-preset"; }
+    std::string_view description() const override { return "Export a preset to a file"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " export-preset <id> --output <filepath>\n"
+                  << "\n"
+                  << "Exports a preset to the specified file path.\n"
+                  << "\n"
+                  << "Options:\n"
+                  << "  --output <path>   Output file path (required)\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        // Handle --help
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Parse subcommand options
+        std::string preset_id;
+        std::filesystem::path output_filepath;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (arg == "--output" || arg == "-o") {
+                if (i + 1 >= argc) {
+                    std::cerr << "Error: --output requires a path\n";
+                    help(argv[0]);
+                    return ExitCode::USAGE;
+                }
+                output_filepath = argv[++i];
+            } else if (!arg.empty() && arg[0] != '-') {
+                if (preset_id.empty()) {
+                    preset_id = std::string(arg);
+                } else {
+                    std::cerr << "Too many arguments\n";
+                    help(argv[0]);
+                    return ExitCode::USAGE;
+                }
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (preset_id.empty()) {
+            std::cerr << "Error: preset ID required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        if (output_filepath.empty()) {
+            std::cerr << "Error: --output is required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Find preset file
+        auto source_filepath = PresetPaths::find_preset_filepath(preset_id);
+        if (!source_filepath) {
+            std::cerr << "Error: preset not found: " << preset_id << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        // Copy file to output path
+        std::error_code ec;
+        std::filesystem::copy_file(*source_filepath, output_filepath,
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) {
+            std::cerr << "Error: cannot write to output file: " << output_filepath.string()
+                      << " (" << ec.message() << ")\n";
+            return ExitCode::IOERR;
+        }
+
+        return ExitCode::OK;
+    }
+};
+
 // Help subcommand - shows help for other subcommands
 template<typename MachineType>
 class HelpSubcommand : public Subcommand<MachineType> {
@@ -1534,6 +2202,13 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ListPresetsSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ShowPresetSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ReportPresetsDirpathSubcommand<MachineType>>());
+        v.push_back(std::make_unique<CreatePresetSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DeletePresetSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ImportPresetSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ExportPresetSubcommand<MachineType>>());
         v.push_back(std::make_unique<HelpSubcommand<MachineType>>());
         return v;
     }();
