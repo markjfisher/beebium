@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 import Foundation
+import AppKit
 
 /// Manages machine presets by discovering preset files and querying their configurations.
 ///
@@ -25,75 +26,116 @@ class PresetManager: ObservableObject {
     static let shared = PresetManager()
 
     @Published private(set) var systemPresets: [MachinePreset] = []
+    @Published private(set) var userPresets: [MachinePreset] = []
     @Published private(set) var isDiscovering = false
     @Published private(set) var discoveryError: String?
 
+    /// Cached user presets directory path (retrieved from CLI)
+    private var cachedUserPresetsDirpath: String?
+
     private init() {}
 
-    /// Discover preset files and build system presets.
+    /// Discover preset files and build system and user presets.
     func discoverPresets() async {
         isDiscovering = true
         discoveryError = nil
         systemPresets = []
+        userPresets = []
 
         let dirpath = serversDirpath()
-        let presetsDirpath = "\(dirpath)/presets"
-        var discovered: [MachinePreset] = []
+        let systemPresetsDirpath = "\(dirpath)/presets"
+        var discoveredSystem: [MachinePreset] = []
+        var discoveredUser: [MachinePreset] = []
         var configFailures: [String] = []
 
-        NSLog("[PresetManager] Searching for presets in: \(presetsDirpath)")
+        NSLog("[PresetManager] Searching for system presets in: \(systemPresetsDirpath)")
 
-        let (presetFilepaths, directoryError) = findPresetFiles(in: presetsDirpath)
-        NSLog("[PresetManager] Found \(presetFilepaths.count) preset file(s)")
+        // Discover system presets
+        let (systemFilepaths, directoryError) = findPresetFiles(in: systemPresetsDirpath)
+        NSLog("[PresetManager] Found \(systemFilepaths.count) system preset file(s)")
 
-        for presetFilepath in presetFilepaths {
-            let filename = URL(fileURLWithPath: presetFilepath).lastPathComponent
-            NSLog("[PresetManager] Processing preset: \(filename)")
-
-            guard let presetData = parsePresetFile(at: presetFilepath) else {
-                configFailures.append(filename)
-                NSLog("[PresetManager] Failed to parse preset file: \(filename)")
-                continue
+        for presetFilepath in systemFilepaths {
+            if let preset = await loadPreset(from: presetFilepath, source: .systemPreset, serversDirpath: dirpath, configFailures: &configFailures) {
+                discoveredSystem.append(preset)
             }
-
-            let executablePath = "\(dirpath)/beebium-\(presetData.model)"
-            guard FileManager.default.isExecutableFile(atPath: executablePath) else {
-                NSLog("[PresetManager] Executable not found for model '\(presetData.model)': \(executablePath)")
-                continue
-            }
-
-            let (schema, error) = await fetchPresetSchema(from: executablePath)
-            guard let schema = schema else {
-                configFailures.append(filename)
-                NSLog("[PresetManager] Failed to get schema from \(presetData.model): \(error ?? "unknown error")")
-                continue
-            }
-
-            let preset = MachinePreset(
-                id: UUID(),
-                name: presetData.name ?? schema.model.name,
-                coreExecutablePath: executablePath,
-                source: .systemPreset,
-                modelName: schema.model.name,
-                modelDescription: presetData.description ?? schema.model.description,
-                releaseDate: presetData.releaseDate,
-                configuration: [:]
-            )
-            discovered.append(preset)
-            NSLog("[PresetManager] Discovered: \(preset.name)")
         }
 
-        systemPresets = sortPresets(discovered)
+        // Discover user presets (need an executable to query the user presets directory)
+        if let firstSystemPreset = discoveredSystem.first,
+           let userDirpath = await fetchUserPresetsDirpath(using: firstSystemPreset.coreExecutablePath) {
+            NSLog("[PresetManager] Searching for user presets in: \(userDirpath)")
+            let (userFilepaths, _) = findPresetFiles(in: userDirpath)
+            NSLog("[PresetManager] Found \(userFilepaths.count) user preset file(s)")
+
+            for presetFilepath in userFilepaths {
+                if let preset = await loadPreset(from: presetFilepath, source: .userPreset, serversDirpath: dirpath, configFailures: &configFailures) {
+                    discoveredUser.append(preset)
+                }
+            }
+        }
+
+        systemPresets = sortPresets(discoveredSystem)
+        userPresets = sortPresets(discoveredUser)
         isDiscovering = false
 
         if let directoryError = directoryError {
             discoveryError = directoryError
-        } else if presetFilepaths.isEmpty {
-            discoveryError = "No preset files found in \(presetsDirpath)"
-        } else if discovered.isEmpty {
+        } else if systemFilepaths.isEmpty {
+            discoveryError = "No preset files found in \(systemPresetsDirpath)"
+        } else if discoveredSystem.isEmpty {
             let failedList = configFailures.joined(separator: ", ")
-            discoveryError = "Found \(presetFilepaths.count) preset(s) but failed to load: \(failedList)"
+            discoveryError = "Found \(systemFilepaths.count) preset(s) but failed to load: \(failedList)"
         }
+    }
+
+    /// Load a single preset from a file path.
+    private func loadPreset(from presetFilepath: String, source: MachinePreset.Source, serversDirpath: String, configFailures: inout [String]) async -> MachinePreset? {
+        let filename = URL(fileURLWithPath: presetFilepath).lastPathComponent
+        let presetId = presetIdFromFilename(filename)
+        NSLog("[PresetManager] Processing preset: \(filename) (id: \(presetId))")
+
+        guard let presetData = parsePresetFile(at: presetFilepath) else {
+            configFailures.append(filename)
+            NSLog("[PresetManager] Failed to parse preset file: \(filename)")
+            return nil
+        }
+
+        let executablePath = "\(serversDirpath)/beebium-\(presetData.model)"
+        guard FileManager.default.isExecutableFile(atPath: executablePath) else {
+            NSLog("[PresetManager] Executable not found for model '\(presetData.model)': \(executablePath)")
+            return nil
+        }
+
+        let (schema, error) = await fetchPresetSchema(from: executablePath)
+        guard let schema = schema else {
+            configFailures.append(filename)
+            NSLog("[PresetManager] Failed to get schema from \(presetData.model): \(error ?? "unknown error")")
+            return nil
+        }
+
+        let preset = MachinePreset(
+            id: UUID(),
+            presetId: presetId,
+            name: presetData.name ?? schema.model.name,
+            coreExecutablePath: executablePath,
+            presetFilepath: presetFilepath,
+            source: source,
+            modelName: schema.model.name,
+            modelDescription: presetData.description ?? schema.model.description,
+            releaseDate: presetData.releaseDate,
+            configuration: [:]
+        )
+        NSLog("[PresetManager] Discovered: \(preset.name)")
+        return preset
+    }
+
+    /// Extract preset ID from filename (e.g., "bbc-model-b.preset.beebium" -> "bbc-model-b")
+    private func presetIdFromFilename(_ filename: String) -> String {
+        let suffix = ".preset.beebium"
+        if filename.hasSuffix(suffix) {
+            return String(filename.dropLast(suffix.count))
+        }
+        return filename
     }
 
     /// Get the directory path where server executables are located.
@@ -204,5 +246,170 @@ class PresetManager: ObservableObject {
         let day = parts.count > 2 ? String(parts[2]) : "00"
 
         return "\(year)-\(month)-\(day)"
+    }
+
+    // MARK: - User Presets Directory
+
+    /// Get the user presets directory path by querying the CLI.
+    func userPresetsDirpath() async -> String? {
+        if let cached = cachedUserPresetsDirpath {
+            return cached
+        }
+
+        // Need at least one system preset to determine executable
+        guard let firstPreset = systemPresets.first else {
+            NSLog("[PresetManager] No system presets available to query user presets directory")
+            return nil
+        }
+
+        return await fetchUserPresetsDirpath(using: firstPreset.coreExecutablePath)
+    }
+
+    /// Fetch the user presets directory path using a specific executable.
+    private func fetchUserPresetsDirpath(using executablePath: String) async -> String? {
+        if let cached = cachedUserPresetsDirpath {
+            return cached
+        }
+
+        let (output, error) = await runCli(executable: executablePath, arguments: ["report-presets-dirpath"])
+        if let error = error {
+            NSLog("[PresetManager] Failed to get user presets directory: \(error)")
+            return nil
+        }
+
+        let dirpath = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        cachedUserPresetsDirpath = dirpath
+        return dirpath
+    }
+
+    /// Get the system presets directory path.
+    func systemPresetsDirpath() -> String {
+        return "\(serversDirpath())/presets"
+    }
+
+    // MARK: - Preset Management
+
+    /// Duplicate a preset with a new name.
+    /// - Parameters:
+    ///   - preset: The source preset to duplicate
+    ///   - newName: The name for the new preset
+    /// - Returns: The ID of the created preset, or nil on failure
+    func duplicatePreset(_ preset: MachinePreset, newName: String) async -> String? {
+        let arguments = ["create-preset", "--name", newName, "--from", preset.presetId]
+        let (output, error) = await runCli(executable: preset.coreExecutablePath, arguments: arguments)
+        if let error = error {
+            NSLog("[PresetManager] Failed to duplicate preset: \(error)")
+            return nil
+        }
+
+        let newPresetId = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        NSLog("[PresetManager] Created preset: \(newPresetId)")
+
+        // Reload presets to pick up the new one
+        await discoverPresets()
+
+        return newPresetId
+    }
+
+    /// Delete a user preset.
+    /// - Parameter preset: The preset to delete (must be a user preset)
+    /// - Returns: true if deletion succeeded
+    func deletePreset(_ preset: MachinePreset) async -> Bool {
+        guard preset.isEditable else {
+            NSLog("[PresetManager] Cannot delete system preset: \(preset.presetId)")
+            return false
+        }
+
+        let (_, error) = await runCli(executable: preset.coreExecutablePath, arguments: ["delete-preset", preset.presetId])
+        if let error = error {
+            NSLog("[PresetManager] Failed to delete preset: \(error)")
+            return false
+        }
+
+        NSLog("[PresetManager] Deleted preset: \(preset.presetId)")
+
+        // Reload presets
+        await discoverPresets()
+
+        return true
+    }
+
+    /// Export a preset to a file.
+    /// - Parameters:
+    ///   - preset: The preset to export
+    ///   - filepath: The destination file path
+    /// - Returns: true if export succeeded
+    func exportPreset(_ preset: MachinePreset, to filepath: String) async -> Bool {
+        let (_, error) = await runCli(executable: preset.coreExecutablePath, arguments: ["export-preset", preset.presetId, "--output", filepath])
+        if let error = error {
+            NSLog("[PresetManager] Failed to export preset: \(error)")
+            return false
+        }
+
+        NSLog("[PresetManager] Exported preset to: \(filepath)")
+        return true
+    }
+
+    /// Import a preset from a file.
+    /// - Parameters:
+    ///   - filepath: The source file path
+    ///   - executablePath: The executable to use for import (determines model)
+    /// - Returns: The ID of the imported preset, or nil on failure
+    func importPreset(from filepath: String, using executablePath: String) async -> String? {
+        let (output, error) = await runCli(executable: executablePath, arguments: ["import-preset", filepath])
+        if let error = error {
+            NSLog("[PresetManager] Failed to import preset: \(error)")
+            return nil
+        }
+
+        let newPresetId = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        NSLog("[PresetManager] Imported preset: \(newPresetId)")
+
+        // Reload presets
+        await discoverPresets()
+
+        return newPresetId
+    }
+
+    /// Reveal a preset's directory in Finder.
+    /// - Parameter preset: The preset to reveal
+    func revealInFinder(_ preset: MachinePreset) {
+        let dirpath = URL(fileURLWithPath: preset.presetFilepath).deletingLastPathComponent().path
+        NSWorkspace.shared.selectFile(preset.presetFilepath, inFileViewerRootedAtPath: dirpath)
+    }
+
+    // MARK: - CLI Execution
+
+    /// Run a CLI command and return (stdout, errorMessage).
+    private func runCli(executable: String, arguments: [String]) async -> (String, String?) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+
+            guard process.terminationStatus == 0 else {
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrText = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let errorMsg = stderrText.isEmpty
+                    ? "exit status \(process.terminationStatus)"
+                    : stderrText
+                return (stdout, errorMsg)
+            }
+
+            return (stdout, nil)
+        } catch {
+            return ("", error.localizedDescription)
+        }
     }
 }

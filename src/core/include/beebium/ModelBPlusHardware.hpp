@@ -85,7 +85,7 @@ public:
     // Machine identification and region names (compile-time constants)
     static constexpr std::string_view MACHINE_TYPE = "model-b-plus";
     static constexpr std::string_view MACHINE_DISPLAY_NAME = "BBC Model B+ 64K";
-    static constexpr std::string_view MACHINE_DESCRIPTION = "Enhanced Model B with 64KB RAM and built-in DFS";
+    static constexpr std::string_view MACHINE_DESCRIPTION = "Enhanced Model B with 64KB RAM and built-in FDC";
     static constexpr std::string_view REGION_MAIN_RAM = "main_ram";
     static constexpr std::string_view REGION_SHADOW_RAM = "shadow_ram";
     static constexpr std::string_view REGION_ANDY_RAM = "andy_ram";

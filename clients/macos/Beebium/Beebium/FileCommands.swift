@@ -11,11 +11,15 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct FileCommands: Commands {
     @FocusedBinding(\.showConnectDialog) private var showConnectDialog
     @FocusedBinding(\.showNewMachineDialog) private var showNewMachineDialog
     @FocusedValue(\.openNewWindow) private var openNewWindow
+
+    @ObservedObject private var presetManager = PresetManager.shared
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -44,6 +48,14 @@ struct FileCommands: Commands {
 
             Divider()
 
+            Button("Import Preset...") {
+                importPreset()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(presetManager.systemPresets.isEmpty)
+
+            Divider()
+
             Button("Connect...") {
                 showConnectDialog = true
             }
@@ -65,5 +77,50 @@ struct FileCommands: Commands {
             .disabled(true)
         }
         // Close (Cmd-W) provided automatically by SwiftUI
+    }
+
+    private func importPreset() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "beebium") ?? .data]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Import Preset"
+        panel.message = "Select a preset file to import."
+
+        if panel.runModal() == .OK, let url = panel.url {
+            // Parse the preset file to determine which model it's for
+            guard let data = FileManager.default.contents(atPath: url.path),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let model = json["model"] as? String else {
+                NSLog("[FileCommands] Failed to parse preset file or missing model field")
+                showImportErrorAlert(message: "Invalid preset file. The file must contain a valid model field.")
+                return
+            }
+
+            // Find a matching system preset to get the executable path
+            guard let matchingPreset = presetManager.systemPresets.first(where: {
+                $0.coreExecutablePath.contains("beebium-\(model)")
+            }) else {
+                NSLog("[FileCommands] No matching executable found for model: \(model)")
+                showImportErrorAlert(message: "No matching machine core found for model \"\(model)\". The preset cannot be imported.")
+                return
+            }
+
+            Task { @MainActor in
+                let result = await presetManager.importPreset(from: url.path, using: matchingPreset.coreExecutablePath)
+                if result == nil {
+                    showImportErrorAlert(message: "Failed to import the preset. Check the console for details.")
+                }
+            }
+        }
+    }
+
+    private func showImportErrorAlert(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Import Failed"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

@@ -26,8 +26,12 @@ struct MachinePreset: Identifiable, Hashable {
     }
 
     let id: UUID
+    /// The CLI preset ID (slug derived from name, e.g., "bbc-model-b-with-acorn-dfs")
+    let presetId: String
     var name: String
     let coreExecutablePath: String
+    /// Path to the preset file on disk
+    let presetFilepath: String
     let source: Source
     let modelName: String
     let modelDescription: String?

@@ -423,7 +423,7 @@ Slugification rules:
 │  │     Model B with Acorn 1770 FDC and DFS ROM                 ││
 │  │                                                             ││
 │  │ 🖥️  BBC Model B+                                     [Dup] ││
-│  │     Enhanced Model B with 64KB RAM and built-in DFS         ││
+│  │     Enhanced Model B with 64KB RAM and built-in FDC         ││
 │  │                                                             ││
 │  │ 🖥️  BBC Master 128                                   [Dup] ││
 │  │     The flagship BBC Micro with 128KB RAM                   ││

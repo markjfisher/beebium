@@ -54,6 +54,6 @@ struct SettingsView: View {
                     Label("Keyboard", systemImage: "keyboard")
                 }
         }
-        .frame(width: 500, height: 350)
+        .frame(minWidth: 500, minHeight: 350)
     }
 }
