@@ -49,6 +49,14 @@ struct PresetLoadResult {
     explicit operator bool() const { return success(); }
 };
 
+// Check if a path string represents a Unix-style absolute path.
+// On Unix, paths starting with '/' are absolute.
+// On Windows, std::filesystem considers '/path' relative (no drive letter),
+// but for preset portability we treat paths starting with '/' as absolute.
+inline bool is_unix_absolute_path(const std::string& path_str) {
+    return !path_str.empty() && path_str[0] == '/';
+}
+
 // Normalize a path or URI to a file:// URI.
 //
 // If the input contains "://", it's treated as a URI and returned unchanged.
@@ -56,6 +64,7 @@ struct PresetLoadResult {
 // - Absolute paths are converted to file:// URIs directly
 // - Relative paths are resolved relative to base_dirpath, then converted
 // - Path components like ".." are resolved to produce clean URIs
+// - Unix-style absolute paths (starting with /) are treated as absolute on all platforms
 //
 // This allows presets to use relative paths (resolved from preset file location)
 // or absolute paths, while storing everything as URIs internally.
@@ -69,8 +78,11 @@ inline std::string normalize_image_uri(const std::string& uri_or_path,
     // Treat as filesystem path
     std::filesystem::path path(uri_or_path);
 
-    // Resolve relative paths against base directory
-    if (path.is_relative()) {
+    // Resolve relative paths against base directory.
+    // On Windows, treat Unix-style absolute paths (starting with /) as absolute
+    // for preset portability, even though std::filesystem considers them relative.
+    bool is_absolute = path.is_absolute() || is_unix_absolute_path(uri_or_path);
+    if (!is_absolute) {
         path = base_dirpath / path;
     }
 
@@ -78,8 +90,14 @@ inline std::string normalize_image_uri(const std::string& uri_or_path,
     // Use lexically_normal for textual normalization (no filesystem access)
     path = path.lexically_normal();
 
-    // Convert to file:// URI using existing utility
-    return DiscUrl::from_filepath(path).url();
+    // Convert to file:// URI
+    // Use generic_string() to ensure forward slashes in the URI on all platforms
+    std::string path_str = path.generic_string();
+    if (path_str.empty() || path_str[0] != '/') {
+        // Ensure path starts with / for proper file:// URI format
+        return "file:///" + path_str;
+    }
+    return "file://" + path_str;
 }
 
 // Parse the storage section from JSON
