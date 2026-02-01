@@ -43,3 +43,23 @@ struct SchemaSection: Codable {
     // Additional fields (builtin, fdc_socket, floppy_drives, etc.) are
     // decoded on-demand when building configuration UI for that section.
 }
+
+/// Data parsed from a preset file (*.preset.beebium).
+///
+/// Preset files declare the target model and optional metadata.
+/// The `model` field is required and maps to executable names (beebium-{model}).
+struct PresetFileData: Codable {
+    /// The model ID that maps to an executable (e.g., "model-b" -> beebium-model-b)
+    let model: String
+    /// Optional display name (if absent, use name from executable's schema)
+    let name: String?
+    /// Optional description (if absent, use description from executable's schema)
+    let description: String?
+    /// Release date for sorting, format: YYYY, YYYY-MM, or YYYY-MM-DD
+    let releaseDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case model, name, description
+        case releaseDate = "release_date"
+    }
+}

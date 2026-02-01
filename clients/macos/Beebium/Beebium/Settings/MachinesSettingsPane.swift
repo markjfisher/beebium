@@ -18,9 +18,9 @@ struct MachinesSettingsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if presetManager.isDiscovering {
-                ProgressView("Discovering machine cores...")
+                ProgressView("Discovering machines...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if presetManager.defaultPresets.isEmpty {
+            } else if presetManager.systemPresets.isEmpty {
                 emptyStateView
             } else {
                 presetListView
@@ -29,7 +29,7 @@ struct MachinesSettingsPane: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
-            await presetManager.discoverCores()
+            await presetManager.discoverPresets()
         }
     }
 
@@ -54,12 +54,21 @@ struct MachinesSettingsPane: View {
 
     private var presetListView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Default Presets")
+            Text("Built-in Machine Presets")
                 .font(.headline)
 
-            ForEach(presetManager.defaultPresets) { preset in
+            ForEach(presetManager.systemPresets) { preset in
                 PresetRow(preset: preset)
             }
+
+            Divider()
+
+            Text("My Machine Presets")
+                .font(.headline)
+
+            Text("No custom presets yet")
+                .foregroundColor(.secondary)
+                .font(.caption)
 
             Spacer()
         }

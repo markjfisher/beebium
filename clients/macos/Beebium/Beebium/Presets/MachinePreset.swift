@@ -14,16 +14,32 @@ import Foundation
 
 /// A machine preset representing a configuration that can be used to launch an emulator.
 ///
-/// Default presets are auto-discovered from core executables and are immutable.
-/// User presets are copies that can be edited and saved.
+/// System presets are auto-discovered from preset files in the presets/ directory.
+/// User presets are custom configurations created by users and can be edited.
 struct MachinePreset: Identifiable, Hashable {
+    /// The origin of a preset.
+    enum Source: Hashable {
+        /// System-provided preset from presets/*.preset.beebium
+        case systemPreset
+        /// User-created preset from ~/Library/Application Support/...
+        case userPreset
+    }
+
     let id: UUID
     var name: String
     let coreExecutablePath: String
-    let isDefault: Bool
+    let source: Source
     let modelName: String
     let modelDescription: String?
+    /// Release date for sorting, format: YYYY, YYYY-MM, or YYYY-MM-DD
+    let releaseDate: String?
     var configuration: [String: String]
+
+    /// Whether this is a system-provided preset (not user-created).
+    var isSystemProvided: Bool { source == .systemPreset }
+
+    /// Whether this preset can be edited by the user.
+    var isEditable: Bool { source == .userPreset }
 
     static func == (lhs: MachinePreset, rhs: MachinePreset) -> Bool {
         lhs.id == rhs.id

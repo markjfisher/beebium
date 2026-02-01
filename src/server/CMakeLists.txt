@@ -3,6 +3,20 @@
 # Common include directory for server templates
 set(SERVER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Presets output directory (alongside executables)
+set(PRESETS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/presets")
+file(MAKE_DIRECTORY ${PRESETS_OUTPUT_DIR})
+
+# Function to generate a bare preset file for a model
+function(generate_bare_preset MODEL_ID RELEASE_DATE)
+    set(PRESET_FILEPATH "${PRESETS_OUTPUT_DIR}/${MODEL_ID}.preset.beebium")
+    if(RELEASE_DATE)
+        file(WRITE "${PRESET_FILEPATH}" "{\n  \"model\": \"${MODEL_ID}\",\n  \"release_date\": \"${RELEASE_DATE}\"\n}\n")
+    else()
+        file(WRITE "${PRESET_FILEPATH}" "{\n  \"model\": \"${MODEL_ID}\"\n}\n")
+    endif()
+endfunction()
+
 # Function to create a beebium server executable for a specific machine type
 function(add_beebium_server TARGET_NAME SOURCE_FILE)
     add_executable(${TARGET_NAME} ${SOURCE_FILE})
@@ -28,6 +42,11 @@ endfunction()
 add_beebium_server(beebium-model-b main_model_b.cpp)
 add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
 add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
+
+# Generate bare preset files for each model (with historical release dates)
+generate_bare_preset("model-b" "1981-12")
+generate_bare_preset("model-b-plus" "1985-06")
+generate_bare_preset("model-b-romram" "1984")
 
 # Convenience target to build all server executables (add new models here)
 add_custom_target(beebium-servers DEPENDS
@@ -57,4 +76,8 @@ install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram
 install(DIRECTORY ${BEEBIUM_ROM_DIR}/
     DESTINATION share/beebium/roms
     FILES_MATCHING PATTERN "*.rom"
+)
+install(DIRECTORY ${PRESETS_OUTPUT_DIR}/
+    DESTINATION share/beebium/presets
+    FILES_MATCHING PATTERN "*.preset.beebium"
 )
