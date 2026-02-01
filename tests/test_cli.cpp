@@ -16,6 +16,8 @@
 #include <beebium/server/ServerMain.hpp>
 #include <beebium/Machines.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
+#include <sstream>
 
 using namespace beebium::server;
 using MachineType = beebium::ModelB;
@@ -138,14 +140,14 @@ TEST_CASE("parse_global_arguments: help subcommand", "[cli][parse_global_argumen
     REQUIRE(global.subcommand_name == "help");
 }
 
-TEST_CASE("parse_global_arguments: describe-config subcommand", "[cli][parse_global_arguments]") {
-    ArgvHelper args{"beebium", "describe-config"};
+TEST_CASE("parse_global_arguments: describe-preset-schema subcommand", "[cli][parse_global_arguments]") {
+    ArgvHelper args{"beebium", "describe-preset-schema"};
     GlobalConfig global;
 
     auto result = parse_global_arguments(args.argc(), args.data(), global);
 
     REQUIRE_FALSE(result.has_value());
-    REQUIRE(global.subcommand_name == "describe-config");
+    REQUIRE(global.subcommand_name == "describe-preset-schema");
 }
 
 TEST_CASE("parse_global_arguments: unknown option passes through to default subcommand", "[cli][parse_global_arguments]") {
@@ -337,10 +339,10 @@ TEST_CASE("dispatch_subcommand: help returns OK", "[cli][dispatch_subcommand]") 
     REQUIRE(result == ExitCode::OK);
 }
 
-TEST_CASE("dispatch_subcommand: describe-config returns OK", "[cli][dispatch_subcommand]") {
-    ArgvHelper args{"beebium", "describe-config"};
+TEST_CASE("dispatch_subcommand: describe-preset-schema returns OK", "[cli][dispatch_subcommand]") {
+    ArgvHelper args{"beebium", "describe-preset-schema"};
     GlobalConfig global;
-    global.subcommand_name = "describe-config";
+    global.subcommand_name = "describe-preset-schema";
     global.subcommand_argv_start = 2;
 
     auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
@@ -439,7 +441,7 @@ TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcomman
     REQUIRE(std::find(names.begin(), names.end(), "start") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "list-fdcs") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "describe-machine") != names.end());
-    REQUIRE(std::find(names.begin(), names.end(), "describe-config") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "describe-preset-schema") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "help") != names.end());
 }
 
@@ -884,15 +886,15 @@ TEST_CASE("parse_start_arguments: identity and provenance combined", "[cli][pars
 }
 
 // ============================================================================
-// describe-config subcommand tests
+// describe-preset-schema subcommand tests
 // ============================================================================
 
-TEST_CASE("describe-config: subcommand is registered", "[cli][describe-config]") {
+TEST_CASE("describe-preset-schema: subcommand is registered", "[cli][describe-preset-schema]") {
     const auto& cmds = get_subcommands<MachineType>();
 
     bool found = false;
     for (const auto& cmd : cmds) {
-        if (cmd->name() == "describe-config") {
+        if (cmd->name() == "describe-preset-schema") {
             found = true;
             break;
         }
@@ -901,22 +903,22 @@ TEST_CASE("describe-config: subcommand is registered", "[cli][describe-config]")
     REQUIRE(found);
 }
 
-TEST_CASE("describe-config: has non-empty description", "[cli][describe-config]") {
+TEST_CASE("describe-preset-schema: has non-empty description", "[cli][describe-preset-schema]") {
     const auto& cmds = get_subcommands<MachineType>();
 
     for (const auto& cmd : cmds) {
-        if (cmd->name() == "describe-config") {
+        if (cmd->name() == "describe-preset-schema") {
             REQUIRE_FALSE(cmd->description().empty());
             return;
         }
     }
-    FAIL("describe-config subcommand not found");
+    FAIL("describe-preset-schema subcommand not found");
 }
 
-TEST_CASE("describe-config: --help returns OK", "[cli][describe-config]") {
-    ArgvHelper args{"beebium", "describe-config", "--help"};
+TEST_CASE("describe-preset-schema: --help returns OK", "[cli][describe-preset-schema]") {
+    ArgvHelper args{"beebium", "describe-preset-schema", "--help"};
     GlobalConfig global;
-    global.subcommand_name = "describe-config";
+    global.subcommand_name = "describe-preset-schema";
     global.subcommand_argv_start = 2;
     global.help_requested = true;
 
@@ -925,10 +927,10 @@ TEST_CASE("describe-config: --help returns OK", "[cli][describe-config]") {
     REQUIRE(result == ExitCode::OK);
 }
 
-TEST_CASE("describe-config: returns OK with no arguments", "[cli][describe-config]") {
-    ArgvHelper args{"beebium", "describe-config"};
+TEST_CASE("describe-preset-schema: returns OK with no arguments", "[cli][describe-preset-schema]") {
+    ArgvHelper args{"beebium", "describe-preset-schema"};
     GlobalConfig global;
-    global.subcommand_name = "describe-config";
+    global.subcommand_name = "describe-preset-schema";
     global.subcommand_argv_start = 2;
 
     auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
@@ -936,10 +938,10 @@ TEST_CASE("describe-config: returns OK with no arguments", "[cli][describe-confi
     REQUIRE(result == ExitCode::OK);
 }
 
-TEST_CASE("describe-config: unknown argument returns USAGE", "[cli][describe-config]") {
-    ArgvHelper args{"beebium", "describe-config", "--unknown"};
+TEST_CASE("describe-preset-schema: unknown argument returns USAGE", "[cli][describe-preset-schema]") {
+    ArgvHelper args{"beebium", "describe-preset-schema", "--unknown"};
     GlobalConfig global;
-    global.subcommand_name = "describe-config";
+    global.subcommand_name = "describe-preset-schema";
     global.subcommand_argv_start = 2;
 
     auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
@@ -1101,4 +1103,294 @@ TEST_CASE("parse_start_arguments: --preset with matching model succeeds", "[cli]
 
     REQUIRE_FALSE(result.has_value());
     REQUIRE(config.fdc_type == "acorn-1770");
+}
+
+// ============================================================================
+// describe-preset-schema JSON output tests
+// ============================================================================
+
+// Helper to capture stdout from a subcommand invocation
+namespace {
+    template<typename MachineType>
+    std::string capture_describe_preset_schema_output() {
+        ArgvHelper args{"beebium", "describe-preset-schema"};
+        GlobalConfig global;
+        global.subcommand_name = "describe-preset-schema";
+        global.subcommand_argv_start = 2;
+
+        // Capture stdout
+        std::stringstream buffer;
+        std::streambuf* old_cout = std::cout.rdbuf(buffer.rdbuf());
+
+        dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+        // Restore stdout
+        std::cout.rdbuf(old_cout);
+        return buffer.str();
+    }
+}
+
+TEST_CASE("describe-preset-schema: outputs valid JSON", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+
+    // Parse as JSON - this will throw if invalid
+    nlohmann::json json;
+    REQUIRE_NOTHROW(json = nlohmann::json::parse(output));
+    REQUIRE(json.is_object());
+}
+
+TEST_CASE("describe-preset-schema: has schema_version", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    REQUIRE(json.contains("schema_version"));
+    REQUIRE(json["schema_version"].is_number_integer());
+    REQUIRE(json["schema_version"].get<int>() == 1);
+}
+
+TEST_CASE("describe-preset-schema: has model info", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    REQUIRE(json.contains("model"));
+    REQUIRE(json["model"].is_object());
+    REQUIRE(json["model"].contains("id"));
+    REQUIRE(json["model"].contains("name"));
+    REQUIRE(json["model"].contains("description"));
+
+    // Model B specific values
+    REQUIRE(json["model"]["id"].get<std::string>() == "ModelB");
+    REQUIRE(json["model"]["name"].get<std::string>() == "BBC Model B");
+    REQUIRE_FALSE(json["model"]["description"].get<std::string>().empty());
+}
+
+TEST_CASE("describe-preset-schema: has sections array", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    REQUIRE(json.contains("sections"));
+    REQUIRE(json["sections"].is_array());
+    REQUIRE(json["sections"].size() >= 1);
+}
+
+TEST_CASE("describe-preset-schema: Model B has storage section with fdc_socket", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+    REQUIRE_FALSE(storage.is_null());
+    REQUIRE(storage["type"] == "storage");
+
+    // Model B has fdc_socket (not built-in)
+    REQUIRE(storage.contains("fdc_socket"));
+    REQUIRE(storage["fdc_socket"].is_object());
+    REQUIRE(storage["fdc_socket"].contains("options"));
+    REQUIRE(storage["fdc_socket"]["options"].is_array());
+
+    // Built-in FDC should be null for Model B
+    REQUIRE(storage["builtin"]["fdc"].is_null());
+}
+
+TEST_CASE("describe-preset-schema: Model B fdc_socket has none option", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    // Look for "none" option
+    bool found_none = false;
+    for (const auto& option : storage["fdc_socket"]["options"]) {
+        if (option["id"] == "none") {
+            found_none = true;
+            REQUIRE(option["label"] == "Empty");
+            REQUIRE(option["device"].is_null());
+            break;
+        }
+    }
+    REQUIRE(found_none);
+}
+
+TEST_CASE("describe-preset-schema: Model B fdc_socket has acorn-1770 option", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    // Look for "acorn-1770" option
+    bool found_acorn_1770 = false;
+    for (const auto& option : storage["fdc_socket"]["options"]) {
+        if (option["id"] == "acorn-1770") {
+            found_acorn_1770 = true;
+            REQUIRE(option["label"] == "Acorn 1770");
+            REQUIRE(option["device"] == "WD1770");
+            REQUIRE_FALSE(option["description"].get<std::string>().empty());
+            break;
+        }
+    }
+    REQUIRE(found_acorn_1770);
+}
+
+TEST_CASE("describe-preset-schema: storage section has floppy_drives", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    REQUIRE(storage.contains("floppy_drives"));
+    REQUIRE(storage["floppy_drives"].is_array());
+    REQUIRE(storage["floppy_drives"].size() == 2);  // Drives 0 and 1
+
+    // Check drive 0
+    auto& drive0 = storage["floppy_drives"][0];
+    REQUIRE(drive0["drive"].get<int>() == 0);
+    REQUIRE(drive0["tracks"].is_array());
+    REQUIRE(drive0["sides"].get<int>() == 2);
+    REQUIRE(drive0["image_types"].is_array());
+
+    // Check drive 1
+    auto& drive1 = storage["floppy_drives"][1];
+    REQUIRE(drive1["drive"].get<int>() == 1);
+}
+
+TEST_CASE("describe-preset-schema: floppy_drives has correct tracks", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    auto& drive0 = storage["floppy_drives"][0];
+    auto& tracks = drive0["tracks"];
+    REQUIRE(tracks.size() == 2);
+
+    // Should contain 40 and 80
+    std::vector<int> track_values = tracks.get<std::vector<int>>();
+    REQUIRE(std::find(track_values.begin(), track_values.end(), 40) != track_values.end());
+    REQUIRE(std::find(track_values.begin(), track_values.end(), 80) != track_values.end());
+}
+
+TEST_CASE("describe-preset-schema: floppy_drives has correct image_types", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    auto& drive0 = storage["floppy_drives"][0];
+    auto& image_types = drive0["image_types"];
+    std::vector<std::string> types = image_types.get<std::vector<std::string>>();
+
+    REQUIRE(std::find(types.begin(), types.end(), "ssd") != types.end());
+    REQUIRE(std::find(types.begin(), types.end(), "dsd") != types.end());
+    REQUIRE(std::find(types.begin(), types.end(), "adf") != types.end());
+    REQUIRE(std::find(types.begin(), types.end(), "adl") != types.end());
+}
+
+TEST_CASE("describe-preset-schema: builtin has cassette true", "[cli][describe-preset-schema][json]") {
+    auto output = capture_describe_preset_schema_output<MachineType>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    REQUIRE(storage.contains("builtin"));
+    REQUIRE(storage["builtin"]["cassette"].get<bool>() == true);
+}
+
+// Test Model B+ output (different machine type with built-in FDC)
+using ModelBPlus = beebium::ModelBPlus;
+
+TEST_CASE("describe-preset-schema: Model B+ has built-in FDC, no fdc_socket", "[cli][describe-preset-schema][json][model-b-plus]") {
+    auto output = capture_describe_preset_schema_output<ModelBPlus>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+    REQUIRE_FALSE(storage.is_null());
+
+    // Model B+ has built-in FDC
+    REQUIRE(storage["builtin"]["fdc"].is_object());
+    REQUIRE(storage["builtin"]["fdc"]["device"] == "WD1770");
+    REQUIRE(storage["builtin"]["fdc"]["label"] == "Built-in WD1770");
+
+    // Model B+ should NOT have fdc_socket key
+    REQUIRE_FALSE(storage.contains("fdc_socket"));
+}
+
+TEST_CASE("describe-preset-schema: Model B+ has floppy_drives", "[cli][describe-preset-schema][json][model-b-plus]") {
+    auto output = capture_describe_preset_schema_output<ModelBPlus>();
+    auto json = nlohmann::json::parse(output);
+
+    // Find storage section
+    nlohmann::json storage;
+    for (const auto& section : json["sections"]) {
+        if (section.contains("type") && section["type"] == "storage") {
+            storage = section;
+            break;
+        }
+    }
+
+    REQUIRE(storage.contains("floppy_drives"));
+    REQUIRE(storage["floppy_drives"].is_array());
+    REQUIRE(storage["floppy_drives"].size() == 2);
+}
+
+TEST_CASE("describe-preset-schema: Model B+ model info is correct", "[cli][describe-preset-schema][json][model-b-plus]") {
+    auto output = capture_describe_preset_schema_output<ModelBPlus>();
+    auto json = nlohmann::json::parse(output);
+
+    REQUIRE(json["model"]["id"].get<std::string>() == "ModelBPlus");
+    REQUIRE(json["model"]["name"].get<std::string>() == "BBC Model B+ 64K");
 }

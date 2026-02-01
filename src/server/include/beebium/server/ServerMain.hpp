@@ -22,6 +22,8 @@
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/RomPaths.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -1396,18 +1398,23 @@ public:
     }
 };
 
-// DescribeConfiguration subcommand - output configuration schema as JSON
+// DescribePresetSchema subcommand - output preset configuration schema as JSON
 template<typename MachineType>
-class DescribeConfigurationSubcommand : public Subcommand<MachineType> {
+class DescribePresetSchemaSubcommand : public Subcommand<MachineType> {
 public:
-    std::string_view name() const override { return "describe-config"; }
-    std::string_view description() const override { return "Output configuration schema as JSON"; }
+    std::string_view name() const override { return "describe-preset-schema"; }
+    std::string_view description() const override { return "Output preset configuration schema as JSON"; }
 
     void help(const char* program_name) const override {
-        std::cerr << "Usage: " << program_name << " describe-config\n"
+        std::cerr << "Usage: " << program_name << " describe-preset-schema\n"
                   << "\n"
-                  << "Outputs JSON describing the machine's configurable options.\n"
+                  << "Outputs JSON describing the machine's configurable options for presets.\n"
                   << "This is used by frontends to dynamically build configuration UI.\n"
+                  << "\n"
+                  << "Output includes:\n"
+                  << "  - schema_version: Schema format version\n"
+                  << "  - model: Machine identification (id, name, description)\n"
+                  << "  - sections: Array of configuration sections (storage, etc.)\n"
                   << "\n"
                   << "Output is always JSON regardless of --format option.\n";
     }
@@ -1434,13 +1441,66 @@ public:
             return ExitCode::USAGE;
         }
 
-        // Always output JSON regardless of format (this is a schema for programmatic use)
-        std::cout << "{\n"
-                  << "  \"model_name\": \"" << Memory::MACHINE_DISPLAY_NAME << "\",\n"
-                  << "  \"model_description\": \"" << Memory::MACHINE_DESCRIPTION << "\",\n"
-                  << "  \"options\": []\n"
-                  << "}\n";
+        // Build JSON output using ordered_json to preserve key insertion order
+        // (standard json sorts keys alphabetically, making output harder to read)
+        using ojson = nlohmann::ordered_json;
 
+        ojson output;
+        output["schema_version"] = 1;
+        output["model"] = ojson{
+            {"id", Memory::MACHINE_TYPE},
+            {"name", Memory::MACHINE_DISPLAY_NAME},
+            {"description", Memory::MACHINE_DESCRIPTION}
+        };
+
+        // Build storage section - "type" first for readability
+        ojson storage;
+        storage["type"] = "storage";
+
+        // Built-in hardware - all current models have cassette
+        storage["builtin"]["cassette"] = true;
+
+        if constexpr (HasDiscControllerSocket<Memory>) {
+            // Model B: socketed FDC, no built-in controller
+            storage["builtin"]["fdc"] = nullptr;
+
+            // List available FDC options for the socket - "id" first in each option
+            ojson fdc_options = ojson::array();
+            fdc_options.push_back(ojson{
+                {"id", "none"},
+                {"label", "Empty"},
+                {"device", nullptr},
+                {"description", "No disc controller"}
+            });
+            for (const auto& info : DiscControllerRegistry::available()) {
+                fdc_options.push_back(ojson{
+                    {"id", info.id},
+                    {"label", info.display_name},
+                    {"device", info.fdc_chip},
+                    {"description", info.description}
+                });
+            }
+            storage["fdc_socket"]["options"] = fdc_options;
+        } else if constexpr (HasDiscDrives<Memory>) {
+            // Model B+: built-in FDC, no socket
+            storage["builtin"]["fdc"] = ojson{
+                {"device", "WD1770"},
+                {"label", "Built-in WD1770"}
+            };
+            // No fdc_socket key for machines with built-in FDC
+        }
+
+        // Floppy drives (if hardware has them) - "drive" first in each entry
+        if constexpr (HasDiscDrives<Memory>) {
+            storage["floppy_drives"] = ojson::array({
+                ojson{{"drive", 0}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", {"ssd", "dsd", "adf", "adl"}}},
+                ojson{{"drive", 1}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", {"ssd", "dsd", "adf", "adl"}}}
+            });
+        }
+
+        output["sections"] = ojson::array({storage});
+
+        std::cout << output.dump(2) << "\n";
         return ExitCode::OK;
     }
 };
@@ -1473,7 +1533,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<StartSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
-        v.push_back(std::make_unique<DescribeConfigurationSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
         v.push_back(std::make_unique<HelpSubcommand<MachineType>>());
         return v;
     }();

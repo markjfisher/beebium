@@ -261,7 +261,7 @@ Or for Model B+ / Master:
   "builtin": {
     "cassette": true,
     "fdc": {
-      "chip": "WD1770",
+      "device": "WD1770",
       "label": "Built-in WD1770"
     }
   }
@@ -275,7 +275,7 @@ Or for Master Compact:
   "builtin": {
     "cassette": false,
     "fdc": {
-      "chip": "WD1770",
+      "device": "WD1770",
       "label": "Built-in WD1770 (3.5\")"
     }
   }
@@ -293,7 +293,7 @@ Lists available choices for each open interface.
   "fdc_socket": {
     "options": [
       { "id": "none", "label": "Empty" },
-      { "id": "acorn-1770", "label": "Acorn 1770 FDC", "chip": "WD1770" }
+      { "id": "acorn-1770", "label": "Acorn 1770 FDC", "device": "WD1770" }
     ]
   }
 }
@@ -307,7 +307,7 @@ For machines without FDC socket (B+, Master), this section is absent.
 {
   "id": "solidisk-dfdc",
   "label": "Solidisk DFDC",
-  "chip": "8271+WD1770",
+  "device": "8271+WD1770",
   "parameters": [
     {
       "id": "mode",
