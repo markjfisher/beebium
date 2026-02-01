@@ -39,8 +39,9 @@ final class KeyboardMTKView: MTKView {
     // MARK: - Keyboard Events
 
     override func keyDown(with event: NSEvent) {
-        // Ignore keys pressed while Command is held - these are host shortcuts
+        // Pass command-key combinations to the responder chain for menu shortcuts
         if event.modifierFlags.contains(.command) {
+            super.keyDown(with: event)
             return
         }
 
