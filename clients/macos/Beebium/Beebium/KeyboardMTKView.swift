@@ -38,10 +38,17 @@ final class KeyboardMTKView: MTKView {
 
     // MARK: - Keyboard Events
 
-    override func keyDown(with event: NSEvent) {
-        // Pass command-key combinations to the responder chain for menu shortcuts
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Let command-key combinations propagate to the menu system
         if event.modifierFlags.contains(.command) {
-            super.keyDown(with: event)
+            return super.performKeyEquivalent(with: event)
+        }
+        return false
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Command-key combinations are handled by performKeyEquivalent for menu shortcuts
+        if event.modifierFlags.contains(.command) {
             return
         }
 
