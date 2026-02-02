@@ -18,8 +18,10 @@ final class MachinePresetTests: XCTestCase {
     func testSystemPresetIsNotEditable() {
         let preset = MachinePreset(
             id: UUID(),
+            presetId: "bbc-model-b",
             name: "BBC Model B",
             coreExecutablePath: "/path/to/beebium-model-b",
+            presetFilepath: "/path/to/presets/bbc-model-b.preset.beebium",
             source: .systemPreset,
             modelName: "BBC Model B",
             modelDescription: "The original BBC Micro",
@@ -34,8 +36,10 @@ final class MachinePresetTests: XCTestCase {
     func testUserPresetIsEditable() {
         let preset = MachinePreset(
             id: UUID(),
+            presetId: "my-custom-setup",
             name: "My Custom Setup",
             coreExecutablePath: "/path/to/beebium-model-b",
+            presetFilepath: "/path/to/user/presets/my-custom-setup.preset.beebium",
             source: .userPreset,
             modelName: "BBC Model B",
             modelDescription: nil,
@@ -51,8 +55,10 @@ final class MachinePresetTests: XCTestCase {
         let id = UUID()
         let preset1 = MachinePreset(
             id: id,
+            presetId: "bbc-model-b",
             name: "BBC Model B",
             coreExecutablePath: "/path/to/beebium-model-b",
+            presetFilepath: "/path/to/presets/bbc-model-b.preset.beebium",
             source: .systemPreset,
             modelName: "BBC Model B",
             modelDescription: nil,
@@ -61,8 +67,10 @@ final class MachinePresetTests: XCTestCase {
         )
         let preset2 = MachinePreset(
             id: id,
+            presetId: "different-preset",
             name: "Different Name",
             coreExecutablePath: "/different/path",
+            presetFilepath: "/different/path/preset.preset.beebium",
             source: .userPreset,
             modelName: "Different Model",
             modelDescription: nil,
@@ -77,8 +85,10 @@ final class MachinePresetTests: XCTestCase {
         let id = UUID()
         let preset = MachinePreset(
             id: id,
+            presetId: "bbc-model-b",
             name: "BBC Model B",
             coreExecutablePath: "/path/to/beebium-model-b",
+            presetFilepath: "/path/to/presets/bbc-model-b.preset.beebium",
             source: .systemPreset,
             modelName: "BBC Model B",
             modelDescription: nil,
