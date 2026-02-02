@@ -273,7 +273,7 @@ private:
             return std::filesystem::path(home) / "Library" / "Application Support" / "Beebium" / "presets";
         }
 #elif defined(_WIN32)
-        // Windows: %APPDATA%\Beebium\presets\
+        // Windows: %APPDATA%/Beebium/presets/
         if (auto appdata = platform::get_env("APPDATA")) {
             return std::filesystem::path(*appdata) / "Beebium" / "presets";
         }
