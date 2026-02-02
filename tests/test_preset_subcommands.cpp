@@ -76,9 +76,15 @@ ProcessResult run_command(const std::string& command) {
 
 // Get path to executable - looks in common locations
 std::filesystem::path find_executable(const std::string& name) {
+#ifdef _WIN32
+    std::string exe_name = name + ".exe";
+#else
+    std::string exe_name = name;
+#endif
+
     // Check environment variable first
     if (const char* env = std::getenv("BEEBIUM_SERVERS_DIRPATH")) {
-        auto path = std::filesystem::path(env) / name;
+        auto path = std::filesystem::path(env) / exe_name;
         if (std::filesystem::exists(path)) {
             return path;
         }
@@ -86,9 +92,16 @@ std::filesystem::path find_executable(const std::string& name) {
 
     // Check relative to build directory (typical CMake layout)
     std::vector<std::filesystem::path> search_paths = {
-        std::filesystem::current_path() / "src" / "server" / name,
-        std::filesystem::current_path() / ".." / "src" / "server" / name,
-        std::filesystem::current_path() / "build" / "src" / "server" / name,
+        std::filesystem::current_path() / "src" / "server" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / exe_name,
+        std::filesystem::current_path() / "build" / "src" / "server" / exe_name,
+#ifdef _WIN32
+        // MSVC puts executables in Release/Debug subdirectories
+        std::filesystem::current_path() / "src" / "server" / "Release" / exe_name,
+        std::filesystem::current_path() / "src" / "server" / "Debug" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / "Release" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / "Debug" / exe_name,
+#endif
     };
 
     for (const auto& path : search_paths) {
@@ -97,7 +110,7 @@ std::filesystem::path find_executable(const std::string& name) {
         }
     }
 
-    return name;  // Fall back to just the name (rely on PATH)
+    return exe_name;  // Fall back to just the name (rely on PATH)
 }
 
 // RAII helper for temporary directories
