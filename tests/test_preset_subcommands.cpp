@@ -32,6 +32,25 @@ struct ProcessResult {
     std::string stderr_output;
 };
 
+// Cross-platform environment variable helpers
+// Set environment variable in current process (inherited by child processes)
+void set_env(const std::string& name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name.c_str(), value.c_str());
+#else
+    setenv(name.c_str(), value.c_str(), 1);
+#endif
+}
+
+// Unset environment variable in current process
+void unset_env(const std::string& name) {
+#ifdef _WIN32
+    _putenv_s(name.c_str(), "");
+#else
+    unsetenv(name.c_str());
+#endif
+}
+
 ProcessResult run_command(const std::string& command,
                           const std::vector<std::pair<std::string, std::string>>& env_vars = {}) {
     ProcessResult result;
@@ -41,27 +60,26 @@ ProcessResult run_command(const std::string& command,
     auto stdout_filepath = std::filesystem::temp_directory_path() / "beebium_test_stdout.txt";
     auto stderr_filepath = std::filesystem::temp_directory_path() / "beebium_test_stderr.txt";
 
-    // Build command with environment variables
-    std::string full_command;
-#ifdef _WIN32
-    // Windows: use "set VAR=value&& command"
-    // IMPORTANT: No space before && - otherwise the space becomes part of the value!
-    // Quote the assignment to handle paths with spaces
+    // Set environment variables in current process - child processes inherit them
     for (const auto& [name, value] : env_vars) {
-        full_command += "set \"" + name + "=" + value + "\"&& ";
+        set_env(name, value);
     }
-    full_command += command;
+
+    // Build command with output redirection
+    std::string full_command = command;
+#ifdef _WIN32
     full_command += " >\"" + stdout_filepath.string() + "\" 2>\"" + stderr_filepath.string() + "\"";
 #else
-    // Unix: use "VAR=value command"
-    for (const auto& [name, value] : env_vars) {
-        full_command += name + "=\"" + value + "\" ";
-    }
-    full_command += command;
     full_command += " >" + stdout_filepath.string() + " 2>" + stderr_filepath.string();
 #endif
 
     result.exit_code = std::system(full_command.c_str());
+
+    // Unset environment variables after command completes
+    for (const auto& [name, value] : env_vars) {
+        unset_env(name);
+    }
+
     // WEXITSTATUS macro to get actual exit code on Unix
 #ifdef _WIN32
     // On Windows, system() returns the exit code directly
