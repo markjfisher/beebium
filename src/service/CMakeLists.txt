@@ -86,14 +86,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         COMPILE_FLAGS "-Wno-unused-parameter -Wno-shadow"
     )
 elseif(MSVC)
-    # Only suppress benign warnings in generated code:
+    # Suppress warnings in generated protobuf/gRPC code:
     # C4100: unreferenced formal parameter
     # C4127: conditional expression is constant
-    # Note: C4267 (size conversion) is NOT suppressed - better to see these
+    # C4244: conversion from 'type1' to 'type2', possible loss of data
+    # C4267: conversion from 'size_t' to 'type', possible loss of data
     set_source_files_properties(
         ${PROTO_SRCS}
         ${GRPC_SRCS}
         PROPERTIES
-        COMPILE_FLAGS "/wd4100 /wd4127"
+        COMPILE_FLAGS "/wd4100 /wd4127 /wd4244 /wd4267"
     )
 endif()
