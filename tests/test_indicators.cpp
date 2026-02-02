@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -159,8 +159,10 @@ TEST_CASE("Indicators set by ID updates published value via consumer", "[indicat
     // Set value
     REQUIRE(indicators.set(id, 255));
 
-    // Wait for consumer to process (consumer runs at ~50Hz = 20ms)
-    std::this_thread::sleep_for(50ms);
+    // Wait for consumer to process (poll with timeout for slow CI machines)
+    for (int i = 0; i < 100 && indicators.get("led") != 255; ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
 
     REQUIRE(indicators.get("led") == 255);
 
@@ -177,8 +179,10 @@ TEST_CASE("Indicators set by name updates published value via consumer", "[indic
     // Set value by name
     REQUIRE(indicators.set("led", 128));
 
-    // Wait for consumer to process
-    std::this_thread::sleep_for(50ms);
+    // Wait for consumer to process (poll with timeout for slow CI machines)
+    for (int i = 0; i < 100 && indicators.get("led") != 128; ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
 
     REQUIRE(indicators.get("led") == 128);
 
@@ -196,8 +200,10 @@ TEST_CASE("Indicators batch set updates multiple values", "[indicators]") {
     // Batch update
     REQUIRE(indicators.set({{id0, 100}, {id1, 200}}));
 
-    // Wait for consumer to process
-    std::this_thread::sleep_for(50ms);
+    // Wait for consumer to process (poll with timeout for slow CI machines)
+    for (int i = 0; i < 100 && (indicators.get("led-0") != 100 || indicators.get("led-1") != 200); ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
 
     REQUIRE(indicators.get("led-0") == 100);
     REQUIRE(indicators.get("led-1") == 200);
@@ -217,10 +223,12 @@ TEST_CASE("Indicators sequence increments on value change", "[indicators]") {
     // Set value
     indicators.set(id, 255);
 
-    // Wait for consumer to process
-    std::this_thread::sleep_for(50ms);
-
-    auto seq2 = indicators.sequence();
+    // Wait for consumer to process (poll with timeout for slow CI machines)
+    uint64_t seq2 = seq1;
+    for (int i = 0; i < 100 && seq2 == seq1; ++i) {
+        std::this_thread::sleep_for(10ms);
+        seq2 = indicators.sequence();
+    }
     REQUIRE(seq2 > seq1);
 
     indicators.stop();
@@ -233,14 +241,18 @@ TEST_CASE("Indicators sequence does not increment when value unchanged", "[indic
 
     indicators.start();
 
-    // Set initial value
+    // Set initial value and wait for consumer to process
     indicators.set(id, 255);
-    std::this_thread::sleep_for(50ms);
+    for (int i = 0; i < 100 && indicators.get("led") != 255; ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
 
     auto seq1 = indicators.sequence();
 
     // Set same value again
     indicators.set(id, 255);
+
+    // Wait a bit to give consumer a chance to (not) increment sequence
     std::this_thread::sleep_for(50ms);
 
     auto seq2 = indicators.sequence();
