@@ -44,12 +44,14 @@ ProcessResult run_command(const std::string& command,
     // Build command with environment variables
     std::string full_command;
 #ifdef _WIN32
-    // Windows: use "set VAR=value && command"
+    // Windows: use "set VAR=value&& command"
+    // IMPORTANT: No space before && - otherwise the space becomes part of the value!
+    // Quote the assignment to handle paths with spaces
     for (const auto& [name, value] : env_vars) {
-        full_command += "set " + name + "=" + value + " && ";
+        full_command += "set \"" + name + "=" + value + "\"&& ";
     }
     full_command += command;
-    full_command += " >" + stdout_filepath.string() + " 2>" + stderr_filepath.string();
+    full_command += " >\"" + stdout_filepath.string() + "\" 2>\"" + stderr_filepath.string() + "\"";
 #else
     // Unix: use "VAR=value command"
     for (const auto& [name, value] : env_vars) {
