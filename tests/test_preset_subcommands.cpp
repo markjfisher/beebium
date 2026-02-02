@@ -32,7 +32,8 @@ struct ProcessResult {
     std::string stderr_output;
 };
 
-ProcessResult run_command(const std::string& command) {
+ProcessResult run_command(const std::string& command,
+                          const std::vector<std::pair<std::string, std::string>>& env_vars = {}) {
     ProcessResult result;
     result.exit_code = -1;
 
@@ -40,8 +41,23 @@ ProcessResult run_command(const std::string& command) {
     auto stdout_filepath = std::filesystem::temp_directory_path() / "beebium_test_stdout.txt";
     auto stderr_filepath = std::filesystem::temp_directory_path() / "beebium_test_stderr.txt";
 
-    std::string full_command = command + " >" + stdout_filepath.string() +
-                               " 2>" + stderr_filepath.string();
+    // Build command with environment variables
+    std::string full_command;
+#ifdef _WIN32
+    // Windows: use "set VAR=value && command"
+    for (const auto& [name, value] : env_vars) {
+        full_command += "set " + name + "=" + value + " && ";
+    }
+    full_command += command;
+    full_command += " >" + stdout_filepath.string() + " 2>" + stderr_filepath.string();
+#else
+    // Unix: use "VAR=value command"
+    for (const auto& [name, value] : env_vars) {
+        full_command += name + "=\"" + value + "\" ";
+    }
+    full_command += command;
+    full_command += " >" + stdout_filepath.string() + " 2>" + stderr_filepath.string();
+#endif
 
     result.exit_code = std::system(full_command.c_str());
     // WEXITSTATUS macro to get actual exit code on Unix
@@ -183,10 +199,11 @@ TEST_CASE("report-presets-dirpath: returns a path", "[integration][preset][repor
 
 TEST_CASE("report-presets-dirpath: respects BEEBIUM_USER_PRESETS_DIRPATH", "[integration][preset][report-presets-dirpath]") {
     TempDirectory temp_dir;
-    std::string command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + temp_dir.path().string() +
-                          "\" " + EXECUTABLE + " report-presets-dirpath";
 
-    auto result = run_command(command);
+    auto result = run_command(
+        EXECUTABLE + " report-presets-dirpath",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", temp_dir.path().string()}}
+    );
 
     REQUIRE(result.exit_code == 0);
     REQUIRE(result.stdout_output.find(temp_dir.path().string()) != std::string::npos);
@@ -239,10 +256,11 @@ TEST_CASE("create-preset --output: creates preset file", "[integration][preset][
 
 TEST_CASE("create-preset: creates preset in user directory", "[integration][preset][create-preset]") {
     TempDirectory temp_dir;
-    std::string command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + temp_dir.path().string() +
-                          "\" " + EXECUTABLE + " create-preset --name \"My Test Setup\"";
 
-    auto result = run_command(command);
+    auto result = run_command(
+        EXECUTABLE + " create-preset --name \"My Test Setup\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", temp_dir.path().string()}}
+    );
 
     REQUIRE(result.exit_code == 0);
     // Output should be the preset ID
@@ -288,10 +306,10 @@ TEST_CASE("delete-preset: deletes user preset", "[integration][preset][delete-pr
     REQUIRE(std::filesystem::exists(preset_filepath));
 
     // Delete it
-    std::string command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + temp_dir.path().string() +
-                          "\" " + EXECUTABLE + " delete-preset deleteme";
-
-    auto result = run_command(command);
+    auto result = run_command(
+        EXECUTABLE + " delete-preset deleteme",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", temp_dir.path().string()}}
+    );
 
     REQUIRE(result.exit_code == 0);
     REQUIRE_FALSE(std::filesystem::exists(preset_filepath));
@@ -331,10 +349,10 @@ TEST_CASE("import-preset: imports valid preset", "[integration][preset][import-p
         f << R"({"model": "model-b", "name": "Import Me"})";
     }
 
-    std::string command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + dest_dir.path().string() +
-                          "\" " + EXECUTABLE + " import-preset \"" + source_filepath.string() + "\"";
-
-    auto result = run_command(command);
+    auto result = run_command(
+        EXECUTABLE + " import-preset \"" + source_filepath.string() + "\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", dest_dir.path().string()}}
+    );
 
     REQUIRE(result.exit_code == 0);
     REQUIRE(result.stdout_output.find("importme") != std::string::npos);
@@ -405,11 +423,11 @@ TEST_CASE("export-preset: exports user preset", "[integration][preset][export-pr
     }
 
     auto output_filepath = output_dir.path() / "exported.preset.beebium";
-    std::string command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + user_dir.path().string() +
-                          "\" " + EXECUTABLE + " export-preset mypreset --output \"" +
-                          output_filepath.string() + "\"";
 
-    auto result = run_command(command);
+    auto result = run_command(
+        EXECUTABLE + " export-preset mypreset --output \"" + output_filepath.string() + "\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
 
     REQUIRE(result.exit_code == 0);
     REQUIRE(std::filesystem::exists(output_filepath));
@@ -438,9 +456,10 @@ TEST_CASE("Full preset workflow: create, export, import, delete", "[integration]
     TempDirectory import_dir;
 
     // Step 1: Create a preset
-    std::string create_command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + user_dir.path().string() +
-                                 "\" " + EXECUTABLE + " create-preset --name \"Workflow Test\"";
-    auto create_result = run_command(create_command);
+    auto create_result = run_command(
+        EXECUTABLE + " create-preset --name \"Workflow Test\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
     REQUIRE(create_result.exit_code == 0);
 
     std::string preset_id = create_result.stdout_output;
@@ -456,24 +475,26 @@ TEST_CASE("Full preset workflow: create, export, import, delete", "[integration]
 
     // Step 2: Export the preset
     auto export_filepath = export_dir.path() / "exported.preset.beebium";
-    std::string export_command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + user_dir.path().string() +
-                                 "\" " + EXECUTABLE + " export-preset " + preset_id +
-                                 " --output \"" + export_filepath.string() + "\"";
-    auto export_result = run_command(export_command);
+    auto export_result = run_command(
+        EXECUTABLE + " export-preset " + preset_id + " --output \"" + export_filepath.string() + "\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
     REQUIRE(export_result.exit_code == 0);
     REQUIRE(std::filesystem::exists(export_filepath));
 
     // Step 3: Delete the original
-    std::string delete_command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + user_dir.path().string() +
-                                 "\" " + EXECUTABLE + " delete-preset " + preset_id;
-    auto delete_result = run_command(delete_command);
+    auto delete_result = run_command(
+        EXECUTABLE + " delete-preset " + preset_id,
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
     REQUIRE(delete_result.exit_code == 0);
     REQUIRE_FALSE(std::filesystem::exists(preset_filepath));
 
     // Step 4: Import from export
-    std::string import_command = "BEEBIUM_USER_PRESETS_DIRPATH=\"" + import_dir.path().string() +
-                                 "\" " + EXECUTABLE + " import-preset \"" + export_filepath.string() + "\"";
-    auto import_result = run_command(import_command);
+    auto import_result = run_command(
+        EXECUTABLE + " import-preset \"" + export_filepath.string() + "\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", import_dir.path().string()}}
+    );
     REQUIRE(import_result.exit_code == 0);
 
     // Verify imported file exists
