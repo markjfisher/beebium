@@ -25,8 +25,9 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #elif defined(_WIN32)
-#include <windows.h>
-#include <shlobj.h>
+// Note: <windows.h> is already included by Platform.hpp with WIN32_LEAN_AND_MEAN.
+// We don't use SHGetFolderPathA here to avoid shell API header complications;
+// instead we use the APPDATA environment variable directly.
 #else
 #include <unistd.h>
 #include <climits>
@@ -273,11 +274,6 @@ private:
         }
 #elif defined(_WIN32)
         // Windows: %APPDATA%\Beebium\presets\
-        char path[MAX_PATH];
-        if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_APPDATA, nullptr, 0, path))) {
-            return std::filesystem::path(path) / "Beebium" / "presets";
-        }
-        // Fallback to APPDATA environment variable
         if (auto appdata = platform::get_env("APPDATA")) {
             return std::filesystem::path(*appdata) / "Beebium" / "presets";
         }
