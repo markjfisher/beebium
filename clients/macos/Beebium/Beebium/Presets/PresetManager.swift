@@ -13,6 +13,24 @@
 import Foundation
 import AppKit
 
+/// Error type for core launch failures
+enum CoreLaunchError: LocalizedError {
+    case launchFailed(String)
+    case timeout
+    case processExited(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .launchFailed(let message):
+            return message
+        case .timeout:
+            return "Timeout waiting for server to start"
+        case .processExited(let message):
+            return message
+        }
+    }
+}
+
 /// Manages machine presets by discovering preset files and querying their configurations.
 ///
 /// Discovers presets via:
@@ -376,6 +394,102 @@ class PresetManager: ObservableObject {
     func revealInFinder(_ preset: MachinePreset) {
         let dirpath = URL(fileURLWithPath: preset.presetFilepath).deletingLastPathComponent().path
         NSWorkspace.shared.selectFile(preset.presetFilepath, inFileViewerRootedAtPath: dirpath)
+    }
+
+    // MARK: - Core Launching
+
+    /// Result of successfully launching a core process
+    struct LaunchedCore {
+        let process: Process
+        let port: Int
+    }
+
+    /// Launch a core process for the given preset.
+    /// The core is launched with --wait=api, meaning it waits for a Run() RPC before starting emulation.
+    /// - Parameters:
+    ///   - preset: The preset to launch
+    ///   - floppyFilepath: Optional disc image to insert in drive 0
+    /// - Returns: LaunchedCore on success, or error on failure
+    func launchCore(_ preset: MachinePreset, floppyFilepath: String? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: preset.coreExecutablePath)
+
+        var arguments = [
+            "start",
+            "--preset", preset.presetFilepath,
+            "--port", "0",
+            "--advertise",
+            "--wait=api"
+        ]
+
+        if let floppyFilepath = floppyFilepath {
+            arguments.append(contentsOf: ["--floppy", "0:\(floppyFilepath)"])
+        }
+
+        process.arguments = arguments
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+        } catch {
+            return .failure(.launchFailed("Failed to launch: \(error.localizedDescription)"))
+        }
+
+        NSLog("[PresetManager] Launched \(preset.coreExecutablePath) with args: \(arguments.joined(separator: " "))")
+
+        // Read stdout to find the port
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let handle = stdoutPipe.fileHandleForReading
+                var buffer = Data()
+                let portPattern = #"Listening on port (\d+)"#
+                let regex = try? NSRegularExpression(pattern: portPattern)
+
+                // Timeout after 5 seconds
+                let deadline = Date().addingTimeInterval(5.0)
+
+                while Date() < deadline {
+                    // Check if process has exited unexpectedly
+                    if !process.isRunning {
+                        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                        let stderrText = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+                        let errorMsg = stderrText.isEmpty
+                            ? "Process exited with status \(process.terminationStatus)"
+                            : stderrText
+                        continuation.resume(returning: .failure(.processExited(errorMsg)))
+                        return
+                    }
+
+                    // Read available data
+                    let chunk = handle.availableData
+                    if chunk.isEmpty {
+                        usleep(10_000) // 10ms
+                        continue
+                    }
+
+                    buffer.append(chunk)
+
+                    // Try to parse port from accumulated output
+                    if let text = String(data: buffer, encoding: .utf8),
+                       let match = regex?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                       let portRange = Range(match.range(at: 1), in: text),
+                       let port = Int(text[portRange]) {
+                        NSLog("[PresetManager] Core listening on port \(port)")
+                        continuation.resume(returning: .success(LaunchedCore(process: process, port: port)))
+                        return
+                    }
+                }
+
+                // Timeout - kill the process
+                NSLog("[PresetManager] Timeout waiting for port, terminating process")
+                process.terminate()
+                continuation.resume(returning: .failure(.timeout))
+            }
+        }
     }
 
     // MARK: - CLI Execution

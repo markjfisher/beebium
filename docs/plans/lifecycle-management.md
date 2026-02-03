@@ -99,23 +99,7 @@ See [preset-system.md](preset-system.md) for detailed design.
 
 **Goal**: File > New… with preset selection and configuration.
 
-With the Preset System (Phase 7.6) in place, the New Machine dialog becomes a consumer of `PresetManager`. The dialog:
-
-1. Shows preset picker (populated from PresetManager)
-2. Shows model info (from selected preset)
-3. Shows editable configuration (from core's `DescribeConfiguration` RPC)
-4. Cancel / Create buttons
-5. Create launches core with configuration, connects, opens window
-
-### Files to create/modify:
-- `clients/macos/Beebium/Beebium/NewMachineDialog.swift` (replace placeholder)
-- `clients/macos/Beebium/Beebium/ConfigurationEditor.swift` (shared with Settings)
-
-### Verification:
-- All presets appear in picker (default + user)
-- Selecting preset populates configuration form
-- Modifying configuration doesn't affect stored preset
-- Create launches core and opens window
+See [new-machine-dialog.md](new-machine-dialog.md) for detailed design.
 
 ---
 

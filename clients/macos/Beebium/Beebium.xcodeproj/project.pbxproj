@@ -19,6 +19,7 @@
 		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
 		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
 		2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */; };
+		345AA9A186D7CA962B5D31A1 /* DebuggerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDC80983751CFBC0D9B98A3 /* DebuggerClient.swift */; };
 		3A5F2C41B8468DD7E63EC414 /* audio.proto in Resources */ = {isa = PBXBuildFile; fileRef = A16BD17340EC98E2C5EF1127 /* audio.proto */; };
 		3B3122E1626E09ABEAC4315B /* ConfigurationSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */; };
 		40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */; };
@@ -31,12 +32,14 @@
 		4DD0F4094D0E603CFF35DF6C /* FileCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1031975F4050BF5875549DFA /* FileCommands.swift */; };
 		4F522FC6B586A81F9B0C6507 /* indicator.proto in Resources */ = {isa = PBXBuildFile; fileRef = 87E7F7F1255B32F8C85FAFDA /* indicator.proto */; };
 		4F70A7E16C384FDF27FB7DA7 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */; };
+		517A5C299A144DD482FC9AC2 /* debugger.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A25B5AEA5BC043A1C1314DA /* debugger.grpc.swift */; };
 		562B6F36BE2D62D913DB2A32 /* AVFAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9DE8C83B31D707C9E30C491D /* AVFAudio.framework */; };
 		5BFF6217532F7E4126E6A946 /* system.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */; };
 		6115EAB5B469DD1B9242F92E /* GeneralSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C4FBFCE12BD6DED30E2E24 /* GeneralSettingsPane.swift */; };
 		62024A31F9AD52CA2676CCB2 /* PresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8061A3DD36CCF7976C8F41E1 /* PresetTests.swift */; };
 		627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FF930B029ECBBAE243C4D0 /* ContentView.swift */; };
 		6573E0F14063A6C83E3204CA /* AudioRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86FF568406281481A0E0D88 /* AudioRenderer.swift */; };
+		698365A81FDEB647194AEF2D /* debugger.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57967139EC7DEA91FCF67161 /* debugger.pb.swift */; };
 		739F46631A5F30A8209D9623 /* disc.proto in Resources */ = {isa = PBXBuildFile; fileRef = 9141154B5BCF7C71635E62B2 /* disc.proto */; };
 		75BBA7064C85D6CDB3797111 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9849250F602C15283E458A /* StatusBarView.swift */; };
 		7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE550723A13DFA9A20EB302 /* IndicatorView.swift */; };
@@ -107,9 +110,11 @@
 		3D27B82F5650277464200982 /* system.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = system.proto; sourceTree = "<group>"; };
 		42858282A95435EEDFA1413F /* ConnectDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectDialog.swift; sourceTree = "<group>"; };
 		4635C74CA6E1654868006CA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4A25B5AEA5BC043A1C1314DA /* debugger.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = debugger.grpc.swift; sourceTree = "<group>"; };
 		4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		4DAEE1DC0F503B0F7129CE02 /* BeebiumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BeebiumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E0CD29C9A89B375C692C019 /* audio.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.pb.swift; sourceTree = "<group>"; };
+		57967139EC7DEA91FCF67161 /* debugger.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = debugger.pb.swift; sourceTree = "<group>"; };
 		58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumApp.swift; sourceTree = "<group>"; };
 		5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerState.swift; sourceTree = "<group>"; };
 		5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSchema.swift; sourceTree = "<group>"; };
@@ -128,6 +133,7 @@
 		87E7F7F1255B32F8C85FAFDA /* indicator.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = indicator.proto; sourceTree = "<group>"; };
 		8B269A5937DAC1914CA8BF39 /* video.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.grpc.swift; sourceTree = "<group>"; };
 		8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
+		8FDC80983751CFBC0D9B98A3 /* DebuggerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebuggerClient.swift; sourceTree = "<group>"; };
 		9141154B5BCF7C71635E62B2 /* disc.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = disc.proto; sourceTree = "<group>"; };
 		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
@@ -207,6 +213,8 @@
 			children = (
 				AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */,
 				4E0CD29C9A89B375C692C019 /* audio.pb.swift */,
+				4A25B5AEA5BC043A1C1314DA /* debugger.grpc.swift */,
+				57967139EC7DEA91FCF67161 /* debugger.pb.swift */,
 				A44DA8D133CDD247497229CA /* disc.grpc.swift */,
 				92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */,
 				03C4898953F0003B85113EC0 /* indicator.grpc.swift */,
@@ -286,6 +294,7 @@
 				42858282A95435EEDFA1413F /* ConnectDialog.swift */,
 				0380D979784116B4110F8904 /* ConnectionRegistry.swift */,
 				E2FF930B029ECBBAE243C4D0 /* ContentView.swift */,
+				8FDC80983751CFBC0D9B98A3 /* DebuggerClient.swift */,
 				CF6562062957B62B8C099A42 /* DiscClient.swift */,
 				D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */,
 				A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */,
@@ -450,6 +459,7 @@
 				E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */,
 				EEC1DCADCCF584AB8BC8DD01 /* ConnectionRegistry.swift in Sources */,
 				627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */,
+				345AA9A186D7CA962B5D31A1 /* DebuggerClient.swift in Sources */,
 				4D9536D54F0C9291F5ECD326 /* DiscClient.swift in Sources */,
 				AEFDACA93EC7747DF05C2447 /* DiscoveryClient.swift in Sources */,
 				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
@@ -482,6 +492,8 @@
 				F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */,
 				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,
 				A005244A2347799984C194E6 /* audio.pb.swift in Sources */,
+				517A5C299A144DD482FC9AC2 /* debugger.grpc.swift in Sources */,
+				698365A81FDEB647194AEF2D /* debugger.pb.swift in Sources */,
 				22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */,
 				EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */,
 				44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */,

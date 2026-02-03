@@ -21,13 +21,20 @@ class ConnectWindowState: ObservableObject {
     /// Target for the next window to connect to (set before opening a new window)
     @Published var pendingTarget: ConnectionTarget?
 
+    /// Whether the pending target needs Run() RPC after connection.
+    /// Set to true when launching a new core with --wait=api.
+    @Published var pendingNeedsRun: Bool = false
+
     private init() {}
 
     /// Consume the pending target (returns it and clears it)
-    func consumePendingTarget() -> ConnectionTarget? {
+    /// - Returns: Tuple of (target, needsRun) where needsRun indicates if Run() RPC should be called
+    func consumePendingTarget() -> (ConnectionTarget?, Bool) {
         let target = pendingTarget
+        let needsRun = pendingNeedsRun
         pendingTarget = nil
-        return target
+        pendingNeedsRun = false
+        return (target, needsRun)
     }
 }
 

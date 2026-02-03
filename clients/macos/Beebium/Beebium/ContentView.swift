@@ -21,7 +21,10 @@ struct ContentView: View {
     @StateObject private var indicatorClient = IndicatorClient()
     @StateObject private var discClient = DiscClient()
     @StateObject private var audioClient = AudioClient()
+    @StateObject private var debuggerClient = DebuggerClient()
     @StateObject private var audioMixerState = AudioMixerState()
+    /// Whether this window needs to call Run() after connection (for cores launched with --wait=api)
+    @State private var needsRun: Bool = false
     @State private var showStatusBar: Bool = true
     @State private var showSidebar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
@@ -104,8 +107,10 @@ struct ContentView: View {
                 )
             }
 
-            // Check for pending connection target (set by Connect dialog)
-            if let target = ConnectWindowState.shared.consumePendingTarget() {
+            // Check for pending connection target (set by Connect dialog or New Machine dialog)
+            let (target, runNeeded) = ConnectWindowState.shared.consumePendingTarget()
+            needsRun = runNeeded
+            if let target = target {
                 videoClient.reconnect(to: target)
             } else {
                 videoClient.connect()
@@ -115,6 +120,7 @@ struct ContentView: View {
             // Unregister connection when window closes
             ConnectionRegistry.shared.unregister(address: videoClient.target.address)
 
+            debuggerClient.disconnect()
             audioClient.disconnect()
             discClient.disconnect()
             indicatorClient.disconnect()
@@ -140,6 +146,7 @@ struct ContentView: View {
                 indicatorClient.connect(channel: channel)
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
+                debuggerClient.connect(channel: channel)
 
                 // Register this connection
                 if let window = currentWindow {
@@ -147,6 +154,18 @@ struct ContentView: View {
                         address: videoClient.target.address,
                         window: window
                     )
+                }
+
+                // If this was a freshly launched core with --wait=api, start emulation
+                if needsRun {
+                    needsRun = false
+                    Task {
+                        do {
+                            try await debuggerClient.run()
+                        } catch {
+                            NSLog("[ContentView] Failed to start emulation: \(error)")
+                        }
+                    }
                 }
 
                 // Load keyboard mappings from core
@@ -164,6 +183,7 @@ struct ContentView: View {
                 // Unregister this connection
                 ConnectionRegistry.shared.unregister(address: videoClient.target.address)
 
+                debuggerClient.disconnect()
                 audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
@@ -173,6 +193,7 @@ struct ContentView: View {
                 // Unregister this connection
                 ConnectionRegistry.shared.unregister(address: videoClient.target.address)
 
+                debuggerClient.disconnect()
                 audioClient.disconnect()
                 discClient.disconnect()
                 indicatorClient.disconnect()
