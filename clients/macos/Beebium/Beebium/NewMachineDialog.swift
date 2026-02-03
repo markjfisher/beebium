@@ -11,7 +11,6 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct NewMachineDialog: View {
     @Environment(\.dismiss) private var dismiss
@@ -24,27 +23,16 @@ struct NewMachineDialog: View {
     @AppStorage("lastSelectedPresetId") private var lastSelectedPresetId: String = ""
     @State private var selectedPreset: MachinePreset?
 
-    // Drag-drop state
-    @State private var droppedDiscFilepath: String?
-    @State private var droppedDiscFilename: String?
-    @State private var isDropTargeted = false
-
     // Launch state
     @State private var isLaunching = false
     @State private var launchError: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            headerSection
-
-            Divider()
-
             // Content
-            VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
                 presetPickerSection
                 descriptionSection
-                discDropSection
                 errorSection
             }
             .padding(20)
@@ -54,32 +42,13 @@ struct NewMachineDialog: View {
             // Buttons
             buttonBar
         }
-        .frame(width: 400)
+        .frame(width: 380)
         .task {
             if presetManager.systemPresets.isEmpty {
                 await presetManager.discoverPresets()
             }
             restoreLastSelection()
         }
-    }
-
-    // MARK: - Header
-
-    private var headerSection: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 32))
-                .foregroundColor(.accentColor)
-            VStack(alignment: .leading) {
-                Text("New Machine")
-                    .font(.headline)
-                Text("Select a machine preset to start")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-        }
-        .padding(20)
     }
 
     // MARK: - Preset Picker
@@ -149,92 +118,6 @@ struct NewMachineDialog: View {
         .frame(height: 40, alignment: .top)
     }
 
-    // MARK: - Disc Drop Zone
-
-    private var discDropSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Disc Image (Optional)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            discDropZone
-        }
-    }
-
-    private var discDropZone: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(
-                    isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
-                    style: StrokeStyle(lineWidth: 2, dash: [6])
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isDropTargeted ? Color.accentColor.opacity(0.1) : Color.clear)
-                )
-
-            if let filename = droppedDiscFilename {
-                HStack {
-                    Image(systemName: "opticaldiscdrive")
-                        .foregroundColor(.accentColor)
-                    Text(filename)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button {
-                        droppedDiscFilepath = nil
-                        droppedDiscFilename = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 12)
-            } else {
-                VStack(spacing: 4) {
-                    Image(systemName: "arrow.down.doc")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    Text("Drop .ssd or .dsd file here")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .frame(height: 60)
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-            handleDrop(providers: providers)
-        }
-    }
-
-    private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, error in
-            guard let data = item as? Data,
-                  let url = URL(dataRepresentation: data, relativeTo: nil) else {
-                return
-            }
-
-            let ext = url.pathExtension.lowercased()
-            guard ext == "ssd" || ext == "dsd" else {
-                Task { @MainActor in
-                    launchError = "Only .ssd and .dsd files are supported"
-                }
-                return
-            }
-
-            Task { @MainActor in
-                droppedDiscFilepath = url.path
-                droppedDiscFilename = url.lastPathComponent
-                launchError = nil
-            }
-        }
-
-        return true
-    }
-
     // MARK: - Error Section
 
     @ViewBuilder
@@ -300,7 +183,7 @@ struct NewMachineDialog: View {
 
         // Capture the manager reference before async call to avoid @StateObject wrapper issues
         let manager = presetManager
-        let result = await manager.launchCore(preset, floppyFilepath: droppedDiscFilepath)
+        let result = await manager.launchCore(preset)
 
         switch result {
         case .success(let core):

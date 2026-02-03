@@ -20,9 +20,9 @@ The initial implementation focuses on the minimal path: select a preset, launch 
 - Create button launches core with preset defaults
 - Cancel dismisses dialog
 - Remember last-selected preset
-- Drag-drop disc image onto dialog sets drive 0
 
 **Deferred to Phase 8.2:**
+- Drag-drop disc image onto dialog
 - Configuration editing section
 - Save as new preset option
 - Configuration diff display
@@ -51,9 +51,8 @@ Add the ability to modify configuration before launch:
 1. User selects File > New... (⌘N)
 2. Dialog appears with preset picker (last-selected preset remembered)
 3. User selects a preset (or accepts the default)
-4. Optionally: user drops a disc image onto dialog to set drive 0
-5. User clicks Create
-6. Core launches, connects, window opens
+4. User clicks Create
+5. Core launches, connects, window opens
 
 ### Phase 8.1: Quick Launch Flow
 
@@ -95,8 +94,6 @@ The initial dialog is minimal — preset selection and launch only:
 │                                          └────────┘ └────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
-
-Drag-drop a disc image onto the dialog to set it as drive 0 for this launch.
 
 ### Phase 8.2 Layout (With Configuration)
 
@@ -174,13 +171,12 @@ The picker groups presets by source (system vs user) and shows checkmark on curr
 │   NewMachineDialog                                              │
 │   ┌─────────────────────────────────────────────────────────┐   │
 │   │ selectedPreset: MachinePreset?                          │   │
-│   │ droppedDiscFilepath: String?  ← from drag-drop          │   │
 │   └────────────────────────┬────────────────────────────────┘   │
 │                            │                                    │
 │                            │ Create button clicked              │
 │                            ▼                                    │
 │   ┌─────────────────────────────────────────────────────────┐   │
-│   │ presetManager.launchCore(preset, floppyFilepath:)       │   │
+│   │ presetManager.launchCore(preset)                        │   │
 │   │   → spawns: beebium-<model> start --preset <filepath>   │   │
 │   │             --port 0 --advertise --wait=api             │   │
 │   │   → parses stdout for "Listening on port XXXX"          │   │
@@ -248,11 +244,6 @@ struct NewMachineDialog: View {
     // Preset selection - persisted via @AppStorage
     @AppStorage("lastSelectedPresetId") private var lastSelectedPresetId: String = ""
     @State private var selectedPreset: MachinePreset?
-
-    // Drag-drop state
-    @State private var droppedDiscFilepath: String?
-    @State private var droppedDiscFilename: String?
-    @State private var isDropTargeted = Bool
 
     // Launch state
     @State private var isLaunching = false
@@ -346,7 +337,6 @@ The launch uses `--wait=api` mode for controlled startup. This ensures the emula
         ▼
 2. PresetManager.launchCore() spawns core process
    Arguments: start --preset <filepath> --port 0 --advertise --wait=api
-             [--floppy 0:<filepath>]  (if disc dropped)
         │
         ▼
 3. Parse stdout for "Listening on port XXXX"
@@ -389,21 +379,17 @@ The launch uses `--wait=api` mode for controlled startup. This ensures the emula
 **PresetManager.launchCore()** handles process spawning and port discovery:
 
 ```swift
-func launchCore(_ preset: MachinePreset, floppyFilepath: String? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
+func launchCore(_ preset: MachinePreset) async -> Result<LaunchedCore, CoreLaunchError> {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: preset.coreExecutablePath)
 
-    var arguments = [
+    let arguments = [
         "start",
         "--preset", preset.presetFilepath,
         "--port", "0",        // Auto-assign port
         "--advertise",        // Enable Bonjour discovery
         "--wait=api"          // Wait for Run() RPC before starting
     ]
-
-    if let floppyFilepath = floppyFilepath {
-        arguments.append(contentsOf: ["--floppy", "0:\(floppyFilepath)"])
-    }
 
     // ... launch process, parse stdout for port, return LaunchedCore
 }
@@ -454,7 +440,6 @@ The `--wait=api` flag provides several benefits:
 1. **Controlled startup**: The emulator waits in a paused state until the client is ready
 2. **No missed frames**: The display window is guaranteed to be connected before emulation begins
 3. **Clean initial state**: The user sees the machine boot from the beginning
-4. **Reliable disc insertion**: If a disc was specified, it's ready before the MOS starts
 
 Without `--wait=api`, there's a race condition where the emulator might boot partway before the window connects, causing the user to miss the initial boot sequence.
 
@@ -475,8 +460,6 @@ The core launch mechanism (`--wait=api` + `Run()` RPC) remains the same.
 | Action | Trigger | Result |
 |--------|---------|--------|
 | Select preset | Click picker, choose preset | Description updates, selection remembered |
-| Drop disc image | Drag .ssd/.dsd onto dialog | Sets drive 0 for this launch, shows filename |
-| Clear dropped disc | Click X on dropped disc indicator | Clears drive 0 override |
 | Cancel | Click Cancel or press Escape | Dialog dismisses, no action |
 | Create | Click Create or press Return | Launch sequence begins |
 
@@ -522,7 +505,7 @@ Selecting a disabled preset:
 
 | File | Purpose |
 |------|---------|
-| `clients/macos/Beebium/Beebium/NewMachineDialog.swift` | Complete dialog with preset picker, disc drop zone, launch flow |
+| `clients/macos/Beebium/Beebium/NewMachineDialog.swift` | Complete dialog with preset picker and launch flow |
 | `clients/macos/Beebium/Beebium/Presets/PresetManager.swift` | Added `launchCore()` method and `CoreLaunchError` type |
 | `clients/macos/Beebium/Beebium/DebuggerClient.swift` | New client for DebuggerControl service (Run() RPC) |
 | `clients/macos/Beebium/Beebium/Generated/debugger.pb.swift` | Generated protobuf bindings for debugger.proto |
@@ -600,16 +583,12 @@ struct FileCommands: Commands {
    - Machine window opens after creation
    - Core process is running
 
-4. **Drag-drop disc image**
-   - Dropping .ssd/.dsd file onto dialog sets drive 0
-   - Launched machine has disc in drive 0
-
-5. **Disabled presets**
+4. **Disabled presets**
    - Disabled presets appear grayed out
    - Selecting disabled preset disables Create button
    - Warning explains why preset is unavailable
 
-6. **Error handling**
+5. **Error handling**
    - Missing executable shows error
    - Launch failure shows error message
    - Error can be dismissed, user can try again
@@ -640,16 +619,6 @@ final class NewMachineDialogTests: XCTestCase {
         let args = buildLaunchArguments(preset: preset)
 
         XCTAssertEqual(args, ["start", "--preset", "model-b", "--port", "0"])
-    }
-
-    func testBuildLaunchArguments_withDroppedDisc() {
-        let preset = makeTestPreset(id: "model-b")
-        let discPath = "/path/to/game.ssd"
-
-        let args = buildLaunchArguments(preset: preset, droppedDiscPath: discPath)
-
-        XCTAssertTrue(args.contains("--floppy"))
-        XCTAssertTrue(args.contains("0:file:///path/to/game.ssd"))
     }
 
     func testDisabledPresetBlocksCreate() {
@@ -692,13 +661,6 @@ If gRPC connection fails after launch:
 - Show error message
 - Offer retry or cancel
 
-### Dropped Disc Not Found
-
-If the dropped disc image path no longer exists at launch time:
-- Core will report error
-- Show error message
-- Allow user to drop a different disc or cancel
-
 ### Preset Deleted During Dialog
 
 If the selected preset is deleted (via Settings) while dialog is open:
@@ -720,29 +682,23 @@ If configuration values are invalid (e.g., invalid file path):
 
 3. **Picker over list**: Using a dropdown picker rather than a list view keeps the dialog compact. The full preset list with descriptions is available in Settings.
 
-4. **Drag-drop for quick disc loading**: Rather than exposing drive configuration in Phase 8.1, support drag-drop of disc images as a quick way to set drive 0. This covers the common "launch game from disc" use case.
+4. **Configuration collapsed by default** (Phase 8.2): Most users will just pick a preset and go. Advanced configuration is available but hidden initially.
 
-5. **Configuration collapsed by default** (Phase 8.2): Most users will just pick a preset and go. Advanced configuration is available but hidden initially.
+5. **Temporary modifications** (Phase 8.2): Changes in this dialog don't persist. This matches user expectation — "I'm launching a machine, not editing a preset." The "Save as new preset" option provides an escape hatch.
 
-6. **Temporary modifications** (Phase 8.2): Changes in this dialog don't persist. This matches user expectation — "I'm launching a machine, not editing a preset." The "Save as new preset" option provides an escape hatch.
+6. **Schema-driven UI** (Phase 8.2): Configuration controls are generated from the schema. This means new configuration options from updated cores appear automatically.
 
-7. **Schema-driven UI** (Phase 8.2): Configuration controls are generated from the schema. This means new configuration options from updated cores appear automatically.
+7. **Preset-based launch arguments**: Even with modifications, we launch with `--preset` plus overrides. This keeps the argument list manageable and lets the core apply preset defaults for anything not overridden.
 
-8. **Preset-based launch arguments**: Even with modifications, we launch with `--preset` plus overrides. This keeps the argument list manageable and lets the core apply preset defaults for anything not overridden.
-
-9. **Shared ConfigurationEditor** (Phase 8.2): The same component handles configuration in both New Machine dialog and Settings. This ensures consistency and reduces maintenance.
+8. **Shared ConfigurationEditor** (Phase 8.2): The same component handles configuration in both New Machine dialog and Settings. This ensures consistency and reduces maintenance.
 
 ## Resolved Questions
 
 1. **Remember last preset**: Yes — use UserDefaults to remember the last-selected preset. (Phase 8.1)
 
-2. **Drag-drop disc images**: Yes — dropping a disc image onto the dialog sets it as drive 0 for this launch. (Phase 8.1)
+2. **Preset preview image**: No — not adding thumbnail images to presets at this time.
 
-3. **Recent disc images**: No — not implementing recently-used disc image lists.
-
-4. **Preset preview image**: No — not adding thumbnail images to presets at this time.
-
-5. **Configuration diff display**: Yes — when configuration editing is added (Phase 8.2), show which values differ from the preset defaults.
+3. **Configuration diff display**: Yes — when configuration editing is added (Phase 8.2), show which values differ from the preset defaults.
 
 ## Dependencies
 
