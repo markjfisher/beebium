@@ -239,6 +239,60 @@ class PresetManager: ObservableObject {
         }
     }
 
+    /// Fetch and decode the storage schema section for a preset's model.
+    ///
+    /// This queries the preset's core executable for its schema and extracts
+    /// the storage section, which includes FDC options and floppy drive configuration.
+    func fetchStorageSchema(for preset: MachinePreset) async -> StorageSchemaSection? {
+        let (schema, error) = await fetchPresetSchema(from: preset.coreExecutablePath)
+        guard let schema = schema else {
+            NSLog("[PresetManager] Failed to fetch schema for \(preset.presetId): \(error ?? "unknown error")")
+            return nil
+        }
+
+        // Find and decode the storage section from the raw JSON
+        // We need to re-decode the sections array to get the full storage section
+        return await fetchStorageSectionFromSchema(executablePath: preset.coreExecutablePath)
+    }
+
+    /// Fetch the storage section with full detail from the schema JSON.
+    private func fetchStorageSectionFromSchema(executablePath: String) async -> StorageSchemaSection? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = ["describe-preset-schema"]
+
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else { return nil }
+
+            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+
+            // Decode as a dictionary to extract the sections array
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let sections = json["sections"] as? [[String: Any]] else {
+                return nil
+            }
+
+            // Find the storage section
+            guard let storageSection = sections.first(where: { ($0["type"] as? String) == "storage" }) else {
+                return nil
+            }
+
+            // Re-encode and decode as StorageSchemaSection
+            let sectionData = try JSONSerialization.data(withJSONObject: storageSection)
+            return try JSONDecoder().decode(StorageSchemaSection.self, from: sectionData)
+        } catch {
+            NSLog("[PresetManager] Failed to decode storage schema: \(error)")
+            return nil
+        }
+    }
+
     /// Sort presets by release date (chronological), then by name (natural alphanumeric).
     private func sortPresets(_ presets: [MachinePreset]) -> [MachinePreset] {
         presets.sorted { lhs, rhs in
@@ -408,9 +462,9 @@ class PresetManager: ObservableObject {
     /// The core is launched with --wait=api, meaning it waits for a Run() RPC before starting emulation.
     /// - Parameters:
     ///   - preset: The preset to launch
-    ///   - floppyFilepath: Optional disc image to insert in drive 0
+    ///   - storageConfig: Optional storage configuration with drive images
     /// - Returns: LaunchedCore on success, or error on failure
-    func launchCore(_ preset: MachinePreset, floppyFilepath: String? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
+    func launchCore(_ preset: MachinePreset, storageConfig: StorageConfigurationState? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: preset.coreExecutablePath)
 
@@ -422,8 +476,13 @@ class PresetManager: ObservableObject {
             "--wait=api"
         ]
 
-        if let floppyFilepath = floppyFilepath {
-            arguments.append(contentsOf: ["--floppy", "0:\(floppyFilepath)"])
+        // Add floppy drive arguments from storage config
+        if let config = storageConfig {
+            for drive in config.drives {
+                if let filepath = drive.imageFilepath {
+                    arguments.append(contentsOf: ["--floppy", "\(drive.id):\(filepath)"])
+                }
+            }
         }
 
         process.arguments = arguments

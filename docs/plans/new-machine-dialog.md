@@ -27,14 +27,25 @@ The initial implementation focuses on the minimal path: select a preset, launch 
 - Save as new preset option
 - Configuration diff display
 
-### Phase 8.2: Configuration Editing (Future)
+### Phase 8.2: Configuration Editing (Implemented)
 
-Add the ability to modify configuration before launch:
-- Expandable configuration section
-- Schema-driven form controls
-- Temporary modifications (don't affect stored preset)
-- "Save as new preset" option
-- Show which values differ from preset defaults
+Configuration editing UI with sidebar navigation:
+
+**Implemented:**
+- Disclosure-based expandable configuration section (▶ Configuration)
+- Sidebar navigation for configuration sections
+- Storage section with FDC picker and floppy drive slots
+- Drive slots match StorageModeView visual style (drag-drop, browse, clear)
+- Schema-driven FDC options (fetched from `describe-preset-schema`)
+- "Save as new preset" checkbox with name field
+- Dialog width animates when configuration expanded (380pt → 520pt)
+
+**Files created:**
+- `Configuration/ConfigurationEditor.swift` - Main editor with sidebar
+- `Configuration/StorageSectionView.swift` - Storage section form
+- `Configuration/FloppyDriveConfigView.swift` - Drive slot UI
+- `Configuration/StorageConfigurationState.swift` - Mutable state model
+- `Presets/StorageSchemaSection.swift` - Schema types for storage
 
 ## Design Principles
 

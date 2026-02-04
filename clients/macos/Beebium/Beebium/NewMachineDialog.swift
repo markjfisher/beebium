@@ -23,9 +23,23 @@ struct NewMachineDialog: View {
     @AppStorage("lastSelectedPresetId") private var lastSelectedPresetId: String = ""
     @State private var selectedPreset: MachinePreset?
 
+    // Configuration state
+    @State private var showConfiguration = false
+    @StateObject private var storageConfig = StorageConfigurationState()
+    @State private var storageSchema: StorageSchemaSection?
+    @State private var isLoadingSchema = false
+
+    // Save as preset
+    @State private var saveAsNewPreset = false
+    @State private var newPresetName = ""
+
     // Launch state
     @State private var isLaunching = false
     @State private var launchError: String?
+
+    private var dialogWidth: CGFloat {
+        showConfiguration ? 520 : 380
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +47,10 @@ struct NewMachineDialog: View {
             VStack(alignment: .leading, spacing: 16) {
                 presetPickerSection
                 descriptionSection
+                configurationSection
+                if showConfiguration {
+                    saveAsPresetSection
+                }
                 errorSection
             }
             .padding(20)
@@ -42,12 +60,18 @@ struct NewMachineDialog: View {
             // Buttons
             buttonBar
         }
-        .frame(width: 380)
+        .frame(width: dialogWidth)
+        .animation(.easeInOut(duration: 0.2), value: showConfiguration)
         .task {
             if presetManager.systemPresets.isEmpty {
                 await presetManager.discoverPresets()
             }
             restoreLastSelection()
+        }
+        .onChange(of: selectedPreset) { newPreset in
+            if let preset = newPreset {
+                loadSchemaForPreset(preset)
+            }
         }
     }
 
@@ -118,6 +142,65 @@ struct NewMachineDialog: View {
         .frame(height: 40, alignment: .top)
     }
 
+    // MARK: - Configuration Section
+
+    private var configurationSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Disclosure button
+            Button {
+                withAnimation {
+                    showConfiguration.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showConfiguration ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .frame(width: 12)
+                    Text("Configuration")
+                        .font(.subheadline)
+                }
+                .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedPreset == nil)
+
+            // Configuration editor (shown when expanded)
+            if showConfiguration {
+                if isLoadingSchema {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Loading configuration...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(height: 200)
+                } else {
+                    ConfigurationEditor(
+                        storageConfig: storageConfig,
+                        storageSchema: storageSchema,
+                        modelId: selectedPreset?.modelName ?? "model-b"
+                    )
+                    .frame(height: 220)
+                }
+            }
+        }
+    }
+
+    // MARK: - Save as Preset Section
+
+    private var saveAsPresetSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Save as new preset", isOn: $saveAsNewPreset)
+                .toggleStyle(.checkbox)
+
+            if saveAsNewPreset {
+                TextField("Preset name", text: $newPresetName)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
     // MARK: - Error Section
 
     @ViewBuilder
@@ -155,7 +238,8 @@ struct NewMachineDialog: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(selectedPreset == nil || isLaunching || presetManager.isDiscovering)
+            .disabled(selectedPreset == nil || isLaunching || presetManager.isDiscovering ||
+                     (saveAsNewPreset && newPresetName.trimmingCharacters(in: .whitespaces).isEmpty))
         }
         .padding(16)
     }
@@ -175,15 +259,44 @@ struct NewMachineDialog: View {
         }
     }
 
+    private func loadSchemaForPreset(_ preset: MachinePreset) {
+        isLoadingSchema = true
+        storageSchema = nil
+
+        // Reset storage config to defaults
+        storageConfig.fdcSocketId = "none"
+        storageConfig.clearAllDrives()
+
+        Task {
+            let manager = presetManager
+            let schema = await manager.fetchStorageSchema(for: preset)
+
+            await MainActor.run {
+                storageSchema = schema
+
+                // Update drive count based on schema
+                let driveCount = schema?.floppyDrives?.count ?? 2
+                storageConfig.drives = (0..<driveCount).map {
+                    StorageConfigurationState.DriveConfig(id: $0, imageFilepath: nil)
+                }
+
+                isLoadingSchema = false
+            }
+        }
+    }
+
     private func createMachine() async {
         guard let preset = selectedPreset else { return }
 
         isLaunching = true
         launchError = nil
 
+        // TODO: If saveAsNewPreset, create the preset first
+        // For now, just launch with the selected preset and storage config
+
         // Capture the manager reference before async call to avoid @StateObject wrapper issues
         let manager = presetManager
-        let result = await manager.launchCore(preset)
+        let result = await manager.launchCore(preset, storageConfig: storageConfig)
 
         switch result {
         case .success(let core):
