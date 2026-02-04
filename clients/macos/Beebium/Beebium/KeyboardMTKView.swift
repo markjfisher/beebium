@@ -23,6 +23,12 @@ final class KeyboardMTKView: MTKView {
     /// Keyboard client for sending key events to the server
     weak var keyboardClient: KeyboardClient?
 
+    /// Indicator client for LED states (used by Touch Bar)
+    weak var indicatorClient: IndicatorClient?
+
+    /// Touch Bar manager for creating and managing the Touch Bar
+    var touchBarManager: BeebiumTouchBarManager?
+
     /// Track previous modifier flags for change detection
     private var lastModifiers: NSEvent.ModifierFlags = []
 
@@ -169,5 +175,12 @@ final class KeyboardMTKView: MTKView {
         if let observer = windowDidBecomeKeyObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+    }
+
+    // MARK: - Touch Bar Support
+
+    @available(macOS 10.12.2, *)
+    override func makeTouchBar() -> NSTouchBar? {
+        return touchBarManager?.getTouchBar()
     }
 }

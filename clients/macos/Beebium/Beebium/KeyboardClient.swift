@@ -301,6 +301,32 @@ final class KeyboardClient: ObservableObject {
         }
     }
 
+    // MARK: - Touch Bar Support
+
+    /// Send a key down event directly by ikNumber (bypasses mapping system).
+    /// Used by TouchBar to send keys by their BBC internal key number.
+    func touchBarKeyDown(ikNumber: UInt8) async {
+        await sendKeyDown(ikNumber: ikNumber)
+    }
+
+    /// Send a key up event directly by ikNumber (bypasses mapping system).
+    /// Used by TouchBar to send keys by their BBC internal key number.
+    func touchBarKeyUp(ikNumber: UInt8) async {
+        await sendKeyUp(ikNumber: ikNumber)
+    }
+
+    /// Send a BREAK key down event (bypasses mapping system).
+    /// Used by TouchBar BREAK key.
+    func touchBarBreakDown() async {
+        await sendBreakDown()
+    }
+
+    /// Send a BREAK key up event (bypasses mapping system).
+    /// Used by TouchBar BREAK key.
+    func touchBarBreakUp() async {
+        await sendBreakUp()
+    }
+
     // MARK: - Private gRPC Methods
 
     private func sendKeyDown(ikNumber: UInt8) async {
