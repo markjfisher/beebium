@@ -22,6 +22,12 @@ struct EmulatorView: NSViewRepresentable {
     /// Keyboard client for sending key events to server
     @ObservedObject var keyboardClient: KeyboardClient
 
+    /// Indicator client for LED states (used by Touch Bar)
+    @ObservedObject var indicatorClient: IndicatorClient
+
+    /// BBC key cache for Touch Bar key lookups
+    var bbcKeyCache: BBCKeyCache?
+
     func makeNSView(context: Context) -> KeyboardMTKView {
         let mtkView = KeyboardMTKView()
 
@@ -46,6 +52,18 @@ struct EmulatorView: NSViewRepresentable {
         // Wire up keyboard client for key events
         mtkView.keyboardClient = keyboardClient
 
+        // Wire up indicator client and Touch Bar manager
+        mtkView.indicatorClient = indicatorClient
+        if #available(macOS 10.12.2, *) {
+            let touchBarManager = BeebiumTouchBarManager(
+                keyboardClient: keyboardClient,
+                indicatorClient: indicatorClient,
+                bbcKeyCache: bbcKeyCache
+            )
+            mtkView.touchBarManager = touchBarManager
+            context.coordinator.touchBarManager = touchBarManager
+        }
+
         // Enable display link for smooth updates
         mtkView.isPaused = false
         mtkView.enableSetNeedsDisplay = false
@@ -65,13 +83,20 @@ struct EmulatorView: NSViewRepresentable {
 
     class Coordinator {
         var renderer: MetalRenderer?
+        @available(macOS 10.12.2, *)
+        var touchBarManager: BeebiumTouchBarManager?
     }
 }
 
 #if DEBUG
 struct EmulatorView_Previews: PreviewProvider {
     static var previews: some View {
-        EmulatorView(videoClient: VideoClient(), keyboardClient: KeyboardClient())
+        EmulatorView(
+            videoClient: VideoClient(),
+            keyboardClient: KeyboardClient(),
+            indicatorClient: IndicatorClient(),
+            bbcKeyCache: nil
+        )
             .frame(width: 736, height: 576)
     }
 }

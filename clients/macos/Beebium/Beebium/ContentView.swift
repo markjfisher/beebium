@@ -60,7 +60,12 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 ZStack {
                     // Emulator display (receives frames directly via videoClient.renderer)
-                    EmulatorView(videoClient: videoClient, keyboardClient: keyboardClient)
+                    EmulatorView(
+                        videoClient: videoClient,
+                        keyboardClient: keyboardClient,
+                        indicatorClient: indicatorClient,
+                        bbcKeyCache: keyboardMappingManager.bbcKeyCache
+                    )
 
                     // Status overlay when not connected
                     if videoClient.connectionState != .connected {
