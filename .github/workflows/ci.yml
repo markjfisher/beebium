@@ -8,8 +8,8 @@ on:
     - cron: '0 6 * * 1'
 
 jobs:
-  server-macos:
-    name: Build and Test Server (macOS)
+  server-macos-arm64:
+    name: Build and Test Server (macOS arm64)
     runs-on: macos-14
 
     steps:
@@ -24,6 +24,7 @@ jobs:
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DBEEBIUM_BUILD_TESTS=ON \
             -DBEEBIUM_BUILD_SERVICE=ON \
             -DBEEBIUM_BUILD_SERVER=ON
@@ -37,9 +38,43 @@ jobs:
       - name: Upload server binary
         uses: actions/upload-artifact@v4
         with:
-          name: beebium-server-macos
+          name: beebium-server-macos-arm64
           path: build/src/server/beebium-model-b
-          retention-days: 1
+          retention-days: 7
+
+  server-macos-x86_64:
+    name: Build and Test Server (macOS x86_64)
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install cmake grpc protobuf
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DBEEBIUM_BUILD_TESTS=ON \
+            -DBEEBIUM_BUILD_SERVICE=ON \
+            -DBEEBIUM_BUILD_SERVER=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-server-macos-x86_64
+          path: build/src/server/beebium-model-b
+          retention-days: 7
 
   server-linux:
     name: Build and Test Server (Linux)
@@ -73,7 +108,7 @@ jobs:
         with:
           name: beebium-server-linux
           path: build/src/server/beebium-model-b
-          retention-days: 1
+          retention-days: 7
 
   server-windows:
     name: Build and Test Server (Windows)
@@ -144,10 +179,10 @@ jobs:
         with:
           name: beebium-server-windows
           path: build/src/server/Release/
-          retention-days: 1
+          retention-days: 7
 
-  gui-client-macos:
-    name: Build and Test GUI Client (macOS)
+  gui-client-macos-arm64:
+    name: Build and Test GUI Client (macOS arm64)
     runs-on: macos-14
 
     steps:
@@ -171,8 +206,9 @@ jobs:
         run: |
           xcodebuild build \
             -scheme Beebium \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -configuration Release \
+            -derivedDataPath build \
             -quiet \
             CODE_SIGNING_ALLOWED=NO
 
@@ -181,9 +217,65 @@ jobs:
         run: |
           xcodebuild test \
             -scheme BeebiumTests \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
             -quiet \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload client app
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-client-macos-arm64
+          path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
+          retention-days: 7
+
+  gui-client-macos-x86_64:
+    name: Build and Test GUI Client (macOS x86_64)
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 15
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.2'
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: clients/macos/Beebium
+        run: xcodegen generate
+
+      - name: Build client
+        working-directory: clients/macos/Beebium
+        run: |
+          xcodebuild build \
+            -scheme Beebium \
+            -destination 'platform=macOS,arch=x86_64' \
+            -configuration Release \
+            -derivedDataPath build \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run client tests
+        working-directory: clients/macos/Beebium
+        run: |
+          xcodebuild test \
+            -scheme BeebiumTests \
+            -destination 'platform=macOS,arch=x86_64' \
+            -derivedDataPath build \
+            -quiet \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload client app
+        uses: actions/upload-artifact@v4
+        with:
+          name: beebium-client-macos-x86_64
+          path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
+          retention-days: 7
 
   python-client:
     name: Python Client Unit Tests
@@ -271,10 +363,10 @@ jobs:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/Release/beebium-model-b.exe
         run: uv run --with pytest python -m pytest tests/ -v
 
-  python-integration-macos:
-    name: Python Client Integration Tests (macOS)
+  python-integration-macos-arm64:
+    name: Python Client Integration Tests (macOS arm64)
     runs-on: macos-14
-    needs: server-macos
+    needs: server-macos-arm64
 
     steps:
       - name: Checkout
@@ -286,7 +378,42 @@ jobs:
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
-          name: beebium-server-macos
+          name: beebium-server-macos-arm64
+          path: build/src/server
+
+      - name: Make server executable
+        run: chmod +x build/src/server/beebium-model-b
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run integration tests
+        working-directory: clients/python
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+        run: uv run --with pytest python -m pytest tests/ -v
+
+  python-integration-macos-x86_64:
+    name: Python Client Integration Tests (macOS x86_64)
+    runs-on: macos-13
+    needs: server-macos-x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gRPC runtime libraries
+        run: brew install grpc
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos-x86_64
           path: build/src/server
 
       - name: Make server executable
