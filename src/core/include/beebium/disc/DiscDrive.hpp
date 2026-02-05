@@ -74,12 +74,17 @@ public:
               const std::string& color = "568nm")
         : indicators_(&indicators)
     {
+        // Build metadata map explicitly using emplace to avoid any potential
+        // issues with initializer-list construction on different architectures
+        std::unordered_map<std::string, std::string> metadata;
+        metadata.emplace("label", label);
+        metadata.emplace("color", color);
+        metadata.emplace("shape", "rectangular");
+
         activity_led_id_ = indicators_->register_indicator(
             indicator_name,
             std::make_unique<PassthroughFilter>(),
-            std::unordered_map<std::string, std::string>{
-                {"label", label}, {"color", color}, {"shape", "rectangular"}
-            }
+            std::move(metadata)
         );
     }
 

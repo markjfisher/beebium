@@ -284,20 +284,30 @@ private:
     void register_indicators() {
         using namespace std::chrono_literals;
 
+        // Build metadata maps explicitly using emplace to avoid any potential
+        // issues with initializer-list construction on different architectures
+        std::unordered_map<std::string, std::string> caps_metadata;
+        caps_metadata.emplace("label", "CAPS LOCK");
+        caps_metadata.emplace("color", "625nm");
+        caps_metadata.emplace("shape", "domed");
+        caps_metadata.emplace("related_key", "Caps Lock");
+
         caps_lock_led_id_ = indicators_->register_indicator(
             "caps-lock-led",
             std::make_unique<QuantizedDutyCycleFilter<2>>(100ms),
-            std::unordered_map<std::string, std::string>{
-                {"label", "CAPS LOCK"}, {"color", "625nm"}, {"shape", "domed"}, {"related_key", "Caps Lock"}
-            }
+            std::move(caps_metadata)
         );
+
+        std::unordered_map<std::string, std::string> shift_metadata;
+        shift_metadata.emplace("label", "SHIFT LOCK");
+        shift_metadata.emplace("color", "625nm");
+        shift_metadata.emplace("shape", "domed");
+        shift_metadata.emplace("related_key", "Shift Lock");
 
         shift_lock_led_id_ = indicators_->register_indicator(
             "shift-lock-led",
             std::make_unique<QuantizedDutyCycleFilter<2>>(100ms),
-            std::unordered_map<std::string, std::string>{
-                {"label", "SHIFT LOCK"}, {"color", "625nm"}, {"shape", "domed"}, {"related_key", "Shift Lock"}
-            }
+            std::move(shift_metadata)
         );
     }
 

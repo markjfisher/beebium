@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -17,6 +17,7 @@
 #include <moodycamel/readerwriterqueue.h>
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -124,6 +125,9 @@ public:
 
         std::unique_lock lock(registry_mutex_);
 
+        // Capture metadata size before move for post-registration verification
+        const size_t expected_metadata_size = metadata.size();
+
         uint16_t id = static_cast<uint16_t>(indicators_.size());
         name_to_id_[name] = id;
 
@@ -134,6 +138,11 @@ public:
         state.published_value.store(0, std::memory_order_relaxed);
 
         indicators_.push_back(std::move(state));
+
+        // Verify metadata was preserved through the move operations
+        // This assertion helps catch architecture-specific issues with move semantics
+        assert(indicators_.back().metadata.size() == expected_metadata_size &&
+               "Metadata lost during indicator registration - possible move semantics issue");
 
         return id;
     }
