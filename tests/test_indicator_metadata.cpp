@@ -651,3 +651,132 @@ TEST_CASE("Registration during default member init - verify order independence",
     REQUIRE(hw1.indicators.metadata("caps-lock-led").size() == 4);
     REQUIRE(hw2.indicators.metadata("caps-lock-led").size() == 4);
 }
+
+// =============================================================================
+// Step 10: Test with nesting structure similar to Machine/MachineState/Hardware
+// This mimics the actual runtime structure more closely
+// =============================================================================
+
+namespace {
+    // Similar to MachineState<HardwareWithMultipleComponents>
+    struct StateLike {
+        uint64_t dummy_cpu_state[128]{};  // Simulate M6502 struct size
+        HardwareWithMultipleComponents memory;
+        uint64_t cycle_count = 0;
+    };
+
+    // Similar to Machine<..., HardwareWithMultipleComponents>
+    class MachineLike {
+    public:
+        MachineLike() {
+            // Simulate what Machine constructor does
+            setup();
+        }
+
+        StateLike& state() { return state_; }
+        const StateLike& state() const { return state_; }
+
+    private:
+        void setup() {
+            // Machine constructor does various setup here
+            // The key point is that state_ is already fully constructed
+            // before this runs
+        }
+
+        StateLike state_;
+        int other_member_1_ = 0;
+        int other_member_2_ = 0;
+    };
+}
+
+TEST_CASE("Nested structure like Machine/MachineState/Hardware", "[indicator][metadata][step10]") {
+    MachineLike machine;
+
+    auto names = machine.state().memory.indicators.names();
+    INFO("Registered indicator count: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    // Access metadata through the nested structure path
+    auto caps = machine.state().memory.indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+    CHECK(caps.at("color") == "625nm");
+
+    auto shift = machine.state().memory.indicators.metadata("shift-lock-led");
+    INFO("shift-lock-led metadata size: " << shift.size());
+    REQUIRE(shift.size() == 4);
+
+    auto floppy0 = machine.state().memory.indicators.metadata("floppy-0-led");
+    INFO("floppy-0-led metadata size: " << floppy0.size());
+    REQUIRE(floppy0.size() == 2);
+
+    auto floppy1 = machine.state().memory.indicators.metadata("floppy-1-led");
+    INFO("floppy-1-led metadata size: " << floppy1.size());
+    REQUIRE(floppy1.size() == 2);
+}
+
+// =============================================================================
+// Step 11: Test with actual ModelBHardware if available
+// This is the most realistic test - uses the real hardware struct
+// =============================================================================
+
+#include "beebium/ModelBHardware.hpp"
+
+TEST_CASE("ModelBHardware indicators have metadata", "[indicator][metadata][step11]") {
+    beebium::ModelBHardware hw;
+
+    auto names = hw.indicators.names();
+    INFO("Registered indicator count: " << names.size());
+    // Model B has 4 indicators: caps-lock, shift-lock, floppy-0, floppy-1
+    REQUIRE(names.size() == 4);
+
+    // Check caps-lock metadata
+    auto caps = hw.indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+    CHECK(caps.at("color") == "625nm");
+    CHECK(caps.at("shape") == "domed");
+    CHECK(caps.at("related_key") == "Caps Lock");
+
+    // Check shift-lock metadata
+    auto shift = hw.indicators.metadata("shift-lock-led");
+    INFO("shift-lock-led metadata size: " << shift.size());
+    REQUIRE(shift.size() == 4);
+    CHECK(shift.at("label") == "SHIFT LOCK");
+
+    // Check floppy-0 metadata
+    auto floppy0 = hw.indicators.metadata("floppy-0-activity-led");
+    INFO("floppy-0-activity-led metadata size: " << floppy0.size());
+    REQUIRE(floppy0.size() == 3);
+    CHECK(floppy0.at("label") == "Floppy 0");
+    CHECK(floppy0.at("color") == "568nm");
+    CHECK(floppy0.at("shape") == "rectangular");
+
+    // Check floppy-1 metadata
+    auto floppy1 = hw.indicators.metadata("floppy-1-activity-led");
+    INFO("floppy-1-activity-led metadata size: " << floppy1.size());
+    REQUIRE(floppy1.size() == 3);
+    CHECK(floppy1.at("label") == "Floppy 1");
+}
+
+TEST_CASE("ModelBHardware in MachineState-like wrapper", "[indicator][metadata][step11]") {
+    // Wrap ModelBHardware in a struct like MachineState does
+    struct State {
+        uint64_t dummy[128]{};  // Simulates M6502
+        beebium::ModelBHardware memory;
+        uint64_t cycle = 0;
+    };
+
+    State state;
+
+    auto names = state.memory.indicators.names();
+    INFO("Registered indicator count: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    auto caps = state.memory.indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+}
