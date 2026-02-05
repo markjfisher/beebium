@@ -208,6 +208,50 @@ TEST_CASE("DIAGNOSTIC: Fixture machine has metadata before gRPC call", "[grpc][i
     CHECK(caps_meta.at("color") == "625nm");
 }
 
+TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicator][diagnostic]") {
+    IndicatorTestFixtureModelB fixture;
+
+    // Get metadata directly
+    auto& indicators = fixture.machine().state().memory.indicators;
+    auto direct_names = indicators.names();
+    INFO("Direct access - indicator count: " << direct_names.size());
+    REQUIRE(direct_names.size() >= 2);
+
+    auto direct_caps_meta = indicators.metadata("caps-lock-led");
+    INFO("Direct access - caps-lock-led metadata size: " << direct_caps_meta.size());
+    REQUIRE(direct_caps_meta.size() == 4);
+
+    // Now make gRPC call
+    grpc::ClientContext context;
+    beebium::ListIndicatorsRequest request;
+    beebium::ListIndicatorsResponse response;
+    auto status = fixture.stub().ListIndicators(&context, request, &response);
+    REQUIRE(status.ok());
+
+    INFO("gRPC response - indicator count: " << response.indicators_size());
+    REQUIRE(response.indicators_size() >= 2);
+
+    // Find caps-lock-led in response and check metadata
+    for (const auto& indicator : response.indicators()) {
+        if (indicator.name() == "caps-lock-led") {
+            INFO("gRPC response - caps-lock-led metadata size: " << indicator.metadata().size());
+            INFO("Direct access metadata size was: " << direct_caps_meta.size());
+
+            // Check each key individually and report what's missing
+            for (const auto& [key, value] : direct_caps_meta) {
+                INFO("Checking key '" << key << "' (direct value: '" << value << "')");
+                if (indicator.metadata().count(key) == 0) {
+                    FAIL("gRPC response missing key: " << key);
+                } else {
+                    CHECK(indicator.metadata().at(key) == value);
+                }
+            }
+            return;
+        }
+    }
+    FAIL("caps-lock-led not found in gRPC response");
+}
+
 // =============================================================================
 // ListIndicators tests
 // =============================================================================
