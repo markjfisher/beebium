@@ -780,3 +780,65 @@ TEST_CASE("ModelBHardware in MachineState-like wrapper", "[indicator][metadata][
     REQUIRE(caps.size() == 4);
     CHECK(caps.at("label") == "CAPS LOCK");
 }
+
+// =============================================================================
+// Step 12: Test with actual Machine<> type (ModelB)
+// This is exactly what the gRPC tests use
+// =============================================================================
+
+#include "beebium/Machines.hpp"
+
+TEST_CASE("ModelB machine indicators have metadata", "[indicator][metadata][step12]") {
+    beebium::ModelB machine;
+
+    // Access indicators through the same path the gRPC service uses:
+    // machine.state().memory.indicators
+    auto& indicators = machine.state().memory.indicators;
+
+    auto names = indicators.names();
+    INFO("Registered indicator count: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    // Check caps-lock metadata
+    auto caps = indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+    CHECK(caps.at("color") == "625nm");
+    CHECK(caps.at("shape") == "domed");
+    CHECK(caps.at("related_key") == "Caps Lock");
+
+    // Check shift-lock metadata
+    auto shift = indicators.metadata("shift-lock-led");
+    INFO("shift-lock-led metadata size: " << shift.size());
+    REQUIRE(shift.size() == 4);
+    CHECK(shift.at("label") == "SHIFT LOCK");
+
+    // Check floppy-0 metadata
+    auto floppy0 = indicators.metadata("floppy-0-activity-led");
+    INFO("floppy-0-activity-led metadata size: " << floppy0.size());
+    REQUIRE(floppy0.size() == 3);
+    CHECK(floppy0.at("label") == "Floppy 0");
+
+    // Check floppy-1 metadata
+    auto floppy1 = indicators.metadata("floppy-1-activity-led");
+    INFO("floppy-1-activity-led metadata size: " << floppy1.size());
+    REQUIRE(floppy1.size() == 3);
+    CHECK(floppy1.at("label") == "Floppy 1");
+}
+
+TEST_CASE("ModelB machine after reset has metadata", "[indicator][metadata][step12]") {
+    beebium::ModelB machine;
+    machine.reset();  // This is called by the gRPC test fixture
+
+    auto& indicators = machine.state().memory.indicators;
+
+    auto names = indicators.names();
+    INFO("Registered indicator count after reset: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    auto caps = indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size after reset: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+}
