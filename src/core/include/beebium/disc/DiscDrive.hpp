@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -77,7 +77,9 @@ public:
         activity_led_id_ = indicators_->register_indicator(
             indicator_name,
             std::make_unique<PassthroughFilter>(),
-            {{"label", label}, {"color", color}, {"shape", "rectangular"}}
+            std::unordered_map<std::string, std::string>{
+                {"label", label}, {"color", color}, {"shape", "rectangular"}
+            }
         );
     }
 
