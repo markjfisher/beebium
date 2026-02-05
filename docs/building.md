@@ -15,7 +15,7 @@ Each component can be built for multiple architectures. We ship separate binarie
 
 ### macOS
 
-- Xcode 15+ (includes Swift 5.9, Metal)
+- Xcode 16+ (includes Swift 5.9, Metal, AppleClang 16+)
 - CMake 3.16+
 - Homebrew (for gRPC/protobuf)
 - XcodeGen (`brew install xcodegen`)
