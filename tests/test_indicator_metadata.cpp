@@ -513,3 +513,141 @@ TEST_CASE("Indicators as struct member stores metadata", "[indicator][metadata][
     REQUIRE(shift.size() == 2);
     CHECK(shift.at("label") == "SHIFT LOCK");
 }
+
+// =============================================================================
+// Step 9: Test registration during default member initialization
+// (exactly mimics ModelBHardware pattern where registration happens in
+// component constructors that are invoked via default member initializers)
+// =============================================================================
+
+namespace {
+    // Mimics DiscDrive: registers an indicator in its constructor
+    struct RegisteringComponent {
+        Indicators* indicators_;
+        uint16_t indicator_id_;
+
+        RegisteringComponent(Indicators& ind, const std::string& name, const std::string& label)
+            : indicators_(&ind)
+        {
+            std::unordered_map<std::string, std::string> metadata;
+            metadata.emplace("label", label);
+            metadata.emplace("color", "625nm");
+
+            indicator_id_ = indicators_->register_indicator(
+                name,
+                std::make_unique<PassthroughFilter>(),
+                std::move(metadata)
+            );
+        }
+    };
+
+    // Mimics SystemViaPeripheral: registers multiple indicators in constructor
+    struct MultiRegisteringComponent {
+        Indicators* indicators_;
+        uint16_t led1_id_;
+        uint16_t led2_id_;
+
+        MultiRegisteringComponent(Indicators& ind)
+            : indicators_(&ind)
+        {
+            std::unordered_map<std::string, std::string> meta1;
+            meta1.emplace("label", "CAPS LOCK");
+            meta1.emplace("color", "625nm");
+            meta1.emplace("shape", "domed");
+            meta1.emplace("related_key", "Caps Lock");
+
+            led1_id_ = indicators_->register_indicator(
+                "caps-lock-led",
+                std::make_unique<PassthroughFilter>(),
+                std::move(meta1)
+            );
+
+            std::unordered_map<std::string, std::string> meta2;
+            meta2.emplace("label", "SHIFT LOCK");
+            meta2.emplace("color", "625nm");
+            meta2.emplace("shape", "domed");
+            meta2.emplace("related_key", "Shift Lock");
+
+            led2_id_ = indicators_->register_indicator(
+                "shift-lock-led",
+                std::make_unique<PassthroughFilter>(),
+                std::move(meta2)
+            );
+        }
+    };
+
+    // Mimics ModelBHardware: Indicators member followed by components that
+    // register indicators in their constructors via default member initializers
+    struct HardwareWithDefaultMemberInit {
+        Indicators indicators;  // Constructed first
+        RegisteringComponent component{indicators, "test-led", "Test LED"};  // Registration during init
+    };
+
+    // Full pattern: multiple components registering during default member init
+    struct HardwareWithMultipleComponents {
+        Indicators indicators;  // Must be first
+        MultiRegisteringComponent via_peripheral{indicators};  // Registers 2 LEDs
+        RegisteringComponent drive0{indicators, "floppy-0-led", "Floppy 0"};  // Registers 1 LED
+        RegisteringComponent drive1{indicators, "floppy-1-led", "Floppy 1"};  // Registers 1 LED
+    };
+}
+
+TEST_CASE("Registration during default member init - single component", "[indicator][metadata][step9]") {
+    HardwareWithDefaultMemberInit hw;
+
+    auto names = hw.indicators.names();
+    INFO("Registered indicator names: " << names.size());
+    REQUIRE(names.size() == 1);
+
+    auto meta = hw.indicators.metadata("test-led");
+    INFO("test-led metadata size: " << meta.size());
+    REQUIRE(meta.size() == 2);
+    CHECK(meta.at("label") == "Test LED");
+    CHECK(meta.at("color") == "625nm");
+}
+
+TEST_CASE("Registration during default member init - multiple components", "[indicator][metadata][step9]") {
+    HardwareWithMultipleComponents hw;
+
+    auto names = hw.indicators.names();
+    INFO("Registered indicator count: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    // Check caps-lock from MultiRegisteringComponent
+    auto caps = hw.indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size: " << caps.size());
+    REQUIRE(caps.size() == 4);
+    CHECK(caps.at("label") == "CAPS LOCK");
+
+    // Check shift-lock from MultiRegisteringComponent
+    auto shift = hw.indicators.metadata("shift-lock-led");
+    INFO("shift-lock-led metadata size: " << shift.size());
+    REQUIRE(shift.size() == 4);
+    CHECK(shift.at("label") == "SHIFT LOCK");
+
+    // Check floppy-0 from RegisteringComponent
+    auto floppy0 = hw.indicators.metadata("floppy-0-led");
+    INFO("floppy-0-led metadata size: " << floppy0.size());
+    REQUIRE(floppy0.size() == 2);
+    CHECK(floppy0.at("label") == "Floppy 0");
+
+    // Check floppy-1 from RegisteringComponent
+    auto floppy1 = hw.indicators.metadata("floppy-1-led");
+    INFO("floppy-1-led metadata size: " << floppy1.size());
+    REQUIRE(floppy1.size() == 2);
+    CHECK(floppy1.at("label") == "Floppy 1");
+}
+
+TEST_CASE("Registration during default member init - verify order independence", "[indicator][metadata][step9]") {
+    // Create multiple instances to verify no static/global state issues
+    HardwareWithMultipleComponents hw1;
+    HardwareWithMultipleComponents hw2;
+
+    // Each should have independent indicators
+    REQUIRE(hw1.indicators.names().size() == 4);
+    REQUIRE(hw2.indicators.names().size() == 4);
+
+    // Both should have valid metadata
+    REQUIRE(hw1.indicators.metadata("caps-lock-led").size() == 4);
+    REQUIRE(hw2.indicators.metadata("caps-lock-led").size() == 4);
+}
