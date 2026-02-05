@@ -157,6 +157,58 @@ private:
 } // anonymous namespace
 
 // =============================================================================
+// Diagnostic tests - check indicators directly without gRPC
+// =============================================================================
+
+TEST_CASE("DIAGNOSTIC: ModelB member has metadata before server creation", "[grpc][indicator][diagnostic]") {
+    // This mimics IndicatorTestFixtureModelB but checks indicators BEFORE creating server
+    beebium::ModelB machine;
+
+    // Check immediately after construction
+    auto& indicators = machine.state().memory.indicators;
+    auto names = indicators.names();
+    INFO("Indicator count immediately after construction: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    auto caps_meta = indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size after construction: " << caps_meta.size());
+    REQUIRE(caps_meta.size() == 4);
+    CHECK(caps_meta.at("label") == "CAPS LOCK");
+    CHECK(caps_meta.at("color") == "625nm");
+}
+
+TEST_CASE("DIAGNOSTIC: ModelB member has metadata after reset", "[grpc][indicator][diagnostic]") {
+    beebium::ModelB machine;
+    machine.reset();
+
+    auto& indicators = machine.state().memory.indicators;
+    auto names = indicators.names();
+    INFO("Indicator count after reset: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    auto caps_meta = indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size after reset: " << caps_meta.size());
+    REQUIRE(caps_meta.size() == 4);
+    CHECK(caps_meta.at("label") == "CAPS LOCK");
+}
+
+TEST_CASE("DIAGNOSTIC: Fixture machine has metadata before gRPC call", "[grpc][indicator][diagnostic]") {
+    IndicatorTestFixtureModelB fixture;
+
+    // Check indicators directly on the machine (not through gRPC)
+    auto& indicators = fixture.machine().state().memory.indicators;
+    auto names = indicators.names();
+    INFO("Indicator count in fixture: " << names.size());
+    REQUIRE(names.size() == 4);
+
+    auto caps_meta = indicators.metadata("caps-lock-led");
+    INFO("caps-lock-led metadata size in fixture: " << caps_meta.size());
+    REQUIRE(caps_meta.size() == 4);
+    CHECK(caps_meta.at("label") == "CAPS LOCK");
+    CHECK(caps_meta.at("color") == "625nm");
+}
+
+// =============================================================================
 // ListIndicators tests
 // =============================================================================
 
