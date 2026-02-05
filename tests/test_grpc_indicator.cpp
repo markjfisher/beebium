@@ -215,6 +215,19 @@ TEST_CASE("DIAGNOSTIC: Fixture machine has metadata before gRPC call", "[grpc][i
 TEST_CASE("IndicatorService ListIndicators returns registered indicators for Model B", "[grpc][indicator]") {
     IndicatorTestFixtureModelB fixture;
 
+    // DIAGNOSTIC: Check metadata directly on THIS fixture's machine before gRPC call
+    {
+        auto& indicators = fixture.machine().state().memory.indicators;
+        auto names = indicators.names();
+        INFO("Direct check - indicator count: " << names.size());
+        REQUIRE(names.size() >= 2);  // At least caps and shift lock
+
+        auto caps_meta = indicators.metadata("caps-lock-led");
+        INFO("Direct check - caps-lock-led metadata size: " << caps_meta.size());
+        REQUIRE(caps_meta.size() == 4);
+        REQUIRE(caps_meta.at("label") == "CAPS LOCK");
+    }
+
     grpc::ClientContext context;
     beebium::ListIndicatorsRequest request;
     beebium::ListIndicatorsResponse response;
