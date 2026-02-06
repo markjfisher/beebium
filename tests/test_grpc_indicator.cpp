@@ -42,6 +42,50 @@
 
 namespace {
 
+// =============================================================================
+// Workaround for protobuf Map hash bug on x86_64 macOS
+//
+// Since protobuf v22, google::protobuf::Map uses absl::hash with a non-deterministic
+// seed that can cause find()/count()/at() to fail even when keys exist and are
+// correctly accessible via iteration. This manifests on x86_64 macOS but not arm64.
+//
+// The bug is documented in:
+//   - https://github.com/protocolbuffers/protobuf/issues/15069
+//   - https://github.com/protocolbuffers/protobuf/issues/18097
+//
+// Symptoms: map.size() returns correct count, iteration works and shows correct
+// keys/values, but find(key) returns end() and count(key) returns 0.
+//
+// Workaround: Use iteration-based lookup instead of hash-based lookup.
+// =============================================================================
+
+// Find a value in a protobuf Map using iteration (workaround for hash bug)
+template<typename MapType>
+auto proto_map_find(const MapType& map, const typename MapType::key_type& key)
+    -> decltype(map.begin()) {
+    for (auto it = map.begin(); it != map.end(); ++it) {
+        if (it->first == key) {
+            return it;
+        }
+    }
+    return map.end();
+}
+
+// Check if a key exists in a protobuf Map using iteration (workaround for hash bug)
+template<typename MapType>
+bool proto_map_contains(const MapType& map, const typename MapType::key_type& key) {
+    return proto_map_find(map, key) != map.end();
+}
+
+// Get a value from a protobuf Map using iteration, with default (workaround for hash bug)
+template<typename MapType>
+auto proto_map_get(const MapType& map, const typename MapType::key_type& key,
+                   const typename MapType::mapped_type& default_value = {})
+    -> typename MapType::mapped_type {
+    auto it = proto_map_find(map, key);
+    return (it != map.end()) ? it->second : default_value;
+}
+
 // Helper to wait for an indicator value with timeout (more reliable than fixed sleep)
 template<typename StubType>
 bool wait_for_indicator(StubType& stub, const std::string& indicator_name,
@@ -54,7 +98,8 @@ bool wait_for_indicator(StubType& stub, const std::string& indicator_name,
         beebium::GetIndicatorsResponse response;
         auto status = stub.GetIndicators(&context, request, &response);
         if (status.ok()) {
-            auto it = response.values().find(indicator_name);
+            // Use iteration-based lookup (workaround for protobuf Map hash bug)
+            auto it = proto_map_find(response.values(), indicator_name);
             if (it != response.values().end() && predicate(it->second)) {
                 return true;
             }
@@ -291,13 +336,16 @@ TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicato
 
             std::cerr << "=== END DIAGNOSTIC ===\n" << std::flush;
 
-            // Now do the actual check
+            // Now do the actual check using iteration-based lookup (workaround for protobuf Map hash bug)
+            // Note: The diagnostic output above demonstrates the bug where count()/find() fail
+            // even though the keys exist and can be found via iteration.
             for (const auto& [key, value] : direct_caps_meta) {
                 INFO("Checking key '" << key << "' (direct value: '" << value << "')");
-                if (grpc_meta.count(key) == 0) {
+                auto grpc_value = proto_map_get(grpc_meta, key, std::string{});
+                if (grpc_value.empty() && !value.empty()) {
                     FAIL("gRPC response missing key: " << key);
                 } else {
-                    CHECK(grpc_meta.at(key) == value);
+                    CHECK(grpc_value == value);
                 }
             }
             return;
@@ -342,13 +390,14 @@ TEST_CASE("IndicatorService ListIndicators returns registered indicators for Mod
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "caps-lock-led") {
             found_caps = true;
-            CHECK(indicator.metadata().count("label") > 0);
-            CHECK(indicator.metadata().at("label") == "CAPS LOCK");
+            // Use iteration-based lookup (workaround for protobuf Map hash bug)
+            CHECK(proto_map_contains(indicator.metadata(), std::string("label")));
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "CAPS LOCK");
         }
         if (indicator.name() == "shift-lock-led") {
             found_shift = true;
-            CHECK(indicator.metadata().count("label") > 0);
-            CHECK(indicator.metadata().at("label") == "SHIFT LOCK");
+            CHECK(proto_map_contains(indicator.metadata(), std::string("label")));
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "SHIFT LOCK");
         }
     }
     CHECK(found_caps);
@@ -373,14 +422,15 @@ TEST_CASE("IndicatorService ListIndicators returns disc indicators for Model B+"
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "floppy-0-activity-led") {
             found_floppy_0 = true;
-            CHECK(indicator.metadata().count("label") > 0);
-            CHECK(indicator.metadata().at("label") == "Floppy 0");
-            CHECK(indicator.metadata().count("color") > 0);
-            CHECK(indicator.metadata().at("color") == "568nm");
+            // Use iteration-based lookup (workaround for protobuf Map hash bug)
+            CHECK(proto_map_contains(indicator.metadata(), std::string("label")));
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "Floppy 0");
+            CHECK(proto_map_contains(indicator.metadata(), std::string("color")));
+            CHECK(proto_map_get(indicator.metadata(), std::string("color")) == "568nm");
         }
         if (indicator.name() == "floppy-1-activity-led") {
             found_floppy_1 = true;
-            CHECK(indicator.metadata().at("label") == "Floppy 1");
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "Floppy 1");
         }
     }
     CHECK(found_floppy_0);
@@ -401,8 +451,9 @@ TEST_CASE("IndicatorService ListIndicators includes metadata", "[grpc][indicator
     // Find caps-lock-led and check all metadata fields
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "caps-lock-led") {
-            CHECK(indicator.metadata().at("color") == "625nm");
-            CHECK(indicator.metadata().at("shape") == "domed");
+            // Use iteration-based lookup (workaround for protobuf Map hash bug)
+            CHECK(proto_map_get(indicator.metadata(), std::string("color")) == "625nm");
+            CHECK(proto_map_get(indicator.metadata(), std::string("shape")) == "domed");
             return;
         }
     }
@@ -425,8 +476,9 @@ TEST_CASE("IndicatorService GetIndicators returns current values", "[grpc][indic
     REQUIRE(status.ok());
     CHECK(response.changed());
     // Sequence starts at 0, no need to check > 0
-    CHECK(response.values().count("caps-lock-led") > 0);
-    CHECK(response.values().count("shift-lock-led") > 0);
+    // Use iteration-based lookup (workaround for protobuf Map hash bug)
+    CHECK(proto_map_contains(response.values(), std::string("caps-lock-led")));
+    CHECK(proto_map_contains(response.values(), std::string("shift-lock-led")));
 }
 
 TEST_CASE("IndicatorService GetIndicators conditional fetch returns unchanged when sequence matches", "[grpc][indicator]") {
@@ -595,7 +647,8 @@ TEST_CASE("IndicatorService Subscribe filters by name", "[grpc][indicator]") {
     beebium::IndicatorUpdate update;
     while (reader->Read(&update)) {
         // Should only contain caps-lock-led, not floppy
-        CHECK(update.values().count("floppy-0-activity-led") == 0);
+        // Use iteration-based lookup (workaround for protobuf Map hash bug)
+        CHECK_FALSE(proto_map_contains(update.values(), std::string("floppy-0-activity-led")));
     }
 }
 
@@ -621,7 +674,8 @@ TEST_CASE("IndicatorService Model B+ disc motor indicator updates", "[grpc][indi
     beebium::GetIndicatorsResponse response;
     auto status = fixture.stub().GetIndicators(&context, request, &response);
     REQUIRE(status.ok());
-    CHECK(response.values().at("floppy-1-activity-led") == 0);
+    // Use iteration-based lookup (workaround for protobuf Map hash bug)
+    CHECK(proto_map_get(response.values(), std::string("floppy-1-activity-led"), uint64_t{1}) == 0);
 }
 
 TEST_CASE("IndicatorService Model B+ both drives can be active", "[grpc][indicator]") {
@@ -649,8 +703,9 @@ TEST_CASE("IndicatorService Model B+ both drives can be active", "[grpc][indicat
     auto status = fixture.stub().GetIndicators(&context, request, &response);
 
     REQUIRE(status.ok());
-    CHECK(response.values().at("floppy-0-activity-led") > 0);
-    CHECK(response.values().at("floppy-1-activity-led") > 0);
+    // Use iteration-based lookup (workaround for protobuf Map hash bug)
+    CHECK(proto_map_get(response.values(), std::string("floppy-0-activity-led"), uint64_t{0}) > 0);
+    CHECK(proto_map_get(response.values(), std::string("floppy-1-activity-led"), uint64_t{0}) > 0);
 }
 
 // =============================================================================
@@ -723,7 +778,8 @@ TEST_CASE("IndicatorService drive LED activates when WD1770 executes command", "
         beebium::GetIndicatorsResponse resp;
         auto status = fixture.stub().GetIndicators(&ctx, req, &resp);
         REQUIRE(status.ok());
-        CHECK(resp.values().at("floppy-0-activity-led") == 0);
+        // Use iteration-based lookup (workaround for protobuf Map hash bug)
+        CHECK(proto_map_get(resp.values(), std::string("floppy-0-activity-led"), uint64_t{1}) == 0);
     }
 
     // Select drive 0 and release reset via disc control register
