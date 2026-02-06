@@ -40,11 +40,15 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
 
-      - name: Upload server binary
+      - name: Upload server binaries and presets
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-macos-arm64
-          path: build/src/server/beebium-model-b
+          path: |
+            build/src/server/beebium-model-b
+            build/src/server/beebium-model-b-plus
+            build/src/server/beebium-model-b-romram
+            build/src/server/presets/
           retention-days: 7
 
   server-macos-x86_64:
@@ -79,11 +83,15 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
 
-      - name: Upload server binary
+      - name: Upload server binaries and presets
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-macos-x86_64
-          path: build/src/server/beebium-model-b
+          path: |
+            build/src/server/beebium-model-b
+            build/src/server/beebium-model-b-plus
+            build/src/server/beebium-model-b-romram
+            build/src/server/presets/
           retention-days: 7
 
   server-linux:
@@ -194,6 +202,7 @@ jobs:
   gui-client-macos-arm64:
     name: Build and Test GUI Client (macOS arm64)
     runs-on: macos-14
+    needs: server-macos-arm64
 
     steps:
       - name: Checkout
@@ -204,6 +213,15 @@ jobs:
         with:
           xcode-version: '16'
 
+      - name: Download server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos-arm64
+          path: server-build
+
+      - name: Make servers executable
+        run: chmod +x server-build/beebium-model-b*
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -211,8 +229,11 @@ jobs:
         working-directory: clients/macos/Beebium
         run: xcodegen generate
 
-      - name: Build client
+      - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
+        env:
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
             -scheme Beebium \
@@ -232,16 +253,17 @@ jobs:
             -quiet \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload client app
+      - name: Upload Beebium.app
         uses: actions/upload-artifact@v4
         with:
-          name: beebium-client-macos-arm64
+          name: Beebium-macos-arm64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
           retention-days: 7
 
   gui-client-macos-x86_64:
     name: Build and Test GUI Client (macOS x86_64)
     runs-on: macos-15-intel
+    needs: server-macos-x86_64
 
     steps:
       - name: Checkout
@@ -252,6 +274,15 @@ jobs:
         with:
           xcode-version: '16'
 
+      - name: Download server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos-x86_64
+          path: server-build
+
+      - name: Make servers executable
+        run: chmod +x server-build/beebium-model-b*
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -259,8 +290,11 @@ jobs:
         working-directory: clients/macos/Beebium
         run: xcodegen generate
 
-      - name: Build client
+      - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
+        env:
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
             -scheme Beebium \
@@ -280,10 +314,10 @@ jobs:
             -quiet \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload client app
+      - name: Upload Beebium.app
         uses: actions/upload-artifact@v4
         with:
-          name: beebium-client-macos-x86_64
+          name: Beebium-macos-x86_64
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
           retention-days: 7
 

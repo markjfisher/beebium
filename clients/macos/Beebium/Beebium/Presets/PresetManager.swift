@@ -61,15 +61,15 @@ class PresetManager: ObservableObject {
         userPresets = []
 
         let dirpath = serversDirpath()
-        let systemPresetsDirpath = "\(dirpath)/presets"
+        let systemPresetsDirpathValue = systemPresetsDirpath()
         var discoveredSystem: [MachinePreset] = []
         var discoveredUser: [MachinePreset] = []
         var configFailures: [String] = []
 
-        NSLog("[PresetManager] Searching for system presets in: \(systemPresetsDirpath)")
+        NSLog("[PresetManager] Searching for system presets in: \(systemPresetsDirpathValue)")
 
         // Discover system presets
-        let (systemFilepaths, directoryError) = findPresetFiles(in: systemPresetsDirpath)
+        let (systemFilepaths, directoryError) = findPresetFiles(in: systemPresetsDirpathValue)
         NSLog("[PresetManager] Found \(systemFilepaths.count) system preset file(s)")
 
         for presetFilepath in systemFilepaths {
@@ -99,7 +99,7 @@ class PresetManager: ObservableObject {
         if let directoryError = directoryError {
             discoveryError = directoryError
         } else if systemFilepaths.isEmpty {
-            discoveryError = "No preset files found in \(systemPresetsDirpath)"
+            discoveryError = "No preset files found in \(systemPresetsDirpathValue)"
         } else if discoveredSystem.isEmpty {
             let failedList = configFailures.joined(separator: ", ")
             discoveryError = "Found \(systemFilepaths.count) preset(s) but failed to load: \(failedList)"
@@ -157,13 +157,45 @@ class PresetManager: ObservableObject {
     }
 
     /// Get the directory path where server executables are located.
+    ///
+    /// Search order:
+    /// 1. `BEEBIUM_SERVERS_DIRPATH` environment variable (for development/testing)
+    /// 2. App bundle Frameworks directory (for distribution)
+    /// 3. Development fallback path
     private func serversDirpath() -> String {
+        // 1. Environment variable override (for development/testing)
         if let envPath = ProcessInfo.processInfo.environment["BEEBIUM_SERVERS_DIRPATH"] {
             return envPath
         }
 
+        // 2. App bundle (for distribution)
+        if let bundlePath = Bundle.main.privateFrameworksPath {
+            let fm = FileManager.default
+            // Check if servers exist in bundle
+            if fm.fileExists(atPath: "\(bundlePath)/beebium-model-b") {
+                return bundlePath
+            }
+        }
+
+        // 3. Development fallback
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         return homeDir.appendingPathComponent("Code/beebium/build/src/server").path
+    }
+
+    /// Get the bundled ROM directory path, if ROMs are bundled in the app.
+    /// Returns nil if no bundled ROMs are found.
+    private func bundledRomDirpath() -> String? {
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+        let romPath = "\(resourcePath)/roms"
+        return FileManager.default.fileExists(atPath: romPath) ? romPath : nil
+    }
+
+    /// Get the bundled presets directory path, if presets are bundled in the app.
+    /// Returns nil if no bundled presets are found.
+    private func bundledPresetsDirpath() -> String? {
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+        let presetsPath = "\(resourcePath)/presets"
+        return FileManager.default.fileExists(atPath: presetsPath) ? presetsPath : nil
     }
 
     /// Find preset files in a directory (files with `.preset.beebium` extension).
@@ -355,7 +387,12 @@ class PresetManager: ObservableObject {
     }
 
     /// Get the system presets directory path.
+    ///
+    /// Checks bundled presets first, then falls back to server directory.
     func systemPresetsDirpath() -> String {
+        if let bundledPath = bundledPresetsDirpath() {
+            return bundledPath
+        }
         return "\(serversDirpath())/presets"
     }
 
@@ -475,6 +512,11 @@ class PresetManager: ObservableObject {
             "--advertise",
             "--wait=api"
         ]
+
+        // Pass ROM directory if running from app bundle with bundled ROMs
+        if let romDir = bundledRomDirpath() {
+            arguments.append(contentsOf: ["--rom-dir", romDir])
+        }
 
         // Add floppy drive arguments from storage config
         if let config = storageConfig {
