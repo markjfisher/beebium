@@ -207,146 +207,33 @@ private:
 // Diagnostic tests - check indicators directly without gRPC
 // =============================================================================
 
-TEST_CASE("DIAGNOSTIC: ModelB member has metadata before server creation", "[grpc][indicator][diagnostic]") {
-    // This mimics IndicatorTestFixtureModelB but checks indicators BEFORE creating server
-    beebium::ModelB machine;
-
-    // Check immediately after construction
-    auto& indicators = machine.state().memory.indicators;
-    auto names = indicators.names();
-    INFO("Indicator count immediately after construction: " << names.size());
-    REQUIRE(names.size() == 4);
-
-    auto caps_meta = indicators.metadata("caps-lock-led");
-    INFO("caps-lock-led metadata size after construction: " << caps_meta.size());
-    REQUIRE(caps_meta.size() == 4);
-    CHECK(caps_meta.at("label") == "CAPS LOCK");
-    CHECK(caps_meta.at("color") == "625nm");
-}
-
-TEST_CASE("DIAGNOSTIC: ModelB member has metadata after reset", "[grpc][indicator][diagnostic]") {
-    beebium::ModelB machine;
-    machine.reset();
-
-    auto& indicators = machine.state().memory.indicators;
-    auto names = indicators.names();
-    INFO("Indicator count after reset: " << names.size());
-    REQUIRE(names.size() == 4);
-
-    auto caps_meta = indicators.metadata("caps-lock-led");
-    INFO("caps-lock-led metadata size after reset: " << caps_meta.size());
-    REQUIRE(caps_meta.size() == 4);
-    CHECK(caps_meta.at("label") == "CAPS LOCK");
-}
-
-TEST_CASE("DIAGNOSTIC: Fixture machine has metadata before gRPC call", "[grpc][indicator][diagnostic]") {
+// Regression test for protobuf Map hash bug on x86_64 macOS.
+// See docs/known-issues.md for details.
+// This test verifies the iteration-based workaround functions correctly.
+TEST_CASE("Protobuf Map workaround: iteration-based lookup works", "[grpc][indicator]") {
     IndicatorTestFixtureModelB fixture;
 
-    // Check indicators directly on the machine (not through gRPC)
+    // Get metadata directly from the machine (std::unordered_map - works fine)
     auto& indicators = fixture.machine().state().memory.indicators;
-    auto names = indicators.names();
-    INFO("Indicator count in fixture: " << names.size());
-    REQUIRE(names.size() == 4);
+    auto direct_meta = indicators.metadata("caps-lock-led");
+    REQUIRE(direct_meta.size() == 4);
 
-    auto caps_meta = indicators.metadata("caps-lock-led");
-    INFO("caps-lock-led metadata size in fixture: " << caps_meta.size());
-    REQUIRE(caps_meta.size() == 4);
-    CHECK(caps_meta.at("label") == "CAPS LOCK");
-    CHECK(caps_meta.at("color") == "625nm");
-}
-
-TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicator][diagnostic]") {
-    IndicatorTestFixtureModelB fixture;
-
-    // Get metadata directly
-    auto& indicators = fixture.machine().state().memory.indicators;
-    auto direct_names = indicators.names();
-    INFO("Direct access - indicator count: " << direct_names.size());
-    REQUIRE(direct_names.size() >= 2);
-
-    auto direct_caps_meta = indicators.metadata("caps-lock-led");
-    INFO("Direct access - caps-lock-led metadata size: " << direct_caps_meta.size());
-    REQUIRE(direct_caps_meta.size() == 4);
-
-    // Now make gRPC call
+    // Get metadata via gRPC (google::protobuf::Map - has hash bug on x86_64)
     grpc::ClientContext context;
     beebium::ListIndicatorsRequest request;
     beebium::ListIndicatorsResponse response;
     auto status = fixture.stub().ListIndicators(&context, request, &response);
     REQUIRE(status.ok());
 
-    INFO("gRPC response - indicator count: " << response.indicators_size());
-    REQUIRE(response.indicators_size() >= 2);
-
-    // Find caps-lock-led in response and check metadata
+    // Find caps-lock-led in response
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "caps-lock-led") {
             const auto& grpc_meta = indicator.metadata();
-            INFO("gRPC response - caps-lock-led metadata size: " << grpc_meta.size());
-            INFO("Direct access metadata size was: " << direct_caps_meta.size());
 
-            // Use stderr for immediate output (bypasses Catch2 buffering)
-            std::cerr << "\n=== DIAGNOSTIC OUTPUT (stderr) ===\n";
-            std::cerr << "gRPC metadata size(): " << grpc_meta.size() << "\n";
-            std::cerr << "gRPC metadata empty(): " << grpc_meta.empty() << "\n";
-
-            // Print gRPC map contents with string details
-            std::cerr << "gRPC metadata contents:\n";
-            size_t grpc_count = 0;
-            for (auto it = grpc_meta.begin(); it != grpc_meta.end(); ++it) {
-                const std::string& key = it->first;
-                const std::string& value = it->second;
-                std::cerr << "  [" << grpc_count << "] key.size()=" << key.size()
-                          << " key.data()=" << (void*)key.data()
-                          << " key='" << key << "'"
-                          << " value='" << value << "'\n";
-                // Print hex of first few bytes of key
-                std::cerr << "      key hex: ";
-                for (size_t i = 0; i < std::min(key.size(), size_t(16)); i++) {
-                    std::cerr << std::hex << (int)(unsigned char)key[i] << " ";
-                }
-                std::cerr << std::dec << "\n";
-                grpc_count++;
-            }
-            std::cerr << "gRPC iteration count: " << grpc_count << "\n";
-
-            // Print direct metadata contents
-            std::cerr << "Direct metadata contents:\n";
-            size_t direct_count = 0;
-            for (const auto& [key, value] : direct_caps_meta) {
-                std::cerr << "  [" << direct_count << "] key='" << key << "' value='" << value << "'\n";
-                direct_count++;
-            }
-            std::cerr << "Direct iteration count: " << direct_count << "\n";
-
-            // Test find() vs count() vs iteration
-            std::cerr << "\nTesting find/count for 'label':\n";
-            std::cerr << "  grpc_meta.count(\"label\") = " << grpc_meta.count("label") << "\n";
-            std::cerr << "  grpc_meta.find(\"label\") == end(): " << (grpc_meta.find("label") == grpc_meta.end()) << "\n";
-
-            // Check if any iterated key equals "label"
-            std::cerr << "  Checking iterated keys against \"label\":\n";
-            for (auto it = grpc_meta.begin(); it != grpc_meta.end(); ++it) {
-                bool equals = (it->first == "label");
-                bool compare = (it->first.compare("label") == 0);
-                std::cerr << "    '" << it->first << "' == \"label\": " << equals
-                          << ", compare(): " << compare
-                          << ", sizes: " << it->first.size() << " vs 5\n";
-            }
-
-            std::cerr << "=== END DIAGNOSTIC ===\n" << std::flush;
-
-            // Now do the actual check using iteration-based lookup (workaround for protobuf Map hash bug)
-            // Note: The diagnostic output above demonstrates the bug where count()/find() fail
-            // even though the keys exist and can be found via iteration.
-            for (const auto& [key, value] : direct_caps_meta) {
-                INFO("Checking key '" << key << "' (direct value: '" << value << "')");
+            // Verify iteration-based workaround finds all keys
+            for (const auto& [key, value] : direct_meta) {
                 auto grpc_value = proto_map_get(grpc_meta, key, std::string{});
-                if (grpc_value.empty() && !value.empty()) {
-                    FAIL("gRPC response missing key: " << key);
-                } else {
-                    CHECK(grpc_value == value);
-                }
+                CHECK(grpc_value == value);
             }
             return;
         }
@@ -360,19 +247,6 @@ TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicato
 
 TEST_CASE("IndicatorService ListIndicators returns registered indicators for Model B", "[grpc][indicator]") {
     IndicatorTestFixtureModelB fixture;
-
-    // DIAGNOSTIC: Check metadata directly on THIS fixture's machine before gRPC call
-    {
-        auto& indicators = fixture.machine().state().memory.indicators;
-        auto names = indicators.names();
-        INFO("Direct check - indicator count: " << names.size());
-        REQUIRE(names.size() >= 2);  // At least caps and shift lock
-
-        auto caps_meta = indicators.metadata("caps-lock-led");
-        INFO("Direct check - caps-lock-led metadata size: " << caps_meta.size());
-        REQUIRE(caps_meta.size() == 4);
-        REQUIRE(caps_meta.at("label") == "CAPS LOCK");
-    }
 
     grpc::ClientContext context;
     beebium::ListIndicatorsRequest request;
