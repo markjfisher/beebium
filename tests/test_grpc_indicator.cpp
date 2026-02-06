@@ -237,6 +237,18 @@ TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicato
             INFO("gRPC response - caps-lock-led metadata size: " << indicator.metadata().size());
             INFO("Direct access metadata size was: " << direct_caps_meta.size());
 
+            // Print what keys ARE in the gRPC response
+            INFO("Keys in gRPC response metadata:");
+            for (const auto& [key, value] : indicator.metadata()) {
+                INFO("  gRPC key: '" << key << "' = '" << value << "'");
+            }
+
+            // Print what keys are in direct access
+            INFO("Keys in direct access metadata:");
+            for (const auto& [key, value] : direct_caps_meta) {
+                INFO("  Direct key: '" << key << "' = '" << value << "'");
+            }
+
             // Check each key individually and report what's missing
             for (const auto& [key, value] : direct_caps_meta) {
                 INFO("Checking key '" << key << "' (direct value: '" << value << "')");
