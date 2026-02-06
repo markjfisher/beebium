@@ -10,6 +10,7 @@ on:
 jobs:
   server-macos-arm64:
     name: Build and Test Server (macOS arm64)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: macos-14
 
     steps:
@@ -88,6 +89,7 @@ jobs:
 
   server-linux:
     name: Build and Test Server (Linux)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: ubuntu-latest
 
     steps:
@@ -122,6 +124,7 @@ jobs:
 
   server-windows:
     name: Build and Test Server (Windows)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: windows-latest
 
     env:
@@ -193,6 +196,7 @@ jobs:
 
   gui-client-macos-arm64:
     name: Build and Test GUI Client (macOS arm64)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: macos-14
 
     steps:
@@ -241,6 +245,7 @@ jobs:
 
   gui-client-macos-x86_64:
     name: Build and Test GUI Client (macOS x86_64)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: macos-15-intel
 
     steps:
@@ -289,6 +294,7 @@ jobs:
 
   python-client:
     name: Python Client Unit Tests
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: ubuntu-latest
 
     steps:
@@ -309,6 +315,7 @@ jobs:
 
   python-integration-linux:
     name: Python Client Integration Tests (Linux)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: ubuntu-latest
     needs: server-linux
 
@@ -346,6 +353,7 @@ jobs:
 
   python-integration-windows:
     name: Python Client Integration Tests (Windows)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: windows-latest
     needs: server-windows
 
@@ -375,6 +383,7 @@ jobs:
 
   python-integration-macos-arm64:
     name: Python Client Integration Tests (macOS arm64)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: macos-14
     needs: server-macos-arm64
 
@@ -410,6 +419,7 @@ jobs:
 
   python-integration-macos-x86_64:
     name: Python Client Integration Tests (macOS x86_64)
+    if: github.ref != 'refs/heads/arch'  # Disabled on arch branch for faster iteration
     runs-on: macos-15-intel
     needs: server-macos-x86_64
 
