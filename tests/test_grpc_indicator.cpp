@@ -237,17 +237,25 @@ TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicato
             INFO("gRPC response - caps-lock-led metadata size: " << indicator.metadata().size());
             INFO("Direct access metadata size was: " << direct_caps_meta.size());
 
-            // Print what keys ARE in the gRPC response
-            INFO("Keys in gRPC response metadata:");
+            // Check if iterators work
+            INFO("gRPC metadata begin==end: " << (indicator.metadata().begin() == indicator.metadata().end()));
+            INFO("Direct metadata begin==end: " << (direct_caps_meta.begin() == direct_caps_meta.end()));
+
+            // Print what keys ARE in the gRPC response using explicit count
+            size_t grpc_count = 0;
             for (const auto& [key, value] : indicator.metadata()) {
-                INFO("  gRPC key: '" << key << "' = '" << value << "'");
+                INFO("  gRPC key[" << grpc_count << "]: '" << key << "' = '" << value << "'");
+                grpc_count++;
             }
+            INFO("gRPC iteration count: " << grpc_count);
 
             // Print what keys are in direct access
-            INFO("Keys in direct access metadata:");
+            size_t direct_count = 0;
             for (const auto& [key, value] : direct_caps_meta) {
-                INFO("  Direct key: '" << key << "' = '" << value << "'");
+                INFO("  Direct key[" << direct_count << "]: '" << key << "' = '" << value << "'");
+                direct_count++;
             }
+            INFO("Direct iteration count: " << direct_count);
 
             // Check each key individually and report what's missing
             for (const auto& [key, value] : direct_caps_meta) {
