@@ -33,6 +33,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <thread>
 #include <vector>
 
@@ -234,36 +236,68 @@ TEST_CASE("DIAGNOSTIC: Compare direct access vs gRPC response", "[grpc][indicato
     // Find caps-lock-led in response and check metadata
     for (const auto& indicator : response.indicators()) {
         if (indicator.name() == "caps-lock-led") {
-            INFO("gRPC response - caps-lock-led metadata size: " << indicator.metadata().size());
+            const auto& grpc_meta = indicator.metadata();
+            INFO("gRPC response - caps-lock-led metadata size: " << grpc_meta.size());
             INFO("Direct access metadata size was: " << direct_caps_meta.size());
 
-            // Check if iterators work
-            INFO("gRPC metadata begin==end: " << (indicator.metadata().begin() == indicator.metadata().end()));
-            INFO("Direct metadata begin==end: " << (direct_caps_meta.begin() == direct_caps_meta.end()));
+            // Use stderr for immediate output (bypasses Catch2 buffering)
+            std::cerr << "\n=== DIAGNOSTIC OUTPUT (stderr) ===\n";
+            std::cerr << "gRPC metadata size(): " << grpc_meta.size() << "\n";
+            std::cerr << "gRPC metadata empty(): " << grpc_meta.empty() << "\n";
 
-            // Print what keys ARE in the gRPC response using explicit count
+            // Print gRPC map contents with string details
+            std::cerr << "gRPC metadata contents:\n";
             size_t grpc_count = 0;
-            for (const auto& [key, value] : indicator.metadata()) {
-                INFO("  gRPC key[" << grpc_count << "]: '" << key << "' = '" << value << "'");
+            for (auto it = grpc_meta.begin(); it != grpc_meta.end(); ++it) {
+                const std::string& key = it->first;
+                const std::string& value = it->second;
+                std::cerr << "  [" << grpc_count << "] key.size()=" << key.size()
+                          << " key.data()=" << (void*)key.data()
+                          << " key='" << key << "'"
+                          << " value='" << value << "'\n";
+                // Print hex of first few bytes of key
+                std::cerr << "      key hex: ";
+                for (size_t i = 0; i < std::min(key.size(), size_t(16)); i++) {
+                    std::cerr << std::hex << (int)(unsigned char)key[i] << " ";
+                }
+                std::cerr << std::dec << "\n";
                 grpc_count++;
             }
-            INFO("gRPC iteration count: " << grpc_count);
+            std::cerr << "gRPC iteration count: " << grpc_count << "\n";
 
-            // Print what keys are in direct access
+            // Print direct metadata contents
+            std::cerr << "Direct metadata contents:\n";
             size_t direct_count = 0;
             for (const auto& [key, value] : direct_caps_meta) {
-                INFO("  Direct key[" << direct_count << "]: '" << key << "' = '" << value << "'");
+                std::cerr << "  [" << direct_count << "] key='" << key << "' value='" << value << "'\n";
                 direct_count++;
             }
-            INFO("Direct iteration count: " << direct_count);
+            std::cerr << "Direct iteration count: " << direct_count << "\n";
 
-            // Check each key individually and report what's missing
+            // Test find() vs count() vs iteration
+            std::cerr << "\nTesting find/count for 'label':\n";
+            std::cerr << "  grpc_meta.count(\"label\") = " << grpc_meta.count("label") << "\n";
+            std::cerr << "  grpc_meta.find(\"label\") == end(): " << (grpc_meta.find("label") == grpc_meta.end()) << "\n";
+
+            // Check if any iterated key equals "label"
+            std::cerr << "  Checking iterated keys against \"label\":\n";
+            for (auto it = grpc_meta.begin(); it != grpc_meta.end(); ++it) {
+                bool equals = (it->first == "label");
+                bool compare = (it->first.compare("label") == 0);
+                std::cerr << "    '" << it->first << "' == \"label\": " << equals
+                          << ", compare(): " << compare
+                          << ", sizes: " << it->first.size() << " vs 5\n";
+            }
+
+            std::cerr << "=== END DIAGNOSTIC ===\n" << std::flush;
+
+            // Now do the actual check
             for (const auto& [key, value] : direct_caps_meta) {
                 INFO("Checking key '" << key << "' (direct value: '" << value << "')");
-                if (indicator.metadata().count(key) == 0) {
+                if (grpc_meta.count(key) == 0) {
                     FAIL("gRPC response missing key: " << key);
                 } else {
-                    CHECK(indicator.metadata().at(key) == value);
+                    CHECK(grpc_meta.at(key) == value);
                 }
             }
             return;
