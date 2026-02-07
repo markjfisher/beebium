@@ -12,6 +12,9 @@ jobs:
     name: Build and Test Server (macOS arm64)
     runs-on: macos-14
 
+    env:
+      VCPKG_DEFAULT_TRIPLET: arm64-osx-static
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,21 +24,46 @@ jobs:
         with:
           xcode-version: '16'
 
-      - name: Install dependencies
-        run: |
-          brew install cmake grpc protobuf
+      - name: Set VCPKG_INSTALLED_DIR
+        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_installed
+          key: vcpkg-${{ runner.os }}-arm64-static-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-arm64-static-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          runVcpkgInstall: true
+          vcpkgJsonGlob: 'vcpkg.json'
 
       - name: Configure CMake
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
+            -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx-static \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
             -DBEEBIUM_BUILD_TESTS=ON \
             -DBEEBIUM_BUILD_SERVICE=ON \
             -DBEEBIUM_BUILD_SERVER=ON
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Verify static linking
+        run: |
+          echo "Checking dynamic dependencies..."
+          otool -L build/src/server/beebium-model-b
+          # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -55,6 +83,9 @@ jobs:
     name: Build and Test Server (macOS x86_64)
     runs-on: macos-15-intel
 
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-osx-static
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,21 +95,46 @@ jobs:
         with:
           xcode-version: '16'
 
-      - name: Install dependencies
-        run: |
-          brew install cmake grpc protobuf
+      - name: Set VCPKG_INSTALLED_DIR
+        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_installed
+          key: vcpkg-${{ runner.os }}-x64-static-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-x64-static-
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          runVcpkgInstall: true
+          vcpkgJsonGlob: 'vcpkg.json'
 
       - name: Configure CMake
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
+            -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
+            -DVCPKG_TARGET_TRIPLET=x64-osx-static \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
             -DBEEBIUM_BUILD_TESTS=ON \
             -DBEEBIUM_BUILD_SERVICE=ON \
             -DBEEBIUM_BUILD_SERVER=ON
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Verify static linking
+        run: |
+          echo "Checking dynamic dependencies..."
+          otool -L build/src/server/beebium-model-b
+          # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -416,9 +472,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install gRPC runtime libraries
-        run: brew install grpc
-
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
@@ -450,9 +503,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install gRPC runtime libraries
-        run: brew install grpc
 
       - name: Download server binary
         uses: actions/download-artifact@v4
