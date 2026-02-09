@@ -30,6 +30,14 @@ final class SystemClient: ObservableObject {
     /// Machine model display name (e.g., "BBC Model B+ 64K")
     @Published private(set) var machineDisplayName: String = ""
 
+    // MARK: - Connection Tracking
+
+    /// Number of clients with active WatchServerStatus streams on the server
+    @Published private(set) var clientCount: Int = 0
+
+    /// Whether the server has signaled it is shutting down
+    @Published private(set) var isServerShuttingDown: Bool = false
+
     // MARK: - Connection State
 
     /// Whether system info has been successfully loaded
@@ -39,17 +47,29 @@ final class SystemClient: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private var client: Beebium_SystemServiceNIOClient?
+    private var provenanceUUID: String?
+    private var statusStreamCall: ServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>?
 
     /// Connect to the server using an existing gRPC channel and fetch system info
-    func connect(channel: GRPCChannel) {
+    /// - Parameters:
+    ///   - channel: The gRPC channel to use
+    ///   - provenanceUUID: Provenance UUID for shutdown authorization (nil for external connections)
+    func connect(channel: GRPCChannel, provenanceUUID: String? = nil) {
         client = Beebium_SystemServiceNIOClient(channel: channel)
+        self.provenanceUUID = provenanceUUID
         fetchSystemInfo()
+        startStatusStream()
     }
 
     /// Disconnect from the server
     func disconnect() {
+        statusStreamCall?.cancel(promise: nil)
+        statusStreamCall = nil
         client = nil
+        provenanceUUID = nil
         isLoaded = false
+        clientCount = 0
+        isServerShuttingDown = false
         machineUUID = ""
         machineName = ""
         machineType = ""
@@ -78,6 +98,100 @@ final class SystemClient: ObservableObject {
         }
     }
 
+    // MARK: - Shutdown
+
+    /// Request server shutdown with provenance-based authorization
+    /// - Returns: true if the server accepted the shutdown request
+    func requestShutdown(mode: Beebium_ShutdownMode = .shutdownGraceful, gracePeriodMs: Int32 = 5000) async -> Bool {
+        guard let client = client else { return false }
+
+        var request = Beebium_ShutdownRequest()
+        request.mode = mode
+        request.gracePeriodMs = gracePeriodMs
+
+        var callOptions = CallOptions()
+        if let uuid = provenanceUUID {
+            callOptions.customMetadata.add(name: "x-beebium-instance-uuid", value: uuid)
+        }
+
+        do {
+            let response = try await client.requestShutdown(request, callOptions: callOptions).response.get()
+            NSLog("[SystemClient] RequestShutdown: accepted=%d message=%@", response.accepted, response.message)
+            return response.accepted
+        } catch {
+            NSLog("[SystemClient] RequestShutdown failed: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    // MARK: - Client Count
+
+    /// Fetch the current client count from the server
+    func fetchClientCount() async -> Int {
+        guard let client = client else { return 0 }
+        do {
+            let request = Beebium_GetSystemInfoRequest()
+            let response = try await client.getSystemInfo(request).response.get()
+            let count = Int(response.connections.clientCount)
+            self.clientCount = count
+            return count
+        } catch {
+            NSLog("[SystemClient] fetchClientCount failed: %@", error.localizedDescription)
+            return 0
+        }
+    }
+
+    // MARK: - Private
+
+    /// Start the WatchServerStatus stream.
+    /// This serves two purposes:
+    /// 1. The server's ConnectionTracker counts active streams, so this makes us a counted client
+    /// 2. We receive shutdown notifications and identity changes
+    private func startStatusStream() {
+        guard let client = client else { return }
+
+        let request = Beebium_WatchServerStatusRequest()
+        let call = client.watchServerStatus(request) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleStatusEvent(event)
+            }
+        }
+
+        statusStreamCall = call
+
+        call.status.whenComplete { [weak self] result in
+            Task { @MainActor [weak self] in
+                switch result {
+                case .success(let status):
+                    if status.code != .ok && status.code != .cancelled {
+                        NSLog("[SystemClient] Status stream ended: %@", status.description)
+                    }
+                case .failure(let error):
+                    NSLog("[SystemClient] Status stream error: %@", error.localizedDescription)
+                }
+                self?.statusStreamCall = nil
+            }
+        }
+    }
+
+    /// Handle a server status event from the WatchServerStatus stream
+    private func handleStatusEvent(_ event: Beebium_ServerStatusEvent) {
+        switch event.status {
+        case .serverStatusReady:
+            isServerShuttingDown = false
+        case .serverStatusShuttingDown:
+            isServerShuttingDown = true
+        case .serverStatusIdentityChanged:
+            if event.hasIdentity {
+                updateIdentity(event.identity)
+            }
+        case .serverStatusShutdownProgress:
+            break
+        case .UNRECOGNIZED:
+            break
+        }
+    }
+
     /// Fetch system information from the server
     private func fetchSystemInfo() {
         guard let client = client else { return }
@@ -89,6 +203,7 @@ final class SystemClient: ObservableObject {
 
                 await MainActor.run {
                     self?.updateIdentity(response.identity)
+                    self?.clientCount = Int(response.connections.clientCount)
                     self?.isLoaded = true
                     self?.errorMessage = nil
                 }

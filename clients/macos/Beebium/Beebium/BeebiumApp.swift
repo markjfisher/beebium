@@ -12,8 +12,31 @@
 
 import SwiftUI
 
+// MARK: - App Delegate
+
+/// Handles app quit by delegating to MachineManager for shutdown decisions.
+///
+/// Quit rule: shut down a core only if BOTH (a) this app launched it AND (b) it's the
+/// sole client. Everything else is silently disconnected. No quit dialog ever.
+class BeebiumAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let machineManager = MachineManager.shared
+        let action = machineManager.quitAction()
+
+        switch action {
+        case .terminateNow:
+            return .terminateNow
+        case .shutdownThenTerminate(let machineIds):
+            // Terminate all sole-client servers via SIGTERM, then allow quit
+            machineManager.terminateServers(ids: machineIds)
+            return .terminateNow
+        }
+    }
+}
+
 @main
 struct BeebiumApp: App {
+    @NSApplicationDelegateAdaptor(BeebiumAppDelegate.self) var appDelegate
     @FocusedBinding(\.showStatusBar) private var showStatusBar
     @FocusedBinding(\.showSidebar) private var showSidebar
     @FocusedBinding(\.sidebarMode) private var sidebarMode

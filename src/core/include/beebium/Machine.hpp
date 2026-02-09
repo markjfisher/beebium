@@ -25,6 +25,7 @@
 #include <6502/6502.h>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -346,11 +347,12 @@ public:
     }
 
     // Block until not paused - call from emulation loop
-    // Returns immediately if shutdown is requested, allowing clean exit
+    // Returns immediately if shutdown is requested, allowing clean exit.
+    // Uses a bounded wait (100ms) so the caller can poll for shutdown signals.
     void wait_if_paused() {
         if (paused_.load()) {
             std::unique_lock<std::mutex> lock(debug_mutex_);
-            debug_cv_.wait(lock, [this] {
+            debug_cv_.wait_for(lock, std::chrono::milliseconds(100), [this] {
                 return !paused_.load() || shutdown_requested_.load();
             });
         }

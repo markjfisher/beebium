@@ -300,9 +300,15 @@ struct NewMachineDialog: View {
 
         switch result {
         case .success(let core):
+            MachineManager.shared.register(
+                process: core.process,
+                port: core.port,
+                provenanceUUID: core.provenanceUUID
+            )
             let target = ConnectionTarget(host: "127.0.0.1", port: core.port)
             windowState.pendingTarget = target
             windowState.pendingNeedsRun = true
+            windowState.pendingProvenanceUUID = core.provenanceUUID
             openWindow(id: "main")
             dismiss()
 

@@ -25,6 +25,8 @@ struct ContentView: View {
     @StateObject private var audioMixerState = AudioMixerState()
     /// Whether this window needs to call Run() after connection (for cores launched with --wait=api)
     @State private var needsRun: Bool = false
+    /// Provenance UUID for a core launched by this app (nil for external connections)
+    @State private var provenanceUUID: String?
     @State private var showStatusBar: Bool = true
     @State private var showSidebar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
@@ -32,6 +34,9 @@ struct ContentView: View {
     @State private var showConnectDialog = false
     @State private var showNewMachineDialog = false
     @State private var currentWindow: NSWindow?
+    @State private var closeCoordinator: WindowCloseCoordinator?
+    /// Set during teardown to prevent onChange from racing with onDisappear
+    @State private var tearingDown: Bool = false
     @Environment(\.openWindow) private var openWindow
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -79,7 +84,10 @@ struct ContentView: View {
                         systemClient: systemClient,
                         indicatorClient: indicatorClient,
                         keyboardClient: keyboardClient,
-                        keyboardMappingManager: keyboardMappingManager
+                        keyboardMappingManager: keyboardMappingManager,
+                        machineManager: MachineManager.shared,
+                        connectionTarget: videoClient.target,
+                        onUnlink: { unlinkCurrentMachine() }
                     )
                 }
             }
@@ -113,8 +121,11 @@ struct ContentView: View {
             }
 
             // Check for pending connection target (set by Connect dialog or New Machine dialog)
-            let (target, runNeeded) = ConnectWindowState.shared.consumePendingTarget()
+            let (target, runNeeded, provUUID) = ConnectWindowState.shared.consumePendingTarget()
             needsRun = runNeeded
+            provenanceUUID = provUUID
+            NSLog("[ContentView] onAppear: target=%@, needsRun=%d, provenanceUUID=%@",
+                  target?.address ?? "nil", runNeeded ? 1 : 0, provUUID ?? "nil")
             if let target = target {
                 videoClient.reconnect(to: target)
             } else {
@@ -122,9 +133,33 @@ struct ContentView: View {
             }
         }
         .onDisappear {
-            // Unregister connection when window closes
-            ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+            NSLog("[ContentView] onDisappear fired for address %@", videoClient.target.address)
+            tearingDown = true
+            let address = videoClient.target.address
+            let machineManager = MachineManager.shared
 
+            // Dump MachineManager state for diagnostics
+            NSLog("[ContentView] onDisappear: MachineManager has %d machines:", machineManager.machines.count)
+            for (id, m) in machineManager.machines {
+                NSLog("[ContentView]   %@ -> %@ linked=%d running=%d clientCount=%d",
+                      id.uuidString, m.target.address, m.lifetimeLinked ? 1 : 0,
+                      m.process.isRunning ? 1 : 0, m.lastKnownClientCount)
+            }
+
+            let action = machineManager.windowCloseAction(
+                forAddress: address,
+                clientCount: systemClient.clientCount
+            )
+            NSLog("[ContentView] onDisappear: windowCloseAction=%@ for address=%@ clientCount=%d",
+                  String(describing: action), address, systemClient.clientCount)
+
+            if case .shutdownServer = action {
+                // Synchronous SIGTERM — no gRPC channel needed, no async races
+                let result = machineManager.shutdownServer(forAddress: address)
+                NSLog("[ContentView] onDisappear: shutdownServer returned %d", result ? 1 : 0)
+            }
+
+            ConnectionRegistry.shared.unregister(address: address)
             debuggerClient.disconnect()
             audioClient.disconnect()
             discClient.disconnect()
@@ -134,6 +169,44 @@ struct ContentView: View {
             videoClient.disconnect()
         }
         .background(WindowAccessor(window: $currentWindow))
+        .onChange(of: currentWindow) { window in
+            guard let window = window else {
+                NSLog("[ContentView] onChange(currentWindow): window is nil")
+                return
+            }
+            NSLog("[ContentView] onChange(currentWindow): window='%@'", window.title)
+            // Install close-button interception for the multi-client dialog case.
+            // SwiftUI's WindowGroup manages its own window delegate, so we cannot
+            // rely on windowShouldClose. Instead, redirect the close button's action
+            // to our coordinator, which can show an alert and prevent/allow the close.
+            if closeCoordinator == nil {
+                let coordinator = WindowCloseCoordinator(
+                    systemClient: systemClient,
+                    videoClient: videoClient,
+                    machineManager: MachineManager.shared,
+                    window: window,
+                    disconnectClients: { [weak videoClient, weak keyboardClient, weak systemClient,
+                                          weak indicatorClient, weak discClient, weak audioClient,
+                                          weak debuggerClient] in
+                        let address = videoClient?.target.address ?? ""
+                        NSLog("[ContentView] disconnectClients for %@", address)
+                        ConnectionRegistry.shared.unregister(address: address)
+                        debuggerClient?.disconnect()
+                        audioClient?.disconnect()
+                        discClient?.disconnect()
+                        indicatorClient?.disconnect()
+                        systemClient?.disconnect()
+                        keyboardClient?.disconnect()
+                        videoClient?.disconnect()
+                    }
+                )
+                coordinator.install(on: window)
+                closeCoordinator = coordinator
+                NSLog("[ContentView] closeCoordinator created and installed")
+            } else {
+                NSLog("[ContentView] closeCoordinator already exists, skipping install")
+            }
+        }
         .onChange(of: showConnectDialog) { show in
             if show {
                 openWindow(id: "connect")
@@ -146,8 +219,10 @@ struct ContentView: View {
         .onChange(of: videoClient.connectionState) { newState in
             // Connect clients when video client connects
             if case .connected = newState, let channel = videoClient.channel {
+                NSLog("[ContentView] videoClient connected to %@, provenanceUUID=%@",
+                      videoClient.target.address, provenanceUUID ?? "nil")
                 keyboardClient.connect(channel: channel)
-                systemClient.connect(channel: channel)
+                systemClient.connect(channel: channel, provenanceUUID: provenanceUUID)
                 indicatorClient.connect(channel: channel)
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
@@ -159,6 +234,20 @@ struct ContentView: View {
                         address: videoClient.target.address,
                         window: window
                     )
+                }
+
+                // Verify coordinator installation and dump MachineManager state
+                if let coordinator = closeCoordinator {
+                    coordinator.verifyInstallation()
+                } else {
+                    NSLog("[ContentView] WARNING: closeCoordinator is nil at connection time")
+                }
+                let mm = MachineManager.shared
+                NSLog("[ContentView] MachineManager state at connect: %d machines", mm.machines.count)
+                for (id, m) in mm.machines {
+                    NSLog("[ContentView]   %@ -> %@ linked=%d running=%d",
+                          id.uuidString, m.target.address, m.lifetimeLinked ? 1 : 0,
+                          m.process.isRunning ? 1 : 0)
                 }
 
                 // If this was a freshly launched core with --wait=api, start emulation
@@ -184,26 +273,28 @@ struct ContentView: View {
                     macCapsLockIsOn: macCapsLockIsOn,
                     bbcState: indicatorClient.capsLockState
                 )
-            } else if case .disconnected = newState {
-                // Unregister this connection
-                ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+            } else if !tearingDown {
+                // Handle unexpected disconnection (server dropped connection).
+                // Skip during teardown — onDisappear handles orderly shutdown.
+                if case .disconnected = newState {
+                    ConnectionRegistry.shared.unregister(address: videoClient.target.address)
 
-                debuggerClient.disconnect()
-                audioClient.disconnect()
-                discClient.disconnect()
-                indicatorClient.disconnect()
-                keyboardClient.disconnect()
-                systemClient.disconnect()
-            } else if case .error = newState {
-                // Unregister this connection
-                ConnectionRegistry.shared.unregister(address: videoClient.target.address)
+                    debuggerClient.disconnect()
+                    audioClient.disconnect()
+                    discClient.disconnect()
+                    indicatorClient.disconnect()
+                    keyboardClient.disconnect()
+                    systemClient.disconnect()
+                } else if case .error = newState {
+                    ConnectionRegistry.shared.unregister(address: videoClient.target.address)
 
-                debuggerClient.disconnect()
-                audioClient.disconnect()
-                discClient.disconnect()
-                indicatorClient.disconnect()
-                keyboardClient.disconnect()
-                systemClient.disconnect()
+                    debuggerClient.disconnect()
+                    audioClient.disconnect()
+                    discClient.disconnect()
+                    indicatorClient.disconnect()
+                    keyboardClient.disconnect()
+                    systemClient.disconnect()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -215,6 +306,13 @@ struct ContentView: View {
                 bbcState: indicatorClient.capsLockState
             )
         }
+        .onChange(of: systemClient.clientCount) { count in
+            // Keep MachineManager's cached client count in sync for the quit handler
+            MachineManager.shared.updateClientCount(
+                address: videoClient.target.address,
+                count: count
+            )
+        }
         .onChange(of: keyboardMappingManager.isCapsLockSyncEnabled) { isEnabled in
             // Sync immediately when user enables Caps Lock sync
             if isEnabled {
@@ -224,6 +322,13 @@ struct ContentView: View {
                     bbcState: indicatorClient.capsLockState
                 )
             }
+        }
+    }
+
+    /// Unlink this window's machine from the app's lifecycle
+    private func unlinkCurrentMachine() {
+        if let machine = MachineManager.shared.machine(forTarget: videoClient.target) {
+            MachineManager.shared.unlink(id: machine.id)
         }
     }
 
@@ -296,6 +401,11 @@ struct WindowAccessor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
+            if let window = view.window {
+                NSLog("[WindowAccessor] makeNSView: captured window '%@'", window.title)
+            } else {
+                NSLog("[WindowAccessor] makeNSView: view.window is nil (not yet in hierarchy)")
+            }
             self.window = view.window
         }
         return view
@@ -304,7 +414,138 @@ struct WindowAccessor: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             if self.window !== nsView.window {
+                if let window = nsView.window {
+                    NSLog("[WindowAccessor] updateNSView: window changed to '%@'", window.title)
+                } else {
+                    NSLog("[WindowAccessor] updateNSView: window changed to nil")
+                }
                 self.window = nsView.window
+            }
+        }
+    }
+}
+
+// MARK: - Window Close Coordinator
+
+/// Intercepts the window close button to implement lifecycle-aware behavior.
+///
+/// SwiftUI's WindowGroup manages its own NSWindowDelegate, so we cannot rely on
+/// windowShouldClose. Instead, this coordinator redirects the close button's
+/// target/action to itself, enabling pre-close logic.
+///
+/// All decision logic is delegated to MachineManager.windowCloseAction().
+/// This coordinator only handles the UI flow: close immediately, or show
+/// a multi-client alert before closing.
+@MainActor
+class WindowCloseCoordinator: NSObject {
+    let systemClient: SystemClient
+    let videoClient: VideoClient
+    let machineManager: MachineManager
+    let disconnectClients: () -> Void
+    weak var window: NSWindow?
+
+    init(systemClient: SystemClient, videoClient: VideoClient, machineManager: MachineManager, window: NSWindow, disconnectClients: @escaping () -> Void) {
+        self.systemClient = systemClient
+        self.videoClient = videoClient
+        self.machineManager = machineManager
+        self.disconnectClients = disconnectClients
+        self.window = window
+    }
+
+    /// Redirect the window's close button to our handler
+    func install(on window: NSWindow) {
+        if let closeButton = window.standardWindowButton(.closeButton) {
+            let oldTarget = closeButton.target
+            let oldAction = closeButton.action
+            closeButton.target = self
+            closeButton.action = #selector(handleCloseButton(_:))
+            NSLog("[WindowCloseCoordinator] Installed on window '%@'. Close button: oldTarget=%@ oldAction=%@ newTarget=WindowCloseCoordinator",
+                  window.title,
+                  String(describing: oldTarget), String(describing: oldAction))
+        } else {
+            NSLog("[WindowCloseCoordinator] WARNING: No close button found on window '%@'",
+                  window.title)
+        }
+    }
+
+    /// Check whether this coordinator is still installed as the close button target
+    func verifyInstallation() -> Bool {
+        guard let window = window,
+              let closeButton = window.standardWindowButton(.closeButton) else {
+            NSLog("[WindowCloseCoordinator] verifyInstallation: window or close button is nil")
+            return false
+        }
+        let isInstalled = closeButton.target === self
+        NSLog("[WindowCloseCoordinator] verifyInstallation: target=%@ expected=%@ match=%d",
+              String(describing: closeButton.target),
+              String(describing: self),
+              isInstalled ? 1 : 0)
+        return isInstalled
+    }
+
+    @objc private func handleCloseButton(_ sender: Any?) {
+        guard let window = window else {
+            NSLog("[WindowCloseCoordinator] handleCloseButton: window is nil")
+            return
+        }
+        let address = videoClient.target.address
+        let clientCount = systemClient.clientCount
+        NSLog("[WindowCloseCoordinator] handleCloseButton for address %@, clientCount %d", address, clientCount)
+
+        let action = machineManager.windowCloseAction(forAddress: address, clientCount: clientCount)
+
+        switch action {
+        case .shutdownServer:
+            // Disconnect gRPC clients first — the server's graceful shutdown
+            // waits for active streams to close, so we must drop them before
+            // sending SIGTERM. onDisappear does NOT fire for WindowGroup windows.
+            disconnectClients()
+            machineManager.shutdownServer(forAddress: address)
+            window.close()
+        case .disconnect:
+            disconnectClients()
+            window.close()
+        case .promptUser(let count):
+            showMultiClientAlert(window: window, address: address, clientCount: count)
+        }
+    }
+
+    @MainActor
+    private func showMultiClientAlert(window: NSWindow, address: String, clientCount: Int) {
+        let machineName = systemClient.machineDisplayName.isEmpty
+            ? "This machine"
+            : "\"\(systemClient.machineDisplayName)\""
+
+        let alert = NSAlert()
+        alert.messageText = "\(machineName) has \(clientCount - 1) other connected client\(clientCount - 1 == 1 ? "" : "s")."
+        alert.informativeText = "You can shut down the machine (disconnecting other clients) or leave it running."
+        alert.alertStyle = .informational
+
+        let shutDownButton = alert.addButton(withTitle: "Shut Down")
+        shutDownButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "Leave Running")
+        alert.addButton(withTitle: "Cancel")
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self else { return }
+
+            Task { @MainActor in
+                switch response {
+                case .alertFirstButtonReturn:
+                    // Shut Down: gRPC shutdown (notifies other clients), then close
+                    await self.machineManager.gracefulShutdownServer(forAddress: address, using: self.systemClient)
+                    self.disconnectClients()
+                    window.close()
+                case .alertSecondButtonReturn:
+                    // Leave Running: unlink, then close
+                    if let machine = self.machineManager.machine(forAddress: address) {
+                        self.machineManager.unlink(id: machine.id)
+                    }
+                    self.disconnectClients()
+                    window.close()
+                default:
+                    break
+                }
             }
         }
     }

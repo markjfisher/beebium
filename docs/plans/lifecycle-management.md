@@ -103,51 +103,76 @@ See [new-machine-dialog.md](new-machine-dialog.md) for detailed design.
 
 ---
 
-## Phase 9: Quit Dialog
+fGraceful Window Close & App Quit
 
-**Goal**: Aggregated quit dialog per menus-and-machines.md design.
+**Goal**: Lifecycle-aware window close and app quit with no-nag casual use, power user control via unlink.
 
-### 9.1 Dialog Design
+### 9.1 Window Close Behavior
 
-```swift
-struct QuitDialog: View {
-    let machines: [ManagedMachine]
-    @State var actions: [UUID: QuitAction] = [:]
+Three behaviors based on machine lifecycle state:
+1. **Launched core + sole client**: Auto-shutdown via `RequestShutdown` RPC. No dialog.
+2. **Externally-connected core**: Silent disconnect. No dialog.
+3. **Launched core + other clients**: Alert with "Shut Down" / "Leave Running" / "Cancel".
 
-    enum QuitAction {
-        case powerOff
-        case keepRunning
-        case disconnect  // For connected-only machines
-    }
-}
-```
+### 9.2 App Quit Behavior
 
-### 9.2 Default Actions
+Quit rule: shut down a core only if BOTH (a) this app launched it AND (b) it's the sole client.
+Everything else is silently disconnected. No quit dialog ever.
 
-- Locally-launched: default to Power Off (resource concern)
-- Connected: Disconnect only (cannot power off)
-- Show warning for "Keep Running" about resource usage
+### 9.3 MachineManager
 
-### 9.3 "Don't Ask Again" Preference
+Central `@MainActor` singleton (`MachineManager.shared`) tracking launched server processes, their
+provenance UUIDs, connection targets, lifetime-linked state, and cached client count.
 
-UserDefaults key: `quitBehavior`:
-- `ask` (default)
-- `alwaysPowerOff`
-- `alwaysKeepRunning`
+### 9.4 Provenance Fix
 
-### 9.4 Trigger Points
+`PresetManager.launchCore()` now passes `--provenance-type macos-gui --provenance-uuid <uuid>` to the
+server, enabling `RequestShutdown` authorization via the `ShutdownPolicyEvaluator`.
 
-- `applicationShouldTerminate:` in AppDelegate
-- Show dialog only if locally-launched machines exist
+### 9.5 SystemClient Enhancements
 
-### Files to create/modify:
-- `clients/macos/Beebium/Beebium/QuitDialog.swift` (new)
-- `clients/macos/Beebium/Beebium/BeebiumApp.swift` (quit handling)
+- `WatchServerStatus` streaming (counted by server's `ConnectionTracker`)
+- `RequestShutdown` RPC with provenance UUID in `x-beebium-instance-uuid` metadata
+- `fetchClientCount()` for sole-client detection at close time
+
+### 9.6 Status Bar Lifetime Indicator
+
+`link` SF Symbol in `StatusBarView` when connected to a lifetime-linked core. Clickable to unlink
+(machine keeps running but closing the window becomes a silent disconnect).
+
+### 9.7 WindowCloseCoordinator
+
+Intercepts the close button's target/action (NOT `NSWindowDelegate` — SwiftUI's `WindowGroup`
+manages its own delegate and overrides `windowShouldClose`). Installed via `WindowAccessor` which
+captures the `NSWindow` reference.
+
+**Critical finding**: `onDisappear` does NOT fire for SwiftUI `WindowGroup` windows when
+they close. This means gRPC client cleanup (`videoClient.disconnect()`, `audioClient.disconnect()`,
+etc.) must be done by the coordinator, not by `onDisappear`. The coordinator takes a
+`disconnectClients` callback from ContentView and calls it before sending SIGTERM and before
+`window.close()`. Without disconnecting gRPC streams first, the server's graceful shutdown hangs
+waiting for active streams to close, and SIGTERM alone is insufficient because the server's signal
+handler initiates a graceful shutdown that respects open connections.
+
+### Files created:
+- `clients/macos/Beebium/Beebium/MachineManager.swift`
+
+### Files modified:
+- `clients/macos/Beebium/Beebium/Generated/system.{pb,grpc}.swift` (regenerated)
+- `clients/macos/Beebium/Beebium/Presets/PresetManager.swift` (provenance args + LaunchedCore field)
+- `clients/macos/Beebium/Beebium/NewMachineDialog.swift` (register with MachineManager)
+- `clients/macos/Beebium/Beebium/ConnectDialog.swift` (pendingProvenanceUUID)
+- `clients/macos/Beebium/Beebium/SystemClient.swift` (WatchServerStatus, RequestShutdown, client count)
+- `clients/macos/Beebium/Beebium/ContentView.swift` (WindowCloseCoordinator, provenance plumbing)
+- `clients/macos/Beebium/Beebium/StatusBarView.swift` (link indicator)
+- `clients/macos/Beebium/Beebium/BeebiumApp.swift` (AppDelegate quit handler)
 
 ### Verification:
-- Quit with running machines shows dialog
-- Power Off actually terminates cores
-- Keep Running leaves cores running (verify with `ps`)
+- Launch core, close window -> core shuts down (verify with `ps`)
+- Launch core, connect Python client, close window -> multi-client alert
+- Connect to external core, close window -> silent disconnect
+- Status bar link icon visible, click to unlink
+- Cmd+Q shuts down sole-client cores, leaves multi-client cores running
 
 ---
 
@@ -225,6 +250,43 @@ This may overlap with the standard Window menu, which lists open windows. The in
 
 ---
 
+## Phase 12: Lifecycle Refactoring
+
+**Goal**: Clean up the lifecycle management code once all behaviour is correct and tested.
+
+### 12.1 Client Collection Protocol
+
+Currently, each gRPC client (`VideoClient`, `KeyboardClient`, `SystemClient`, `IndicatorClient`,
+`DiscClient`, `AudioClient`, `DebuggerClient`) is managed individually. Connecting and disconnecting
+requires enumerating all seven clients by name in multiple places (ContentView's `onAppear`,
+`onChange(of: connectionState)`, `onDisappear`, and the coordinator's `disconnectClients` callback).
+
+Introduce a protocol (e.g., `GRPCClient`) with a `disconnect()` method that all clients conform to,
+and a collection type (e.g., `ClientGroup`) that manages them as a unit. This would replace the
+seven individual `disconnect()` calls with a single `clientGroup.disconnectAll()`, and make it
+impossible to forget a client when adding new ones.
+
+### 12.2 Remove Dead onDisappear Code
+
+`onDisappear` does not fire for SwiftUI `WindowGroup` windows. The cleanup code in `onDisappear`
+is dead code in practice. Once the coordinator-based cleanup is proven reliable, remove the
+`onDisappear` handler (or reduce it to a diagnostic log) to avoid confusion about which code path
+actually runs.
+
+### 12.3 Remove Diagnostic Logging
+
+Strip the diagnostic `NSLog` statements added during Phase 9 debugging (WindowAccessor logging,
+MachineManager state dumps at connect time, coordinator verification logging). Keep the
+operationally useful logs (coordinator action decisions, SIGTERM sends, registration/unregistration).
+
+### 12.4 Review tearingDown Flag
+
+The `tearingDown` flag was introduced to prevent `onChange(of: connectionState)` from racing with
+`onDisappear`. Since `onDisappear` doesn't fire, the flag may be unnecessary. Investigate whether
+it can be removed or whether it guards against other races.
+
+---
+
 ## Deferred: Multi-Window Support
 
 The File menu skeleton includes "New Window" (⌘⇧N) but it is disabled initially. The current architecture allows multiple windows to view the same machine (useful for viewing different sidebar tabs simultaneously), but enabling this adds complexity to:
@@ -268,10 +330,11 @@ Phase 7 (Connect Dialog)                    Phase 7.5 (Settings Infrastructure)
     │                                                   │
     └───────────────────────┬───────────────────────────┘
                             v
-                    Phase 9 (Quit Dialog)
+                    Phase 9 (Window Close & Quit)
                             │
-                            v
-                    Phase 10 (Welcome Window)
+                            ├──────────────────────────┐
+                            v                          v
+                    Phase 10 (Welcome Window)  Phase 12 (Lifecycle Refactoring)
                             │
                             v
                     Phase 11 (Machines Menu) [deferred]

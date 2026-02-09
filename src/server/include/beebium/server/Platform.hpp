@@ -94,11 +94,24 @@ inline bool is_stdout_tty() {
 #else  // POSIX
 
 namespace detail {
+    inline std::atomic<bool> g_signal_received{false};
     inline ShutdownCallback g_shutdown_callback;
 
     inline void signal_handler(int /*signal*/) {
-        if (g_shutdown_callback) {
-            g_shutdown_callback();
+        // Only set an atomic flag — nothing else is async-signal-safe.
+        // The main loop must poll g_signal_received and call the callback
+        // from a normal (non-signal) context.
+        g_signal_received.store(true, std::memory_order_relaxed);
+    }
+
+    /// Call from the main loop to check for pending signals and dispatch
+    /// the shutdown callback. Safe to call from any non-signal context.
+    inline void dispatch_pending_signal() {
+        if (g_signal_received.load(std::memory_order_relaxed)) {
+            g_signal_received.store(false, std::memory_order_relaxed);
+            if (g_shutdown_callback) {
+                g_shutdown_callback();
+            }
         }
     }
 }  // namespace detail
@@ -113,6 +126,12 @@ inline void remove_shutdown_handler() {
     std::signal(SIGINT, SIG_DFL);
     std::signal(SIGTERM, SIG_DFL);
     detail::g_shutdown_callback = nullptr;
+}
+
+/// Check for pending shutdown signal and dispatch the callback if received.
+/// Call this from the main emulation loop (non-signal context).
+inline void dispatch_pending_signal() {
+    detail::dispatch_pending_signal();
 }
 
 inline bool is_stdin_tty() {

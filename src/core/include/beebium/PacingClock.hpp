@@ -113,12 +113,14 @@ public:
 
     /// Called by emulation thread - blocks until next tick is ready.
     /// Returns immediately if running in unlimited mode.
+    /// Uses a bounded wait (100ms) so the caller can poll for shutdown signals.
     void wait_for_tick() {
         if (config_.is_unlimited()) {
             return;
         }
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return tick_ready_ || !running_; });
+        cv_.wait_for(lock, std::chrono::milliseconds(100),
+                     [this] { return tick_ready_ || !running_; });
         tick_ready_ = false;
     }
 

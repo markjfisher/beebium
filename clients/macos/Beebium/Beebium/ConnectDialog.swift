@@ -25,16 +25,21 @@ class ConnectWindowState: ObservableObject {
     /// Set to true when launching a new core with --wait=api.
     @Published var pendingNeedsRun: Bool = false
 
+    /// Provenance UUID for a core launched by this app (nil for external connections)
+    @Published var pendingProvenanceUUID: String?
+
     private init() {}
 
     /// Consume the pending target (returns it and clears it)
-    /// - Returns: Tuple of (target, needsRun) where needsRun indicates if Run() RPC should be called
-    func consumePendingTarget() -> (ConnectionTarget?, Bool) {
+    /// - Returns: Tuple of (target, needsRun, provenanceUUID)
+    func consumePendingTarget() -> (ConnectionTarget?, Bool, String?) {
         let target = pendingTarget
         let needsRun = pendingNeedsRun
+        let provenanceUUID = pendingProvenanceUUID
         pendingTarget = nil
         pendingNeedsRun = false
-        return (target, needsRun)
+        pendingProvenanceUUID = nil
+        return (target, needsRun, provenanceUUID)
     }
 }
 
