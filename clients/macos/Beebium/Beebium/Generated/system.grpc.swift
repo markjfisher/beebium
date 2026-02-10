@@ -34,6 +34,21 @@ internal protocol Beebium_SystemServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?,
     handler: @escaping (Beebium_ServerStatusEvent) -> Void
   ) -> ServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>
+
+  func requestShutdown(
+    _ request: Beebium_ShutdownRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_ShutdownRequest, Beebium_ShutdownResponse>
+
+  func getAdvertisementState(
+    _ request: Beebium_GetAdvertisementStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse>
+
+  func setAdvertisement(
+    _ request: Beebium_SetAdvertisementRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>
 }
 
 extension Beebium_SystemServiceClientProtocol {
@@ -97,6 +112,63 @@ extension Beebium_SystemServiceClientProtocol {
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? [],
       handler: handler
+    )
+  }
+
+  /// Request server shutdown.
+  /// Returns whether the request was accepted based on shutdown policy.
+  /// Policy: accept if requester's instance UUID matches launch provenance,
+  ///         or only one client connected, or --allow-shutdown flag was set.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to RequestShutdown.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func requestShutdown(
+    _ request: Beebium_ShutdownRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_ShutdownRequest, Beebium_ShutdownResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.requestShutdown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRequestShutdownInterceptors() ?? []
+    )
+  }
+
+  /// Get current mDNS service advertisement state
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetAdvertisementState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getAdvertisementState(
+    _ request: Beebium_GetAdvertisementStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getAdvertisementState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdvertisementStateInterceptors() ?? []
+    )
+  }
+
+  /// Enable or disable mDNS service advertisement at runtime
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetAdvertisement.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setAdvertisement(
+    _ request: Beebium_SetAdvertisementRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setAdvertisement.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
     )
   }
 }
@@ -179,6 +251,21 @@ internal protocol Beebium_SystemServiceAsyncClientProtocol: GRPCClient {
     _ request: Beebium_WatchServerStatusRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncServerStreamingCall<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>
+
+  func makeRequestShutdownCall(
+    _ request: Beebium_ShutdownRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_ShutdownRequest, Beebium_ShutdownResponse>
+
+  func makeGetAdvertisementStateCall(
+    _ request: Beebium_GetAdvertisementStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse>
+
+  func makeSetAdvertisementCall(
+    _ request: Beebium_SetAdvertisementRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -226,6 +313,42 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? []
     )
   }
+
+  internal func makeRequestShutdownCall(
+    _ request: Beebium_ShutdownRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_ShutdownRequest, Beebium_ShutdownResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.requestShutdown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRequestShutdownInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetAdvertisementStateCall(
+    _ request: Beebium_GetAdvertisementStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getAdvertisementState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdvertisementStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetAdvertisementCall(
+    _ request: Beebium_SetAdvertisementRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setAdvertisement.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -265,6 +388,42 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeWatchServerStatusInterceptors() ?? []
     )
   }
+
+  internal func requestShutdown(
+    _ request: Beebium_ShutdownRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_ShutdownResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.requestShutdown.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRequestShutdownInterceptors() ?? []
+    )
+  }
+
+  internal func getAdvertisementState(
+    _ request: Beebium_GetAdvertisementStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_GetAdvertisementStateResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getAdvertisementState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdvertisementStateInterceptors() ?? []
+    )
+  }
+
+  internal func setAdvertisement(
+    _ request: Beebium_SetAdvertisementRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetAdvertisementResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setAdvertisement.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -294,6 +453,15 @@ internal protocol Beebium_SystemServiceClientInterceptorFactoryProtocol: Sendabl
 
   /// - Returns: Interceptors to use when invoking 'watchServerStatus'.
   func makeWatchServerStatusInterceptors() -> [ClientInterceptor<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>]
+
+  /// - Returns: Interceptors to use when invoking 'requestShutdown'.
+  func makeRequestShutdownInterceptors() -> [ClientInterceptor<Beebium_ShutdownRequest, Beebium_ShutdownResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getAdvertisementState'.
+  func makeGetAdvertisementStateInterceptors() -> [ClientInterceptor<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'setAdvertisement'.
+  func makeSetAdvertisementInterceptors() -> [ClientInterceptor<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>]
 }
 
 internal enum Beebium_SystemServiceClientMetadata {
@@ -304,6 +472,9 @@ internal enum Beebium_SystemServiceClientMetadata {
       Beebium_SystemServiceClientMetadata.Methods.getSystemInfo,
       Beebium_SystemServiceClientMetadata.Methods.setMachineName,
       Beebium_SystemServiceClientMetadata.Methods.watchServerStatus,
+      Beebium_SystemServiceClientMetadata.Methods.requestShutdown,
+      Beebium_SystemServiceClientMetadata.Methods.getAdvertisementState,
+      Beebium_SystemServiceClientMetadata.Methods.setAdvertisement,
     ]
   )
 
@@ -325,6 +496,24 @@ internal enum Beebium_SystemServiceClientMetadata {
       path: "/beebium.SystemService/WatchServerStatus",
       type: GRPCCallType.serverStreaming
     )
+
+    internal static let requestShutdown = GRPCMethodDescriptor(
+      name: "RequestShutdown",
+      path: "/beebium.SystemService/RequestShutdown",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAdvertisementState = GRPCMethodDescriptor(
+      name: "GetAdvertisementState",
+      path: "/beebium.SystemService/GetAdvertisementState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setAdvertisement = GRPCMethodDescriptor(
+      name: "SetAdvertisement",
+      path: "/beebium.SystemService/SetAdvertisement",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -345,6 +534,18 @@ internal protocol Beebium_SystemServiceProvider: CallHandlerProvider {
   /// Server sends READY immediately upon subscription, then status changes.
   /// Stream ends when server shuts down or client disconnects.
   func watchServerStatus(request: Beebium_WatchServerStatusRequest, context: StreamingResponseCallContext<Beebium_ServerStatusEvent>) -> EventLoopFuture<GRPCStatus>
+
+  /// Request server shutdown.
+  /// Returns whether the request was accepted based on shutdown policy.
+  /// Policy: accept if requester's instance UUID matches launch provenance,
+  ///         or only one client connected, or --allow-shutdown flag was set.
+  func requestShutdown(request: Beebium_ShutdownRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ShutdownResponse>
+
+  /// Get current mDNS service advertisement state
+  func getAdvertisementState(request: Beebium_GetAdvertisementStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_GetAdvertisementStateResponse>
+
+  /// Enable or disable mDNS service advertisement at runtime
+  func setAdvertisement(request: Beebium_SetAdvertisementRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetAdvertisementResponse>
 }
 
 extension Beebium_SystemServiceProvider {
@@ -386,6 +587,33 @@ extension Beebium_SystemServiceProvider {
         userFunction: self.watchServerStatus(request:context:)
       )
 
+    case "RequestShutdown":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ShutdownRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ShutdownResponse>(),
+        interceptors: self.interceptors?.makeRequestShutdownInterceptors() ?? [],
+        userFunction: self.requestShutdown(request:context:)
+      )
+
+    case "GetAdvertisementState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAdvertisementStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_GetAdvertisementStateResponse>(),
+        interceptors: self.interceptors?.makeGetAdvertisementStateInterceptors() ?? [],
+        userFunction: self.getAdvertisementState(request:context:)
+      )
+
+    case "SetAdvertisement":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetAdvertisementRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetAdvertisementResponse>(),
+        interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? [],
+        userFunction: self.setAdvertisement(request:context:)
+      )
+
     default:
       return nil
     }
@@ -421,6 +649,27 @@ internal protocol Beebium_SystemServiceAsyncProvider: CallHandlerProvider, Senda
     responseStream: GRPCAsyncResponseStreamWriter<Beebium_ServerStatusEvent>,
     context: GRPCAsyncServerCallContext
   ) async throws
+
+  /// Request server shutdown.
+  /// Returns whether the request was accepted based on shutdown policy.
+  /// Policy: accept if requester's instance UUID matches launch provenance,
+  ///         or only one client connected, or --allow-shutdown flag was set.
+  func requestShutdown(
+    request: Beebium_ShutdownRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_ShutdownResponse
+
+  /// Get current mDNS service advertisement state
+  func getAdvertisementState(
+    request: Beebium_GetAdvertisementStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_GetAdvertisementStateResponse
+
+  /// Enable or disable mDNS service advertisement at runtime
+  func setAdvertisement(
+    request: Beebium_SetAdvertisementRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetAdvertisementResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -469,6 +718,33 @@ extension Beebium_SystemServiceAsyncProvider {
         wrapping: { try await self.watchServerStatus(request: $0, responseStream: $1, context: $2) }
       )
 
+    case "RequestShutdown":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ShutdownRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ShutdownResponse>(),
+        interceptors: self.interceptors?.makeRequestShutdownInterceptors() ?? [],
+        wrapping: { try await self.requestShutdown(request: $0, context: $1) }
+      )
+
+    case "GetAdvertisementState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAdvertisementStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_GetAdvertisementStateResponse>(),
+        interceptors: self.interceptors?.makeGetAdvertisementStateInterceptors() ?? [],
+        wrapping: { try await self.getAdvertisementState(request: $0, context: $1) }
+      )
+
+    case "SetAdvertisement":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetAdvertisementRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetAdvertisementResponse>(),
+        interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? [],
+        wrapping: { try await self.setAdvertisement(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -488,6 +764,18 @@ internal protocol Beebium_SystemServiceServerInterceptorFactoryProtocol: Sendabl
   /// - Returns: Interceptors to use when handling 'watchServerStatus'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeWatchServerStatusInterceptors() -> [ServerInterceptor<Beebium_WatchServerStatusRequest, Beebium_ServerStatusEvent>]
+
+  /// - Returns: Interceptors to use when handling 'requestShutdown'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeRequestShutdownInterceptors() -> [ServerInterceptor<Beebium_ShutdownRequest, Beebium_ShutdownResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getAdvertisementState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetAdvertisementStateInterceptors() -> [ServerInterceptor<Beebium_GetAdvertisementStateRequest, Beebium_GetAdvertisementStateResponse>]
+
+  /// - Returns: Interceptors to use when handling 'setAdvertisement'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetAdvertisementInterceptors() -> [ServerInterceptor<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>]
 }
 
 internal enum Beebium_SystemServiceServerMetadata {
@@ -498,6 +786,9 @@ internal enum Beebium_SystemServiceServerMetadata {
       Beebium_SystemServiceServerMetadata.Methods.getSystemInfo,
       Beebium_SystemServiceServerMetadata.Methods.setMachineName,
       Beebium_SystemServiceServerMetadata.Methods.watchServerStatus,
+      Beebium_SystemServiceServerMetadata.Methods.requestShutdown,
+      Beebium_SystemServiceServerMetadata.Methods.getAdvertisementState,
+      Beebium_SystemServiceServerMetadata.Methods.setAdvertisement,
     ]
   )
 
@@ -518,6 +809,24 @@ internal enum Beebium_SystemServiceServerMetadata {
       name: "WatchServerStatus",
       path: "/beebium.SystemService/WatchServerStatus",
       type: GRPCCallType.serverStreaming
+    )
+
+    internal static let requestShutdown = GRPCMethodDescriptor(
+      name: "RequestShutdown",
+      path: "/beebium.SystemService/RequestShutdown",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAdvertisementState = GRPCMethodDescriptor(
+      name: "GetAdvertisementState",
+      path: "/beebium.SystemService/GetAdvertisementState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setAdvertisement = GRPCMethodDescriptor(
+      name: "SetAdvertisement",
+      path: "/beebium.SystemService/SetAdvertisement",
+      type: GRPCCallType.unary
     )
   }
 }

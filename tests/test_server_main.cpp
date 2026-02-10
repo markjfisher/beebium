@@ -642,3 +642,135 @@ TEST_CASE("apply_startup_options: sets auto-boot when specified", "[server_main]
     REQUIRE_NOTHROW(apply_startup_options(machine, config));
 }
 #endif
+
+// ============================================================================
+// Signal handler tests
+// ============================================================================
+
+#include <beebium/server/Platform.hpp>
+#include <csignal>
+
+#ifndef _WIN32
+TEST_CASE("signal handler: sets atomic flag without calling callback directly",
+          "[server_main][signal]") {
+    // Reset state
+    beebium::server::platform::detail::g_signal_received.store(false);
+
+    bool callback_called = false;
+    beebium::server::platform::install_shutdown_handler([&callback_called] {
+        callback_called = true;
+    });
+
+    // Simulate what the kernel does: call the signal handler function
+    beebium::server::platform::detail::signal_handler(SIGTERM);
+
+    // The handler should have set the atomic flag but NOT called the callback
+    REQUIRE(beebium::server::platform::detail::g_signal_received.load());
+    REQUIRE_FALSE(callback_called);
+
+    // Now dispatch the pending signal (as the main loop would)
+    beebium::server::platform::dispatch_pending_signal();
+
+    // Now the callback should have been called
+    REQUIRE(callback_called);
+    // And the flag should be cleared
+    REQUIRE_FALSE(beebium::server::platform::detail::g_signal_received.load());
+
+    // Clean up
+    beebium::server::platform::remove_shutdown_handler();
+}
+
+TEST_CASE("signal handler: dispatch_pending_signal is a no-op when no signal received",
+          "[server_main][signal]") {
+    beebium::server::platform::detail::g_signal_received.store(false);
+
+    bool callback_called = false;
+    beebium::server::platform::install_shutdown_handler([&callback_called] {
+        callback_called = true;
+    });
+
+    // Dispatch without any signal having been received
+    beebium::server::platform::dispatch_pending_signal();
+
+    REQUIRE_FALSE(callback_called);
+
+    beebium::server::platform::remove_shutdown_handler();
+}
+#endif  // !_WIN32
+
+TEST_CASE("signal handler: invoke_shutdown sets g_running false and interrupts waits",
+          "[server_main][signal]") {
+    // Reset g_running
+    g_running = true;
+
+    MachineType machine;
+    bool pacing_stopped = false;
+
+    g_request_machine_shutdown = [&machine]() { machine.request_shutdown(); };
+    g_request_pacing_stop = [&pacing_stopped]() { pacing_stopped = true; };
+    g_notify_clients_shutdown = nullptr;
+
+    invoke_shutdown();
+
+    REQUIRE_FALSE(g_running);
+    REQUIRE(machine.shutdown_requested());
+    REQUIRE(pacing_stopped);
+
+    // Clean up
+    g_request_machine_shutdown = nullptr;
+    g_request_pacing_stop = nullptr;
+    g_running = true;
+}
+
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+
+TEST_CASE("SIGTERM: terminates server process within 2 seconds",
+          "[server_main][signal][integration]") {
+    // Fork a child that installs the shutdown handler and blocks in a loop
+    pid_t child = fork();
+    REQUIRE(child >= 0);
+
+    if (child == 0) {
+        // Child process: install handler and block
+        std::atomic<bool> running{true};
+        beebium::server::platform::install_shutdown_handler([&running] {
+            running = false;
+        });
+
+        // Simulate the main loop: poll for pending signals with bounded waits
+        while (running) {
+            beebium::server::platform::dispatch_pending_signal();
+            usleep(10000);  // 10ms
+        }
+
+        _exit(0);
+    }
+
+    // Parent: give child time to start, then send SIGTERM
+    usleep(100000);  // 100ms
+    kill(child, SIGTERM);
+
+    // Wait for child to exit (timeout 2 seconds)
+    int status = 0;
+    bool exited = false;
+    for (int i = 0; i < 40; ++i) {
+        pid_t result = waitpid(child, &status, WNOHANG);
+        if (result == child) {
+            exited = true;
+            break;
+        }
+        usleep(50000);  // 50ms
+    }
+
+    if (!exited) {
+        kill(child, SIGKILL);
+        waitpid(child, &status, 0);
+    }
+
+    REQUIRE(exited);
+    REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 0);
+}
+#endif

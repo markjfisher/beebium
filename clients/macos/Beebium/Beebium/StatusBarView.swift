@@ -19,6 +19,9 @@ struct StatusBarView: View {
     @ObservedObject var indicatorClient: IndicatorClient
     @ObservedObject var keyboardClient: KeyboardClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
+    @ObservedObject var machineManager: MachineManager
+    var connectionTarget: ConnectionTarget
+    var onUnlink: (() -> Void)?
 
     /// Display order for indicators (keyboard LEDs first, then drives)
     private let indicatorOrder = [
@@ -46,6 +49,17 @@ struct StatusBarView: View {
             }
 
             Spacer()
+
+            // Lifetime link indicator (only for cores launched by this app)
+            if machineManager.isLifetimeLinked(address: connectionTarget.address) {
+                Button(action: { onUnlink?() }) {
+                    Image(systemName: "link")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .help("Linked: closing this window will shut down the machine. Click to unlink.")
+            }
 
             // Keyboard mapping name
             if let mappingName = keyboardMappingManager.activeMapping?.name {
@@ -90,7 +104,9 @@ struct StatusBarView_Previews: PreviewProvider {
             systemClient: SystemClient(),
             indicatorClient: IndicatorClient(),
             keyboardClient: KeyboardClient(),
-            keyboardMappingManager: KeyboardMappingManager()
+            keyboardMappingManager: KeyboardMappingManager(),
+            machineManager: MachineManager.shared,
+            connectionTarget: .localhost
         )
         .frame(width: 600)
     }

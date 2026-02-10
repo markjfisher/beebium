@@ -1037,6 +1037,12 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     // Main emulation loop
     constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
     while (g_running) {
+        // Check for pending SIGINT/SIGTERM and dispatch shutdown callback.
+        // The signal handler only sets an atomic flag (async-signal-safe);
+        // the actual shutdown work (notifying CVs, etc.) happens here
+        // in a normal context where mutex operations are safe.
+        platform::dispatch_pending_signal();
+
         // Block if debugger has paused execution
         machine.wait_if_paused();
 

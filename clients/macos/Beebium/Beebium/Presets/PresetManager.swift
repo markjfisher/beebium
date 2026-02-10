@@ -493,6 +493,7 @@ class PresetManager: ObservableObject {
     struct LaunchedCore {
         let process: Process
         let port: Int
+        let provenanceUUID: String
     }
 
     /// Launch a core process for the given preset.
@@ -505,12 +506,16 @@ class PresetManager: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: preset.coreExecutablePath)
 
+        let provenanceUUID = UUID().uuidString
+
         var arguments = [
             "start",
             "--preset", preset.presetFilepath,
             "--port", "0",
             "--advertise",
-            "--wait=api"
+            "--wait=api",
+            "--provenance-type", "macos-gui",
+            "--provenance-uuid", provenanceUUID
         ]
 
         // Pass ROM directory if running from app bundle with bundled ROMs
@@ -580,7 +585,7 @@ class PresetManager: ObservableObject {
                        let portRange = Range(match.range(at: 1), in: text),
                        let port = Int(text[portRange]) {
                         NSLog("[PresetManager] Core listening on port \(port)")
-                        continuation.resume(returning: .success(LaunchedCore(process: process, port: port)))
+                        continuation.resume(returning: .success(LaunchedCore(process: process, port: port, provenanceUUID: provenanceUUID)))
                         return
                     }
                 }
