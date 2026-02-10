@@ -650,6 +650,7 @@ TEST_CASE("apply_startup_options: sets auto-boot when specified", "[server_main]
 #include <beebium/server/Platform.hpp>
 #include <csignal>
 
+#ifndef _WIN32
 TEST_CASE("signal handler: sets atomic flag without calling callback directly",
           "[server_main][signal]") {
     // Reset state
@@ -695,6 +696,7 @@ TEST_CASE("signal handler: dispatch_pending_signal is a no-op when no signal rec
 
     beebium::server::platform::remove_shutdown_handler();
 }
+#endif  // !_WIN32
 
 TEST_CASE("signal handler: invoke_shutdown sets g_running false and interrupts waits",
           "[server_main][signal]") {

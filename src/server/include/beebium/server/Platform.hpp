@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_SERVER_PLATFORM_HPP
 #define BEEBIUM_SERVER_PLATFORM_HPP
 
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -78,6 +79,10 @@ inline void remove_shutdown_handler() {
     detail::g_shutdown_callback = nullptr;
     LeaveCriticalSection(&detail::g_callback_lock);
 }
+
+/// No-op on Windows. The console control handler dispatches the callback
+/// directly from its own thread (protected by a critical section).
+inline void dispatch_pending_signal() {}
 
 inline bool is_stdin_tty() {
     HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
