@@ -103,76 +103,11 @@ See [new-machine-dialog.md](new-machine-dialog.md) for detailed design.
 
 ---
 
-fGraceful Window Close & App Quit
+## Phase 9: Graceful Window Close & App Quit
 
 **Goal**: Lifecycle-aware window close and app quit with no-nag casual use, power user control via unlink.
 
-### 9.1 Window Close Behavior
-
-Three behaviors based on machine lifecycle state:
-1. **Launched core + sole client**: Auto-shutdown via `RequestShutdown` RPC. No dialog.
-2. **Externally-connected core**: Silent disconnect. No dialog.
-3. **Launched core + other clients**: Alert with "Shut Down" / "Leave Running" / "Cancel".
-
-### 9.2 App Quit Behavior
-
-Quit rule: shut down a core only if BOTH (a) this app launched it AND (b) it's the sole client.
-Everything else is silently disconnected. No quit dialog ever.
-
-### 9.3 MachineManager
-
-Central `@MainActor` singleton (`MachineManager.shared`) tracking launched server processes, their
-provenance UUIDs, connection targets, lifetime-linked state, and cached client count.
-
-### 9.4 Provenance Fix
-
-`PresetManager.launchCore()` now passes `--provenance-type macos-gui --provenance-uuid <uuid>` to the
-server, enabling `RequestShutdown` authorization via the `ShutdownPolicyEvaluator`.
-
-### 9.5 SystemClient Enhancements
-
-- `WatchServerStatus` streaming (counted by server's `ConnectionTracker`)
-- `RequestShutdown` RPC with provenance UUID in `x-beebium-instance-uuid` metadata
-- `fetchClientCount()` for sole-client detection at close time
-
-### 9.6 Status Bar Lifetime Indicator
-
-`link` SF Symbol in `StatusBarView` when connected to a lifetime-linked core. Clickable to unlink
-(machine keeps running but closing the window becomes a silent disconnect).
-
-### 9.7 WindowCloseCoordinator
-
-Intercepts the close button's target/action (NOT `NSWindowDelegate` — SwiftUI's `WindowGroup`
-manages its own delegate and overrides `windowShouldClose`). Installed via `WindowAccessor` which
-captures the `NSWindow` reference.
-
-**Critical finding**: `onDisappear` does NOT fire for SwiftUI `WindowGroup` windows when
-they close. This means gRPC client cleanup (`videoClient.disconnect()`, `audioClient.disconnect()`,
-etc.) must be done by the coordinator, not by `onDisappear`. The coordinator takes a
-`disconnectClients` callback from ContentView and calls it before sending SIGTERM and before
-`window.close()`. Without disconnecting gRPC streams first, the server's graceful shutdown hangs
-waiting for active streams to close, and SIGTERM alone is insufficient because the server's signal
-handler initiates a graceful shutdown that respects open connections.
-
-### Files created:
-- `clients/macos/Beebium/Beebium/MachineManager.swift`
-
-### Files modified:
-- `clients/macos/Beebium/Beebium/Generated/system.{pb,grpc}.swift` (regenerated)
-- `clients/macos/Beebium/Beebium/Presets/PresetManager.swift` (provenance args + LaunchedCore field)
-- `clients/macos/Beebium/Beebium/NewMachineDialog.swift` (register with MachineManager)
-- `clients/macos/Beebium/Beebium/ConnectDialog.swift` (pendingProvenanceUUID)
-- `clients/macos/Beebium/Beebium/SystemClient.swift` (WatchServerStatus, RequestShutdown, client count)
-- `clients/macos/Beebium/Beebium/ContentView.swift` (WindowCloseCoordinator, provenance plumbing)
-- `clients/macos/Beebium/Beebium/StatusBarView.swift` (link indicator)
-- `clients/macos/Beebium/Beebium/BeebiumApp.swift` (AppDelegate quit handler)
-
-### Verification:
-- Launch core, close window -> core shuts down (verify with `ps`)
-- Launch core, connect Python client, close window -> multi-client alert
-- Connect to external core, close window -> silent disconnect
-- Status bar link icon visible, click to unlink
-- Cmd+Q shuts down sole-client cores, leaves multi-client cores running
+See [window-close-and-quit.md](window-close-and-quit.md) for detailed design.
 
 ---
 
@@ -180,58 +115,7 @@ handler initiates a graceful shutdown that respects open connections.
 
 **Goal**: Provide a welcoming startup experience with quick access to presets and recent states.
 
-### 10.1 Window Design
-
-```
-┌─────────────────────────────────────────────────┐
-│  Beebium                                        │
-│                                                 │
-│  Get Started                                    │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │ [thumb] │ │ [thumb] │ │ [thumb] │  New...   │
-│  │ Model B │ │Model B+ │ │Master128│           │
-│  │  (DFS)  │ │         │ │         │           │
-│  └─────────┘ └─────────┘ └─────────┘           │
-│                                                 │
-│  Recent                                    ▼    │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │ [thumb] │ │ [thumb] │ │ [thumb] │           │
-│  │ Elite   │ │ Chuckie │ │ Testing │           │
-│  │ 2h ago  │ │yesterday│ │ 3 days  │           │
-│  └─────────┘ └─────────┘ └─────────┘           │
-│                                                 │
-│  ☐ Show this window when Beebium opens         │
-└─────────────────────────────────────────────────┘
-```
-
-### 10.2 Behaviour
-
-- **On app launch**: Show welcome window (unless preference disabled)
-- **Preset thumbnails**: Default boot screen for each model
-- **Recent thumbnails**: Last framebuffer capture from saved state
-- **Pre-selection**: First preset selected by default; user can just press Return to launch
-- **New... button**: Opens full New Machine dialog for custom configuration
-- **Re-open**: Window > Welcome to Beebium
-
-### 10.3 Empty State (First Launch)
-
-With no recent states, window shows only presets — still useful for quick launch.
-
-### Files to create/modify:
-- `clients/macos/Beebium/Beebium/WelcomeWindow.swift` (new)
-- `clients/macos/Beebium/Beebium/BeebiumApp.swift` (show on launch)
-- Window menu additions
-
-### Dependencies:
-- Phase 7.6 (Preset System) for preset data and PresetManager
-- Phase 8 (New Machine Dialog) for machine creation flow
-- State persistence (future) for recent states with thumbnails
-
-### Verification:
-- Window appears on launch
-- Selecting preset and pressing Return launches machine
-- "Show this window" preference persists
-- Window > Welcome to Beebium re-opens it
+See [welcome-window.md](welcome-window.md) for detailed design.
 
 ---
 

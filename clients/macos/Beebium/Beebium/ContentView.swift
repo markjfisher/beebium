@@ -120,7 +120,9 @@ struct ContentView: View {
                 )
             }
 
-            // Check for pending connection target (set by Connect dialog or New Machine dialog)
+            // Check for pending connection target (set by Connect dialog, New Machine dialog,
+            // or Welcome Window). If no target was set, this window was auto-created by SwiftUI
+            // on launch — open the welcome window and close this one immediately.
             let (target, runNeeded, provUUID) = ConnectWindowState.shared.consumePendingTarget()
             needsRun = runNeeded
             provenanceUUID = provUUID
@@ -129,7 +131,13 @@ struct ContentView: View {
             if let target = target {
                 videoClient.reconnect(to: target)
             } else {
-                videoClient.connect()
+                // No pending target — show the welcome window and close this auto-created window.
+                NSLog("[ContentView] onAppear: no pending target, showing welcome window")
+                openWindow(id: "welcome")
+                DispatchQueue.main.async {
+                    self.currentWindow?.orderOut(nil)
+                    self.currentWindow?.close()
+                }
             }
         }
         .onDisappear {

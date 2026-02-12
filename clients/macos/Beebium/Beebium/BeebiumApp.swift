@@ -98,6 +98,21 @@ struct BeebiumApp: App {
             }
         }
 
+        // Welcome window (singleton, shown on bare launch)
+        Window("Welcome to Beebium", id: "welcome") {
+            WelcomeWindowContent()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .windowStyle(.hiddenTitleBar)
+
+        // New Machine dialog window (singleton, opened from Welcome Window's "New Machine...")
+        Window("New Machine", id: "new-machine") {
+            NewMachineDialog()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         // Connect window (singleton, non-modal)
         Window("Connect to Machine", id: "connect") {
             ConnectWindowContent()

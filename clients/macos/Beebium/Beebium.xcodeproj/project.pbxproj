@@ -83,6 +83,7 @@
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
 		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
 		E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */; };
+		E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */; };
 		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
 		EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */ = {isa = PBXBuildFile; fileRef = DFB1414298AE8F8261138293 /* keyboard.proto */; };
 		EEC1DCADCCF584AB8BC8DD01 /* ConnectionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0380D979784116B4110F8904 /* ConnectionRegistry.swift */; };
@@ -119,6 +120,7 @@
 		21F63FE0D5862D2315B5AFDC /* BeebiumSvgGlyphRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumSvgGlyphRenderer.swift; sourceTree = "<group>"; };
 		25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerView.swift; sourceTree = "<group>"; };
 		28ED949DB593C8353954F7B1 /* MachinePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinePreset.swift; sourceTree = "<group>"; };
+		2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindow.swift; sourceTree = "<group>"; };
 		2CE550723A13DFA9A20EB302 /* IndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorView.swift; sourceTree = "<group>"; };
 		38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClientTests.swift; sourceTree = "<group>"; };
 		3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardClient.swift; sourceTree = "<group>"; };
@@ -359,6 +361,7 @@
 				F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */,
 				FEB0459103AA8B2261579315 /* SystemClient.swift */,
 				08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */,
+				2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */,
 				8BE2CECB7FD5D0AF509AAE1C /* Configuration */,
 				302A817E494E35F2A03C8A10 /* Generated */,
 				5353E11520D70E76E4C80AB1 /* Presets */,
@@ -580,6 +583,7 @@
 				AE3969E0CE7F7D5F7C57513A /* StorageSectionView.swift in Sources */,
 				E275D2F57760944D93A67635 /* SystemClient.swift in Sources */,
 				F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */,
+				E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */,
 				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,
 				A005244A2347799984C194E6 /* audio.pb.swift in Sources */,
 				517A5C299A144DD482FC9AC2 /* debugger.grpc.swift in Sources */,
