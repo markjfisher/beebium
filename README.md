@@ -170,3 +170,7 @@ Beebium is licensed under the [GNU General Public License v3.0](COPYING.txt).
   - Copyright (c) 2013-2021, Cameron Desrochers
   - Simplified BSD License
   - https://github.com/cameron314/readerwriterqueue
+- **stb_image_write** - Single-file PNG/BMP/TGA/JPEG/HDR image writer
+  - Copyright (c) 2017, Sean Barrett
+  - MIT License / Public Domain
+  - https://github.com/nothings/stb

@@ -448,6 +448,7 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(test_server_main PRIVATE
         beebium_service
         nlohmann_json::nlohmann_json
+        stb_image_write
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_server_main PRIVATE
@@ -464,6 +465,7 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(test_cli PRIVATE
         beebium_service
         nlohmann_json::nlohmann_json
+        stb_image_write
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_cli PRIVATE
