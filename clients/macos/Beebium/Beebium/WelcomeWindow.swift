@@ -18,7 +18,6 @@ struct WelcomeWindowContent: View {
     @StateObject private var presetManager = PresetManager.shared
     @ObservedObject private var connectWindowState = ConnectWindowState.shared
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismiss) private var dismiss
     @State private var launchError: String?
     @State private var isLaunching = false
     @State private var gridHeight: CGFloat = 376
@@ -90,7 +89,6 @@ struct WelcomeWindowContent: View {
                     connectWindowState.pendingNeedsRun = false
                     connectWindowState.pendingProvenanceUUID = nil
                     openWindow(id: "new-machine")
-                    dismiss()
                 }
             }
             .padding(.horizontal, 24)
@@ -99,8 +97,8 @@ struct WelcomeWindowContent: View {
         .frame(minWidth: 420, idealWidth: 600, maxWidth: .infinity)
         .task {
             // Capture openWindow into shared AppActions for FileCommands
-            AppActions.shared.openNewMachine = { [openWindow, dismiss] in openWindow(id: "new-machine"); dismiss() }
-            AppActions.shared.openConnect = { [openWindow, dismiss] in openWindow(id: "connect"); dismiss() }
+            AppActions.shared.openNewMachine = { [openWindow] in openWindow(id: "new-machine") }
+            AppActions.shared.openConnect = { [openWindow] in openWindow(id: "connect") }
             if presetManager.systemPresets.isEmpty && !presetManager.isDiscovering {
                 await presetManager.discoverPresets()
             }
@@ -126,7 +124,7 @@ struct WelcomeWindowContent: View {
             connectWindowState.pendingNeedsRun = true
             connectWindowState.pendingProvenanceUUID = core.provenanceUUID
             openWindow(id: "main")
-            dismiss()
+            isLaunching = false
 
         case .failure(let error):
             launchError = error.localizedDescription

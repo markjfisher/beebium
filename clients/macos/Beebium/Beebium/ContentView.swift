@@ -13,6 +13,48 @@
 import AppKit
 import SwiftUI
 
+/// Routes the main WindowGroup to either welcome or emulator content based on whether
+/// a connection target was pending when the window was created. This eliminates the need
+/// for a separate Welcome Window scene and avoids the ghost Window menu entry caused by
+/// SwiftUI's unconditional window creation on launch.
+struct MainWindowRouter: View {
+    @ObservedObject var keyboardMappingManager: KeyboardMappingManager
+    @State private var connectionTarget: ConnectionTarget?
+    @State private var needsRun: Bool = false
+    @State private var provenanceUUID: String?
+    @State private var currentWindow: NSWindow?
+
+    var body: some View {
+        Group {
+            if let target = connectionTarget {
+                ContentView(
+                    initialTarget: target,
+                    initialNeedsRun: needsRun,
+                    initialProvenanceUUID: provenanceUUID,
+                    keyboardMappingManager: keyboardMappingManager
+                )
+            } else {
+                WelcomeWindowContent()
+                    .background(WindowAccessor(window: $currentWindow))
+                    .onChange(of: currentWindow) { window in
+                        guard let window = window else { return }
+                        window.titlebarAppearsTransparent = true
+                        window.titleVisibility = .hidden
+                        window.title = "Welcome to Beebium"
+                        window.setContentSize(NSSize(width: 800, height: 640))
+                        window.center()
+                    }
+            }
+        }
+        .onAppear {
+            let (target, run, prov) = ConnectWindowState.shared.consumePendingTarget()
+            connectionTarget = target
+            needsRun = run
+            provenanceUUID = prov
+        }
+    }
+}
+
 /// Main content view displaying the emulator output
 struct ContentView: View {
     @StateObject private var videoClient = VideoClient()
@@ -23,10 +65,12 @@ struct ContentView: View {
     @StateObject private var audioClient = AudioClient()
     @StateObject private var debuggerClient = DebuggerClient()
     @StateObject private var audioMixerState = AudioMixerState()
-    /// Whether this window needs to call Run() after connection (for cores launched with --wait=api)
+    let initialTarget: ConnectionTarget
+    let initialNeedsRun: Bool
+    let initialProvenanceUUID: String?
+    /// Whether this window needs to call Run() after connection (for cores launched with --wait=api).
+    /// Initialised from initialNeedsRun in onAppear; reset to false after Run() succeeds.
     @State private var needsRun: Bool = false
-    /// Provenance UUID for a core launched by this app (nil for external connections)
-    @State private var provenanceUUID: String?
     @State private var showStatusBar: Bool = true
     @State private var showSidebar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
@@ -120,25 +164,12 @@ struct ContentView: View {
                 )
             }
 
-            // Check for pending connection target (set by Connect dialog, New Machine dialog,
-            // or Welcome Window). If no target was set, this window was auto-created by SwiftUI
-            // on launch — open the welcome window and close this one immediately.
-            let (target, runNeeded, provUUID) = ConnectWindowState.shared.consumePendingTarget()
-            needsRun = runNeeded
-            provenanceUUID = provUUID
+            // Connection target was passed from MainWindowRouter (which consumed the
+            // pending target from ConnectWindowState). Connect immediately.
+            needsRun = initialNeedsRun
             NSLog("[ContentView] onAppear: target=%@, needsRun=%d, provenanceUUID=%@",
-                  target?.address ?? "nil", runNeeded ? 1 : 0, provUUID ?? "nil")
-            if let target = target {
-                videoClient.reconnect(to: target)
-            } else {
-                // No pending target — show the welcome window and close this auto-created window.
-                NSLog("[ContentView] onAppear: no pending target, showing welcome window")
-                openWindow(id: "welcome")
-                DispatchQueue.main.async {
-                    self.currentWindow?.orderOut(nil)
-                    self.currentWindow?.close()
-                }
-            }
+                  initialTarget.address, initialNeedsRun ? 1 : 0, initialProvenanceUUID ?? "nil")
+            videoClient.reconnect(to: initialTarget)
         }
         .onDisappear {
             NSLog("[ContentView] onDisappear fired for address %@", videoClient.target.address)
@@ -176,11 +207,7 @@ struct ContentView: View {
             keyboardClient.disconnect()
             videoClient.disconnect()
         }
-        // suppressDisplay: hide the auto-created launch window before it renders (see WindowAccessor)
-        .background(WindowAccessor(
-            window: $currentWindow,
-            suppressDisplay: ConnectWindowState.shared.pendingTarget == nil
-        ))
+        .background(WindowAccessor(window: $currentWindow))
         .onChange(of: currentWindow) { window in
             guard let window = window else {
                 NSLog("[ContentView] onChange(currentWindow): window is nil")
@@ -223,9 +250,9 @@ struct ContentView: View {
             // Connect clients when video client connects
             if case .connected = newState, let channel = videoClient.channel {
                 NSLog("[ContentView] videoClient connected to %@, provenanceUUID=%@",
-                      videoClient.target.address, provenanceUUID ?? "nil")
+                      videoClient.target.address, initialProvenanceUUID ?? "nil")
                 keyboardClient.connect(channel: channel)
-                systemClient.connect(channel: channel, provenanceUUID: provenanceUUID)
+                systemClient.connect(channel: channel, provenanceUUID: initialProvenanceUUID)
                 indicatorClient.connect(channel: channel)
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
@@ -389,6 +416,9 @@ struct ContentView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView(
+            initialTarget: ConnectionTarget(host: "127.0.0.1", port: 50051),
+            initialNeedsRun: false,
+            initialProvenanceUUID: nil,
             keyboardMappingManager: KeyboardMappingManager()
         )
     }
@@ -408,25 +438,14 @@ class WindowObserverView: NSView {
     }
 }
 
-/// Helper view to capture the NSWindow reference.
-///
-/// Workaround: SwiftUI's WindowGroup unconditionally creates a window on app launch. When no
-/// connection target is pending (bare launch), this window flashes on screen before onAppear
-/// can detect the situation and close it. Setting the window's alpha to 0 synchronously in
-/// viewDidMoveToWindow — before the first render — makes the flash invisible. We use alphaValue
-/// rather than orderOut because orderOut removes the window from SwiftUI's management, preventing
-/// onAppear from firing. macOS 15+ offers .defaultLaunchBehavior(.suppressed) which would
-/// eliminate this hack; until the deployment target is raised, this is the least-bad option.
+/// Helper view to capture the NSWindow reference from SwiftUI into an @Binding.
+/// Uses viewDidMoveToWindow for synchronous capture before the first render.
 struct WindowAccessor: NSViewRepresentable {
     @Binding var window: NSWindow?
-    var suppressDisplay: Bool = false
 
     func makeNSView(context: Context) -> WindowObserverView {
         let view = WindowObserverView()
-        view.onWindowChanged = { [suppressDisplay] newWindow in
-            if suppressDisplay, let newWindow = newWindow {
-                newWindow.alphaValue = 0
-            }
+        view.onWindowChanged = { newWindow in
             DispatchQueue.main.async {
                 self.window = newWindow
             }
@@ -435,10 +454,7 @@ struct WindowAccessor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WindowObserverView, context: Context) {
-        nsView.onWindowChanged = { [suppressDisplay] newWindow in
-            if suppressDisplay, let newWindow = newWindow {
-                newWindow.alphaValue = 0
-            }
+        nsView.onWindowChanged = { newWindow in
             DispatchQueue.main.async {
                 self.window = newWindow
             }

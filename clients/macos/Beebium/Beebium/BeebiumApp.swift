@@ -49,7 +49,7 @@ struct BeebiumApp: App {
 
     var body: some Scene {
         WindowGroup("Beebium", id: "main") {
-            ContentView(
+            MainWindowRouter(
                 keyboardMappingManager: keyboardMappingManager
             )
         }
@@ -97,14 +97,6 @@ struct BeebiumApp: App {
                 }
             }
         }
-
-        // Welcome window (singleton, shown on bare launch)
-        Window("Welcome to Beebium", id: "welcome") {
-            WelcomeWindowContent()
-        }
-        .defaultSize(width: 800, height: 640)
-        .defaultPosition(.center)
-        .windowStyle(.hiddenTitleBar)
 
         // New Machine dialog window (singleton, opened from Welcome Window's "New Machine...")
         Window("New Machine", id: "new-machine") {
