@@ -134,40 +134,41 @@ This may overlap with the standard Window menu, which lists open windows. The in
 
 ---
 
-## Phase 12: Lifecycle Refactoring
+## Phase 12: Lifecycle Refactoring ✓
 
 **Goal**: Clean up the lifecycle management code once all behaviour is correct and tested.
 
-### 12.1 Client Collection Protocol
+**Status**: Complete.
 
-Currently, each gRPC client (`VideoClient`, `KeyboardClient`, `SystemClient`, `IndicatorClient`,
-`DiscClient`, `AudioClient`, `DebuggerClient`) is managed individually. Connecting and disconnecting
-requires enumerating all seven clients by name in multiple places (ContentView's `onAppear`,
-`onChange(of: connectionState)`, `onDisappear`, and the coordinator's `disconnectClients` callback).
+### 12.1 Client Collection Protocol ✓
 
-Introduce a protocol (e.g., `GRPCClient`) with a `disconnect()` method that all clients conform to,
-and a collection type (e.g., `ClientGroup`) that manages them as a unit. This would replace the
-seven individual `disconnect()` calls with a single `clientGroup.disconnectAll()`, and make it
-impossible to forget a client when adding new ones.
+Introduced `Disconnectable` protocol with `disconnect()` and `ClientGroup` class in
+`Disconnectable.swift`. All seven gRPC client wrappers conform to `Disconnectable`. `ClientGroup`
+manages them as a unit with `disconnectAll()` (all clients, VideoClient last) and
+`disconnectNonVideoClients()` (for unexpected server disconnections). VideoClient is registered
+separately because it owns the shared GRPCChannel. `WindowCloseCoordinator` now takes a
+`ClientGroup` directly instead of a closure with seven weak captures.
 
-### 12.2 Remove Dead onDisappear Code
+### 12.2 Remove Dead onDisappear Code ✓
 
-`onDisappear` does not fire for SwiftUI `WindowGroup` windows. The cleanup code in `onDisappear`
-is dead code in practice. Once the coordinator-based cleanup is proven reliable, remove the
-`onDisappear` handler (or reduce it to a diagnostic log) to avoid confusion about which code path
-actually runs.
+Removed the entire `onDisappear` block from ContentView. All cleanup is handled by
+`WindowCloseCoordinator`, which intercepts both close-button clicks and Cmd+W (via `performClose:`
+routing through the close button's redirected action).
 
-### 12.3 Remove Diagnostic Logging
+### 12.3 Remove Diagnostic Logging ✓
 
-Strip the diagnostic `NSLog` statements added during Phase 9 debugging (WindowAccessor logging,
-MachineManager state dumps at connect time, coordinator verification logging). Keep the
-operationally useful logs (coordinator action decisions, SIGTERM sends, registration/unregistration).
+Stripped ~20 diagnostic `NSLog` statements from ContentView (lifecycle tracing, state dumps,
+coordinator verification), VideoClient (per-second frame stats), MetalRenderer (per-second update
+stats), and BeebiumApp (startup marker). Retained operational logs in MachineManager (shutdown
+decisions and actions), SystemClient (shutdown RPC results), ConnectionRegistry
+(register/unregister), and WindowCloseCoordinator (close handler decisions and warnings).
 
-### 12.4 Review tearingDown Flag
+### 12.4 Review tearingDown Flag ✓
 
-The `tearingDown` flag was introduced to prevent `onChange(of: connectionState)` from racing with
-`onDisappear`. Since `onDisappear` doesn't fire, the flag may be unnecessary. Investigate whether
-it can be removed or whether it guards against other races.
+Removed. The flag was only ever set inside `onDisappear` (which never fires for WindowGroup
+windows), so it was never true, making its `!tearingDown` guard in `onChange` a permanent no-op.
+All seven clients are idempotent for `disconnect()`, so double-disconnect from the `onChange`
+handler firing after `WindowCloseCoordinator` calls `disconnectAll()` is harmless.
 
 ---
 
