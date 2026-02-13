@@ -176,7 +176,11 @@ struct ContentView: View {
             keyboardClient.disconnect()
             videoClient.disconnect()
         }
-        .background(WindowAccessor(window: $currentWindow))
+        // suppressDisplay: hide the auto-created launch window before it renders (see WindowAccessor)
+        .background(WindowAccessor(
+            window: $currentWindow,
+            suppressDisplay: ConnectWindowState.shared.pendingTarget == nil
+        ))
         .onChange(of: currentWindow) { window in
             guard let window = window else {
                 NSLog("[ContentView] onChange(currentWindow): window is nil")
@@ -402,32 +406,50 @@ struct ContentView_Previews: PreviewProvider {
 
 // MARK: - Window Accessor
 
-/// Helper view to capture the NSWindow reference
+/// NSView subclass that reports window attachment synchronously via viewDidMoveToWindow(),
+/// firing before the window is rendered on screen.
+class WindowObserverView: NSView {
+    var onWindowChanged: ((NSWindow?) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChanged?(window)
+    }
+}
+
+/// Helper view to capture the NSWindow reference.
+///
+/// Workaround: SwiftUI's WindowGroup unconditionally creates a window on app launch. When no
+/// connection target is pending (bare launch), this window flashes on screen before onAppear
+/// can detect the situation and close it. Setting the window's alpha to 0 synchronously in
+/// viewDidMoveToWindow — before the first render — makes the flash invisible. We use alphaValue
+/// rather than orderOut because orderOut removes the window from SwiftUI's management, preventing
+/// onAppear from firing. macOS 15+ offers .defaultLaunchBehavior(.suppressed) which would
+/// eliminate this hack; until the deployment target is raised, this is the least-bad option.
 struct WindowAccessor: NSViewRepresentable {
     @Binding var window: NSWindow?
+    var suppressDisplay: Bool = false
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window {
-                NSLog("[WindowAccessor] makeNSView: captured window '%@'", window.title)
-            } else {
-                NSLog("[WindowAccessor] makeNSView: view.window is nil (not yet in hierarchy)")
+    func makeNSView(context: Context) -> WindowObserverView {
+        let view = WindowObserverView()
+        view.onWindowChanged = { [suppressDisplay] newWindow in
+            if suppressDisplay, let newWindow = newWindow {
+                newWindow.alphaValue = 0
             }
-            self.window = view.window
+            DispatchQueue.main.async {
+                self.window = newWindow
+            }
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            if self.window !== nsView.window {
-                if let window = nsView.window {
-                    NSLog("[WindowAccessor] updateNSView: window changed to '%@'", window.title)
-                } else {
-                    NSLog("[WindowAccessor] updateNSView: window changed to nil")
-                }
-                self.window = nsView.window
+    func updateNSView(_ nsView: WindowObserverView, context: Context) {
+        nsView.onWindowChanged = { [suppressDisplay] newWindow in
+            if suppressDisplay, let newWindow = newWindow {
+                newWindow.alphaValue = 0
+            }
+            DispatchQueue.main.async {
+                self.window = newWindow
             }
         }
     }
