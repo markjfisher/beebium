@@ -258,7 +258,7 @@ jobs:
           retention-days: 7
 
   gui-client-macos-arm64:
-    if: false  # Temporarily disabled for static linking testing
+
     name: Build and Test GUI Client (macOS arm64)
     runs-on: macos-14
     needs: server-macos-arm64
@@ -320,7 +320,7 @@ jobs:
           retention-days: 7
 
   gui-client-macos-x86_64:
-    if: false  # Temporarily disabled for static linking testing
+
     name: Build and Test GUI Client (macOS x86_64)
     runs-on: macos-15-intel
     needs: server-macos-x86_64
@@ -382,7 +382,7 @@ jobs:
           retention-days: 7
 
   python-client:
-    if: false  # Temporarily disabled for static linking testing
+
     name: Python Client Unit Tests
     runs-on: ubuntu-latest
 
