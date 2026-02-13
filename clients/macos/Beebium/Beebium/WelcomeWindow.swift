@@ -184,16 +184,16 @@ struct PresetCard: View {
 
     @ViewBuilder
     private var thumbnailView: some View {
-        // Try to load sidecar thumbnail PNG
         if let thumbnailURL = thumbnailURL(for: preset),
            let nsImage = NSImage(contentsOf: thumbnailURL) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .interpolation(.none)
-                .aspectRatio(contentMode: .fit)
-                .background(Color.black)
+            ZStack {
+                Color.black
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .interpolation(.none)
+                    .aspectRatio(contentMode: .fit)
+            }
         } else {
-            // Fallback: generic machine icon
             ZStack {
                 Color.black
                 Image(systemName: "desktopcomputer")

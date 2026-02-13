@@ -37,6 +37,7 @@ struct PresetConfig {
     std::string name;
     std::optional<std::string> model;             // For validation against executable
     std::optional<PresetStorageConfig> storage;
+    std::optional<double> thumbnail_capture_delay_seconds;  // For capture-screenshot subcommand
     // Future: sideways_bank, startup_options, networking, coprocessor, os_rom
 };
 
@@ -204,6 +205,13 @@ inline PresetLoadResult load_preset(const std::filesystem::path& filepath) {
     // Storage section
     if (json.contains("storage") && json["storage"].is_object()) {
         config.storage = parse_storage_section(json["storage"], filepath.parent_path());
+    }
+
+    // Thumbnail capture delay (for capture-screenshot subcommand)
+    if (json.contains("thumbnail_capture_delay_seconds") &&
+        json["thumbnail_capture_delay_seconds"].is_number()) {
+        config.thumbnail_capture_delay_seconds =
+            json["thumbnail_capture_delay_seconds"].get<double>();
     }
 
     // Note: Unknown keys are silently ignored for forward compatibility

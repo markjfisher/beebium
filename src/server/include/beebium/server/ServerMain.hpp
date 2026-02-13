@@ -24,6 +24,7 @@
 #include "beebium/server/RomPaths.hpp"
 
 #include <nlohmann/json.hpp>
+#include "stb_image_write.h"
 
 #include <array>
 #include <atomic>
@@ -2179,6 +2180,245 @@ public:
     }
 };
 
+// CaptureScreenshot subcommand - headless emulation to PNG
+template<typename MachineType>
+class CaptureScreenshotSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "capture-screenshot"; }
+    std::string_view description() const override {
+        return "Capture a screenshot from headless emulation";
+    }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name
+                  << " capture-screenshot --output <filepath> [options]\n"
+                  << "\n"
+                  << "Runs the emulator headlessly and captures a framebuffer screenshot as PNG.\n"
+                  << "Accepts all 'start' options (--preset, --floppy, --fdc, etc.).\n"
+                  << "\n"
+                  << "Required:\n"
+                  << "  --output <filepath>      Output PNG filepath\n"
+                  << "\n"
+                  << "Optional:\n"
+                  << "  --duration <seconds>     Emulation duration before capture (default: from\n"
+                  << "                           preset thumbnail_capture_delay_seconds, or 2.0)\n"
+                  << "  --border <pixels>        Black border width around the image (default: 20)\n"
+                  << "\n"
+                  << "All 'start' subcommand options are also accepted.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        // Pre-scan argv for capture-specific args (--output, --duration, --border),
+        // then pass the rest to parse_start_arguments unchanged.
+        std::string output_filepath;
+        std::optional<double> cli_duration;
+        int border_pixels = 20;
+
+        std::vector<char*> filtered_argv;
+        for (int i = 0; i < argc; ++i) {
+            if (i >= global.subcommand_argv_start) {
+                std::string_view arg = argv[i];
+                if (arg == "--output" && i + 1 < argc) {
+                    output_filepath = argv[i + 1];
+                    ++i;
+                    continue;
+                } else if (arg == "--duration" && i + 1 < argc) {
+                    try {
+                        cli_duration = std::stod(argv[i + 1]);
+                    } catch (...) {
+                        std::cerr << "Error: --duration must be a number\n";
+                        return ExitCode::USAGE;
+                    }
+                    if (*cli_duration < 0) {
+                        std::cerr << "Error: --duration must be non-negative\n";
+                        return ExitCode::USAGE;
+                    }
+                    ++i;
+                    continue;
+                } else if (arg == "--border" && i + 1 < argc) {
+                    try {
+                        border_pixels = parse_int(argv[i + 1], "--border");
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error: " << e.what() << "\n";
+                        return ExitCode::USAGE;
+                    }
+                    if (border_pixels < 0) {
+                        std::cerr << "Error: --border must be non-negative\n";
+                        return ExitCode::USAGE;
+                    }
+                    ++i;
+                    continue;
+                } else if (arg == "--help" || arg == "-h") {
+                    help(argv[0]);
+                    return ExitCode::OK;
+                }
+            }
+            filtered_argv.push_back(argv[i]);
+        }
+        int filtered_argc = static_cast<int>(filtered_argv.size());
+
+        if (output_filepath.empty()) {
+            std::cerr << "Error: --output is required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        // Parse machine configuration from remaining args
+        ServerConfig<MachineType> config;
+        if (auto exit_code = parse_start_arguments<MachineType>(
+                filtered_argc, filtered_argv.data(),
+                global.subcommand_argv_start, config)) {
+            return *exit_code;
+        }
+
+        if (auto error = validate_config<MachineType>(config)) {
+            std::cerr << "Error: " << *error << "\n";
+            return ExitCode::CONFIG;
+        }
+
+        // Determine capture duration.
+        // Priority: CLI --duration > preset thumbnail_capture_delay_seconds > 2.0
+        double duration_seconds = 2.0;
+        if (cli_duration) {
+            duration_seconds = *cli_duration;
+        } else if (config.preset_filepath) {
+            auto result = load_preset(*config.preset_filepath);
+            if (result && result.config->thumbnail_capture_delay_seconds) {
+                duration_seconds = *result.config->thumbnail_capture_delay_seconds;
+            }
+        }
+
+        try {
+            if (!config.rom_dirpath.empty()) {
+                RomPaths::set_rom_directory(config.rom_dirpath);
+            }
+
+            MachineType machine;
+            load_roms(machine, config);
+
+            if (auto exit_code = install_disc_controller(machine, config)) {
+                return *exit_code;
+            }
+            load_disc_images(machine, config);
+
+            // Enable video output only (no audio needed for screenshots)
+            machine.state().memory.enable_video_output();
+
+            apply_startup_options(machine, config);
+            machine.reset();
+
+            // Create local framebuffer and renderer (no gRPC server needed)
+            FrameBuffer frame_buffer;
+            FrameRenderer renderer(&frame_buffer);
+            auto& video_output = *machine.state().memory.video_output;
+
+            // Helper to drain the video output queue completely.
+            // Each machine.run() step produces ~20,000 PixelBatches (one per 2 CPU
+            // cycles), so we must drain the entire queue after each step rather than
+            // relying on the default max_units of 1000.
+            auto drain_video = [&]() {
+                while (renderer.process(video_output, 100000) > 0) {}
+            };
+
+            constexpr uint64_t cycles_per_step = 40000;
+
+            if (duration_seconds == 0.0) {
+                // Duration 0: capture first complete frame
+                uint64_t initial_version = frame_buffer.version();
+                while (frame_buffer.version() == initial_version) {
+                    machine.run(cycles_per_step);
+                    drain_video();
+                }
+            } else {
+                uint64_t total_cycles = static_cast<uint64_t>(
+                    duration_seconds * timing::CYCLES_PER_SECOND);
+                uint64_t cycles_run = 0;
+                while (cycles_run < total_cycles) {
+                    machine.run(cycles_per_step);
+                    drain_video();
+                    cycles_run += cycles_per_step;
+                }
+            }
+
+            if (frame_buffer.version() == 0) {
+                std::cerr << "Error: no frames produced during emulation\n";
+                return ExitCode::SOFTWARE;
+            }
+
+            // Extract frame data
+            const auto& metadata = frame_buffer.metadata();
+            uint32_t frame_width = metadata.width;
+            uint32_t frame_height = metadata.height;
+            size_t stride_pixels = frame_buffer.stride_pixels();
+
+            std::vector<uint32_t> frame_copy(stride_pixels * frame_height);
+            frame_buffer.copy_frame(frame_copy.data(), frame_copy.size());
+
+            // Scale from logical frame to display dimensions (nearest-neighbour)
+            // with black border around the image
+            uint32_t display_width = metadata.display_width;
+            uint32_t display_height = metadata.display_height;
+            uint32_t border = static_cast<uint32_t>(border_pixels);
+            uint32_t output_width = display_width + 2 * border;
+            uint32_t output_height = display_height + 2 * border;
+
+            // Zero-initialised = black with alpha 0, then we set alpha for all pixels
+            std::vector<uint8_t> rgba(output_width * output_height * 4, 0);
+
+            // Set alpha to 0xFF for all pixels (border stays black RGB)
+            for (size_t i = 3; i < rgba.size(); i += 4) {
+                rgba[i] = 0xFF;
+            }
+
+            // Write display content into the bordered region
+            for (uint32_t y = 0; y < display_height; ++y) {
+                uint32_t src_y = y * frame_height / display_height;
+                if (src_y >= frame_height) src_y = frame_height - 1;
+
+                for (uint32_t x = 0; x < display_width; ++x) {
+                    uint32_t src_x = x * frame_width / display_width;
+                    if (src_x >= frame_width) src_x = frame_width - 1;
+
+                    uint32_t bgra = frame_copy[src_y * stride_pixels + src_x];
+
+                    // BGRA32 to RGBA bytes, offset by border
+                    size_t dst_idx = ((y + border) * output_width + (x + border)) * 4;
+                    rgba[dst_idx + 0] = static_cast<uint8_t>((bgra >> 16) & 0xFF);  // R
+                    rgba[dst_idx + 1] = static_cast<uint8_t>((bgra >> 8) & 0xFF);   // G
+                    rgba[dst_idx + 2] = static_cast<uint8_t>(bgra & 0xFF);           // B
+                    rgba[dst_idx + 3] = static_cast<uint8_t>((bgra >> 24) & 0xFF);   // A
+                }
+            }
+
+            int write_result = stbi_write_png(
+                output_filepath.c_str(),
+                static_cast<int>(output_width),
+                static_cast<int>(output_height),
+                4,
+                rgba.data(),
+                static_cast<int>(output_width * 4)
+            );
+
+            if (!write_result) {
+                std::cerr << "Error: failed to write PNG: " << output_filepath << "\n";
+                return ExitCode::IOERR;
+            }
+
+            std::cout << output_filepath << "\n";
+            return ExitCode::OK;
+
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::SOFTWARE;
+        }
+    }
+};
+
 // Help subcommand - shows help for other subcommands
 template<typename MachineType>
 class HelpSubcommand : public Subcommand<MachineType> {
@@ -2215,6 +2455,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<DeletePresetSubcommand<MachineType>>());
         v.push_back(std::make_unique<ImportPresetSubcommand<MachineType>>());
         v.push_back(std::make_unique<ExportPresetSubcommand<MachineType>>());
+        v.push_back(std::make_unique<CaptureScreenshotSubcommand<MachineType>>());
         v.push_back(std::make_unique<HelpSubcommand<MachineType>>());
         return v;
     }();
@@ -2279,7 +2520,7 @@ void print_global_help(const char* program_name) {
     for (const auto& cmd : get_subcommands<MachineType>()) {
         std::cerr << "  " << cmd->name();
         // Pad to align descriptions
-        for (size_t i = cmd->name().length(); i < 18; ++i) {
+        for (size_t i = cmd->name().length(); i < 22; ++i) {
             std::cerr << ' ';
         }
         std::cerr << cmd->description() << "\n";

@@ -145,6 +145,9 @@ if(BEEBIUM_BUILD_SERVICE)
     endif()
 endif()
 
+# Third-party libraries
+add_subdirectory(third_party/stb)
+
 # Subdirectories
 add_subdirectory(src/6502)
 add_subdirectory(src/core)

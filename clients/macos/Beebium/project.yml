@@ -62,11 +62,12 @@ targets:
               fi
             done
 
-            # Copy presets to Resources
+            # Copy presets and thumbnails to Resources
             if [ -d "$SERVERS_DIR/presets" ]; then
               mkdir -p "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets"
               cp "$SERVERS_DIR/presets/"*.preset.beebium "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets/" 2>/dev/null || true
-              echo "  Copied presets"
+              cp "$SERVERS_DIR/presets/"*.thumbnail.png "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets/" 2>/dev/null || true
+              echo "  Copied presets and thumbnails"
             fi
           else
             echo "BEEBIUM_SERVERS_BUILD_DIR not set or directory does not exist, skipping server embedding"

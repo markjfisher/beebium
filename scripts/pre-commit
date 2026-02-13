@@ -28,7 +28,7 @@ for file in $staged_files; do
             fi
 
             # Skip third-party libraries (they have their own licenses)
-            if [[ "$file" == *"/third_party/"* ]]; then
+            if [[ "$file" == "third_party/"* || "$file" == *"/third_party/"* ]]; then
                 continue
             fi
 

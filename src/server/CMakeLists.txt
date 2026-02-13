@@ -35,6 +35,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
         PRIVATE
             beebium_service
             nlohmann_json::nlohmann_json
+            stb_image_write
     )
 endfunction()
 
@@ -74,6 +75,29 @@ add_custom_command(TARGET beebium-model-b POST_BUILD
     COMMENT "Copying ROMs to build directory"
 )
 
+# Generate preset thumbnails via capture-screenshot subcommand
+add_custom_command(TARGET beebium-model-b POST_BUILD
+    COMMAND beebium-model-b capture-screenshot
+        --preset "${PRESETS_OUTPUT_DIR}/model-b.preset.beebium"
+        --output "${PRESETS_OUTPUT_DIR}/model-b.thumbnail.png"
+        --rom-dir "${BEEBIUM_ROM_DIR}"
+    COMMENT "Generating thumbnail for model-b preset"
+)
+add_custom_command(TARGET beebium-model-b-plus POST_BUILD
+    COMMAND beebium-model-b-plus capture-screenshot
+        --preset "${PRESETS_OUTPUT_DIR}/model-b-plus.preset.beebium"
+        --output "${PRESETS_OUTPUT_DIR}/model-b-plus.thumbnail.png"
+        --rom-dir "${BEEBIUM_ROM_DIR}"
+    COMMENT "Generating thumbnail for model-b-plus preset"
+)
+add_custom_command(TARGET beebium-model-b-romram POST_BUILD
+    COMMAND beebium-model-b-romram capture-screenshot
+        --preset "${PRESETS_OUTPUT_DIR}/model-b-romram.preset.beebium"
+        --output "${PRESETS_OUTPUT_DIR}/model-b-romram.thumbnail.png"
+        --rom-dir "${BEEBIUM_ROM_DIR}"
+    COMMENT "Generating thumbnail for model-b-romram preset"
+)
+
 # Install rules
 install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram
     RUNTIME DESTINATION bin
@@ -84,5 +108,7 @@ install(DIRECTORY ${BEEBIUM_ROM_DIR}/
 )
 install(DIRECTORY ${PRESETS_OUTPUT_DIR}/
     DESTINATION share/beebium/presets
-    FILES_MATCHING PATTERN "*.preset.beebium"
+    FILES_MATCHING
+        PATTERN "*.preset.beebium"
+        PATTERN "*.thumbnail.png"
 )
