@@ -75,10 +75,6 @@ struct BeebiumApp: App {
     @StateObject private var keyboardMappingManager = KeyboardMappingManager()
     @StateObject private var connectWindowState = ConnectWindowState.shared
 
-    init() {
-        NSLog("[BeebiumApp] Starting...")
-    }
-
     var body: some Scene {
         WindowGroup("Beebium", id: "main") {
             MainWindowRouter(

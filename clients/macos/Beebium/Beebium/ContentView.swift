@@ -182,8 +182,6 @@ struct ContentView: View {
             // Connection target was passed from MainWindowRouter (which consumed the
             // pending target from ConnectWindowState). Connect immediately.
             needsRun = initialNeedsRun
-            NSLog("[ContentView] onAppear: target=%@, needsRun=%d, provenanceUUID=%@",
-                  initialTarget.address, initialNeedsRun ? 1 : 0, initialProvenanceUUID ?? "nil")
             videoClient.reconnect(to: initialTarget)
         }
         // No onDisappear: SwiftUI's WindowGroup does not fire onDisappear on window
@@ -191,11 +189,7 @@ struct ContentView: View {
         // WindowCloseCoordinator, which intercepts both the close button and Cmd+W.
         .background(WindowAccessor(window: $currentWindow))
         .onChange(of: currentWindow) { window in
-            guard let window = window else {
-                NSLog("[ContentView] onChange(currentWindow): window is nil")
-                return
-            }
-            NSLog("[ContentView] onChange(currentWindow): window='%@'", window.title)
+            guard let window = window else { return }
             // Install close-button interception for the multi-client dialog case.
             // SwiftUI's WindowGroup manages its own window delegate, so we cannot
             // rely on windowShouldClose. Instead, redirect the close button's action
@@ -210,16 +204,11 @@ struct ContentView: View {
                 )
                 coordinator.install(on: window)
                 closeCoordinator = coordinator
-                NSLog("[ContentView] closeCoordinator created and installed")
-            } else {
-                NSLog("[ContentView] closeCoordinator already exists, skipping install")
             }
         }
         .onChange(of: videoClient.connectionState) { newState in
             // Connect clients when video client connects
             if case .connected = newState, let channel = videoClient.channel {
-                NSLog("[ContentView] videoClient connected to %@, provenanceUUID=%@",
-                      videoClient.target.address, initialProvenanceUUID ?? "nil")
                 keyboardClient.connect(channel: channel)
                 systemClient.connect(channel: channel, provenanceUUID: initialProvenanceUUID)
                 indicatorClient.connect(channel: channel)
@@ -235,18 +224,8 @@ struct ContentView: View {
                     )
                 }
 
-                // Verify coordinator installation and dump MachineManager state
-                if let coordinator = closeCoordinator {
-                    coordinator.verifyInstallation()
-                } else {
+                if closeCoordinator == nil {
                     NSLog("[ContentView] WARNING: closeCoordinator is nil at connection time")
-                }
-                let mm = MachineManager.shared
-                NSLog("[ContentView] MachineManager state at connect: %d machines", mm.machines.count)
-                for (id, m) in mm.machines {
-                    NSLog("[ContentView]   %@ -> %@ linked=%d running=%d",
-                          id.uuidString, m.target.address, m.lifetimeLinked ? 1 : 0,
-                          m.process.isRunning ? 1 : 0)
                 }
 
                 // If this was a freshly launched core with --wait=api, start emulation
@@ -458,13 +437,8 @@ class WindowCloseCoordinator: NSObject {
     /// Redirect the window's close button to our handler
     func install(on window: NSWindow) {
         if let closeButton = window.standardWindowButton(.closeButton) {
-            let oldTarget = closeButton.target
-            let oldAction = closeButton.action
             closeButton.target = self
             closeButton.action = #selector(handleCloseButton(_:))
-            NSLog("[WindowCloseCoordinator] Installed on window '%@'. Close button: oldTarget=%@ oldAction=%@ newTarget=WindowCloseCoordinator",
-                  window.title,
-                  String(describing: oldTarget), String(describing: oldAction))
         } else {
             NSLog("[WindowCloseCoordinator] WARNING: No close button found on window '%@'",
                   window.title)
@@ -475,15 +449,9 @@ class WindowCloseCoordinator: NSObject {
     func verifyInstallation() -> Bool {
         guard let window = window,
               let closeButton = window.standardWindowButton(.closeButton) else {
-            NSLog("[WindowCloseCoordinator] verifyInstallation: window or close button is nil")
             return false
         }
-        let isInstalled = closeButton.target === self
-        NSLog("[WindowCloseCoordinator] verifyInstallation: target=%@ expected=%@ match=%d",
-              String(describing: closeButton.target),
-              String(describing: self),
-              isInstalled ? 1 : 0)
-        return isInstalled
+        return closeButton.target === self
     }
 
     @objc private func handleCloseButton(_ sender: Any?) {

@@ -98,8 +98,6 @@ final class MetalRenderer: NSObject {
         super.init()
     }
 
-    private var updateCount: UInt64 = 0
-
     /// Update the frame texture with new pixel data
     /// - Parameters:
     ///   - data: BGRA32 pixel data
@@ -117,13 +115,6 @@ final class MetalRenderer: NSObject {
                      leftBorder: Int, rightBorder: Int,
                      topBorder: Int, bottomBorder: Int,
                      interlaced: Bool) {
-        updateCount += 1
-        if updateCount % 50 == 0 {
-            let scaleX = displayWidth > 0 ? displayWidth / width : 1
-            NSLog("[MetalRenderer] updateFrame #%llu: %dx%d -> %dx%d (scale %dx), borders: L=%d R=%d T=%d B=%d, interlaced=%d",
-                  updateCount, width, height, displayWidth, displayHeight, scaleX, leftBorder, rightBorder, topBorder, bottomBorder, interlaced ? 1 : 0)
-        }
-
         // Store display dimensions for scaling
         self.displayWidth = displayWidth > 0 ? displayWidth : width
         self.displayHeight = displayHeight > 0 ? displayHeight : height
