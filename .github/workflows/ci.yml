@@ -153,7 +153,6 @@ jobs:
           retention-days: 7
 
   server-linux:
-    if: false  # Temporarily disabled for static linking testing
     name: Build and Test Server (Linux)
     runs-on: ubuntu-latest
 
@@ -188,7 +187,6 @@ jobs:
           retention-days: 7
 
   server-windows:
-    if: false  # Temporarily disabled for static linking testing
     name: Build and Test Server (Windows)
     runs-on: windows-latest
 
@@ -405,7 +403,6 @@ jobs:
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-linux:
-    if: false  # Temporarily disabled for static linking testing
     name: Python Client Integration Tests (Linux)
     runs-on: ubuntu-latest
     needs: server-linux
@@ -443,7 +440,6 @@ jobs:
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-windows:
-    if: false  # Temporarily disabled for static linking testing
     name: Python Client Integration Tests (Windows)
     runs-on: windows-latest
     needs: server-windows
