@@ -23,6 +23,11 @@ class BeebiumAppDelegate: NSObject, NSApplicationDelegate {
     private static let hiddenWindowMenuTitles: Set<String> = ["New Machine", "Connect to Machine"]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Beebium doesn't use tabbed windows. Disable macOS automatic window
+        // tabbing to remove the Show Previous/Next Tab and Merge All Windows
+        // items from the Window menu.
+        NSWindow.allowsAutomaticWindowTabbing = false
+
         // SwiftUI automatically adds a Window menu entry for every Window scene,
         // with no API to opt out (macOS 13/14). Our dialog windows (New Machine,
         // Connect to Machine) are already accessible via the File menu, so these
