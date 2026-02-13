@@ -21,7 +21,7 @@ struct WelcomeWindowContent: View {
     @Environment(\.dismiss) private var dismiss
     @State private var launchError: String?
     @State private var isLaunching = false
-    @State private var gridHeight: CGFloat = 200
+    @State private var gridHeight: CGFloat = 376
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -70,7 +70,7 @@ struct WelcomeWindowContent: View {
                         Color.clear.preference(key: GridHeightKey.self, value: geo.size.height)
                     })
                 }
-                .frame(minHeight: 100, maxHeight: gridHeight)
+                .frame(minHeight: 100, idealHeight: gridHeight, maxHeight: gridHeight)
                 .onPreferenceChange(GridHeightKey.self) { gridHeight = $0 }
 
                 // Error display
@@ -134,7 +134,7 @@ struct WelcomeWindowContent: View {
 
 /// Preference key for measuring the grid's natural height.
 private struct GridHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 200
+    static var defaultValue: CGFloat = 376
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }

@@ -102,7 +102,7 @@ struct BeebiumApp: App {
         Window("Welcome to Beebium", id: "welcome") {
             WelcomeWindowContent()
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 800, height: 640)
         .defaultPosition(.center)
         .windowStyle(.hiddenTitleBar)
 
