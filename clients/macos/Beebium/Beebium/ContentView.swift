@@ -31,8 +31,6 @@ struct ContentView: View {
     @State private var showSidebar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
-    @State private var showConnectDialog = false
-    @State private var showNewMachineDialog = false
     @State private var currentWindow: NSWindow?
     @State private var closeCoordinator: WindowCloseCoordinator?
     /// Set during teardown to prevent onChange from racing with onDisappear
@@ -99,10 +97,12 @@ struct ContentView: View {
         .focusedValue(\.sidebarMode, $sidebarMode)
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)
-        .focusedValue(\.showConnectDialog, $showConnectDialog)
-        .focusedValue(\.showNewMachineDialog, $showNewMachineDialog)
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
         .onAppear {
+            // Capture openWindow into shared AppActions for FileCommands
+            AppActions.shared.openNewMachine = { [openWindow] in openWindow(id: "new-machine") }
+            AppActions.shared.openConnect = { [openWindow] in openWindow(id: "connect") }
+
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager
 
@@ -218,15 +218,6 @@ struct ContentView: View {
             } else {
                 NSLog("[ContentView] closeCoordinator already exists, skipping install")
             }
-        }
-        .onChange(of: showConnectDialog) { show in
-            if show {
-                openWindow(id: "connect")
-                showConnectDialog = false  // Reset the trigger
-            }
-        }
-        .sheet(isPresented: $showNewMachineDialog) {
-            NewMachineDialog()
         }
         .onChange(of: videoClient.connectionState) { newState in
             // Connect clients when video client connects

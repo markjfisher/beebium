@@ -15,8 +15,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct FileCommands: Commands {
-    @FocusedBinding(\.showConnectDialog) private var showConnectDialog
-    @FocusedBinding(\.showNewMachineDialog) private var showNewMachineDialog
+    @ObservedObject private var appActions = AppActions.shared
     @FocusedValue(\.openNewWindow) private var openNewWindow
 
     @ObservedObject private var presetManager = PresetManager.shared
@@ -24,10 +23,10 @@ struct FileCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New...") {
-                showNewMachineDialog = true
+                appActions.openNewMachine?()
             }
             .keyboardShortcut("n", modifiers: .command)
-            .disabled(showNewMachineDialog == nil)
+            .disabled(appActions.openNewMachine == nil)
 
             Button("New Window") {
                 openNewWindow?()
@@ -57,9 +56,9 @@ struct FileCommands: Commands {
             Divider()
 
             Button("Connect...") {
-                showConnectDialog = true
+                appActions.openConnect?()
             }
-            .disabled(showConnectDialog == nil)
+            .disabled(appActions.openConnect == nil)
         }
 
         CommandGroup(replacing: .saveItem) {

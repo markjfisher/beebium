@@ -12,14 +12,18 @@
 
 import SwiftUI
 
-struct ShowConnectDialogKey: FocusedValueKey {
-    typealias Value = Binding<Bool>
+/// Shared actions for File menu commands. Captured from any view that has
+/// @Environment(\.openWindow) and used by FileCommands via @ObservedObject.
+/// This avoids @FocusedValue, which breaks when the key window changes
+/// (e.g. after a menu interaction dismisses and the Welcome window loses focus).
+@MainActor
+class AppActions: ObservableObject {
+    static let shared = AppActions()
+    var openNewMachine: (() -> Void)?
+    var openConnect: (() -> Void)?
 }
 
-struct ShowNewMachineDialogKey: FocusedValueKey {
-    typealias Value = Binding<Bool>
-}
-
+// "New Window" remains a focused value — it should only be available from emulator windows.
 struct OpenNewWindowActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
@@ -28,14 +32,5 @@ extension FocusedValues {
     var openNewWindow: (() -> Void)? {
         get { self[OpenNewWindowActionKey.self] }
         set { self[OpenNewWindowActionKey.self] = newValue }
-    }
-    var showConnectDialog: Binding<Bool>? {
-        get { self[ShowConnectDialogKey.self] }
-        set { self[ShowConnectDialogKey.self] = newValue }
-    }
-
-    var showNewMachineDialog: Binding<Bool>? {
-        get { self[ShowNewMachineDialogKey.self] }
-        set { self[ShowNewMachineDialogKey.self] = newValue }
     }
 }

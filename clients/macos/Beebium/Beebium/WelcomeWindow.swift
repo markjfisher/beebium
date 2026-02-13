@@ -98,6 +98,9 @@ struct WelcomeWindowContent: View {
         }
         .frame(minWidth: 420, idealWidth: 600, maxWidth: .infinity)
         .task {
+            // Capture openWindow into shared AppActions for FileCommands
+            AppActions.shared.openNewMachine = { [openWindow, dismiss] in openWindow(id: "new-machine"); dismiss() }
+            AppActions.shared.openConnect = { [openWindow, dismiss] in openWindow(id: "connect"); dismiss() }
             if presetManager.systemPresets.isEmpty && !presetManager.isDiscovering {
                 await presetManager.discoverPresets()
             }
