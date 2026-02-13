@@ -79,8 +79,6 @@ struct ContentView: View {
     @State private var currentWindow: NSWindow?
     @State private var closeCoordinator: WindowCloseCoordinator?
     private let clientGroup = ClientGroup()
-    /// Set during teardown to prevent onChange from racing with onDisappear
-    @State private var tearingDown: Bool = false
     @Environment(\.openWindow) private var openWindow
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -188,36 +186,9 @@ struct ContentView: View {
                   initialTarget.address, initialNeedsRun ? 1 : 0, initialProvenanceUUID ?? "nil")
             videoClient.reconnect(to: initialTarget)
         }
-        .onDisappear {
-            NSLog("[ContentView] onDisappear fired for address %@", videoClient.target.address)
-            tearingDown = true
-            let address = videoClient.target.address
-            let machineManager = MachineManager.shared
-
-            // Dump MachineManager state for diagnostics
-            NSLog("[ContentView] onDisappear: MachineManager has %d machines:", machineManager.machines.count)
-            for (id, m) in machineManager.machines {
-                NSLog("[ContentView]   %@ -> %@ linked=%d running=%d clientCount=%d",
-                      id.uuidString, m.target.address, m.lifetimeLinked ? 1 : 0,
-                      m.process.isRunning ? 1 : 0, m.lastKnownClientCount)
-            }
-
-            let action = machineManager.windowCloseAction(
-                forAddress: address,
-                clientCount: systemClient.clientCount
-            )
-            NSLog("[ContentView] onDisappear: windowCloseAction=%@ for address=%@ clientCount=%d",
-                  String(describing: action), address, systemClient.clientCount)
-
-            if case .shutdownServer = action {
-                // Synchronous SIGTERM — no gRPC channel needed, no async races
-                let result = machineManager.shutdownServer(forAddress: address)
-                NSLog("[ContentView] onDisappear: shutdownServer returned %d", result ? 1 : 0)
-            }
-
-            ConnectionRegistry.shared.unregister(address: address)
-            clientGroup.disconnectAll()
-        }
+        // No onDisappear: SwiftUI's WindowGroup does not fire onDisappear on window
+        // close. All cleanup (shutdown decisions, client disconnection) is handled by
+        // WindowCloseCoordinator, which intercepts both the close button and Cmd+W.
         .background(WindowAccessor(window: $currentWindow))
         .onChange(of: currentWindow) { window in
             guard let window = window else {
@@ -301,9 +272,8 @@ struct ContentView: View {
                     macCapsLockIsOn: macCapsLockIsOn,
                     bbcState: indicatorClient.capsLockState
                 )
-            } else if !tearingDown {
+            } else {
                 // Handle unexpected disconnection (server dropped connection).
-                // Skip during teardown — onDisappear handles orderly shutdown.
                 if case .disconnected = newState {
                     ConnectionRegistry.shared.unregister(address: videoClient.target.address)
                     clientGroup.disconnectNonVideoClients()
