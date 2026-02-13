@@ -23,6 +23,13 @@ class AppActions: ObservableObject {
     var openConnect: (() -> Void)?
 }
 
+/// Posted when a new emulator window is about to open. The Welcome window
+/// listens for this to close itself, regardless of which code path triggered
+/// the new window (preset card, New Machine dialog, Connect dialog, etc.).
+extension Notification.Name {
+    static let didOpenEmulatorWindow = Notification.Name("BeebiumDidOpenEmulatorWindow")
+}
+
 // "New Window" remains a focused value — it should only be available from emulator windows.
 struct OpenNewWindowActionKey: FocusedValueKey {
     typealias Value = () -> Void

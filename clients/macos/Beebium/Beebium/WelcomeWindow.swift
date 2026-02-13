@@ -90,17 +90,19 @@ struct WelcomeWindowContent: View {
                     connectWindowState.pendingNeedsRun = false
                     connectWindowState.pendingProvenanceUUID = nil
                     openWindow(id: "new-machine")
-                    onDismiss?()
                 }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 16)
         }
         .frame(minWidth: 420, idealWidth: 600, maxWidth: .infinity)
+        .onReceive(NotificationCenter.default.publisher(for: .didOpenEmulatorWindow)) { _ in
+            onDismiss?()
+        }
         .task {
             // Capture openWindow into shared AppActions for FileCommands
-            AppActions.shared.openNewMachine = { [openWindow, onDismiss] in openWindow(id: "new-machine"); onDismiss?() }
-            AppActions.shared.openConnect = { [openWindow, onDismiss] in openWindow(id: "connect"); onDismiss?() }
+            AppActions.shared.openNewMachine = { [openWindow] in openWindow(id: "new-machine") }
+            AppActions.shared.openConnect = { [openWindow] in openWindow(id: "connect") }
             if presetManager.systemPresets.isEmpty && !presetManager.isDiscovering {
                 await presetManager.discoverPresets()
             }
@@ -127,7 +129,6 @@ struct WelcomeWindowContent: View {
             connectWindowState.pendingProvenanceUUID = core.provenanceUUID
             openWindow(id: "main")
             isLaunching = false
-            onDismiss?()
 
         case .failure(let error):
             launchError = error.localizedDescription

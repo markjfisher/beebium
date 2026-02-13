@@ -51,6 +51,9 @@ struct MainWindowRouter: View {
             connectionTarget = target
             needsRun = run
             provenanceUUID = prov
+            if target != nil {
+                NotificationCenter.default.post(name: .didOpenEmulatorWindow, object: nil)
+            }
         }
     }
 }
