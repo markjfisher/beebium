@@ -19,6 +19,33 @@ import SwiftUI
 /// Quit rule: shut down a core only if BOTH (a) this app launched it AND (b) it's the
 /// sole client. Everything else is silently disconnected. No quit dialog ever.
 class BeebiumAppDelegate: NSObject, NSApplicationDelegate {
+    /// Titles of Window scene entries to hide in the Window menu.
+    private static let hiddenWindowMenuTitles: Set<String> = ["New Machine", "Connect to Machine"]
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI automatically adds a Window menu entry for every Window scene,
+        // with no API to opt out (macOS 13/14). Our dialog windows (New Machine,
+        // Connect to Machine) are already accessible via the File menu, so these
+        // entries are redundant and confusing.
+        //
+        // Workaround: observe NSMenu.didAddItemNotification to catch items as
+        // SwiftUI adds them. We can't use a menu delegate because SwiftUI owns
+        // the windowsMenu delegate and may replace it. We hide items rather than
+        // remove them — removing triggers didAddItemNotification recursively as
+        // AppKit rebuilds the item array, causing a stack overflow.
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didAddItemNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let menu = notification.object as? NSMenu,
+                  menu == NSApp.windowsMenu else { return }
+            for item in menu.items where Self.hiddenWindowMenuTitles.contains(item.title) {
+                item.isHidden = true
+            }
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let machineManager = MachineManager.shared
         let action = machineManager.quitAction()
