@@ -35,15 +35,13 @@ struct MainWindowRouter: View {
                 )
             } else {
                 WelcomeWindowContent(onDismiss: { currentWindow?.close() })
-                    .background(WindowAccessor(window: $currentWindow))
-                    .onChange(of: currentWindow) { window in
-                        guard let window = window else { return }
+                    .background(WindowAccessor(window: $currentWindow, configure: { window in
                         window.titlebarAppearsTransparent = true
                         window.titleVisibility = .hidden
                         window.title = "Welcome to Beebium"
                         window.setContentSize(NSSize(width: 800, height: 640))
                         window.center()
-                    }
+                    }))
             }
         }
         .onAppear {
@@ -443,12 +441,19 @@ class WindowObserverView: NSView {
 
 /// Helper view to capture the NSWindow reference from SwiftUI into an @Binding.
 /// Uses viewDidMoveToWindow for synchronous capture before the first render.
+/// The optional `configure` closure runs synchronously in viewDidMoveToWindow,
+/// allowing window properties (size, title bar style, etc.) to be set before
+/// the window is first displayed on screen.
 struct WindowAccessor: NSViewRepresentable {
     @Binding var window: NSWindow?
+    var configure: ((NSWindow) -> Void)?
 
     func makeNSView(context: Context) -> WindowObserverView {
         let view = WindowObserverView()
-        view.onWindowChanged = { newWindow in
+        view.onWindowChanged = { [configure] newWindow in
+            if let newWindow = newWindow {
+                configure?(newWindow)
+            }
             DispatchQueue.main.async {
                 self.window = newWindow
             }
@@ -457,7 +462,10 @@ struct WindowAccessor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WindowObserverView, context: Context) {
-        nsView.onWindowChanged = { newWindow in
+        nsView.onWindowChanged = { [configure] newWindow in
+            if let newWindow = newWindow {
+                configure?(newWindow)
+            }
             DispatchQueue.main.async {
                 self.window = newWindow
             }
