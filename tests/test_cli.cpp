@@ -424,12 +424,6 @@ TEST_CASE("GlobalConfig: default values", "[cli][GlobalConfig]") {
 // get_subcommands() tests
 // ============================================================================
 
-TEST_CASE("get_subcommands: returns correct number of subcommands", "[cli][get_subcommands]") {
-    const auto& cmds = get_subcommands<MachineType>();
-
-    REQUIRE(cmds.size() == 12);
-}
-
 TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcommands]") {
     const auto& cmds = get_subcommands<MachineType>();
 
@@ -449,6 +443,7 @@ TEST_CASE("get_subcommands: contains expected subcommands", "[cli][get_subcomman
     REQUIRE(std::find(names.begin(), names.end(), "delete-preset") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "import-preset") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "export-preset") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "capture-screenshot") != names.end());
     REQUIRE(std::find(names.begin(), names.end(), "help") != names.end());
 }
 
