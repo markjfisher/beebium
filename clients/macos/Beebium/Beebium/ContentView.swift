@@ -147,6 +147,12 @@ struct ContentView: View {
             // Capture openWindow into shared AppActions for FileCommands
             AppActions.shared.openNewMachine = { [openWindow] in openWindow(id: "new-machine") }
             AppActions.shared.openConnect = { [openWindow] in openWindow(id: "connect") }
+            AppActions.shared.openWelcome = { [openWindow] in
+                ConnectWindowState.shared.pendingTarget = nil
+                ConnectWindowState.shared.pendingNeedsRun = false
+                ConnectWindowState.shared.pendingProvenanceUUID = nil
+                openWindow(id: "main")
+            }
 
             // Wire up keyboard client to mapping manager
             keyboardClient.mappingManager = keyboardMappingManager

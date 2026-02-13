@@ -19,8 +19,15 @@ import SwiftUI
 @MainActor
 class AppActions: ObservableObject {
     static let shared = AppActions()
-    var openNewMachine: (() -> Void)?
-    var openConnect: (() -> Void)?
+    var openNewMachine: (() -> Void)? {
+        willSet { objectWillChange.send() }
+    }
+    var openConnect: (() -> Void)? {
+        willSet { objectWillChange.send() }
+    }
+    var openWelcome: (() -> Void)? {
+        willSet { objectWillChange.send() }
+    }
 }
 
 /// Posted when a new emulator window is about to open. The Welcome window

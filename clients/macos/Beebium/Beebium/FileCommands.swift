@@ -123,3 +123,17 @@ struct FileCommands: Commands {
         alert.runModal()
     }
 }
+
+struct HelpCommands: Commands {
+    @ObservedObject private var appActions = AppActions.shared
+
+    var body: some Commands {
+        CommandGroup(before: .help) {
+            Button("Welcome to Beebium") {
+                appActions.openWelcome?()
+            }
+            .disabled(appActions.openWelcome == nil)
+            Divider()
+        }
+    }
+}
