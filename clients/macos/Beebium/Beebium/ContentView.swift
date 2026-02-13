@@ -34,7 +34,7 @@ struct MainWindowRouter: View {
                     keyboardMappingManager: keyboardMappingManager
                 )
             } else {
-                WelcomeWindowContent()
+                WelcomeWindowContent(onDismiss: { currentWindow?.close() })
                     .background(WindowAccessor(window: $currentWindow))
                     .onChange(of: currentWindow) { window in
                         guard let window = window else { return }

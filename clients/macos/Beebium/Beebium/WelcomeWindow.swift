@@ -15,6 +15,7 @@ import SwiftUI
 /// Welcome window shown on bare app launch. Displays preset cards for one-click
 /// machine creation and a "New Machine..." button for custom configuration.
 struct WelcomeWindowContent: View {
+    var onDismiss: (() -> Void)?
     @StateObject private var presetManager = PresetManager.shared
     @ObservedObject private var connectWindowState = ConnectWindowState.shared
     @Environment(\.openWindow) private var openWindow
@@ -89,6 +90,7 @@ struct WelcomeWindowContent: View {
                     connectWindowState.pendingNeedsRun = false
                     connectWindowState.pendingProvenanceUUID = nil
                     openWindow(id: "new-machine")
+                    onDismiss?()
                 }
             }
             .padding(.horizontal, 24)
@@ -97,8 +99,8 @@ struct WelcomeWindowContent: View {
         .frame(minWidth: 420, idealWidth: 600, maxWidth: .infinity)
         .task {
             // Capture openWindow into shared AppActions for FileCommands
-            AppActions.shared.openNewMachine = { [openWindow] in openWindow(id: "new-machine") }
-            AppActions.shared.openConnect = { [openWindow] in openWindow(id: "connect") }
+            AppActions.shared.openNewMachine = { [openWindow, onDismiss] in openWindow(id: "new-machine"); onDismiss?() }
+            AppActions.shared.openConnect = { [openWindow, onDismiss] in openWindow(id: "connect"); onDismiss?() }
             if presetManager.systemPresets.isEmpty && !presetManager.isDiscovering {
                 await presetManager.discoverPresets()
             }
@@ -125,6 +127,7 @@ struct WelcomeWindowContent: View {
             connectWindowState.pendingProvenanceUUID = core.provenanceUUID
             openWindow(id: "main")
             isLaunching = false
+            onDismiss?()
 
         case .failure(let error):
             launchError = error.localizedDescription
