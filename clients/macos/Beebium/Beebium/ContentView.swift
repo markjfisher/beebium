@@ -78,6 +78,7 @@ struct ContentView: View {
     @State private var sidebarMode: SidebarMode = .storage
     @State private var currentWindow: NSWindow?
     @State private var closeCoordinator: WindowCloseCoordinator?
+    private let clientGroup = ClientGroup()
     /// Set during teardown to prevent onChange from racing with onDisappear
     @State private var tearingDown: Bool = false
     @Environment(\.openWindow) private var openWindow
@@ -171,6 +172,15 @@ struct ContentView: View {
                 )
             }
 
+            // Register clients with ClientGroup for bulk disconnect
+            clientGroup.register(keyboardClient)
+            clientGroup.register(systemClient)
+            clientGroup.register(indicatorClient)
+            clientGroup.register(discClient)
+            clientGroup.register(audioClient)
+            clientGroup.register(debuggerClient)
+            clientGroup.registerVideoClient(videoClient)
+
             // Connection target was passed from MainWindowRouter (which consumed the
             // pending target from ConnectWindowState). Connect immediately.
             needsRun = initialNeedsRun
@@ -206,13 +216,7 @@ struct ContentView: View {
             }
 
             ConnectionRegistry.shared.unregister(address: address)
-            debuggerClient.disconnect()
-            audioClient.disconnect()
-            discClient.disconnect()
-            indicatorClient.disconnect()
-            systemClient.disconnect()
-            keyboardClient.disconnect()
-            videoClient.disconnect()
+            clientGroup.disconnectAll()
         }
         .background(WindowAccessor(window: $currentWindow))
         .onChange(of: currentWindow) { window in
@@ -231,20 +235,7 @@ struct ContentView: View {
                     videoClient: videoClient,
                     machineManager: MachineManager.shared,
                     window: window,
-                    disconnectClients: { [weak videoClient, weak keyboardClient, weak systemClient,
-                                          weak indicatorClient, weak discClient, weak audioClient,
-                                          weak debuggerClient] in
-                        let address = videoClient?.target.address ?? ""
-                        NSLog("[ContentView] disconnectClients for %@", address)
-                        ConnectionRegistry.shared.unregister(address: address)
-                        debuggerClient?.disconnect()
-                        audioClient?.disconnect()
-                        discClient?.disconnect()
-                        indicatorClient?.disconnect()
-                        systemClient?.disconnect()
-                        keyboardClient?.disconnect()
-                        videoClient?.disconnect()
-                    }
+                    clientGroup: clientGroup
                 )
                 coordinator.install(on: window)
                 closeCoordinator = coordinator
@@ -315,22 +306,10 @@ struct ContentView: View {
                 // Skip during teardown — onDisappear handles orderly shutdown.
                 if case .disconnected = newState {
                     ConnectionRegistry.shared.unregister(address: videoClient.target.address)
-
-                    debuggerClient.disconnect()
-                    audioClient.disconnect()
-                    discClient.disconnect()
-                    indicatorClient.disconnect()
-                    keyboardClient.disconnect()
-                    systemClient.disconnect()
+                    clientGroup.disconnectNonVideoClients()
                 } else if case .error = newState {
                     ConnectionRegistry.shared.unregister(address: videoClient.target.address)
-
-                    debuggerClient.disconnect()
-                    audioClient.disconnect()
-                    discClient.disconnect()
-                    indicatorClient.disconnect()
-                    keyboardClient.disconnect()
-                    systemClient.disconnect()
+                    clientGroup.disconnectNonVideoClients()
                 }
             }
         }
@@ -495,14 +474,14 @@ class WindowCloseCoordinator: NSObject {
     let systemClient: SystemClient
     let videoClient: VideoClient
     let machineManager: MachineManager
-    let disconnectClients: () -> Void
+    let clientGroup: ClientGroup
     weak var window: NSWindow?
 
-    init(systemClient: SystemClient, videoClient: VideoClient, machineManager: MachineManager, window: NSWindow, disconnectClients: @escaping () -> Void) {
+    init(systemClient: SystemClient, videoClient: VideoClient, machineManager: MachineManager, window: NSWindow, clientGroup: ClientGroup) {
         self.systemClient = systemClient
         self.videoClient = videoClient
         self.machineManager = machineManager
-        self.disconnectClients = disconnectClients
+        self.clientGroup = clientGroup
         self.window = window
     }
 
@@ -552,12 +531,14 @@ class WindowCloseCoordinator: NSObject {
         case .shutdownServer:
             // Disconnect gRPC clients first — the server's graceful shutdown
             // waits for active streams to close, so we must drop them before
-            // sending SIGTERM. onDisappear does NOT fire for WindowGroup windows.
-            disconnectClients()
+            // sending SIGTERM.
+            ConnectionRegistry.shared.unregister(address: address)
+            clientGroup.disconnectAll()
             machineManager.shutdownServer(forAddress: address)
             window.close()
         case .disconnect:
-            disconnectClients()
+            ConnectionRegistry.shared.unregister(address: address)
+            clientGroup.disconnectAll()
             window.close()
         case .promptUser(let count):
             showMultiClientAlert(window: window, address: address, clientCount: count)
@@ -588,14 +569,16 @@ class WindowCloseCoordinator: NSObject {
                 case .alertFirstButtonReturn:
                     // Shut Down: gRPC shutdown (notifies other clients), then close
                     await self.machineManager.gracefulShutdownServer(forAddress: address, using: self.systemClient)
-                    self.disconnectClients()
+                    ConnectionRegistry.shared.unregister(address: address)
+                    self.clientGroup.disconnectAll()
                     window.close()
                 case .alertSecondButtonReturn:
                     // Leave Running: unlink, then close
                     if let machine = self.machineManager.machine(forAddress: address) {
                         self.machineManager.unlink(id: machine.id)
                     }
-                    self.disconnectClients()
+                    ConnectionRegistry.shared.unregister(address: address)
+                    self.clientGroup.disconnectAll()
                     window.close()
                 default:
                     break

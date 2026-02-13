@@ -37,7 +37,7 @@ private struct PressedKeyState {
 /// to BBC keyboard matrix positions, including automatic handling of
 /// synthetic Shift and Ctrl keys.
 @MainActor
-final class KeyboardClient: ObservableObject {
+final class KeyboardClient: ObservableObject, Disconnectable {
 
     private var channel: GRPCChannel?
     private var client: Beebium_KeyboardServiceClient?

@@ -15,7 +15,7 @@ import GRPC
 
 /// Client for querying system/machine information from beebium-server via gRPC
 @MainActor
-final class SystemClient: ObservableObject {
+final class SystemClient: ObservableObject, Disconnectable {
     // MARK: - Machine Identity
 
     /// Machine UUID (RFC 4122 v4), stable for machine lifetime

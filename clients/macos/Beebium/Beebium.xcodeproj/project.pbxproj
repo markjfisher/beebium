@@ -79,6 +79,7 @@
 		D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */; };
 		D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */; };
 		D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */; };
+		DD38D6EB9C3CC2182169F801 /* Disconnectable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */; };
 		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
 		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
@@ -138,6 +139,7 @@
 		5B097B8092C02F8851C2C5C9 /* TouchBarGlyphs.svg */ = {isa = PBXFileReference; path = TouchBarGlyphs.svg; sourceTree = "<group>"; };
 		5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSchema.swift; sourceTree = "<group>"; };
 		5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
+		639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Disconnectable.swift; sourceTree = "<group>"; };
 		642BEA30A8664289314B2D9E /* video.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.pb.swift; sourceTree = "<group>"; };
 		6595E1ACFB74733DA1DDB653 /* Beebium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Beebium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		664E24EC940C75F69FE7E1E4 /* FloppyDriveConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloppyDriveConfigView.swift; sourceTree = "<group>"; };
@@ -337,6 +339,7 @@
 				E2FF930B029ECBBAE243C4D0 /* ContentView.swift */,
 				8FDC80983751CFBC0D9B98A3 /* DebuggerClient.swift */,
 				CF6562062957B62B8C099A42 /* DiscClient.swift */,
+				639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */,
 				D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */,
 				A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */,
 				1031975F4050BF5875549DFA /* FileCommands.swift */,
@@ -549,6 +552,7 @@
 				627C3A63E155268D81CFFA47 /* ContentView.swift in Sources */,
 				345AA9A186D7CA962B5D31A1 /* DebuggerClient.swift in Sources */,
 				4D9536D54F0C9291F5ECD326 /* DiscClient.swift in Sources */,
+				DD38D6EB9C3CC2182169F801 /* Disconnectable.swift in Sources */,
 				AEFDACA93EC7747DF05C2447 /* DiscoveryClient.swift in Sources */,
 				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
 				4DD0F4094D0E603CFF35DF6C /* FileCommands.swift in Sources */,

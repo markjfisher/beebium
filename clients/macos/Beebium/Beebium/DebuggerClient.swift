@@ -28,7 +28,7 @@ enum DebuggerClientError: Error, LocalizedError {
 /// Client for debugger control operations via gRPC.
 /// Provides Run() RPC to start emulation for cores launched with --wait=api.
 @MainActor
-final class DebuggerClient: ObservableObject {
+final class DebuggerClient: ObservableObject, Disconnectable {
     private var client: Beebium_DebuggerControlNIOClient?
 
     /// Connect to the server using an existing gRPC channel

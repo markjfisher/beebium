@@ -34,7 +34,7 @@ enum CapsLockState {
 
 /// Client for streaming indicator states from beebium-server via gRPC
 @MainActor
-final class IndicatorClient: ObservableObject {
+final class IndicatorClient: ObservableObject, Disconnectable {
     /// Current indicator values (name -> 0-255)
     @Published private(set) var values: [String: UInt32] = [:]
 

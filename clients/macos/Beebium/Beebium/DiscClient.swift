@@ -30,7 +30,7 @@ enum DiscError: LocalizedError {
 
 /// Client for managing disc drives via gRPC
 @MainActor
-final class DiscClient: ObservableObject {
+final class DiscClient: ObservableObject, Disconnectable {
     /// Status of all drives
     @Published private(set) var drives: [Beebium_DriveStatus] = []
 

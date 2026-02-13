@@ -25,7 +25,7 @@ enum ConnectionState: Equatable {
 
 /// Client for streaming video frames from beebium-server via gRPC
 @MainActor
-final class VideoClient: ObservableObject {
+final class VideoClient: ObservableObject, Disconnectable {
     /// Current connection state
     @Published private(set) var connectionState: ConnectionState = .disconnected
 
