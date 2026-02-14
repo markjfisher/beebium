@@ -27,7 +27,37 @@ AUN (Acorn Universal Networking) encapsulates Econet protocols over TCP/IP, orig
 | &FEA2 | Transmit FIFO (Frame Continue) / Receive FIFO | Write / Read |
 | &FEA3 | Transmit FIFO (Frame Terminate) / Receive FIFO | Write / Read |
 
-The station ID at &FE18 is set by hardware links (S11) and returns a value 0-255. Reading this register also enables NMI from the ADLC.
+The station ID at &FE18 is set by hardware links (S11) on the Model B and returns a value 0-255. Reading this register also triggers INTOFF (disables NMI from the ADLC).
+
+### Station ID Across Machine Types
+
+The station number is obtained differently depending on the machine:
+
+| Aspect | Model B / B+ | Master 128 | Master Compact |
+|--------|-------------|------------|----------------|
+| **Storage** | Binary links (S11) on PCB | CMOS RAM byte 0x0E (MC146818 RTC) | EEPROM |
+| **Address** | &FE18 hardware register | CMOS RAM (read via OSBYTE) | EEPROM (read via OSBYTE) |
+| **Persistence** | Fixed at manufacture | Battery-backed, survives power-off | Non-volatile |
+| **Runtime modification** | No (hardware links) | Yes (`*SETSTATION`) | Yes (`*SET` network utility) |
+| **INTOFF address** | &FE18 | &FE38 | &FE38 |
+| **INTON address** | &FE20 (Video ULA range) | &FE3C | &FE3C |
+
+**Model B / B+:** Station number is hardwired by binary links. The NFS ROM reads it from the &FE18 register (which also triggers INTOFF). The number cannot be changed without physically modifying the links.
+
+**Master 128:** Station number stored in CMOS RAM at byte offset 0x0E of the MC146818 Real-Time Clock chip (which provides 50 bytes of user RAM alongside its timekeeping registers, addresses 0x0E-0x3F). The ANFS ROM reads it from CMOS at boot. The byte is protected against normal OSBYTE 162 writes — it must be set via `*SETSTATION` (a network utility command, typically run from a file server), or by directly programming the 6522 VIA chip at &FE40-&FE43 which drives the RTC chip's read/write strobes.
+
+**Master Compact:** Station number stored in EEPROM rather than CMOS RAM. Can only be set via the `*SET` network utility (direct VIA access doesn't work). EEPROM has limited write endurance (~10,000 cycles). Econet connectivity requires fitting the optional MC68B54 daughter board and an ANFS ROM.
+
+**CMOS layout** (Master 128, from BeebEm's `Rtc.cpp`):
+```
+Byte 0x0E: Econet station number        *SETSTATION nnn
+Byte 0x0F: File server station number    *CONFIGURE FS nnn
+Byte 0x10: File server network number    *CONFIGURE FS nnn.sss
+Byte 0x11: Printer server station number *CONFIGURE PS nnn
+Byte 0x12: Printer server network number *CONFIGURE PS nnn.sss
+```
+
+**Implication for Beebium:** For Model B (our initial implementation), the station number comes from `--station N` on the command line and is returned by the &FE18 register. For future Master support, the station number would instead be stored in the emulated CMOS RAM, and the &FE18 register would not exist (the station ID register is at a different address, &FE38, with different semantics).
 
 ### MC68B54 ADLC Registers
 
@@ -972,19 +1002,25 @@ To use Econet file servers, BBC Micros need appropriate network filing system RO
 
 | ROM | Machine | Notes |
 |-----|---------|-------|
-| NFS 3.34 | Model B | Original network filing system |
-| NFS 3.60 | Model B | Later version, in DNFS ROM |
+| NFS 3.34 | Model B / B+ | Original network filing system (`roms/acorn-nfs_3_34.rom`, 8K) |
+| NFS 3.60 | Model B / B+ | Later version, combined with DFS in DNFS ROM |
 | ANFS 4.18 | Master 128 | Advanced NFS for Master series |
 | ANFS 4.25 | Master 128 | Later ANFS version |
 
 ### DNFS ROM
 
-The DNFS (Disc and Network Filing System) ROM combines DFS 1.20 and NFS 3.60 into a single ROM. From the DNFS manual:
+The DNFS (Disc and Network Filing System) ROM combines DFS 1.20 and NFS 3.60 into a single 16K ROM. From the DNFS manual:
 
 - **Auto-detection:** DNFS checks for Econet and/or disc hardware at startup
 - **Priority:** If both are present, DFS takes priority by default
 - **Selection:** Keyboard switch 1 (link S1) overrides to select NFS at boot
 - **Commands:** Use `*NET` or `*DISC` to switch filing systems at runtime
+
+**Important limitation:** DNFS's DFS 1.20 component requires the Intel 8271 FDC. There is no DNFS ROM with a WD1770-compatible DFS. Since Beebium currently only supports the WD1770 FDC, we cannot use DNFS. Instead, we use separate ROMs in two sideways slots:
+- DFS 2.x (WD1770-compatible) — e.g. `roms/acorn-dfs_2_26.rom`
+- NFS 3.34 (standalone) — `roms/acorn-nfs_3_34.rom`
+
+This is the default configuration for Econet-capable Beebium machines with disc support.
 
 **NFS 3.60 improvements over 3.34:**
 - Multi-column catalogue display
@@ -1334,6 +1370,14 @@ beebium --drive0 games.ssd
 
 - **BBC Master New Advanced User Guide, Chapter 11** - `docs/manuals_text/BBC_Master-New-Advanced-User-Guide/11_11._Hardware.md`
   - Master-specific INTON/INTOFF addresses (&FE38/&FE3C vs Model B's &FE18/&FE20)
+
+- **BBC Master CMOS RAM layout** (from BeebEm `Rtc.cpp` lines 73-77)
+  - Byte 0x0E: Econet station number (`*SETSTATION`)
+  - Bytes 0x0F-0x12: File/printer server station and network numbers
+  - Protected byte — cannot be written via OSBYTE 162; requires `*SETSTATION` or direct VIA access
+
+- **AUN Manager's Guide** - `docs/manuals_text/AUN_Managers_Guide/full_text.md` (lines 2485-2522)
+  - `*SETSTATION` command documentation (sets station number in CMOS, range 2-254)
 
 - Econet Advanced User Guide (Acorn, 1988)
 
