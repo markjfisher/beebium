@@ -33,6 +33,7 @@
 #include "disc/Acorn1770DiscController.hpp"
 #include "disc/DiscControllerSocket.hpp"
 #include "disc/DiscDrive.hpp"
+#include "econet/EconetSocket.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
 #include <cstdint>
@@ -160,6 +161,36 @@ public:
     // Registry ID of installed controller (empty if no controller or unknown)
     std::string installed_controller_id_;
 
+    // Econet subsystem — optional networking hardware
+    EconetSocket econet_socket;
+
+    // Econet memory-mapped region adapters (thin wrappers for MemoryMappedDevice concept)
+    struct EconetStationIdRegion {
+        EconetSocket& econet_socket;
+        uint8_t read(uint16_t offset) { return econet_socket.read_station_id(offset); }
+        void write(uint16_t offset, uint8_t value) { econet_socket.write_station_id(offset, value); }
+    };
+
+    struct EconetAdlcRegion {
+        EconetSocket& econet_socket;
+        uint8_t read(uint16_t offset) { return econet_socket.read_adlc(offset); }
+        void write(uint16_t offset, uint8_t value) { econet_socket.write_adlc(offset, value); }
+    };
+
+    // Video ULA wrapper that fires INTON on every access to &FE20-&FE2F.
+    // On real hardware, the Econet NMI enable flip-flop (IC97) shares the same
+    // address decode select line as the Video ULA.
+    struct VideoUlaWithInton {
+        VideoUla& video_ula;
+        EconetSocket& econet_socket;
+        uint8_t read(uint16_t offset) { econet_socket.on_inton(); return video_ula.read(offset); }
+        void write(uint16_t offset, uint8_t value) { econet_socket.on_inton(); video_ula.write(offset, value); }
+    };
+
+    EconetStationIdRegion econet_station_id_region_{econet_socket};
+    EconetAdlcRegion econet_adlc_region_{econet_socket};
+    VideoUlaWithInton video_ula_with_inton_{video_ula, econet_socket};
+
     // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
     struct RomselRegister {
         SidewaysType& sideways;
@@ -190,11 +221,13 @@ public:
         MemoryMap{
             make_region<0xFC00, 0xFDFF>(std::declval<FredJimRegion&>()),   // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(std::declval<Crtc6845&>()),
-            make_region<0xFE20, 0xFE2F, Mirror<0x01>>(std::declval<VideoUla&>()),
+            make_region<0xFE18, 0xFE1F, Mirror<0x07>>(std::declval<EconetStationIdRegion&>()),  // Econet station ID + INTOFF
+            make_region<0xFE20, 0xFE2F, Mirror<0x01>>(std::declval<VideoUlaWithInton&>()),       // Video ULA + INTON
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(std::declval<Via6522&>()),
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(std::declval<Via6522&>()),
             make_region<0xFE30, 0xFE3F, Mirror<0x0F>>(std::declval<RomselRegister&>()),
             make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(std::declval<DiscControllerSocket&>()),
+            make_region<0xFEA0, 0xFEBF, Mirror<0x03>>(std::declval<EconetAdlcRegion&>()),        // Econet ADLC
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),
             make_region<0x8000, 0xBFFF>(std::declval<SidewaysType&>()),
             make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())       // MOS ROM (occluded by I/O regions)
@@ -222,6 +255,9 @@ public:
         // Socket 3 (IC101): ROM (BASIC)
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
+
+        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -234,6 +270,9 @@ public:
         // Configure default socket types
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
+
+        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Destructor - stops indicator consumer thread
@@ -284,6 +323,7 @@ public:
         addressable_latch.reset();
         sideways.select_bank(0);
         disc_socket.reset();
+        econet_socket.reset();
     }
 
     // Soft reset (Break key): reset peripherals but preserve System VIA state
@@ -300,6 +340,7 @@ public:
         sound_chip.reset();
         addressable_latch.reset();
         disc_socket.reset();
+        econet_socket.reset();
         // Do NOT clear RAM
         // Do NOT reset sideways bank selection
     }
@@ -760,16 +801,18 @@ private:
         // Order matters: first match wins
         // I/O regions overlay MOS ROM at 0xFC00-0xFEFF
         return MemoryMap{
-            make_region<0xFC00, 0xFDFF>(fred_jim_),            // FRED/JIM (overlays MOS ROM)
+            make_region<0xFC00, 0xFDFF>(fred_jim_),                              // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(crtc),
-            make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula),
+            make_region<0xFE18, 0xFE1F, Mirror<0x07>>(econet_station_id_region_), // Econet station ID + INTOFF
+            make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula_with_inton_),     // Video ULA + INTON
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(system_via),
             make_region<0xFE60, 0xFE7F, Mirror<0x0F>>(user_via),
             make_region<0xFE30, 0xFE3F, Mirror<0x0F>>(romsel),
             make_region<0xFE80, 0xFE9F, Mirror<0x1F>>(disc_socket),
+            make_region<0xFEA0, 0xFEBF, Mirror<0x03>>(econet_adlc_region_),       // Econet ADLC
             make_region<0x0000, 0x7FFF>(main_ram),
             make_region<0x8000, 0xBFFF>(sideways),
-            make_region<0xC000, 0xFFFF>(mos_rom)               // MOS ROM (occluded by I/O regions)
+            make_region<0xC000, 0xFFFF>(mos_rom)                                   // MOS ROM (occluded by I/O regions)
         };
     }
 };

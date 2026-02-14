@@ -66,6 +66,11 @@ add_executable(test_mc6854 test_mc6854.cpp)
 target_link_libraries(test_mc6854 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_mc6854)
 
+# Econet socket tests
+add_executable(test_econet_socket test_econet_socket.cpp)
+target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_econet_socket)
+
 # Disc controller socket tests
 add_executable(test_disc_controller_socket test_disc_controller_socket.cpp)
 target_link_libraries(test_disc_controller_socket PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -512,5 +517,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     # Integration tests depend on executables being built
     add_dependencies(test_preset_subcommands beebium-servers)
-    catch_discover_tests(test_preset_subcommands)
+    # These tests share temp files and a user presets directory, so they must
+    # run sequentially to avoid races when CTest runs tests in parallel.
+    catch_discover_tests(test_preset_subcommands PROPERTIES RESOURCE_LOCK preset_dir)
 endif()

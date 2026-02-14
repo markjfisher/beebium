@@ -166,6 +166,12 @@ public:
     uint8_t last_bus_value() const {
         return last_bus_value_;
     }
+
+    // Get pointer to last bus value for open bus emulation by memory-mapped devices.
+    // The pointer remains valid for the lifetime of this MemoryMap.
+    const uint8_t* last_bus_value_ptr() const {
+        return &last_bus_value_;
+    }
 };
 
 

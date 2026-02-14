@@ -21,6 +21,7 @@
 #include "Types.hpp"
 #include "Via6522.hpp"
 #include "VideoBinding.hpp"
+#include "econet/EconetConcepts.hpp"
 
 #include <6502/6502.h>
 #include <atomic>
@@ -42,9 +43,11 @@ namespace beebium {
 constexpr uint8_t kViaIrqDeviceMask = 0x03;
 
 // NMI device mask for M6502_SetDeviceNMI
-// The 6502 library supports multiple NMI sources; we use mask 0x01 for disc controller
+// The 6502 library supports multiple NMI sources; we use separate bits for each source.
 // Bit 0: Disc controller NMI (WD1770 INTRQ on Model B+, 8271 on Model B)
+// Bit 1: Econet ADLC NMI (MC6854 IRQ gated through INTON/INTOFF flip-flop)
 constexpr uint8_t kDiscNmiDeviceMask = 0x01;
+constexpr uint8_t kEconetNmiDeviceMask = 0x02;
 
 // Watchpoint callback: addr, value, is_write, cycle
 using WatchCallback = std::function<void(uint16_t addr, uint8_t value, bool is_write, uint64_t cycle)>;
@@ -245,6 +248,17 @@ public:
             state_.memory.sound_chip.tick(state_.memory.audio_buffer.value());
         }
 
+        // Tick Econet ADLC at 2MHz (no-op when socket is empty).
+        // The ADLC sits on the 2MHz bus at &FEA0-&FEBF and needs clocking
+        // on every E-clock edge to drive the byte trickle timer.
+        if constexpr (HasEconetSocket<MemoryPolicy>) {
+            if (is_rising) {
+                state_.memory.econet_socket.tick_rising();
+            } else {
+                state_.memory.econet_socket.tick_falling();
+            }
+        }
+
         // Check if the CPU's memory access triggered bus stretching
         if (cpu_binding_.needs_stretch()) {
             // VIAs were already pre-ticked by CpuBinding for synchronization.
@@ -257,20 +271,26 @@ public:
         uint8_t irq_mask = state_.memory.poll_irq();
         M6502_SetDeviceIRQ(&state_.cpu, kViaIrqDeviceMask, irq_mask ? 1 : 0);
 
-        // NMI handling - only update on 1MHz clock edges (every other 2MHz cycle).
+        // NMI handling — disc controller at 1MHz, Econet at 2MHz.
+        //
+        // Disc NMI: only update on 1MHz clock edges (every other 2MHz cycle).
         // The WD1770 disc controller runs at 1MHz. Updating NMI every 2MHz cycle
         // causes DRQ to toggle too rapidly: after the NMI handler reads the data
         // register (clearing DRQ), the next tick() would immediately set DRQ for
         // the next byte, creating a new falling edge on /NMI before the handler
         // completes RTI. This causes NMIs to stack up infinitely.
-        //
-        // By only updating on 1MHz edges, we match the real hardware timing where
-        // the WD1770 operates at 1MHz and the NMI line is sampled at that rate.
-        // This gives the NMI handler sufficient cycles to execute before the next
-        // DRQ assertion can trigger another NMI.
         if ((state_.cycle_count & 1) == 0) {
             uint8_t nmi_mask = state_.memory.poll_nmi();
             M6502_SetDeviceNMI(&state_.cpu, kDiscNmiDeviceMask, nmi_mask ? 1 : 0);
+        }
+
+        // Econet NMI: update every 2MHz cycle (ADLC is a 2MHz device).
+        // The ADLC IRQ output is gated through the INTON/INTOFF flip-flop
+        // in EconetSocket::nmi_pending(). When all three conditions are met
+        // (socket enabled, NMI flip-flop set, ADLC IRQ active), NMI is asserted.
+        if constexpr (HasEconetSocket<MemoryPolicy>) {
+            uint8_t econet_nmi = state_.memory.econet_socket.nmi_pending() ? 1 : 0;
+            M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
         }
 
         ++state_.cycle_count;
