@@ -19,6 +19,7 @@ struct ManagedMachine: Identifiable {
     let process: Process
     let provenanceUUID: String
     var lifetimeLinked: Bool
+    var unlinkRequested: Bool = false
     /// Last known number of WatchServerStatus clients on the server.
     /// Updated by ContentView when SystemClient.clientCount changes.
     /// Used by the app quit handler to avoid creating temporary gRPC connections.
@@ -98,6 +99,11 @@ class MachineManager: ObservableObject {
         machine(forAddress: address)?.lifetimeLinked == true
     }
 
+    /// Check whether a given address has a pending unlink request
+    func isUnlinkRequested(address: String) -> Bool {
+        machine(forAddress: address)?.unlinkRequested == true
+    }
+
     // MARK: - State Changes
 
     /// Unlink a machine's lifetime from this app.
@@ -105,8 +111,19 @@ class MachineManager: ObservableObject {
     func unlink(id: UUID) {
         guard var machine = machines[id] else { return }
         machine.lifetimeLinked = false
+        machine.unlinkRequested = false
         machines[id] = machine
         NSLog("[MachineManager] Unlinked machine %@ at %@", id.uuidString, machine.target.address)
+    }
+
+    /// Set or clear the deferred unlink request for a machine.
+    /// The actual unlink is deferred until the window closes.
+    func setUnlinkRequested(id: UUID, requested: Bool) {
+        guard var machine = machines[id] else { return }
+        machine.unlinkRequested = requested
+        machines[id] = machine
+        NSLog("[MachineManager] Unlink %@ for machine %@ at %@",
+              requested ? "requested" : "cancelled", id.uuidString, machine.target.address)
     }
 
     /// Remove tracking for a machine entirely (after shutdown or process exit)
@@ -122,9 +139,10 @@ class MachineManager: ObservableObject {
         machines[machine.id]?.lastKnownClientCount = count
     }
 
-    /// All machines that are still lifetime-linked to this app
+    /// All machines that are effectively lifetime-linked to this app.
+    /// Excludes machines where the user has requested unlinking.
     var linkedMachines: [ManagedMachine] {
-        machines.values.filter(\.lifetimeLinked)
+        machines.values.filter { $0.lifetimeLinked && !$0.unlinkRequested }
     }
 
     // MARK: - Window Close Decision
@@ -143,7 +161,7 @@ class MachineManager: ObservableObject {
             return .disconnect
         }
 
-        guard machine.lifetimeLinked else {
+        guard machine.lifetimeLinked && !machine.unlinkRequested else {
             NSLog("[MachineManager] windowCloseAction: machine at %@ is unlinked -> disconnect", address)
             return .disconnect
         }

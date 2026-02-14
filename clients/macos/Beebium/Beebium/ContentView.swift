@@ -129,7 +129,7 @@ struct ContentView: View {
                         keyboardMappingManager: keyboardMappingManager,
                         machineManager: MachineManager.shared,
                         connectionTarget: videoClient.target,
-                        onUnlink: { unlinkCurrentMachine() }
+                        onToggleUnlink: { toggleUnlinkCurrentMachine() }
                     )
                 }
             }
@@ -290,10 +290,10 @@ struct ContentView: View {
         }
     }
 
-    /// Unlink this window's machine from the app's lifecycle
-    private func unlinkCurrentMachine() {
+    /// Toggle the deferred unlink request for this window's machine
+    private func toggleUnlinkCurrentMachine() {
         if let machine = MachineManager.shared.machine(forTarget: videoClient.target) {
-            MachineManager.shared.unlink(id: machine.id)
+            MachineManager.shared.setUnlinkRequested(id: machine.id, requested: !machine.unlinkRequested)
         }
     }
 
@@ -475,6 +475,10 @@ class WindowCloseCoordinator: NSObject {
             machineManager.shutdownServer(forAddress: address)
             window.close()
         case .disconnect:
+            // Finalize any pending unlink request
+            if let machine = machineManager.machine(forAddress: address), machine.unlinkRequested {
+                machineManager.unlink(id: machine.id)
+            }
             ConnectionRegistry.shared.unregister(address: address)
             clientGroup.disconnectAll()
             window.close()

@@ -75,6 +75,44 @@ final class MachineManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testUnlinkClearsUnlinkRequested() async {
+        let manager = MachineManager()
+        let process = Process()
+        let id = manager.register(process: process, port: 50000, provenanceUUID: "uuid")
+
+        manager.setUnlinkRequested(id: id, requested: true)
+        XCTAssertTrue(manager.isUnlinkRequested(address: "127.0.0.1:50000"))
+
+        manager.unlink(id: id)
+
+        XCTAssertFalse(manager.isUnlinkRequested(address: "127.0.0.1:50000"))
+        XCTAssertFalse(manager.isLifetimeLinked(address: "127.0.0.1:50000"))
+    }
+
+    @MainActor
+    func testSetUnlinkRequestedTogglesFlag() async {
+        let manager = MachineManager()
+        let process = Process()
+        let id = manager.register(process: process, port: 50000, provenanceUUID: "uuid")
+
+        XCTAssertFalse(manager.isUnlinkRequested(address: "127.0.0.1:50000"))
+
+        manager.setUnlinkRequested(id: id, requested: true)
+        XCTAssertTrue(manager.isUnlinkRequested(address: "127.0.0.1:50000"))
+        // Machine is still lifetime-linked (unlink not yet finalized)
+        XCTAssertTrue(manager.isLifetimeLinked(address: "127.0.0.1:50000"))
+
+        manager.setUnlinkRequested(id: id, requested: false)
+        XCTAssertFalse(manager.isUnlinkRequested(address: "127.0.0.1:50000"))
+    }
+
+    @MainActor
+    func testIsUnlinkRequestedForUnknownAddress() async {
+        let manager = MachineManager()
+        XCTAssertFalse(manager.isUnlinkRequested(address: "127.0.0.1:99999"))
+    }
+
+    @MainActor
     func testUnregisterRemovesMachine() async {
         let manager = MachineManager()
         let process = Process()
@@ -112,6 +150,21 @@ final class MachineManagerTests: XCTestCase {
         XCTAssertEqual(linked.first?.target.address, "127.0.0.1:50002")
     }
 
+    @MainActor
+    func testLinkedMachinesExcludesUnlinkRequested() async {
+        let manager = MachineManager()
+        let p1 = Process()
+        let p2 = Process()
+        let id1 = manager.register(process: p1, port: 50001, provenanceUUID: "uuid1")
+        _ = manager.register(process: p2, port: 50002, provenanceUUID: "uuid2")
+
+        manager.setUnlinkRequested(id: id1, requested: true)
+
+        let linked = manager.linkedMachines
+        XCTAssertEqual(linked.count, 1)
+        XCTAssertEqual(linked.first?.target.address, "127.0.0.1:50002")
+    }
+
     // MARK: - Window Close Action Decision
 
     @MainActor
@@ -129,6 +182,18 @@ final class MachineManagerTests: XCTestCase {
         let process = Process()
         let id = manager.register(process: process, port: 50000, provenanceUUID: "uuid")
         manager.unlink(id: id)
+
+        let action = manager.windowCloseAction(forAddress: "127.0.0.1:50000", clientCount: 1)
+
+        XCTAssertEqual(action, .disconnect)
+    }
+
+    @MainActor
+    func testWindowCloseActionUnlinkRequestedReturnsDisconnect() async {
+        let manager = MachineManager()
+        let process = Process()
+        let id = manager.register(process: process, port: 50000, provenanceUUID: "uuid")
+        manager.setUnlinkRequested(id: id, requested: true)
 
         let action = manager.windowCloseAction(forAddress: "127.0.0.1:50000", clientCount: 1)
 
@@ -242,6 +307,19 @@ final class MachineManagerTests: XCTestCase {
         let action = manager.quitAction()
 
         // Unlinked machines are not in linkedMachines, so no shutdown needed
+        XCTAssertEqual(action, .terminateNow)
+    }
+
+    @MainActor
+    func testQuitActionUnlinkRequestedMachinesAreIgnored() async {
+        let manager = MachineManager()
+        let process = Process()
+        let id = manager.register(process: process, port: 50000, provenanceUUID: "uuid")
+        manager.setUnlinkRequested(id: id, requested: true)
+
+        let action = manager.quitAction()
+
+        // Machines with pending unlink request are not in linkedMachines
         XCTAssertEqual(action, .terminateNow)
     }
 
