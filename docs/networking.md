@@ -752,9 +752,39 @@ On real hardware, data moves through the 3-byte FIFOs on **both phases** of the 
 
 The simulated "serial clock" determines when new bytes enter the RX FIFO or leave the TX FIFO. Rather than modelling individual bits at 200 kHz, the network backend delivers/consumes whole bytes at a configurable rate (default: one byte every 128 E-clock cycles, ~64 us, matching BeebEm's `TimeBetweenBytes`).
 
-Frame boundary tracking uses the datasheet's pointer model:
-- **TX**: Writing to "Frame Continue" ($FEA2) sets the frame boundary pointer. Writing to "Frame Terminate" ($FEA3) resets it. When a negative transition is detected at the third FIFO location (pointer transitions from set to clear), the transmitter appends FCS and closing flag.
-- **RX**: Address Present (AP) flag marks the first byte of a frame. Frame Valid (FV) is set when the last byte reaches the third FIFO location (positive transition of frame boundary pointer at FIFO position 3). Once FV is set, further data transfer to the last location is blocked until status is cleared.
+**FIFO entry encoding** (adopted from MAME's approach): Each FIFO position is a `uint16_t` where the lower 8 bits carry the data byte and upper bits carry co-located metadata:
+
+| Bit | Mask | Meaning |
+|-----|------|---------|
+| 0-7 | 0x00FF | Data byte |
+| 8 | 0x0100 | Entry valid (slot occupied) |
+| 9 | 0x0200 | Last byte of frame |
+| 10 | 0x0400 | Address Present (RX only) |
+
+This keeps metadata co-located with its data, so FIFO shifts are a single move per slot rather than parallel shifts of separate data and bitmask arrays. The valid bit (0x100) eliminates the need for a separate FIFO pointer — the number of occupied slots is implicit in which entries have bit 8 set.
+
+**Frame boundary tracking** uses the datasheet's pointer model:
+- **TX**: Writing to "Frame Continue" ($FEA2) sets the frame boundary pointer (bit 9 clear). Writing to "Frame Terminate" ($FEA3) sets bit 9 on the entry. When a negative transition is detected at the third FIFO location (entry with bit 9 set reaches the output), the transmitter appends FCS and closing flag.
+- **RX**: Address Present (bit 10) marks address bytes of a frame. Frame Valid (FV) is set when the last byte (bit 9 set) reaches the third FIFO location. Once FV is set, further data transfer to the last location is blocked until status is cleared.
+
+### Frame Field State Machine
+
+Both TX and RX paths track which HDLC frame field is being processed, using a state machine adopted from MAME's approach:
+
+| State | Field | Length | Transition |
+|-------|-------|--------|------------|
+| 0 | Idle | — | First FIFO push starts frame → state 2 |
+| 1 | Flag sync (RX only) | — | Flag detected → state 2 |
+| 2 | Address | 8 bits | If AEX and bit 0=0: stay in 2 (more address bytes); else → 3 |
+| 3 | Control | 8 bits | If CEX: → 4; else if LCF: → 5; else → 6 |
+| 4 | Extended control | 8 bits | If LCF: → 5; else → 6 |
+| 5 | Logical control | 8 bits | If bit 7=1: stay in 5 (more LCF bytes); else → 6 |
+| 6 | Data | TWL/RWL bits | Until frame terminates → 0 |
+
+This state machine is needed to:
+- **Correctly set AP**: Only on address bytes (state 2), not on control or data
+- **Handle extended addressing (AEX)**: Econet uses 4-byte addressing (dest net, dest stn, src net, src stn) — multiple address bytes with bit 0 continuation
+- **Determine word length**: Address/control fields are always 8 bits; data fields use CR4's TWL (TX) or RWL (RX) setting (5/6/7/8 bits, though Econet always uses 8)
 
 ### Status Register Model
 
@@ -785,68 +815,76 @@ The IRQ output asserts on the **same E-cycle** that sets the triggering status b
 The ADLC's IRQ output (active low) connects to the BBC Micro's NMI line, gated by the INTON/INTOFF hardware:
 
 **Beebium integration:**
-- `Mc6854` satisfies the `NmiSource` concept: `bool nmi_pending() const` returns the logical AND of the ADLC's IRQ output and the NMI-enable flip-flop state
+- `EconetSocket` (not `Mc6854` directly) satisfies the `NmiSource` role: `bool nmi_pending() const` returns `enabled_ && nmi_enable_ff_ && adlc_.irq_output()`
+- The NMI gating flip-flop (`nmi_enable_ff_`) lives in `EconetSocket`, not in `Mc6854` — matching the physical hardware where IC97 is separate from IC93
 - New mask constant: `kEconetNmiDeviceMask = 0x02` (bit 1, alongside disc controller's bit 0)
-- Hardware's `poll_nmi()` aggregates both disc and ADLC NMI sources
-- The ADLC's NMI is **not** subject to the 1MHz sampling restriction applied to the disc controller (since the ADLC runs at 2MHz and its IRQ output updates at 2MHz, it can be polled every cycle)
+- Hardware's NMI aggregation includes both disc and Econet sources
+- The Econet NMI is **not** subject to the 1MHz sampling restriction applied to the disc controller (since the ADLC runs at 2MHz and its IRQ output updates at 2MHz, it can be polled every cycle)
 
-**NMI gating** is external to the ADLC — it's address-decoded hardware on the BBC board:
-- INTOFF: reading $FE18 (station ID register) — clears the NMI-enable flip-flop
-- INTON: accessing $FE20 range (Video ULA) — sets the NMI-enable flip-flop
-- When INTON fires with a pending ADLC IRQ, NMI asserts immediately
+**NMI gating** is glue logic within `EconetSocket`, external to the ADLC:
+- INTOFF: side-effect of reading station ID register ($FE18) — clears `nmi_enable_ff_`
+- INTON: side-effect of accessing Video ULA range ($FE20) — sets `nmi_enable_ff_`
+- When INTON fires with a pending ADLC IRQ, NMI asserts on the next poll cycle
+- When socket is empty (no Econet fitted): `nmi_pending()` always returns false
 
 ### Machine::step() Integration
 
-The `Mc6854` integrates into `Machine::step()` as a 2MHz peripheral:
+The `EconetSocket` integrates into `Machine::step()` as a 2MHz peripheral. The socket delegates to `Mc6854` when enabled, and is a no-op when empty:
 
 ```
-ClockSubscriber: clock_rate = Rate_2MHz, clock_edges = Both
-NmiSource:       nmi_pending() -> bool
-
 step() {
     // ... existing CPU tick, video tick, VIA tick ...
 
-    // Tick ADLC (if Econet hardware fitted)
-    if (econet_enabled) {
-        if (is_rising) adlc.tick_rising();
-        else adlc.tick_falling();
-    }
+    // Tick Econet (delegates to ADLC when hardware is fitted; no-op when empty)
+    if (is_rising) memory.econet_socket.tick_rising();
+    else memory.econet_socket.tick_falling();
 
     // ... existing IRQ poll ...
 
-    // NMI poll: aggregate disc + ADLC
-    // ADLC NMI can be polled every 2MHz cycle (not restricted to 1MHz like disc)
+    // NMI poll: aggregate disc + Econet
+    // Disc NMI polled at 1MHz; Econet NMI polled at 2MHz (ADLC is a fast device)
     uint8_t nmi_mask = 0;
     if ((cycle_count & 1) == 0) {
         nmi_mask |= memory.poll_disc_nmi();   // Disc at 1MHz
     }
-    if (econet_enabled) {
-        nmi_mask |= adlc.nmi_pending() ? kEconetNmiDeviceMask : 0;
-    }
+    nmi_mask |= memory.econet_socket.nmi_pending() ? kEconetNmiDeviceMask : 0;
     M6502_SetDeviceNMI(&cpu, kDiscNmiDeviceMask | kEconetNmiDeviceMask, nmi_mask);
 }
 ```
 
-The ADLC address region ($FEA0-$FEA3) is mapped via `Mirror<0x03>` in the Hardware's memory map, with the NMI gating addresses ($FE18, $FE20) handled by the existing SHEILA routing logic.
+Note: No `if (econet_enabled)` guard needed — `EconetSocket::tick_rising()`, `tick_falling()`, and `nmi_pending()` are all no-ops when the socket is empty, matching the `DiscControllerSocket` pattern where the socket handles the null case internally.
 
 ### Class Structure
 
 ```
-Mc6854 (ClockSubscriber, NmiSource)
+EconetSocket (member of Hardware policy — analogous to DiscControllerSocket)
+├── enabled_                         // Whether Econet hardware is "fitted"
+├── station_id_                      // Station number (from --station N)
+├── nmi_enable_ff_                   // INTON/INTOFF flip-flop (IC97 glue logic)
+├── adlc_                            // Mc6854 instance
+├── Station ID Region (mapped to &FE18-&FE1F)
+│   ├── read() -> station_id_        // Returns station number
+│   └── read side-effect: INTOFF     // Clears nmi_enable_ff_
+├── ADLC Region (mapped to &FEA0-&FEBF)
+│   ├── read(offset) -> uint8_t      // Delegates to adlc_.read()
+│   └── write(offset, value)         // Delegates to adlc_.write()
+├── on_inton()                       // Called from Video ULA hook; sets nmi_enable_ff_
+├── nmi_pending() -> bool            // enabled_ && nmi_enable_ff_ && adlc_.irq_output()
+├── tick_rising()                    // Delegates to adlc_ when enabled
+├── tick_falling()                   // Delegates to adlc_ when enabled
+└── enabled() -> bool                // For HasEconetSocket concept
+
+Mc6854 (pure ADLC hardware — no knowledge of BBC-specific glue logic)
 ├── Registers
-│   ├── cr1_, cr2_, cr3_, cr4_      // Control register latches
-│   ├── sr1_, sr2_                   // Derived status (updated on E edges)
-│   └── nmi_enable_                  // INTON/INTOFF flip-flop state
+│   ├── cr1_, cr2_, cr3_, cr4_       // Control register latches
+│   └── sr1_, sr2_                   // Derived status (updated on E edges)
 ├── TX Path
-│   ├── tx_fifo_[3]                  // 3-byte transmit FIFO
-│   ├── tx_fifo_ptr_                 // Write pointer (0-3)
-│   ├── tx_last_flags_               // Bitmask: which slots are "last byte"
+│   ├── tx_fifo_[3]                  // uint16_t: data (0-7) + valid/last/AP metadata (8-10)
+│   ├── tx_state_                    // Frame field state machine (0=idle, 2=addr, 3-5=ctrl, 6=data)
 │   └── tx_frame_buffer_             // Assembled frame awaiting network send
 ├── RX Path
-│   ├── rx_fifo_[3]                  // 3-byte receive FIFO
-│   ├── rx_fifo_ptr_                 // Read pointer (0-3)
-│   ├── rx_ap_flags_                 // Bitmask: which slots have Address Present
-│   ├── rx_fc_flags_                 // Bitmask: which slots have Frame Complete
+│   ├── rx_fifo_[3]                  // uint16_t: data (0-7) + valid/last/AP metadata (8-10)
+│   ├── rx_state_                    // Frame field state machine (0=idle, 1=flag, 2=addr, 3-6=...)
 │   └── rx_frame_buffer_             // Received frame being trickled into FIFO
 ├── Timing
 │   ├── byte_timer_                  // Countdown for next byte transfer
@@ -856,34 +894,39 @@ Mc6854 (ClockSubscriber, NmiSource)
 │   ├── flag_fill_active_            // Pseudo flag fill state
 │   └── idle_                        // Line idle detection
 ├── Interface
-│   ├── read(offset) -> uint8_t      // CPU register read
-│   ├── write(offset, value)         // CPU register write
+│   ├── read(offset) -> uint8_t      // CPU register read (offsets 0-3)
+│   ├── write(offset, value)         // CPU register write (offsets 0-3)
 │   ├── tick_rising()                // E-clock rising edge
 │   ├── tick_falling()               // E-clock falling edge
-│   ├── nmi_pending() -> bool        // NmiSource concept
-│   ├── set_nmi_enable(bool)         // INTON/INTOFF control
-│   └── station_id() -> uint8_t      // Station number for $FE18 reads
+│   └── irq_output() -> bool         // ADLC IRQ pin state (active low on real chip)
 └── Network Backend (injected)
     ├── send(frame) -> bool          // Send AUN packet via UDP
     ├── receive() -> optional<frame> // Non-blocking receive
     └── is_connected() -> bool       // Socket/clock status for DCD
 ```
 
-The network backend is injected, keeping the ADLC as pure hardware emulation. Test doubles can simulate specific Econet scenarios without any UDP.
+**Separation of concerns**: The `Mc6854` is a pure ADLC emulation with no knowledge of BBC-specific details (NMI gating, station ID register, address decoding). The `EconetSocket` provides the BBC-specific glue logic — the NMI enable flip-flop, station ID register, and the INTON/INTOFF side-effects. This mirrors the physical hardware: IC93 (ADLC) is a Motorola part; IC97 (flip-flop) and the address decoding are Acorn's glue logic.
 
-### Comparison with BeebEm
+The network backend is injected into `Mc6854`, keeping it as pure hardware emulation. Test doubles can simulate specific Econet scenarios without any UDP.
 
-| Aspect | BeebEm | Beebium |
-|--------|--------|---------|
-| Tick granularity | Once per CPU instruction | Every 2MHz half-cycle (rising + falling) |
-| FIFO model | Shift register with cycle-counted trickle | 3-byte FIFO with position pointers and frame boundary markers, advanced on E phases |
-| Status derivation | Recomputed at poll time | Updated synchronously on E-clock falling edges |
-| NMI timing | Edge detection at poll time (may be late by one instruction) | Asserts on same E-cycle as triggering status bit |
-| E-clock phases | Not modelled | Both phases advance FIFO state |
-| PSE (priority filtering) | Partial (4-tier) | Full per datasheet |
-| Frame boundaries | Implicit in packet state machine | Explicit pointer transitions through FIFO positions |
-| Serial bit-level | Not modelled | Not modelled (abstracted — same as BeebEm, but for different reasons) |
-| Testability | Integrated with BeebEm global state | Isolated class with injected network backend |
+### Comparison with BeebEm and MAME
+
+| Aspect | BeebEm | MAME | Beebium |
+|--------|--------|------|---------|
+| Tick granularity | Once per CPU instruction | Timer callbacks | Every 2MHz half-cycle (rising + falling) |
+| FIFO model | `uint8_t[3]` + separate bitmask arrays | `uint16_t[3]` with metadata in upper bits | `uint16_t[3]` with metadata in upper bits (adopted from MAME) |
+| Frame field tracking | None (implicit in packet state) | 7-state machine (idle/flag/addr/ctrl/ext-ctrl/lcf/data) | 7-state machine (adopted from MAME) |
+| Status derivation | Recomputed at poll time | Level-sensitive recomputation | Updated synchronously on E-clock falling edges |
+| Stored vs present status | Not distinguished | Not distinguished | Explicit model for DCD, RxABT, Rx Idle |
+| NMI timing | Edge detection at poll time (may be late) | N/A (drives IRQ line directly) | Asserts on same E-cycle as triggering status bit |
+| E-clock phases | Not modelled | Not modelled | Both phases advance FIFO state |
+| PSE (priority filtering) | Partial (4-tier) | Not implemented (TODO) | Full per datasheet |
+| Extended addressing (AEX) | Not modelled | Bit 0 continuation check | Bit 0 continuation check (adopted from MAME) |
+| CRC | Not simulated | Hardcoded placeholder (TODO) | Not simulated (AUN/UDP provides checksums) |
+| Word length (CR4) | Not modelled | Full 5/6/7/8 bit support | Full 5/6/7/8 bit support |
+| Serial bit-level | Not modelled | Full (zero insertion/deletion, flag/abort detect) | Not modelled (abstracted to byte/frame level) |
+| Frame-level interface | Implicit (packet buffers) | Explicit (`send_frame()` / `out_frame_cb()`) | Explicit (injected network backend) |
+| Testability | Integrated with BeebEm global state | MAME device framework | Isolated class with injected network backend |
 
 ## Pi Econet Bridge
 
@@ -973,39 +1016,134 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
      - Register 2/3 write with CR1b0=0: TX data (register 3 auto-sets TX_LAST)
    - Status registers (SR1, SR2) updated synchronously on E-clock falling edges
    - 3-byte transmit and receive FIFOs advanced on both E phases (rising + falling)
-   - FIFO frame boundary pointers: tx_last_flags_, rx_ap_flags_, rx_fc_flags_ (bitmasks)
+   - FIFO entries are `uint16_t`: data in bits 0-7, metadata in bits 8-10 (valid, last-byte, address-present)
+   - Frame field state machine: tracks address/control/data phases for correct AP handling and word length
+   - Extended addressing (AEX): bit 0 continuation check for multi-byte address fields
+   - Word length (CR4): full 5/6/7/8 bit support for TX (TWL) and RX (RWL)
    - PSE (Prioritised Status Enable) with full 4-tier priority filtering per datasheet
    - Auto-clearing control bits: CR1b5, CR2b4, CR2b5, CR2b6, CR4b5
    - Edge-triggered interrupt: IRQ asserts on same E-cycle as triggering status bit
    - Injected network backend (for testability — test doubles replace UDP)
 
-2. **NMI gating (INTON/INTOFF)** — external to ADLC, in memory map routing
-   - INTOFF: any access to &FE18-&FE1F (station ID range); also returns station number
-   - INTON: any read from &FE20-&FE27 (Video ULA range)
-   - On Master: INTOFF at &FE38-&FE3B, INTON at &FE3C-&FE3F
-   - Flip-flop state stored in `Mc6854::nmi_enable_`, toggled via `set_nmi_enable(bool)`
-   - When INTON fires with pending IRQ: assert NMI immediately
+2. **`EconetSocket` class** — models the optional Econet hardware upgrade
 
-3. **Conditional hardware presence** (like disc controllers)
-   - `--station N` enables Econet hardware AND sets station number
-   - Without `--station`, no ADLC mapped — machine has no Econet fitted
-   - DNFS ROM auto-detects: reads &FE18, if no Econet hardware, no NFS initialisation
+   Following the same pattern as `DiscControllerSocket` for the FDC, `EconetSocket` represents the physical hardware socket on the BBC motherboard. On the Model B this was a set of discrete chip positions (IC93 for the MC68B54, IC97 for the NMI gating flip-flop, etc.); on the Master series it was a pin header for a carrier board. The socket abstraction covers both.
 
-4. **Memory mapping** (when enabled)
-   - Map ADLC to &FEA0-&FEA3 via `Mirror<0x03>`
-   - Map station ID register to &FE18 (returns configured station number)
-   - No bus stretching required ($FEA0-$BEBF is "fast" at 2MHz)
-   - NMI gating via INTON/INTOFF address decoding in SHEILA routing
+   **When empty** (no Econet hardware fitted):
+   - The ADLC and station ID regions are **not mapped** in the memory map
+   - Reads to &FEA0-&FEBF return the previous bus value (fast 2MHz open bus — capacitance holds)
+   - Reads to &FE18 return 0x00 (slow 1MHz open bus — pull-down resistors discharge)
+   - Writes to both regions are ignored (fall through to no-op)
+   - NMI is never asserted from the Econet source
+   - The DNFS ROM detects this state and skips NFS initialisation
+   - This matches the existing `unmapped_read_value()` behaviour in `BusStretching.hpp`:
+     slow 1MHz → 0x00, fast 2MHz → last bus value, FRED/JIM → 0xFF
 
-5. **CTS/DCD logic**
+   **When populated** (`--station N` specified):
+   - Delegates ADLC register access (&FEA0-&FEA3 via `Mirror<0x03>`) to the `Mc6854`
+   - Station ID register (&FE18) returns the configured station number
+   - NMI gating logic (INTON/INTOFF) is active
+   - ADLC is ticked on every 2MHz half-cycle
+
+   **Key difference from `DiscControllerSocket`**: The FDC socket uses runtime polymorphism (`unique_ptr<DiscControllerInterface>`) because multiple controller types can be installed (8271, WD1770, Opus, Watford). The Econet socket always contains the same hardware (MC68B54 ADLC + glue logic), so it can use a simpler `std::optional<Mc6854>` or a boolean enabled flag with a direct `Mc6854` member. No virtual dispatch needed.
+
+   ```
+   EconetSocket
+   ├── adlc_                        // Mc6854 instance (always present, but only active when enabled)
+   ├── enabled_                     // Whether Econet hardware is "fitted"
+   ├── station_id_                  // Station number (from --station N)
+   ├── nmi_enable_ff_               // INTON/INTOFF flip-flop (IC97 on Model B)
+   ├── ADLC Region (MemoryMappedDevice for &FEA0-&FEBF)
+   │   ├── read(offset)             // When enabled: adlc_.read(). When empty: last bus value (fast open bus)
+   │   └── write(offset, value)     // When enabled: adlc_.write(). When empty: ignored
+   ├── Station ID Region (MemoryMappedDevice for &FE18-&FE1F)
+   │   ├── read(offset)             // When enabled: station_id_ + INTOFF. When empty: 0x00 (slow open bus)
+   │   └── write(offset, value)     // Ignored (read-only register)
+   ├── on_inton()                   // Called when &FE20 is accessed (INTON side-effect)
+   ├── nmi_pending() -> bool        // enabled_ && nmi_enable_ff_ && adlc_.irq_output()
+   ├── tick_rising()                // Delegates to adlc_ when enabled; no-op when empty
+   └── tick_falling()               // Delegates to adlc_ when enabled; no-op when empty
+   ```
+
+3. **NMI gating (INTON/INTOFF)** — glue logic within `EconetSocket`
+
+   The NMI gating is not part of the ADLC itself — it's external glue logic (IC97 on the Model B, a flip-flop on the Econet carrier board on the Master). It lives in the `EconetSocket` because it's part of the Econet hardware upgrade, not the base machine.
+
+   - **INTOFF**: Triggered as a side-effect of reading the station ID register (&FE18). Clears `nmi_enable_ff_`. On real hardware, the address decoding for &FE18 drives the flip-flop's reset pin.
+   - **INTON**: Triggered as a side-effect of accessing the Video ULA range (&FE20). Sets `nmi_enable_ff_`. This is a quirk of the BBC's address decoding — the Econet hardware taps the same select line.
+   - On Master: INTOFF at &FE38, INTON at &FE3C (different addresses, same mechanism)
+   - When INTON fires with a pending ADLC IRQ: NMI asserts on the next poll cycle
+
+   **Integration with Video ULA**: The INTON side-effect must be triggered on *any* access to &FE20, not just Econet-specific accesses. This means the Video ULA's memory-mapped region needs a hook that notifies the `EconetSocket`. Options:
+   - The hardware's `write` handler for &FE20 calls both `video_ula.write()` and `econet_socket.on_inton()`
+   - Or the memory map routing explicitly invokes both
+
+4. **Memory mapping** — two non-contiguous address regions, conditionally present
+
+   The Econet hardware occupies two separate ranges in SHEILA:
+
+   ```
+   &FE18-&FE1F: Station ID register (+ INTOFF side-effect)
+                Currently unmapped — falls through to unmapped_read_value()
+                Unmapped behaviour: returns 0x00 (slow 1MHz region — pull-downs discharge)
+
+   &FEA0-&FEBF: ADLC registers
+                Currently unmapped — falls through to unmapped_read_value()
+                Unmapped behaviour: returns last bus value (fast 2MHz region — capacitance holds)
+   ```
+
+   **Critical: these regions must produce correct open bus values when Econet is not fitted.** Unlike the `DiscControllerSocket` which always returns 0xFF when empty, the Econet regions have different open bus characteristics:
+   - &FEA0 (fast 2MHz): previous bus value, NOT 0xFF
+   - &FE18 (slow 1MHz): 0x00, NOT 0xFF
+
+   Some code relies on these open bus values to detect whether Econet hardware is present. Getting this wrong would break hardware detection.
+
+   **Approach**: Always include both regions in the memory map via `EconetSocket`, but have the socket produce correct open bus values when disabled:
+   - `read_station_id()` when disabled: return 0x00 (1MHz open bus — pull-downs)
+   - `read_adlc(offset)` when disabled: return the last bus value (fast open bus — capacitance)
+
+   For the ADLC region, the socket needs access to the last bus value. Options:
+   - Pass `last_bus_value` from the memory map's read dispatch as a parameter
+   - Have `EconetSocket` track the bus value independently (less clean — duplicates state)
+   - Use a reference/pointer to the memory map's `last_bus_value_` member
+
+   When enabled, these regions delegate to the ADLC and station ID register normally.
+
+   No bus stretching required — &FEA0-&FEBF is confirmed "fast" at 2MHz.
+
+   **Note on &FE08-&FE0F (Serial ACIA)**: This range is also currently unmapped. It's unrelated to Econet but adjacent to the station ID range. Care needed to not overlap when adding the &FE18 region.
+
+5. **Concepts for hardware detection** (following `DiscConcepts.hpp` pattern)
+
+   ```cpp
+   // Concept to detect if hardware has an Econet socket
+   template<typename T>
+   concept HasEconetSocket = requires(T& hw) {
+       { hw.econet_socket } -> std::same_as<EconetSocket&>;
+   };
+
+   // Helper to check if Econet hardware is fitted at runtime
+   template<typename T>
+   bool econet_present(const T& hw) {
+       if constexpr (HasEconetSocket<T>) {
+           return hw.econet_socket.enabled();
+       } else {
+           return false;
+       }
+   }
+   ```
+
+   All three current hardware variants (Model B, Model B+, Model B with ROM/RAM board) would have `EconetSocket econet_socket` as a member. The Master series (future) would also have it, with different INTON/INTOFF addresses.
+
+6. **CTS/DCD logic**
    - DCD (SR2b5): low when network backend is connected (clock present), high otherwise
    - CTS: `!(backend.is_connected() && CR2b7_RTS)` — same logic as BeebEm
    - CTS positive-edge stored; cleared by Clear TX Status
 
-6. **Integration with Machine::step()**
-   - Tick ADLC on every 2MHz cycle (rising + falling edges) — no 1MHz restriction
+7. **Integration with Machine::step()**
+   - Tick `EconetSocket` on every 2MHz cycle (rising + falling edges) — no-op when empty
    - `kEconetNmiDeviceMask = 0x02` alongside existing `kDiscNmiDeviceMask = 0x01`
-   - Aggregate NMI: disc at 1MHz + ADLC at 2MHz (different polling rates)
+   - Aggregate NMI: disc at 1MHz + Econet at 2MHz (different polling rates)
    - Byte trickle rate: one TX/RX byte every 128 E-cycles (configurable)
 
 ### Phase 2: Econet Protocol Layer
@@ -1208,6 +1346,14 @@ beebium --drive0 games.ssd
   - NMI handling in `6502core.cpp` (EconetPoll called after each instruction)
 - BeebEm macOS: `/Users/rjs/Code/beebem-mac/Src/Econet.cpp`
   - Structurally identical to Windows; `#ifdef __APPLE__` for platform differences
+- MAME: `/Users/rjs/Code/mame/src/devices/machine/mc6854.cpp` + `mc6854.h`
+  - ~985 lines; cycle-accurate ADLC with both bit-level and frame-level interfaces
+  - Clean `uint16_t` FIFO entries with metadata in upper bits (adopted for Beebium)
+  - 7-state frame field machine tracking address/control/data phases (adopted for Beebium)
+  - Full bit-level RX: zero deletion, flag detection, abort detection, shift register
+  - Extended addressing (AEX) and extended control (CEX) field handling
+  - Unimplemented: PSE, stored/present status, CRC (hardcoded), loop mode, NRZ
+  - Used for Thomson nano-network extension (up to 32 computers at 500 Kbps)
 - Pi Econet Bridge: https://github.com/cr12925/PiEconetBridge
 
 ### Beebium Integration Points
