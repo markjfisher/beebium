@@ -20,14 +20,15 @@
 namespace beebium {
 
 // Test double for NetworkBackend. Captures sent frames and allows injection of
-// receive frames for deterministic testing of the ADLC.
+// receive frames for deterministic testing of the ADLC and four-way handshake.
 class TestBackend : public NetworkBackend {
 public:
-    void send(const std::vector<uint8_t>& frame) override {
-        sent_frames_.push_back(frame);
+    void send_frame(const NetworkFrame& frame) override {
+        sent_network_frames_.push_back(frame);
+        sent_raw_frames_.push_back(frame.data);
     }
 
-    std::optional<std::vector<uint8_t>> receive() override {
+    std::optional<NetworkFrame> receive_frame() override {
         if (rx_queue_.empty()) {
             return std::nullopt;
         }
@@ -40,34 +41,58 @@ public:
         return connected_;
     }
 
-    // Test control: inject a frame into the receive queue.
-    void inject_rx_frame(std::vector<uint8_t> frame) {
+    // --- Test control: inject frames ---
+
+    // Inject a raw frame into the receive queue (convenience for non-AUN tests).
+    void inject_rx_frame(std::vector<uint8_t> data) {
+        NetworkFrame frame;
+        frame.type = FrameType::RawFrame;
+        frame.data = std::move(data);
         rx_queue_.push_back(std::move(frame));
     }
 
-    // Test control: set connection state.
+    // Inject a typed AUN frame into the receive queue.
+    void inject_rx_network_frame(NetworkFrame frame) {
+        rx_queue_.push_back(std::move(frame));
+    }
+
+    // Set connection state.
     void set_connected(bool connected) {
         connected_ = connected;
     }
 
-    // Test inspection: frames sent by the ADLC.
+    // --- Test inspection: sent frames ---
+
+    // Raw data payloads from all sent frames (backward-compatible convenience).
     const std::vector<std::vector<uint8_t>>& sent_frames() const {
-        return sent_frames_;
+        return sent_raw_frames_;
     }
 
-    // Test inspection: number of frames sent.
+    // Full typed frames sent by the ADLC.
+    const std::vector<NetworkFrame>& sent_network_frames() const {
+        return sent_network_frames_;
+    }
+
+    // Number of frames sent.
     size_t sent_frame_count() const {
-        return sent_frames_.size();
+        return sent_network_frames_.size();
     }
 
-    // Test inspection: clear sent frame history.
+    // Clear sent frame history.
     void clear_sent_frames() {
-        sent_frames_.clear();
+        sent_network_frames_.clear();
+        sent_raw_frames_.clear();
+    }
+
+    // Number of frames remaining in the receive queue.
+    size_t rx_queue_size() const {
+        return rx_queue_.size();
     }
 
 private:
-    std::vector<std::vector<uint8_t>> sent_frames_;
-    std::deque<std::vector<uint8_t>> rx_queue_;
+    std::vector<NetworkFrame> sent_network_frames_;
+    std::vector<std::vector<uint8_t>> sent_raw_frames_;
+    std::deque<NetworkFrame> rx_queue_;
     bool connected_ = true;
 };
 

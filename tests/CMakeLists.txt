@@ -71,6 +71,11 @@ add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_econet_socket)
 
+# Four-way handshake (AUN mode) tests
+add_executable(test_four_way_handshake test_four_way_handshake.cpp)
+target_link_libraries(test_four_way_handshake PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_four_way_handshake)
+
 # Disc controller socket tests
 add_executable(test_disc_controller_socket test_disc_controller_socket.cpp)
 target_link_libraries(test_disc_controller_socket PRIVATE beebium_core Catch2::Catch2WithMain)

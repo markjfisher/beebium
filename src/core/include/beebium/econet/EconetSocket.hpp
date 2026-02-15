@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "FourWayHandshake.hpp"
 #include "Mc6854.hpp"
 #include "NetworkBackend.hpp"
 
@@ -52,9 +53,19 @@ public:
     // --- Configuration ---
 
     // Fit the Econet hardware: sets station number and connects the network backend.
-    void enable(uint8_t station_id, std::unique_ptr<NetworkBackend> backend) {
+    // When aun_mode is true, a FourWayHandshake decorator is inserted between the
+    // ADLC and the backend to bridge AUN's two-way protocol to the four-way
+    // handshake that NFS ROMs expect.
+    void enable(uint8_t station_id, std::unique_ptr<NetworkBackend> backend,
+                bool aun_mode = false) {
         backend_ = std::move(backend);
-        adlc_ = std::make_unique<Mc6854>(*backend_);
+        if (aun_mode) {
+            handshake_ = std::make_unique<FourWayHandshake>(*backend_);
+            adlc_ = std::make_unique<Mc6854>(*handshake_);
+        } else {
+            handshake_.reset();
+            adlc_ = std::make_unique<Mc6854>(*backend_);
+        }
         station_id_ = station_id;
         enabled_ = true;
     }
@@ -62,6 +73,7 @@ public:
     // Remove the Econet hardware (return to empty socket state).
     void disable() {
         adlc_.reset();
+        handshake_.reset();
         backend_.reset();
         enabled_ = false;
         nmi_enable_ff_ = false;
@@ -142,9 +154,12 @@ public:
     // --- Clock ---
 
     // 2MHz clock edges — delegates to ADLC when populated, no-op when empty.
+    // The handshake is ticked before the ADLC so that timeout-generated frames
+    // are available when the ADLC's byte trickle calls receive_frame().
     void tick_rising() {
-        if (enabled_ && adlc_) {
-            adlc_->tick_rising();
+        if (enabled_) {
+            if (handshake_) handshake_->tick();
+            if (adlc_) adlc_->tick_rising();
         }
     }
 
@@ -160,6 +175,9 @@ public:
         if (adlc_) {
             adlc_->hard_reset();
         }
+        if (handshake_) {
+            handshake_->reset();
+        }
         nmi_enable_ff_ = false;
     }
 
@@ -169,9 +187,12 @@ public:
     uint8_t station_id() const { return station_id_; }
     Mc6854* adlc() { return adlc_.get(); }
     const Mc6854* adlc() const { return adlc_.get(); }
+    FourWayHandshake* handshake() { return handshake_.get(); }
+    const FourWayHandshake* handshake() const { return handshake_.get(); }
 
 private:
     std::unique_ptr<NetworkBackend> backend_;
+    std::unique_ptr<FourWayHandshake> handshake_;
     std::unique_ptr<Mc6854> adlc_;
     uint8_t station_id_ = 0;
     bool enabled_ = false;

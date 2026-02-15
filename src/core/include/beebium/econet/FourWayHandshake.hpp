@@ -1,0 +1,544 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include "NetworkBackend.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <deque>
+#include <vector>
+
+namespace beebium {
+
+// Bridges AUN's two-way protocol (data + ack) to the four-way handshake
+// (scout + scout-ack + data + final-ack) that Econet NFS ROMs expect.
+//
+// Implements NetworkBackend as a decorator: the ADLC talks to this class
+// using raw Econet frames, and this class translates to/from typed AUN
+// packets on the wrapped backend.  Scout phases are generated locally
+// using timeouts; only data and ack packets cross the real network.
+//
+// Timer tick() must be called once per 2MHz rising edge, before the ADLC
+// tick, so that timeout-generated frames are available when the ADLC's
+// byte trickle calls receive_frame().
+class FourWayHandshake : public NetworkBackend {
+public:
+
+    // Handshake states
+    enum class Stage : uint8_t {
+        Idle,               // No transaction
+        ScoutSent,          // TX: scout held, waiting for timeout to fake ack
+        ScoutAckReceived,   // TX: fake scout ack delivered, waiting for data from Beeb
+        DataSent,           // TX: AUN Unicast sent, waiting for remote AUN Ack
+        WaitForIdle,        // Transaction finishing, draining buffers
+        ScoutReceived,      // RX: scout delivered to Beeb, waiting for Beeb's ack
+        ScoutAckSent,       // RX: Beeb's ack swallowed, waiting for timeout to deliver data
+        DataReceived,       // RX: data delivered to Beeb, waiting for Beeb's final ack
+        ImmediateSent,      // TX: immediate sent, waiting for reply from remote
+        ImmediateReceived,  // RX: immediate reply delivered, waiting for Beeb's response
+    };
+
+    // Handshake timeouts (in ticks — one per 2MHz rising edge)
+    static constexpr int SCOUT_ACK_TIMEOUT = 5000;     // ~2.5ms — delay before faking scout ack
+    static constexpr int WATCHDOG_TIMEOUT  = 500000;    // ~250ms — force-reset hung transactions
+    static constexpr int FLAG_FILL_TIMEOUT = 500000;    // ~250ms — assume peer finished
+
+    // Econet frame byte offsets
+    static constexpr int FRAME_DEST_STN = 0;
+    static constexpr int FRAME_DEST_NET = 1;
+    static constexpr int FRAME_SRC_STN  = 2;
+    static constexpr int FRAME_SRC_NET  = 3;
+    static constexpr int FRAME_CONTROL  = 4;
+    static constexpr int FRAME_PORT     = 5;
+    static constexpr int FRAME_DATA     = 6;
+
+    explicit FourWayHandshake(NetworkBackend& backend)
+        : backend_(backend) {}
+
+    // --- NetworkBackend interface ---
+
+    // Called by the ADLC when a complete frame has been assembled.
+    // The frame is a RawFrame with data containing Econet frame bytes.
+    void send_frame(const NetworkFrame& frame) override {
+        const auto& data = frame.data;
+        switch (stage_) {
+            case Stage::Idle:
+                handle_tx_from_idle(data);
+                break;
+            case Stage::ScoutAckReceived:
+                handle_tx_data_after_scout_ack(data);
+                break;
+            case Stage::ScoutReceived:
+                handle_tx_scout_ack_from_beeb(data);
+                break;
+            case Stage::DataReceived:
+                handle_tx_final_ack_from_beeb(data);
+                break;
+            case Stage::ImmediateReceived:
+                handle_tx_immediate_reply(data);
+                break;
+            default:
+                // Unexpected TX in this state — reset
+                reset_handshake();
+                break;
+        }
+    }
+
+    // Called by the ADLC's byte trickle to fetch the next frame for RX delivery.
+    // Returns a RawFrame with Econet bytes, or nullopt if nothing available.
+    std::optional<NetworkFrame> receive_frame() override {
+        // 1. Return queued frames first (from timeouts or handshake processing)
+        if (!rx_queue_.empty()) {
+            auto frame = std::move(rx_queue_.front());
+            rx_queue_.pop_front();
+            return frame;
+        }
+
+        // 2. Check backend for incoming AUN packets
+        auto packet = backend_.receive_frame();
+        if (!packet) return std::nullopt;
+
+        // 3. Route through handshake state machine
+        if (!handle_incoming(*packet)) return std::nullopt;
+
+        // 4. Return first generated frame
+        if (!rx_queue_.empty()) {
+            auto frame = std::move(rx_queue_.front());
+            rx_queue_.pop_front();
+            return frame;
+        }
+
+        return std::nullopt;
+    }
+
+    bool is_connected() const override {
+        return backend_.is_connected();
+    }
+
+    bool is_receiving_flags() const override {
+        return flag_fill_active_;
+    }
+
+    // --- Timer tick (called once per 2MHz rising edge) ---
+
+    void tick() {
+        if (handshake_timer_ > 0) {
+            if (--handshake_timer_ == 0) {
+                on_handshake_timeout();
+            }
+        }
+
+        if (watchdog_timer_ > 0) {
+            if (--watchdog_timer_ == 0) {
+                on_watchdog_timeout();
+            }
+        }
+
+        if (flag_fill_timer_ > 0) {
+            if (--flag_fill_timer_ == 0) {
+                flag_fill_active_ = false;
+            }
+        }
+
+        // WaitForIdle → Idle when all queued frames have been consumed
+        if (stage_ == Stage::WaitForIdle && rx_queue_.empty()) {
+            stage_ = Stage::Idle;
+        }
+    }
+
+    // Reset all handshake state (called on system reset).
+    void reset() {
+        reset_handshake();
+    }
+
+    // --- State inspection ---
+
+    Stage stage() const { return stage_; }
+    bool flag_fill_active() const { return flag_fill_active_; }
+
+    // Number of extra scout payload bytes for a given control byte value.
+    static int scout_payload_size(uint8_t ctrl) {
+        switch (ctrl & 0x7F) {
+            case 0x02: return 8;                      // POKE
+            case 0x03: case 0x04: case 0x05: return 4; // JSR, UserProc, OSProc
+            default: return 0;
+        }
+    }
+
+private:
+
+    // --- TX frame routing ---
+
+    // First TX frame from Idle: classify as scout, broadcast, or immediate.
+    void handle_tx_from_idle(const std::vector<uint8_t>& data) {
+        if (data.size() < 4) return;  // Malformed — too short for addressing
+
+        uint8_t dest_stn = data[FRAME_DEST_STN];
+        uint8_t dest_net = data[FRAME_DEST_NET];
+        uint8_t src_stn  = data[FRAME_SRC_STN];
+        uint8_t src_net  = data[FRAME_SRC_NET];
+
+        // Broadcast: destination station 0xFF
+        if (dest_stn == 0xFF) {
+            NetworkFrame nf;
+            nf.type = FrameType::Broadcast;
+            nf.dest_stn = dest_stn;
+            nf.dest_net = dest_net;
+            nf.src_stn = src_stn;
+            nf.src_net = src_net;
+            if (data.size() >= 6) {
+                nf.control_byte = data[FRAME_CONTROL] & 0x7F;
+                nf.port = data[FRAME_PORT];
+                if (data.size() > 6) {
+                    nf.data.assign(data.begin() + FRAME_DATA, data.end());
+                }
+            }
+            backend_.send_frame(nf);
+            set_flag_fill();
+            stage_ = Stage::WaitForIdle;
+            return;
+        }
+
+        if (data.size() < 6) return;  // Too short for scout header
+
+        uint8_t ctrl = data[FRAME_CONTROL];
+        uint8_t port = data[FRAME_PORT];
+
+        // Immediate operation: port 0x00
+        if (port == 0x00) {
+            NetworkFrame nf;
+            nf.type = FrameType::Immediate;
+            nf.port = 0;
+            nf.control_byte = ctrl & 0x7F;
+            nf.dest_stn = dest_stn;
+            nf.dest_net = dest_net;
+            nf.src_stn = src_stn;
+            nf.src_net = src_net;
+            if (data.size() > FRAME_DATA) {
+                nf.data.assign(data.begin() + FRAME_DATA, data.end());
+            }
+            backend_.send_frame(nf);
+            save_addressing(dest_stn, dest_net, src_stn, src_net, ctrl, port);
+            arm_watchdog();
+            stage_ = Stage::ImmediateSent;
+            return;
+        }
+
+        // Unicast scout: save frame, arm timeout, do NOT send to network
+        saved_scout_ = data;
+        save_addressing(dest_stn, dest_net, src_stn, src_net, ctrl, port);
+        arm_scout_timer();
+        arm_watchdog();
+        set_flag_fill();
+        stage_ = Stage::ScoutSent;
+    }
+
+    // Beeb sends data frame after receiving (fake) scout ack.
+    void handle_tx_data_after_scout_ack(const std::vector<uint8_t>& data) {
+        NetworkFrame nf;
+        nf.type = FrameType::Unicast;
+        nf.port = saved_port_;
+        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.dest_stn = saved_dest_stn_;
+        nf.dest_net = saved_dest_net_;
+        nf.src_stn = saved_src_stn_;
+        nf.src_net = saved_src_net_;
+
+        // AUN payload = scout extra bytes + data frame payload (after 4 address bytes)
+        int extra = scout_payload_size(saved_ctrl_);
+        if (extra > 0 && saved_scout_.size() > static_cast<size_t>(FRAME_DATA)) {
+            int available = std::min(extra,
+                static_cast<int>(saved_scout_.size() - FRAME_DATA));
+            nf.data.insert(nf.data.end(),
+                saved_scout_.begin() + FRAME_DATA,
+                saved_scout_.begin() + FRAME_DATA + available);
+        }
+        if (data.size() > 4) {
+            nf.data.insert(nf.data.end(), data.begin() + 4, data.end());
+        }
+
+        backend_.send_frame(nf);
+        saved_scout_.clear();
+        arm_watchdog();
+        stage_ = Stage::DataSent;
+    }
+
+    // Beeb sends scout ack after receiving a locally-constructed scout.
+    void handle_tx_scout_ack_from_beeb(const std::vector<uint8_t>& /*data*/) {
+        // Don't send to network — the scout was generated locally
+        arm_scout_timer();
+        stage_ = Stage::ScoutAckSent;
+    }
+
+    // Beeb sends final ack after receiving data.
+    void handle_tx_final_ack_from_beeb(const std::vector<uint8_t>& /*data*/) {
+        NetworkFrame nf;
+        nf.type = FrameType::Ack;
+        nf.port = saved_port_;
+        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.dest_stn = saved_src_stn_;   // Ack goes TO the original source
+        nf.dest_net = saved_src_net_;
+        nf.src_stn = saved_dest_stn_;   // FROM us (we were the original destination)
+        nf.src_net = saved_dest_net_;
+        backend_.send_frame(nf);
+        clear_flag_fill();
+        stage_ = Stage::WaitForIdle;
+    }
+
+    // Beeb sends reply to an immediate operation we received.
+    void handle_tx_immediate_reply(const std::vector<uint8_t>& data) {
+        if (data.size() < 4) {
+            reset_handshake();
+            return;
+        }
+        NetworkFrame nf;
+        nf.type = FrameType::ImmReply;
+        nf.port = 0;
+        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.dest_stn = saved_src_stn_;   // Reply goes TO the requester
+        nf.dest_net = saved_src_net_;
+        nf.src_stn = saved_dest_stn_;   // FROM us
+        nf.src_net = saved_dest_net_;
+        if (data.size() > 4) {
+            nf.data.assign(data.begin() + 4, data.end());
+        }
+        backend_.send_frame(nf);
+        stage_ = Stage::WaitForIdle;
+    }
+
+    // --- RX packet routing ---
+
+    // Route an incoming AUN packet based on current handshake stage.
+    bool handle_incoming(NetworkFrame& packet) {
+        switch (stage_) {
+            case Stage::Idle:
+                return handle_rx_in_idle(packet);
+
+            case Stage::DataSent:
+                if (packet.type == FrameType::Ack) {
+                    // Remote acknowledged our data — generate fake final ack for Beeb
+                    enqueue_rx_frame({
+                        saved_src_stn_, saved_src_net_,     // dest of ack = us
+                        saved_dest_stn_, saved_dest_net_    // src of ack = them
+                    });
+                    clear_flag_fill();
+                    stage_ = Stage::WaitForIdle;
+                    return true;
+                }
+                return false;
+
+            case Stage::ImmediateSent:
+                if (packet.type == FrameType::ImmReply) {
+                    // Construct Econet frame for the Beeb
+                    std::vector<uint8_t> frame;
+                    frame.push_back(saved_src_stn_);   // dest = us
+                    frame.push_back(saved_src_net_);
+                    frame.push_back(saved_dest_stn_);  // src = them
+                    frame.push_back(saved_dest_net_);
+                    frame.insert(frame.end(),
+                        packet.data.begin(), packet.data.end());
+                    enqueue_rx_frame(std::move(frame));
+                    stage_ = Stage::WaitForIdle;
+                    return true;
+                }
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    // Handle a received frame when the handshake is idle.
+    bool handle_rx_in_idle(NetworkFrame& packet) {
+        switch (packet.type) {
+            case FrameType::Unicast: {
+                // Construct scout frame for the Beeb
+                int extra = scout_payload_size(packet.control_byte);
+                int available = std::min(extra, static_cast<int>(packet.data.size()));
+
+                std::vector<uint8_t> scout;
+                scout.push_back(packet.dest_stn);
+                scout.push_back(packet.dest_net);
+                scout.push_back(packet.src_stn);
+                scout.push_back(packet.src_net);
+                scout.push_back(packet.control_byte | 0x80);
+                scout.push_back(packet.port);
+                if (available > 0) {
+                    scout.insert(scout.end(),
+                        packet.data.begin(), packet.data.begin() + available);
+                }
+
+                // Cache remaining data for after scout ack
+                cached_rx_data_.clear();
+                if (static_cast<int>(packet.data.size()) > extra) {
+                    cached_rx_data_.assign(
+                        packet.data.begin() + std::max(extra, 0),
+                        packet.data.end());
+                }
+
+                save_addressing(packet.dest_stn, packet.dest_net,
+                                packet.src_stn, packet.src_net,
+                                packet.control_byte, packet.port);
+                enqueue_rx_frame(std::move(scout));
+                set_flag_fill();
+                arm_watchdog();
+                stage_ = Stage::ScoutReceived;
+                return true;
+            }
+
+            case FrameType::Broadcast: {
+                // Deliver broadcast directly as an Econet frame
+                std::vector<uint8_t> frame;
+                frame.push_back(packet.dest_stn);
+                frame.push_back(packet.dest_net);
+                frame.push_back(packet.src_stn);
+                frame.push_back(packet.src_net);
+                frame.push_back(packet.control_byte | 0x80);
+                frame.push_back(packet.port);
+                frame.insert(frame.end(),
+                    packet.data.begin(), packet.data.end());
+                enqueue_rx_frame(std::move(frame));
+                // Broadcasts are fire-and-forget — stay in Idle
+                return true;
+            }
+
+            case FrameType::Immediate: {
+                // Deliver immediate operation as an Econet frame
+                std::vector<uint8_t> frame;
+                frame.push_back(packet.dest_stn);
+                frame.push_back(packet.dest_net);
+                frame.push_back(packet.src_stn);
+                frame.push_back(packet.src_net);
+                frame.push_back(packet.control_byte | 0x80);
+                frame.push_back(packet.port);
+                frame.insert(frame.end(),
+                    packet.data.begin(), packet.data.end());
+                save_addressing(packet.dest_stn, packet.dest_net,
+                                packet.src_stn, packet.src_net,
+                                packet.control_byte, packet.port);
+                enqueue_rx_frame(std::move(frame));
+                stage_ = Stage::ImmediateReceived;
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    // --- Timeout handlers ---
+
+    void on_handshake_timeout() {
+        switch (stage_) {
+            case Stage::ScoutSent: {
+                // Generate fake scout ack: swap src/dest from saved scout
+                enqueue_rx_frame({
+                    saved_src_stn_, saved_src_net_,
+                    saved_dest_stn_, saved_dest_net_
+                });
+                clear_flag_fill();
+                stage_ = Stage::ScoutAckReceived;
+                break;
+            }
+            case Stage::ScoutAckSent: {
+                // Deliver cached data as an Econet data frame
+                std::vector<uint8_t> frame;
+                frame.push_back(saved_dest_stn_);  // dest = us
+                frame.push_back(saved_dest_net_);
+                frame.push_back(saved_src_stn_);   // src = them
+                frame.push_back(saved_src_net_);
+                frame.insert(frame.end(),
+                    cached_rx_data_.begin(), cached_rx_data_.end());
+                cached_rx_data_.clear();
+                enqueue_rx_frame(std::move(frame));
+                stage_ = Stage::DataReceived;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    void on_watchdog_timeout() {
+        reset_handshake();
+    }
+
+    // --- Helpers ---
+
+    void enqueue_rx_frame(std::vector<uint8_t> data) {
+        NetworkFrame frame;
+        frame.type = FrameType::RawFrame;
+        frame.data = std::move(data);
+        rx_queue_.push_back(std::move(frame));
+    }
+
+    void save_addressing(uint8_t dest_stn, uint8_t dest_net,
+                         uint8_t src_stn, uint8_t src_net,
+                         uint8_t ctrl, uint8_t port) {
+        saved_dest_stn_ = dest_stn;
+        saved_dest_net_ = dest_net;
+        saved_src_stn_ = src_stn;
+        saved_src_net_ = src_net;
+        saved_ctrl_ = ctrl;
+        saved_port_ = port;
+    }
+
+    void arm_scout_timer() { handshake_timer_ = SCOUT_ACK_TIMEOUT; }
+    void arm_watchdog() { watchdog_timer_ = WATCHDOG_TIMEOUT; }
+
+    void set_flag_fill() {
+        flag_fill_active_ = true;
+        flag_fill_timer_ = FLAG_FILL_TIMEOUT;
+    }
+
+    void clear_flag_fill() {
+        flag_fill_active_ = false;
+        flag_fill_timer_ = 0;
+    }
+
+    void reset_handshake() {
+        stage_ = Stage::Idle;
+        handshake_timer_ = 0;
+        watchdog_timer_ = 0;
+        clear_flag_fill();
+        saved_scout_.clear();
+        cached_rx_data_.clear();
+        rx_queue_.clear();
+    }
+
+    // --- State ---
+
+    NetworkBackend& backend_;
+    Stage stage_ = Stage::Idle;
+
+    // Handshake timers (count ticks, decremented once per tick() call)
+    int handshake_timer_ = 0;
+    int watchdog_timer_ = 0;
+    int flag_fill_timer_ = 0;
+    bool flag_fill_active_ = false;
+
+    // Saved state for the current handshake transaction
+    std::vector<uint8_t> saved_scout_;       // TX path: saved scout frame
+    std::vector<uint8_t> cached_rx_data_;    // RX path: cached AUN payload for data delivery
+    std::deque<NetworkFrame> rx_queue_;       // Frames waiting for ADLC to receive
+
+    uint8_t saved_dest_stn_ = 0;
+    uint8_t saved_dest_net_ = 0;
+    uint8_t saved_src_stn_ = 0;
+    uint8_t saved_src_net_ = 0;
+    uint8_t saved_ctrl_ = 0;
+    uint8_t saved_port_ = 0;
+};
+
+}  // namespace beebium

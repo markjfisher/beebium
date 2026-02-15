@@ -218,6 +218,7 @@ public:
 
         // Reset byte timer
         byte_timer_ = 0;
+
     }
 
     // IRQ output pin (directly drives NMI via BBC glue logic)
@@ -297,7 +298,7 @@ private:
             rx_frame_buffer_.clear();
             rx_buffer_index_ = 0;
             fd_stored_ = false;
-    
+
             fv_stored_ = false;
             err_stored_ = false;
             abt_stored_ = false;
@@ -315,7 +316,7 @@ private:
             rx_frame_buffer_.clear();
             rx_buffer_index_ = 0;
             fv_stored_ = false;
-    
+
             // Bit auto-clears — don't store it
             value &= ~CR1_DISCONTINUE;
         }
@@ -444,15 +445,23 @@ private:
             tx_frame_buffer_.push_back(data);
 
             if (entry & FIFO_LAST) {
-                // Frame complete — send via backend
-                backend_.send(tx_frame_buffer_);
-                tx_frame_buffer_.clear();
+                // Frame complete — send to backend
+                on_tx_frame_complete();
             }
         } else if (!tx_frame_buffer_.empty()) {
             // FIFO empty mid-frame → TX underrun
             txu_stored_ = true;
             tx_frame_buffer_.clear();
         }
+    }
+
+    // Called when a complete frame has been assembled in tx_frame_buffer_.
+    void on_tx_frame_complete() {
+        NetworkFrame nf;
+        nf.type = FrameType::RawFrame;
+        nf.data = tx_frame_buffer_;
+        backend_.send_frame(nf);
+        tx_frame_buffer_.clear();
     }
 
     // RX: If FIFO has space and no FV blocking, push from rx_frame_buffer_.
@@ -462,11 +471,11 @@ private:
         // If FV is set, don't push more data until it's cleared
         if (fv_stored_) return;
 
-        // Try to fetch a new frame from backend if we have no buffered frame
+        // Try to fetch a new frame if we have no buffered frame
         if (rx_buffer_index_ >= rx_frame_buffer_.size()) {
-            auto frame = backend_.receive();
+            auto frame = backend_.receive_frame();
             if (frame) {
-                rx_frame_buffer_ = std::move(*frame);
+                rx_frame_buffer_ = std::move(frame->data);
                 rx_buffer_index_ = 0;
                 rx_frame_field_ = FrameField::Idle;
             } else {
@@ -604,14 +613,24 @@ private:
         // DCD present: reflects backend connection (DCD=1 when disconnected)
         bool dcd_present = !backend_.is_connected();
 
-        // Rx Idle present: (placeholder — will be driven by frame timing in Phase 3)
-        bool idle_present = false;
+        // Rx Idle present: line is idle when RX not in reset, FIFO empty, no FV,
+        // and no pending data in the frame buffer
+        bool idle_present = !(cr1_ & CR1_RX_RESET)
+            && rx_fifo_empty()
+            && !fv_stored_
+            && (rx_buffer_index_ >= rx_frame_buffer_.size());
 
-        // Rx Abort present: (placeholder — will be driven by abort detection)
+        // Flag fill from the backend suppresses idle (line appears busy)
+        bool idle_condition = idle_present && !backend_.is_receiving_flags();
+
+        // Rx Abort present: (placeholder — not simulated over AUN/UDP)
         bool abt_present = false;
 
         // CTS present: reflects external CTS input (active low: high = not clear to send)
         bool cts_present = cts_input_;
+
+        // Flag Detected: driven by backend flag fill, or by stored latch
+        bool fd_condition = fd_stored_ || backend_.is_receiving_flags();
 
         // --- Stored condition edge detection ---
 
@@ -637,7 +656,7 @@ private:
         // Dual-nature bits: OR of stored latch + present input
         bool dcd_bit = dcd_stored_ || dcd_present;
         bool abt_bit = abt_stored_ || abt_present;
-        bool idle_bit = idle_stored_ || idle_present;
+        bool idle_bit = (idle_stored_ || idle_condition);
 
         uint8_t sr2_raw = 0;
         if (ap_present)                sr2_raw |= SR2_AP;
@@ -663,7 +682,7 @@ private:
 
         sr1_ = (rda ? SR1_RDA : 0)
              | (s2rq ? SR1_S2RQ : 0)
-             | (fd_stored_ ? SR1_FD : 0)
+             | (fd_condition ? SR1_FD : 0)
              | ((cts_stored_ || cts_present) ? SR1_CTS : 0)
              | (txu_stored_ ? SR1_TXU : 0)
              | (tdra ? SR1_TDRA : 0);
@@ -768,7 +787,7 @@ private:
     FrameField tx_frame_field_ = FrameField::Idle;
     FrameField rx_frame_field_ = FrameField::Idle;
 
-    // TX frame buffer — accumulates bytes for backend_->send()
+    // TX frame buffer — accumulates bytes for backend send
     std::vector<uint8_t> tx_frame_buffer_;
 
     // RX frame buffer — holds received frame for byte-trickle into RX FIFO
@@ -782,7 +801,6 @@ private:
     bool fd_stored_ = false;     // SR1: Flag Detected
     bool cts_stored_ = false;    // SR1: CTS positive edge
     bool txu_stored_ = false;    // SR1: Transmitter Underrun
-
 
     bool fv_stored_ = false;     // SR2: Frame Valid
     bool err_stored_ = false;    // SR2: FCS/CRC Error
@@ -804,6 +822,7 @@ private:
     // Byte trickle timer (counts 2MHz half-cycles between byte transfers)
     int byte_timer_ = 0;
     int byte_period_ = 128;  // Default: 128 half-cycles = 32us per byte (~200kbps)
+
 };
 
 }  // namespace beebium
