@@ -8,6 +8,7 @@ add_library(beebium_core STATIC
     src/TypeAheadQueue.cpp
     src/disc/DiscGeometry.cpp
     src/disc/FileDiscImage.cpp
+    src/econet/AunBackend.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp

@@ -49,9 +49,14 @@ struct NetworkFrame {
 // Abstract network transport for the MC6854 ADLC.
 //
 // Decouples the ADLC from the underlying network transport (UDP/AUN, loopback, test
-// double). In the emulation inner loop, send_frame() and receive_frame() must be fast
-// queue operations — no system calls. The real AunBackend (Phase 7) uses a separate
-// I/O thread for UDP socket operations, with lock-free queues bridging the two threads.
+// double). The AunBackend currently uses non-blocking socket I/O with select() at
+// zero timeout. This introduces syscalls on the emulation thread — best-case ~1-2us,
+// but potentially much worse under system load (context switches, scheduling delays).
+// At 2MHz (0.5us/cycle) even the best case is several cycles of wall-clock time.
+// This is tolerable for now because receive_frame() is only called when the ADLC's
+// RX frame buffer is drained (roughly once per inter-frame gap, not every cycle).
+// A future improvement would be a separate I/O thread with lock-free queues to
+// eliminate all syscalls from the emulation path.
 class NetworkBackend {
 public:
     virtual ~NetworkBackend() = default;

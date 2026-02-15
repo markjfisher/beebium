@@ -76,6 +76,16 @@ add_executable(test_four_way_handshake test_four_way_handshake.cpp)
 target_link_libraries(test_four_way_handshake PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_four_way_handshake)
 
+# AUN packet encode/decode tests
+add_executable(test_aun_packet test_aun_packet.cpp)
+target_link_libraries(test_aun_packet PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_aun_packet)
+
+# AUN backend UDP loopback tests
+add_executable(test_aun_backend test_aun_backend.cpp)
+target_link_libraries(test_aun_backend PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_aun_backend)
+
 # Disc controller socket tests
 add_executable(test_disc_controller_socket test_disc_controller_socket.cpp)
 target_link_libraries(test_disc_controller_socket PRIVATE beebium_core Catch2::Catch2WithMain)
