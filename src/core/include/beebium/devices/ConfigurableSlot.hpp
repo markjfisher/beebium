@@ -107,13 +107,20 @@ public:
     bool is_ram() const { return type_ == SlotType::Ram; }
     bool is_writable() const { return type_ == SlotType::Ram; }
 
-    // Load data into slot (typically ROM image or pre-loaded RAM)
+    // Load data into slot (typically ROM image or pre-loaded RAM).
+    // If source is smaller than the slot, mirrors the data to fill the remainder.
+    // This matches real EPROM socket behaviour where unconnected upper address
+    // lines cause the smaller chip's address space to repeat.
     void load(std::span<const uint8_t> src) {
+        if (src.empty()) return;
         size_t copy_len = std::min(src.size(), size);
         std::memcpy(data_.data(), src.data(), copy_len);
-        // Fill remainder with 0xFF if source is smaller
-        if (copy_len < size) {
-            std::memset(data_.data() + copy_len, 0xFF, size - copy_len);
+        // Mirror data to fill remainder by doubling the filled region each pass
+        size_t filled = copy_len;
+        while (filled < size) {
+            size_t chunk = std::min(filled, size - filled);
+            std::memcpy(data_.data() + filled, data_.data(), chunk);
+            filled += chunk;
         }
     }
 

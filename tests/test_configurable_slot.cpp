@@ -264,10 +264,73 @@ TEST_CASE("ConfigurableSlot address wrapping", "[configurable_slot][addressing]"
     }
 }
 
-TEST_CASE("ConfigurableSlot load with smaller data", "[configurable_slot][load]") {
+TEST_CASE("ConfigurableSlot load mirrors undersized data", "[configurable_slot][load]") {
     ConfigurableSlot slot(SlotType::Rom);
 
-    SECTION("Smaller data pads remainder with 0xFF") {
+    SECTION("8 kB ROM mirrors into upper 8 kB") {
+        std::array<uint8_t, 8192> rom_8k;
+        for (size_t i = 0; i < rom_8k.size(); ++i) {
+            rom_8k[i] = static_cast<uint8_t>(i & 0xFF);
+        }
+
+        slot.load(rom_8k.data(), rom_8k.size());
+
+        // Lower 8 kB has original data
+        REQUIRE(slot.read(0x0000) == 0x00);
+        REQUIRE(slot.read(0x0001) == 0x01);
+        REQUIRE(slot.read(0x1FFF) == 0xFF);
+
+        // Upper 8 kB mirrors the lower 8 kB
+        REQUIRE(slot.read(0x2000) == 0x00);
+        REQUIRE(slot.read(0x2001) == 0x01);
+        REQUIRE(slot.read(0x3FFF) == 0xFF);
+    }
+
+    SECTION("4 kB ROM mirrors four times") {
+        std::array<uint8_t, 4096> rom_4k;
+        for (size_t i = 0; i < rom_4k.size(); ++i) {
+            rom_4k[i] = static_cast<uint8_t>(i & 0xFF);
+        }
+
+        slot.load(rom_4k.data(), rom_4k.size());
+
+        // All four 4 kB regions should be identical
+        for (uint16_t base : {0x0000, 0x1000, 0x2000, 0x3000}) {
+            REQUIRE(slot.read(base) == 0x00);
+            REQUIRE(slot.read(base + 1) == 0x01);
+            REQUIRE(slot.read(base + 0x0FFF) == 0xFF);
+        }
+    }
+
+    SECTION("2 kB ROM mirrors eight times") {
+        std::array<uint8_t, 2048> rom_2k;
+        for (size_t i = 0; i < rom_2k.size(); ++i) {
+            rom_2k[i] = static_cast<uint8_t>(i & 0xFF);
+        }
+
+        slot.load(rom_2k.data(), rom_2k.size());
+
+        for (uint16_t base = 0; base < 16384; base += 2048) {
+            REQUIRE(slot.read(base) == 0x00);
+            REQUIRE(slot.read(base + 1) == 0x01);
+            REQUIRE(slot.read(base + 0x07FF) == 0xFF);
+        }
+    }
+
+    SECTION("16 kB load fills slot exactly") {
+        std::array<uint8_t, 16384> rom_16k;
+        for (size_t i = 0; i < rom_16k.size(); ++i) {
+            rom_16k[i] = static_cast<uint8_t>(i & 0xFF);
+        }
+
+        slot.load(rom_16k.data(), rom_16k.size());
+
+        REQUIRE(slot.read(0x0000) == 0x00);
+        REQUIRE(slot.read(0x0100) == 0x00);
+        REQUIRE(slot.read(0x3FFF) == 0xFF);
+    }
+
+    SECTION("Non-power-of-two size mirrors cyclically") {
         std::array<uint8_t, 100> small_data;
         small_data.fill(0x42);
 
@@ -275,8 +338,22 @@ TEST_CASE("ConfigurableSlot load with smaller data", "[configurable_slot][load]"
 
         REQUIRE(slot.read(0x0000) == 0x42);
         REQUIRE(slot.read(99) == 0x42);
-        REQUIRE(slot.read(100) == 0xFF);
-        REQUIRE(slot.read(0x3FFF) == 0xFF);
+        // Mirrored data continues beyond the original
+        REQUIRE(slot.read(100) == 0x42);
+        REQUIRE(slot.read(199) == 0x42);
+    }
+
+    SECTION("Empty load is a no-op") {
+        // Pre-fill with known data
+        std::array<uint8_t, 16384> data;
+        data.fill(0x42);
+        slot.load(data.data(), data.size());
+
+        // Loading empty span should not change contents
+        slot.load(static_cast<const uint8_t*>(nullptr), 0);
+
+        REQUIRE(slot.read(0x0000) == 0x42);
+        REQUIRE(slot.read(0x3FFF) == 0x42);
     }
 }
 
