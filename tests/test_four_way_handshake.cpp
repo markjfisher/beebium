@@ -72,10 +72,21 @@ TEST_CASE("FourWayHandshake: is_connected delegates to backend", "[econet][hands
     CHECK_FALSE(hs.is_connected());
 }
 
-TEST_CASE("FourWayHandshake: is_receiving_flags reflects flag fill state", "[econet][handshake]") {
+TEST_CASE("FourWayHandshake: is_receiving_flags true when idle and connected (clock box)", "[econet][handshake]") {
     TestBackend backend;
+    backend.set_connected(true);
     FourWayHandshake hs(backend);
 
+    // Idle + connected = clock box flag fill active
+    CHECK(hs.is_receiving_flags());
+}
+
+TEST_CASE("FourWayHandshake: is_receiving_flags false when idle and disconnected", "[econet][handshake]") {
+    TestBackend backend;
+    backend.set_connected(false);
+    FourWayHandshake hs(backend);
+
+    // Idle + disconnected = no clock box, no flag fill
     CHECK_FALSE(hs.is_receiving_flags());
 }
 
@@ -816,3 +827,4 @@ TEST_CASE("EconetSocket: reset resets handshake", "[econet][socket][handshake]")
     socket.reset();
     CHECK(socket.handshake()->stage() == FourWayHandshake::Stage::Idle);
 }
+

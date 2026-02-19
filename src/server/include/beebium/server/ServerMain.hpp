@@ -18,6 +18,9 @@
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
+#include "beebium/econet/EconetConcepts.hpp"
+#include "beebium/econet/AunBackend.hpp"
+#include "beebium/econet/TestBackend.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/PresetPaths.hpp"
@@ -26,8 +29,11 @@
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
 
+#include <arpa/inet.h>
+
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -296,6 +302,60 @@ inline std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) 
     return {static_cast<uint8_t>(drive), filepath_or_url};
 }
 
+// Parsed AUN map entry: maps Econet address to IP endpoint.
+struct AunMapEntry {
+    uint8_t net;
+    uint8_t stn;
+    uint32_t ip_addr;    // network byte order
+    uint16_t port;       // host byte order
+};
+
+// Parse an --aun-map argument: net.stn:ip[:port]
+// Throws std::runtime_error on invalid input.
+inline AunMapEntry parse_aun_map_arg(const std::string& arg) {
+    auto dot_pos = arg.find('.');
+    if (dot_pos == std::string::npos || dot_pos == 0) {
+        throw std::runtime_error("Invalid --aun-map: " + arg + " (expected net.stn:ip[:port])");
+    }
+
+    auto first_colon = arg.find(':', dot_pos);
+    if (first_colon == std::string::npos) {
+        throw std::runtime_error("Invalid --aun-map: " + arg + " (expected net.stn:ip[:port])");
+    }
+
+    int net = parse_int(arg.substr(0, dot_pos), "--aun-map net");
+    int stn = parse_int(arg.substr(dot_pos + 1, first_colon - dot_pos - 1), "--aun-map stn");
+
+    if (net < 0 || net > 255) {
+        throw std::runtime_error("Invalid --aun-map net: must be 0-255");
+    }
+    if (stn < 0 || stn > 254) {
+        throw std::runtime_error("Invalid --aun-map stn: must be 0-254 (255 is broadcast)");
+    }
+
+    // Parse ip[:port]
+    auto second_colon = arg.find(':', first_colon + 1);
+    std::string ip_str;
+    uint16_t port = beebium::AUN_DEFAULT_PORT;
+    if (second_colon != std::string::npos) {
+        ip_str = arg.substr(first_colon + 1, second_colon - first_colon - 1);
+        port = static_cast<uint16_t>(parse_int(arg.substr(second_colon + 1), "--aun-map port"));
+    } else {
+        ip_str = arg.substr(first_colon + 1);
+    }
+
+    if (ip_str.empty()) {
+        throw std::runtime_error("Invalid --aun-map: " + arg + " (IP address required)");
+    }
+
+    uint32_t ip_addr;
+    if (::inet_pton(AF_INET, ip_str.c_str(), &ip_addr) != 1) {
+        throw std::runtime_error("Invalid --aun-map IP address: " + ip_str);
+    }
+
+    return {static_cast<uint8_t>(net), static_cast<uint8_t>(stn), ip_addr, port};
+}
+
 // Sentinel values to mark slots that should not have default ROMs loaded
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 constexpr const char* RAM_SLOT_MARKER = "\x01RAM\x01";
@@ -491,6 +551,11 @@ struct ServerConfig {
     std::array<std::string, 2> floppy_filepaths;
     std::string fdc_type;
 
+    // Econet configuration
+    int station_number = -1;                          // -1 = Econet not fitted
+    std::optional<uint16_t> aun_port = beebium::AUN_DEFAULT_PORT;  // nullopt = no network
+    std::vector<AunMapEntry> aun_maps;
+
     // Startup options (keyboard links)
     // -1 means not set; we use int to detect if user specified a value
     int screen_mode = -1;
@@ -547,6 +612,14 @@ void print_usage(const char* program_name) {
         std::cerr << "  --fdc <type>             Disc controller to install in socket:\n"
                   << "                           acorn-1770 - Acorn WD1770 controller\n"
                   << "                           none - leave socket empty (no disc)\n";
+    }
+
+    if constexpr (HasEconetSocket<Memory>) {
+        std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n"
+                  << "  --aun-port <port|none>   AUN UDP port (default: "
+                  << beebium::AUN_DEFAULT_PORT << ", none = no network)\n"
+                  << "  --aun-map <net.stn:ip[:port]>\n"
+                  << "                           Map Econet address to IP (repeatable)\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -759,6 +832,38 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             config.wait_mode = parse_wait_arg(wait_value);
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
+        } else if (arg == "--station" && i + 1 < argc) {
+            try {
+                config.station_number = parse_int(argv[++i], "--station");
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
+            if (config.station_number < 1 || config.station_number > 254) {
+                std::cerr << "Error: --station must be 1-254\n";
+                return ExitCode::USAGE;
+            }
+        } else if (arg == "--aun-port" && i + 1 < argc) {
+            std::string port_str = argv[++i];
+            if (port_str == "none") {
+                config.aun_port = std::nullopt;
+            } else {
+                try {
+                    config.aun_port = static_cast<uint16_t>(parse_int(port_str, "--aun-port"));
+                } catch (const std::runtime_error& e) {
+                    std::cerr << "Error: " << e.what() << "\n";
+                    return ExitCode::USAGE;
+                }
+            }
+        } else if (arg == "--aun-map" && i + 1 < argc) {
+            try {
+                std::string value = argv[++i];
+                complete_colon_arg(value, i, argc, argv);
+                config.aun_maps.push_back(parse_aun_map_arg(value));
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--provenance-type" && i + 1 < argc) {
             config.provenance_type = argv[++i];
         } else if (arg == "--provenance-uuid" && i + 1 < argc) {
@@ -865,9 +970,10 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
         std::cout << "Loading ROM into slot " << static_cast<int>(slot) << ": " << rom_path << "\n";
         auto rom_data = load_file(rom_path);
 
-        if (rom_data.size() != 16384) {
+        if (rom_data.empty() || rom_data.size() > 16384
+            || !std::has_single_bit(rom_data.size())) {
             std::cerr << "Warning: ROM is " << rom_data.size()
-                      << " bytes, expected 16384\n";
+                      << " bytes, expected a power-of-two size up to 16384\n";
         }
 
         // Unified API handles slot type configuration and loading together
@@ -914,6 +1020,59 @@ std::optional<int> install_disc_controller(MachineType& machine, const ServerCon
     } else if (!config.fdc_type.empty()) {
         // Model B+ has built-in controller, --fdc option is not applicable
         std::cerr << "Warning: --fdc option ignored (machine has built-in disc controller)\n";
+    }
+
+    return std::nullopt;
+}
+
+// Install Econet hardware for machines with Econet sockets.
+// Returns exit code on error, nullopt on success.
+template<typename MachineType>
+std::optional<int> install_econet(MachineType& machine, const ServerConfig<MachineType>& config) {
+    using Memory = typename MachineType::Memory;
+
+    if constexpr (HasEconetSocket<Memory>) {
+        if (config.station_number >= 1) {
+            auto station = static_cast<uint8_t>(config.station_number);
+
+            if (config.aun_port.has_value()) {
+                // AUN networking enabled: create UDP socket
+                auto backend = std::make_unique<beebium::AunBackend>(
+                    0,  // local net (always 0 for now)
+                    station,
+                    config.aun_port.value());
+
+                if (!backend->is_connected()) {
+                    std::cerr << "Error: Failed to bind AUN socket to port "
+                              << config.aun_port.value() << "\n";
+                    return 1;
+                }
+
+                for (const auto& entry : config.aun_maps) {
+                    backend->add_peer(entry.net, entry.stn, entry.ip_addr, entry.port);
+                }
+
+                std::cout << "Econet station " << config.station_number
+                          << " on UDP port " << backend->local_port()
+                          << " (" << config.aun_maps.size() << " peers)\n";
+
+                machine.state().memory.econet_socket.enable(
+                    station, std::move(backend),
+                    true);  // aun_mode = true (FourWayHandshake active)
+            } else {
+                // --aun-port none: Econet hardware fitted, no network connection
+                auto backend = std::make_unique<beebium::TestBackend>();
+                backend->set_connected(false);
+                machine.state().memory.econet_socket.enable(
+                    station, std::move(backend),
+                    true);  // aun_mode = true (FourWayHandshake wraps disconnected backend)
+
+                std::cout << "Econet station " << config.station_number
+                          << " (no network)\n";
+            }
+        }
+    } else if (config.station_number >= 1) {
+        std::cerr << "Warning: --station option ignored (machine has no Econet socket)\n";
     }
 
     return std::nullopt;
@@ -1144,6 +1303,11 @@ public:
 
             // Install disc controller
             if (auto exit_code = install_disc_controller(machine, config)) {
+                return *exit_code;
+            }
+
+            // Install Econet hardware
+            if (auto exit_code = install_econet(machine, config)) {
                 return *exit_code;
             }
 
@@ -2304,6 +2468,9 @@ public:
             if (auto exit_code = install_disc_controller(machine, config)) {
                 return *exit_code;
             }
+            if (auto exit_code = install_econet(machine, config)) {
+                return *exit_code;
+            }
             load_disc_images(machine, config);
 
             // Enable video output only (no audio needed for screenshots)
@@ -2580,92 +2747,6 @@ int server_main(int argc, char* argv[]) {
 // ============================================================================
 // Legacy function for backwards compatibility with tests
 // ============================================================================
-
-// Parse command-line arguments into a ServerConfig struct.
-// This function is provided for backwards compatibility with existing tests.
-// New code should use the subcommand-based architecture.
-// Returns:
-//   - std::nullopt on success (continue execution)
-//   - 0 for --help (exit successfully)
-//   - 1 for errors (exit with error)
-template<typename MachineType>
-std::optional<int> parse_arguments(int argc, char* argv[], ServerConfig<MachineType>& config) {
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-
-        if (arg == "--help" || arg == "-h") {
-            print_usage<MachineType>(argv[0]);
-            return 0;
-        } else if (arg == "--mos" && i + 1 < argc) {
-            config.mos_filepath = argv[++i];
-        } else if (arg == "--sideways" && i + 1 < argc) {
-            std::string value = argv[++i];
-            complete_colon_arg(value, i, argc, argv);
-            auto sideways_config = parse_sideways_arg(value);
-            config.sideways_configs.push_back(sideways_config);
-            if (sideways_config.type == SidewaysSlotType::Rom) {
-                config.rom_slots[sideways_config.slot] = sideways_config.image_filepath;
-            } else if (sideways_config.type == SidewaysSlotType::Empty) {
-                config.rom_slots[sideways_config.slot] = EMPTY_SLOT_MARKER;
-            } else if (sideways_config.type == SidewaysSlotType::Ram) {
-                config.rom_slots[sideways_config.slot] = RAM_SLOT_MARKER;
-            }
-        } else if (arg == "--rom-dir" && i + 1 < argc) {
-            config.rom_dirpath = argv[++i];
-        } else if (arg == "--port" && i + 1 < argc) {
-            try {
-                config.port = static_cast<uint16_t>(parse_int(argv[++i], "--port"));
-            } catch (const std::runtime_error& e) {
-                std::cerr << "Error: " << e.what() << "\n";
-                return 1;
-            }
-        } else if (arg == "--floppy" && i + 1 < argc) {
-            std::string value = argv[++i];
-            complete_colon_arg(value, i, argc, argv);
-            auto [drive, filepath] = parse_floppy_arg(value);
-            config.floppy_filepaths[drive] = filepath;
-        } else if (arg == "--screen-mode" && i + 1 < argc) {
-            try {
-                config.screen_mode = parse_int(argv[++i], "--screen-mode");
-            } catch (const std::runtime_error& e) {
-                std::cerr << "Error: " << e.what() << "\n";
-                return 1;
-            }
-            if (config.screen_mode < 0 || config.screen_mode > 7) {
-                std::cerr << "Error: --screen-mode must be 0-7\n";
-                return 1;
-            }
-            config.screen_mode_set = true;
-        } else if (arg == "--auto-boot") {
-            config.auto_boot = true;
-            config.auto_boot_set = true;
-        } else if (arg == "--links" && i + 1 < argc) {
-            try {
-                config.raw_links = parse_int(argv[++i], "--links");
-            } catch (const std::runtime_error& e) {
-                std::cerr << "Error: " << e.what() << "\n";
-                return 1;
-            }
-            if (config.raw_links < 0 || config.raw_links > 255) {
-                std::cerr << "Error: --links must be 0-255\n";
-                return 1;
-            }
-        } else if (arg == "--wait") {
-            config.wait_mode = platform::is_stdin_tty() ? WaitMode::Cli : WaitMode::Api;
-        } else if (arg.rfind("--wait=", 0) == 0) {
-            std::string wait_value = arg.substr(7);
-            config.wait_mode = parse_wait_arg(wait_value);
-        } else if (arg == "--fdc" && i + 1 < argc) {
-            config.fdc_type = argv[++i];
-        } else {
-            std::cerr << "Unknown argument: " << arg << "\n";
-            print_usage<MachineType>(argv[0]);
-            return 1;
-        }
-    }
-
-    return std::nullopt;
-}
 
 } // namespace beebium::server
 

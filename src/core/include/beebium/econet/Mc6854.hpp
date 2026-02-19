@@ -208,8 +208,12 @@ public:
         idle_stored_ = false;
         dcd_stored_ = false;
 
-        // Clear edge detection state
-        prev_dcd_input_ = false;
+        // Initialize DCD edge detection to match the current backend state.
+        // This prevents a spurious edge on the first tick: if the backend is
+        // already disconnected (no carrier), we don't want the edge-triggered
+        // latch to fire, since the level-sensitive SR2 DCD path already handles
+        // the "carrier continuously absent" case for NFS "No Clock" detection.
+        prev_dcd_input_ = !backend_.is_connected();
         prev_cts_input_ = false;
         cts_input_ = false;
 
@@ -653,8 +657,19 @@ private:
 
         // --- Build SR2 ---
 
-        // Dual-nature bits: OR of stored latch + present input
-        bool dcd_bit = dcd_stored_ || dcd_present;
+        // DCD in SR2 has two components:
+        //  1. Edge-triggered latch: set on carrier-loss transition, cleared by
+        //     CLR_RX_ST or RX_RESET. Drives S2RQ and thus IRQ generation.
+        //  2. Current pin level: reflects continuous carrier state for polling.
+        //     When the receiver is active (!RX_RESET) and no carrier is present,
+        //     the DCD pin is HIGH, and SR2 DCD reflects this directly.
+        //
+        // The NFS ROM polls SR2 DCD during boot to detect "No Clock" — it needs
+        // to see DCD=1 whenever carrier is absent, not just on transitions.
+        // S2RQ uses only the edge-triggered latch to prevent NMI storms from
+        // continuously absent carrier (as would happen with --aun-port none).
+        bool dcd_for_sr2 = dcd_stored_ || (dcd_present && !(cr1_ & CR1_RX_RESET));
+        bool dcd_for_s2rq = dcd_stored_;  // Edge-triggered only for IRQ path
         bool abt_bit = abt_stored_ || abt_present;
         bool idle_bit = (idle_stored_ || idle_condition);
 
@@ -664,7 +679,7 @@ private:
         if (idle_bit)                  sr2_raw |= SR2_INACTIVE;
         if (abt_bit)                   sr2_raw |= SR2_ABT;
         if (err_stored_)               sr2_raw |= SR2_ERR;
-        if (dcd_bit)                   sr2_raw |= SR2_DCD;
+        if (dcd_for_sr2)               sr2_raw |= SR2_DCD;
         if (ovrn_stored_)              sr2_raw |= SR2_OVRN;
         if (rda)                       sr2_raw |= SR2_RDA;
 
@@ -677,8 +692,12 @@ private:
 
         // --- Build SR1 ---
 
-        // S2RQ: any SR2 condition set (excluding RDA)
-        bool s2rq = (sr2_ & ~SR2_RDA) != 0;
+        // S2RQ: OR of DCD, OVRN, ABT, FV, AP, ERR (per MC6854 datasheet).
+        // INACTIVE and RDA do NOT participate in S2RQ.
+        // Uses the edge-triggered DCD latch (not the level-sensitive SR2 DCD)
+        // to prevent NMI storms when carrier is continuously absent.
+        bool s2rq_bits = (sr2_ & (SR2_OVRN | SR2_ABT | SR2_FV | SR2_AP | SR2_ERR)) != 0;
+        bool s2rq = s2rq_bits || dcd_for_s2rq;
 
         sr1_ = (rda ? SR1_RDA : 0)
              | (s2rq ? SR1_S2RQ : 0)
@@ -693,9 +712,11 @@ private:
         // Edge detection for NMI happens at the 6502 (via the INTON/INTOFF gating in
         // EconetSocket). The ADLC itself simply reports whether an interrupt condition exists.
 
-        // RIE gates: RDA (SR1b0), S2RQ (SR1b1), FD (SR1b3)
+        // RIE gates: RDA (SR1b0), S2RQ (SR1b1)
+        // Note: FD (SR1b3) is informational only and does NOT participate in IRQ generation.
+        // Per MC6854 datasheet: IRQ = (RIE AND (RDA OR S2RQ)) OR (TIE AND (TDRA OR CTS OR TXU))
         bool rx_cause = (cr1_ & CR1_RIE) &&
-            ((sr1_ & (SR1_RDA | SR1_S2RQ | SR1_FD)) != 0);
+            ((sr1_ & (SR1_RDA | SR1_S2RQ)) != 0);
 
         // TIE gates: CTS (SR1b4), TxU (SR1b5), TDRA (SR1b6)
         bool tx_cause = (cr1_ & CR1_TIE) &&

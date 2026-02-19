@@ -435,3 +435,23 @@ TEST_CASE("AunBackend: handles increment by 4 on successive sends", "[econet][au
         CHECK(received->data[0] == static_cast<uint8_t>(i));
     }
 }
+
+// =============================================================================
+// Port 0 (OS-chosen ephemeral port)
+// =============================================================================
+
+TEST_CASE("AunBackend: port 0 binds to an ephemeral port",
+          "[aun_backend][port]") {
+    AunBackend backend(0, 1, 0);  // port 0 = OS-chosen
+
+    REQUIRE(backend.is_connected());
+    REQUIRE(backend.local_port() != 0);  // OS assigned a real port
+}
+
+TEST_CASE("AunBackend: local_port returns specified port when non-zero",
+          "[aun_backend][port]") {
+    AunBackend backend(0, 1, 44001);
+
+    REQUIRE(backend.is_connected());
+    REQUIRE(backend.local_port() == 44001);
+}

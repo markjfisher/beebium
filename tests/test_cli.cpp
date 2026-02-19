@@ -16,6 +16,7 @@
 #include <beebium/server/ServerMain.hpp>
 #include <beebium/Machines.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
@@ -1793,4 +1794,368 @@ TEST_CASE("dispatch_subcommand: export-preset --help returns OK", "[cli][dispatc
     auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
 
     REQUIRE(result == ExitCode::OK);
+}
+
+// ============================================================================
+// parse_start_arguments() — Econet options
+// ============================================================================
+
+TEST_CASE("parse_start_arguments: --station sets station_number", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--station", "1"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.station_number == 1);
+}
+
+TEST_CASE("parse_start_arguments: --station 254 is valid", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--station", "254"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.station_number == 254);
+}
+
+TEST_CASE("parse_start_arguments: --station 0 returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--station", "0"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: --station 255 returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--station", "255"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: --station non-numeric returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--station", "abc"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: default station_number is -1", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.station_number == -1);
+}
+
+TEST_CASE("parse_start_arguments: --aun-port sets aun_port", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-port", "42001"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_port == 42001);
+}
+
+TEST_CASE("parse_start_arguments: --aun-port accepts hex", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-port", "0x8000"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_port == 32768);
+}
+
+TEST_CASE("parse_start_arguments: default aun_port is AUN_DEFAULT_PORT", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_port == beebium::AUN_DEFAULT_PORT);
+}
+
+TEST_CASE("parse_start_arguments: --aun-map with default port", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:192.168.1.10"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_maps.size() == 1);
+    CHECK(config.aun_maps[0].net == 0);
+    CHECK(config.aun_maps[0].stn == 254);
+    CHECK(config.aun_maps[0].port == beebium::AUN_DEFAULT_PORT);
+}
+
+TEST_CASE("parse_start_arguments: --aun-map with explicit port", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:192.168.1.10:42001"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_maps.size() == 1);
+    CHECK(config.aun_maps[0].net == 0);
+    CHECK(config.aun_maps[0].stn == 254);
+    CHECK(config.aun_maps[0].port == 42001);
+}
+
+TEST_CASE("parse_start_arguments: multiple --aun-map entries accumulate", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start",
+                    "--aun-map", "0.254:192.168.1.10",
+                    "--aun-map", "0.1:192.168.1.20:42002"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_maps.size() == 2);
+    CHECK(config.aun_maps[0].stn == 254);
+    CHECK(config.aun_maps[1].stn == 1);
+    CHECK(config.aun_maps[1].port == 42002);
+}
+
+TEST_CASE("parse_start_arguments: --aun-map missing dot returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-map", "254:192.168.1.10"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: --aun-map missing colon returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-map", "0.254"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: --aun-map invalid IP returns USAGE", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:not.an.ip"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: --aun-port none sets aun_port to nullopt", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun-port", "none"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE_FALSE(config.aun_port.has_value());
+}
+
+TEST_CASE("parse_start_arguments: --aun-port has_value by default", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.aun_port.has_value());
+    REQUIRE(config.aun_port.value() == beebium::AUN_DEFAULT_PORT);
+}
+
+TEST_CASE("parse_start_arguments: all Econet options combined", "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start",
+                    "--station", "1",
+                    "--aun-port", "42001",
+                    "--aun-map", "0.254:127.0.0.1"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.station_number == 1);
+    REQUIRE(config.aun_port == 42001);
+    REQUIRE(config.aun_maps.size() == 1);
+    CHECK(config.aun_maps[0].net == 0);
+    CHECK(config.aun_maps[0].stn == 254);
+}
+
+// ============================================================================
+// parse_start_arguments() — options migrated from test_server_main.cpp
+// ============================================================================
+
+TEST_CASE("parse_start_arguments: --rom-dir sets rom_dirpath", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--rom-dir", "/path/to/roms"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.rom_dirpath == "/path/to/roms");
+}
+
+TEST_CASE("parse_start_arguments: --sideways rom populates sideways_configs and rom_slots", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--sideways", "15:rom:test.rom"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 15);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Rom);
+    REQUIRE(config.sideways_configs[0].image_filepath == "test.rom");
+    REQUIRE(config.rom_slots.count(15) == 1);
+    REQUIRE(config.rom_slots[15] == "test.rom");
+}
+
+TEST_CASE("parse_start_arguments: --sideways empty populates config", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--sideways", "11:empty"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 11);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Empty);
+}
+
+TEST_CASE("parse_start_arguments: --sideways ram populates config", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--sideways", "4:ram"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 4);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Ram);
+}
+
+TEST_CASE("parse_start_arguments: --floppy sets floppy_filepaths", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--floppy", "0:game.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0] == "game.ssd");
+    REQUIRE(config.floppy_filepaths[1].empty());
+}
+
+TEST_CASE("parse_start_arguments: --floppy for drive 1", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--floppy", "1:backup.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0].empty());
+    REQUIRE(config.floppy_filepaths[1] == "backup.ssd");
+}
+
+TEST_CASE("parse_start_arguments: --floppy with split filepath (colon completion)", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--floppy", "0:", "game.ssd"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.floppy_filepaths[0] == "game.ssd");
+}
+
+TEST_CASE("parse_start_arguments: --sideways with split filepath (colon completion)", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--sideways", "15:rom:", "forth.rom"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 15);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Rom);
+    REQUIRE(config.sideways_configs[0].image_filepath == "forth.rom");
+}
+
+TEST_CASE("parse_start_arguments: --floppy colon completion doesn't consume options", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--floppy", "0:", "--port", "8080"};
+    ServerConfig<MachineType> config;
+
+    REQUIRE_THROWS_WITH(
+        parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config),
+        Catch::Matchers::ContainsSubstring("filepath required")
+    );
+}
+
+TEST_CASE("parse_start_arguments: --sideways colon completion with following option", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--sideways", "15:empty", "--port", "8080"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Empty);
+    REQUIRE(config.port == 8080);
+}
+
+TEST_CASE("parse_start_arguments: --auto-boot sets auto_boot", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--auto-boot"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.auto_boot == true);
+    REQUIRE(config.auto_boot_set == true);
+}
+
+TEST_CASE("parse_start_arguments: --wait=cli sets wait_mode", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--wait=cli"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.wait_mode == WaitMode::Cli);
+}
+
+TEST_CASE("parse_start_arguments: --wait=api sets wait_mode", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--wait=api"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.wait_mode == WaitMode::Api);
+}
+
+TEST_CASE("parse_start_arguments: --fdc sets fdc_type", "[cli][parse_start_arguments]") {
+    ArgvHelper args{"beebium", "start", "--fdc", "acorn-1770"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.fdc_type == "acorn-1770");
 }

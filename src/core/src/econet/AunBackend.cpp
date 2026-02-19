@@ -62,6 +62,16 @@ AunBackend::AunBackend(uint8_t local_net, uint8_t local_stn, uint16_t local_port
         return;
     }
 
+    // When port 0 is requested, the OS assigns an ephemeral port.
+    // Discover the actual port so local_port() reports it correctly.
+    if (local_port == 0) {
+        sockaddr_in bound_addr{};
+        socklen_t bound_len = sizeof(bound_addr);
+        if (::getsockname(socket_fd_, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len) == 0) {
+            local_port_ = ntohs(bound_addr.sin_port);
+        }
+    }
+
     connected_ = true;
 }
 

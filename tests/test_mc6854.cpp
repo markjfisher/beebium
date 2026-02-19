@@ -682,13 +682,14 @@ TEST_CASE("S2RQ: set when DCD asserted in SR2", "[econet][mc6854]") {
 
 TEST_CASE("S2RQ: clear when no SR2 conditions", "[econet][mc6854]") {
     TestFixture t;
-    t.release_reset();
+    // Keep RX in reset so idle (SR2_INACTIVE) is suppressed — idle is a legitimate
+    // SR2 condition when RX is active on a quiet line, which would set S2RQ.
+    t.release_tx_reset();
 
     t.backend.set_connected(true);
     t.tick();
 
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_DCD);
-    // S2RQ should be clear when no conditions active
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_S2RQ);
 }
 
@@ -738,21 +739,65 @@ TEST_CASE("DCD: stored latch persists after present clears", "[econet][mc6854][s
     CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
 }
 
-TEST_CASE("DCD: clearing stored reveals present — if still disconnected, bit stays", "[econet][mc6854][status]") {
+TEST_CASE("DCD: CLR_RX_ST clears edge latch but SR2 still reflects pin level", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
 
-    // Disconnect → DCD
+    // Disconnect → DCD edge latches stored condition
     t.backend.set_connected(false);
     t.tick();
     CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
+    CHECK(t.adlc.sr1() & Mc6854::SR1_S2RQ);  // Edge latch drives S2RQ
 
-    // Clear stored
+    // Clear stored with CLR_RX_ST
     t.clear_ac();
     t.adlc.write(1, Mc6854::CR2_CLR_RX_ST);
     t.tick();
 
-    // Still disconnected → present keeps bit set
+    // SR2 DCD still shows: pin is high (no carrier), receiver is active.
+    // This is the level-sensitive path — the NFS ROM polls this to detect
+    // "No Clock" during boot.
+    CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
+
+    // But S2RQ is cleared: the edge latch was cleared and no new 0→1
+    // transition occurred (pin stayed high). This prevents NMI storms
+    // when carrier is continuously absent (--aun-port none).
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_S2RQ);
+
+    // Reconnect → carrier present, DCD pin goes low, SR2 DCD clears
+    t.backend.set_connected(true);
+    t.tick();
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_DCD);
+
+    // Disconnect again → new 0→1 edge re-latches
+    t.backend.set_connected(false);
+    t.tick();
+    CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
+    CHECK(t.adlc.sr1() & Mc6854::SR1_S2RQ);  // Edge latch drives S2RQ again
+}
+
+TEST_CASE("DCD: level-sensitive SR2 path is gated by RX_RESET", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.release_reset();
+
+    // Disconnect with receiver active → SR2 DCD shows pin level
+    t.backend.set_connected(false);
+    t.tick();
+    CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
+
+    // Clear edge latch, then put receiver into reset
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_CLR_RX_ST);
+    t.adlc.write(0, Mc6854::CR1_RX_RESET | Mc6854::CR1_AC);
+    t.tick();
+
+    // During RX_RESET, the level-sensitive path is disabled.
+    // Edge latch was cleared, so SR2 DCD should be clear.
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_DCD);
+
+    // Release reset → level path re-activates, DCD visible again
+    t.release_reset();
+    t.tick();
     CHECK(t.adlc.sr2() & Mc6854::SR2_DCD);
 }
 
@@ -933,10 +978,12 @@ TEST_CASE("IRQ: clears when interrupt enable disabled", "[econet][mc6854][irq]")
 
 TEST_CASE("IRQ: RIE + DCD triggers IRQ", "[econet][mc6854][irq]") {
     TestFixture t;
-    t.release_reset();
+    // Keep RX in reset so idle (SR2_INACTIVE) is suppressed — otherwise idle
+    // sets S2RQ immediately and RIE triggers IRQ before DCD is asserted.
+    t.release_tx_reset();
 
-    // Enable RIE
-    t.adlc.write(0, Mc6854::CR1_RIE);
+    // Enable RIE (keep RX in reset)
+    t.adlc.write(0, Mc6854::CR1_RIE | Mc6854::CR1_RX_RESET);
     t.tick();
 
     // No RX conditions → no IRQ

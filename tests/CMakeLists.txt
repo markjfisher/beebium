@@ -252,6 +252,14 @@ target_compile_definitions(test_boot_sequence PRIVATE
 )
 catch_discover_tests(test_boot_sequence)
 
+# Econet boot integration tests
+add_executable(test_boot_econet test_boot_econet.cpp)
+target_link_libraries(test_boot_econet PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_boot_econet PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_boot_econet)
+
 # clearRAM test
 add_executable(test_clearram test_clearram.cpp)
 target_link_libraries(test_clearram PRIVATE beebium_core Catch2::Catch2WithMain)

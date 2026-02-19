@@ -127,7 +127,11 @@ public:
     }
 
     bool is_receiving_flags() const override {
-        return flag_fill_active_;
+        if (flag_fill_active_) return true;
+        // Simulate clock box: continuous flag fill when idle and connected.
+        // On real Econet, the clock box transmits 0x7E flag bytes between frames.
+        // In AUN mode, a bound socket implies a functioning network with a clock box.
+        return stage_ == Stage::Idle && backend_.is_connected();
     }
 
     // --- Timer tick (called once per 2MHz rising edge) ---
