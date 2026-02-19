@@ -88,4 +88,5 @@ oracle/public
 /docs/datasheets/
 /discs/games/
 
-disassembly/
+disassembly/*
+!disassembly/*.py
