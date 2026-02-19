@@ -17,14 +17,20 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/Machines.hpp>
+#include <beebium/FrameAllocator.hpp>
+#include <beebium/FrameBuffer.hpp>
+#include <beebium/FrameRenderer.hpp>
 #include <beebium/econet/TestBackend.hpp>
 #include <beebium/econet/FourWayHandshake.hpp>
+#include <beebium/econet/Mc6854.hpp>
 
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
+
+#include "test_keyboard_helpers.hpp"
 
 using namespace beebium;
 
@@ -197,4 +203,106 @@ TEST_CASE("Econet boot without NFS ROM shows no Econet message",
 
     // No Econet message (NFS ROM not loaded)
     REQUIRE_FALSE(screen_contains(machine, "Econet Station"));
+}
+
+// =============================================================================
+// NFS command timeout test — exercises the NFS ROM's full TX/RX path through
+// the ADLC emulation without needing an external file server.
+//
+// With the TestBackend connected but no file server responding, the NFS ROM
+// should complete the four-way handshake (using FourWayHandshake's fake acks),
+// wait for a reply that never comes, and eventually produce an error message
+// like "No reply", "Not listening", or "Net error" on screen.
+//
+// If this test hangs (exceeds the cycle budget without producing output),
+// it means the NFS ROM is stuck in a loop — likely due to the ADLC not
+// delivering frames correctly or NMI gating issues.
+// =============================================================================
+
+TEST_CASE("NFS *. with no server triggers network activity",
+          "[boot][econet][nfs]") {
+    if (!base_roms_available()) SKIP("Base ROMs not available");
+    if (!nfs_rom_available()) SKIP("NFS ROM not available");
+
+    using namespace beebium::test;
+
+    ModelB machine;
+    // Manual setup (not setup_econet_machine) to keep a raw pointer to the backend
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
+    machine.memory().load_mos(mos.data(), mos.size());
+    machine.memory().load_basic(basic.data(), basic.size());
+    auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");
+    machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
+
+    auto backend_ptr = std::make_unique<TestBackend>();
+    backend_ptr->set_connected(true);
+    auto* backend = backend_ptr.get();
+    machine.state().memory.econet_socket.enable(101, std::move(backend_ptr), true);
+
+    machine.memory().enable_video_output();
+
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot the machine (using step() for video processing)
+    machine.reset();
+    for (uint64_t i = 0; i < 8'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    INFO("Screen after boot:\n" << dump_screen(machine));
+    REQUIRE(screen_contains(machine, "BBC Computer 32K"));
+    REQUIRE(screen_contains(machine, "Econet Station"));
+
+    // Type *NET to select NFS as the active filing system
+    type_string_with_shift(machine, renderer, "*NET\r", 100000);
+
+    // Give time for *NET to complete
+    for (uint64_t i = 0; i < 2'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    INFO("Screen after *NET:\n" << dump_screen(machine, 12));
+
+    // Record sent frame count before *.
+    size_t frames_before = backend->sent_frame_count();
+
+    // Type *. and RETURN
+    type_string_with_shift(machine, renderer, "*.\r", 100000);
+
+    // Run for a short time — enough for the NFS ROM to attempt at least
+    // one TX cycle (scout + data). With no server responding, the NFS ROM
+    // retries indefinitely (the fake scout/final acks always succeed in
+    // AUN mode, so the retry counter never decrements).
+    // 2M cycles (~1ms BBC time) is enough for several retry attempts.
+    for (uint64_t i = 0; i < 2'000'000; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+
+    size_t frames_after = backend->sent_frame_count();
+
+    INFO("Screen after *. command:\n" << dump_screen(machine, 12));
+    INFO("Frames sent: before=" << frames_before << " after=" << frames_after);
+
+    // Verify the NFS ROM attempted network activity (sent at least one
+    // AUN Unicast to the file server). This confirms the full TX path:
+    // INACTIVE poll → scout → fake scout ack → data → AUN Unicast.
+    REQUIRE(frames_after > frames_before);
+
+    // With a TestBackend (no real server), the NFS ROM retries forever
+    // because the scout and final ack phases always succeed in AUN mode.
+    // For "Who are you?" output, a responding file server is needed.
+    // See the separate file server integration tests for that.
 }

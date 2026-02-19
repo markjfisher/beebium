@@ -501,6 +501,46 @@ TEST_CASE("FourWayHandshake: RX immediate delivered, Beeb reply sent as ImmReply
 }
 
 // =============================================================================
+// TX: Port-0 Classification — Unicast (POKE/JSR/UserProc/OSProc) vs Immediate
+// =============================================================================
+
+TEST_CASE("FourWayHandshake: TX port-0 with ctrl 0x82 (POKE) is Unicast scout, not Immediate", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // Port 0 + ctrl 0x82 = POKE = Unicast scout with 8 extra bytes
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x82, 0x00,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}));
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::ScoutSent);
+    CHECK(backend.sent_frame_count() == 0);  // Scout NOT sent (held for four-way)
+}
+
+TEST_CASE("FourWayHandshake: TX port-0 with ctrl 0x83 (JSR) is Unicast scout, not Immediate", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // Port 0 + ctrl 0x83 = JSR = Unicast scout with 4 extra bytes
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x83, 0x00,
+        0x01, 0x02, 0x03, 0x04}));
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::ScoutSent);
+    CHECK(backend.sent_frame_count() == 0);
+}
+
+TEST_CASE("FourWayHandshake: TX port-0 with ctrl 0x88 (Machine Peek) is Immediate", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // Port 0 + ctrl 0x88 = Machine Peek = Immediate
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x88, 0x00}));
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::ImmediateSent);
+    REQUIRE(backend.sent_frame_count() == 1);
+    CHECK(backend.sent_network_frames()[0].type == FrameType::Immediate);
+}
+
+// =============================================================================
 // TX: Scout Payload Sizes — Extra Bytes in AUN Unicast
 // =============================================================================
 
@@ -657,6 +697,93 @@ TEST_CASE("FourWayHandshake: watchdog timeout resets to Idle", "[econet][handsha
 
     CHECK(hs.stage() == FourWayHandshake::Stage::Idle);
     CHECK_FALSE(hs.flag_fill_active());
+}
+
+TEST_CASE("FourWayHandshake: fake final ack delivered after FINAL_ACK_TIMEOUT", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // Full TX path: scout → scout ack timeout → data → DataSent
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x80, 0x99}));
+    tick_n(hs, FourWayHandshake::SCOUT_ACK_TIMEOUT);
+    hs.receive_frame();  // Consume fake scout ack
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0xAA}));
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::DataSent);
+
+    // One tick before the final ack timer fires
+    tick_n(hs, FourWayHandshake::FINAL_ACK_TIMEOUT - 1);
+    CHECK(hs.stage() == FourWayHandshake::Stage::DataSent);
+
+    // Exactly at FINAL_ACK_TIMEOUT
+    hs.tick();
+    CHECK(hs.stage() == FourWayHandshake::Stage::WaitForIdle);
+
+    auto frame = hs.receive_frame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->type == FrameType::RawFrame);
+    REQUIRE(frame->data.size() == 4);
+    CHECK(frame->data[DEST_STN] == 1);    // Final ack TO us (we were src)
+    CHECK(frame->data[DEST_NET] == 0);
+    CHECK(frame->data[SRC_STN] == 254);   // Final ack FROM them (they were dest)
+    CHECK(frame->data[SRC_NET] == 0);
+}
+
+TEST_CASE("FourWayHandshake: real AUN Ack before timer cancels fake final ack", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // When a real server responds with AUN Ack before the FINAL_ACK_TIMEOUT,
+    // handle_incoming() delivers the fake final ack and transitions to
+    // WaitForIdle. The handshake timer becomes irrelevant.
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x80, 0x99}));
+    tick_n(hs, FourWayHandshake::SCOUT_ACK_TIMEOUT);
+    hs.receive_frame();
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0xDD}));
+    CHECK(hs.stage() == FourWayHandshake::Stage::DataSent);
+
+    // Remote server sends AUN Ack (well before FINAL_ACK_TIMEOUT)
+    tick_n(hs, 100);
+    NetworkFrame ack;
+    ack.type = FrameType::Ack;
+    ack.dest_stn = 1;
+    ack.dest_net = 0;
+    ack.src_stn = 254;
+    ack.src_net = 0;
+    backend.inject_rx_network_frame(ack);
+
+    auto frame = hs.receive_frame();
+    REQUIRE(frame.has_value());
+    CHECK(frame->type == FrameType::RawFrame);
+    REQUIRE(frame->data.size() == 4);
+    CHECK(frame->data[DEST_STN] == 1);    // Final ack TO us
+    CHECK(frame->data[SRC_STN] == 254);   // Final ack FROM them
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::WaitForIdle);
+
+    // Drain the queue and tick to reach Idle
+    hs.tick();
+    CHECK(hs.stage() == FourWayHandshake::Stage::Idle);
+}
+
+TEST_CASE("FourWayHandshake: watchdog during non-DataSent does not generate fake ack", "[econet][handshake]") {
+    TestBackend backend;
+    FourWayHandshake hs(backend);
+
+    // Get into ScoutAckReceived (not DataSent) and let watchdog fire
+    hs.send_frame(make_raw_frame({254, 0, 1, 0, 0x80, 0x99}));
+    tick_n(hs, FourWayHandshake::SCOUT_ACK_TIMEOUT);
+    hs.receive_frame();
+    CHECK(hs.stage() == FourWayHandshake::Stage::ScoutAckReceived);
+
+    int remaining = FourWayHandshake::WATCHDOG_TIMEOUT - FourWayHandshake::SCOUT_ACK_TIMEOUT;
+    tick_n(hs, remaining);
+
+    CHECK(hs.stage() == FourWayHandshake::Stage::Idle);
+
+    // No fake ack should be enqueued for non-DataSent stages
+    auto frame = hs.receive_frame();
+    CHECK_FALSE(frame.has_value());
 }
 
 TEST_CASE("FourWayHandshake: flag fill times out after FLAG_FILL_TIMEOUT", "[econet][handshake]") {

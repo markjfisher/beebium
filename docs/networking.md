@@ -1409,6 +1409,21 @@ beebium --drive0 games.ssd
 - `src/core/include/beebium/ClockBinding.hpp` — `should_tick()` based on static/dynamic clock rate
 - `src/core/include/beebium/Via6522.hpp` — Existing 2MHz peripheral model (both edges, both phases)
 
+### NFS ROM Internals
+
+- **NFS Workspace Layout** (J.G. Harston): https://mdfs.net/Misc/Source/Acorn/NFS/NFSWorkSp
+  - &00C0-&00CB: 12-byte NetTx and NetRx control block for NetFS_Op
+  - (&9A): Current NetTx control block pointer
+  - (&A0): Block to be transmitted (NMI workspace)
+  - (&9E): Private workspace 2 — receive buffers at offsets &00, &0C, &18, &24 (12-byte structures)
+  - (&A4): Open port buffer pointer
+
+- **Page &0D Usage** (J.G. Harston): https://mdfs.net/Misc/Source/Acorn/NFS/PageD
+  - &0D3D-&0D40: Incoming scout data (src_stn, src_net, ctrl, port)
+  - &0D4A: Control status byte
+  - &0D4B-&0D4C: Address in DNFS ROM of handler for next NMI
+  - &0D62: OSWORD busy flag (0=busy, &80=idle)
+
 ### Online Resources
 
 - J.G. Harston's Econet pages: http://mdfs.net/Docs/Comp/Acorn/Econet/

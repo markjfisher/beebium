@@ -62,15 +62,15 @@ public:
     static constexpr uint8_t CR1_RX_RESET     = 0x40;  // Receiver Reset
     static constexpr uint8_t CR1_TX_RESET     = 0x80;  // Transmitter Reset
 
-    // Control Register 2 bits
+    // Control Register 2 bits (per MC6854 datasheet / BeebEm Econet.cpp)
     static constexpr uint8_t CR2_PSE          = 0x01;  // Prioritised Status Enable
     static constexpr uint8_t CR2_2_1_BYTE     = 0x02;  // 2-byte/1-byte transfer
     static constexpr uint8_t CR2_FLAG_IDLE    = 0x04;  // Flag/Mark Idle mode
     static constexpr uint8_t CR2_FC_TDRA      = 0x08;  // Frame Complete / TDRA select
-    static constexpr uint8_t CR2_CLR_RX_ST    = 0x10;  // Clear Rx Status (auto-clear)
-    static constexpr uint8_t CR2_CLR_TX_ST    = 0x20;  // Clear Tx Status (auto-clear)
-    static constexpr uint8_t CR2_RTS          = 0x40;  // Request To Send control
-    static constexpr uint8_t CR2_RTS_CONTROL  = 0x80;  // RTS control mode
+    static constexpr uint8_t CR2_TX_LAST_DATA = 0x10;  // Tx Last Data (auto-clear)
+    static constexpr uint8_t CR2_CLR_RX_ST    = 0x20;  // Clear Rx Status (auto-clear)
+    static constexpr uint8_t CR2_CLR_TX_ST    = 0x40;  // Clear Tx Status (auto-clear)
+    static constexpr uint8_t CR2_RTS          = 0x80;  // Request To Send control
 
     // Control Register 3 bits
     static constexpr uint8_t CR3_LCF          = 0x01;  // Logical Control Field select
@@ -172,11 +172,7 @@ public:
     void set_byte_period(int period) { byte_period_ = period; }
     int byte_period() const { return byte_period_; }
 
-    // External CTS input (active low: false = CTS asserted = clear to send)
-    void set_cts_input(bool cts_high) {
-        cts_input_ = cts_high;
-    }
-
+    // CTS input state (true = high = not clear to send)
     bool cts_input() const { return cts_input_; }
 
     // Hard reset — returns all state to power-on defaults
@@ -202,6 +198,8 @@ public:
         txu_stored_ = false;
 
         fv_stored_ = false;
+        fv_deferred_ = false;
+        frame_boundary_ = false;
         err_stored_ = false;
         abt_stored_ = false;
         ovrn_stored_ = false;
@@ -214,8 +212,12 @@ public:
         // latch to fire, since the level-sensitive SR2 DCD path already handles
         // the "carrier continuously absent" case for NFS "No Clock" detection.
         prev_dcd_input_ = !backend_.is_connected();
-        prev_cts_input_ = false;
-        cts_input_ = false;
+
+        // Initialize CTS to match the initial state. After reset, CR2=0 (no RTS),
+        // so CTS is high (not clear to send) when the backend is connected.
+        // Setting prev_cts_input_ to match prevents a spurious edge latch.
+        cts_input_ = !(backend_.is_connected() && (cr2_ & CR2_RTS));
+        prev_cts_input_ = cts_input_;
 
         // Reset PSE level
         pse_level_ = 0;
@@ -264,6 +266,12 @@ public:
         return (rx_fifo_[FIFO_SIZE - 1] & FIFO_VALID) != 0;
     }
 
+    // RX frame buffer inspection (for debugging)
+    size_t rx_buffer_index() const { return rx_buffer_index_; }
+    size_t rx_frame_buffer_size() const { return rx_frame_buffer_.size(); }
+    bool fv_stored() const { return fv_stored_; }
+    bool ovrn_stored() const { return ovrn_stored_; }
+
 private:
     // --- Register read/write ---
 
@@ -277,8 +285,29 @@ private:
 
     uint8_t read_rx_fifo() {
         if (rx_fifo_[0] & FIFO_VALID) {
+            bool was_last = (rx_fifo_[0] & FIFO_LAST) != 0;
             uint8_t data = rx_fifo_[0] & 0xFF;
             shift_rx_fifo();
+            // On real hardware, the HDLC receiver continuously fills the
+            // 3-byte FIFO from the serial bitstream. The NFS ROM's NMI handler
+            // reads bytes in a polling loop, checking SR2 after each read for
+            // RDA (more data) or FV (frame complete). The byte trickle timer
+            // creates artificial gaps where the FIFO appears empty mid-frame;
+            // the NFS ROM interprets this as "frame ended" and Discontinues.
+            // Push one byte from the frame buffer to keep the FIFO populated,
+            // matching the real hardware's continuous FIFO fill behaviour.
+            if (!(cr1_ & CR1_RX_RESET) && !fv_stored_ && !frame_boundary_
+                && !rx_fifo_full()
+                && rx_buffer_index_ < rx_frame_buffer_.size()) {
+                rx_push_one_byte();
+            }
+            // Re-assert fv_deferred_ if the last byte is read after a
+            // CLR_RX_ST cleared the original push-time FV. This handles the
+            // case where software clears FV status between the push and the
+            // read — the closing flag condition is still valid.
+            if (was_last && !fv_stored_) {
+                fv_deferred_ = true;
+            }
             update_status();
             return data;
         }
@@ -304,6 +333,7 @@ private:
             fd_stored_ = false;
 
             fv_stored_ = false;
+            fv_deferred_ = false;
             err_stored_ = false;
             abt_stored_ = false;
             ovrn_stored_ = false;
@@ -320,6 +350,7 @@ private:
             rx_frame_buffer_.clear();
             rx_buffer_index_ = 0;
             fv_stored_ = false;
+            fv_deferred_ = false;
 
             // Bit auto-clears — don't store it
             value &= ~CR1_DISCONTINUE;
@@ -336,27 +367,37 @@ private:
         } else {
             // AC=0: write to CR2
             // Handle auto-clearing bits before storing
-            uint8_t auto_clear_mask = CR2_CLR_RX_ST | CR2_CLR_TX_ST;
+            uint8_t auto_clear_mask = CR2_TX_LAST_DATA | CR2_CLR_RX_ST | CR2_CLR_TX_ST;
 
             if (value & CR2_CLR_RX_ST) {
                 // Clear stored RX status conditions
                 fv_stored_ = false;
+                fv_deferred_ = false;
+                frame_boundary_ = false;
                 err_stored_ = false;
                 abt_stored_ = false;
                 ovrn_stored_ = false;
                 idle_stored_ = false;
                 dcd_stored_ = false;
                 fd_stored_ = false;
-                // Advance PSE priority level
-                if ((cr2_ & CR2_PSE) && pse_level_ < 4) {
-                    ++pse_level_;
-                }
+                // Reset PSE level — the stateless cascade will re-evaluate
+                // on the next update_status() call and select the highest
+                // active priority group from whatever conditions remain.
+                pse_level_ = 0;
             }
 
             if (value & CR2_CLR_TX_ST) {
                 // Clear stored TX status conditions
                 cts_stored_ = false;
                 txu_stored_ = false;
+            }
+
+            if (value & CR2_TX_LAST_DATA) {
+                // TX Last Data: mark the most recent TX FIFO entry as the last
+                // byte of the frame. The NFS ROM writes all data bytes to offset 2
+                // (TX continue) and then sets TX_LAST_DATA in CR2 to signal frame
+                // termination, rather than writing the final byte to offset 3.
+                mark_tx_last_and_flush();
             }
 
             // Store CR2 without auto-clearing bits
@@ -424,6 +465,16 @@ private:
         // If this was the last byte, reset frame field for next frame
         if (is_last) {
             tx_frame_field_ = FrameField::Idle;
+
+            // Immediately flush the TX FIFO and complete the frame. On real
+            // Econet, the MC6854 serializes bytes at wire speed (~200kbps),
+            // completing a typical 6-byte scout frame in ~240us. The byte
+            // timer approximation (128 half-cycles per byte) is too slow
+            // relative to CPU speed — the NFS ROM writes all frame bytes via
+            // NMI, then asserts TX_RESET before the byte timer has drained
+            // the FIFO. Since our UDP backend sends frames atomically,
+            // flushing on last-byte write matches the real hardware outcome.
+            flush_tx_frame();
         }
 
         update_status();
@@ -468,12 +519,61 @@ private:
         tx_frame_buffer_.clear();
     }
 
+    // Drain all TX FIFO entries into the frame buffer and complete the frame.
+    // Called when the last byte of a frame is written to ensure the frame is
+    // sent before the CPU can assert TX_RESET. Earlier bytes may already have
+    // been extracted into tx_frame_buffer_ by the byte timer; this flushes
+    // whatever remains in the FIFO.
+    void flush_tx_frame() {
+        while (tx_fifo_[0] & FIFO_VALID) {
+            uint16_t entry = pop_tx_fifo();
+            tx_frame_buffer_.push_back(entry & 0xFF);
+            if (entry & FIFO_LAST) {
+                on_tx_frame_complete();
+                return;
+            }
+        }
+    }
+
+    // Mark the most recent TX FIFO entry as LAST and flush the frame.
+    // Called when CR2 TX_LAST_DATA is written. The NFS ROM writes all data
+    // bytes to offset 2 (TX continue) and then sets TX_LAST_DATA via CR2
+    // to signal frame termination, rather than writing the final byte to
+    // offset 3. This finds the topmost valid FIFO entry, sets its FIFO_LAST
+    // flag, resets the frame field to Idle, and flushes the frame.
+    void mark_tx_last_and_flush() {
+        if (cr1_ & CR1_TX_RESET) return;
+
+        // Find the topmost valid entry in the FIFO and mark it as LAST
+        for (int i = FIFO_SIZE - 1; i >= 0; --i) {
+            if (tx_fifo_[i] & FIFO_VALID) {
+                tx_fifo_[i] |= FIFO_LAST;
+                tx_frame_field_ = FrameField::Idle;
+                flush_tx_frame();
+                return;
+            }
+        }
+
+        // FIFO is empty — the byte timer may have already drained all entries
+        // into the frame buffer. In that case, complete the frame directly.
+        if (!tx_frame_buffer_.empty()) {
+            tx_frame_field_ = FrameField::Idle;
+            on_tx_frame_complete();
+        }
+    }
+
     // RX: If FIFO has space and no FV blocking, push from rx_frame_buffer_.
+    // Called periodically by the byte trickle timer.
     void rx_process_byte() {
         if (cr1_ & CR1_RX_RESET) return;
 
         // If FV is set, don't push more data until it's cleared
         if (fv_stored_) return;
+
+        // Frame boundary: the last byte of the current frame has been pushed
+        // into the FIFO. Don't fetch the next frame or push more bytes until
+        // the CPU reads the last byte and FV is asserted.
+        if (frame_boundary_) return;
 
         // Try to fetch a new frame if we have no buffered frame
         if (rx_buffer_index_ >= rx_frame_buffer_.size()) {
@@ -493,13 +593,17 @@ private:
             return;
         }
 
-        // Push one byte from frame buffer into FIFO
+        rx_push_one_byte();
+    }
+
+    // Push the next byte from rx_frame_buffer_ into the RX FIFO.
+    void rx_push_one_byte() {
         uint8_t data = rx_frame_buffer_[rx_buffer_index_];
         bool is_last = (rx_buffer_index_ == rx_frame_buffer_.size() - 1);
 
         uint16_t entry = FIFO_VALID | data;
 
-        // Track frame field for AP marking
+        // AP marking (same logic as documented in rx_process_byte)
         if (rx_frame_field_ == FrameField::Idle) {
             rx_frame_field_ = FrameField::Address;
             entry |= FIFO_AP;
@@ -508,10 +612,8 @@ private:
                 if (data & 0x01) {
                     rx_frame_field_ = FrameField::Control;
                 }
-                entry |= FIFO_AP;
             } else {
                 rx_frame_field_ = FrameField::Control;
-                entry |= FIFO_AP;
             }
         } else if (rx_frame_field_ == FrameField::Control) {
             rx_frame_field_ = FrameField::Data;
@@ -525,9 +627,20 @@ private:
         push_rx_fifo(entry);
         ++rx_buffer_index_;
 
-        // If we just pushed the last byte, mark FV
+        // Per MC6854 datasheet: "FV is set when the closing flag of a frame is
+        // received" — i.e., when the last byte enters the FIFO, not when it is
+        // read. Set fv_deferred_ at push time so update_status() promotes it
+        // to fv_stored_ immediately. This matches real hardware where the NFS
+        // ROM's scout handler checks SR2 after reading the penultimate byte and
+        // expects to see FV=1 (with RDA masked by PSE at P1).
+        //
+        // frame_boundary_ blocks rx_process_byte() from fetching the next frame
+        // and blocks inline refill from pushing bytes past this frame boundary.
+        // It is cleared when fv_deferred_ is promoted to fv_stored_ by
+        // update_status(), since fv_stored_ takes over the blocking role.
         if (is_last) {
-            fv_stored_ = true;
+            frame_boundary_ = true;
+            fv_deferred_ = true;
         }
     }
 
@@ -591,6 +704,15 @@ private:
     //   Dual-nature: OR of stored latch + present input (DCD, RxABT, Rx Idle)
 
     void update_status() {
+        // Promote deferred FV to stored FV. Runs on every tick and every
+        // register read/write (not just the byte timer), giving near-immediate
+        // FV visibility after the CPU reads the last byte of a frame.
+        if (fv_deferred_) {
+            fv_stored_ = true;
+            fv_deferred_ = false;
+            frame_boundary_ = false;  // fv_stored_ now guards further pushes
+        }
+
         // --- Present conditions (derived from current state) ---
 
         // RDA: data available in RX FIFO
@@ -601,36 +723,60 @@ private:
         // output has the AP metadata flag set)
         bool ap_present = rda && (rx_fifo_[0] & FIFO_AP) != 0;
 
-        // FV: frame valid — last byte with good CRC in FIFO (stored until cleared)
-        bool fv_present = false;
-        for (int i = 0; i < FIFO_SIZE; ++i) {
-            if ((rx_fifo_[i] & FIFO_VALID) && (rx_fifo_[i] & FIFO_LAST)) {
-                fv_present = true;
-                break;
-            }
-        }
-
-        // TDRA: TX data register available
-        // True when TX FIFO has space, TX not in reset, AND CTS is not inhibiting
-        bool tdra = !tx_fifo_full() && !(cr1_ & CR1_TX_RESET) && !cts_input_;
+        // FV: frame valid — promoted from fv_deferred_ above when the CPU reads
+        // the last byte of a frame. Unlike AP/RDA which are derived from current
+        // FIFO state, FV is a stored latch (fv_stored_) cleared by CLR_RX_ST
+        // or RX_RESET.
 
         // DCD present: reflects backend connection (DCD=1 when disconnected)
+        // Computed before TDRA because TDRA requires carrier to be present.
         bool dcd_present = !backend_.is_connected();
 
+        // CTS (Clear To Send) input: on Econet, CTS is driven by the collision
+        // detection hardware. CTS is LOW (clear to send) when the clock box is
+        // present (backend connected) AND RTS is asserted (CR2 bit 7). CTS is
+        // HIGH (not clear to send) when either the clock is absent or RTS is
+        // not asserted. This matches BeebEm's CTS logic.
+        cts_input_ = !(backend_.is_connected() && (cr2_ & CR2_RTS));
+
+        // TDRA: TX data register available
+        // In 2-byte mode (CR2b1), requires room for 2 bytes (at most 1 entry in FIFO).
+        // In 1-byte mode, requires room for 1 byte (FIFO not full).
+        // Also requires carrier present (DCD clear) and CTS asserted (low).
+        bool has_tx_room = (cr2_ & CR2_2_1_BYTE)
+            ? !(tx_fifo_[FIFO_SIZE - 2] & FIFO_VALID)  // Room for 2: slots [1],[2] empty
+            : !tx_fifo_full();                           // Room for 1: slot [2] empty
+        bool tdra = has_tx_room && !(cr1_ & CR1_TX_RESET) && !cts_input_ && !dcd_present;
+
         // Rx Idle present: line is idle when RX not in reset, FIFO empty, no FV,
-        // and no pending data in the frame buffer
+        // no pending data in the frame buffer, AND not in an inter-frame gap
+        // where more data is expected.
+        //
+        // On real Econet, the clock box sends continuous flag fill (0x7E) between
+        // frames within a four-way handshake, so INACTIVE never appears in the
+        // gap between scout and data frames. The NFS ROM's PSE-based NMI handler
+        // reads SR2 after clearing FV and if it sees INACTIVE at that point, it
+        // may interpret the handshake as failed. Suppressing INACTIVE during
+        // inter-frame gaps (when is_expecting_frame() is true) prevents this.
+        //
+        // INACTIVE must still be set when the network is genuinely idle (no
+        // handshake in progress) — the NFS ROM polls INACTIVE as part of its
+        // transmit readiness check.
         bool idle_present = !(cr1_ & CR1_RX_RESET)
             && rx_fifo_empty()
             && !fv_stored_
-            && (rx_buffer_index_ >= rx_frame_buffer_.size());
+            && (rx_buffer_index_ >= rx_frame_buffer_.size())
+            && !backend_.is_expecting_frame();
 
-        // Flag fill from the backend suppresses idle (line appears busy)
-        bool idle_condition = idle_present && !backend_.is_receiving_flags();
+        // INACTIVE reflects whether data frames are being received, independent
+        // of clock box flag fill. On real Econet, FD (SR1) and INACTIVE (SR2) are
+        // both set simultaneously when the network is idle with a working clock box.
+        bool idle_condition = idle_present;
 
         // Rx Abort present: (placeholder — not simulated over AUN/UDP)
         bool abt_present = false;
 
-        // CTS present: reflects external CTS input (active low: high = not clear to send)
+        // CTS present: reflects CTS input (high = not clear to send)
         bool cts_present = cts_input_;
 
         // Flag Detected: driven by backend flag fill, or by stored latch
@@ -650,10 +796,8 @@ private:
         }
         prev_cts_input_ = cts_present;
 
-        // FV stored: latch when frame valid condition appears
-        if (fv_present) {
-            fv_stored_ = true;
-        }
+        // FV stored: promoted from fv_deferred_ by update_status() above.
+        // No edge detection needed — it's set directly on read/tick.
 
         // --- Build SR2 ---
 
@@ -675,7 +819,7 @@ private:
 
         uint8_t sr2_raw = 0;
         if (ap_present)                sr2_raw |= SR2_AP;
-        if (fv_stored_ || fv_present)  sr2_raw |= SR2_FV;
+        if (fv_stored_)                sr2_raw |= SR2_FV;
         if (idle_bit)                  sr2_raw |= SR2_INACTIVE;
         if (abt_bit)                   sr2_raw |= SR2_ABT;
         if (err_stored_)               sr2_raw |= SR2_ERR;
@@ -731,57 +875,48 @@ private:
         }
     }
 
-    // PSE 4-tier priority filtering for SR2
-    uint8_t apply_pse_filter(uint8_t sr2_raw) const {
-        // Priority 1 (highest): FV, Abort, FCS Error, DCD, Overrun
+    // PSE priority cascade for SR2.
+    //
+    // Per the MC6854 datasheet, PSE evaluates priority groups from highest (P1)
+    // to lowest (P4) on each status read. The highest active group determines
+    // which bits are visible; lower-priority bits are masked. There is no floor
+    // or memory — each evaluation is stateless. CLR_RX_ST clears stored latches,
+    // allowing the cascade to naturally fall through to lower-priority conditions.
+    //
+    // Priority groups:
+    //   P1: FV, ABT, ERR, DCD, OVRN  — receive completion/errors
+    //   P2: INACTIVE                   — line idle
+    //   P3: AP                         — address present
+    //   P4: RDA                        — receive data available
+    //
+    // This is critical for the NFS ROM's scout handler: when the last byte of a
+    // frame is pushed to the FIFO (setting FV), FV at P1 immediately masks RDA
+    // at P4. The handler sees FV=1/RDA=0 and enters the scout completion path.
+    uint8_t apply_pse_filter(uint8_t sr2_raw) {
         constexpr uint8_t P1_MASK = SR2_FV | SR2_ABT | SR2_ERR | SR2_DCD | SR2_OVRN;
-        // Priority 2: Idle
         constexpr uint8_t P2_MASK = SR2_INACTIVE;
-        // Priority 3: AP
         constexpr uint8_t P3_MASK = SR2_AP;
-        // Priority 4 (lowest): RDA
         constexpr uint8_t P4_MASK = SR2_RDA;
 
-        switch (pse_level_) {
-            case 0:
-            case 1:
-                // Show P1 conditions; suppress P2, P3, P4 if P1 present
-                if (sr2_raw & P1_MASK) {
-                    return sr2_raw & (P1_MASK);
-                }
-                // Fall through to P2 if no P1
-                if (sr2_raw & P2_MASK) {
-                    return sr2_raw & (P1_MASK | P2_MASK);
-                }
-                if (sr2_raw & P3_MASK) {
-                    return sr2_raw & (P1_MASK | P2_MASK | P3_MASK);
-                }
-                return sr2_raw;  // Show all (P4 = RDA)
-
-            case 2:
-                // After first Clear RX Status: show P2+ only
-                if (sr2_raw & P2_MASK) {
-                    return sr2_raw & (P2_MASK);
-                }
-                if (sr2_raw & P3_MASK) {
-                    return sr2_raw & (P2_MASK | P3_MASK);
-                }
-                return sr2_raw & (P2_MASK | P3_MASK | P4_MASK);
-
-            case 3:
-                // After second Clear RX Status: show P3+ only
-                if (sr2_raw & P3_MASK) {
-                    return sr2_raw & (P3_MASK);
-                }
-                return sr2_raw & (P3_MASK | P4_MASK);
-
-            case 4:
-                // After third Clear RX Status: show P4 only
-                return sr2_raw & P4_MASK;
-
-            default:
-                return sr2_raw;
+        if (sr2_raw & P1_MASK) {
+            pse_level_ = 1;
+            return sr2_raw & ~(P2_MASK | P3_MASK | P4_MASK);
         }
+        if (sr2_raw & P2_MASK) {
+            pse_level_ = 2;
+            return sr2_raw & ~(P3_MASK | P4_MASK);
+        }
+        if (sr2_raw & P3_MASK) {
+            pse_level_ = 3;
+            return sr2_raw & ~P4_MASK;
+        }
+        if (sr2_raw & P4_MASK) {
+            pse_level_ = 4;
+            return sr2_raw;
+        }
+
+        pse_level_ = 0;
+        return sr2_raw;
     }
 
     // --- State ---
@@ -823,7 +958,9 @@ private:
     bool cts_stored_ = false;    // SR1: CTS positive edge
     bool txu_stored_ = false;    // SR1: Transmitter Underrun
 
-    bool fv_stored_ = false;     // SR2: Frame Valid
+    bool fv_stored_ = false;     // SR2: Frame Valid (latched)
+    bool fv_deferred_ = false;   // FV pending: set when last byte pushed to FIFO, promoted by update_status()
+    bool frame_boundary_ = false; // Frame boundary: blocks byte timer and inline refill after last byte pushed
     bool err_stored_ = false;    // SR2: FCS/CRC Error
     bool abt_stored_ = false;    // SR2: Rx Abort (stored component)
     bool ovrn_stored_ = false;   // SR2: Rx Overrun
@@ -837,7 +974,7 @@ private:
     // External CTS input (active low: false = clear to send)
     bool cts_input_ = false;
 
-    // PSE priority level: 0 = inactive/initial, 1-4 = priority tiers
+    // PSE priority level (observational): 0 = no active condition, 1-4 = last selected tier
     int pse_level_ = 0;
 
     // Byte trickle timer (counts 2MHz half-cycles between byte transfers)

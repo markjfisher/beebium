@@ -260,6 +260,14 @@ target_compile_definitions(test_boot_econet PRIVATE
 )
 catch_discover_tests(test_boot_econet)
 
+# Econet file server integration tests (discretionary — need BEEBIUM_FILESERVER env var)
+add_executable(test_econet_fileserver test_econet_fileserver.cpp)
+target_link_libraries(test_econet_fileserver PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_econet_fileserver PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_econet_fileserver)
+
 # clearRAM test
 add_executable(test_clearram test_clearram.cpp)
 target_link_libraries(test_clearram PRIVATE beebium_core Catch2::Catch2WithMain)

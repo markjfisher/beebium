@@ -51,8 +51,10 @@ public:
 
     // Handshake timeouts (in ticks — one per 2MHz rising edge)
     static constexpr int SCOUT_ACK_TIMEOUT = 5000;     // ~2.5ms — delay before faking scout ack
+    static constexpr int FINAL_ACK_TIMEOUT = 10000;    // ~5ms — delay before faking final ack
     static constexpr int WATCHDOG_TIMEOUT  = 500000;    // ~250ms — force-reset hung transactions
     static constexpr int FLAG_FILL_TIMEOUT = 500000;    // ~250ms — assume peer finished
+    static constexpr int IDLE_COOLDOWN     = 5000;      // ~2.5ms — gap between handshakes
 
     // Econet frame byte offsets
     static constexpr int FRAME_DEST_STN = 0;
@@ -105,14 +107,27 @@ public:
             return frame;
         }
 
-        // 2. Check backend for incoming AUN packets
+        // 2. Don't poll backend during idle cooldown. On real Econet, there is
+        // a natural gap between handshakes (wire speed, remote processing time).
+        // AUN-over-UDP delivers replies instantly; the cooldown gives the
+        // foreground code time to process the previous result and set up the
+        // next receive control block before a new scout arrives.
+        //
+        // TODO: Replace this blunt cooldown with proper decoupling. The
+        // FourWayHandshake should buffer incoming AUN packets in a queue with
+        // arrival timestamps, and only present them to the ADLC after a
+        // minimum inter-frame gap has elapsed — modelling wire-speed delivery
+        // rather than blocking all backend polling.
+        if (idle_cooldown_ > 0) return std::nullopt;
+
+        // 3. Check backend for incoming AUN packets
         auto packet = backend_.receive_frame();
         if (!packet) return std::nullopt;
 
-        // 3. Route through handshake state machine
+        // 4. Route through handshake state machine
         if (!handle_incoming(*packet)) return std::nullopt;
 
-        // 4. Return first generated frame
+        // 5. Return first generated frame
         if (!rx_queue_.empty()) {
             auto frame = std::move(rx_queue_.front());
             rx_queue_.pop_front();
@@ -132,6 +147,15 @@ public:
         // On real Econet, the clock box transmits 0x7E flag bytes between frames.
         // In AUN mode, a bound socket implies a functioning network with a clock box.
         return stage_ == Stage::Idle && backend_.is_connected();
+    }
+
+    bool is_expecting_frame() const override {
+        // During an RX handshake, the gap between scout delivery and data
+        // delivery is bridged by flag fill on real Econet. The ADLC should
+        // not report INACTIVE during this gap. ScoutAckSent is the state
+        // where the Beeb has acknowledged the scout and we're waiting for
+        // the timer to deliver the data frame.
+        return stage_ == Stage::ScoutAckSent;
     }
 
     // --- Timer tick (called once per 2MHz rising edge) ---
@@ -155,10 +179,15 @@ public:
             }
         }
 
-        // WaitForIdle → Idle when all queued frames have been consumed
+        // WaitForIdle → Idle when all queued frames have been consumed.
+        // Start a cooldown to prevent the next incoming AUN packet from
+        // arriving before the foreground code has processed the completion.
         if (stage_ == Stage::WaitForIdle && rx_queue_.empty()) {
             stage_ = Stage::Idle;
+            idle_cooldown_ = IDLE_COOLDOWN;
         }
+
+        if (idle_cooldown_ > 0) --idle_cooldown_;
     }
 
     // Reset all handshake state (called on system reset).
@@ -219,8 +248,14 @@ private:
         uint8_t ctrl = data[FRAME_CONTROL];
         uint8_t port = data[FRAME_PORT];
 
-        // Immediate operation: port 0x00
-        if (port == 0x00) {
+        // Port 0 classification: control bytes 0x02-0x05 (POKE, JSR,
+        // UserProc, OSProc) carry extra scout payload and use the full
+        // four-way handshake — they are Unicast scouts, not Immediates.
+        // All other port-0 operations (Machine Peek, Halt, etc.) are
+        // Immediate. Matches BeebEm's classification.
+        uint8_t masked_ctrl = ctrl & 0x7F;
+        bool is_port0_unicast = (masked_ctrl >= 0x02 && masked_ctrl <= 0x05);
+        if (port == 0x00 && !is_port0_unicast) {
             NetworkFrame nf;
             nf.type = FrameType::Immediate;
             nf.port = 0;
@@ -274,6 +309,7 @@ private:
 
         backend_.send_frame(nf);
         saved_scout_.clear();
+        arm_final_ack_timer();
         arm_watchdog();
         stage_ = Stage::DataSent;
     }
@@ -328,6 +364,18 @@ private:
         switch (stage_) {
             case Stage::Idle:
                 return handle_rx_in_idle(packet);
+
+            case Stage::WaitForIdle:
+                // The previous transaction is finishing. If the rx_queue_ has
+                // been fully consumed by the ADLC, accept new incoming packets
+                // as if idle. This handles the common case where the remote
+                // server's reply Unicast arrives between the ADLC consuming
+                // the last frame from the queue and the next tick() advancing
+                // the stage to Idle.
+                if (rx_queue_.empty()) {
+                    return handle_rx_in_idle(packet);
+                }
+                return false;
 
             case Stage::DataSent:
                 if (packet.type == FrameType::Ack) {
@@ -469,12 +517,34 @@ private:
                 stage_ = Stage::DataReceived;
                 break;
             }
+            case Stage::DataSent: {
+                // Generate fake final ack when no real AUN Ack arrived.
+                // On real Econet, the final ack comes within microseconds if
+                // the scout succeeded. In AUN mode, the scout always succeeds
+                // (locally faked), so we must also provide the final ack.
+                // The NFS ROM has no software timeout for this phase — it
+                // relies entirely on the ADLC NMI.
+                // If a real AUN Ack arrived first (handle_incoming), the stage
+                // already transitioned to WaitForIdle and this case won't fire.
+                enqueue_rx_frame({
+                    saved_src_stn_, saved_src_net_,     // dest of ack = us
+                    saved_dest_stn_, saved_dest_net_    // src of ack = them
+                });
+                clear_flag_fill();
+                watchdog_timer_ = 0;  // Cancel watchdog — handshake completing
+                stage_ = Stage::WaitForIdle;
+                break;
+            }
             default:
                 break;
         }
     }
 
     void on_watchdog_timeout() {
+        // Safety reset: if any stage gets stuck beyond the watchdog period,
+        // force-reset to Idle. The handshake timer handles normal timeouts
+        // (scout ack, data delivery, final ack); the watchdog catches
+        // unexpected stalls.
         reset_handshake();
     }
 
@@ -499,6 +569,7 @@ private:
     }
 
     void arm_scout_timer() { handshake_timer_ = SCOUT_ACK_TIMEOUT; }
+    void arm_final_ack_timer() { handshake_timer_ = FINAL_ACK_TIMEOUT; }
     void arm_watchdog() { watchdog_timer_ = WATCHDOG_TIMEOUT; }
 
     void set_flag_fill() {
@@ -515,6 +586,7 @@ private:
         stage_ = Stage::Idle;
         handshake_timer_ = 0;
         watchdog_timer_ = 0;
+        idle_cooldown_ = 0;
         clear_flag_fill();
         saved_scout_.clear();
         cached_rx_data_.clear();
@@ -530,6 +602,7 @@ private:
     int handshake_timer_ = 0;
     int watchdog_timer_ = 0;
     int flag_fill_timer_ = 0;
+    int idle_cooldown_ = 0;
     bool flag_fill_active_ = false;
 
     // Saved state for the current handshake transaction

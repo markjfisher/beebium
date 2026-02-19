@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/econet/Mc6854.hpp>
+#include <beebium/econet/FourWayHandshake.hpp>
 #include <beebium/econet/TestBackend.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -179,8 +180,8 @@ TEST_CASE("CR2: writing offset 1 with AC=0 sets CR2", "[econet][mc6854]") {
     t.release_reset();
     t.clear_ac();
 
-    t.adlc.write(1, 0x42);  // RTS + 2/1-byte
-    CHECK(t.adlc.cr2() == 0x42);
+    t.adlc.write(1, 0x82);  // RTS(0x80) + 2/1-byte(0x02)
+    CHECK(t.adlc.cr2() == 0x82);
 }
 
 TEST_CASE("CR2: Clear Rx Status (bit 4) auto-clears", "[econet][mc6854]") {
@@ -229,14 +230,14 @@ TEST_CASE("AC bit toggles between CR2 and CR3", "[econet][mc6854]") {
 
     // Write CR2 (AC=0)
     t.clear_ac();
-    t.adlc.write(1, 0x42);
-    CHECK(t.adlc.cr2() == 0x42);
+    t.adlc.write(1, 0x82);  // RTS(0x80) + 2/1-byte(0x02)
+    CHECK(t.adlc.cr2() == 0x82);
 
     // Write CR3 (AC=1)
     t.set_ac();
     t.adlc.write(1, 0x0B);
     CHECK(t.adlc.cr3() == 0x0B);
-    CHECK(t.adlc.cr2() == 0x42);  // CR2 unchanged
+    CHECK(t.adlc.cr2() == 0x82);  // CR2 unchanged
 }
 
 // =============================================================================
@@ -276,6 +277,8 @@ TEST_CASE("SR1: reading offset 0 returns SR1", "[econet][mc6854]") {
 TEST_CASE("SR1: TDRA set when TX FIFO has space and not in reset", "[econet][mc6854]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);  // Assert RTS so CTS clears
     t.tick();
 
     uint8_t sr1 = t.adlc.read(0);
@@ -364,11 +367,12 @@ TEST_CASE("TX FIFO: frame terminate via offset 3 with AC=0", "[econet][mc6854]")
     t.clear_ac();
 
     t.adlc.write(2, 0x01);  // Continue
-    t.adlc.write(3, 0x02);  // Terminate (last byte)
+    t.adlc.write(3, 0x02);  // Terminate (last byte) — triggers immediate flush
 
-    // FIFO should have 2 entries
-    CHECK_FALSE(t.adlc.tx_fifo_empty());
-    CHECK_FALSE(t.adlc.tx_fifo_full());
+    // FIFO should be empty after flush, and frame should be sent
+    CHECK(t.adlc.tx_fifo_empty());
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    CHECK(t.backend.sent_frames()[0] == std::vector<uint8_t>({0x01, 0x02}));
 }
 
 TEST_CASE("TX FIFO: offset 3 with AC=1 writes CR4, not TX FIFO", "[econet][mc6854]") {
@@ -570,8 +574,8 @@ TEST_CASE("Clear Tx Status: clears stored TX status bits", "[econet][mc6854]") {
     t.release_reset();
     t.clear_ac();
 
-    // Clear TX status via CR2 bit 5
-    t.adlc.write(1, Mc6854::CR2_CLR_TX_ST);
+    // Assert RTS (so CTS is low) and clear TX status
+    t.adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_TX_ST);
 
     t.tick();
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_TXU);
@@ -615,8 +619,10 @@ TEST_CASE("Hard reset: restores power-on state", "[econet][mc6854]") {
 TEST_CASE("Tick: rising and falling edges update status", "[econet][mc6854]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);  // Assert RTS so CTS clears
 
-    // After releasing from reset, TDRA should be set on next tick
+    // After releasing from reset with RTS, TDRA should be set on next tick
     t.adlc.tick_rising();
     CHECK(t.adlc.sr1() & Mc6854::SR1_TDRA);
 
@@ -632,6 +638,8 @@ TEST_CASE("Tick: rising and falling edges update status", "[econet][mc6854]") {
 TEST_CASE("IRQ: not asserted when interrupts disabled", "[econet][mc6854]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);  // Assert RTS so CTS clears
     t.tick();
 
     // TDRA is set but TIE is not enabled
@@ -642,8 +650,9 @@ TEST_CASE("IRQ: not asserted when interrupts disabled", "[econet][mc6854]") {
 TEST_CASE("IRQ: asserted when TIE enabled and TDRA set", "[econet][mc6854]") {
     TestFixture t;
 
-    // Enable TIE and release from reset
+    // Enable TIE (AC=0 so CR2 writes go to CR2), assert RTS → CTS clear
     t.adlc.write(0, Mc6854::CR1_TIE);
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
 
     CHECK(t.adlc.sr1() & Mc6854::SR1_TDRA);
@@ -808,25 +817,25 @@ TEST_CASE("DCD: level-sensitive SR2 path is gated by RX_RESET", "[econet][mc6854
 TEST_CASE("CTS: positive edge latches stored condition", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
 
-    // CTS input low (clear to send) → no CTS status
-    t.adlc.set_cts_input(false);
+    // RTS asserted → CTS low (clear to send) → no CTS status
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_CTS);
 
-    // CTS input goes high (not clear to send) → stored latch captures edge
-    t.adlc.set_cts_input(true);
+    // Clear RTS → CTS goes high (not clear to send) → stored latch captures edge
+    t.adlc.write(1, 0x00);
     t.tick();
     CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
 
-    // CTS drops again → present is low, but stored keeps it set
-    t.adlc.set_cts_input(false);
+    // Re-assert RTS → CTS drops low, but stored keeps CTS status set
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
     CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
 
     // Clear TX status clears stored CTS
-    t.clear_ac();
-    t.adlc.write(1, Mc6854::CR2_CLR_TX_ST);
+    t.adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_TX_ST);
     t.tick();
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_CTS);
 }
@@ -834,19 +843,20 @@ TEST_CASE("CTS: positive edge latches stored condition", "[econet][mc6854][statu
 TEST_CASE("CTS: real-time inhibit of TDRA", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
 
-    // With CTS low (clear to send), TDRA should be set
-    t.adlc.set_cts_input(false);
+    // With RTS asserted → CTS low (clear to send) → TDRA should be set
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
     CHECK(t.adlc.sr1() & Mc6854::SR1_TDRA);
 
-    // CTS goes high → TDRA inhibited
-    t.adlc.set_cts_input(true);
+    // Clear RTS → CTS high → TDRA inhibited
+    t.adlc.write(1, 0x00);
     t.tick();
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_TDRA);
 
-    // CTS drops → TDRA restored
-    t.adlc.set_cts_input(false);
+    // Re-assert RTS → CTS low → TDRA restored
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
     CHECK(t.adlc.sr1() & Mc6854::SR1_TDRA);
 }
@@ -854,7 +864,7 @@ TEST_CASE("CTS: real-time inhibit of TDRA", "[econet][mc6854][status]") {
 TEST_CASE("CTS: inhibits TDRA regardless of FIFO state", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
-    t.adlc.set_cts_input(true);  // CTS not clear
+    // CTS is high by default (RTS not asserted)
 
     // Even with empty TX FIFO, TDRA should be inhibited
     CHECK(t.adlc.tx_fifo_empty());
@@ -873,31 +883,185 @@ TEST_CASE("PSE: not active by default (CR2b0=0)", "[econet][mc6854][pse]") {
     CHECK_FALSE(t.adlc.cr2() & Mc6854::CR2_PSE);
 }
 
-TEST_CASE("PSE: Clear Rx Status advances priority level when PSE enabled", "[econet][mc6854][pse]") {
+TEST_CASE("PSE: dynamic cascade — AP masks RDA, CLR_RX_ST reveals RDA", "[econet][mc6854][pse]") {
     TestFixture t;
     t.release_reset();
     t.clear_ac();
 
     // Enable PSE
     t.adlc.write(1, Mc6854::CR2_PSE);
-    CHECK(t.adlc.pse_level() == 0);
+    t.adlc.set_byte_period(4);
 
-    // Each Clear RX Status advances
-    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
-    CHECK(t.adlc.pse_level() == 1);
+    // Inject a 4-byte frame (need >3 so tick after CLR_RX_ST doesn't push LAST)
+    t.backend.inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
 
-    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
-    CHECK(t.adlc.pse_level() == 2);
-
-    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+    // Byte 0 arrives — AP present → P3 selected
+    t.tick_byte_periods(1);
     CHECK(t.adlc.pse_level() == 3);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);  // RDA masked by AP at P3
+
+    // Read byte 0 (inline refill pushes byte 1) and clear RX status
+    t.adlc.read(2);
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+
+    // Byte 2 pushed by timer — FIFO has [byte1, byte2]. P4 selects RDA.
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
+}
+
+TEST_CASE("PSE: last byte pushed — FV at P1 immediately masks RDA at P4", "[econet][mc6854][pse]") {
+    // When the last byte of a frame is pushed to the FIFO (setting FV), the
+    // stateless PSE cascade immediately shows FV at P1, masking RDA at P4.
+    // This is how the NFS ROM's scout handler detects frame completion: it
+    // sees FV=1/RDA=0 in SR2 and enters the scout completion path.
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    t.adlc.write(1, Mc6854::CR2_PSE);
+    t.adlc.set_byte_period(4);
+
+    // 4-byte frame: address + 3 data bytes
+    t.backend.inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
+
+    // Byte 0 (AP) → P3
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 3);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
+    t.adlc.read(2);  // inline refill: byte 1
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+
+    // Timer pushes byte 2 → FIFO has [byte1, byte2]. P4 selects RDA.
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Read byte 1 → inline refill pushes byte 3 (LAST) → FV stored.
+    // FV at P1 immediately masks RDA at P4.
+    t.adlc.read(2);
+    CHECK(t.adlc.pse_level() == 1);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Read remaining bytes under FV — RDA masked by P1
+    t.adlc.read(2);  // byte 2
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    t.adlc.read(2);  // byte 3 (last) — FIFO empty, FV still stored
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // CLR_RX_ST clears FV → INACTIVE visible
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
+}
+
+TEST_CASE("PSE: FV at P1 masks RDA when last byte still in FIFO", "[econet][mc6854][pse]") {
+    // The NFS ROM's scout handler reads the penultimate byte, which triggers
+    // inline refill of the last byte (setting FV). FV at P1 immediately masks
+    // RDA at P4 — the handler sees FV=1/RDA=0 and enters scout completion.
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    t.adlc.write(1, Mc6854::CR2_PSE);
+    t.adlc.set_byte_period(4);
+
+    t.backend.inject_rx_frame({0xFF, 0x01, 0x42});
+
+    // Byte 0 (AP) → P3
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 3);
+    t.adlc.read(2);  // inline refill: byte 1
 
     t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
-    CHECK(t.adlc.pse_level() == 4);
 
-    // Should not advance past 4
+    // Timer pushes byte 2 (LAST) → FV stored.
+    // FIFO has [byte1, byte2(LAST)]. FV at P1 masks RDA at P4.
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 1);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // CLR_RX_ST clears FV. Byte still in FIFO → RDA at P4.
     t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Read byte 1
+    t.adlc.read(2);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Read byte 2 (last) → re-asserts FV
+    t.adlc.read(2);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+}
+
+TEST_CASE("PSE: INACTIVE visible when idle with PSE enabled", "[econet][mc6854][pse]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    // Enable PSE — INACTIVE is a valid condition when no frame is being received
+    t.adlc.write(1, Mc6854::CR2_PSE);
+    CHECK(t.adlc.pse_level() == 2);  // P2 (INACTIVE) dynamically selected
+    CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
+
+    // CLR_RX_ST advances past P2
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+    // CLR_RX_ST clears stored latches but INACTIVE is a present condition
+    // (line is genuinely idle), so P2 still selects it
+    CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
+}
+
+TEST_CASE("PSE: multi-byte data frame — RDA visible until FV interrupts", "[econet][mc6854][pse]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    t.adlc.write(1, Mc6854::CR2_PSE);
+    t.adlc.set_byte_period(4);
+
+    // 5-byte frame: 1 address + 4 data
+    t.backend.inject_rx_frame({0xFF, 0x01, 0x02, 0x03, 0x04});
+
+    // Byte 0 (AP) → P3
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 3);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
+    t.adlc.read(2);  // inline refill: byte 1
+
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+
+    // Timer pushes byte 2 → FIFO [byte1, byte2]. RDA at P4.
+    t.tick_byte_periods(1);
     CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
+    t.adlc.read(2);  // byte 1; inline refill: byte 3
+
+    // Timer pushes byte 4 (LAST) → FV stored → P1 masks RDA
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 1);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Remaining bytes readable under FV
+    t.adlc.read(2);  // byte 2
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    t.adlc.read(2);  // byte 3
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    t.adlc.read(2);  // byte 4 (last)
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // CLR_RX_ST clears FV → INACTIVE
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
 }
 
 TEST_CASE("PSE: does not advance level when PSE disabled", "[econet][mc6854][pse]") {
@@ -915,11 +1079,12 @@ TEST_CASE("PSE: RX reset resets PSE level", "[econet][mc6854][pse]") {
     t.release_reset();
     t.clear_ac();
 
-    // Advance PSE level
+    // Get PSE into a non-zero state via frame reception
     t.adlc.write(1, Mc6854::CR2_PSE);
-    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
-    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
-    CHECK(t.adlc.pse_level() == 2);
+    t.adlc.set_byte_period(4);
+    t.backend.inject_rx_frame({0xFF, 0x01});
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 3);  // AP active
 
     // RX reset should clear PSE level
     t.adlc.write(0, Mc6854::CR1_RX_RESET);
@@ -933,6 +1098,8 @@ TEST_CASE("PSE: RX reset resets PSE level", "[econet][mc6854][pse]") {
 TEST_CASE("IRQ: level-sensitive — enabling TIE with existing TDRA triggers IRQ", "[econet][mc6854][irq]") {
     TestFixture t;
     t.release_reset();
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);  // Assert RTS so CTS clears
     t.tick();
 
     // TDRA is set, TIE is not
@@ -948,8 +1115,9 @@ TEST_CASE("IRQ: level-sensitive — enabling TIE with existing TDRA triggers IRQ
 TEST_CASE("IRQ: clears when cause removed", "[econet][mc6854][irq]") {
     TestFixture t;
 
-    // Enable TIE and release from reset → TDRA + TIE = IRQ
+    // Enable TIE (AC=0 so CR2 writes go to CR2), assert RTS → CTS clear → TDRA + TIE = IRQ
     t.adlc.write(0, Mc6854::CR1_TIE);
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
     CHECK(t.adlc.irq_output());
 
@@ -1000,8 +1168,10 @@ TEST_CASE("IRQ: RIE + DCD triggers IRQ", "[econet][mc6854][irq]") {
 TEST_CASE("IRQ: both RIE and TIE — either cause triggers", "[econet][mc6854][irq]") {
     TestFixture t;
 
-    // Enable both
+    // Enable both, assert RTS so CTS clears for TDRA
     t.adlc.write(0, Mc6854::CR1_RIE | Mc6854::CR1_TIE);
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);
     t.tick();
 
     // TDRA set → TIE cause → IRQ
@@ -1034,20 +1204,25 @@ TEST_CASE("Clear RX Status: clears stored AP, FV, ERR, ABT, OVRN, Idle, DCD, FD"
 TEST_CASE("Clear TX Status: clears stored CTS and TxU", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
-
-    // Trigger CTS stored latch
-    t.adlc.set_cts_input(true);
-    t.tick();
-    CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
-
-    // CTS input goes low but stored remains
-    t.adlc.set_cts_input(false);
-    t.tick();
-    CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
-
-    // Clear TX status
     t.clear_ac();
-    t.adlc.write(1, Mc6854::CR2_CLR_TX_ST);
+
+    // Start with RTS asserted (CTS low)
+    t.adlc.write(1, Mc6854::CR2_RTS);
+    t.tick();
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_CTS);
+
+    // Clear RTS → CTS goes high → stored latch fires
+    t.adlc.write(1, 0x00);
+    t.tick();
+    CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
+
+    // Re-assert RTS → CTS goes low but stored remains
+    t.adlc.write(1, Mc6854::CR2_RTS);
+    t.tick();
+    CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
+
+    // Clear TX status clears stored CTS
+    t.adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_TX_ST);
     t.tick();
     CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_CTS);
 }
@@ -1056,7 +1231,7 @@ TEST_CASE("Clear TX Status: clears stored CTS and TxU", "[econet][mc6854][status
 // Phase 3: TX Frame Assembly
 // =============================================================================
 
-TEST_CASE("TX: 3-byte frame sent to backend after byte trickle", "[econet][mc6854][frame]") {
+TEST_CASE("TX: 3-byte frame sent immediately on last-byte write", "[econet][mc6854][frame]") {
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(4);  // Short period for fast tests
@@ -1065,13 +1240,9 @@ TEST_CASE("TX: 3-byte frame sent to backend after byte trickle", "[econet][mc685
     // Write a 3-byte frame (fits in FIFO): dest, src, terminate
     t.adlc.write(2, 0xFF);  // Dest address
     t.adlc.write(2, 0x01);  // Src address
-    t.adlc.write(3, 0x80);  // Control (last byte)
+    t.adlc.write(3, 0x80);  // Control (last byte) — triggers immediate flush
 
-    CHECK(t.backend.sent_frame_count() == 0);
-
-    // Tick through 3 byte periods (one per byte)
-    t.tick_byte_periods(3);
-
+    // Frame sent immediately, no byte timer ticks needed
     REQUIRE(t.backend.sent_frame_count() == 1);
     auto& frame = t.backend.sent_frames()[0];
     REQUIRE(frame.size() == 3);
@@ -1158,25 +1329,30 @@ TEST_CASE("TX: blocked when TX in reset", "[econet][mc6854][frame]") {
     CHECK(t.backend.sent_frame_count() == 0);
 }
 
-TEST_CASE("TX: configurable byte period", "[econet][mc6854][frame]") {
+TEST_CASE("TX: configurable byte period affects continuation byte drain", "[econet][mc6854][frame]") {
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(10);
     t.clear_ac();
 
-    // Write 2-byte frame
+    // Write a continuation byte only (not terminated)
     t.adlc.write(2, 0xFF);
-    t.adlc.write(3, 0x01);
 
-    // After 9 half-cycles: no byte processed yet
+    // After 9 half-cycles: byte not yet drained from FIFO by timer
     t.tick_n(9);
-    CHECK(t.backend.sent_frame_count() == 0);
+    CHECK_FALSE(t.adlc.tx_fifo_empty());
 
-    // After 10: first byte processed
+    // After 10: first byte drained from FIFO into frame buffer
     t.tick_n(1);
-    // After 20: second byte processed (last), frame sent
-    t.tick_n(10);
-    CHECK(t.backend.sent_frame_count() == 1);
+    CHECK(t.adlc.tx_fifo_empty());
+
+    // Write last byte — frame completes immediately via flush
+    t.adlc.write(3, 0x01);
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 2);
+    CHECK(frame[0] == 0xFF);
+    CHECK(frame[1] == 0x01);
 }
 
 // =============================================================================
@@ -1213,19 +1389,81 @@ TEST_CASE("RX: received frame delivered to FIFO via byte trickle", "[econet][mc6
     CHECK(b3 == 0x42);
 }
 
-TEST_CASE("RX: FV set on last byte", "[econet][mc6854][frame]") {
+TEST_CASE("RX: FV set when last byte pushed to FIFO", "[econet][mc6854][frame]") {
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(4);
 
     t.backend.inject_rx_frame({0xFF, 0x01, 0x80});
 
-    // FV should not be set until the last byte enters the FIFO
+    // FV not set while non-last bytes are being pushed to FIFO
     t.tick_byte_periods(2);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
 
-    // Third byte (last) triggers FV
+    // Third byte (last) pushed — per MC6854 datasheet, FV is set when the
+    // closing flag is detected, i.e. when the last byte enters the FIFO
     t.tick_byte_periods(1);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // FV persists through reads of earlier bytes
+    t.adlc.read(2);  // 0xFF
+    t.adlc.read(2);  // 0x01
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // FV still set after reading the last byte (cleared only by CLR_RX_ST)
+    t.adlc.read(2);  // 0x80 (last)
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+}
+
+TEST_CASE("RX: FV and RDA both set when last byte still in FIFO", "[econet][mc6854][frame]") {
+    // Per MC6854 datasheet: FV is set when the closing flag is received
+    // (i.e. when the last byte enters the FIFO). The last byte remains
+    // available as RDA. The NFS ROM's scout handler depends on seeing
+    // FV=1 after reading the penultimate byte (via inline refill of the
+    // last byte) to enter the scout completion path.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    t.backend.inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
+
+    // Push all 4 bytes to the FIFO
+    t.tick_byte_periods(3);  // byte 0, 1, 2 via trickle
+
+    // Read bytes 0, 1: inline refill pushes byte 3 (LAST) on second read
+    t.adlc.read(2);  // 0xFF
+    t.adlc.read(2);  // 0x01 → inline refill pushes 0x42 (LAST)
+
+    // FV set at push time. Last byte still in FIFO → both FV and RDA present.
+    uint8_t sr2 = t.adlc.sr2();
+    CHECK(sr2 & Mc6854::SR2_FV);
+    CHECK(sr2 & Mc6854::SR2_RDA);
+}
+
+TEST_CASE("RX: FV re-asserted on read after CLR_RX_ST", "[econet][mc6854][frame]") {
+    // If software clears FV via CLR_RX_ST but the last byte is still in
+    // the FIFO, reading that byte re-triggers fv_deferred_ → FV re-appears.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+    t.clear_ac();
+
+    t.backend.inject_rx_frame({0xFF, 0x42});
+
+    // Push both bytes (byte 1 is LAST) → FV set at push time
+    t.tick_byte_periods(2);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // CLR_RX_ST clears FV
+    t.adlc.write(1, Mc6854::CR2_CLR_RX_ST);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Read first byte (not last) — FV stays clear
+    t.adlc.read(2);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Read last byte — FV re-asserted because was_last triggers fv_deferred_
+    t.adlc.read(2);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 }
 
@@ -1238,18 +1476,19 @@ TEST_CASE("RX: FV blocks further FIFO pushes until cleared", "[econet][mc6854][f
     t.backend.inject_rx_frame({0xFF, 0x01});
     t.backend.inject_rx_frame({0xAA, 0xBB});
 
-    // Process first frame
+    // Process first frame — pushing last byte sets FV at push time
     t.tick_byte_periods(2);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
-    // More ticks shouldn't deliver second frame yet
+    // Read first frame's bytes; FV persists
+    t.adlc.read(2);  // 0xFF
+    t.adlc.read(2);  // 0x01 (last)
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // More ticks shouldn't deliver second frame while FV is stored
     t.tick_byte_periods(4);
 
-    // Read first frame's bytes
-    t.adlc.read(2);  // 0xFF
-    t.adlc.read(2);  // 0x01
-
-    // FV still stored — clear it
+    // Clear FV
     t.clear_ac();
     t.adlc.write(1, Mc6854::CR2_CLR_RX_ST);
     t.tick();
@@ -1263,28 +1502,29 @@ TEST_CASE("RX: FV blocks further FIFO pushes until cleared", "[econet][mc6854][f
     CHECK(b0 == 0xAA);
 }
 
-TEST_CASE("RX: AP set on address bytes", "[econet][mc6854][frame]") {
+TEST_CASE("RX: AP set on first byte only", "[econet][mc6854][frame]") {
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(4);
 
     t.backend.inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
 
-    // First byte: address byte → AP set
+    // First byte (dest address): AP set
     t.tick_byte_periods(1);
     CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
 
     // Read it
     t.adlc.read(2);
 
-    // Second byte: also address → AP still set
+    // Second byte (src address): AP NOT set — matching BBC Micro NFS ROM
+    // expectations and BeebEm behaviour
     t.tick_byte_periods(1);
-    CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
 
     // Read it
     t.adlc.read(2);
 
-    // Third byte: control → AP should clear
+    // Third byte (control): AP not set
     t.tick_byte_periods(1);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
 }
@@ -1364,4 +1604,750 @@ TEST_CASE("TX: back-to-back frames", "[econet][mc6854][frame]") {
 
     CHECK(t.backend.sent_frames()[0] == std::vector<uint8_t>({0x01, 0x02}));
     CHECK(t.backend.sent_frames()[1] == std::vector<uint8_t>({0x03, 0x04}));
+}
+
+// =============================================================================
+// INACTIVE (SR2 Rx Idle) — independent of flag fill
+// =============================================================================
+
+TEST_CASE("SR2: INACTIVE set when idle with flag fill present", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.backend.set_connected(true);
+    t.release_reset();
+    t.tick();
+
+    // Flag fill is present (TestBackend defaults to connected, but doesn't implement
+    // is_receiving_flags — it inherits the base which returns false). However, INACTIVE
+    // should be set regardless: the RX is idle (no data in FIFO, no pending frame).
+    uint8_t sr2 = t.adlc.read(1);
+    CHECK(sr2 & Mc6854::SR2_INACTIVE);
+}
+
+TEST_CASE("SR2: INACTIVE and FD simultaneously set when idle with clock box", "[econet][mc6854][status]") {
+    // On real Econet, an idle network with a clock box has both FD=1 (flags being
+    // received from clock box) and INACTIVE=1 (no data frames in progress).
+    // This test uses a backend that reports is_receiving_flags()=true to simulate
+    // the clock box, and verifies both bits are set simultaneously.
+    TestBackend backend;
+    backend.set_connected(true);
+
+    // Wrap in FourWayHandshake to get is_receiving_flags()=true when idle+connected
+    FourWayHandshake handshake(backend);
+    Mc6854 adlc(handshake);
+
+    // Release from reset
+    adlc.write(0, 0x00);
+    adlc.tick_rising();
+    adlc.tick_falling();
+
+    uint8_t sr1 = adlc.read(0);
+    uint8_t sr2 = adlc.read(1);
+
+    CHECK(sr1 & Mc6854::SR1_FD);        // Flag Detected — clock box active
+    CHECK(sr2 & Mc6854::SR2_INACTIVE);   // Rx Idle — no data frames
+}
+
+TEST_CASE("SR2: INACTIVE clear when RX frame data pending", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.backend.set_connected(true);
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Inject a frame — once the byte trickle loads data into the RX FIFO,
+    // INACTIVE should clear because there is pending frame data.
+    t.backend.inject_rx_frame({0x01, 0x02, 0x03, 0x04});
+    t.tick_byte_periods(1);  // Triggers rx_process_byte which fetches the frame
+
+    uint8_t sr2 = t.adlc.read(1);
+    CHECK_FALSE(sr2 & Mc6854::SR2_INACTIVE);
+}
+
+// =============================================================================
+// TDRA — 2-byte transfer mode and DCD check
+// =============================================================================
+
+TEST_CASE("SR1: TDRA in 2-byte mode requires room for 2 bytes", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    // Enable 2-byte mode via CR2 and assert RTS (so CTS clears, allowing TDRA)
+    t.adlc.write(1, Mc6854::CR2_2_1_BYTE | Mc6854::CR2_RTS);
+    t.tick();
+
+    // Empty FIFO: room for 2 → TDRA set
+    CHECK(t.adlc.read(0) & Mc6854::SR1_TDRA);
+
+    // Fill 1 entry: still room for 2 → TDRA set
+    t.adlc.write(2, 0x01);
+    t.tick();
+    CHECK(t.adlc.read(0) & Mc6854::SR1_TDRA);
+
+    // Fill 2 entries: room for only 1 more → TDRA clear (need room for 2)
+    t.adlc.write(2, 0x02);
+    t.tick();
+    CHECK_FALSE(t.adlc.read(0) & Mc6854::SR1_TDRA);
+}
+
+TEST_CASE("SR1: TDRA in 1-byte mode requires room for 1 byte", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    // 1-byte mode (CR2_2_1_BYTE not set), RTS asserted so CTS clears
+    t.adlc.write(1, Mc6854::CR2_RTS);
+    t.tick();
+
+    // Empty FIFO → TDRA set
+    CHECK(t.adlc.read(0) & Mc6854::SR1_TDRA);
+
+    // Fill 2 entries: still room for 1 → TDRA set
+    t.adlc.write(2, 0x01);
+    t.adlc.write(2, 0x02);
+    t.tick();
+    CHECK(t.adlc.read(0) & Mc6854::SR1_TDRA);
+
+    // Fill 3 entries (full): no room → TDRA clear
+    t.adlc.write(2, 0x03);
+    t.tick();
+    CHECK_FALSE(t.adlc.read(0) & Mc6854::SR1_TDRA);
+}
+
+TEST_CASE("SR1: TDRA false when DCD present (no carrier)", "[econet][mc6854][status]") {
+    TestFixture t;
+    t.backend.set_connected(false);  // DCD present (no carrier)
+    t.release_reset();
+    t.tick();
+
+    // TX FIFO empty, TX not in reset, but no carrier → TDRA false
+    // (Both DCD and CTS block TDRA when backend disconnected)
+    CHECK_FALSE(t.adlc.read(0) & Mc6854::SR1_TDRA);
+}
+
+// =============================================================================
+// TX Frame Flush — Immediate completion on last-byte write
+// =============================================================================
+
+TEST_CASE("TX flush: frame completes immediately on last-byte write", "[econet][mc6854][frame]") {
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(128);  // Default (slow) period
+    t.clear_ac();
+
+    // Write a 3-byte frame — last byte triggers immediate flush
+    t.adlc.write(2, 0xFF);  // Dest
+    t.adlc.write(2, 0x01);  // Src
+    t.adlc.write(3, 0x80);  // Last byte
+
+    // Frame should be sent immediately, without any byte timer ticks
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 3);
+    CHECK(frame[0] == 0xFF);
+    CHECK(frame[1] == 0x01);
+    CHECK(frame[2] == 0x80);
+}
+
+TEST_CASE("TX flush: longer frame with partial byte-timer drain", "[econet][mc6854][frame]") {
+    // Simulates the NFS ROM scenario: CPU writes bytes faster than the byte
+    // timer can drain them. Some bytes are extracted by the timer, the rest
+    // are flushed when the last byte is written.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+    t.clear_ac();
+
+    // Write 3 bytes (fills FIFO)
+    t.adlc.write(2, 0xFE);
+    t.adlc.write(2, 0x65);
+    t.adlc.write(2, 0x00);
+
+    // Drain 2 bytes via timer (into frame buffer)
+    t.tick_byte_periods(2);
+    CHECK(t.backend.sent_frame_count() == 0);
+
+    // Write 2 more continuation bytes (FIFO has room after drain)
+    t.adlc.write(2, 0x01);
+    t.adlc.write(2, 0x42);
+
+    // Drain 1 more byte via timer
+    t.tick_byte_periods(1);
+
+    // Write last byte — triggers flush of remaining FIFO entries
+    t.adlc.write(3, 0x99);
+
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 6);
+    CHECK(frame[0] == 0xFE);
+    CHECK(frame[1] == 0x65);
+    CHECK(frame[2] == 0x00);
+    CHECK(frame[3] == 0x01);
+    CHECK(frame[4] == 0x42);
+    CHECK(frame[5] == 0x99);
+}
+
+TEST_CASE("TX flush: FIFO empty after flush", "[econet][mc6854][frame]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    t.adlc.write(2, 0xAA);
+    t.adlc.write(3, 0xBB);  // Last byte → flush
+
+    CHECK(t.backend.sent_frame_count() == 1);
+    CHECK(t.adlc.tx_fifo_empty());
+
+    // Subsequent byte timer ticks should not cause underrun
+    t.adlc.set_byte_period(4);
+    t.tick_byte_periods(4);
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_TXU);
+}
+
+// =============================================================================
+// TX_LAST_DATA via CR2 — NFS ROM frame termination
+// =============================================================================
+
+TEST_CASE("TX_LAST_DATA: CR2 terminates frame without offset 3 write", "[econet][mc6854][frame]") {
+    // The NFS ROM writes all data bytes to offset 2 (TX continue) and then
+    // sets CR2 TX_LAST_DATA to signal frame termination. This test verifies
+    // that writing TX_LAST_DATA via CR2 marks the topmost FIFO entry as LAST
+    // and flushes the frame.
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    // Write 3 continuation bytes to offset 2
+    t.adlc.write(2, 0xFE);  // Dest
+    t.adlc.write(2, 0x65);  // Src
+    t.adlc.write(2, 0x80);  // Control
+
+    CHECK(t.backend.sent_frame_count() == 0);
+
+    // Set TX_LAST_DATA via CR2 — frame should complete and send
+    t.adlc.write(1, Mc6854::CR2_TX_LAST_DATA | Mc6854::CR2_RTS);
+
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 3);
+    CHECK(frame[0] == 0xFE);
+    CHECK(frame[1] == 0x65);
+    CHECK(frame[2] == 0x80);
+    CHECK(t.adlc.tx_fifo_empty());
+}
+
+TEST_CASE("TX_LAST_DATA: works with partially drained FIFO", "[econet][mc6854][frame]") {
+    // Simulates the NFS ROM scenario: CPU writes bytes via NMI (2 at a time),
+    // byte timer drains some into the frame buffer, then TX_LAST_DATA flushes
+    // the rest. Must interleave writes and drains to respect the 3-entry FIFO.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+    t.clear_ac();
+    t.adlc.write(1, Mc6854::CR2_RTS);  // Assert RTS for CTS
+
+    // Round 1: write 2 bytes
+    t.adlc.write(2, 0xFE);
+    t.adlc.write(2, 0x65);
+
+    // Drain 1 byte via timer
+    t.tick_byte_periods(1);
+
+    // Round 2: write 2 more bytes (FIFO: 1 existing + 2 new = 3 = full)
+    t.adlc.write(2, 0x00);
+    t.adlc.write(2, 0x01);
+
+    // Drain 2 bytes via timer
+    t.tick_byte_periods(2);
+
+    // Round 3: write 2 more bytes (FIFO: 1 existing + 2 new = 3 = full)
+    t.adlc.write(2, 0x42);
+    t.adlc.write(2, 0x99);
+
+    CHECK(t.backend.sent_frame_count() == 0);
+
+    // Now signal frame end via TX_LAST_DATA
+    t.adlc.write(1, Mc6854::CR2_TX_LAST_DATA | Mc6854::CR2_RTS);
+
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 6);
+    CHECK(frame[0] == 0xFE);
+    CHECK(frame[1] == 0x65);
+    CHECK(frame[2] == 0x00);
+    CHECK(frame[3] == 0x01);
+    CHECK(frame[4] == 0x42);
+    CHECK(frame[5] == 0x99);
+}
+
+TEST_CASE("TX_LAST_DATA: completes frame when FIFO already empty", "[econet][mc6854][frame]") {
+    // Edge case: all bytes already drained by byte timer into frame buffer,
+    // then TX_LAST_DATA is set. The flush should complete the frame from the
+    // frame buffer directly.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+    t.clear_ac();
+
+    // Write 2 continuation bytes
+    t.adlc.write(2, 0xAA);
+    t.adlc.write(2, 0xBB);
+
+    // Drain both via byte timer — they go into frame buffer, no LAST flag
+    t.tick_byte_periods(2);
+    CHECK(t.adlc.tx_fifo_empty());
+    CHECK(t.backend.sent_frame_count() == 0);
+
+    // Set TX_LAST_DATA — FIFO is empty, frame buffer has the 2 bytes
+    t.adlc.write(1, Mc6854::CR2_TX_LAST_DATA);
+
+    REQUIRE(t.backend.sent_frame_count() == 1);
+    auto& frame = t.backend.sent_frames()[0];
+    REQUIRE(frame.size() == 2);
+    CHECK(frame[0] == 0xAA);
+    CHECK(frame[1] == 0xBB);
+}
+
+TEST_CASE("TX_LAST_DATA: auto-clears in CR2", "[econet][mc6854][frame]") {
+    TestFixture t;
+    t.release_reset();
+    t.clear_ac();
+
+    t.adlc.write(1, Mc6854::CR2_TX_LAST_DATA | Mc6854::CR2_RTS);
+    CHECK_FALSE(t.adlc.cr2() & Mc6854::CR2_TX_LAST_DATA);
+    CHECK(t.adlc.cr2() & Mc6854::CR2_RTS);  // Other bits preserved
+}
+
+// =============================================================================
+// ADLC + FourWayHandshake Integration: Fake Final Ack After Watchdog Timeout
+// =============================================================================
+//
+// These tests wire up the full stack (TestBackend → FourWayHandshake → Mc6854)
+// to verify that a fake final ack generated by the watchdog timeout is
+// correctly delivered through the ADLC's RX FIFO and triggers an NMI.
+
+namespace {
+
+struct HandshakeFixture {
+    TestBackend backend;
+    FourWayHandshake handshake;
+    Mc6854 adlc;
+
+    HandshakeFixture() : handshake(backend), adlc(handshake) {
+        // Use a short byte period for fast, deterministic tests
+        adlc.set_byte_period(4);
+    }
+
+    void tick_rising() {
+        handshake.tick();
+        adlc.tick_rising();
+    }
+
+    void tick_falling() {
+        adlc.tick_falling();
+    }
+
+    void tick() {
+        tick_rising();
+        tick_falling();
+    }
+
+    // Tick N half-cycles (alternating rising/falling, starting with rising)
+    void tick_n(int half_cycles) {
+        for (int i = 0; i < half_cycles; ++i) {
+            if (i % 2 == 0) tick_rising();
+            else tick_falling();
+        }
+    }
+
+    // Tick through N byte periods (each byte_period half-cycles)
+    void tick_byte_periods(int n) {
+        tick_n(n * adlc.byte_period());
+    }
+
+    // Write a byte to the TX FIFO (offset 2 = continue), ticking to drain
+    // the FIFO if it would overflow. On real hardware the NMI handler checks
+    // TDRA before each write; here we simulate that by draining between writes.
+    void write_tx_with_drain(uint8_t value) {
+        if (adlc.tx_fifo_full()) {
+            tick_byte_periods(1);
+        }
+        adlc.write(2, value);
+    }
+
+    // Drive the ADLC through a full TX handshake: scout → scout ack → data.
+    // Mirrors the NFS ROM's register sequence:
+    //   1. Reset ADLC (CR1=$C1, CR4, CR3, CR1=$82, CR2=$67)
+    //   2. TX setup (CR2=$E7 with RTS, CR1=$44 with TIE|RX_RESET)
+    //   3. Write scout frame via TX FIFO, last byte via TX_LAST_DATA
+    //   4. Wait for scout ack timeout, read fake scout ack from RX FIFO
+    //   5. Write data frame via TX FIFO, last byte via TX_LAST_DATA
+    //   6. Switch to receive mode (CR1=$82 with TX_RESET|RIE)
+    void send_scout_and_data(uint8_t dest_stn, uint8_t dest_net,
+                             uint8_t src_stn, uint8_t src_net,
+                             uint8_t ctrl, uint8_t port,
+                             const std::vector<uint8_t>& data_payload) {
+        // Reset ADLC (NFS ROM sub_c96dc)
+        adlc.write(0, Mc6854::CR1_TX_RESET | Mc6854::CR1_RX_RESET | Mc6854::CR1_AC);
+        adlc.write(3, 0x1E);  // CR4
+        adlc.write(1, 0x00);  // CR3
+        adlc.write(0, Mc6854::CR1_TX_RESET | Mc6854::CR1_RIE);  // CR1=$82
+        adlc.write(1, Mc6854::CR2_CLR_RX_ST | Mc6854::CR2_CLR_TX_ST
+                     | Mc6854::CR2_FLAG_IDLE | Mc6854::CR2_2_1_BYTE
+                     | Mc6854::CR2_PSE);  // CR2=$67
+
+        // TX setup: assert RTS, enable TIE, hold RX in reset
+        adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_RX_ST | Mc6854::CR2_CLR_TX_ST
+                     | Mc6854::CR2_FLAG_IDLE | Mc6854::CR2_2_1_BYTE
+                     | Mc6854::CR2_PSE);  // CR2=$E7
+        adlc.write(0, Mc6854::CR1_TIE | Mc6854::CR1_RX_RESET);  // CR1=$44
+
+        // Write scout frame: all bytes via continue, then TX_LAST_DATA
+        write_tx_with_drain(dest_stn);
+        write_tx_with_drain(dest_net);
+        write_tx_with_drain(src_stn);
+        write_tx_with_drain(src_net);
+        write_tx_with_drain(ctrl);
+        write_tx_with_drain(port);
+        // Signal frame end via TX_LAST_DATA (as the NFS ROM does)
+        adlc.write(1, Mc6854::CR2_TX_LAST_DATA | Mc6854::CR2_RTS
+                     | Mc6854::CR2_CLR_RX_ST | Mc6854::CR2_FLAG_IDLE
+                     | Mc6854::CR2_2_1_BYTE | Mc6854::CR2_PSE);
+
+        // Wait for scout ack timeout. Handshake ticks happen on rising edges.
+        // Each half-cycle pair (rising+falling) = 1 handshake tick.
+        tick_n(FourWayHandshake::SCOUT_ACK_TIMEOUT * 2);
+
+        // Clear RX_RESET to receive the fake scout ack
+        adlc.write(0, Mc6854::CR1_TIE);
+        adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_RX_ST
+                     | Mc6854::CR2_FLAG_IDLE | Mc6854::CR2_2_1_BYTE
+                     | Mc6854::CR2_PSE);
+
+        // Tick enough for all 4 scout ack bytes to be delivered
+        tick_byte_periods(5);
+
+        // Read and discard the 4 scout ack bytes from the RX FIFO
+        for (int i = 0; i < 4; ++i) {
+            adlc.read(2);
+        }
+        // Clear FV from the scout ack
+        adlc.write(1, Mc6854::CR2_RTS | Mc6854::CR2_CLR_RX_ST
+                     | Mc6854::CR2_FLAG_IDLE | Mc6854::CR2_2_1_BYTE
+                     | Mc6854::CR2_PSE);
+
+        // Put RX back in reset for data TX
+        adlc.write(0, Mc6854::CR1_TIE | Mc6854::CR1_RX_RESET);
+
+        // Write data frame: address bytes + payload, draining FIFO as needed
+        write_tx_with_drain(dest_stn);
+        write_tx_with_drain(dest_net);
+        write_tx_with_drain(src_stn);
+        write_tx_with_drain(src_net);
+        for (auto byte : data_payload) {
+            write_tx_with_drain(byte);
+        }
+
+        // TX_LAST_DATA + CLR_RX_ST (matching NFS ROM CR2=$3F, no RTS)
+        adlc.write(1, Mc6854::CR2_TX_LAST_DATA | Mc6854::CR2_CLR_RX_ST
+                     | Mc6854::CR2_FC_TDRA | Mc6854::CR2_FLAG_IDLE
+                     | Mc6854::CR2_2_1_BYTE | Mc6854::CR2_PSE);
+
+        // Switch to receive mode: CR1=$82 (TX_RESET | RIE)
+        adlc.write(0, Mc6854::CR1_TX_RESET | Mc6854::CR1_RIE);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("ADLC+Handshake: fake final ack delivered after FINAL_ACK_TIMEOUT", "[econet][mc6854][handshake]") {
+    HandshakeFixture t;
+
+    t.send_scout_and_data(254, 0, 101, 0, 0x80, 0x99, {0xAA, 0xBB});
+
+    CHECK(t.handshake.stage() == FourWayHandshake::Stage::DataSent);
+    CHECK(t.adlc.cr1() == (Mc6854::CR1_TX_RESET | Mc6854::CR1_RIE));
+
+    // Verify FV is clear (CLR_RX_ST was in the TX_LAST_DATA write)
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK(t.adlc.rx_fifo_empty());
+
+    // Tick until the final ack timer fires
+    t.tick_n(FourWayHandshake::FINAL_ACK_TIMEOUT * 2);
+
+    CHECK(t.handshake.stage() == FourWayHandshake::Stage::WaitForIdle);
+
+    // Tick enough byte periods for the fake ack to be delivered to the RX FIFO
+    t.tick_byte_periods(2);
+
+    CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+    CHECK(t.adlc.irq_output());  // RIE enabled → IRQ should fire
+
+    // Read the fake ack: dest_stn, dest_net (first 2 bytes in FIFO)
+    uint8_t byte0 = t.adlc.read(2);
+    uint8_t byte1 = t.adlc.read(2);
+
+    // Tick to push remaining bytes into FIFO
+    t.tick_byte_periods(3);
+
+    uint8_t byte2 = t.adlc.read(2);
+    uint8_t byte3 = t.adlc.read(2);
+
+    CHECK(byte0 == 101);  // dest = us (our station)
+    CHECK(byte1 == 0);    // dest net
+    CHECK(byte2 == 254);  // src = them (remote station)
+    CHECK(byte3 == 0);    // src net
+}
+
+TEST_CASE("ADLC+Handshake: FV blocks rx delivery until cleared", "[econet][mc6854][handshake]") {
+    // Verify that fv_stored_ prevents a second frame from being pushed
+    // into the RX FIFO, and that CLR_RX_ST unblocks delivery.
+    // Uses direct TestBackend → Mc6854 (no handshake) because the handshake
+    // only passes typed AUN packets, not raw frames.
+    //
+    // On real hardware, frames are longer than the 3-deep FIFO. The CPU
+    // drains the FIFO via interrupt-driven reads as bytes arrive — exactly
+    // as modelled here with interleaved tick/read sequences.
+    TestFixture t;
+
+    t.release_reset();
+    t.adlc.write(0, Mc6854::CR1_RIE);
+    t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_2_1_BYTE | Mc6854::CR2_FLAG_IDLE);
+
+    // Inject two 4-byte raw frames into the backend
+    t.backend.inject_rx_frame({0x65, 0x00, 0xFE, 0x00});  // Frame 1
+    t.backend.inject_rx_frame({0xAA, 0xBB, 0xCC, 0xDD});  // Frame 2
+
+    // Drain frame 1 byte-by-byte, interleaving ticks and reads as the
+    // real CPU's NMI handler would. Check RDA via SR1 since PSE filtering
+    // suppresses SR2_RDA when higher-priority bits (AP, FV) are present.
+    std::vector<uint8_t> frame1_bytes;
+    for (int i = 0; i < 4; ++i) {
+        t.tick_byte_periods(1);
+        CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+        frame1_bytes.push_back(t.adlc.read(2));
+    }
+    CHECK(frame1_bytes == std::vector<uint8_t>{0x65, 0x00, 0xFE, 0x00});
+
+    // FV was set at push time (when the last byte entered the FIFO)
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Ticks shouldn't deliver second frame while FV is stored
+    t.tick_byte_periods(4);
+    CHECK(t.adlc.rx_fifo_empty());
+
+    // Clear FV via CLR_RX_ST
+    t.adlc.write(1, Mc6854::CR2_CLR_RX_ST | Mc6854::CR2_PSE
+                   | Mc6854::CR2_2_1_BYTE | Mc6854::CR2_FLAG_IDLE);
+
+    // Now frame 2 should be delivered
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+    uint8_t b0 = t.adlc.read(2);
+    CHECK(b0 == 0xAA);
+}
+
+// =============================================================================
+// Phase 7: NFS ROM hardware-behaviour tests
+//
+// These tests verify specific MC6854 behaviours that the NFS 3.34 ROM
+// depends on for correct operation. Each test is derived directly from
+// analysis of the NFS ROM disassembly at the referenced addresses.
+// =============================================================================
+
+TEST_CASE("NFS: CTS present in SR1 when connected and RTS not asserted", "[econet][mc6854][nfs]") {
+    // The NFS ROM INACTIVE polling loop at $9C66-$9C6B checks SR1 bit4 (CTS)
+    // after clearing status with CR2=$67. With RTS not asserted (bit7=0 in
+    // CR2=$67), CTS input is HIGH because cts_input_ = !(connected && RTS).
+    // CTS present feeds directly into SR1_CTS, so bit4 must be set for
+    // the BNE $9CA2 to branch and start transmission.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Write CR2=$67: CLR_TX_ST | CLR_RX_ST | FC_TDRA | 2_1_BYTE | PSE
+    // Note: RTS (bit7) is NOT set — this is the idle/listen configuration
+    t.adlc.write(1, 0x67);
+    t.tick_one_byte_period();
+
+    // SR1 CTS bit should be set (CTS input HIGH = not clear to send,
+    // because RTS is not asserted)
+    CHECK(t.adlc.sr1() & Mc6854::SR1_CTS);
+}
+
+TEST_CASE("NFS: CTS clears in SR1 when RTS asserted", "[econet][mc6854][nfs]") {
+    // The NFS ROM TX preparation at $9CA2 writes CR2=$E7 (with RTS bit7=1).
+    // After asserting RTS, CTS input goes LOW (clear to send), so CTS
+    // should NOT appear in SR1. This ensures TDRA can report TX readiness.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Assert RTS: CR2=$E7 (RTS | CLR_TX_ST | CLR_RX_ST | FC_TDRA | 2_1_BYTE | PSE)
+    t.adlc.write(1, 0xE7);
+    t.tick_one_byte_period();
+
+    // CTS bit should NOT be set (CTS input LOW = clear to send)
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_CTS);
+}
+
+TEST_CASE("NFS: TDRA and IRQ set when TIE enabled and TX active", "[econet][mc6854][nfs]") {
+    // The NFS ROM TX path writes CR1=$44 (TIE enabled, RX reset) and
+    // CR2=$E7 (RTS asserted). The NMI TX handler at $9D4C checks:
+    //   BIT $FEA0  ; reads SR1, V=bit6(TDRA), N=bit7(IRQ)
+    //   BVC $9D76  ; if TDRA not set, error
+    // So TDRA (SR1 bit6) and IRQ (SR1 bit7) must be set when TX FIFO
+    // is empty, TIE enabled, TX not in reset, CTS low, and carrier present.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Prepare TX: CR2=$E7 (RTS, clear status)
+    t.adlc.write(1, 0xE7);
+    // Enable TX: CR1=$44 (RX_RESET | TIE, TX released from reset)
+    t.adlc.write(0, 0x44);
+    t.tick_one_byte_period();
+
+    uint8_t sr1 = t.adlc.sr1();
+    CHECK(sr1 & Mc6854::SR1_TDRA);  // TX FIFO empty -> TDRA set
+    CHECK(sr1 & Mc6854::SR1_IRQ);   // TIE enabled + TDRA -> IRQ asserted
+}
+
+TEST_CASE("NFS: TDRA clears when TX FIFO full in 2-byte mode", "[econet][mc6854][nfs]") {
+    // The NFS ROM TX handler writes 2 bytes per NMI. After writing 2 bytes
+    // to a 3-deep FIFO (now 2 entries used), TDRA should clear in 2-byte
+    // mode because only 1 slot remains (need room for 2).
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // TX setup: CR2=$E7 (RTS, 2_1_BYTE), CR1=$44 (TIE, RX_RESET)
+    t.adlc.write(1, 0xE7);
+    t.adlc.write(0, 0x44);
+    t.tick_one_byte_period();
+
+    // Write 1 byte — FIFO has 1 entry, room for 2 more -> TDRA set
+    t.adlc.write(2, 0x65);
+    CHECK(t.adlc.sr1() & Mc6854::SR1_TDRA);
+
+    // Write 2nd byte — FIFO has 2 entries, room for 1 -> TDRA clear (need 2)
+    t.adlc.write(2, 0x00);
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_TDRA);
+}
+
+TEST_CASE("NFS: TX to RX mode switch enables frame reception", "[econet][mc6854][nfs]") {
+    // After TX completes, the NFS ROM at $9D94 writes CR1=$82 to switch
+    // from TX mode (CR1=$44) to RX mode. CR1=$82 = TX_RESET | RIE.
+    // A frame injected after this switch should be receivable.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Start in TX mode: CR1=$44, CR2=$E7
+    t.adlc.write(1, 0xE7);
+    t.adlc.write(0, 0x44);
+    t.tick_one_byte_period();
+
+    // Write a scout frame (2 bytes + TX_LAST_DATA) and send it
+    t.adlc.write(2, 0x65);
+    t.adlc.write(2, 0x00);
+    t.tick_byte_periods(2);
+    // Terminate with TX_LAST_DATA: CR2=$3F
+    t.adlc.write(1, 0x3F);
+    t.tick_byte_periods(2);
+
+    // Switch to RX mode: CR1=$82 (TX_RESET, RIE)
+    t.adlc.write(0, 0x82);
+
+    // Inject a reply frame
+    t.backend.inject_rx_frame({0xFE, 0x00, 0x65, 0x00});
+    t.tick_byte_periods(1);
+
+    // RDA should be set and first byte readable
+    CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+    CHECK(t.adlc.read(2) == 0xFE);
+}
+
+TEST_CASE("NFS: PSE filtering suppresses RDA behind AP in SR2", "[econet][mc6854][nfs]") {
+    // The NFS ROM RX handler at $974C reads SR2 and tests bit7 (RDA) via BPL.
+    // With PSE enabled and AP set on the first received byte, RDA is
+    // suppressed in SR2 (AP is P3, RDA is P4 = lowest priority).
+    // SR1_RDA is unaffected by PSE, so the NFS ROM can still detect data
+    // via SR1. This test verifies the PSE suppression is correct.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Configure with PSE: CR2=$67 (PSE | 2_1_BYTE | ...)
+    t.adlc.write(0, Mc6854::CR1_RIE);
+    t.adlc.write(1, 0x67);
+
+    // Inject a frame — first byte will have AP flag
+    t.backend.inject_rx_frame({0x65, 0x00, 0xFE, 0x00});
+    t.tick_byte_periods(1);
+
+    // SR1 shows RDA (not affected by PSE)
+    CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+
+    // SR2: AP is set (P3), which suppresses RDA (P4) under PSE
+    CHECK(t.adlc.sr2() & Mc6854::SR2_AP);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+}
+
+TEST_CASE("NFS: IRQ asserted when RIE enabled and RDA present", "[econet][mc6854][nfs]") {
+    // The NFS ROM relies on NMI being asserted when received data is
+    // available and RIE is enabled (CR1=$82). IRQ = RIE AND (RDA OR S2RQ).
+    // This drives the NMI line which triggers the NFS ROM's NMI handler.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // RX listen mode: CR1=$82 (TX_RESET | RIE), CR2=$67
+    t.adlc.write(0, 0x82);
+    t.adlc.write(1, 0x67);
+
+    // No data yet — IRQ should not be asserted
+    t.tick_one_byte_period();
+    CHECK_FALSE(t.adlc.sr1() & Mc6854::SR1_IRQ);
+
+    // Inject a frame and tick
+    t.backend.inject_rx_frame({0x65, 0x00});
+    t.tick_byte_periods(1);
+
+    // IRQ should now be asserted (RIE enabled, RDA present)
+    CHECK(t.adlc.sr1() & Mc6854::SR1_IRQ);
+    CHECK(t.adlc.irq_output());
+}
+
+TEST_CASE("NFS: CLR_RX_ST in TX_LAST_DATA clears FV for subsequent reception", "[econet][mc6854][nfs]") {
+    // At $9D88, the NFS ROM writes CR2=$3F which includes both TX_LAST_DATA
+    // (bit4) and CLR_RX_ST (bit5). CLR_RX_ST clears fv_stored_, ensuring
+    // the ADLC is ready to receive the reply frame after switching to RX mode
+    // with CR1=$82. Without this, stale FV from a previous frame would
+    // block RX delivery.
+    TestFixture t;
+    t.release_reset();
+    t.adlc.set_byte_period(4);
+
+    // Set up RX and receive a frame to set FV
+    t.adlc.write(0, Mc6854::CR1_RIE);
+    t.adlc.write(1, 0x67);
+    t.backend.inject_rx_frame({0x65, 0x00});
+    t.tick_byte_periods(2);
+    t.adlc.read(2);
+    t.adlc.read(2);  // Last byte — FV promoted immediately
+    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Now simulate the TX_LAST_DATA write: CR2=$3F
+    // This includes CLR_RX_ST which should clear FV
+    t.adlc.write(1, 0x3F);
+    t.tick_one_byte_period();
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Subsequent RX should work (FV no longer blocking)
+    t.adlc.write(0, 0x82);  // RX mode
+    t.backend.inject_rx_frame({0xAA, 0xBB});
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.sr1() & Mc6854::SR1_RDA);
+    CHECK(t.adlc.read(2) == 0xAA);
 }

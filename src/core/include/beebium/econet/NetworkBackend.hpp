@@ -74,10 +74,17 @@ public:
     virtual bool is_connected() const = 0;
 
     // Whether the network is currently receiving flag sequences (inter-frame fill).
-    // The ADLC uses this to drive Flag Detected (SR1b3) and suppress Rx Idle.
+    // The ADLC uses this to drive Flag Detected (SR1b3).
     // On real hardware this comes from the physical line; in emulation, the
     // four-way handshake bridge generates synthetic flag fill during transactions.
     virtual bool is_receiving_flags() const { return false; }
+
+    // Whether another frame is expected imminently (inter-frame gap in a
+    // multi-frame handshake). On real Econet, flag fill continues between
+    // scout and data frames, so the MC6854 does not report INACTIVE during
+    // these gaps. The ADLC uses this to suppress Rx Idle (SR2 INACTIVE)
+    // during inter-frame handshake gaps.
+    virtual bool is_expecting_frame() const { return false; }
 };
 
 }  // namespace beebium
