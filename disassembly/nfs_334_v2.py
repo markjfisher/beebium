@@ -565,4 +565,125 @@ against the destination in the original TX buffer.""")
 comment(0x9DFF, "CR2=$A7: RTS|CLR_TX_ST|FC_TDRA|2_1_BYTE|PSE (TX in handshake)", inline=True)
 comment(0x9E04, "CR1=$44: RX_RESET | TIE (TX active for ack)", inline=True)
 
-go()
+# ============================================================
+# Generate disassembly and split into section files
+# ============================================================
+
+output = go()
+
+import re, os
+
+script_dirpath = os.path.dirname(os.path.abspath(__file__))
+base = "nfs_334_v2"
+
+# Section boundaries: (start_addr, label)
+# Each section covers start_addr up to (but not including) the next section's start_addr.
+section_breaks = [
+    (0x8000, "8000_84ff_header_dispatch_init"),
+    (0x8500, "8500_8dff_filing_system"),
+    (0x8E00, "8e00_96db_cli_and_commands"),
+    (0x96DC, "96dc_9fff_adlc_nmi_handlers"),
+]
+
+addr_re = re.compile(r';\s*([0-9a-f]{4}):', re.IGNORECASE)
+
+lines = output.rstrip('\n').split('\n')
+
+# Phase 1: split into preamble, code, appendix
+preamble = []
+code = []
+appendix = []
+phase = 'preamble'
+
+for line in lines:
+    if phase == 'preamble':
+        preamble.append(line)
+        if line.strip().startswith('org '):
+            preamble.append('')  # blank line after org
+            phase = 'code'
+    elif phase == 'code':
+        if line.startswith('.pydis_end') or line.startswith('save ') or \
+           line.startswith('; Label references'):
+            appendix.append(line)
+            phase = 'appendix'
+        else:
+            code.append(line)
+    else:
+        appendix.append(line)
+
+# Phase 2: split code lines by address into sections
+section_contents = {label: [] for _, label in section_breaks}
+current_label = section_breaks[0][1]
+pending = []  # lines without addresses, buffered until next addressed line
+
+def section_for_addr(addr):
+    """Return the section label for a given address."""
+    result = section_breaks[0][1]
+    for break_addr, label in section_breaks:
+        if addr >= break_addr:
+            result = label
+    return result
+
+for line in code:
+    m = addr_re.search(line)
+    if m:
+        addr = int(m.group(1), 16)
+        new_label = section_for_addr(addr)
+        if new_label != current_label:
+            # Flush pending to OLD section if they're trailing blanks/comments,
+            # or to NEW section if they look like a block comment for the new code.
+            # Heuristic: if pending ends with blank lines only, keep with old section.
+            # If pending contains non-blank comment lines, move to new section.
+            has_content = any(p.strip() for p in pending)
+            if has_content:
+                section_contents[new_label].extend(pending)
+            else:
+                section_contents[current_label].extend(pending)
+            current_label = new_label
+            pending = []
+        else:
+            section_contents[current_label].extend(pending)
+            pending = []
+        section_contents[current_label].append(line)
+    else:
+        pending.append(line)
+
+# Flush remaining pending
+if pending:
+    section_contents[current_label].extend(pending)
+
+# Phase 3: write files
+written_filenames = []
+
+# Preamble
+fn = f"{base}_preamble.asm"
+with open(os.path.join(script_dirpath, fn), 'w') as f:
+    f.write('\n'.join(preamble) + '\n')
+written_filenames.append(fn)
+
+# Code sections
+for _, label in section_breaks:
+    if section_contents[label]:
+        fn = f"{base}_{label}.asm"
+        with open(os.path.join(script_dirpath, fn), 'w') as f:
+            f.write('\n'.join(section_contents[label]) + '\n')
+        written_filenames.append(fn)
+
+# Appendix
+fn = f"{base}_appendix.asm"
+with open(os.path.join(script_dirpath, fn), 'w') as f:
+    f.write('\n'.join(appendix) + '\n')
+written_filenames.append(fn)
+
+# Master file with INCLUDEs
+master_filepath = os.path.join(script_dirpath, f"{base}.asm")
+with open(master_filepath, 'w') as f:
+    for fn in written_filenames:
+        f.write(f'INCLUDE "{fn}"\n')
+
+# Report
+print(f"Split into {len(written_filenames)} files:", file=__import__('sys').stderr)
+for fn in written_filenames:
+    filepath = os.path.join(script_dirpath, fn)
+    n = sum(1 for _ in open(filepath))
+    print(f"  {fn}: {n} lines", file=__import__('sys').stderr)

@@ -912,11 +912,10 @@ TEST_CASE("PSE: dynamic cascade — AP masks RDA, CLR_RX_ST reveals RDA", "[econ
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
 }
 
-TEST_CASE("PSE: last byte pushed — FV at P1 immediately masks RDA at P4", "[econet][mc6854][pse]") {
-    // When the last byte of a frame is pushed to the FIFO (setting FV), the
-    // stateless PSE cascade immediately shows FV at P1, masking RDA at P4.
-    // This is how the NFS ROM's scout handler detects frame completion: it
-    // sees FV=1/RDA=0 in SR2 and enters the scout completion path.
+TEST_CASE("PSE: FV at P1 masks RDA after closing flag delay", "[econet][mc6854][pse]") {
+    // After inline refill pushes the last byte, FV is not set until the byte
+    // timer fires (closing flag delay). Reading the last byte also sets FV
+    // (was_last path). With PSE, FV at P1 masks RDA at P4.
     TestFixture t;
     t.release_reset();
     t.clear_ac();
@@ -940,19 +939,21 @@ TEST_CASE("PSE: last byte pushed — FV at P1 immediately masks RDA at P4", "[ec
     CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
 
-    // Read byte 1 → inline refill pushes byte 3 (LAST) → FV stored.
-    // FV at P1 immediately masks RDA at P4.
+    // Read byte 1 → inline refill pushes byte 3 (LAST). FV NOT yet set
+    // (closing flag delay). RDA still visible at P4.
+    t.adlc.read(2);
+    CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Read byte 2. FIFO has [byte3(LAST)]. Still no FV (delay).
+    t.adlc.read(2);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Read byte 3 (last) — was_last triggers FV. FIFO empty.
+    // FV at P1, no RDA.
     t.adlc.read(2);
     CHECK(t.adlc.pse_level() == 1);
-    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
-    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
-
-    // Read remaining bytes under FV — RDA masked by P1
-    t.adlc.read(2);  // byte 2
-    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
-    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
-
-    t.adlc.read(2);  // byte 3 (last) — FIFO empty, FV still stored
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
 
@@ -961,10 +962,9 @@ TEST_CASE("PSE: last byte pushed — FV at P1 immediately masks RDA at P4", "[ec
     CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
 }
 
-TEST_CASE("PSE: FV at P1 masks RDA when last byte still in FIFO", "[econet][mc6854][pse]") {
-    // The NFS ROM's scout handler reads the penultimate byte, which triggers
-    // inline refill of the last byte (setting FV). FV at P1 immediately masks
-    // RDA at P4 — the handler sees FV=1/RDA=0 and enters scout completion.
+TEST_CASE("PSE: FV at P1 masks RDA after byte timer delay", "[econet][mc6854][pse]") {
+    // After the byte timer pushes the last byte (frame_boundary_), the next
+    // byte timer tick sets FV. FV at P1 then masks RDA at P4.
     TestFixture t;
     t.release_reset();
     t.clear_ac();
@@ -981,14 +981,21 @@ TEST_CASE("PSE: FV at P1 masks RDA when last byte still in FIFO", "[econet][mc68
 
     t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
 
-    // Timer pushes byte 2 (LAST) → FV stored.
-    // FIFO has [byte1, byte2(LAST)]. FV at P1 masks RDA at P4.
+    // Timer pushes byte 2 (LAST) → frame_boundary_ set, but FV NOT yet.
+    // FIFO has [byte1, byte2(LAST)]. RDA at P4.
+    t.tick_byte_periods(1);
+    CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // Next byte timer tick → closing flag delay → FV set.
+    // FV at P1 masks RDA at P4.
     t.tick_byte_periods(1);
     CHECK(t.adlc.pse_level() == 1);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
 
-    // CLR_RX_ST clears FV. Byte still in FIFO → RDA at P4.
+    // CLR_RX_ST clears FV. Bytes still in FIFO → RDA at P4.
     t.adlc.write(1, Mc6854::CR2_PSE | Mc6854::CR2_CLR_RX_ST);
     CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
@@ -1019,7 +1026,10 @@ TEST_CASE("PSE: INACTIVE visible when idle with PSE enabled", "[econet][mc6854][
     CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
 }
 
-TEST_CASE("PSE: multi-byte data frame — RDA visible until FV interrupts", "[econet][mc6854][pse]") {
+TEST_CASE("PSE: multi-byte data frame — RDA visible, FV on read of last byte", "[econet][mc6854][pse]") {
+    // With closing flag delay, FV is not set until the CPU reads the last byte
+    // or the byte timer fires after frame_boundary_. All data bytes show RDA
+    // at P4 until the last byte is read.
     TestFixture t;
     t.release_reset();
     t.clear_ac();
@@ -1045,18 +1055,21 @@ TEST_CASE("PSE: multi-byte data frame — RDA visible until FV interrupts", "[ec
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_AP);
     t.adlc.read(2);  // byte 1; inline refill: byte 3
 
-    // Timer pushes byte 4 (LAST) → FV stored → P1 masks RDA
+    // Timer pushes byte 4 (LAST) → frame_boundary_, but FV NOT yet (delay).
+    // FIFO has [byte2, byte3, byte4(LAST)]. RDA at P4.
     t.tick_byte_periods(1);
-    CHECK(t.adlc.pse_level() == 1);
-    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
-    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK(t.adlc.pse_level() == 4);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
 
-    // Remaining bytes readable under FV
+    // Read data bytes — RDA remains visible (no FV yet)
     t.adlc.read(2);  // byte 2
-    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
     t.adlc.read(2);  // byte 3
-    CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
-    t.adlc.read(2);  // byte 4 (last)
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Read byte 4 (last) → was_last triggers FV
+    t.adlc.read(2);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
     // CLR_RX_ST clears FV → INACTIVE
@@ -1389,19 +1402,26 @@ TEST_CASE("RX: received frame delivered to FIFO via byte trickle", "[econet][mc6
     CHECK(b3 == 0x42);
 }
 
-TEST_CASE("RX: FV set when last byte pushed to FIFO", "[econet][mc6854][frame]") {
+TEST_CASE("RX: FV set after closing flag delay", "[econet][mc6854][frame]") {
+    // On real hardware, FV is set when the HDLC receiver detects the closing
+    // flag, which follows the last data byte by roughly one byte period. In
+    // emulation, the byte timer provides this delay: the tick after the last
+    // byte enters the FIFO sets fv_deferred_, which is promoted to fv_stored_.
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(4);
 
     t.backend.inject_rx_frame({0xFF, 0x01, 0x80});
 
-    // FV not set while non-last bytes are being pushed to FIFO
+    // FV not set while bytes are being pushed to FIFO
     t.tick_byte_periods(2);
     CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
 
-    // Third byte (last) pushed — per MC6854 datasheet, FV is set when the
-    // closing flag is detected, i.e. when the last byte enters the FIFO
+    // Third byte (last) pushed — frame_boundary_ set but FV not yet
+    t.tick_byte_periods(1);
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+
+    // One more byte period: byte timer detects frame_boundary_ → FV set
     t.tick_byte_periods(1);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
@@ -1415,26 +1435,29 @@ TEST_CASE("RX: FV set when last byte pushed to FIFO", "[econet][mc6854][frame]")
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 }
 
-TEST_CASE("RX: FV and RDA both set when last byte still in FIFO", "[econet][mc6854][frame]") {
-    // Per MC6854 datasheet: FV is set when the closing flag is received
-    // (i.e. when the last byte enters the FIFO). The last byte remains
-    // available as RDA. The NFS ROM's scout handler depends on seeing
-    // FV=1 after reading the penultimate byte (via inline refill of the
-    // last byte) to enter the scout completion path.
+TEST_CASE("RX: FV and RDA both set after closing flag delay", "[econet][mc6854][frame]") {
+    // After inline refill pushes the last byte, FV is not immediately set.
+    // The byte timer simulates the closing flag detection delay. After the
+    // timer fires, both FV and RDA are present (last byte still in FIFO).
     TestFixture t;
     t.release_reset();
     t.adlc.set_byte_period(4);
 
     t.backend.inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
 
-    // Push all 4 bytes to the FIFO
-    t.tick_byte_periods(3);  // byte 0, 1, 2 via trickle
+    // Push bytes 0-2 via trickle
+    t.tick_byte_periods(3);
 
     // Read bytes 0, 1: inline refill pushes byte 3 (LAST) on second read
     t.adlc.read(2);  // 0xFF
     t.adlc.read(2);  // 0x01 → inline refill pushes 0x42 (LAST)
 
-    // FV set at push time. Last byte still in FIFO → both FV and RDA present.
+    // FV NOT set yet (closing flag delay). RDA present (last byte in FIFO).
+    CHECK_FALSE(t.adlc.sr2() & Mc6854::SR2_FV);
+    CHECK(t.adlc.sr2() & Mc6854::SR2_RDA);
+
+    // Byte timer tick → closing flag detected → FV set. Last byte still in FIFO.
+    t.tick_byte_periods(1);
     uint8_t sr2 = t.adlc.sr2();
     CHECK(sr2 & Mc6854::SR2_FV);
     CHECK(sr2 & Mc6854::SR2_RDA);
@@ -1450,8 +1473,8 @@ TEST_CASE("RX: FV re-asserted on read after CLR_RX_ST", "[econet][mc6854][frame]
 
     t.backend.inject_rx_frame({0xFF, 0x42});
 
-    // Push both bytes (byte 1 is LAST) → FV set at push time
-    t.tick_byte_periods(2);
+    // Push both bytes (byte 1 is LAST) + closing flag delay
+    t.tick_byte_periods(3);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
     // CLR_RX_ST clears FV
@@ -1476,8 +1499,8 @@ TEST_CASE("RX: FV blocks further FIFO pushes until cleared", "[econet][mc6854][f
     t.backend.inject_rx_frame({0xFF, 0x01});
     t.backend.inject_rx_frame({0xAA, 0xBB});
 
-    // Process first frame — pushing last byte sets FV at push time
-    t.tick_byte_periods(2);
+    // Process first frame — push both bytes + closing flag delay
+    t.tick_byte_periods(3);
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
     // Read first frame's bytes; FV persists
@@ -2129,7 +2152,7 @@ TEST_CASE("ADLC+Handshake: FV blocks rx delivery until cleared", "[econet][mc685
     }
     CHECK(frame1_bytes == std::vector<uint8_t>{0x65, 0x00, 0xFE, 0x00});
 
-    // FV was set at push time (when the last byte entered the FIFO)
+    // FV was set by byte timer (closing flag delay after last byte pushed)
     CHECK(t.adlc.sr2() & Mc6854::SR2_FV);
 
     // Ticks shouldn't deliver second frame while FV is stored
