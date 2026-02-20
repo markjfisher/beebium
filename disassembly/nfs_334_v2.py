@@ -244,8 +244,8 @@ label(0x0D5D, "rx_extra_byte")      # Extra byte read after data frame completio
 # Econet state ($0D60-$0D67) — reference: NFS00 PBUFFP-TBFLAG
 label(0x0D61, "printer_buf_ptr")    # PBUFFP: printer buffer pointer
 label(0x0D62, "tx_clear_flag")      # TXCLR: b7=Transmission in progress
-label(0x0D63, "prot_status")        # LSTAT: PEEK/POKE protection status bits
-label(0x0D64, "rx_flags")           # LFLAG: flag byte used for T/Rx (b7=Rx at $00C0, b2=Halted)
+label(0x0D63, "prot_status")        # LSTAT: protection mask — b0=PEEK, b1=POKE, b2=HALT, b3=JSR, b4=PROC
+label(0x0D64, "rx_flags")           # LFLAG: b7=system Rx (into page-zero CB), b6=user Rx, b2=Halted
 label(0x0D65, "saved_jsr_mask")     # OLDJSR: old copy of JSR buffer protection bits
 label(0x0D66, "econet_init_flag")   # b7=Econet using NMI code ($00=no, $80=yes)
 label(0x0D67, "tube_flag")          # TBFLAG: b7=Tube present ($00=no, $FF=yes)
@@ -278,7 +278,7 @@ label(0x0E07, "fs_eof_flags")       # EOF: end-of-file flags
 label(0x0E08, "fs_sequence_nos")    # SEQNOS: byte stream sequence numbers
 label(0x0E09, "fs_last_error")      # ERROR: slot for last unknown error code
 label(0x0E0A, "fs_cmd_context")     # SPARE/JCMNDP: command context
-label(0x0E0D, "fs_reply_status")    # RSTAT: reply status byte
+label(0x0E0D, "fs_reply_status")    # RSTAT: b0=remote ok, b1=view ok, b2=notify ok, b3=remoted, b7=FS selected
 label(0x0E0E, "fs_target_stn")      # TARGET: target station for remote ops (2 bytes)
 label(0x0E10, "fs_cmd_ptr")         # CMNDP: pointer to rest of command line
 
@@ -793,7 +793,10 @@ label(0x8DF7, "osword_fs_entry")       # OSWORD filing system entry: subtract $0
 # descriptive names based on analysis of the NFS ROM's ADLC
 # interaction and four-way handshake state machine.
 
-# --- ADLC control ---
+# --- ADLC control (BRIAN entry points: NFS02) ---
+# BRIANX=+$0000 (transmit), BRIANP=+$0003 (power up),
+# BRIANC=+$0006 (relinquish NMI), BRIANQ=+$0009 (reclaim NMI),
+# BRIANI=+$000C (unknown interrupt handler)
 label(0x96DC, "adlc_full_reset")       # Full ADLC reset (CR1=$C1, CR4=$1E, CR3=$00)
 label(0x96EB, "adlc_rx_listen")        # Enter RX listen mode (CR1=$82, CR2=$67)
 
