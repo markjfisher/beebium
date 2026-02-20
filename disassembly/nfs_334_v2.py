@@ -526,6 +526,8 @@ entry(0x8949)
 # --- Helper routines in header/init section ---
 label(0x81CC, "call_fscv_shutdown")     # LDA #6; JMP (FSCV) — notify FS of shutdown
 label(0x819B, "match_rom_string")       # Match command text against ROM string at $8008+X
+label(0x81AC, "cmd_name_matched")       # MATCH2: full name matched, check terminator byte
+label(0x81B3, "skip_spaces")            # SKPSP: skip spaces in command text; Z=1 if CR follows
 label(0x822E, "issue_vectors_claimed")  # OSBYTE $8F: issue service $0F (vectors claimed)
 label(0x82D1, "setup_rom_ptrs_netv")    # Read ROM pointer table, set up NETV
 label(0x82FD, "fscv_shutdown")          # FSCV 6: save FS state to workspace, go dormant
@@ -543,8 +545,13 @@ label(0x8380, "send_fs_reply_cmd")      # Send FS command with reply processing
 
 # --- Byte I/O and escape ---
 label(0x83A3, "handle_bput_bget")       # Handle BPUT/BGET: C=0 put, C=1 get
+label(0x83CB, "store_retry_count")      # RAND1: store retry count to $0FDD, initiate TX
+label(0x8402, "store_fs_error")         # FSERR: save error number to fs_last_error
+label(0x841B, "update_sequence_return") # RAND3: update sequence numbers and pull A/Y/X/return
+label(0x842C, "set_listen_offset")      # NLISN2: use reply code as table offset for listen
 label(0x8448, "send_to_fs_star")        # Send '*' command to fileserver
 label(0x844A, "send_to_fs")             # Send command to fileserver and handle reply loop
+label(0x8470, "fs_wait_cleanup")        # WAITEX: tidy stack, restore rx_status_flags
 label(0x847A, "check_escape")           # Check and handle escape condition
 
 # --- Pointer arithmetic helpers ---
