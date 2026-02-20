@@ -418,25 +418,25 @@ label(0x8E1D, "fs_osword_tbl_hi")      # High bytes of FS OSWORD handler table
 
 # FS OSWORD handler routines
 label(0x8E22, "copy_param_block")     # Bidirectional copy: C=1 param→ws, C=0 ws→param
-label(0x8E33, "osword_0f_handler")    # OSWORD $0F: return TX result
+# osword_0f_handler label created by subroutine() call below.
 label(0x8E53, "osword_11_handler")    # OSWORD $11: read FS reply data
 label(0x8E6A, "read_args_size")        # READRB: get args buffer size from RX block offset $7F
 label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write FS server station and config
-label(0x8EF0, "osword_10_handler")    # OSWORD $10: allocate RX slot, copy FS command
+# osword_10_handler label created by subroutine() call below.
 
 # Econet TX/RX handler and OSWORD dispatch
 label(0x8F57, "setup_rx_buffer_ptrs") # Set up RX buffer address pointers in workspace
 label(0x8F68, "store_16bit_at_y")     # Store 16-bit value at (nfs_workspace)+Y
 label(0x8F72, "econet_tx_rx")          # Main TX/RX handler (A=0: send, A>=1: result)
-label(0x9007, "osword_dispatch")       # OSWORD-style function dispatch (codes 0-8)
+# osword_dispatch label created by subroutine() call below.
 label(0x9020, "osword_trampoline")     # PHA/PHA/RTS trampoline
 label(0x902B, "osword_tbl_lo")         # Dispatch table low bytes
 label(0x9034, "osword_tbl_hi")         # Dispatch table high bytes
-label(0x903D, "osword_fn4")            # Function 4: propagate carry
+# net_write_char label created by subroutine() call below.
 label(0x904B, "setup_tx_and_send")    # Set up TX ctrl block at ws+$0C and transmit
 
 # Remote operation function handlers (dispatched via osword_tbl)
-label(0x903D, "net_write_char")       # NWRCH: Fn 4, write char to screen (zeroes stacked carry)
+# (net_write_char subroutine defined above)
 label(0x9063, "remote_cmd_dispatch")  # Fn 7: dispatch received remote OSBYTE/OSWORD
 label(0x90B5, "match_osbyte_code")   # NCALLP: compare A against OSBYTE function table; Z=1 on match
 label(0x90CD, "remote_cmd_data")      # Fn 7/8: copy received command data to workspace
@@ -1070,7 +1070,7 @@ entry(0x87C8)   # PHA; JSR ... (called from $8789 and $8A6B)
 entry(0x8844)   # STA abs; CMP#; ... (called from $8743)
 entry(0x8933)   # TAY; BNE; ... (preceded by RTS, standalone entry)
 entry(0x89EA)   # JSR $8508; ... (preceded by RTS, standalone entry)
-entry(0x8E33)   # ASL $0D3A; ... (preceded by RTS, NMI workspace handler)
+# entry(0x8E33) created by subroutine() call below
 entry(0x9063)   # LDY zp; CMP#; ... (preceded by RTS, standalone entry)
 entry(0x99BB)   # Post-ACK: process received scout (check port, match RX block)
 
@@ -1078,9 +1078,8 @@ entry(0x99BB)   # Post-ACK: process received scout (check port, match RX block)
 # $8F72: Main transmit/receive handler entry (A=0: set up and send, A>=1: handle result)
 # $9007: OSWORD-style dispatch handler (function codes 0-8, PHA/PHA/RTS)
 entry(0x8F72)   # Econet TX/RX handler (CMP #1; BCS)
-entry(0x9007)   # Econet function dispatch handler (PHP; PHA; save regs)
+# entry(0x9007) and entry(0x903D) created by subroutine() calls below
 entry(0x9020)   # Dispatch trampoline (PHA/PHA/RTS into table at $902B/$9034)
-entry(0x903D)   # Function 4 handler: propagate carry into stacked P
 
 # Dispatch table at $902B (low bytes) / $9034 (high bytes)
 # 9 entries for function codes 0-8, used via PHA/PHA/RTS at $9020.
@@ -2315,8 +2314,9 @@ comment(0x8FEF, "Test for end-of-data marker ($0D)", inline=True)
 # ============================================================
 # OSWORD-style function dispatch ($9007)
 # ============================================================
-comment(0x9007, """\
-NETVEC dispatch handler (ENTRY)
+subroutine(0x9007, "osword_dispatch",
+    title="NETVEC dispatch handler (ENTRY)",
+    description="""\
 Indirected from NETVEC at $0224. Saves all registers and flags,
 retrieves the reason code from the stacked A, and dispatches to
 one of 9 handlers (codes 0-8) via the PHA/PHA/RTS trampoline at
@@ -2324,12 +2324,13 @@ $9020. Reason codes >= 9 are ignored.
 
 Dispatch targets (from NFS09):
   0:   no-op (RTS)
-  1-3: PRINT — chars in printer buffer / Ctrl-B / Ctrl-C
-  4:   NWRCH — write character to screen (net write char)
-  5:   SELECT — printer selection changed
-  6:   no-op (net read char — not implemented)
-  7:   NBYTE — remote OSBYTE call
-  8:   NWORD — remote OSWORD call""")
+  1-3: PRINT -- chars in printer buffer / Ctrl-B / Ctrl-C
+  4:   NWRCH -- write character to screen (net write char)
+  5:   SELECT -- printer selection changed
+  6:   no-op (net read char -- not implemented)
+  7:   NBYTE -- remote OSBYTE call
+  8:   NWORD -- remote OSWORD call""",
+    on_entry={"a": "reason code (0-8)"})
 
 comment(0x900E, "Retrieve original A (function code) from stack", inline=True)
 comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", inline=True)
@@ -2337,16 +2338,18 @@ comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", 
 # ============================================================
 # NWRCH: net write character ($903D)
 # ============================================================
-comment(0x903D, """\
-Fn 4: net write character (NWRCH)
+subroutine(0x903D, "net_write_char",
+    title="Fn 4: net write character (NWRCH)",
+    description="""\
 Writes a character (passed in Y) to the screen via OSWRITCH.
 Before the write, uses TSX to reach into the stack and zero the
-carry flag in the caller's saved processor status byte — ROR
+carry flag in the caller's saved processor status byte -- ROR
 followed by ASL on the stacked P byte ($0106,X) shifts carry
 out and back in as zero. This ensures the calling code's PLP
 restores carry=0, signalling "character accepted" without needing
 a separate CLC/PHP sequence. A classic 6502 trick for modifying
-return flags without touching the actual processor status.""")
+return flags without touching the actual processor status.""",
+    on_entry={"y": "character to write"})
 
 comment(0x903E, "ROR/ASL on stacked P: zeros carry to signal success", inline=True)
 
@@ -2410,17 +2413,20 @@ C=0: copy X+1 bytes from (fs_crc_lo),Y to ($F0),Y (workspace to param)""")
 # ============================================================
 # OSWORD handler block comments
 # ============================================================
-comment(0x8E33, """\
-OSWORD $0F handler: initiate transmit (CALLTX)
-Checks the TX semaphore (TXCLR at $0D62) via ASL — if carry is
+subroutine(0x8E33, "osword_0f_handler",
+    title="OSWORD $0F handler: initiate transmit (CALLTX)",
+    description="""\
+Checks the TX semaphore (TXCLR at $0D62) via ASL -- if carry is
 clear, a TX is already in progress and the call returns an error,
 preventing user code from corrupting a system transmit. Otherwise
 copies 16 bytes from the caller's OSWORD parameter block into the
 user TX control block (UTXCB) in static workspace. The TXCB
 pointer is copied to LTXCBP only after the semaphore is claimed,
 ensuring the low-level transmit code (BRIANX) sees a consistent
-pointer — if copied before claiming, another transmitter could
-modify TXCBP between the copy and the claim.""")
+pointer -- if copied before claiming, another transmitter could
+modify TXCBP between the copy and the claim.""",
+    on_entry={"x": "parameter block address low byte",
+              "y": "parameter block address high byte"})
 
 comment(0x8E53, """\
 OSWORD $11 handler: read JSR arguments (READRA)
@@ -2449,20 +2455,23 @@ Dispatches on the sub-function code (0-9):
 Even-numbered sub-functions read; odd-numbered ones write.
 Uses the bidirectional copy at $8E22 for station read/set.""")
 
-comment(0x8EF0, """\
-OSWORD $10 handler: open/read RX control block (OPENRX)
+subroutine(0x8EF0, "osword_10_handler",
+    title="OSWORD $10 handler: open/read RX control block (OPENRX)",
+    description="""\
 If the first byte of the caller's parameter block is zero, scans
 for a free RXCB (flag byte = $3F = deleted) starting from RXCB #3
 (RXCBs 0-2 are dedicated: printer, remote, FS). Returns the RXCB
 number in the first byte, or zero if none free. If the first byte
 is non-zero, reads the specified RXCB's data back into the caller's
 parameter block (12 bytes) and then deletes the RXCB by setting
-its flag byte to $3F — a consume-once semantic so user code reads
+its flag byte to $3F -- a consume-once semantic so user code reads
 received data and frees the CB in a single atomic operation,
 preventing double-reads. The low-level user RX flag (LFLAG) is
 temporarily disabled via ROR/ROL during the operation to prevent
 the interrupt-driven receive code from modifying a CB that is
-being read or opened.""")
+being read or opened.""",
+    on_entry={"x": "parameter block address low byte",
+              "y": "parameter block address high byte"})
 
 # ============================================================
 # Remote operation handlers ($90FC / $912A / $913A / $914A)
