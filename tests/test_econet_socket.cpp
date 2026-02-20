@@ -368,3 +368,117 @@ TEST_CASE("EconetConcepts: econet_present returns true when socket enabled", "[e
     hw.econet_socket.enable(1, std::move(backend));
     CHECK(econet_present(hw));
 }
+
+// ===========================================================================
+// NFS NMI Gating (Group 8)
+//
+// NFS relies on INTOFF/INTON to prevent NMI re-entry during the NMI handler.
+// ===========================================================================
+
+TEST_CASE("EconetSocket NFS: INTOFF at NMI entry prevents re-entry during handler", "[econet][socket][nfs]") {
+    // The NFS ROM's NMI handler reads the station ID register at entry
+    // (INTOFF), performs register operations, then calls INTON before exit.
+    // During the handler, nmi_pending should be false even though the ADLC
+    // IRQ remains asserted.
+    EconetSocket socket;
+    auto backend = std::make_unique<TestBackend>();
+    socket.enable(42, std::move(backend));
+
+    // Release ADLC from reset and enable TIE so TDRA fires IRQ
+    socket.write_adlc(0x00, Mc6854::CR1_TIE);
+    socket.tick_rising();
+    REQUIRE(socket.adlc()->irq_output());
+
+    // INTON — NMI is now armed
+    socket.on_inton();
+    CHECK(socket.nmi_pending());
+
+    // INTOFF via station ID read (NMI handler entry)
+    uint8_t station = socket.read_station_id(0x00);
+    CHECK(station == 42);
+    CHECK_FALSE(socket.nmi_enable_ff());
+
+    // ADLC IRQ still asserted, but NMI should NOT be pending
+    REQUIRE(socket.adlc()->irq_output());
+    CHECK_FALSE(socket.nmi_pending());
+
+    // Various register operations during handler don't change NMI state
+    socket.write_adlc(0x01, 0x67);  // CR2 write
+    socket.read_adlc(0x00);         // SR1 read
+    socket.read_adlc(0x01);         // SR2 read
+    CHECK_FALSE(socket.nmi_pending());
+
+    // INTON restores NMI
+    socket.on_inton();
+    CHECK(socket.nmi_enable_ff());
+    CHECK(socket.nmi_pending());  // IRQ still active → NMI fires again
+}
+
+TEST_CASE("EconetSocket NFS: INTOFF via station ID read also returns station number", "[econet][socket][nfs]") {
+    // Simultaneous side-effect test: station ID read returns the correct
+    // station number AND clears the NMI enable flip-flop.
+    EconetSocket socket;
+    auto backend = std::make_unique<TestBackend>();
+    socket.enable(42, std::move(backend));
+
+    socket.on_inton();
+    CHECK(socket.nmi_enable_ff());
+
+    uint8_t val = socket.read_station_id(0x00);
+    CHECK(val == 42);
+    CHECK_FALSE(socket.nmi_enable_ff());
+}
+
+TEST_CASE("EconetSocket NFS: IRQ toggle during NMI handler does not cause re-entry", "[econet][socket][nfs]") {
+    // INTOFF, clear conditions (IRQ falls), new frame arrives (IRQ rises),
+    // still no nmi_pending until INTON.
+    EconetSocket socket;
+    auto backend_ptr = std::make_unique<TestBackend>();
+    auto* backend = backend_ptr.get();
+    socket.enable(1, std::move(backend_ptr));
+
+    // Set up: RIE enabled, inject frame to trigger IRQ
+    socket.write_adlc(0x00, Mc6854::CR1_TX_RESET | Mc6854::CR1_RIE);
+    socket.adlc()->set_byte_period(4);
+    backend->inject_rx_frame({0xFF, 0x01, 0x80, 0x42});
+
+    // Tick to push first byte
+    for (int i = 0; i < 4; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+    REQUIRE(socket.adlc()->irq_output());
+
+    // Arm NMI and verify
+    socket.on_inton();
+    CHECK(socket.nmi_pending());
+
+    // INTOFF — NMI handler entry
+    socket.read_station_id(0x00);
+    CHECK_FALSE(socket.nmi_pending());
+
+    // Read data and clear status to drop IRQ
+    socket.read_adlc(0x02);  // Read byte from FIFO
+    socket.write_adlc(0x01, Mc6854::CR2_CLR_RX_ST);
+
+    // Drain remaining bytes to clear RDA
+    socket.read_adlc(0x02);
+    socket.read_adlc(0x02);
+    socket.read_adlc(0x02);
+    socket.write_adlc(0x01, Mc6854::CR2_CLR_RX_ST);
+
+    // Inject a NEW frame — this will cause IRQ to rise again on next tick
+    backend->inject_rx_frame({0xAA, 0xBB});
+    for (int i = 0; i < 4; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+
+    // IRQ should be asserted again (new data), but NMI still blocked
+    REQUIRE(socket.adlc()->irq_output());
+    CHECK_FALSE(socket.nmi_pending());
+
+    // INTON restores NMI
+    socket.on_inton();
+    CHECK(socket.nmi_pending());
+}

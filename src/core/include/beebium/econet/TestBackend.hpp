@@ -89,11 +89,18 @@ public:
         return rx_queue_.size();
     }
 
+    // --- Test control: flag fill simulation ---
+
+    bool is_receiving_flags() const override { return flags_active_; }
+
+    void set_flags_active(bool active) { flags_active_ = active; }
+
 private:
     std::vector<NetworkFrame> sent_network_frames_;
     std::vector<std::vector<uint8_t>> sent_raw_frames_;
     std::deque<NetworkFrame> rx_queue_;
     bool connected_ = true;
+    bool flags_active_ = false;
 };
 
 }  // namespace beebium
