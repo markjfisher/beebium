@@ -536,6 +536,39 @@ label(0x864E, "tx_poll_timeout")        # Transmit with Y=$60 (specified timeout
 label(0x8650, "tx_poll_core")           # Core transmit: send TX block, poll for result
 
 # ============================================================
+# File operations: FILEV, ARGSV, FINDV, GBPBV ($8694-$8B91)
+# ============================================================
+# The FS vector handlers for file I/O. Each handler saves
+# args via save_fscv_args, processes the request by building
+# FS commands and sending them to the fileserver, then restores
+# args and returns via restore_args_return ($892C).
+
+# --- FILEV handler ($8694) and helpers ---
+label(0x86D0, "send_fs_examine")       # Send FS command $92 (examine/load file)
+label(0x8716, "send_data_blocks")      # Send file data in multi-block $80-byte chunks
+label(0x8746, "filev_save")            # OSFILE $00 (save): copy addresses, send to FS
+label(0x87AD, "copy_load_addr_from_params")  # Copy 4-byte load address from param block to $B0
+label(0x87BA, "copy_reply_to_params")  # Copy FS reply data into parameter block
+label(0x87C8, "transfer_file_blocks")  # Multi-block file data transfer loop
+
+# --- FSCV 1: EOF handler ($881F) ---
+label(0x881F, "eof_handler")           # FSCV 1: check end-of-file on handle
+
+# --- FILEV attribute dispatch ($8844) ---
+label(0x8844, "filev_attrib_dispatch") # FILEV function dispatch (A=1-6)
+
+# --- Common return point ($892C) ---
+label(0x892C, "restore_args_return")   # Restore A/X/Y from saved workspace and return
+
+# --- FSCV 0: *OPT handler ($89A1) ---
+label(0x89A1, "opt_handler")           # FSCV 0: *OPT X,Y (set boot option or FS config)
+
+# --- Address adjustment helpers ($89CA-$89E9) ---
+label(0x89CA, "adjust_addrs_9")        # Adjust 4-byte addresses at param block offset 9
+label(0x89CF, "adjust_addrs_1")        # Adjust 4-byte addresses at param block offset 1
+label(0x89D2, "adjust_addrs")          # Bidirectional 4-byte address adjustment
+
+# ============================================================
 # *-Command handlers and FSCV dispatch ($8B92-$8DFF)
 # ============================================================
 # FSCV 2/3/4 (unrecognised *) routes through fscv_star_handler
@@ -1460,6 +1493,107 @@ Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
 comment(0x808C, "Store A/X/Y in FS workspace", inline=True)
 comment(0x808F, "Function code >= 8? Return (unsupported)", inline=True)
 comment(0x8095, "Y=$12: base offset for FSCV dispatch (indices 19+)", inline=True)
+
+# ============================================================
+# FILEV handler ($8694)
+# ============================================================
+comment(0x8694, """\
+FILEV handler (OSFILE entry point)
+Saves A/X/Y, copies the filename pointer from the parameter block
+to os_text_ptr, then uses GSINIT/GSREAD to parse the filename into
+$0FC5+. Sets fs_crc_lo/hi to point at the parsed filename buffer.
+Dispatches by function code A:
+  A=$FF → load file (send_fs_examine at $86D0)
+  A=$00 → save file (filev_save at $8746)
+  A=$01-$06 → attribute operations (filev_attrib_dispatch at $8844)
+  Other → restore_args_return (unsupported, no-op)""")
+
+comment(0x86D0, """\
+Send FS examine command
+Sends FS command $92 (probably "examine file") to the fileserver.
+Sets $0F02=$92 and error pointer to '*'. Called for OSFILE $FF
+(load file) with the filename already in the command buffer.
+The FS reply contains load/exec addresses and file length which
+are used to set up the data transfer.""")
+
+comment(0x8716, """\
+Send file data in multi-block chunks
+Repeatedly sends $80-byte (128-byte) blocks of file data to the
+fileserver using command $7F. Compares current address ($C8-$CB)
+against end address ($B4-$B7) via compare_addresses, and loops
+until the entire file has been transferred. Each block is sent
+via send_to_fs_star.""")
+
+comment(0x8746, """\
+OSFILE save handler (A=$00)
+Copies 4-byte load/exec/length addresses from the parameter block
+to the FS command buffer, along with the filename. Sends FS
+command $91 with function $14 to initiate the save, then
+calls print_file_info to display the filename being saved.
+Handles both host and Tube-based data sources.""")
+
+comment(0x87AD, """\
+Copy load address from parameter block
+Copies 4 bytes from (fs_options)+2..5 (the load address in the
+OSFILE parameter block) to $AE-$B3 (local workspace).""")
+
+comment(0x87BA, """\
+Copy FS reply data to parameter block
+Copies bytes from the FS command reply buffer ($0F02+) into the
+parameter block at (fs_options)+2..13. Used to fill in the OSFILE
+parameter block with information returned by the fileserver.""")
+
+comment(0x87C8, """\
+Multi-block file data transfer
+Manages the transfer of file data in chunks between the local
+machine and the fileserver. Sets up source ($C4-$C7) and
+destination ($C8-$CB) addresses from the FS reply, sends $80-byte
+blocks with command $91, and continues until all data has been
+transferred. Handles address overflow and Tube co-processor
+transfers.""")
+
+comment(0x881F, """\
+FSCV 1: EOF handler
+Checks whether a file handle has reached end-of-file. Converts
+the handle via handle_to_mask_clc, tests the result against
+fs_work_0e07 flags. If the handle is in the flags, sends FS
+command $11 to query the fileserver for EOF status. Returns
+the result in the X register.""")
+
+comment(0x8844, """\
+FILEV attribute dispatch (A=1-6)
+Dispatches OSFILE operations by function code:
+  A=1: write catalogue information (load/exec/length/attrs)
+  A=2: write load address only
+  A=3: write exec address only
+  A=4: write file attributes
+  A=5: read catalogue information
+  A=6: delete named object
+  A>=7: fall through (probably generates an error)
+Each handler builds the appropriate FS command, sends it to
+the fileserver, and copies the reply into the parameter block.""")
+
+comment(0x892C, """\
+Restore arguments and return
+Common exit point for FS vector handlers. Reloads A from
+fs_last_byte_flag ($BD), X from fs_options ($BB), and Y from
+fs_block_offset ($BC) — the values saved at entry by
+save_fscv_args — and returns to the caller.""")
+
+comment(0x89A1, """\
+FSCV 0: *OPT handler
+Handles *OPT X,Y to set filing system options:
+  *OPT 1,Y (Y=0/1): set user option in $0E06
+  *OPT 4,Y (Y=0-3): set boot option via FS command $16
+Other combinations generate error 7 ("bad option").""")
+
+comment(0x89D2, """\
+Bidirectional 4-byte address adjustment
+Adjusts a 4-byte value in the parameter block at (fs_options)+Y:
+  If fs_load_addr_2 ($B2) is positive: adds fs_lib_handle+X values
+  If fs_load_addr_2 ($B2) is negative: subtracts fs_lib_handle+X
+Starting offset X=$FC means it reads from $0E06-$0E09 area.
+Used to convert between absolute and relative file positions.""")
 
 # ============================================================
 # Forward unrecognised * command to fileserver ($8079)
