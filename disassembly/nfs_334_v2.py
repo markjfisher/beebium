@@ -216,12 +216,30 @@ nmi_rti ($0D14):
   BIT $FE20       ; INTON -- re-enable NMIs
   RTI
 
-NMI handler chain for transmission:
-  $96F6 -> RX scout (idle listen)
-  $9D4C -> TX data (2 bytes per NMI)
-  $9D94 -> TX completion (switch to RX: CR1=$82)
-  $9DB2 -> RX reply scout
-  $9DC8 -> RX reply continuation
+NMI handler chain for outbound transmission (four-way handshake):
+  $96F6: RX scout (idle listen, default handler)
+  $9C48: INACTIVE polling (pre-TX, waits for idle line)
+  $9D4C: TX data (2 bytes per NMI, tight loop if IRQ persists)
+  $9D88: TX_LAST_DATA (close frame)
+  $9D94: TX completion (switch to RX: CR1=$82)
+  $9DB2: RX reply scout (check AP, read dest_stn)
+  $9DC8: RX reply continuation (read dest_net, validate)
+  $9DE3: RX reply validation (read src_stn/net, check FV)
+  $9E24: TX scout ACK (write dest/src addr, TX_LAST_DATA)
+  $9EDD: Four-way handshake data phase
+
+NMI handler chain for inbound reception (scout -> data):
+  $96F6: RX scout (idle listen)
+  $9715: RX scout second byte (dest_net, install $9747)
+  $9747: Scout data loop (read body in pairs, detect FV)
+  $9771: Scout completion (disable PSE, read last byte)
+  $995E: TX scout ACK
+  $9839: RX data frame (AP check, validate dest_stn/net)
+  $984F: RX data frame (validate src_net=0)
+  $9865: RX data frame (skip ctrl/port bytes)
+  $989A: RX data bulk read (read payload into buffer)
+  $98CE: RX data completion (disable PSE, check FV, read last)
+  $995E: TX final ACK
 
 Key ADLC register values:
   CR1=$C1: full reset (TX_RESET|RX_RESET|AC)
@@ -282,25 +300,25 @@ entry(0x9DB2)   # RX reply scout handler
 entry(0x9DC8)   # RX reply continuation handler
 entry(0x9DE3)   # RX reply next handler
 
-# --- Four-way handshake ---
-entry(0x9EDD)   # Four-way handshake data phase
-entry(0x9EE9)   # Four-way handshake RX scout
-entry(0x9EFF)   # Four-way handshake RX continuation
+# --- Four-way handshake (outbound data phase) ---
+entry(0x9EDD)   # Four-way handshake: switch to RX for final ACK
+entry(0x9EE9)   # Four-way handshake: RX final ACK (check AP, dest_stn)
+entry(0x9EFF)   # Four-way handshake: RX final ACK continuation (dest_net=0)
 
 # --- Completion / error ---
-entry(0x9F39)   # TX completion handler
-entry(0x9F3F)   # Error handler
-entry(0x9F15)   # Reply validation handler
+entry(0x9F39)   # Completion handler (store result=0 to tx_block)
+entry(0x9F3F)   # Error handler (store error code to tx_block)
+entry(0x9F15)   # Four-way handshake: validate final ACK src addr
 
 # --- Discovered via JMP $0D0E scan (NMI handler installations) ---
-entry(0x9715)   # RX scout second byte handler
-entry(0x9747)   # Full scout frame RX handler
-entry(0x9839)   # Reply data RX handler
-entry(0x984F)   # Reply data continuation
-entry(0x9865)   # Handler installed at $9862
-entry(0x989A)   # Handler installed at $9880
-entry(0x98F7)   # Reply RX data handler
-entry(0x9992)   # Reply completion handler
+entry(0x9715)   # RX scout second byte handler (dest network)
+entry(0x9747)   # Scout data reading loop (reads body in pairs)
+entry(0x9839)   # Data frame RX handler (four-way handshake)
+entry(0x984F)   # Data frame: validate source network = 0
+entry(0x9865)   # Data frame: skip ctrl/port bytes
+entry(0x989A)   # Data frame: bulk data read loop
+entry(0x98F7)   # Data frame: Tube co-processor RX handler
+entry(0x9992)   # ACK TX continuation (write src addr, TX_LAST_DATA)
 
 # --- NMI shim at end of ROM ---
 entry(0x9FCB)   # Secondary NMI entry (BIT $FE18; PHA; TYA; PHA; STA romsel; JMP rx_scout)
@@ -335,7 +353,7 @@ entry(0x8933)   # TAY; BNE; ... (preceded by RTS, standalone entry)
 entry(0x89EA)   # JSR $8508; ... (preceded by RTS, standalone entry)
 entry(0x8E33)   # ASL $0D3A; ... (preceded by RTS, NMI workspace handler)
 entry(0x9063)   # LDY zp; CMP#; ... (preceded by RTS, standalone entry)
-entry(0x99BB)   # LDA $0D40; BNE; ... (NMI handler continuation)
+entry(0x99BB)   # Post-ACK: process received scout (check port, match RX block)
 
 # --- Code found in third-pass remaining equb regions ---
 entry(0x8741)   # BEQ +3; JMP $8844 (called from $8743 region)
@@ -400,6 +418,224 @@ comment(0x9705, "Check for broadcast address ($FF)", inline=True)
 comment(0x9707, "Neither our address nor broadcast -- reject frame", inline=True)
 comment(0x9709, "Flag $40 = broadcast frame", inline=True)
 comment(0x970E, "Install next NMI handler at $9715 (RX scout second byte)", inline=True)
+
+# ============================================================
+# RX scout second byte handler ($9715)
+# ============================================================
+comment(0x9715, """\
+RX scout second byte handler
+Reads the second byte of an incoming scout (destination network).
+Checks for network match: 0 = local network (accept), $FF = broadcast
+(accept and flag), anything else = reject.
+Installs the scout data reading loop handler at $9747.""")
+
+comment(0x9715, "BIT SR2: test for RDA (bit7 = data available)", inline=True)
+comment(0x9718, "No RDA -- check errors", inline=True)
+comment(0x971A, "Read destination network byte", inline=True)
+comment(0x971D, "Network = 0 -- local network, accept", inline=True)
+comment(0x971F, "EOR $FF: test if network = $FF (broadcast)", inline=True)
+comment(0x9721, "Broadcast network -- accept", inline=True)
+comment(0x9723, "Reject: wrong network. CR1=$A2: RIE|RX_DISCONTINUE", inline=True)
+
+comment(0x972B, "Network = $FF broadcast: clear $0D4A", inline=True)
+comment(0x972E, "Store Y offset for scout data buffer", inline=True)
+comment(0x9730, "Install scout data reading loop at $9747", inline=True)
+
+# ============================================================
+# Error/discard path ($9737)
+# ============================================================
+comment(0x9737, """\
+Scout error/discard handler
+Reached when the scout data loop sees no RDA (BPL at $974C) or
+when scout completion finds unexpected SR2 state.
+If SR2 & $81 is non-zero (AP or RDA still active), performs full
+ADLC reset and discards. If zero (clean end), discards via $9A40.
+This path is a common landing for any unexpected ADLC state during
+scout reception.""")
+
+comment(0x9737, "Read SR2", inline=True)
+comment(0x973A, "Test AP (b0) | RDA (b7)", inline=True)
+comment(0x973C, "Neither set -- clean end, discard via $9A40", inline=True)
+comment(0x973E, "Unexpected data/status: full ADLC reset", inline=True)
+comment(0x9741, "Discard and return to idle", inline=True)
+
+# ============================================================
+# Scout data reading loop ($9747-$976E)
+# ============================================================
+# This is the critical Path 1 code for ADLC FV/PSE interaction.
+# The loop reads scout body bytes two at a time, storing them at
+# $0D3D+Y. Between each pair, it checks SR2 to detect frame
+# completion (FV set) or errors.
+#
+# ADLC timing requirement: after the CPU reads the penultimate byte,
+# FV must be visible in SR2 before the next SR2 check. Beebium's
+# inline refill + byte timer reset ensures this: reading the
+# penultimate byte triggers inline refill of the last byte, which
+# sets FV immediately (push-time FV). The byte timer reset prevents
+# the timer from firing mid-loop.
+comment(0x9747, """\
+Scout data reading loop
+Reads the body of a scout frame, two bytes per iteration. Stores
+bytes at $0D3D+Y (scout buffer: src_stn, src_net, ctrl, port, ...).
+Between each pair it checks SR2:
+  - SR2 & $81 tested at entry ($974A): AP|RDA bits
+    - Neither set (BEQ) -> discard ($9744 -> $9A40)
+    - AP without RDA (BPL) -> error ($9737)
+    - RDA set (BMI) -> read byte
+  - After first byte ($9755): full SR2 tested
+    - SR2 non-zero (BNE) -> scout completion ($9771)
+      This is the FV detection point: when FV is set (by inline refill
+      of the last byte during the preceding RX FIFO read), SR2 is
+      non-zero and the branch is taken.
+    - SR2 = 0 -> read second byte and loop
+  - After second byte ($9769): re-test SR2 & $81 for next pair
+    - RDA set (BMI) -> loop back to $974E
+    - Neither set -> RTI, wait for next NMI
+The loop ends at Y=$0C (12 bytes max in scout buffer).""")
+
+comment(0x9747, "Y = buffer offset", inline=True)
+comment(0x9749, "Read SR2", inline=True)
+comment(0x974C, "No RDA -- error handler $9737", inline=True)
+comment(0x974E, "Read data byte from RX FIFO", inline=True)
+comment(0x9751, "Store at $0D3D+Y (scout buffer)", inline=True)
+comment(0x9754, "Advance buffer index", inline=True)
+comment(0x9755, "Read SR2 again (FV detection point)", inline=True)
+comment(0x9758, "RDA set -- more data, read second byte", inline=True)
+comment(0x975A, "SR2 non-zero (FV or other) -- scout completion", inline=True)
+comment(0x975C, "Read second byte of pair", inline=True)
+comment(0x975F, "Store at $0D3D+Y", inline=True)
+comment(0x9762, "Advance and check buffer limit", inline=True)
+comment(0x9765, "Buffer full (Y=12) -- force completion", inline=True)
+comment(0x9767, "Save Y for next iteration", inline=True)
+comment(0x9769, "Read SR2 for next pair", inline=True)
+comment(0x976C, "SR2 non-zero -- loop back for more bytes", inline=True)
+comment(0x976E, "SR2 = 0 -- RTI, wait for next NMI", inline=True)
+
+# ============================================================
+# Scout completion ($9771-$978F)
+# ============================================================
+comment(0x9771, """\
+Scout completion handler
+Reached from the scout data loop when SR2 is non-zero (FV detected).
+Disables PSE to allow individual SR2 bit testing:
+  CR1=$00 (clear all enables)
+  CR2=$84 (RDA_SUPPRESS_FV | FC_TDRA) -- no PSE, no CLR bits
+Then checks FV (bit1) and RDA (bit7):
+  - No FV (BEQ) -> error $9737 (not a valid frame end)
+  - FV set, no RDA (BPL) -> error $9737 (missing last byte)
+  - FV set, RDA set -> read last byte, process scout
+After reading the last byte, the complete scout buffer ($0D3D-$0D48)
+contains: src_stn, src_net, ctrl, port [, extra_data...].
+The port byte at $0D40 determines further processing:
+  - Port = 0 -> immediate operation ($9A59)
+  - Port non-zero -> check if it matches an open receive block""")
+
+comment(0x9771, "CR1=$00: disable all interrupts", inline=True)
+comment(0x9776, "CR2=$84: disable PSE, enable RDA_SUPPRESS_FV", inline=True)
+comment(0x977B, "A=$02: FV mask for SR2 bit1", inline=True)
+comment(0x977D, "BIT SR2: test FV (Z) and RDA (N)", inline=True)
+comment(0x9780, "No FV -- not a valid frame end, error", inline=True)
+comment(0x9782, "FV set but no RDA -- missing last byte, error", inline=True)
+comment(0x9784, "Read last byte from RX FIFO", inline=True)
+comment(0x9787, "Store last byte at $0D3D+Y", inline=True)
+comment(0x978A, "CR1=$44: RX_RESET | TIE (switch to TX for ACK)", inline=True)
+comment(0x978F, "Check port byte: 0 = immediate op, non-zero = data transfer", inline=True)
+comment(0x9792, "Port non-zero -- look for matching receive block", inline=True)
+comment(0x9794, "Port = 0 -- immediate operation handler", inline=True)
+
+# ============================================================
+# Data RX handler ($9839-$98CE)
+# ============================================================
+# This handler chain receives the data frame in a four-way handshake.
+# After sending the scout ACK, the ROM installs $9839 to receive
+# the incoming data frame.
+comment(0x9839, """\
+Data frame RX handler (four-way handshake)
+Receives the data frame after the scout ACK has been sent.
+First checks AP (Address Present) for the start of the data frame.
+Reads and validates the first two address bytes (dest_stn, dest_net)
+against our station address, then installs continuation handlers
+to read the remaining data payload into the open port buffer.
+
+Handler chain: $9839 (AP+addr check) -> $984F (net=0 check) ->
+$9865 (skip ctrl+port) -> $989A (bulk data read) -> $98CE (completion)""")
+
+comment(0x982D, "CR1=$82: TX_RESET | RIE (switch to RX for data frame)", inline=True)
+comment(0x9839, "Read SR2 for AP check", inline=True)
+comment(0x984F, "Validate source network = 0", inline=True)
+comment(0x9865, "Skip control and port bytes (already known from scout)", inline=True)
+comment(0x986A, "Discard control byte", inline=True)
+comment(0x986D, "Discard port byte", inline=True)
+
+# ============================================================
+# Data frame bulk read ($989A-$98CE)
+# ============================================================
+comment(0x989A, """\
+Data frame bulk read loop
+Reads data payload bytes from the RX FIFO and stores them into
+the open port buffer at (open_port_buf),Y. Reads bytes in pairs
+(like the scout data loop), checking SR2 between each pair.
+SR2 non-zero (FV or other) -> frame completion at $98CE.
+SR2 = 0 -> RTI, wait for next NMI to continue.""")
+
+comment(0x989A, "Y = buffer offset, resume from last position", inline=True)
+comment(0x989C, "Read SR2 for next pair", inline=True)
+
+# ============================================================
+# Data frame completion ($98CE-$98F4)
+# ============================================================
+comment(0x98CE, """\
+Data frame completion
+Reached when SR2 non-zero during data RX (FV detected).
+Same pattern as scout completion ($9771): disables PSE (CR1=$00,
+CR2=$84), then tests FV and RDA. If FV+RDA, reads the last byte.
+If extra data available and buffer space remains, stores it.
+Proceeds to send the final ACK via $995E.""")
+
+comment(0x98CE, "CR1=$00: disable all interrupts", inline=True)
+comment(0x98D3, "CR2=$84: disable PSE for individual bit testing", inline=True)
+comment(0x98DA, "A=$02: FV mask", inline=True)
+comment(0x98DC, "BIT SR2: test FV (Z) and RDA (N)", inline=True)
+comment(0x98DF, "No FV -- error", inline=True)
+comment(0x98E1, "FV set, no RDA -- proceed to ACK", inline=True)
+comment(0x98E7, "FV+RDA: read and store last data byte", inline=True)
+
+# ============================================================
+# Scout ACK / Final ACK TX ($995E-$99B5)
+# ============================================================
+comment(0x995E, """\
+ACK transmission
+Sends a scout ACK or final ACK frame as part of the four-way handshake.
+If bit7 of $0D4A is set, this is a final ACK -> completion ($9F39).
+Otherwise, configures for TX (CR1=$44, CR2=$A7) and sends the ACK
+frame (dst_stn, dst_net from $0D3D, src_stn from $FE18, src_net=0).
+The ACK frame has no data payload -- just address bytes.
+
+After writing the address bytes to the TX FIFO, installs the next
+NMI handler from $0D4B/$0D4C (saved by the scout/data RX handler)
+and sends TX_LAST_DATA (CR2=$3F) to close the frame.""")
+
+comment(0x9966, "CR1=$44: RX_RESET | TIE (switch to TX mode)", inline=True)
+comment(0x996B, "CR2=$A7: RTS|CLR_TX_ST|FC_TDRA|2_1_BYTE|PSE", inline=True)
+comment(0x9970, "Install saved next handler ($99BB for scout ACK)", inline=True)
+comment(0x997A, "Load dest station from RX scout buffer", inline=True)
+comment(0x997D, "BIT SR1: test TDRA (V=bit6)", inline=True)
+comment(0x9980, "TDRA not ready -- error", inline=True)
+comment(0x9982, "Write dest station to TX FIFO", inline=True)
+comment(0x9985, "Write dest network to TX FIFO", inline=True)
+comment(0x998B, "Install handler at $9992 (write src addr)", inline=True)
+
+comment(0x9992, """\
+ACK TX continuation
+Writes source station and network to TX FIFO, completing the 4-byte
+ACK frame. Then sends TX_LAST_DATA (CR2=$3F) to close the frame.""")
+comment(0x9992, "Load our station ID (also INTOFF)", inline=True)
+comment(0x9995, "BIT SR1: test TDRA", inline=True)
+comment(0x9998, "TDRA not ready -- error", inline=True)
+comment(0x999A, "Write our station to TX FIFO", inline=True)
+comment(0x999D, "Write network=0 to TX FIFO", inline=True)
+comment(0x99A7, "CR2=$3F: TX_LAST_DATA | CLR_RX_ST | FLAG_IDLE | FC_TDRA | 2_1_BYTE | PSE", inline=True)
+comment(0x99AC, "Install saved handler from $0D4B/$0D4C", inline=True)
 
 # ============================================================
 # INACTIVE polling loop ($9C48)
@@ -545,25 +781,179 @@ comment(0x9DC1, "Install next handler at $9DC8 (reply continuation)", inline=Tru
 # ============================================================
 comment(0x9DC8, """\
 RX reply continuation handler
-Reads remaining bytes of the reply scout: source network number,
-then hands off to $9DE3 for source station/network validation.""")
+Reads the second byte of the reply scout (destination network) and
+validates it is zero (local network). Installs $9DE3 for the
+remaining two bytes (source station and network).
+Optimisation: checks SR1 bit7 (IRQ still asserted) via BMI at $9DD9.
+If IRQ is still set, falls through directly to $9DE3 without an RTI,
+avoiding NMI re-entry overhead for short frames where all bytes arrive
+in quick succession.""")
 
 comment(0x9DC8, "BIT SR2: test for RDA (bit7 = data available)", inline=True)
-comment(0x9DCB, "No RDA -- error/timeout", inline=True)
-comment(0x9DCD, "Read next byte (source network)", inline=True)
-comment(0x9DD0, "Non-zero -- mismatch (expects $00 for net=0)", inline=True)
-comment(0x9DD2, "Install next handler at $9DE3", inline=True)
+comment(0x9DCB, "No RDA -- error", inline=True)
+comment(0x9DCD, "Read destination network byte", inline=True)
+comment(0x9DD0, "Non-zero -- network mismatch, error", inline=True)
+comment(0x9DD2, "Install next handler at $9DE3 (reply validation)", inline=True)
+comment(0x9DD6, "BIT SR1: test IRQ (N=bit7) -- more data ready?", inline=True)
+comment(0x9DD9, "IRQ set -- fall through to $9DE3 without RTI", inline=True)
+comment(0x9DDB, "IRQ not set -- install handler and RTI", inline=True)
 
 # ============================================================
 # RX reply validation handler ($9DE3)
 # ============================================================
+# This is the critical Path 2 code for ADLC FV/PSE interaction.
+# The handler reads two bytes (source station and network) and
+# then checks for FV. The key requirement is that RDA must be
+# visible at $9DE3 even if FV has been latched.
+#
+# With Beebium's inline refill model, this works because the
+# inline refill chain feeds bytes in rapid succession: each FIFO
+# read refills the next byte. For a 4-byte reply scout:
+#   Read byte 0 at $9DB9 -> refills byte 1 (RDA visible at $9DC8)
+#   Read byte 1 at $9DCD -> refills byte 2 (RDA visible at $9DE3)
+#   Read byte 2 at $9DE8 -> refills byte 3/LAST (FV set)
+#   Read byte 3 at $9DF1 -> FIFO empty
+#   Check FV at $9DFA -> FV is set
 comment(0x9DE3, """\
-RX reply validation
-Validates the reply scout by comparing source station and network
-against the destination in the original TX buffer.""")
+RX reply validation (Path 2 for FV/PSE interaction)
+Reads the source station and source network from the reply scout and
+validates them against the original TX destination ($0D20/$0D21).
+Sequence:
+  1. Check SR2 bit7 (RDA) at $9DE3 -- must see data available
+  2. Read source station at $9DE8, compare to $0D20 (tx_dst_stn)
+  3. Read source network at $9DF0, compare to $0D21 (tx_dst_net)
+  4. Check SR2 bit1 (FV) at $9DFA -- must see frame complete
+If all checks pass, the reply scout is valid and the ROM proceeds
+to send the scout ACK (CR2=$A7 for RTS, CR1=$44 for TX mode).""")
 
+comment(0x9DE3, "BIT SR2: test RDA (bit7). Must be set for valid reply.", inline=True)
+comment(0x9DE6, "No RDA -- error (FV masking RDA via PSE would cause this)", inline=True)
+comment(0x9DE8, "Read source station", inline=True)
+comment(0x9DEB, "Compare to original TX destination station ($0D20)", inline=True)
+comment(0x9DEE, "Mismatch -- not the expected reply, error", inline=True)
+comment(0x9DF0, "Read source network", inline=True)
+comment(0x9DF3, "Compare to original TX destination network ($0D21)", inline=True)
+comment(0x9DF6, "Mismatch -- error", inline=True)
+comment(0x9DF8, "A=$02: FV mask for SR2 bit1", inline=True)
+comment(0x9DFA, "BIT SR2: test FV -- frame must be complete", inline=True)
+comment(0x9DFD, "No FV -- incomplete frame, error", inline=True)
 comment(0x9DFF, "CR2=$A7: RTS|CLR_TX_ST|FC_TDRA|2_1_BYTE|PSE (TX in handshake)", inline=True)
-comment(0x9E04, "CR1=$44: RX_RESET | TIE (TX active for ack)", inline=True)
+comment(0x9E04, "CR1=$44: RX_RESET | TIE (TX active for scout ACK)", inline=True)
+comment(0x9E09, "Install next handler at $9EDD (four-way data phase) into $0D4B/$0D4C", inline=True)
+comment(0x9E13, "Load dest station for scout ACK TX", inline=True)
+comment(0x9E16, "BIT SR1: test TDRA (V=bit6)", inline=True)
+comment(0x9E19, "TDRA not ready -- error", inline=True)
+comment(0x9E1B, "Write dest station to TX FIFO", inline=True)
+comment(0x9E1E, "Write dest network to TX FIFO", inline=True)
+comment(0x9E24, "Install handler at $9E2B (write src addr for scout ACK)", inline=True)
+
+# ============================================================
+# TX data phase: write src address ($9E2B)
+# ============================================================
+comment(0x9E2B, """\
+TX scout ACK: write source address
+Writes our station ID and network=0 to TX FIFO, completing the
+4-byte scout ACK frame. Then proceeds to send the data frame.""")
+comment(0x9E2B, "Load our station ID (also INTOFF)", inline=True)
+comment(0x9E2E, "BIT SR1: test TDRA", inline=True)
+comment(0x9E31, "TDRA not ready -- error", inline=True)
+comment(0x9E33, "Write our station to TX FIFO", inline=True)
+comment(0x9E36, "Write network=0 to TX FIFO", inline=True)
+
+# ============================================================
+# TX data phase: send data payload ($9E50)
+# ============================================================
+comment(0x9E50, """\
+TX data phase: send payload
+Sends the data frame payload from (open_port_buf),Y in pairs per NMI.
+Same pattern as the NMI TX handler at $9D4C but reads from the port
+buffer instead of the TX workspace. Writes two bytes per iteration,
+checking SR1 IRQ between pairs for tight looping.""")
+comment(0x9E50, "Y = buffer offset, resume from last position", inline=True)
+comment(0x9E52, "BIT SR1: test TDRA (V=bit6)", inline=True)
+comment(0x9E55, "TDRA not ready -- error", inline=True)
+comment(0x9E57, "Write data byte to TX FIFO", inline=True)
+comment(0x9E7D, "CR2=$3F: TX_LAST_DATA (close data frame)", inline=True)
+
+# ============================================================
+# Four-way handshake: switch to RX for final ACK ($9EDD)
+# ============================================================
+comment(0x9EDD, """\
+Four-way handshake: switch to RX for final ACK
+After the data frame TX completes, switches to RX mode (CR1=$82)
+and installs $9EE9 to receive the final ACK from the remote station.""")
+comment(0x9EDD, "CR1=$82: TX_RESET | RIE (switch to RX for final ACK)", inline=True)
+comment(0x9EE2, "Install handler at $9EE9 (RX final ACK)", inline=True)
+
+# ============================================================
+# Four-way handshake: RX final ACK ($9EE9-$9F3D)
+# ============================================================
+# Same pattern as $9DB2/$9DC8/$9DE3 but for the final ACK.
+# Validates that the final ACK is from the expected station.
+comment(0x9EE9, """\
+RX final ACK handler
+Receives the final ACK in a four-way handshake. Same validation
+pattern as the reply scout handler ($9DB2-$9DE3):
+  $9EE9: Check AP, read dest_stn, compare to our station
+  $9EFF: Check RDA, read dest_net, validate = 0
+  $9F15: Check RDA, read src_stn/net, compare to TX dest
+  $9F32: Check FV for frame completion
+On success, stores result=0 at $9F39. On any failure, error $41.""")
+
+comment(0x9EE9, "A=$01: AP mask", inline=True)
+comment(0x9EEB, "BIT SR2: test AP", inline=True)
+comment(0x9EEE, "No AP -- error", inline=True)
+comment(0x9EF0, "Read dest station", inline=True)
+comment(0x9EF3, "Compare to our station (INTOFF side effect)", inline=True)
+comment(0x9EF6, "Not our station -- error", inline=True)
+comment(0x9EF8, "Install handler at $9EFF (final ACK continuation)", inline=True)
+
+comment(0x9EFF, "BIT SR2: test RDA", inline=True)
+comment(0x9F02, "No RDA -- error", inline=True)
+comment(0x9F04, "Read dest network", inline=True)
+comment(0x9F07, "Non-zero -- network mismatch, error", inline=True)
+comment(0x9F09, "Install handler at $9F15 (final ACK validation)", inline=True)
+comment(0x9F0D, "BIT SR1: test IRQ -- more data ready?", inline=True)
+comment(0x9F10, "IRQ set -- fall through to $9F15 without RTI", inline=True)
+
+comment(0x9F15, """\
+Final ACK validation
+Reads and validates src_stn and src_net against original TX dest.
+Then checks FV for frame completion.""")
+comment(0x9F15, "BIT SR2: test RDA", inline=True)
+comment(0x9F18, "No RDA -- error", inline=True)
+comment(0x9F1A, "Read source station", inline=True)
+comment(0x9F1D, "Compare to TX dest station ($0D20)", inline=True)
+comment(0x9F20, "Mismatch -- error", inline=True)
+comment(0x9F22, "Read source network", inline=True)
+comment(0x9F25, "Compare to TX dest network ($0D21)", inline=True)
+comment(0x9F28, "Mismatch -- error", inline=True)
+comment(0x9F32, "A=$02: FV mask for SR2 bit1", inline=True)
+comment(0x9F34, "BIT SR2: test FV -- frame must be complete", inline=True)
+comment(0x9F37, "No FV -- error", inline=True)
+
+# ============================================================
+# Completion and error handlers ($9F39-$9F48)
+# ============================================================
+comment(0x9F39, """\
+TX completion handler
+Stores result code 0 (success) into the first byte of the TX control
+block (nmi_tx_block),Y=0. Then sets $0D3A bit7 to signal completion
+and calls full ADLC reset + idle listen via $9A34.""")
+comment(0x9F39, "A=0: success result code", inline=True)
+comment(0x9F3B, "BEQ: always taken (A=0)", inline=True)
+
+comment(0x9F3F, """\
+TX error handler
+Stores error code (A) into the TX control block, sets $0D3A bit7
+for completion, and returns to idle via $9A34.
+Error codes: $00=success, $40=line jammed, $41=not listening,
+$42=net error.""")
+comment(0x9F3F, "Y=0: index into TX control block", inline=True)
+comment(0x9F41, "Store result/error code at (nmi_tx_block),0", inline=True)
+comment(0x9F43, "$80: completion flag for $0D3A", inline=True)
+comment(0x9F45, "Signal TX complete", inline=True)
+comment(0x9F48, "Full ADLC reset and return to idle listen", inline=True)
 
 # ============================================================
 # Generate disassembly and split into section files
