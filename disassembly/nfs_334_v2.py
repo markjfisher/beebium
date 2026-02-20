@@ -527,7 +527,7 @@ entry(0x8949)
 label(0x81CC, "call_fscv_shutdown")     # LDA #6; JMP (FSCV) — notify FS of shutdown
 label(0x819B, "match_rom_string")       # Match command text against ROM string at $8008+X
 label(0x81AC, "cmd_name_matched")       # MATCH2: full name matched, check terminator byte
-label(0x81B3, "skip_spaces")            # SKPSP: skip spaces in command text; Z=1 if CR follows
+label(0x81B3, "skip_cmd_spaces")         # SKPSP: skip spaces in command text; Z=1 if CR follows
 label(0x822E, "issue_vectors_claimed")  # OSBYTE $8F: issue service $0F (vectors claimed)
 label(0x82D1, "setup_rom_ptrs_netv")    # Read ROM pointer table, set up NETV
 label(0x82FD, "fscv_shutdown")          # FSCV 6: save FS state to workspace, go dormant
@@ -620,6 +620,7 @@ label(0x85E4, "set_fs_flag")            # Set bit(s) in $0E07: A OR'd into flags
 
 # --- File info display ---
 label(0x8600, "print_file_info")        # Print catalogue line: filename + load/exec/length
+label(0x8617, "pad_filename_spaces")    # MONL2: pad filename display to 12 chars with spaces
 label(0x862A, "print_exec_and_len")     # Print exec address (4 bytes) and length (3 bytes)
 label(0x8635, "print_hex_bytes")        # Print X bytes from (fs_options)+Y as hex (high→low)
 label(0x8640, "print_space")            # Print a space character via OSASCI
@@ -629,6 +630,7 @@ label(0x8644, "setup_tx_ptr_c0")        # Set net_tx_ptr = $00C0 (TX control blo
 label(0x864C, "tx_poll_ff")             # Transmit with A=$FF, Y=$60 (full retry)
 label(0x864E, "tx_poll_timeout")        # Transmit with Y=$60 (specified timeout)
 label(0x8650, "tx_poll_core")           # Core transmit: send TX block, poll for result
+label(0x8684, "delay_1ms")              # MSDELY: 1ms delay loop (nested DEX/DEY)
 
 # ============================================================
 # File operations: FILEV, ARGSV, FINDV, GBPBV ($8694-$8B91)
@@ -651,11 +653,17 @@ label(0x881F, "eof_handler")           # FSCV 1: check end-of-file on handle
 
 # --- FILEV attribute dispatch ($8844) ---
 label(0x8844, "filev_attrib_dispatch") # FILEV function dispatch (A=1-6)
+label(0x886E, "get_file_protection")  # CHA1: decode attribute byte for protection status
+label(0x8883, "copy_filename_to_cmd") # CHASK2: copy filename string into FS command buffer
+label(0x88C5, "copy_fs_reply_to_cb")  # COPYFS: copy FS reply buffer data to control block
 
 # --- Common return point ($892C) ---
+label(0x8912, "save_args_handle")      # SETARG: save handle for OSARGS operation
 label(0x892C, "restore_args_return")   # Restore A/X/Y from saved workspace and return
 
 # --- FSCV 0: *OPT handler ($89A1) ---
+label(0x8985, "close_handle")           # CLOSE: detect CLOSE#0, close spool/exec or single handle
+label(0x898F, "close_single_handle")   # CLOSE1: send close command for specific handle to FS
 label(0x89A1, "opt_handler")           # FSCV 0: *OPT X,Y (set boot option or FS config)
 
 # --- Address adjustment helpers ($89CA-$89E9) ---
@@ -663,6 +671,8 @@ label(0x89CA, "adjust_addrs_9")        # Adjust 4-byte addresses at param block 
 label(0x89CF, "adjust_addrs_1")        # Adjust 4-byte addresses at param block offset 1
 label(0x89D1, "adjust_addrs_clc")      # CLC entry: clear carry before address adjustment
 label(0x89D2, "adjust_addrs")          # Bidirectional 4-byte address adjustment
+label(0x8AAD, "osgbpb_info")          # OSINFO: OSGBPB 5-8 handler, check Tube addresses
+label(0x8B8A, "tube_claim_loop")      # TCLAIM: claim Tube with $C3, retry until acquired
 
 # ============================================================
 # *-Command handlers and FSCV dispatch ($8B92-$8DFF)
