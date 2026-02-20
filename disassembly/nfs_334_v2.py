@@ -1177,7 +1177,10 @@ The delimiter handling was revised to support dot-separated path
 components (e.g. "1.$.PROG") -- originally stopped on any char
 >= $40 (any letter), but the revision allows numbers followed
 by dots.""",
-    on_entry={"y": "offset into (fs_options) buffer"})
+    on_entry={"y": "offset into (fs_options) buffer"},
+    on_exit={"a": "parsed value (accumulated in $B2)",
+             "x": "corrupted",
+             "y": "offset past last digit parsed"})
 
 # ============================================================
 # File handle conversion ($8588-$858A)
@@ -1201,7 +1204,9 @@ indexing into garbage.
 Three entry points: $858A (direct), $8589 (CLC first), $8588 (TAY first).""",
     on_entry={"y": "handle number",
               "c": "0: convert, 1 with Y=0: skip, 1 with Y!=0: convert"},
-)
+    on_exit={"a": "preserved",
+             "x": "preserved",
+             "y": "bitmask (single bit set) or $FF if handle invalid"})
 
 # ============================================================
 # Mask to handle ($85A5)
@@ -1215,7 +1220,9 @@ until A=0. Adds $1E to convert the 1-based bit position to
 a handle number (handles start at $1F+1 = $20). Used when
 receiving handle values from the fileserver in reply packets.""",
     on_entry={"a": "single-bit bitmask"},
-)
+    on_exit={"a": "handle number ($20-$27)",
+             "x": "corrupted",
+             "y": "preserved"})
 
 # ============================================================
 # Print decimal number ($85AF)
@@ -1243,7 +1250,9 @@ Compares bytes at $B0-$B3 against $B4-$B7 using EOR.
 Used by the OSFILE save handler to compare the current
 transfer address ($C8-$CB, copied to $B0) against the end
 address ($B4-$B7) during multi-block file data transfers.""",
-)
+    on_exit={"a": "corrupted (EOR result)",
+             "x": "corrupted",
+             "y": "preserved"})
 
 # ============================================================
 # FS flags ($85DF / $85E4)
@@ -1316,7 +1325,10 @@ On error, checks for escape condition and handles retries.
 Two entry points: setup_tx_ptr_c0 ($8644) always uses the
 standard TXCB; tx_poll_core ($8650) is general-purpose.""",
     on_entry={"a": "retry count ($FF = full retry)",
-              "y": "timeout parameter ($60 = standard)"})
+              "y": "timeout parameter ($60 = standard)"},
+    on_exit={"a": "entry A (retry count, restored from stack)",
+             "x": "0",
+             "y": "0"})
 
 # ============================================================
 # print_inline subroutine ($853B)
@@ -1331,7 +1343,10 @@ The high-bit byte serves as both the string terminator and the opcode
 of the first instruction after the string. N.B. Cannot be used for
 BRK error messages -- the stack manipulation means a BRK in the
 inline data would corrupt the stack rather than invoke the error
-handler.""")
+handler.""",
+    on_exit={"a": "terminator byte (bit 7 set, also next opcode)",
+             "x": "corrupted (by OSASCI)",
+             "y": "0"})
 
 comment(0x853B, "Pop return address (low) — points to last byte of JSR", inline=True)
 comment(0x853E, "Pop return address (high)", inline=True)
@@ -1638,7 +1653,12 @@ Builds the 5-byte FS protocol header at $0F00:
   $0F03 HDRCSD = CSD handle (from $0E03)
   $0F04 HDRLIB = LIB handle (from $0E04)
 Command-specific data follows at $0F05 (TXBUF). Also clears V flag.
-Called before building specific FS commands for transmission.""")
+Called before building specific FS commands for transmission.""",
+    on_entry={"y": "function code for HDRFN",
+              "x": "preserved through header build"},
+    on_exit={"a": "0 on success (from build_send_fs_cmd)",
+             "x": "0 on success, $D6 on not-found",
+             "y": "1 (offset past command code in reply)"})
 
 # ============================================================
 # Build and send FS command ($836A)
@@ -1666,7 +1686,10 @@ callers can handle, vs hard errors which go through FSERR.""",
     on_entry={"x": "buffer extent (command-specific data bytes)",
               "y": "function code",
               "a": "timeout period for FS reply",
-              "c": "0 for standard FS path, 1 for byte-stream (BSXMIT)"})
+              "c": "0 for standard FS path, 1 for byte-stream (BSXMIT)"},
+    on_exit={"a": "0 on success",
+             "x": "0 on success, $D6 on not-found",
+             "y": "1 (offset past command code in reply)"})
 
 # ============================================================
 # FS error handler ($8402)
@@ -1707,7 +1730,9 @@ byte-level operations.""",
     on_entry={"c": "0 for BPUT (write byte), 1 for BGET (read byte)",
               "a": "byte to write (BPUT only)",
               "y": "file handle"},
-)
+    on_exit={"a": "preserved",
+             "x": "preserved",
+             "y": "preserved"})
 
 # ============================================================
 # Send command to fileserver ($844A)
@@ -1791,7 +1816,10 @@ Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
 4=*RUN, 5=*CAT, 6=shutdown, 7=read handles.""",
     on_entry={"a": "function code (0-7)",
               "x": "depends on function",
-              "y": "depends on function"})
+              "y": "depends on function"},
+    on_exit={"a": "depends on handler (preserved if A >= 8)",
+             "x": "depends on handler (preserved if A >= 8)",
+             "y": "depends on handler (preserved if A >= 8)"})
 
 comment(0x808C, "Store A/X/Y in FS workspace", inline=True)
 comment(0x808F, "Function code >= 8? Return (unsupported)", inline=True)
@@ -1813,7 +1841,10 @@ Dispatches by function code A:
   Other: restore_args_return (unsupported, no-op)""",
     on_entry={"a": "function code ($FF=load, $00=save, $01-$06=attrs)",
               "x": "parameter block address low byte",
-              "y": "parameter block address high byte"})
+              "y": "parameter block address high byte"},
+    on_exit={"a": "restored",
+             "x": "restored",
+             "y": "restored"})
 
 comment(0x86D0, """\
 Send FS examine command
@@ -1933,7 +1964,9 @@ The handle in Y is converted via handle_to_mask_clc. For writes
 to save_args_handle, which records the handle for later use.""",
     on_entry={"a": "function code (0=query, 1=write ptr, >=3=ensure)",
               "y": "file handle (0=FS-level query, >0=per-file)"},
-)
+    on_exit={"a": "filing system number if A=0/Y=0 query, else restored",
+             "x": "restored",
+             "y": "restored"})
 
 # ============================================================
 # FINDV handler ($8949)
@@ -1953,7 +1986,9 @@ number tracking byte for the byte-stream protocol.""",
     on_entry={"a": "operation (0=close, $40=read, $80=write, $C0=R/W)",
               "x": "filename pointer low (open)",
               "y": "file handle (close) or filename pointer high (open)"},
-)
+    on_exit={"a": "handle on open, 0 on close-all, restored on close-one",
+             "x": "restored",
+             "y": "restored"})
 
 # ============================================================
 # CLOSE handler ($8985)
@@ -1986,7 +2021,10 @@ uses length-prefixed strings (<name length><object name>) rather
 than the CR-terminated strings used elsewhere in the FS.""",
     on_entry={"a": "call number (1-8)",
               "x": "parameter block address low byte",
-              "y": "parameter block address high byte"})
+              "y": "parameter block address high byte"},
+    on_exit={"a": "0 after FS operation, else restored",
+             "x": "restored",
+             "y": "restored"})
 
 # ============================================================
 # OSGBPB info handler ($8AAD)
@@ -2330,7 +2368,10 @@ Dispatch targets (from NFS09):
   6:   no-op (net read char -- not implemented)
   7:   NBYTE -- remote OSBYTE call
   8:   NWORD -- remote OSWORD call""",
-    on_entry={"a": "reason code (0-8)"})
+    on_entry={"a": "reason code (0-8)"},
+    on_exit={"a": "preserved",
+             "x": "preserved",
+             "y": "preserved"})
 
 comment(0x900E, "Retrieve original A (function code) from stack", inline=True)
 comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", inline=True)
@@ -2349,7 +2390,10 @@ out and back in as zero. This ensures the calling code's PLP
 restores carry=0, signalling "character accepted" without needing
 a separate CLC/PHP sequence. A classic 6502 trick for modifying
 return flags without touching the actual processor status.""",
-    on_entry={"y": "character to write"})
+    on_entry={"y": "character to write"},
+    on_exit={"a": "$3F",
+             "x": "0",
+             "y": "0"})
 
 comment(0x903E, "ROR/ASL on stacked P: zeros carry to signal success", inline=True)
 
@@ -2426,7 +2470,10 @@ ensuring the low-level transmit code (BRIANX) sees a consistent
 pointer -- if copied before claiming, another transmitter could
 modify TXCBP between the copy and the claim.""",
     on_entry={"x": "parameter block address low byte",
-              "y": "parameter block address high byte"})
+              "y": "parameter block address high byte"},
+    on_exit={"a": "corrupted",
+             "x": "corrupted",
+             "y": "$FF"})
 
 comment(0x8E53, """\
 OSWORD $11 handler: read JSR arguments (READRA)
@@ -2471,7 +2518,10 @@ temporarily disabled via ROR/ROL during the operation to prevent
 the interrupt-driven receive code from modifying a CB that is
 being read or opened.""",
     on_entry={"x": "parameter block address low byte",
-              "y": "parameter block address high byte"})
+              "y": "parameter block address high byte"},
+    on_exit={"a": "corrupted",
+             "x": "corrupted",
+             "y": "$FF"})
 
 # ============================================================
 # Remote operation handlers ($90FC / $912A / $913A / $914A)
