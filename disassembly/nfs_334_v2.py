@@ -578,10 +578,12 @@ label(0x81AC, "cmd_name_matched")       # MATCH2: full name matched, check termi
 label(0x81B3, "skip_cmd_spaces")         # SKPSP: skip spaces in command text; Z=1 if CR follows
 label(0x822E, "issue_vectors_claimed")  # OSBYTE $8F: issue service $0F (vectors claimed)
 label(0x82D1, "setup_rom_ptrs_netv")    # Read ROM pointer table, set up NETV
+label(0x82E5, "store_rom_ptr_pair")     # Write 2-byte address + ROM bank to ROM pointer table
 label(0x82FD, "fscv_shutdown")          # FSCV 6: save FS state to workspace, go dormant
 
 # --- TX control block and FS command setup ---
 label(0x830E, "init_tx_ctrl_data")      # Init TX control block for data port ($90)
+label(0x8310, "init_tx_ctrl_port")      # Init TX control block with port in A (2 JSR refs)
 label(0x831C, "init_tx_ctrl_block")     # Init TX control block from template at $8334
 label(0x8334, "tx_ctrl_template")       # 12-byte TX control block template
 label(0x8340, "prepare_cmd_with_flag")  # Prepare FS command with '*' flag and carry set
@@ -762,10 +764,13 @@ label(0x8D20, "copy_handles")          # Copy FS reply handles to workspace only
 label(0x8D3A, "option_name_strings")   # Option name table: "Off", "Load", "Run", "Exec"
 label(0x8D4B, "option_name_offsets")   # Offsets into option_name_strings (4 entries)
 label(0x8D4F, "print_reply_bytes")     # Print Y bytes from FS reply buffer starting at offset X
+label(0x8D51, "print_reply_counted")   # STRIN1: sub-entry of print_reply_bytes with caller-supplied Y count
 label(0x8D5C, "print_spaces")          # Print X space characters
 label(0x8D63, "copy_filename")         # Copy filename from (fs_crc_lo) to $0F05+ (X=0)
 label(0x8D65, "copy_string_to_cmd")    # Copy string from (fs_crc_lo)+Y to $0F05+X until CR
+label(0x8D67, "copy_string_from_offset") # COPLP1: sub-entry of copy_string_to_cmd with caller-supplied Y offset
 label(0x8D73, "print_dir_name")        # Print directory name from reply buffer
+label(0x8D75, "print_dir_from_offset") # INFOLP: sub-entry of print_dir_name with caller-supplied X offset
 label(0x8D84, "notify_and_exec")       # Send FS command $4A, execute response or jump via ($0F09)
 
 # --- *NET sub-command handlers ---
