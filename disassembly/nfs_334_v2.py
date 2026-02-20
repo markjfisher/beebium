@@ -304,6 +304,8 @@ label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write FS server station
 label(0x8EF0, "osword_10_handler")    # OSWORD $10: allocate RX slot, copy FS command
 
 # Econet TX/RX handler and OSWORD dispatch
+label(0x8F57, "setup_rx_buffer_ptrs") # Set up RX buffer address pointers in workspace
+label(0x8F68, "store_16bit_at_y")     # Store 16-bit value at (nfs_workspace)+Y
 label(0x8F72, "econet_tx_rx")          # Main TX/RX handler (A=0: send, A>=1: result)
 label(0x9007, "osword_dispatch")       # OSWORD-style function dispatch (codes 0-8)
 label(0x9020, "osword_trampoline")     # PHA/PHA/RTS trampoline
@@ -312,7 +314,9 @@ label(0x9034, "osword_tbl_hi")         # Dispatch table high bytes
 label(0x903D, "osword_fn4")            # Function 4: propagate carry
 label(0x904B, "setup_tx_and_send")    # Set up TX ctrl block at ws+$0C and transmit
 
-# Remote operation handlers
+# Remote operation function handlers (dispatched via osword_tbl)
+label(0x9063, "remote_cmd_dispatch")  # Fn 7: dispatch received remote OSBYTE/OSWORD
+label(0x90CD, "remote_cmd_data")      # Fn 7/8: copy received command data to workspace
 label(0x90FC, "remote_boot_handler")  # Remote boot: set up, download, execute at $0100
 label(0x912A, "execute_at_0100")      # Zero $0100-$0102, JMP $0100
 label(0x913A, "remote_validated")     # Remote op with source address validation
@@ -321,13 +325,23 @@ label(0x914A, "insert_remote_key")    # Insert char from RX block into keyboard 
 # Control block setup
 label(0x9159, "ctrl_block_setup_alt")  # Alternate entry into control block setup
 label(0x9162, "ctrl_block_setup")     # Main entry: X=$1A, Y=$17, V=0 (nfs_workspace)
+label(0x9166, "ctrl_block_setup_clv") # CLV entry: same setup but clears V flag
 label(0x918E, "ctrl_block_template")  # Template table for control block initialisation
+
+# Remote printer and display handlers (fn 1/2/3/5)
+label(0x91B5, "remote_display_setup") # Fn 5: set up remote display/character position
+label(0x91C7, "remote_print_handler") # Fn 1/2/3: handle received chars for remote printing
+label(0x91EC, "store_output_byte")    # Store byte at (net_rx_ptr) + current output offset
+label(0x9217, "flush_output_block")   # Send current output block and reset buffer
 
 # Network transmit
 label(0x9248, "econet_tx_retry")      # Transmit with retry until accepted or timeout
 
 # Palette/VDU state save
 label(0x9291, "save_palette_vdu")     # Save all 16 palette entries + VDU state
+label(0x92DD, "save_vdu_state")       # Save cursor pos ($0355) and 2 VDU OSBYTE values to workspace
+label(0x92EE, "read_vdu_osbyte_x0")  # Read next VDU OSBYTE with X=0 parameter
+label(0x92F0, "read_vdu_osbyte")     # Read next OSBYTE from table, store result in workspace
 
 # ADLC initialisation and state management
 label(0x966F, "adlc_init")           # Full init: reset ADLC, read station ID, install NMI shim
@@ -566,6 +580,7 @@ label(0x89A1, "opt_handler")           # FSCV 0: *OPT X,Y (set boot option or FS
 # --- Address adjustment helpers ($89CA-$89E9) ---
 label(0x89CA, "adjust_addrs_9")        # Adjust 4-byte addresses at param block offset 9
 label(0x89CF, "adjust_addrs_1")        # Adjust 4-byte addresses at param block offset 1
+label(0x89D1, "adjust_addrs_clc")      # CLC entry: clear carry before address adjustment
 label(0x89D2, "adjust_addrs")          # Bidirectional 4-byte address adjustment
 
 # ============================================================
@@ -607,6 +622,7 @@ label(0x8DB7, "calc_handle_offset")    # Calculate handle workspace offset: A â†
 label(0x8DC9, "net2_read_handle_entry")# *NET2: look up handle in workspace
 label(0x8DDF, "net3_close_handle")     # *NET3: mark handle as closed ($3F) in workspace
 label(0x8DF2, "net4_resume_remote")    # *NET4: resume after remote operation
+label(0x8DF7, "osword_fs_entry")       # OSWORD filing system entry: subtract $0F from command code
 
 # ============================================================
 # Named labels for ADLC NMI handler routines
@@ -814,8 +830,8 @@ for i in range(33, 37):
 # ============================================================
 # Filing system OSWORD dispatch table at $8E18/$8E1D
 # ============================================================
-# Used by the PHA/PHA/RTS dispatch at $8E01 (entered from sub_c8df7).
-# sub_c8df7 subtracts $0F from the command code in $EF, giving a
+# Used by the PHA/PHA/RTS dispatch at $8E01 (entered from osword_fs_entry).
+# osword_fs_entry subtracts $0F from the command code in $EF, giving a
 # 0-4 index for OSWORD calls $0F-$13 (15-19).
 #
 # Index  OSWORD  Target   Purpose
@@ -2032,6 +2048,59 @@ comment(0x914A, """\
 Insert remote keypress
 Reads a character from RX block offset $82 and inserts it into
 keyboard input buffer 0 via OSBYTE $99.""")
+
+# ============================================================
+# Remote operation support routines ($8F57-$92F0)
+# ============================================================
+comment(0x8F57, """\
+Set up RX buffer pointers in NFS workspace
+Calculates the start address of the RX data area ($F0+1) and stores
+it at workspace offset $28. Also reads the data length from ($F0)+1
+and adds it to $F0 to compute the end address at offset $2C.""")
+
+comment(0x9063, """\
+Fn 7: dispatch received remote OSBYTE/OSWORD command
+Compares the received command byte against two tables of known
+OSBYTE/OSWORD codes (table at $90BE). If matched, copies the
+command parameters from NFS workspace to the stack area at $0106+
+and executes via a PHA/PHA/RTS trampoline. If no match, returns
+without action.""")
+
+comment(0x90CD, """\
+Fn 7/8: copy received command data to workspace
+Copies received command parameters from the RX buffer at ($F0)+Y
+into NFS workspace at offset $DB+. Used by function codes 7 and 8
+to stage data before dispatch.""")
+
+comment(0x91B5, """\
+Fn 5: remote display/character position setup
+Reads character position data from the RX block for use by the
+remote display handler. Exact display management semantics need
+verification.""")
+
+comment(0x91C7, """\
+Fn 1/2/3: remote print handler
+Handles characters received over the network for remote printing.
+Buffers output bytes and flushes complete blocks via
+flush_output_block ($9217).""")
+
+comment(0x91EC, """\
+Store output byte to network buffer
+Stores byte A at the current output offset in the RX buffer
+pointed to by (net_rx_ptr). Advances the offset counter and
+triggers a flush if the buffer is full.""")
+
+comment(0x9217, """\
+Flush output block
+Sends the accumulated output block over the network, resets the
+buffer pointer, and prepares for the next block of output data.""")
+
+comment(0x92DD, """\
+Save VDU workspace state
+Stores the cursor position value from $0355 into NFS workspace,
+then reads cursor position (OSBYTE $85), shadow RAM (OSBYTE $C2),
+and screen start (OSBYTE $C3) via read_vdu_osbyte, storing
+each result into consecutive workspace bytes.""")
 
 # ============================================================
 # ADLC initialisation ($966F)
