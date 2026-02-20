@@ -461,12 +461,60 @@ label(0x0F01, "fs_cmd_y_param")         # FS command Y parameter
 label(0x0F02, "fs_cmd_urd")             # FS command URD handle
 label(0x0F03, "fs_cmd_csd")             # FS command CSD/LIB handle pair
 
-# Filing system section ($8500-$8DFF) — partially analysed.
-# Contains FS command implementations (*CAT, *LOAD, *SAVE, *INFO, etc.),
-# the FS protocol client that builds command packets and interprets
-# replies, and the print_inline subroutine at $853B.
-# The section also handles OSFILE, OSGBPB, OSBPUT, OSBGET, OSARGS,
-# and OSFIND calls when NFS is the active filing system.
+# ============================================================
+# Filing system protocol client ($8500-$86FF)
+# ============================================================
+# Core routines shared by all FS commands: argument saving,
+# file handle conversion, number parsing/printing, TX/RX,
+# file info display, and attribute decoding.
+
+# --- Argument save and file handle conversion ---
+label(0x8508, "save_fscv_args")         # Store A→$BD, X→$BB/$BE, Y→$BC/$BF (6 refs)
+label(0x8513, "decode_attribs_6bit")    # Read attribute byte at offset $0E, mask 6 bits
+label(0x851D, "decode_attribs_5bit")    # Mask A to 5 bits, build access bitmask
+label(0x8530, "access_bit_table")       # Lookup table for attribute bit mapping (11 bytes)
+label(0x8555, "skip_spaces")            # Skip leading spaces in (fs_options),Y; sets C if >= 'A'
+
+# --- Decimal number parser ($8560-$8587, undecoded code region) ---
+# Reads ASCII digits from (fs_options),Y and accumulates in $B2.
+# Terminates on chars >= '@', '.', or negative.
+# Returns with C=0 on normal exit, value in A and $B2.
+label(0x8560, "parse_decimal")          # TAX; LDA #0; parse digits from (fs_options),Y
+entry(0x8560)
+
+# --- File handle ↔ bitmask conversion ---
+label(0x8588, "handle_to_mask_a")       # TAY; CLC; fall into handle_to_mask
+label(0x8589, "handle_to_mask_clc")     # CLC; fall into handle_to_mask (always convert)
+label(0x858A, "handle_to_mask")         # Convert handle in Y to bitmask; C=0: convert, C=1 & Y=0: skip
+label(0x85A5, "mask_to_handle")         # Convert single-bit mask in A to handle number (+$1E)
+
+# --- Number and hex printing ---
+label(0x85AF, "print_decimal")          # Print byte in A as 3-digit decimal (100/10/1)
+label(0x85BC, "print_decimal_digit")    # Divide: print digit of Y÷A, remainder in Y
+label(0x85EB, "print_hex")              # Print byte in A as two hex digits
+label(0x85F6, "print_hex_nibble")       # Print low nibble of A as hex digit
+
+# --- Address comparison ---
+label(0x85CE, "compare_addresses")      # Compare 4-byte addresses at $B0 vs $B4; Z=1 if equal
+
+# --- FSCV 7: read FS handles ---
+label(0x85DA, "fscv_read_handles")      # Return X=$20 (base handle), Y=$27 (top handle)
+
+# --- FS flags manipulation ---
+label(0x85DF, "clear_fs_flag")          # Clear bit(s) in $0E07: A inverted, AND'd into flags
+label(0x85E4, "set_fs_flag")            # Set bit(s) in $0E07: A OR'd into flags
+
+# --- File info display ---
+label(0x8600, "print_file_info")        # Print catalogue line: filename + load/exec/length
+label(0x862A, "print_exec_and_len")     # Print exec address (4 bytes) and length (3 bytes)
+label(0x8635, "print_hex_bytes")        # Print X bytes from (fs_options)+Y as hex (high→low)
+label(0x8640, "print_space")            # Print a space character via OSASCI
+
+# --- TX control and transmission ---
+label(0x8644, "setup_tx_ptr_c0")        # Set net_tx_ptr = $00C0 (TX control block address)
+label(0x864C, "tx_poll_ff")             # Transmit with A=$FF, Y=$60 (full retry)
+label(0x864E, "tx_poll_timeout")        # Transmit with Y=$60 (specified timeout)
+label(0x8650, "tx_poll_core")           # Core transmit: send TX block, poll for result
 
 # ============================================================
 # Named labels for ADLC NMI handler routines
@@ -804,10 +852,173 @@ entry(0x8D5C)   # JSR ... (preceded by RTS, standalone entry)
 entry(0x982D)   # LDA #$82; STA $FEA0; installs NMI handler $9839
 
 # ============================================================
-# Inline comments for key instructions (from original annotations)
+# Inline comments for key instructions
 # ============================================================
 # Note: acorn.bbc()'s hooks auto-annotate OSBYTE/OSWORD calls, so
 # we only add comments where the auto-annotations don't reach.
+
+# ============================================================
+# Save FSCV arguments ($8508)
+# ============================================================
+comment(0x8508, """\
+Save FSCV/vector arguments
+Stores A, X, Y into the filing system workspace. Called at the
+start of every FS vector handler (FILEV, ARGSV, BGETV, BPUTV,
+GBPBV, FINDV, FSCV). NFS repurposes CFS/RFS workspace locations:
+  $BD (fs_last_byte_flag) = A (function code / command)
+  $BB (fs_options)        = X (control block ptr low)
+  $BC (fs_block_offset)   = Y (control block ptr high)
+  $BE/$BF (fs_crc_lo/hi)  = X/Y (duplicate for indexed access)""")
+
+# ============================================================
+# Attribute decoding ($8513 / $851D)
+# ============================================================
+comment(0x8513, """\
+Decode file attributes (6-bit variant)
+Reads attribute byte at offset $0E from the parameter block,
+masks to 6 bits, then falls through to the shared bitmask
+builder. Probably converts fileserver attribute format to
+the MOS OSFILE attribute format.""")
+
+comment(0x851D, """\
+Decode file attributes (5-bit variant)
+Masks A to 5 bits and builds an access bitmask via the
+lookup table at $8530. Each input bit position maps to a
+different output bit via the table, translating between
+fileserver and MOS attribute representations.""")
+
+# ============================================================
+# Skip spaces ($8555)
+# ============================================================
+comment(0x8555, """\
+Skip leading spaces in parameter block
+Advances Y past space characters in (fs_options),Y.
+Returns with the first non-space character in A.
+Sets carry if the character is >= 'A' (alphabetic).""")
+
+# ============================================================
+# Decimal number parser ($8560)
+# ============================================================
+comment(0x8560, """\
+Parse decimal number from (fs_options),Y
+Reads ASCII digits and accumulates in $B2 (fs_load_addr_2).
+Multiplication by 10 uses the identity: n*10 = n*8 + n*2,
+computed as ASL $B2 (×2), then A = $B2*4 via two ASLs,
+then ADC $B2 gives ×10.
+Terminates on: chars >= '@' or '.', negative bytes, or NUL.
+Returns: value in A and $B2, C=0 on normal termination.""")
+
+# ============================================================
+# File handle conversion ($8588-$858A)
+# ============================================================
+comment(0x858A, """\
+Convert file handle to bitmask
+Entry: Y = handle number, C flag controls behaviour:
+  C=0: convert handle to bitmask (subtract $1F base, shift bit)
+  C=1 with Y=0: return Y unchanged (skip conversion)
+  C=1 with Y≠0: convert (probably indicates close all)
+Returns: Y = bitmask (single bit set at handle position),
+  original A and X preserved on stack/restored.
+Three entry points:
+  $858A: direct entry (caller sets C and Y)
+  $8589: CLC first (always convert)
+  $8588: TAY first (handle in A, always convert)""")
+
+# ============================================================
+# Mask to handle ($85A5)
+# ============================================================
+comment(0x85A5, """\
+Convert bitmask to handle number
+Finds the bit position of the single set bit in A by
+counting right shifts until A=0. Adds $1E to convert
+the 1-based position to a handle number (handles start
+at $1F+1 = $20).""")
+
+# ============================================================
+# Print decimal number ($85AF)
+# ============================================================
+comment(0x85AF, """\
+Print byte as 3-digit decimal number
+Prints A as a decimal number using repeated subtraction
+for each digit position (100, 10, 1). Leading zeros are
+printed (no suppression). Used to display station numbers.""")
+
+comment(0x85BC, """\
+Print one decimal digit by repeated subtraction
+Divides Y by A using repeated subtraction. Prints the
+quotient as an ASCII digit ('0'-'9'). Returns with the
+remainder in Y. X starts at $2F ('0'-1) and increments
+once per subtraction, giving the ASCII digit directly.""")
+
+# ============================================================
+# Address comparison ($85CE)
+# ============================================================
+comment(0x85CE, """\
+Compare two 4-byte addresses
+Compares bytes at $B0-$B3 against $B4-$B7 using EOR.
+Returns Z=1 if all 4 bytes match, Z=0 on first mismatch.
+Probably compares load address against exec address or
+similar during OSFILE operations.""")
+
+# ============================================================
+# FS flags ($85DF / $85E4)
+# ============================================================
+comment(0x85DF, """\
+Clear bit(s) in FS flags ($0E07)
+Inverts A (EOR #$FF), then ANDs into fs_work_0e07 to clear
+the specified bits. Falls through to set_fs_flag to store.""")
+
+comment(0x85E4, """\
+Set bit(s) in FS flags ($0E07)
+ORs A into fs_work_0e07. This byte probably tracks which
+file operations are active or which handles are in use.""")
+
+# ============================================================
+# Print file info ($8600)
+# ============================================================
+comment(0x8600, """\
+Print file catalogue line
+Displays a formatted catalogue entry: filename (padded to 12
+chars with spaces), load address (4 hex bytes at offset 5-2),
+exec address (4 hex bytes at offset 9-6), and file length
+(3 hex bytes at offset $0C-$0A), followed by a newline.
+Data is read from (fs_crc_lo) for the filename and from
+(fs_options) for the numeric fields. Returns immediately
+if fs_work_0e06 is zero (no info available).""")
+
+# ============================================================
+# Hex printing ($85EB / $85F6)
+# ============================================================
+comment(0x85EB, """\
+Print byte as two hex digits
+Prints the high nibble first (via 4× LSR), then the low
+nibble. Each nibble is converted to ASCII '0'-'9' or 'A'-'F'
+and output via OSASCI.""")
+
+# ============================================================
+# TX control ($8644-$8650)
+# ============================================================
+comment(0x8644, """\
+Set up TX pointer to control block at $00C0
+Points net_tx_ptr to $00C0 where the TX control block has
+been built by init_tx_ctrl_block. Falls through to tx_poll_ff
+to initiate transmission with full retry.""")
+
+comment(0x864C, """\
+Transmit and poll for result (full retry)
+Sets A=$FF (retry count) and Y=$60 (timeout parameter).
+Falls through to tx_poll_core.""")
+
+comment(0x8650, """\
+Core transmit and poll routine
+Saves parameters, reads the control byte from (net_tx_ptr),
+waits for tx_ctrl_status ready (bit 7 shifts out via ASL),
+copies the TX pointer to nmi_tx_block, and calls the ADLC
+TX setup routine. Then polls the control byte for completion:
+  bit 7 set = still busy (loop)
+  bit 6 set = error (check escape or report)
+  bit 6 clear = success (clean return)
+On error, checks for escape condition and handles retries.""")
 
 # ============================================================
 # print_inline subroutine ($853B)
