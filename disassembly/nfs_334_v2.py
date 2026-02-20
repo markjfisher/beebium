@@ -532,8 +532,8 @@ label(0x824D, "fs_vector_addrs")        # 14-byte table: FILEV-FSCV extended vec
 
 # --- FSCV handler and dispatch ---
 # FSCV ($808C) dispatches via secondary indices 19-26:
-#   FSCV 0 (*OPT)               → index 19 → sub_c89a1
-#   FSCV 1 (EOF)                → index 20 → sub_c881f
+#   FSCV 0 (*OPT)               → index 19 → opt_handler ($89A1)
+#   FSCV 1 (EOF)                → index 20 → eof_handler ($881F)
 #   FSCV 2 (*/ run)             → index 21 → fscv_star_handler (match known FS commands)
 #   FSCV 3 (unrecognised *)     → index 22 → fscv_star_handler (match known FS commands)
 #   FSCV 4 (*RUN)               → index 23 → fscv_star_handler (match known FS commands)
@@ -1099,7 +1099,7 @@ entry(0x903D)   # Function 4 handler: propagate carry into stacked P
 for i in range(9):
     rts_code_ptr(0x902B + i, 0x9034 + i)
 
-# Alternate entry into sub_c9162 (ADLC register setup)
+# Alternate entry into ctrl_block_setup ($9162)
 entry(0x9159)   # ADLC setup: LDX #$0D; LDY #$7C; BIT $833A; BVS c9167
 
 # Dispatch targets found in equb data regions
@@ -2309,15 +2309,20 @@ comment(0x900E, "Retrieve original A (function code) from stack", inline=True)
 comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", inline=True)
 
 # ============================================================
-# Function 4 handler ($903D)
+# NWRCH: net write character ($903D)
 # ============================================================
 comment(0x903D, """\
-Function 4: propagate carry into stacked processor status
-The ROR/ASL pair on the stacked P register replaces the saved
-carry flag with the current carry, so the caller gets the
-updated carry after PLP restores the flags.""")
+Fn 4: net write character (NWRCH)
+Writes a character (passed in Y) to the screen via OSWRITCH.
+Before the write, uses TSX to reach into the stack and zero the
+carry flag in the caller's saved processor status byte — ROR
+followed by ASL on the stacked P byte ($0106,X) shifts carry
+out and back in as zero. This ensures the calling code's PLP
+restores carry=0, signalling "character accepted" without needing
+a separate CLC/PHP sequence. A classic 6502 trick for modifying
+return flags without touching the actual processor status.""")
 
-comment(0x903E, "ROR then ASL the stacked P: replaces saved carry with current carry", inline=True)
+comment(0x903E, "ROR/ASL on stacked P: zeros carry to signal success", inline=True)
 
 # ============================================================
 # Setup TX and send ($904B)
