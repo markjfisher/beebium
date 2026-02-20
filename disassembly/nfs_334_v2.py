@@ -374,6 +374,7 @@ label(0x8E1D, "fs_osword_tbl_hi")      # High bytes of FS OSWORD handler table
 label(0x8E22, "copy_param_block")     # Bidirectional copy: C=1 param→ws, C=0 ws→param
 label(0x8E33, "osword_0f_handler")    # OSWORD $0F: return TX result
 label(0x8E53, "osword_11_handler")    # OSWORD $11: read FS reply data
+label(0x8E6A, "read_args_size")        # READRB: get args buffer size from RX block offset $7F
 label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write FS server station and config
 label(0x8EF0, "osword_10_handler")    # OSWORD $10: allocate RX slot, copy FS command
 
@@ -390,6 +391,7 @@ label(0x904B, "setup_tx_and_send")    # Set up TX ctrl block at ws+$0C and trans
 
 # Remote operation function handlers (dispatched via osword_tbl)
 label(0x9063, "remote_cmd_dispatch")  # Fn 7: dispatch received remote OSBYTE/OSWORD
+label(0x90B5, "match_osbyte_code")   # NCALLP: compare A against OSBYTE function table; Z=1 on match
 label(0x90CD, "remote_cmd_data")      # Fn 7/8: copy received command data to workspace
 label(0x90FC, "remote_boot_handler")  # Remote boot: set up, download, execute at $0100
 label(0x912A, "execute_at_0100")      # Zero $0100-$0102, JMP $0100
@@ -410,6 +412,9 @@ label(0x9217, "flush_output_block")   # Send current output block and reset buff
 
 # Network transmit
 label(0x9248, "econet_tx_retry")      # Transmit with retry until accepted or timeout
+
+# JSR buffer protection
+label(0x92D6, "clear_jsr_protection") # CLRJSR: reset JSR buffer protection bits (4 refs)
 
 # Palette/VDU state save
 label(0x9291, "save_palette_vdu")     # Save all 16 palette entries + VDU state
