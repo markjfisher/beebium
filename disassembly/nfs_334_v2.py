@@ -87,6 +87,9 @@ constant(0xFE30, "romsel")
 # ============================================================
 
 # Econet port numbers (FS protocol version 2)
+# Ports are allocated above $B0 to leave $01-$AA free for user applications.
+# The low 3 bits of the TXCB flag byte encode error reasons and index into
+# the error message table (ERRTAB) at $84AF.
 constant(0x99, "port_command")        # PCMND: command port
 constant(0x90, "port_reply")          # PREPLY: reply port
 constant(0x91, "port_save_ack")       # PSAACK: save acknowledge port
@@ -433,6 +436,7 @@ label(0x903D, "osword_fn4")            # Function 4: propagate carry
 label(0x904B, "setup_tx_and_send")    # Set up TX ctrl block at ws+$0C and transmit
 
 # Remote operation function handlers (dispatched via osword_tbl)
+label(0x903D, "net_write_char")       # NWRCH: Fn 4, write char to screen (zeroes stacked carry)
 label(0x9063, "remote_cmd_dispatch")  # Fn 7: dispatch received remote OSBYTE/OSWORD
 label(0x90B5, "match_osbyte_code")   # NCALLP: compare A against OSBYTE function table; Z=1 on match
 label(0x90CD, "remote_cmd_data")      # Fn 7/8: copy received command data to workspace
@@ -1174,13 +1178,16 @@ Sets carry if the character is >= 'A' (alphabetic).""")
 # Decimal number parser ($8560)
 # ============================================================
 comment(0x8560, """\
-Parse decimal number from (fs_options),Y
+Parse decimal number from (fs_options),Y (DECIN)
 Reads ASCII digits and accumulates in $B2 (fs_load_addr_2).
 Multiplication by 10 uses the identity: n*10 = n*8 + n*2,
 computed as ASL $B2 (×2), then A = $B2*4 via two ASLs,
 then ADC $B2 gives ×10.
-Terminates on: chars >= '@' or '.', negative bytes, or NUL.
-Returns: value in A and $B2, C=0 on normal termination.""")
+Terminates on "." (pathname separator), control chars, or space.
+The delimiter handling was revised to support dot-separated path
+components (e.g. "1.$.PROG") — originally stopped on any char
+>= $40 (any letter), but the revision allows numbers followed
+by dots. Returns: value in A and $B2, C=0 on normal termination.""")
 
 # ============================================================
 # File handle conversion ($8588-$858A)
@@ -1188,12 +1195,18 @@ Returns: value in A and $B2, C=0 on normal termination.""")
 comment(0x858A, """\
 Convert file handle to bitmask (Y2FS)
 Converts fileserver handles to single-bit masks segregated inside
-the BBC. This power-of-two encoding allows the EOF hint byte to
-track up to 8 files simultaneously with one bit per file, and
-enables fast set operations (ORA to add, EOR to toggle, AND to
-test) without loops. Handle 0 passes through unchanged (means
-"no file"). Invalid handles that don't map to a valid bit
-position result in Y=0, converted to Y=$FF as a sentinel.
+the BBC. NFS handles occupy the $20-$27 range (base HAND=$20),
+which cannot collide with local filing system or cassette handles
+— the MOS routes OSFIND/OSBGET/OSBPUT to the correct filing
+system based on the handle value alone. The power-of-two encoding
+allows the EOF hint byte to track up to 8 files simultaneously
+with one bit per file, and enables fast set operations (ORA to
+add, EOR to toggle, AND to test) without loops. Handle 0 passes
+through unchanged (means "no file"). The bit-shift conversion loop
+has a built-in validity check: if the handle is out of range, the
+repeated ASL shifts all bits out, leaving A=0, which is converted
+to Y=$FF as a sentinel — bad handles fail gracefully rather than
+indexing into garbage.
 Entry: Y = handle number, C flag controls behaviour:
   C=0: convert handle to bitmask (subtract $1F base, shift bit)
   C=1 with Y=0: return Y unchanged (skip conversion)
@@ -1207,11 +1220,12 @@ Three entry points:
 # Mask to handle ($85A5)
 # ============================================================
 comment(0x85A5, """\
-Convert bitmask to handle number
-Finds the bit position of the single set bit in A by
-counting right shifts until A=0. Adds $1E to convert
-the 1-based position to a handle number (handles start
-at $1F+1 = $20).""")
+Convert bitmask to handle number (FS2A)
+Inverse of Y2FS. Converts from the power-of-two FS format
+back to a sequential handle number by counting right shifts
+until A=0. Adds $1E to convert the 1-based bit position to
+a handle number (handles start at $1F+1 = $20). Used when
+receiving handle values from the fileserver in reply packets.""")
 
 # ============================================================
 # Print decimal number ($85AF)
@@ -1236,8 +1250,9 @@ comment(0x85CE, """\
 Compare two 4-byte addresses
 Compares bytes at $B0-$B3 against $B4-$B7 using EOR.
 Returns Z=1 if all 4 bytes match, Z=0 on first mismatch.
-Probably compares load address against exec address or
-similar during OSFILE operations.""")
+Used by the OSFILE save handler to compare the current
+transfer address ($C8-$CB, copied to $B0) against the end
+address ($B4-$B7) during multi-block file data transfers.""")
 
 # ============================================================
 # FS flags ($85DF / $85E4)
@@ -1313,11 +1328,14 @@ Two entry points: setup_tx_ptr_c0 always uses the standard TXCB
 # print_inline subroutine ($853B)
 # ============================================================
 comment(0x853B, """\
-Print inline string (high-bit terminated)
+Print inline string (high-bit terminated) (VSTRNG)
 Pops the return address from the stack, prints each byte via OSASCI
 until a byte with bit 7 set is found, then jumps to that address.
 The high-bit byte serves as both the string terminator and the opcode
-of the first instruction after the string.""")
+of the first instruction after the string. N.B. Cannot be used for
+BRK error messages — the stack manipulation means a BRK in the
+inline data would corrupt the stack rather than invoke the error
+handler.""")
 
 comment(0x853B, "Pop return address (low) — points to last byte of JSR", inline=True)
 comment(0x853E, "Pop return address (high)", inline=True)
@@ -1602,36 +1620,53 @@ The template sets up: control=$80, port=$99 (FS command port),
 command data length=$0F, plus padding bytes.""")
 
 comment(0x8334, """\
-TX control block template (12 bytes)
-$00C0: $80 (control flag)    $00C1: $99 (port — fileserver command port)
+TX control block template (TXTAB, 12 bytes)
+$00C0: $80 (control flag)    $00C1: $99 (port — FS command port)
 $00C2: server station        $00C3: server network
-$00C4: $00 (data length)     $00C5: $0F (buffer page)
-$00C6-$00CB: $FF padding""")
+$00C4: $00 (data low)        $00C5: $0F (data high — buffer page)
+$00C6-$00CB: $FF (FILLER)
+The $FF padding in the address fields is a recurring pattern:
+Econet control blocks use 4-byte addresses but NFS only needs
+2-byte addresses, so the upper two bytes are filled with $FF.""")
 
 # ============================================================
 # Prepare FS command ($8350)
 # ============================================================
 comment(0x8350, """\
 Prepare FS command buffer (main entry — 12 references)
-Sets up the FS command buffer at $0F00:
-  $0F02 = URD handle (from $0E02)
-  $0F03-$0F04 = CSD/LIB handles (from $0E03/$0E04)
-  $0F01 = Y parameter
-  $0F00 = command type (set by caller or downstream)
-Also clears V flag. Called before building specific FS
-commands for transmission to the fileserver.""")
+Builds the 5-byte FS protocol header at $0F00:
+  $0F00 HDRREP = reply port (set downstream, typically $90/PREPLY)
+  $0F01 HDRFN  = Y parameter (function code: FCEXAM=$03, FCFIND=$06, etc.)
+  $0F02 HDRURD = URD handle (from $0E02)
+  $0F03 HDRCSD = CSD handle (from $0E03)
+  $0F04 HDRLIB = LIB handle (from $0E04)
+Command-specific data follows at $0F05 (TXBUF). Also clears V flag.
+Called before building specific FS commands for transmission.""")
 
 # ============================================================
 # Build and send FS command ($836A)
 # ============================================================
 comment(0x836A, """\
-Build and send FS command
-Sets command type to $90 at $0F00, initialises the TX control
-block, adjusts the buffer length, and sends the command to the
-fileserver. If carry is set on entry, takes an alternate path
-through econet_tx_retry for direct transmission. Otherwise
-first sets up the TX pointer via sub_c8644, then falls through
-to send_fs_reply_cmd for reply handling.""")
+Build and send FS command (DOFSOP)
+Entry: X = buffer extent (number of command-specific data bytes),
+Y = function code, A = timeout period for FS reply.
+Sets reply port to $90 (PREPLY) at $0F00, initialises the TX
+control block, then adjusts TXCB's high pointer (HPTR) to X+5
+— the 5-byte FS header (reply port, function code, URD, CSD,
+LIB) plus the command data — so only meaningful bytes are
+transmitted, conserving Econet bandwidth. If carry is set on
+entry (DOFSBX byte-stream path), takes the alternate path
+through econet_tx_retry for direct BSXMIT transmission.
+Otherwise sets up the TX pointer via setup_tx_ptr_c0 and falls
+through to send_fs_reply_cmd for reply handling. The carry flag
+is the sole discriminator between byte-stream and standard FS
+protocol paths — set by SEC at the BPUTV/BGETV entry points.
+On return from WAITFS/BSXMIT, Y=0; INY advances past the
+command code to read the return code. Error $D6 ("not found")
+is detected via ADC #($100-$D6) with C=0 — if the return code
+was exactly $D6, the result wraps to zero (Z=1). This is a
+branchless comparison returning C=1, A=0 as a soft error that
+callers can handle, vs hard errors which go through FSERR.""")
 
 # ============================================================
 # FS error handler ($8402)
@@ -1690,33 +1725,39 @@ checks for escape conditions between blocks.""")
 # Check escape ($847A)
 # ============================================================
 comment(0x847A, """\
-Check and handle escape condition
-The escape flag ($FF bit 7) is masked with ESCAP ($D0) to enable
-or disable escape detection: when ESCAP=$FF, the AND passes through
-the escape flag; when ESCAP=$00, escape is suppressed. ESCAP is
-set non-zero during data port operations (LOADOP stores the data
-port number $90, serving double duty as both the port number and
-the escape-enable flag). ESCAP is disabled via LSR during critical
-FS operations, which shifts out bit 7 so the AND always produces a
-positive result. If escape is detected, acknowledges via OSBYTE $7E
-and initiates cleanup — notifies the fileserver, checks SPOOL/EXEC
-handles (closing "SP." or "E." via OSCLI if affected), and returns
-with the appropriate error indication.""")
+Check and handle escape condition (ESC)
+Two-level escape gating: the MOS escape flag ($FF bit 7) is ANDed
+with the software enable flag ESCAP. Both must have bit 7 set for
+escape to fire. ESCAP is set non-zero during data port operations
+(LOADOP stores the data port $90, serving double duty as both the
+port number and the escape-enable flag). ESCAP is disabled via LSR
+in the ENTER routine, which clears bit 7 — PHP/PLP around the LSR
+preserves the carry flag since ENTER is called from contexts where
+carry has semantic meaning (e.g., PUTBYT vs BGET distinction).
+This architecture allows escape between retransmission attempts
+but prevents interruption during critical FS transactions. If
+escape fires: acknowledges via OSBYTE $7E, then checks whether
+the failing handle is the current SPOOL or EXEC handle (OSBYTE
+$C6/$C7); if so, issues "*SP." or "*E." via OSCLI to gracefully
+close the channel before raising the error — preventing the system
+from continuing to spool output to a broken file handle.""")
 
 # ============================================================
 # Error message table ($84AF)
 # ============================================================
 comment(0x84AF, """\
-Econet error message table (8 entries)
+Econet error message table (ERRTAB, 8 entries)
 Each entry: error number byte followed by NUL-terminated string.
   $A0: "Line Jammed"     $A1: "Net Error"
   $A2: "Not listening"   $A3: "No Clock"
   $A4: "Bad Txcb"        $11: "Escape"
   $CB: "Bad Option"      $A5: "No reply"
-The NLISTN routine extracts the flag byte from the TXCB to
-determine the specific error type and indexes into this table.
-These routines convert Econet-level transmission failures into
-standard MOS BRK errors using the BRK convention.
+Indexed by the low 3 bits of the TXCB flag byte (AND #$07),
+which encode the specific Econet failure reason. The NREPLY
+and NLISTN routines build a MOS BRK error block at $100 on the
+stack page: NREPLY fires when the fileserver does not respond
+within the timeout period; NLISTN fires when the destination
+station actively refused the connection.
 Indexed via the error dispatch at c8424/c842c.""")
 
 # ============================================================
@@ -1892,6 +1933,21 @@ matching the fileserver protocol. After a successful open, the
 new handle's bit is OR'd into the EOF hint byte (marks it as
 "might be at EOF, query the server"), and into the sequence
 number tracking byte for the byte-stream protocol.""")
+
+# ============================================================
+# CLOSE handler ($8985)
+# ============================================================
+comment(0x8985, """\
+Close file handle(s) (CLOSE)
+  Y=0: close all files — first calls OSBYTE $77 (close SPOOL and
+       EXEC files) to coordinate with the MOS before sending the
+       close-all command to the fileserver. This ensures locally-
+       managed file handles are released before the server-side
+       handles are invalidated, preventing the MOS from writing to
+       a closed spool file.
+  Y>0: close single handle — sends FS close command and clears
+       the handle's bit in both the EOF hint byte and the sequence
+       number tracking byte.""")
 
 # ============================================================
 # GBPBV handler ($89EA)
@@ -2400,7 +2456,10 @@ ensures that only the station that initiated the remote session
 can send commands — characters from other stations are rejected.
 Full init sequence: 1) disable keyboard, 2) set workspace ptr,
 3) set status busy, 4) set R/W/byte/word masks, 5) set up CB,
-6) set MODE 7, 7) set auto repeat rates, 8) enter language.
+6) set MODE 7 (the only mode guaranteed for terminal emulation),
+7) set auto repeat rates, 8) enter current language. This is
+essentially a "thin terminal" setup — the local machine becomes
+a remote display/keyboard for the controlling station.
 Bit 0 of the status byte disallows further remote takeover
 attempts (preventing re-entrant remote control), while bit 3
 marks the machine as currently remoted.""")
@@ -2734,10 +2793,10 @@ the source for the initial copy to RAM.""")
 # ============================================================
 # OSWORD $12 handler detail
 # ============================================================
-# The label says "read/write Econet state" but more specifically
-# this appears to handle reading and writing the fileserver
-# station number ($0E00/$0E01) and possibly other FS configuration.
-# It uses the bidirectional copy at $8E22 to transfer data between
+# OSWORD $12 (RS) dispatches on sub-function codes 0-9:
+# read/set FS station, printer station, protection masks,
+# context handles (URD/CSD/LIB), local station, JSR buffer size.
+# Uses the bidirectional copy at $8E22 to transfer data between
 # the OSWORD parameter block and the FS workspace.
 
 # ============================================================
