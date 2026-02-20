@@ -1441,13 +1441,17 @@ comment(0x80F0, "Write $8E to Tube control register", inline=True)
 # Select NFS as active filing system ($8184)
 # ============================================================
 comment(0x8184, """\
-Select NFS as active filing system
+Select NFS as active filing system (INIT)
 Reached from service $12 (select FS) with Y=5, or when *NET command
-selects NFS. Notifies the current FS of shutdown via FSCV A=6, then
-sets up filing system vectors (FILEV-FSCV) and the extended vector
-table entries. Issues service $0F (vectors claimed) to notify other
-ROMs. If fs_temp_cd is zero (auto-boot not inhibited), runs the
-auto-boot sequence via c8b92 with the string "I .BOOT".""")
+selects NFS. Notifies the current FS of shutdown via FSCV A=6 —
+this triggers the outgoing FS to save its context back to its
+workspace page, allowing restoration if re-selected later (the
+FSDIE handoff mechanism). Then sets up the standard OS vector
+indirections (FILEV through FSCV) to NFS entry points, claims the
+extended vector table entries, and issues service $0F (vectors
+claimed) to notify other ROMs. If fs_temp_cd is zero (auto-boot
+not inhibited), injects the synthetic command "I .BOOT" through
+the command decoder to trigger auto-boot login.""")
 
 # ============================================================
 # Set up filing system vectors ($8217)
@@ -1709,18 +1713,24 @@ Each entry: error number byte followed by NUL-terminated string.
   $A2: "Not listening"   $A3: "No Clock"
   $A4: "Bad Txcb"        $11: "Escape"
   $CB: "Bad Option"      $A5: "No reply"
+The NLISTN routine extracts the flag byte from the TXCB to
+determine the specific error type and indexes into this table.
+These routines convert Econet-level transmission failures into
+standard MOS BRK errors using the BRK convention.
 Indexed via the error dispatch at c8424/c842c.""")
 
 # ============================================================
 # Resume after remote operation ($8146)
 # ============================================================
 comment(0x8146, """\
-Resume after remote operation
+Resume after remote operation / *ROFF handler (NROFF)
 Checks byte 4 of (net_rx_ptr): if non-zero, the keyboard was
 disabled during a remote operation (peek/poke/boot). Clears
 the flag, re-enables the keyboard via OSBYTE $C9, and sends
-function $0A to notify completion. Also used as the *ROFF
-(log off) handler.""")
+function $0A to notify completion. Also handles *ROFF and the
+triple-plus escape sequence (+++), which resets system masks
+via OSBYTE $CE and returns control to the MOS, providing an
+escape route when a remote session becomes unresponsive.""")
 
 # ============================================================
 # FSCV handler ($808C)
