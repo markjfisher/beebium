@@ -113,73 +113,81 @@ label(0x63, "zp_63")               # Used by NFS
 # The NMI shim code occupies $0D00-$0D1F. Workspace follows at $0D20.
 # From J.G. Harston's PageD (mdfs.net/Misc/Source/Acorn/NFS/PageD)
 
-# NMI shim internal addresses
-constant(0x0D0C, "nmi_jmp_lo")       # JMP target low byte (self-modifying)
-constant(0x0D0D, "nmi_jmp_hi")       # JMP target high byte (self-modifying)
-constant(0x0D0E, "set_nmi_vector")   # Subroutine: set NMI handler (A=low, Y=high)
-constant(0x0D14, "nmi_rti")          # NMI return: restore ROM bank, PLA, BIT INTON, RTI
+# NMI shim internal addresses (label not constant — these are memory refs)
+label(0x0D0C, "nmi_jmp_lo")         # JMP target low byte (self-modifying)
+label(0x0D0D, "nmi_jmp_hi")         # JMP target high byte (self-modifying)
+label(0x0D0E, "set_nmi_vector")     # Subroutine: set NMI handler (A=low, Y=high)
+label(0x0D14, "nmi_rti")            # NMI return: restore ROM bank, PLA, BIT INTON, RTI
+label(0x0D1A, "nmi_shim_1a")        # Referenced by NMI workspace init
 
 # Scout/acknowledge packet buffer ($0D20-$0D25)
-constant(0x0D20, "tx_dst_stn")       # TX: Destination station
-constant(0x0D21, "tx_dst_net")       # TX: Destination network
-constant(0x0D22, "tx_src_stn")       # TX: Source station
-constant(0x0D23, "tx_src_net")       # TX: Source network
-constant(0x0D24, "tx_ctrl_byte")     # TX: Control byte
-constant(0x0D25, "tx_port")          # TX: Port number
-constant(0x0D26, "tx_data_start")    # TX: Start of data area
+label(0x0D20, "tx_dst_stn")         # TX: Destination station
+label(0x0D21, "tx_dst_net")         # TX: Destination network
+label(0x0D22, "tx_src_stn")         # TX: Source station
+label(0x0D23, "tx_src_net")         # TX: Source network
+label(0x0D24, "tx_ctrl_byte")       # TX: Control byte
+label(0x0D25, "tx_port")            # TX: Port number
+label(0x0D26, "tx_data_start")      # TX: Start of data area
 
 # TX control
-constant(0x0D2A, "tx_data_len")      # Length of data in open port block
-constant(0x0D3A, "tx_ctrl_status")   # TX control/status byte (shifted by ASL at $8E33)
+label(0x0D2A, "tx_data_len")        # Length of data in open port block
+label(0x0D3A, "tx_ctrl_status")     # TX control/status byte (shifted by ASL at $8E33)
 
 # Received scout ($0D3D-$0D48)
-constant(0x0D3D, "rx_src_stn")       # RX: Source station
-constant(0x0D3E, "rx_src_net")       # RX: Source network
-constant(0x0D3F, "rx_ctrl")          # RX: Control byte
-constant(0x0D40, "rx_port")          # RX: Port number
-constant(0x0D41, "rx_remote_addr")   # RX: Remote address (4 bytes) / broadcast data (8 bytes)
+# $0D3D is also the base of the scout buffer for indexed access (STA $0D3D,Y)
+label(0x0D3D, "rx_src_stn")         # RX: Source station (scout buffer base)
+label(0x0D3E, "rx_src_net")         # RX: Source network
+label(0x0D3F, "rx_ctrl")            # RX: Control byte
+label(0x0D40, "rx_port")            # RX: Port number
+label(0x0D41, "rx_remote_addr")     # RX: Remote address (4 bytes) / broadcast data (8 bytes)
 
 # TX state
-constant(0x0D4A, "tx_flags")         # TX workspace flags (b0=four-way, b6=completion)
-constant(0x0D4B, "nmi_next_lo")      # Next NMI handler address (low)
-constant(0x0D4C, "nmi_next_hi")      # Next NMI handler address (high)
-constant(0x0D4F, "tx_index")         # Current TX buffer index
-constant(0x0D50, "tx_length")        # TX frame length
+label(0x0D4A, "tx_flags")           # TX workspace flags (b0=four-way, b6=completion)
+label(0x0D4B, "nmi_next_lo")        # Next NMI handler address (low)
+label(0x0D4C, "nmi_next_hi")        # Next NMI handler address (high)
+label(0x0D4F, "tx_index")           # Current TX buffer index
+label(0x0D50, "tx_length")          # TX frame length
+label(0x0D51, "tx_work_51")         # TX workspace
+label(0x0D57, "tx_work_57")         # TX workspace
 
 # RX/status
-constant(0x0D38, "rx_status_flags")  # RX status/mode flags
-constant(0x0D3B, "rx_ctrl_copy")     # Copy of received control byte
-constant(0x0D52, "tx_in_progress")   # Referenced by NMI handlers
-constant(0x0D5C, "scout_status")     # Scout/packet status indicator
+label(0x0D07, "nmi_shim_07")        # NMI shim workspace
+label(0x0D38, "rx_status_flags")    # RX status/mode flags
+label(0x0D3B, "rx_ctrl_copy")       # Copy of received control byte
+label(0x0D52, "tx_in_progress")     # Referenced by NMI handlers
+label(0x0D5C, "scout_status")       # Scout/packet status indicator
+label(0x0D5D, "rx_extra_byte")      # Extra byte read after data frame completion
 
 # Econet state ($0D60-$0D67)
-constant(0x0D62, "osword_busy")      # b7=Transmission in progress
-constant(0x0D63, "protection_mask")  # Protection mask
-constant(0x0D64, "rx_flags")         # b7=Rx at $00C0, b2=Halted
-constant(0x0D65, "saved_prot_mask")  # Saved protection mask
-constant(0x0D66, "econet_init_flag") # b7=Econet using NMI code ($00=no, $80=yes)
-constant(0x0D67, "tube_flag")        # b7=Tube present ($00=no, $FF=yes)
+label(0x0D62, "osword_busy")        # b7=Transmission in progress
+label(0x0D63, "protection_mask")    # Protection mask
+label(0x0D64, "rx_flags")           # b7=Rx at $00C0, b2=Halted
+label(0x0D65, "saved_prot_mask")    # Saved protection mask
+label(0x0D66, "econet_init_flag")   # b7=Econet using NMI code ($00=no, $80=yes)
+label(0x0D67, "tube_flag")          # b7=Tube present ($00=no, $FF=yes)
 
 # ============================================================
 # Page $0E — Filing system workspace
 # ============================================================
-constant(0x0E00, "fs_server_stn")    # File server station number
-constant(0x0E01, "fs_server_net")    # File server network number
-constant(0x0E05, "fs_sequence")      # FS command sequence number
-constant(0x0E09, "fs_csd_handle")    # Current selected directory handle
-constant(0x0E0A, "fs_lib_handle")    # Library directory handle
-constant(0x0E0B, "fs_work_0e0b")    # FS workspace
-constant(0x0E0C, "fs_work_0e0c")    # FS workspace
-constant(0x0E10, "fs_work_0e10")    # FS workspace
-constant(0x0E11, "fs_work_0e11")    # FS workspace
-constant(0x0E16, "fs_work_0e16")    # FS workspace
+label(0x0E00, "fs_server_stn")      # File server station number
+label(0x0E01, "fs_server_net")      # File server network number
+label(0x0E05, "fs_sequence")        # FS command sequence number
+label(0x0E08, "fs_work_0e08")      # FS workspace
+label(0x0E09, "fs_csd_handle")     # Current selected directory handle
+label(0x0E0A, "fs_lib_handle")     # Library directory handle
+label(0x0E0B, "fs_work_0e0b")     # FS workspace
+label(0x0E0C, "fs_work_0e0c")     # FS workspace
+label(0x0E10, "fs_work_0e10")     # FS workspace
+label(0x0E11, "fs_work_0e11")     # FS workspace
+label(0x0E16, "fs_work_0e16")     # FS workspace
 
 # Other workspace used by NFS
-constant(0x0400, "nmi_handler_page4")  # NMI handler code copied from ROM
-constant(0x0414, "nmi_init_entry")     # Entry point into copied NMI init code
-constant(0x0500, "nmi_handler_page5")  # NMI handler code page 5
-constant(0x0600, "nmi_handler_page6")  # NMI handler code page 6
-constant(0x0DEB, "fs_state_deb")       # Filing system state
+label(0x0400, "nmi_handler_page4")   # NMI handler code copied from ROM
+label(0x0406, "nmi_tube_helper")     # Tube data transfer helper (in copied code)
+label(0x0414, "nmi_init_entry")      # Entry point into copied NMI init code
+label(0x0500, "nmi_handler_page5")   # NMI handler code page 5
+label(0x0600, "nmi_handler_page6")   # NMI handler code page 6
+label(0x0DEB, "fs_state_deb")        # Filing system state
 
 # ============================================================
 # Named labels for key routines
@@ -187,6 +195,94 @@ constant(0x0DEB, "fs_state_deb")       # Filing system state
 label(0x80AE, "return_1")
 label(0x8145, "return_2")
 label(0x8275, "return_3")
+
+# ============================================================
+# Named labels for ADLC NMI handler routines
+# ============================================================
+# These replace auto-generated c/sub_ prefixed labels with
+# descriptive names based on analysis of the NFS ROM's ADLC
+# interaction and four-way handshake state machine.
+
+# --- ADLC control ---
+label(0x96DC, "adlc_full_reset")       # Full ADLC reset (CR1=$C1, CR4=$1E, CR3=$00)
+label(0x96EB, "adlc_rx_listen")        # Enter RX listen mode (CR1=$82, CR2=$67)
+
+# --- RX scout reception (inbound) ---
+label(0x96F6, "nmi_rx_scout")          # Default NMI handler: check AP, read dest_stn
+label(0x9715, "nmi_rx_scout_net")      # Read dest_net, validate network
+label(0x9723, "scout_reject")          # Reject: wrong network (RX_DISCONTINUE)
+label(0x9737, "scout_error")           # Error/discard: unexpected SR2 state (5 refs)
+label(0x9744, "scout_discard")         # Clean discard via $9A40
+label(0x974C, "scout_loop_rda")        # Scout data loop: check RDA
+label(0x975C, "scout_loop_second")     # Scout data loop: read second byte of pair
+label(0x9771, "scout_complete")        # Scout completion: disable PSE, check FV+RDA
+label(0x9797, "scout_no_match")        # Scout port/station mismatch (3 refs)
+label(0x979A, "scout_match_port")      # Port non-zero: look for matching RX block
+
+# --- Data frame RX (inbound four-way handshake) ---
+label(0x982D, "data_rx_setup")         # Switch to RX mode, install data RX handler
+label(0x9839, "nmi_data_rx")           # Data frame: check AP, read dest_stn
+label(0x984F, "nmi_data_rx_net")       # Data frame: validate dest_net = 0
+label(0x9865, "nmi_data_rx_skip")      # Data frame: skip ctrl/port (already from scout)
+label(0x988A, "rx_error")              # RX error dispatcher (13 refs -- most referenced!)
+label(0x9894, "rx_error_reset")        # Full reset and discard
+label(0x989A, "nmi_data_rx_bulk")      # Data frame: bulk read into port buffer
+label(0x98CE, "data_rx_complete")      # Data frame completion: disable PSE, check FV
+label(0x98F7, "nmi_data_rx_tube")      # Data frame: Tube co-processor variant
+
+# --- Data frame completion and FV validation ---
+label(0x9933, "data_rx_tube_complete") # Tube data frame completion
+label(0x9930, "data_rx_tube_error")    # Tube data frame error (3 refs)
+
+# --- ACK transmission ---
+label(0x995E, "ack_tx")                # Send scout ACK or final ACK frame
+label(0x9966, "ack_tx_configure")      # Configure CR1/CR2 for TX
+label(0x9974, "ack_tx_write_dest")     # Write dest addr to TX FIFO
+label(0x9992, "nmi_ack_tx_src")        # NMI: write src addr, send TX_LAST_DATA
+label(0x99BB, "post_ack_scout")        # Post-ACK: process received scout data
+
+# --- Discard and idle ---
+label(0x9A34, "discard_reset_listen")  # Reset ADLC and return to idle (5 refs)
+label(0x9A40, "discard_listen")        # Discard frame, return to idle listen
+label(0x9A43, "discard_after_reset")   # Return to idle after reset
+label(0x9A59, "immediate_op")          # Port=0 immediate operation handler
+
+# --- TX path ---
+label(0x9C48, "inactive_poll")         # Poll SR2 for INACTIVE before TX
+label(0x9C84, "tx_active_start")       # Begin TX (CR1=$44)
+label(0x9C88, "tx_line_jammed")        # Timeout error: "Line Jammed"
+label(0x9CA2, "tx_prepare")            # Configure ADLC for TX, install NMI handler
+label(0x9D4C, "nmi_tx_data")           # NMI TX: write 2 bytes per invocation
+label(0x9D72, "tx_error")              # TX error path
+label(0x9D88, "tx_last_data")          # Write TX_LAST_DATA, close frame
+label(0x9D94, "nmi_tx_complete")       # TX done: switch to RX mode
+
+# --- RX reply scout (outbound handshake) ---
+label(0x9DB2, "nmi_reply_scout")       # Check AP, read dest_stn
+label(0x9DC8, "nmi_reply_cont")        # Read dest_net, validate
+label(0x9DDE, "reply_error")           # Reply error: store $41 (8 refs)
+label(0x9DE3, "nmi_reply_validate")    # Read src_stn/net, check FV (Path 2)
+
+# --- TX scout ACK + data phase ---
+label(0x9E2B, "nmi_scout_ack_src")     # Write our station/net to TX FIFO
+label(0x9E3B, "data_tx_begin")         # Begin data frame TX
+label(0x9E50, "nmi_data_tx")           # NMI: send data payload from port buffer
+label(0x9E7D, "data_tx_last")          # TX_LAST_DATA for data frame (5 refs)
+label(0x9E8E, "data_tx_error")         # Data TX error (5 refs)
+label(0x9E9B, "install_saved_handler") # Install handler from $0D4B/$0D4C
+label(0x9EA4, "nmi_data_tx_tube")      # NMI: send data from Tube
+
+# --- Four-way handshake: RX final ACK ---
+label(0x9EDD, "handshake_await_ack")   # Switch to RX, await final ACK
+label(0x9EE9, "nmi_final_ack")         # Check AP, read dest_stn
+label(0x9EFF, "nmi_final_ack_net")     # Read dest_net, validate
+label(0x9F15, "nmi_final_ack_validate")# Read src_stn/net, check FV
+
+# --- Completion and error ---
+label(0x9F39, "tx_result_ok")          # Store result=0 (success)
+label(0x9F3D, "tx_result_fail")        # Store result=$41 (not listening) (9 refs)
+label(0x9F3F, "tx_store_result")       # Store result code, signal completion (6 refs)
+label(0x9F5B, "tx_calc_transfer")      # Calculate transfer size for RX block
 
 # ============================================================
 # File header / overview comment (placed at $8000, first in code)
