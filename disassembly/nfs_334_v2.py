@@ -647,18 +647,13 @@ label(0x851D, "decode_attribs_5bit")    # Mask A to 5 bits, build access bitmask
 label(0x8530, "access_bit_table")       # Lookup table for attribute bit mapping (11 bytes)
 label(0x8555, "skip_spaces")            # Skip leading spaces in (fs_options),Y; sets C if >= 'A'
 
-# --- Decimal number parser ($8560-$8587, undecoded code region) ---
-# Reads ASCII digits from (fs_options),Y and accumulates in $B2.
-# Terminates on chars >= '@', '.', or negative.
-# Returns with C=0 on normal exit, value in A and $B2.
-label(0x8560, "parse_decimal")          # TAX; LDA #0; parse digits from (fs_options),Y
-entry(0x8560)
+# --- Decimal number parser ($8560-$8587) ---
+# parse_decimal label created by subroutine() call below.
 
 # --- File handle ↔ bitmask conversion ---
 label(0x8588, "handle_to_mask_a")       # TAY; CLC; fall into handle_to_mask
 label(0x8589, "handle_to_mask_clc")     # CLC; fall into handle_to_mask (always convert)
-label(0x858A, "handle_to_mask")         # Convert handle in Y to bitmask; C=0: convert, C=1 & Y=0: skip
-label(0x85A5, "mask_to_handle")         # Convert single-bit mask in A to handle number (+$1E)
+# handle_to_mask and mask_to_handle labels created by subroutine() calls below.
 
 # --- Number and hex printing ---
 label(0x85AF, "print_decimal")          # Print byte in A as 3-digit decimal (100/10/1)
@@ -667,7 +662,7 @@ label(0x85EB, "print_hex")              # Print byte in A as two hex digits
 label(0x85F6, "print_hex_nibble")       # Print low nibble of A as hex digit
 
 # --- Address comparison ---
-label(0x85CE, "compare_addresses")      # Compare 4-byte addresses at $B0 vs $B4; Z=1 if equal
+# compare_addresses label created by subroutine() call below.
 
 # --- FSCV 7: read FS handles ---
 label(0x85DA, "fscv_read_handles")      # Return X=$20 (base handle), Y=$27 (top handle)
@@ -687,7 +682,7 @@ label(0x8640, "print_space")            # Print a space character via OSASCI
 label(0x8644, "setup_tx_ptr_c0")        # Set net_tx_ptr = $00C0 (TX control block address)
 label(0x864C, "tx_poll_ff")             # Transmit with A=$FF, Y=$60 (full retry)
 label(0x864E, "tx_poll_timeout")        # Transmit with Y=$60 (specified timeout)
-label(0x8650, "tx_poll_core")           # Core transmit: send TX block, poll for result
+# tx_poll_core label created by subroutine() call below.
 label(0x8684, "delay_1ms")              # MSDELY: 1ms delay loop (nested DEX/DEY)
 
 # ============================================================
@@ -1171,27 +1166,30 @@ Sets carry if the character is >= 'A' (alphabetic).""")
 # ============================================================
 # Decimal number parser ($8560)
 # ============================================================
-comment(0x8560, """\
-Parse decimal number from (fs_options),Y (DECIN)
+subroutine(0x8560, "parse_decimal",
+    title="Parse decimal number from (fs_options),Y (DECIN)",
+    description="""\
 Reads ASCII digits and accumulates in $B2 (fs_load_addr_2).
 Multiplication by 10 uses the identity: n*10 = n*8 + n*2,
-computed as ASL $B2 (×2), then A = $B2*4 via two ASLs,
-then ADC $B2 gives ×10.
+computed as ASL $B2 (x2), then A = $B2*4 via two ASLs,
+then ADC $B2 gives x10.
 Terminates on "." (pathname separator), control chars, or space.
 The delimiter handling was revised to support dot-separated path
-components (e.g. "1.$.PROG") — originally stopped on any char
+components (e.g. "1.$.PROG") -- originally stopped on any char
 >= $40 (any letter), but the revision allows numbers followed
-by dots. Returns: value in A and $B2, C=0 on normal termination.""")
+by dots.""",
+    on_entry={"y": "offset into (fs_options) buffer"})
 
 # ============================================================
 # File handle conversion ($8588-$858A)
 # ============================================================
-comment(0x858A, """\
-Convert file handle to bitmask (Y2FS)
+subroutine(0x858A, "handle_to_mask",
+    title="Convert file handle to bitmask (Y2FS)",
+    description="""\
 Converts fileserver handles to single-bit masks segregated inside
 the BBC. NFS handles occupy the $20-$27 range (base HAND=$20),
 which cannot collide with local filing system or cassette handles
-— the MOS routes OSFIND/OSBGET/OSBPUT to the correct filing
+-- the MOS routes OSFIND/OSBGET/OSBPUT to the correct filing
 system based on the handle value alone. The power-of-two encoding
 allows the EOF hint byte to track up to 8 files simultaneously
 with one bit per file, and enables fast set operations (ORA to
@@ -1199,27 +1197,26 @@ add, EOR to toggle, AND to test) without loops. Handle 0 passes
 through unchanged (means "no file"). The bit-shift conversion loop
 has a built-in validity check: if the handle is out of range, the
 repeated ASL shifts all bits out, leaving A=0, which is converted
-to Y=$FF as a sentinel — bad handles fail gracefully rather than
+to Y=$FF as a sentinel -- bad handles fail gracefully rather than
 indexing into garbage.
-Entry: Y = handle number, C flag controls behaviour:
-  C=0: convert handle to bitmask (subtract $1F base, shift bit)
-  C=1 with Y=0: return Y unchanged (skip conversion)
-  C=1 with Y≠0: convert (used by FINDOP for close-by-handle)
-Three entry points:
-  $858A: direct entry (caller sets C and Y)
-  $8589: CLC first (always convert)
-  $8588: TAY first (handle in A, always convert)""")
+Three entry points: $858A (direct), $8589 (CLC first), $8588 (TAY first).""",
+    on_entry={"y": "handle number",
+              "c": "0: convert, 1 with Y=0: skip, 1 with Y!=0: convert"},
+)
 
 # ============================================================
 # Mask to handle ($85A5)
 # ============================================================
-comment(0x85A5, """\
-Convert bitmask to handle number (FS2A)
+subroutine(0x85A5, "mask_to_handle",
+    title="Convert bitmask to handle number (FS2A)",
+    description="""\
 Inverse of Y2FS. Converts from the power-of-two FS format
 back to a sequential handle number by counting right shifts
 until A=0. Adds $1E to convert the 1-based bit position to
 a handle number (handles start at $1F+1 = $20). Used when
-receiving handle values from the fileserver in reply packets.""")
+receiving handle values from the fileserver in reply packets.""",
+    on_entry={"a": "single-bit bitmask"},
+)
 
 # ============================================================
 # Print decimal number ($85AF)
@@ -1240,13 +1237,14 @@ once per subtraction, giving the ASCII digit directly.""")
 # ============================================================
 # Address comparison ($85CE)
 # ============================================================
-comment(0x85CE, """\
-Compare two 4-byte addresses
+subroutine(0x85CE, "compare_addresses",
+    title="Compare two 4-byte addresses",
+    description="""\
 Compares bytes at $B0-$B3 against $B4-$B7 using EOR.
-Returns Z=1 if all 4 bytes match, Z=0 on first mismatch.
 Used by the OSFILE save handler to compare the current
 transfer address ($C8-$CB, copied to $B0) against the end
-address ($B4-$B7) during multi-block file data transfers.""")
+address ($B4-$B7) during multi-block file data transfers.""",
+)
 
 # ============================================================
 # FS flags ($85DF / $85E4)
@@ -1303,31 +1301,36 @@ Transmit and poll for result (full retry)
 Sets A=$FF (retry count) and Y=$60 (timeout parameter).
 Falls through to tx_poll_core.""")
 
-comment(0x8650, """\
-Core transmit and poll routine (XMIT)
-Saves parameters, then claims the TX semaphore (tx_ctrl_status)
-via ASL — a busy-wait spinlock where carry=0 means the semaphore
-is held by another operation. Only after claiming the semaphore
-is the TX pointer copied to nmi_tx_block, ensuring the low-level
-transmit code sees a consistent pointer. Then calls the ADLC TX
-setup routine and polls the control byte for completion:
+subroutine(0x8650, "tx_poll_core",
+    title="Core transmit and poll routine (XMIT)",
+    description="""\
+Claims the TX semaphore (tx_ctrl_status) via ASL -- a busy-wait
+spinlock where carry=0 means the semaphore is held by another
+operation. Only after claiming the semaphore is the TX pointer
+copied to nmi_tx_block, ensuring the low-level transmit code
+sees a consistent pointer. Then calls the ADLC TX setup routine
+and polls the control byte for completion:
   bit 7 set = still busy (loop)
   bit 6 set = error (check escape or report)
   bit 6 clear = success (clean return)
 On error, checks for escape condition and handles retries.
-Two entry points: setup_tx_ptr_c0 always uses the standard TXCB
-(for fileserver traffic); tx_poll_core is general-purpose.""")
+Two entry points: setup_tx_ptr_c0 ($8644) always uses the
+standard TXCB; tx_poll_core ($8650) is general-purpose.""",
+    on_entry={"a": "retry count ($FF = full retry)",
+              "y": "timeout parameter ($60 = standard)"})
 
 # ============================================================
 # print_inline subroutine ($853B)
 # ============================================================
-comment(0x853B, """\
-Print inline string (high-bit terminated) (VSTRNG)
+# Label and code-tracing hook created by hook_subroutine() above.
+subroutine(0x853B, hook=None,
+    title="Print inline string, high-bit terminated (VSTRNG)",
+    description="""\
 Pops the return address from the stack, prints each byte via OSASCI
 until a byte with bit 7 set is found, then jumps to that address.
 The high-bit byte serves as both the string terminator and the opcode
 of the first instruction after the string. N.B. Cannot be used for
-BRK error messages — the stack manipulation means a BRK in the
+BRK error messages -- the stack manipulation means a BRK in the
 inline data would corrupt the stack rather than invoke the error
 handler.""")
 
@@ -1705,7 +1708,7 @@ byte-level operations.""",
     on_entry={"c": "0 for BPUT (write byte), 1 for BGET (read byte)",
               "a": "byte to write (BPUT only)",
               "y": "file handle"},
-    on_exit={"a": "byte read (BGET only)"})
+)
 
 # ============================================================
 # Send command to fileserver ($844A)
@@ -1931,7 +1934,7 @@ The handle in Y is converted via handle_to_mask_clc. For writes
 to save_args_handle, which records the handle for later use.""",
     on_entry={"a": "function code (0=query, 1=write ptr, >=3=ensure)",
               "y": "file handle (0=FS-level query, >0=per-file)"},
-    on_exit={"a": "filing system number (10) when A=0, Y=0"})
+)
 
 # ============================================================
 # FINDV handler ($8949)
@@ -1951,7 +1954,7 @@ number tracking byte for the byte-stream protocol.""",
     on_entry={"a": "operation (0=close, $40=read, $80=write, $C0=R/W)",
               "x": "filename pointer low (open)",
               "y": "file handle (close) or filename pointer high (open)"},
-    on_exit={"a": "file handle (open) or preserved (close)"})
+)
 
 # ============================================================
 # CLOSE handler ($8985)
@@ -1984,8 +1987,7 @@ uses length-prefixed strings (<name length><object name>) rather
 than the CR-terminated strings used elsewhere in the FS.""",
     on_entry={"a": "call number (1-8)",
               "x": "parameter block address low byte",
-              "y": "parameter block address high byte"},
-    on_exit={"c": "set if transfer incomplete"})
+              "y": "parameter block address high byte"})
 
 # ============================================================
 # OSGBPB info handler ($8AAD)
