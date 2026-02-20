@@ -83,6 +83,39 @@ constant(0xFE30, "romsel")
 #   CR2=$A7: TX in handshake (RTS|CLR_TX_ST|FC_TDRA|2_1_BYTE|PSE)
 
 # ============================================================
+# Protocol constants from DNFS 3.60 reference (NFS00)
+# ============================================================
+
+# Econet port numbers (FS protocol version 2)
+constant(0x99, "port_command")        # PCMND: command port
+constant(0x90, "port_reply")          # PREPLY: reply port
+constant(0x91, "port_save_ack")       # PSAACK: save acknowledge port
+constant(0x92, "port_load_data")      # PLDATA: load data port
+constant(0x93, "port_remote")         # PREMOT: remote operation port
+constant(0xD1, "port_printer")        # PBLOCK: printer block port
+
+# Econet error codes
+constant(0xA0, "err_line_jammed")     # LINJAM
+constant(0xA1, "err_net_error")       # NETER
+constant(0xA2, "err_not_listening")   # NOLISE
+constant(0xA3, "err_no_clock")        # NOCLK
+constant(0xA4, "err_tx_cb_error")     # TXCBER: TX control block error
+constant(0xA5, "err_no_reply")        # NOREPE: no reply from server
+constant(0xA8, "err_fs_cutoff")       # ERRCUT: FS errors >= this are FS-specific
+
+# Protocol flags
+constant(0x80, "tx_flag")             # TXFLAG: OR with flag byte before transmit
+constant(0x7F, "rx_ready")            # RXRDY: flag byte value for reception ready
+
+# FS handle base and retry count
+constant(0x20, "handle_base")         # HAND: base value for file handles ($20-$27)
+
+# Control block template markers
+constant(0xFE, "cb_stop")             # CBSTOP: stop copying in ctrl_block_setup
+constant(0xFD, "cb_skip")             # CBSKIP: skip this byte (leave unchanged)
+constant(0xFC, "cb_fill")             # CBFILL: substitute page byte of pointer
+
+# ============================================================
 # Inline string subroutine hook
 # ============================================================
 # sub_c853b prints an inline string following the JSR, terminated by a
@@ -598,6 +631,10 @@ label(0x0F00, "fs_cmd_type")            # HDRREP: reply header / command type
 label(0x0F01, "fs_cmd_y_param")         # HDRFN: function code
 label(0x0F02, "fs_cmd_urd")             # HDRURD: URD handle slot
 label(0x0F03, "fs_cmd_csd")             # HDRCSD: CSD handle / RX control code
+label(0x0F04, "fs_cmd_lib")             # HDRLIB/RXRC: LIB slot / RX return code
+label(0x0F05, "fs_cmd_data")            # TXBUF/RXBUF: start of TX/RX data area
+label(0x0FDC, "fs_putb_buf")            # PUTB: single-byte random access buffer (4 bytes)
+label(0x0FDD, "fs_getb_buf")            # PUTB2/GETB2: shared GET/PUT byte workspace
 
 # ============================================================
 # Filing system protocol client ($8500-$86FF)
