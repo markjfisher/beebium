@@ -584,9 +584,8 @@ label(0x831C, "init_tx_ctrl_block")     # Init TX control block from template at
 label(0x8334, "tx_ctrl_template")       # 12-byte TX control block template
 label(0x8340, "prepare_cmd_with_flag")  # Prepare FS command with '*' flag and carry set
 label(0x8346, "prepare_cmd_clv")        # Prepare FS command with V cleared
-label(0x8350, "prepare_fs_cmd")         # Prepare FS command buffer (12 refs, main entry)
+# prepare_fs_cmd and build_send_fs_cmd labels created by subroutine() calls below.
 label(0x8351, "prepare_fs_cmd_v")       # Prepare FS command, V flag preserved
-label(0x836A, "build_send_fs_cmd")      # Build FS command and send to fileserver
 label(0x8380, "send_fs_reply_cmd")      # Send FS command with reply processing
 
 # --- Byte I/O and escape ---
@@ -1627,11 +1626,12 @@ Econet control blocks use 4-byte addresses but NFS only needs
 # ============================================================
 # Prepare FS command ($8350)
 # ============================================================
-comment(0x8350, """\
-Prepare FS command buffer (main entry — 12 references)
+subroutine(0x8350, "prepare_fs_cmd",
+    title="Prepare FS command buffer (12 references)",
+    description="""\
 Builds the 5-byte FS protocol header at $0F00:
   $0F00 HDRREP = reply port (set downstream, typically $90/PREPLY)
-  $0F01 HDRFN  = Y parameter (function code: FCEXAM=$03, FCFIND=$06, etc.)
+  $0F01 HDRFN  = Y parameter (function code)
   $0F02 HDRURD = URD handle (from $0E02)
   $0F03 HDRCSD = CSD handle (from $0E03)
   $0F04 HDRLIB = LIB handle (from $0E04)
@@ -1641,27 +1641,30 @@ Called before building specific FS commands for transmission.""")
 # ============================================================
 # Build and send FS command ($836A)
 # ============================================================
-comment(0x836A, """\
-Build and send FS command (DOFSOP)
-Entry: X = buffer extent (number of command-specific data bytes),
-Y = function code, A = timeout period for FS reply.
+subroutine(0x836A, "build_send_fs_cmd",
+    title="Build and send FS command (DOFSOP)",
+    description="""\
 Sets reply port to $90 (PREPLY) at $0F00, initialises the TX
 control block, then adjusts TXCB's high pointer (HPTR) to X+5
-— the 5-byte FS header (reply port, function code, URD, CSD,
-LIB) plus the command data — so only meaningful bytes are
+-- the 5-byte FS header (reply port, function code, URD, CSD,
+LIB) plus the command data -- so only meaningful bytes are
 transmitted, conserving Econet bandwidth. If carry is set on
 entry (DOFSBX byte-stream path), takes the alternate path
 through econet_tx_retry for direct BSXMIT transmission.
 Otherwise sets up the TX pointer via setup_tx_ptr_c0 and falls
 through to send_fs_reply_cmd for reply handling. The carry flag
 is the sole discriminator between byte-stream and standard FS
-protocol paths — set by SEC at the BPUTV/BGETV entry points.
+protocol paths -- set by SEC at the BPUTV/BGETV entry points.
 On return from WAITFS/BSXMIT, Y=0; INY advances past the
 command code to read the return code. Error $D6 ("not found")
-is detected via ADC #($100-$D6) with C=0 — if the return code
+is detected via ADC #($100-$D6) with C=0 -- if the return code
 was exactly $D6, the result wraps to zero (Z=1). This is a
 branchless comparison returning C=1, A=0 as a soft error that
-callers can handle, vs hard errors which go through FSERR.""")
+callers can handle, vs hard errors which go through FSERR.""",
+    on_entry={"x": "buffer extent (command-specific data bytes)",
+              "y": "function code",
+              "a": "timeout period for FS reply",
+              "c": "0 for standard FS path, 1 for byte-stream (BSXMIT)"})
 
 # ============================================================
 # FS error handler ($8402)
