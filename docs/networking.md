@@ -1248,11 +1248,11 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - Include or document NFS/ANFS ROM acquisition
    - ROM slot configuration for network ROMs
 
-## Outstanding Problems: MC6854 FV/PSE Timing vs NFS ROM
+## Resolved: MC6854 FV/PSE Timing vs NFS ROM
 
-### Context
+### Summary
 
-The integration test `test_econet_fileserver.cpp` connects to a real Acorn Level 3 File Server running in BeebEm on `127.0.0.1:32768`. The test boots a Beebium BBC with NFS 3.34, types `*NET` then `*.`, and expects an NFS error message (e.g. "Who are you?") on the emulated screen. Getting this working requires the MC6854 ADLC emulation to correctly satisfy two different NFS ROM code paths that have conflicting requirements around Frame Valid (FV) timing and PSE filtering.
+The integration test `test_econet_fileserver.cpp` connects to a real Acorn Level 3 File Server running in BeebEm on `127.0.0.1:32768`. The test boots a Beebium BBC with NFS 3.34, types `*NET` then `*.`, and expects "Who are you?" on the emulated screen. This now works correctly with push-time FV, inline refill, and a byte timer reset on FIFO read.
 
 ### Running the Integration Test
 
@@ -1275,9 +1275,9 @@ BEEBIUM_FILESERVER=0.254:127.0.0.1:32768 BEEBIUM_LOCAL_PORT=10101 ./tests/test_e
 
 `BEEBIUM_LOCAL_PORT=10101` is essential — with LEARN off, BeebEm's `FindHost()` matches incoming UDP packets by both IP and port. An ephemeral port won't match the config entry and packets are silently discarded.
 
-### The FV Timing Conflict
+### The Two NFS ROM Code Paths
 
-Two NFS ROM code paths impose contradictory requirements on when FV appears in SR2 relative to RDA:
+Two NFS ROM code paths have different expectations for when FV appears in SR2 relative to RDA:
 
 #### Path 1: Scout Data Reading Loop ($9747-$976E)
 
@@ -1306,16 +1306,14 @@ $976F: BNE $9737       ; AP without RDA → check errors
 $9771: ...             ; Scout completion
 ```
 
-At $975A, the ROM checks whether SR2 is non-zero after reading a byte. If FV has been set (because the last byte of the frame just entered the FIFO), SR2 will be non-zero and the branch to $9771 is taken — the scout completion path. If SR2 is zero, the loop continues reading more bytes.
-
-**Requirement: FV must be visible in SR2 at $9756/$975A after the penultimate byte has been read.** If FV is not yet set, SR2=0 at $975A, the loop continues to $975C and reads the last byte as if it were a middle byte, missing the frame boundary.
+At $975A, the ROM checks whether SR2 is non-zero after reading a byte. FV must be visible here after the penultimate byte read so the branch to $9771 (scout completion) is taken.
 
 #### Path 2: Reply Scout Handler ($9DB2-$9DFA)
 
 When the NFS ROM receives a reply scout during a four-way handshake, a chain of NMI handlers processes it byte by byte:
 
 ```
-$9DB2: LDA SR2         ; AP handler entry (installed by previous step)
+$9DB2: LDA SR2         ; AP handler entry
 $9DB5: AND #$01        ; Check AP
 $9DB7: BEQ $9DCE       ; No AP → error path
 $9DB9: LDA RX_DATA     ; Read byte 0 (dest station)
@@ -1339,91 +1337,37 @@ $9DFA: AND #$02        ; Check FV (b1)
 $9DFC: BEQ error       ; No FV → error
 ```
 
-At $9DE3, the handler checks SR2 bit 7 (RDA). It needs to see RDA=1 to read the remaining two bytes. Only after reading both bytes does it check for FV at $9DFA.
+At $9DE3, the handler needs RDA visible (not masked by FV via PSE) to read the remaining two bytes. FV is only checked at $9DFA after all bytes are read.
 
-**Requirement: RDA must be visible in SR2 at $9DE3 even when FV is already latched.** If FV (a P1 condition) masks RDA (a P4 condition) via PSE, the handler sees RDA=0 at $9DE3 and takes the error path.
+### How the Conflict is Resolved
 
-#### The Conflict
+The apparent conflict was between push-time FV (needed by Path 1) and FV masking RDA via PSE (breaking Path 2). The resolution is that **inline refill** and **byte timer reset** together satisfy both paths without any PSE model changes:
 
-Under PSE, the priority groups are:
-- P1 (highest): FV, ABT, ERR, DCD, OVRN
-- P2: INACTIVE
-- P3: AP
-- P4 (lowest): RDA
+1. **Push-time FV with inline refill** handles Path 1: when the CPU reads the penultimate byte at $9751, inline refill pushes the last byte from the frame buffer, setting FV immediately. At $9756, SR2 is non-zero (FV set at P1), so BNE at $975A branches to $9771.
 
-When FV is active at P1, it masks RDA at P4. This creates a fundamental tension:
+2. **Inline refill chain** handles Path 2: the reply scout handler reads bytes consecutively via NMI re-entry ($9DB2→$9DC8→$9DE3). Each read triggers inline refill of the next byte. Byte 0 read → refills byte 1 (RDA). Byte 1 read → refills byte 2 (RDA). Byte 2 read → refills byte 3/LAST (FV set, but byte 3 is already in the FIFO). At $9DE3, the NMI handler sees RDA because the inline refill from the previous read already pushed byte 2 into the FIFO. FV isn't set until byte 3 is pushed during the byte 2 read, which happens *after* the $9DE3 check.
 
-| Approach | Path 1 (data loop) | Path 2 (reply handler) |
-|----------|-------------------|----------------------|
-| **Push-time FV** (current HEAD) | Works: FV visible at $975A after penultimate byte read | Breaks: FV masks RDA at $9DE3, handler can't read bytes 2-3 |
-| **Delayed FV** (not on disk) | Breaks: FV not visible at $975A, loop misses frame boundary | Works: RDA visible at $9DE3 because FV hasn't appeared yet |
+3. **Byte timer reset on FIFO read** (`byte_timer_ = 0` in `read_rx_fifo()`) prevents the byte timer from firing during the NFS ROM's tight polling loop. Without this reset, the byte timer could push the last byte mid-loop (e.g. between the $9751 read and the $9756 SR2 check), setting FV at an unexpected point and causing the loop to exit to the error handler at $9737 instead of the scout completion path at $9771. Resetting the timer on each read ensures a full byte period (128 half-cycles) must elapse before the next timer-driven push — much longer than the ~40 half-cycle loop iteration.
 
-### Current Implementation (HEAD)
+### Implementation Details
 
-The current `Mc6854.hpp` uses **push-time FV** with a **stateless PSE cascade**:
+The `Mc6854.hpp` implementation uses:
 
-- When the last byte of a frame is pushed into the RX FIFO (by byte timer or inline refill), `fv_deferred_` is set immediately (`rx_push_one_byte()` line 641-643)
-- On the next `update_status()` call, `fv_deferred_` is promoted to `fv_stored_` (line 710-714)
-- `frame_boundary_` blocks further frame buffer pushes until `fv_stored_` takes over
-- PSE cascade is stateless: `apply_pse_filter()` evaluates from P1 to P4 on each call with no floor or memory
-- `CLR_RX_ST` clears all stored latches and resets `pse_level_` to 0
+- **Push-time FV**: `fv_deferred_` set immediately in `rx_push_one_byte()` when the LAST-flagged byte is pushed
+- **Inline refill**: `read_rx_fifo()` pushes one byte from the frame buffer after each CPU read, keeping the FIFO populated
+- **Byte timer reset**: `read_rx_fifo()` resets `byte_timer_ = 0` after each valid read, preventing timer-driven pushes from interleaving with the ROM's fast polling
+- **Stateless PSE cascade**: `apply_pse_filter()` evaluates P1→P4 on each call; FV at P1 masks RDA at P4
 
-This makes Path 1 work (FV is visible immediately after the last byte is pushed) but breaks Path 2 (FV masks RDA before the handler has read the remaining bytes).
+### How BeebEm Differs
 
-### Inline Refill
+For reference, BeebEm uses a different approach that also works:
 
-A related mechanism is the **inline refill** in `read_rx_fifo()` (lines 299-303): after the CPU reads a byte, if the FIFO has room and the frame buffer has more bytes, one byte is immediately pushed from the frame buffer to keep the FIFO populated. This exists because the NFS ROM's NMI handler reads bytes in a tight loop checking SR2 after each read; without inline refill, the byte timer creates artificial gaps where the FIFO appears empty mid-frame, causing the ROM to Discontinue the frame prematurely.
+1. **No inline refill**: FIFO filled exclusively via byte timer (one byte per 128 CPU cycles)
+2. **FV from FIFO output position**: FV set when last byte reaches output slot, not on entry
+3. **PSE floor model**: `sr2pse` counter advances on `CLR_RX_ST`, resets when no SR2 bits active
+4. **sr2pse resets when FIFO empties**: Between timer ticks, FIFO can empty, resetting the cascade
 
-The inline refill interacts with FV timing: if inline refill pushes the last byte after the CPU reads the penultimate byte, FV becomes visible immediately — which is what Path 1 needs, but what Path 2 cannot tolerate.
-
-### How BeebEm Solves This
-
-BeebEm's MC6854 model handles both paths because of several interacting design choices:
-
-1. **No inline refill**: BeebEm fills the FIFO exclusively via its byte timer (one byte per 128 CPU cycles via `TimeBetweenBytes`). There is no inline refill after CPU reads.
-
-2. **FV from FIFO output position**: BeebEm sets FV when the last byte reaches the FIFO *output* position (`rxffc & powers[rxfptr-1]`), not when it first enters any FIFO slot. Since the FIFO has 3 positions and bytes shift through over multiple timer ticks, FV appears several timer periods after the last byte enters the FIFO.
-
-3. **PSE floor model**: BeebEm's `sr2pse` is a floor counter that advances on each `CLR_RX_ST` and resets to 0 when no SR2 bits are active. Checks use `sr2pse <= N` guards to prevent re-selecting a priority level after advancing past it. At P4, RDA suppresses FV (the reverse of the standard priority — BeebEm's "Priority 4: RDA → suppresses FV").
-
-4. **sr2pse resets when FIFO empties**: Between byte timer ticks, the FIFO can empty completely. When no SR2 bits are active, `sr2pse` resets to 0, allowing the full cascade to restart from P1 on the next status evaluation.
-
-The combination means:
-- For Path 1: Because of no inline refill, the FIFO empties between timer ticks, so `sr2pse` resets. When the last byte enters the FIFO output position (alone), FV is set at P1, masking RDA. The ROM sees FV=1/RDA=0 at $975A.
-- For Path 2: Because the reply scout is only 4 bytes and the FIFO holds 3, the bytes are consumed quickly while the byte timer hasn't yet shifted the last byte to the output. `sr2pse` is at a level where RDA is still visible. FV only appears after the handler has read all bytes.
-
-### Possible Approaches
-
-Several strategies could resolve the conflict. None has been proven yet.
-
-#### A. Match BeebEm's Model More Carefully
-
-Adopt BeebEm's byte-timer-only fill, FV-from-FIFO-output, and PSE floor model. A previous attempt to do this broke 7 existing unit tests (11 failed assertions out of 347) because the test suite was written for the push-time FV / stateless PSE model. The test expectations would need to be rewritten to match the new model. This approach was attempted and reverted; the tests need careful rework rather than a wholesale copy.
-
-#### B. Contextual FV Timing
-
-Use push-time FV for multi-byte frames (where the data loop needs it) but delay FV for short frames (4-byte reply scouts where the handler needs RDA first). The challenge is determining the right threshold — the ADLC has no knowledge of Econet protocol semantics; it only sees bytes and frame boundaries.
-
-#### C. PSE Floor with P4 Masking FV
-
-Keep push-time FV but adopt BeebEm's PSE floor where advancing past P1 prevents FV from re-masking RDA. After the ROM's NMI handler at $9DB2 reads AP (P3 condition), `CLR_RX_ST` advances past P1, so subsequent evaluations show RDA even if FV is latched. This requires the floor model and careful handling of the `sr2pse` reset condition.
-
-#### D. Two-Stage FV Promotion
-
-Keep `fv_deferred_` but delay promotion to `fv_stored_` until specific conditions are met (e.g. the FIFO has been fully drained, or a byte timer tick occurs). This would let inline refill push the last byte (setting `fv_deferred_` and `frame_boundary_`) without immediately making FV visible in SR2. The data loop at $975A would need another mechanism to see FV.
-
-### Current Test Status
-
-The unit test file `test_mc6854.cpp` has staged changes from a previous session that were written for a delayed FV model. Since `Mc6854.hpp` is at HEAD (push-time FV), 5 tests fail:
-
-- "PSE: FV at P1 masks RDA after byte timer delay"
-- "PSE: multi-byte data frame — RDA visible, FV on read of last byte"
-- "RX: FV set after closing flag delay"
-- "RX: FV and RDA both set after closing flag delay"
-- "RX: FV re-asserted on read after CLR_RX_ST"
-- "RX: FV blocks further FIFO pushes until cleared"
-
-These need to be reconciled with whichever FV timing model is adopted.
+Beebium's inline refill + byte timer reset approach is functionally equivalent but avoids the need for BeebEm's more complex PSE floor model.
 
 ### FourWayHandshake Port-0 Classification
 

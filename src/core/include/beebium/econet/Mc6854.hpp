@@ -288,6 +288,12 @@ private:
             bool was_last = (rx_fifo_[0] & FIFO_LAST) != 0;
             uint8_t data = rx_fifo_[0] & 0xFF;
             shift_rx_fifo();
+            // Reset the byte timer so the next timer-driven push won't fire
+            // until a full byte period after this read. Without this, the
+            // timer can push the last byte mid-loop in the NFS ROM's fast
+            // polling path ($9747), setting FV which masks RDA via PSE and
+            // causes the ROM to miss remaining scout bytes.
+            byte_timer_ = 0;
             // On real hardware, the HDLC receiver continuously fills the
             // 3-byte FIFO from the serial bitstream. The NFS ROM's NMI handler
             // reads bytes in a polling loop, checking SR2 after each read for
