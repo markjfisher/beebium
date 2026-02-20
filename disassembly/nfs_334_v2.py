@@ -124,20 +124,29 @@ label(0xA9, "rom_svc_num")         # ROM service number (7=osbyte, 8=osword)
 # ============================================================
 # Zero page — Filing system workspace ($B0-$CF)
 # ============================================================
-# CFS/RFS workspace, repurposed by NFS when Econet filing system active.
-# From mdfs.net/Docs/Comp/BBC/AllMem
+# NFS zero-page layout from DNFS 3.60 source (NFS00):
+#   $B0-$B3  WORK    4-byte variable workspace (load/exec/size)
+#   $B4-$B7  (WORK+4) additional workspace (address compare target)
+#   $B8      JWORK   3 bytes for timing (also CRFLAG at $B9, SPOOL1 at $BA)
+#   $BB      TEMPX   register save: X (also used as options pointer low)
+#   $BC      TEMPY   register save: Y (also options pointer high)
+#   $BD      TEMPA   register save: A (also last-byte flag)
+#   $BE-$BF  POINTR  generic 2-byte pointer (filename, workspace)
+#   $C0-$CE  TXCB/RXCB overlapping TX/RX control blocks (15 bytes)
+#   $CF      SPOOL0  spool file handle
+# NB: $CD-$CE noted as "two bytes free" in original source.
 
-label(0xB0, "fs_load_addr")        # Load/start address (4 bytes)
+label(0xB0, "fs_load_addr")        # WORK: load/start address (4 bytes)
 label(0xB1, "fs_load_addr_hi")
 label(0xB2, "fs_load_addr_2")
-label(0xB8, "fs_error_ptr")        # Error pointer
-label(0xBB, "fs_options")          # Current options
-label(0xBC, "fs_block_offset")     # Offset into block
-label(0xBD, "fs_last_byte_flag")   # b7=last byte from block
-label(0xBE, "fs_crc_lo")           # CRC workspace (low)
-label(0xBF, "fs_crc_hi")           # CRC workspace (high)
-label(0xCD, "fs_temp_cd")          # Used as temporary storage by NFS
-label(0xCE, "fs_temp_ce")          # Used as temporary storage by NFS
+label(0xB8, "fs_error_ptr")        # JWORK: error pointer / timing workspace
+label(0xBB, "fs_options")          # TEMPX: options/control block pointer (low)
+label(0xBC, "fs_block_offset")     # TEMPY: block offset / control block pointer (high)
+label(0xBD, "fs_last_byte_flag")   # TEMPA: b7=last byte from block / saved A
+label(0xBE, "fs_crc_lo")           # POINTR: generic pointer (low)
+label(0xBF, "fs_crc_hi")           # POINTR+1: generic pointer (high)
+label(0xCD, "fs_temp_cd")          # Free byte, used as temporary by NFS 3.34
+label(0xCE, "fs_temp_ce")          # Free byte, used as temporary by NFS 3.34
 
 # Zero page — Additional OS locations
 label(0x10, "zp_temp_10")          # Temporary storage (Y save during service calls)
@@ -196,7 +205,8 @@ label(0x0D52, "tx_in_progress")     # Referenced by NMI handlers
 label(0x0D5C, "scout_status")       # Scout/packet status indicator
 label(0x0D5D, "rx_extra_byte")      # Extra byte read after data frame completion
 
-# Econet state ($0D60-$0D67) — reference: NFS00 TXCLR-TBFLAG
+# Econet state ($0D60-$0D67) — reference: NFS00 PBUFFP-TBFLAG
+label(0x0D61, "printer_buf_ptr")    # PBUFFP: printer buffer pointer
 label(0x0D62, "tx_clear_flag")      # TXCLR: b7=Transmission in progress
 label(0x0D63, "prot_status")        # LSTAT: PEEK/POKE protection status bits
 label(0x0D64, "rx_flags")           # LFLAG: flag byte used for T/Rx (b7=Rx at $00C0, b2=Halted)
@@ -575,10 +585,19 @@ label(0x8079, "forward_star_cmd")       # Forward unrecognised * command to file
 label(0x8349, "bye_handler")            # *BYE: close spool/exec files, fall into prepare_fs_cmd
 
 # --- Page $0F workspace (FS command buffer) ---
-label(0x0F00, "fs_cmd_type")            # FS command type byte
-label(0x0F01, "fs_cmd_y_param")         # FS command Y parameter
-label(0x0F02, "fs_cmd_urd")             # FS command URD handle
-label(0x0F03, "fs_cmd_csd")             # FS command CSD/LIB handle pair
+# NFS00 layout: BIGBUF=$0F00, TXBUF/RXBUF=$0F05, RXBUFE=$0FFF
+#   $0F00 HDRREP: reply header / command type
+#   $0F01 HDRFN:  function code
+#   $0F02 HDRURD: URD handle slot
+#   $0F03 HDRCSD/RXCC: CSD slot / RX control code
+#   $0F04 HDRLIB/RXRC: LIB slot / RX return code
+#   $0F05 TXBUF/RXBUF: start of TX/RX data area
+#   $0FDC PUTB/PUTB1: single-byte random access buffer (4 bytes)
+#   $0FDD PUTB2/GETB2: shared GET/PUT byte workspace
+label(0x0F00, "fs_cmd_type")            # HDRREP: reply header / command type
+label(0x0F01, "fs_cmd_y_param")         # HDRFN: function code
+label(0x0F02, "fs_cmd_urd")             # HDRURD: URD handle slot
+label(0x0F03, "fs_cmd_csd")             # HDRCSD: CSD handle / RX control code
 
 # ============================================================
 # Filing system protocol client ($8500-$86FF)
