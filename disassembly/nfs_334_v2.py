@@ -555,25 +555,17 @@ label(0x824D, "fs_vector_addrs")        # 14-byte table: FILEV-FSCV extended vec
 #   *NET2 → index 34 → net2_read_handle_entry ($8DC9)
 #   *NET3 → index 35 → net3_close_handle ($8DDF)
 #   *NET4 → index 36 → net4_resume_remote ($8DF2)
-label(0x808C, "fscv_handler")           # FSCV entry: dispatch function codes 0-7
-
 # --- Filing system vector entry points ---
 # Extended vector table entries set up at init ($82E5):
 #   FILEV → $8694    ARGSV → $88E1    BGETV → $8485
 #   BPUTV → $83A2    GBPBV → $89EA    FINDV → $8949
 #   FSCV  → $808C
-label(0x8694, "filev_handler")          # FILEV entry point (in FS section)
-label(0x88E1, "argsv_handler")          # ARGSV entry point (in FS section)
+# Labels and entry points for FSCV, FILEV, ARGSV, FINDV, GBPBV
+# are created by subroutine() calls below in the comment sections.
 label(0x8485, "bgetv_handler")          # BGETV entry: SEC then JSR handle_bput_bget
 label(0x83A2, "bputv_handler")          # BPUTV entry: CLC then fall into handle_bput_bget
-label(0x89EA, "gbpbv_handler")          # GBPBV entry point (in FS section)
-label(0x8949, "findv_handler")          # FINDV entry point (in FS section)
-entry(0x8694)
-entry(0x88E1)
 entry(0x8485)
 entry(0x83A2)
-entry(0x89EA)
-entry(0x8949)
 
 # --- Helper routines in header/init section ---
 label(0x81CC, "call_fscv_shutdown")     # LDA #6; JMP (FSCV) — notify FS of shutdown
@@ -598,7 +590,7 @@ label(0x836A, "build_send_fs_cmd")      # Build FS command and send to fileserve
 label(0x8380, "send_fs_reply_cmd")      # Send FS command with reply processing
 
 # --- Byte I/O and escape ---
-label(0x83A3, "handle_bput_bget")       # Handle BPUT/BGET: C=0 put, C=1 get
+# handle_bput_bget label created by subroutine() call below.
 label(0x83CB, "store_retry_count")      # RAND1: store retry count to $0FDD, initiate TX
 label(0x8402, "store_fs_error")         # FSERR: save error number to fs_last_error
 label(0x841B, "update_sequence_return") # RAND3: update sequence numbers and pull A/Y/X/return
@@ -1691,22 +1683,26 @@ code in position 0 of the reply buffer.""")
 # ============================================================
 # Handle BPUT/BGET ($83A3)
 # ============================================================
-comment(0x83A3, """\
-Handle BPUT/BGET file byte I/O
-Entry: C=0 for BPUT (write byte), C=1 for BGET (read byte).
+subroutine(0x83A3, "handle_bput_bget",
+    title="Handle BPUT/BGET file byte I/O",
+    description="""\
 BPUTV enters at $83A2 (CLC; fall through) and BGETV enters
 at $8485 (SEC; JSR here). The carry flag is preserved via
 PHP/PLP through the call chain and tested later (BCS) to
 select byte-stream transmission (BSXMIT) vs normal FS
-transmission (FSXMIT) — a control-flow encoding using
+transmission (FSXMIT) -- a control-flow encoding using
 processor flags to avoid an extra flag variable.
 
 BSXMIT uses handle=0 for print stream transactions (which
 sidestep the SEQNOS sequence number manipulation) and non-zero
 handles for file operations. After transmission, the high
-pointer bytes of the CB are reset to $FF — "The BGET/PUT byte
+pointer bytes of the CB are reset to $FF -- "The BGET/PUT byte
 fix" which prevents stale buffer pointers corrupting subsequent
-byte-level operations.""")
+byte-level operations.""",
+    on_entry={"c": "0 for BPUT (write byte), 1 for BGET (read byte)",
+              "a": "byte to write (BPUT only)",
+              "y": "file handle"},
+    on_exit={"a": "byte read (BGET only)"})
 
 # ============================================================
 # Send command to fileserver ($844A)
@@ -1779,14 +1775,18 @@ escape route when a remote session becomes unresponsive.""")
 # ============================================================
 # FSCV handler ($808C)
 # ============================================================
-comment(0x808C, """\
-FSCV dispatch entry
+subroutine(0x808C, "fscv_handler",
+    title="FSCV dispatch entry",
+    description="""\
 Entered via the extended vector table when the MOS calls FSCV.
 Stores A/X/Y via save_fscv_args, compares A (function code) against 8,
 and dispatches codes 0-7 via the shared dispatch table at $8020
 with base offset Y=$12 (table indices 19-26).
 Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
-4=*RUN, 5=*CAT, 6=shutdown, 7=read handles.""")
+4=*RUN, 5=*CAT, 6=shutdown, 7=read handles.""",
+    on_entry={"a": "function code (0-7)",
+              "x": "depends on function",
+              "y": "depends on function"})
 
 comment(0x808C, "Store A/X/Y in FS workspace", inline=True)
 comment(0x808F, "Function code >= 8? Return (unsupported)", inline=True)
@@ -1795,16 +1795,20 @@ comment(0x8095, "Y=$12: base offset for FSCV dispatch (indices 19+)", inline=Tru
 # ============================================================
 # FILEV handler ($8694)
 # ============================================================
-comment(0x8694, """\
-FILEV handler (OSFILE entry point)
+subroutine(0x8694, "filev_handler",
+    title="FILEV handler (OSFILE entry point)",
+    description="""\
 Saves A/X/Y, copies the filename pointer from the parameter block
 to os_text_ptr, then uses GSINIT/GSREAD to parse the filename into
 $0FC5+. Sets fs_crc_lo/hi to point at the parsed filename buffer.
 Dispatches by function code A:
-  A=$FF → load file (send_fs_examine at $86D0)
-  A=$00 → save file (filev_save at $8746)
-  A=$01-$06 → attribute operations (filev_attrib_dispatch at $8844)
-  Other → restore_args_return (unsupported, no-op)""")
+  A=$FF: load file (send_fs_examine at $86D0)
+  A=$00: save file (filev_save at $8746)
+  A=$01-$06: attribute operations (filev_attrib_dispatch at $8844)
+  Other: restore_args_return (unsupported, no-op)""",
+    on_entry={"a": "function code ($FF=load, $00=save, $01-$06=attrs)",
+              "x": "parameter block address low byte",
+              "y": "parameter block address high byte"})
 
 comment(0x86D0, """\
 Send FS examine command
@@ -1911,31 +1915,40 @@ Used to convert between absolute and relative file positions.""")
 # ============================================================
 # ARGSV handler ($88E1)
 # ============================================================
-comment(0x88E1, """\
-ARGSV handler (OSARGS entry point)
+subroutine(0x88E1, "argsv_handler",
+    title="ARGSV handler (OSARGS entry point)",
+    description="""\
   A=0, Y=0: return filing system number (10 = network FS)
   A=0, Y>0: read file pointer via FS command $0A (FCRDSE)
   A=1, Y>0: write file pointer via FS command $14 (FCWRSE)
-  A>=3 (ensure): silently returns — NFS has no local write buffer
+  A>=3 (ensure): silently returns -- NFS has no local write buffer
      to flush, since all data is sent to the fileserver immediately
 The handle in Y is converted via handle_to_mask_clc. For writes
 (A=1), the carry flag from the mask conversion is used to branch
-to save_args_handle, which records the handle for later use.""")
+to save_args_handle, which records the handle for later use.""",
+    on_entry={"a": "function code (0=query, 1=write ptr, >=3=ensure)",
+              "y": "file handle (0=FS-level query, >0=per-file)"},
+    on_exit={"a": "filing system number (10) when A=0, Y=0"})
 
 # ============================================================
 # FINDV handler ($8949)
 # ============================================================
-comment(0x8949, """\
-FINDV handler (OSFIND entry point)
-  A=0: close file — delegates to close_handle ($8985)
-  A>0: open file — modes $40=read, $80=write/update, $C0=read/write
+subroutine(0x8949, "findv_handler",
+    title="FINDV handler (OSFIND entry point)",
+    description="""\
+  A=0: close file -- delegates to close_handle ($8985)
+  A>0: open file -- modes $40=read, $80=write/update, $C0=read/write
 For open: the mode byte is converted to the fileserver's two-flag
 format by flipping bit 7 (EOR #$80) and shifting. This produces
 Flag 1 (read/write direction) and Flag 2 (create/existing),
 matching the fileserver protocol. After a successful open, the
 new handle's bit is OR'd into the EOF hint byte (marks it as
 "might be at EOF, query the server"), and into the sequence
-number tracking byte for the byte-stream protocol.""")
+number tracking byte for the byte-stream protocol.""",
+    on_entry={"a": "operation (0=close, $40=read, $80=write, $C0=R/W)",
+              "x": "filename pointer low (open)",
+              "y": "file handle (close) or filename pointer high (open)"},
+    on_exit={"a": "file handle (open) or preserved (close)"})
 
 # ============================================================
 # CLOSE handler ($8985)
@@ -1955,16 +1968,21 @@ Close file handle(s) (CLOSE)
 # ============================================================
 # GBPBV handler ($89EA)
 # ============================================================
-comment(0x89EA, """\
-GBPBV handler (OSGBPB entry point)
+subroutine(0x89EA, "gbpbv_handler",
+    title="GBPBV handler (OSGBPB entry point)",
+    description="""\
   A=1-4: file read/write operations (handle-based)
   A=5-8: info queries (disc title, current dir, lib, filenames)
 Calls 1-4 are standard file data transfers via the fileserver.
 Calls 5-8 were a late addition to the MOS spec and are the only
-NFS operations requiring Tube data transfer — described in the
+NFS operations requiring Tube data transfer -- described in the
 original source as "untidy but useful in theory." The data format
 uses length-prefixed strings (<name length><object name>) rather
-than the CR-terminated strings used elsewhere in the FS.""")
+than the CR-terminated strings used elsewhere in the FS.""",
+    on_entry={"a": "call number (1-8)",
+              "x": "parameter block address low byte",
+              "y": "parameter block address high byte"},
+    on_exit={"c": "set if transfer incomplete"})
 
 # ============================================================
 # OSGBPB info handler ($8AAD)
