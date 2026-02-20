@@ -1779,7 +1779,7 @@ escape route when a remote session becomes unresponsive.""")
 comment(0x808C, """\
 FSCV dispatch entry
 Entered via the extended vector table when the MOS calls FSCV.
-Stores A/X/Y via sub_c8508, compares A (function code) against 8,
+Stores A/X/Y via save_fscv_args, compares A (function code) against 8,
 and dispatches codes 0-7 via the shared dispatch table at $8020
 with base offset Y=$12 (table indices 19-26).
 Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
@@ -2365,7 +2365,7 @@ down to 0. Values are stored into either (nfs_workspace) or
 (net_rx_ptr) at offset Y, depending on the V flag.
 
 Two entry paths read different slices of this table:
-  sub_c9162:          X=$1A (26) down, Y=$17 (23) down, V=0
+  ctrl_block_setup:   X=$1A (26) down, Y=$17 (23) down, V=0
   ctrl_block_setup_alt: X=$0D (13) down, Y=$7C (124) down, V from BIT $833A
 
 Sentinel values:
