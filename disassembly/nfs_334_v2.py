@@ -391,15 +391,30 @@ label(0x8217, "setup_fs_vectors")       # Copy FS vector addresses, set up ROM p
 label(0x824D, "fs_vector_addrs")        # 14-byte table: FILEV-FSCV extended vector addresses
 
 # --- FSCV handler and dispatch ---
-# FSCV ($808C) dispatches via secondary indices 19-25:
+# FSCV ($808C) dispatches via secondary indices 19-26:
 #   FSCV 0 (*OPT)               → index 19 → sub_c89a1
 #   FSCV 1 (EOF)                → index 20 → sub_c881f
-#   FSCV 2 (*/ run)             → index 21 → c8b92 (forward to fileserver)
-#   FSCV 3 (unrecognised *)     → index 22 → c8b92 (forward to fileserver)
-#   FSCV 4 (*RUN)               → index 23 → c8b92 (forward to fileserver)
-#   FSCV 5 (*CAT)               → index 24 → sub_c8bfd
+#   FSCV 2 (*/ run)             → index 21 → fscv_star_handler (match known FS commands)
+#   FSCV 3 (unrecognised *)     → index 22 → fscv_star_handler (match known FS commands)
+#   FSCV 4 (*RUN)               → index 23 → fscv_star_handler (match known FS commands)
+#   FSCV 5 (*CAT)               → index 24 → cat_handler ($8BFD)
 #   FSCV 6 (shut down)          → index 25 → fscv_shutdown ($82FD)
-#   FSCV 7 (read handles/info)  → index 26 → sub_c85da
+#   FSCV 7 (read handles/info)  → index 26 → fscv_read_handles ($85DA)
+#
+# Extended dispatch table entries (indices 27-36):
+# These appear to be used by FS reply processing and *NET sub-commands.
+#   index 27 → print_dir_name ($8D73)        (print directory path)
+#   index 28 → copy_handles_and_boot ($8D1F) (copy handles + run boot command)
+#   index 29 → copy_handles ($8D20)          (copy handles only)
+#   index 30 → set_csd_handle ($8CFC)        (update CSD handle)
+#   index 31 → notify_and_exec ($8D84)       (send FS notify, execute response)
+#   index 32 → set_lib_handle ($8CF7)        (update library handle)
+#
+# *NET sub-commands (base Y=$20, indices 33-36):
+#   *NET1 → index 33 → net1_read_handle ($8DAF)
+#   *NET2 → index 34 → net2_read_handle_entry ($8DC9)
+#   *NET3 → index 35 → net3_close_handle ($8DDF)
+#   *NET4 → index 36 → net4_resume_remote ($8DF2)
 label(0x808C, "fscv_handler")           # FSCV entry: dispatch function codes 0-7
 
 # --- Filing system vector entry points ---
@@ -454,6 +469,10 @@ label(0x84AB, "sub_3_from_y")           # DEY * 3; RTS
 label(0x84AF, "error_msg_table")        # Econet error message strings (8 entries)
 label(0x8146, "resume_after_remote")    # Resume after remote op: re-enable keyboard, send fn $0A
 label(0x815C, "clear_osbyte_ce_cf")     # Clear OSBYTE variables $CE/$CF (probably RS423 state)
+
+# --- * command forwarding and BYE ---
+label(0x8079, "forward_star_cmd")       # Forward unrecognised * command to fileserver
+label(0x8349, "bye_handler")            # *BYE: close spool/exec files, fall into prepare_fs_cmd
 
 # --- Page $0F workspace (FS command buffer) ---
 label(0x0F00, "fs_cmd_type")            # FS command type byte
@@ -515,6 +534,46 @@ label(0x8644, "setup_tx_ptr_c0")        # Set net_tx_ptr = $00C0 (TX control blo
 label(0x864C, "tx_poll_ff")             # Transmit with A=$FF, Y=$60 (full retry)
 label(0x864E, "tx_poll_timeout")        # Transmit with Y=$60 (specified timeout)
 label(0x8650, "tx_poll_core")           # Core transmit: send TX block, poll for result
+
+# ============================================================
+# *-Command handlers and FSCV dispatch ($8B92-$8DFF)
+# ============================================================
+# FSCV 2/3/4 (unrecognised *) routes through fscv_star_handler
+# which matches against known FS commands before forwarding.
+# The *CAT/*EX handlers display directory listings.
+# *NET1-4 sub-commands manage file handles in local workspace.
+
+# --- FSCV unrecognised * and command matching ---
+label(0x8B92, "fscv_star_handler")     # FSCV 2/3/4: match * command against known FS commands
+label(0x8BD6, "fs_cmd_match_table")    # Command match table: "I.", "I AM", "EX", "BYE", catch-all
+
+# --- *EX and *CAT handlers ---
+label(0x8BF2, "ex_handler")            # *EX: set 80-column format, branch into cat_handler
+label(0x8BFD, "cat_handler")           # *CAT: display directory listing (20-column format)
+
+# --- Boot command strings and option tables ---
+label(0x8CEA, "boot_cmd_strings")      # Boot command strings: overlaps with JMP at $8CE7
+label(0x8CF7, "set_lib_handle")        # Store Y into $0E04 (library handle)
+label(0x8CFC, "set_csd_handle")        # Store Y into $0E03 (CSD handle)
+label(0x8D02, "boot_option_offsets")   # Boot option → OSCLI string offset table (4 entries)
+label(0x8D06, "i_am_handler")          # "I AM" command: parse station.network, forward to FS
+label(0x8D1F, "copy_handles_and_boot") # Copy FS reply handles to workspace + execute boot
+label(0x8D20, "copy_handles")          # Copy FS reply handles to workspace only (C=0 entry)
+label(0x8D3A, "option_name_strings")   # Option name table: "Off", "Load", "Run", "Exec"
+label(0x8D4B, "option_name_offsets")   # Offsets into option_name_strings (4 entries)
+label(0x8D4F, "print_reply_bytes")     # Print Y bytes from FS reply buffer starting at offset X
+label(0x8D5C, "print_spaces")          # Print X space characters
+label(0x8D63, "copy_filename")         # Copy filename from (fs_crc_lo) to $0F05+ (X=0)
+label(0x8D65, "copy_string_to_cmd")    # Copy string from (fs_crc_lo)+Y to $0F05+X until CR
+label(0x8D73, "print_dir_name")        # Print directory name from reply buffer
+label(0x8D84, "notify_and_exec")       # Send FS command $4A, execute response or jump via ($0F09)
+
+# --- *NET sub-command handlers ---
+label(0x8DAF, "net1_read_handle")      # *NET1: read file handle from RX buffer offset $6F
+label(0x8DB7, "calc_handle_offset")    # Calculate handle workspace offset: A → Y (A*12)
+label(0x8DC9, "net2_read_handle_entry")# *NET2: look up handle in workspace
+label(0x8DDF, "net3_close_handle")     # *NET3: mark handle as closed ($3F) in workspace
+label(0x8DF2, "net4_resume_remote")    # *NET4: resume after remote operation
 
 # ============================================================
 # Named labels for ADLC NMI handler routines
@@ -849,6 +908,10 @@ entry(0x8F57)   # LDY #$28; ... (preceded by RTS, standalone entry)
 
 # --- Code found in fourth-pass small equb regions ---
 entry(0x8D5C)   # JSR ... (preceded by RTS, standalone entry)
+
+# --- Dispatch targets from fs_cmd_match_table (PHA/PHA/RTS) ---
+entry(0x8BF2)   # *EX handler (dispatch from command match table)
+entry(0x8D06)   # "I AM" handler (dispatch from command match table)
 entry(0x982D)   # LDA #$82; STA $FEA0; installs NMI handler $9839
 
 # ============================================================
@@ -1397,6 +1460,250 @@ Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
 comment(0x808C, "Store A/X/Y in FS workspace", inline=True)
 comment(0x808F, "Function code >= 8? Return (unsupported)", inline=True)
 comment(0x8095, "Y=$12: base offset for FSCV dispatch (indices 19+)", inline=True)
+
+# ============================================================
+# Forward unrecognised * command to fileserver ($8079)
+# ============================================================
+comment(0x8079, """\
+Forward unrecognised * command to fileserver
+Copies command text from (fs_crc_lo) to $0F05+ via copy_filename,
+prepares an FS command with type $16, and dispatches via the shared
+dispatch table. Called from the "I." and catch-all entries in the
+command match table at $8BD6, and from FSCV 2/3/4 indirectly.
+If CSD handle is zero (not logged in), returns without sending.""")
+
+# ============================================================
+# *BYE handler ($8349)
+# ============================================================
+comment(0x8349, """\
+*BYE handler (logoff)
+Closes any open *SPOOL and *EXEC files via OSBYTE $77, then
+falls into prepare_fs_cmd with Y=$17 (FS command type for BYE).
+Dispatched from the command match table at $8BD6 for "BYE".""")
+
+# ============================================================
+# FSCV unrecognised * handler ($8B92)
+# ============================================================
+comment(0x8B92, """\
+FSCV 2/3/4: unrecognised * command handler
+Matches the command text against a table of known FS commands
+at $8BD6. The table uses case-insensitive comparison with
+abbreviation support (commands can be shortened with '.').
+
+The matching loop compares input characters against table
+entries. On mismatch, it skips to the next entry. On match
+of all table characters, or when '.' abbreviation is found,
+it dispatches via PHA/PHA/RTS to the entry's handler address.
+
+After matching, adjusts fs_crc_lo/fs_crc_hi to point past
+the matched command text.""")
+
+comment(0x8BD6, """\
+FS command match table
+Format: command letters (bit 7 clear), then dispatch address
+as two bytes: high|(bit 7 set), low. The PHA/PHA/RTS trick
+adds 1 to the stored (address-1).
+
+Entries:
+  "I."     → $8079 (forward_star_cmd: send to FS)
+  "I AM"   → $8D06 (i_am_handler: parse station.net, logon)
+  "EX "    → $8BF2 (ex_handler: extended catalogue)
+  "EX"\\r   → $8BF2 (same, exact match at end of line)
+  "BYE"\\r  → $8349 (bye_handler: logoff)
+  <catch-all> → $8079 (forward anything else to FS)""")
+
+# ============================================================
+# *EX and *CAT handlers ($8BF2 / $8BFD)
+# ============================================================
+comment(0x8BF2, """\
+*EX handler (extended catalogue)
+Sets column width $B6=$50 (80 columns, one file per line with
+full details) and $B7=$01, then branches into cat_handler at
+$8C07, bypassing cat_handler's default 20-column setup.""")
+
+comment(0x8BFD, """\
+*CAT handler (directory catalogue)
+Sets column width $B6=$14 (20 columns, four files per 80-column
+line) and $B7=$03. Sends FS command $12 (examine directory) to
+the fileserver, then displays the directory listing:
+  - Station number in parentheses
+  - "Owner" or "Public" access level
+  - Boot option with name (Off/Load/Run/Exec)
+  - Current directory and library paths
+  - Directory entries in columns
+
+Uses prepare_fs_cmd to build commands, and iterates through
+directory pages using $B4/$B5 as start/end counters.""")
+
+# ============================================================
+# Boot command strings ($8CEA)
+# ============================================================
+comment(0x8CEA, """\
+Boot command strings for auto-boot
+The four boot options use OSCLI strings at offsets within page $8C:
+  Option 0 (Off):  offset $F6 → $8CF6 = bare CR (empty command)
+  Option 1 (Load): offset $E7 → $8CE7 = "L.!BOOT" (dual-purpose:
+      the JMP $212E instruction at $8CE7 has opcode $4C='L' and
+      operand bytes $2E='.' $21='!', forming the string "L.!")
+  Option 2 (Run):  offset $E9 → $8CE9 = "!BOOT" (bare filename = *RUN)
+  Option 3 (Exec): offset $EF → $8CEF = "E.!BOOT"
+
+This is a classic BBC ROM space optimisation: the JMP instruction's
+bytes serve double duty as both executable code and ASCII text.""")
+
+# ============================================================
+# Handle workspace management ($8CF7-$8CFF)
+# ============================================================
+comment(0x8CF7, """\
+Set library handle
+Stores Y into $0E04 (library directory handle in FS workspace).
+Falls through to c8cff (JMP c892c) if Y is non-zero.""")
+
+comment(0x8CFC, """\
+Set CSD handle
+Stores Y into $0E03 (current selected directory handle).
+Falls through to c8cff (JMP c892c).""")
+
+# ============================================================
+# Boot option table and "I AM" handler ($8D02-$8D1E)
+# ============================================================
+comment(0x8D02, """\
+Boot option → OSCLI string offset table
+Four bytes indexed by the boot option value (0-3). Each byte
+is the low byte of a pointer into page $8C, where the OSCLI
+command string for that boot option lives. See boot_cmd_strings.""")
+
+comment(0x8D06, """\
+"I AM" command handler
+Dispatched from the command match table when the user types
+"*I AM <station>" or "*I AM <station>.<network>".
+Parses the station number (and optional network number after '.')
+using skip_spaces and parse_decimal. Stores the results in:
+  $0E00 = station number (or fileserver station)
+  $0E01 = network number
+Then forwards the command to the fileserver via forward_star_cmd.""")
+
+# ============================================================
+# Copy handles and boot ($8D1F / $8D20)
+# ============================================================
+comment(0x8D1F, """\
+Copy FS reply handles to workspace and execute boot command
+SEC entry: copies 4 bytes from $0F05-$0F08 (FS reply) to
+$0E02-$0E05 (URD, CSD, LIB handles and boot option), then
+looks up the boot option in boot_option_offsets to get the
+OSCLI command string and executes it via JMP oscli.
+Used after logging on to the fileserver.""")
+
+comment(0x8D20, """\
+Copy FS reply handles to workspace (no boot)
+CLC entry: copies handles only, then jumps to c8cff.
+Called when the FS reply contains updated handle values
+but no boot action is needed.""")
+
+# ============================================================
+# Option name display ($8D3A-$8D4E)
+# ============================================================
+comment(0x8D3A, """\
+Option name strings
+Null-terminated strings for the four boot option names:
+  "Off", "Load", "Run", "Exec"
+Used by cat_handler to display the current boot option setting.""")
+
+comment(0x8D4B, """\
+Option name offsets
+Four-byte table of offsets into option_name_strings:
+  0, 4, 9, $0D — one per boot option value (0-3).""")
+
+# ============================================================
+# Reply buffer display helpers ($8D4F-$8D72)
+# ============================================================
+comment(0x8D4F, """\
+Print reply buffer bytes
+Prints Y characters from the FS reply buffer ($0F05+X) to
+the screen via OSASCI. X = starting offset, Y = count.
+Used by cat_handler to display directory and library names.""")
+
+comment(0x8D5C, """\
+Print spaces
+Prints X space characters via print_space. Used by cat_handler
+to align columns in the directory listing.""")
+
+# ============================================================
+# Filename copy helpers ($8D63-$8D72)
+# ============================================================
+comment(0x8D63, """\
+Copy filename to FS command buffer
+Entry with X=0: copies from (fs_crc_lo),Y to $0F05+X until CR.
+Used to place a filename into the FS command buffer before
+sending to the fileserver. Falls through to copy_string_to_cmd.""")
+
+comment(0x8D65, """\
+Copy string to FS command buffer
+Entry with X and Y specified: copies bytes from (fs_crc_lo),Y
+to $0F05+X, stopping when a CR ($0D) is encountered. The CR
+itself is also copied. Returns with X pointing past the last
+byte written.""")
+
+# ============================================================
+# Print directory name ($8D73)
+# ============================================================
+comment(0x8D73, """\
+Print directory name from reply buffer
+Prints characters from the FS reply buffer ($0F05+X onwards).
+Null bytes ($00) are replaced with CR ($0D) for display.
+Stops when a byte with bit 7 set is encountered (high-bit
+terminator). Used by cat_handler to display Dir. and Lib. paths.""")
+
+# ============================================================
+# Notify and execute ($8D84)
+# ============================================================
+comment(0x8D84, """\
+Send FS notify command and execute response
+Sets up an FS command with function $4A (probably "notify" or
+"boot response") using sub_c86d0. If a Tube co-processor is
+present (tx_in_progress != 0), transfers the response data
+to the Tube via nmi_tube_helper. Otherwise jumps via the
+indirect pointer at ($0F09).""")
+
+# ============================================================
+# *NET sub-command handlers ($8DAF-$8DF5)
+# ============================================================
+comment(0x8DAF, """\
+*NET1: read file handle from received packet
+Reads a file handle byte from offset $6F in the RX buffer
+(net_rx_ptr), stores it in $F0, then falls through to the
+common handle workspace cleanup at c8dda (clear fs_temp_ce).""")
+
+comment(0x8DB7, """\
+Calculate handle workspace offset
+Converts a file handle number (in A) to a byte offset (in Y)
+into the NFS handle workspace. The calculation is A*12:
+  ASL A (A*2), ASL A (A*4), PHA, ASL A (A*8),
+  ADC stack (A*8 + A*4 = A*12).
+Validates that the offset is < $48 (max 6 handles × 12 bytes
+per handle entry = 72 bytes). If invalid (>= $48), returns
+with C set and Y=0, A=0 as an error indicator.""")
+
+comment(0x8DC9, """\
+*NET2: read handle entry from workspace
+Looks up the handle in $F0 via calc_handle_offset. If the
+workspace slot contains $3F ('?', meaning unused/closed),
+returns 0. Otherwise returns the stored handle value.
+Clears fs_temp_ce on exit.""")
+
+comment(0x8DDF, """\
+*NET3: close handle (mark as unused)
+Looks up the handle in $F0 via calc_handle_offset. Writes
+$3F ('?') to mark the handle slot as closed in the NFS
+workspace. Preserves the carry flag state across the write
+using ROL/ROR on rx_status_flags. Clears fs_temp_ce on exit.""")
+
+comment(0x8DF2, """\
+*NET4: resume after remote operation
+Calls resume_after_remote ($8146) to re-enable the keyboard
+and send a completion notification. The BVC always branches
+to c8dda (clear fs_temp_ce) since resume_after_remote
+returns with V clear (from CLV in prepare_cmd_clv).""")
 
 # NMI handler init — ROM code copies to page $04/$05/$06
 # ============================================================
