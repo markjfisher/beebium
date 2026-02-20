@@ -181,8 +181,8 @@ label(0x0D4B, "nmi_next_lo")        # Next NMI handler address (low)
 label(0x0D4C, "nmi_next_hi")        # Next NMI handler address (high)
 label(0x0D4F, "tx_index")           # Current TX buffer index
 label(0x0D50, "tx_length")          # TX frame length
-label(0x0D51, "tx_work_51")         # TX workspace
-label(0x0D57, "tx_work_57")         # TX workspace
+label(0x0D51, "tx_work_51")         # TX workspace (possibly retry count or flags)
+label(0x0D57, "tx_work_57")         # TX workspace (possibly timeout or state)
 
 # RX/status
 label(0x0D07, "nmi_shim_07")        # NMI shim workspace
@@ -194,7 +194,7 @@ label(0x0D5D, "rx_extra_byte")      # Extra byte read after data frame completio
 
 # Econet state ($0D60-$0D67)
 label(0x0D62, "osword_busy")        # b7=Transmission in progress
-label(0x0D63, "protection_mask")    # Protection mask
+label(0x0D63, "protection_mask")    # Protection mask (bit per remote op type: peek/poke/halt/etc.)
 label(0x0D64, "rx_flags")           # b7=Rx at $00C0, b2=Halted
 label(0x0D65, "saved_prot_mask")    # Saved protection mask
 label(0x0D66, "econet_init_flag")   # b7=Econet using NMI code ($00=no, $80=yes)
@@ -206,11 +206,16 @@ label(0x0D67, "tube_flag")          # b7=Tube present ($00=no, $FF=yes)
 label(0x0E00, "fs_server_stn")      # File server station number
 label(0x0E01, "fs_server_net")      # File server network number
 label(0x0E05, "fs_sequence")        # FS command sequence number
+label(0x0E02, "fs_urd_handle")     # Probably user root directory handle (unverified)
+label(0x0E03, "fs_work_0e03")     # FS workspace (possibly part of user context)
+label(0x0E04, "fs_work_0e04")     # FS workspace (possibly part of user context)
+label(0x0E06, "fs_work_0e06")     # FS workspace (possibly protocol state)
+label(0x0E07, "fs_work_0e07")     # FS workspace (possibly protocol state)
 label(0x0E08, "fs_work_0e08")      # FS workspace
 label(0x0E09, "fs_csd_handle")     # Current selected directory handle
 label(0x0E0A, "fs_lib_handle")     # Library directory handle
-label(0x0E0B, "fs_work_0e0b")     # FS workspace
-label(0x0E0C, "fs_work_0e0c")     # FS workspace
+label(0x0E0B, "fs_work_0e0b")     # FS workspace (possibly related to command building)
+label(0x0E0C, "fs_work_0e0c")     # FS workspace (possibly related to command building)
 label(0x0E10, "fs_work_0e10")     # FS workspace
 label(0x0E11, "fs_work_0e11")     # FS workspace
 label(0x0E16, "fs_work_0e16")     # FS workspace
@@ -224,7 +229,7 @@ entry(0x0016)
 label(0x0400, "nmi_handler_page4")   # NMI handler code copied from ROM
 label(0x0403, "nmi_tube_entry_2")    # JMP $06E2 (escape check for Tube)
 label(0x0406, "nmi_tube_helper")     # Tube data transfer helper (in copied code)
-label(0x0414, "nmi_init_entry")      # Entry point into copied NMI init code
+label(0x0414, "nmi_init_entry")      # Called after page copy; sets $14=$80 (need_release_tube?)
 label(0x04E7, "rdch_handler")        # RDCHV target
 label(0x04EF, "tube_restore_xy")     # Restore X,Y from $10/$11, JSR c04F7
 entry(0x0400)
@@ -237,10 +242,27 @@ entry(0x04EF)
 # Relocated code — page 5 (WRCH, *NET command dispatch)
 # $0500-$051B: 14-entry dispatch table of word addresses used by
 # JMP ($0500) at $0054 and indexed command dispatch.
+# Table entries (tentative mapping — service call numbers 0-13):
+#   Entry  Addr   Handler
+#   ─────  ─────  ─────────────────────────────
+#     0    $055B  OSRDCH (read character)
+#     1    $05C5  OSCLI (execute command)
+#     2    $0626  OSBYTE 2-param (X result)
+#     3    $063B  OSBYTE 3-param (X,Y results)
+#     4    $065D  OSWORD variable-length
+#     5    $06A3  OSWORD fixed 5-byte
+#     6    $04EF  restore X/Y, poll Tube
+#     7    $053D  OSFIND close (probably)
+#     8    $058C  OSARGS
+#     9    $0550  OSBGET
+#    10    $0543  OSBPUT
+#    11    $0569  OSFIND open
+#    12    $05D8  OSFILE
+#    13    $0602  OSGBPB
 label(0x0500, "nmi_handler_page5")   # NMI handler code page 5
 label(0x051C, "wrch_handler")        # WRCHV target
 entry(0x051C)
-# Dispatch table targets (all *NET command handlers)
+# Dispatch table targets (Tube service call handlers)
 for addr in [0x055B, 0x05C5, 0x0626, 0x063B, 0x065D, 0x06A3,
              0x04EF, 0x053D, 0x058C, 0x0550, 0x0543, 0x0569,
              0x05D8, 0x0602]:
@@ -278,7 +300,7 @@ label(0x8E1D, "fs_osword_tbl_hi")      # High bytes of FS OSWORD handler table
 label(0x8E22, "copy_param_block")     # Bidirectional copy: C=1 param→ws, C=0 ws→param
 label(0x8E33, "osword_0f_handler")    # OSWORD $0F: return TX result
 label(0x8E53, "osword_11_handler")    # OSWORD $11: read FS reply data
-label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write Econet state
+label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write FS server station and config
 label(0x8EF0, "osword_10_handler")    # OSWORD $10: allocate RX slot, copy FS command
 
 # Econet TX/RX handler and OSWORD dispatch
@@ -318,6 +340,14 @@ label(0x96CD, "install_nmi_shim")    # Copy 32-byte NMI shim from ROM to $0D00
 label(0x06D0, "tube_write_data2")    # Poll Tube status 2, write A to data register 2
 label(0x06D9, "tube_write_data4")    # Poll Tube status 4, write A to data register 4
 label(0x06F7, "tube_write_ctrl1")    # Poll Tube control, write A to data register 1
+
+# Filing system section ($8500-$8DFF) — largely unanalysed.
+# Contains FS command implementations (*CAT, *LOAD, *SAVE, *INFO, etc.),
+# the FS protocol client that builds command packets and interprets
+# replies, and the print_inline subroutine at $853B.
+# The section also handles OSFILE, OSGBPB, OSBPUT, OSBGET, OSARGS,
+# and OSFIND calls when NFS is the active filing system.
+# Detailed analysis of individual routines is still needed.
 
 label(0x80AE, "return_1")
 label(0x8145, "return_2")
@@ -369,9 +399,9 @@ label(0x9992, "nmi_ack_tx_src")        # NMI: write src addr, send TX_LAST_DATA
 label(0x99BB, "post_ack_scout")        # Post-ACK: process received scout data
 
 # --- Discard and idle ---
-label(0x9A34, "discard_reset_listen")  # Reset ADLC and return to idle (5 refs)
-label(0x9A40, "discard_listen")        # Discard frame, return to idle listen
-label(0x9A43, "discard_after_reset")   # Return to idle after reset
+label(0x9A34, "discard_reset_listen")  # Full ADLC reset then return to idle listen (5 refs)
+label(0x9A40, "discard_listen")        # RX_DISCONTINUE then return to idle listen
+label(0x9A43, "discard_after_reset")   # Just adlc_rx_listen + RTI (post-reset entry)
 label(0x9A59, "immediate_op")          # Port=0 immediate operation handler
 
 # --- TX path ---
@@ -410,6 +440,12 @@ label(0x9F39, "tx_result_ok")          # Store result=0 (success)
 label(0x9F3D, "tx_result_fail")        # Store result=$41 (not listening) (9 refs)
 label(0x9F3F, "tx_store_result")       # Store result code, signal completion (6 refs)
 label(0x9F5B, "tx_calc_transfer")      # Calculate transfer size for RX block
+
+# --- NMI shim at end of ROM ---
+label(0x9FCA, "nmi_shim_rom_src")      # Source for 32-byte copy to $0D00
+label(0x9FCB, "nmi_bootstrap_entry")   # Bootstrap NMI: hardcoded JMP nmi_rx_scout
+label(0x9FD9, "rom_set_nmi_vector")    # ROM copy of set_nmi_vector routine
+label(0x9FEB, "rom_nmi_tail")          # TX flags update + address calc (purpose unclear)
 
 # ============================================================
 # File header / overview comment (placed at $8000, first in code)
@@ -508,7 +544,10 @@ for i in range(1, 14):
 for i in range(14, 19):
     rts_code_ptr(0x8020 + i, 0x8044 + i)
 
-# Indices 19-32: secondary dispatch (see callers at $8079, $808C)
+# Indices 19-32: secondary dispatch for *-command parsing and
+# filing system operations. Accessed via callers at $8079 (Y=$12)
+# and $808C (Y=$13). The exact mapping of indices to individual
+# handlers hasn't been fully traced yet.
 for i in range(19, 33):
     rts_code_ptr(0x8020 + i, 0x8044 + i)
 
@@ -576,9 +615,11 @@ entry(0x989A)   # Data frame: bulk data read loop
 entry(0x98F7)   # Data frame: Tube co-processor RX handler
 entry(0x9992)   # ACK TX continuation (write src addr, TX_LAST_DATA)
 
-# --- NMI shim at end of ROM ---
-entry(0x9FCB)   # Secondary NMI entry (BIT $FE18; PHA; TYA; PHA; STA romsel; JMP rx_scout)
-entry(0x9FD9)   # set_nmi_vector + nmi_rti (in ROM, not in RAM workspace)
+# --- NMI shim at end of ROM ($9FCA-$9FFF) ---
+# Bootstrap NMI handler and ROM copies of workspace routines.
+# $9FCA is the source for the 32-byte copy to $0D00 by install_nmi_shim.
+entry(0x9FCB)   # Bootstrap NMI entry (hardcoded JMP nmi_rx_scout, no self-mod)
+entry(0x9FD9)   # ROM copy of set_nmi_vector + nmi_rti
 entry(0x9FEB)   # TX flags update + address calculation
 
 # --- Data RX NMI handlers (four-way handshake data phase) ---
@@ -629,6 +670,11 @@ for i in range(9):
 entry(0x9159)   # ADLC setup: LDX #$0D; LDY #$7C; BIT $833A; BVS c9167
 
 # Dispatch targets found in equb data regions
+# These are the bodies of the econet function dispatch handlers.
+# Functions 1-3 share a handler ($91C7) — possibly different
+# sub-operations that share setup logic. Function 5 ($91B5) and
+# function 8 ($90CD) are distinct. The exact purpose of each
+# function code hasn't been fully determined yet.
 entry(0x91B5)   # Function 5 handler
 entry(0x91C7)   # Function 1/2/3 handler (shared)
 entry(0x90CD)   # Function 8 handler
@@ -819,6 +865,17 @@ updated carry after PLP restores the flags.""")
 comment(0x903E, "ROR then ASL the stacked P: replaces saved carry with current carry", inline=True)
 
 # ============================================================
+# Setup TX and send ($904B)
+# ============================================================
+comment(0x904B, """\
+Set up TX control block and send
+Builds a TX control block at (nfs_workspace)+$0C from the current
+workspace state, then initiates transmission via the ADLC TX path.
+This is the common send routine used after command data has been
+prepared. The exact control block layout and field mapping need
+further analysis.""")
+
+# ============================================================
 # Control block setup routine ($9159 / $9162)
 # ============================================================
 comment(0x9159, """\
@@ -865,6 +922,40 @@ C=1: copy X+1 bytes from ($F0),Y to (fs_crc_lo),Y (param to workspace)
 C=0: copy X+1 bytes from (fs_crc_lo),Y to ($F0),Y (workspace to param)""")
 
 # ============================================================
+# OSWORD handler block comments
+# ============================================================
+comment(0x8E33, """\
+OSWORD $0F handler: protection/status control
+Shifts tx_ctrl_status ($0D3A) left via ASL to extract the top bit,
+then returns it to the caller. Probably reports the current TX
+completion status. Exact semantics need verification.""")
+
+comment(0x8E53, """\
+OSWORD $11 handler: read FS reply data
+Copies data from the FS workspace back to the caller's OSWORD
+parameter block using the bidirectional copy at $8E22 (with C=0,
+workspace to param direction). This is how the MOS retrieves
+reply data from a fileserver transaction.""")
+
+comment(0x8E7B, """\
+OSWORD $12 handler: read/write FS server station and config
+Handles reading and writing the fileserver station number
+($0E00/$0E01) and possibly other FS configuration state.
+Uses the bidirectional copy at $8E22. The direction (C flag)
+determines whether the caller is setting or querying the
+server address. This is the mechanism behind *NET (set FS)
+and *STNMAP-style queries.""")
+
+comment(0x8EF0, """\
+OSWORD $10 handler: allocate RX slot and copy FS command
+Sets up a receive block for an FS transaction, copies the
+command data from the caller's OSWORD parameter block into
+the NFS workspace. This is the first step in sending a
+command to the fileserver — the caller provides the command
+block, and this handler prepares the RX slot to receive
+the reply.""")
+
+# ============================================================
 # Remote operation handlers ($90FC / $912A / $913A / $914A)
 # ============================================================
 comment(0x90FC, """\
@@ -878,6 +969,13 @@ comment(0x912A, """\
 Execute downloaded code at $0100
 Zeroes $0100-$0102 (safe BRK default), restores the protection mask,
 and JMP $0100 to execute code received over the network.""")
+
+comment(0x913A, """\
+Remote operation with source validation
+Validates that the source station/network of the received packet
+matches an expected or authorised sender before allowing the
+remote operation to proceed. Falls through to the specific
+operation handler. Exact validation criteria need verification.""")
 
 comment(0x914A, """\
 Insert remote keypress
@@ -982,6 +1080,125 @@ Table of 3 OSBYTE codes used by save_palette_vdu_state ($9291):
 # These labels mark the ROM storage addresses. The code is
 # disassembled at its runtime addresses via move() declarations
 # near the top of this file. See the preamble for addresses.
+
+# ============================================================
+# Econet TX retry ($9248)
+# ============================================================
+comment(0x9248, """\
+Transmit with retry loop
+Calls the low-level transmit routine and retries if it fails,
+up to a timeout. Probably decrements a retry counter and checks
+the result code each iteration. The exact retry count and timeout
+mechanism need verification.""")
+
+# ============================================================
+# Save palette and VDU state ($9291)
+# ============================================================
+comment(0x9291, """\
+Save palette and VDU state
+Reads all 16 palette entries using OSWORD $0B (read palette) and
+stores the results. Then reads cursor position (OSBYTE $85),
+shadow RAM allocation (OSBYTE $C2), and screen start address
+(OSBYTE $C3) using the 3-entry table at $9304 (osbyte_vdu_table).
+Used to save display state before a remote operation or boot
+that will overwrite the screen.""")
+
+# ============================================================
+# Post-ACK scout processing ($99BB)
+# ============================================================
+comment(0x99BB, """\
+Post-ACK scout processing
+Called after the scout ACK has been transmitted. Processes the
+received scout data stored in the buffer at $0D3D-$0D48.
+Checks the port byte ($0D40) against open receive blocks to
+find a matching listener. If a match is found, sets up the
+data RX handler chain for the four-way handshake data phase.
+If no match, discards the frame.""")
+
+# ============================================================
+# Immediate operation handler ($9A59)
+# ============================================================
+comment(0x9A59, """\
+Immediate operation handler (port = 0)
+Handles immediate (non-data-transfer) operations received via
+scout frames with port byte = 0. The control byte ($0D3F)
+determines the operation type. Operations include machine
+peek, poke, halt, continue, and remote procedure call.
+The protection_mask ($0D63) controls which operations are
+permitted — each bit corresponds to an operation type.
+If the operation is not permitted by the mask, it is silently
+ignored.""")
+
+# ============================================================
+# Discard paths ($9A34 / $9A40 / $9A43)
+# ============================================================
+comment(0x9A34, """\
+Discard with full ADLC reset
+Performs adlc_full_reset (CR1=$C1, reset both TX and RX sections),
+then falls through to discard_after_reset. Used when the ADLC is
+in an unexpected state and needs a hard reset before returning
+to idle listen mode. 5 references — the main error recovery path.""")
+
+comment(0x9A40, """\
+Discard frame (gentle)
+Sends RX_DISCONTINUE (CR1=$A2: RIE|RX_DISCONTINUE) to abort the
+current frame reception without a full reset, then falls through
+to discard_after_reset. Used for clean rejection of frames that
+are correctly formatted but not for us (wrong station/network).""")
+
+comment(0x9A43, """\
+Return to idle listen after reset/discard
+Just calls adlc_rx_listen (CR1=$82, CR2=$67) to re-enter idle
+RX mode, then RTI. The simplest of the three discard paths —
+used as the tail of both discard_reset_listen and discard_listen.""")
+
+# ============================================================
+# Transfer size calculation ($9F5B)
+# ============================================================
+comment(0x9F5B, """\
+Calculate transfer size
+Computes the number of bytes actually transferred during a data
+frame reception and stores the count into the RX control block.
+Probably calculates (final buffer offset - initial offset) and
+writes it to the appropriate field in the RX block. The exact
+fields used need verification.""")
+
+# ============================================================
+# NMI shim at end of ROM ($9FCA-$9FFF)
+# ============================================================
+comment(0x9FCB, """\
+Bootstrap NMI entry point (in ROM)
+An alternate NMI handler that lives in the ROM itself rather than
+in the RAM workspace at $0D00. Unlike the RAM shim (which uses a
+self-modifying JMP to dispatch to different handlers), this one
+hardcodes JMP nmi_rx_scout ($96F6). Used as the initial NMI handler
+before the workspace has been properly set up during initialisation.
+Same sequence as the RAM shim: BIT $FE18 (INTOFF), PHA, TYA, PHA,
+LDA romsel, STA $FE30, JMP $96F6.""")
+
+comment(0x9FD9, """\
+ROM copy of set_nmi_vector + nmi_rti
+A version of the NMI vector-setting subroutine and RTI sequence
+that lives in ROM. The RAM workspace copy at $0D0E/$0D14 is the
+one normally used at runtime; this ROM copy is either the source
+for the initial copy or a fallback. Needs verification.""")
+
+# ============================================================
+# Secondary dispatch entries (indices 19-32)
+# ============================================================
+# These are accessed via callers at $8079 and $808C which set
+# different Y base offsets. They handle *-command parsing and
+# filing system operations. The exact mapping of indices to
+# handlers hasn't been fully traced yet.
+
+# ============================================================
+# OSWORD $12 handler detail
+# ============================================================
+# The label says "read/write Econet state" but more specifically
+# this appears to handle reading and writing the fileserver
+# station number ($0E00/$0E01) and possibly other FS configuration.
+# It uses the bidirectional copy at $8E22 to transfer data between
+# the OSWORD parameter block and the FS workspace.
 
 # ============================================================
 # ADLC full reset ($96DC)
