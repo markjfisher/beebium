@@ -735,6 +735,7 @@ label(0x89CF, "adjust_addrs_1")        # Adjust 4-byte addresses at param block 
 label(0x89D1, "adjust_addrs_clc")      # CLC entry: clear carry before address adjustment
 label(0x89D2, "adjust_addrs")          # Bidirectional 4-byte address adjustment
 label(0x8AAD, "osgbpb_info")          # OSINFO: OSGBPB 5-8 handler, check Tube addresses
+label(0x8AFB, "copy_reply_to_caller") # Copy FS reply data to caller buffer (direct or via Tube)
 label(0x8B8A, "tube_claim_loop")      # TCLAIM: claim Tube with $C3, retry until acquired
 
 # ============================================================
