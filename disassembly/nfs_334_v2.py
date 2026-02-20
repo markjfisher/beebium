@@ -341,17 +341,132 @@ label(0x06D0, "tube_write_data2")    # Poll Tube status 2, write A to data regis
 label(0x06D9, "tube_write_data4")    # Poll Tube status 4, write A to data register 4
 label(0x06F7, "tube_write_ctrl1")    # Poll Tube control, write A to data register 1
 
-# Filing system section ($8500-$8DFF) — largely unanalysed.
+# ============================================================
+# Service call handler labels ($8000-$84FF)
+# ============================================================
+# Service call numbers and their dispatch table indices:
+#   svc 0  → index 1  → return_2 (no-op)
+#   svc 1  → index 2  → svc_abs_workspace ($826F)
+#   svc 2  → index 3  → svc_private_workspace ($8278)
+#   svc 3  → index 4  → svc_autoboot ($81D1)
+#   svc 4  → index 5  → svc_star_command ($8172)
+#   svc 5  → index 6  → svc_unknown_irq ($966C) → JMP c9b52
+#   svc 6  → index 7  → return_2 (BRK — no action)
+#   svc 7  → index 8  → dispatch_net_cmd ($8069) (unrecognised OSBYTE)
+#   svc 8  → index 9  → fs_osword_dispatch ($8DF7) (unrecognised OSWORD)
+#   svc 9  → index 10 → svc_help ($81BC)
+#   svc 10 → index 11 → return_2 (no action)
+#   svc 11 → index 12 → svc_nmi_claim ($9669) → JMP restore_econet_state
+#   svc 12 → index 13 → svc_nmi_release ($9666) → JMP save_econet_state
+#
+# Special service handling (outside dispatch table):
+#   svc $12 (18) with Y=5 → select_nfs ($8184)
+#   svc $FE → Tube init (explode character definitions)
+#   svc $FF → init_vectors_and_copy ($80C8)
+
+label(0x80AE, "return_1")
+label(0x8145, "return_2")
+label(0x8275, "return_3")
+
+# --- Service call handlers ---
+label(0x826F, "svc_abs_workspace")      # Svc 1: claim absolute workspace up to page $10
+label(0x8278, "svc_private_workspace")  # Svc 2: claim private workspace and init NFS
+label(0x81D1, "svc_autoboot")           # Svc 3: auto-boot (print station info, set up FS)
+label(0x8172, "svc_star_command")       # Svc 4: unrecognised *-command (handles *ROFF, *NET)
+label(0x81BC, "svc_help")               # Svc 9: *HELP (print "NFS 3.34")
+
+# --- Trampoline JMPs near ADLC init ($9660-$966C) ---
+label(0x9660, "trampoline_tx_setup")    # JMP c9be4 (TX control block setup)
+label(0x9663, "trampoline_adlc_init")   # JMP adlc_init ($966F)
+label(0x9666, "svc_nmi_release")        # Svc 12: JMP save_econet_state ($969D)
+label(0x9669, "svc_nmi_claim")          # Svc 11: JMP restore_econet_state ($96B4)
+label(0x966C, "svc_unknown_irq")        # Svc 5: JMP c9b52 (unknown interrupt handler)
+entry(0x9660)
+entry(0x9663)
+
+# --- Init and vector setup ---
+label(0x80C8, "init_vectors_and_copy")  # Svc $FF: set up WRCHV/RDCHV/BRKV/EVNTV, copy code to RAM
+label(0x8184, "select_nfs")             # Svc $12 with Y=5: select NFS as active filing system
+label(0x8217, "setup_fs_vectors")       # Copy FS vector addresses, set up ROM pointer table
+label(0x824D, "fs_vector_addrs")        # 14-byte table: FILEV-FSCV extended vector addresses
+
+# --- FSCV handler and dispatch ---
+# FSCV ($808C) dispatches via secondary indices 19-25:
+#   FSCV 0 (*OPT)               → index 19 → sub_c89a1
+#   FSCV 1 (EOF)                → index 20 → sub_c881f
+#   FSCV 2 (*/ run)             → index 21 → c8b92 (forward to fileserver)
+#   FSCV 3 (unrecognised *)     → index 22 → c8b92 (forward to fileserver)
+#   FSCV 4 (*RUN)               → index 23 → c8b92 (forward to fileserver)
+#   FSCV 5 (*CAT)               → index 24 → sub_c8bfd
+#   FSCV 6 (shut down)          → index 25 → fscv_shutdown ($82FD)
+#   FSCV 7 (read handles/info)  → index 26 → sub_c85da
+label(0x808C, "fscv_handler")           # FSCV entry: dispatch function codes 0-7
+
+# --- Filing system vector entry points ---
+# Extended vector table entries set up at init ($82E5):
+#   FILEV → $8694    ARGSV → $88E1    BGETV → $8485
+#   BPUTV → $83A2    GBPBV → $89EA    FINDV → $8949
+#   FSCV  → $808C
+label(0x8694, "filev_handler")          # FILEV entry point (in FS section)
+label(0x88E1, "argsv_handler")          # ARGSV entry point (in FS section)
+label(0x8485, "bgetv_handler")          # BGETV entry: SEC then JSR handle_bput_bget
+label(0x83A2, "bputv_handler")          # BPUTV entry: CLC then fall into handle_bput_bget
+label(0x89EA, "gbpbv_handler")          # GBPBV entry point (in FS section)
+label(0x8949, "findv_handler")          # FINDV entry point (in FS section)
+entry(0x8694)
+entry(0x88E1)
+entry(0x8485)
+entry(0x83A2)
+entry(0x89EA)
+entry(0x8949)
+
+# --- Helper routines in header/init section ---
+label(0x81CC, "call_fscv_shutdown")     # LDA #6; JMP (FSCV) — notify FS of shutdown
+label(0x819B, "match_rom_string")       # Match command text against ROM string at $8008+X
+label(0x822E, "issue_vectors_claimed")  # OSBYTE $8F: issue service $0F (vectors claimed)
+label(0x82D1, "setup_rom_ptrs_netv")    # Read ROM pointer table, set up NETV
+label(0x82FD, "fscv_shutdown")          # FSCV 6: save FS state to workspace, go dormant
+
+# --- TX control block and FS command setup ---
+label(0x830E, "init_tx_ctrl_data")      # Init TX control block for data port ($90)
+label(0x831C, "init_tx_ctrl_block")     # Init TX control block from template at $8334
+label(0x8334, "tx_ctrl_template")       # 12-byte TX control block template
+label(0x8340, "prepare_cmd_with_flag")  # Prepare FS command with '*' flag and carry set
+label(0x8346, "prepare_cmd_clv")        # Prepare FS command with V cleared
+label(0x8350, "prepare_fs_cmd")         # Prepare FS command buffer (12 refs, main entry)
+label(0x8351, "prepare_fs_cmd_v")       # Prepare FS command, V flag preserved
+label(0x836A, "build_send_fs_cmd")      # Build FS command and send to fileserver
+label(0x8380, "send_fs_reply_cmd")      # Send FS command with reply processing
+
+# --- Byte I/O and escape ---
+label(0x83A3, "handle_bput_bget")       # Handle BPUT/BGET: C=0 put, C=1 get
+label(0x8448, "send_to_fs_star")        # Send '*' command to fileserver
+label(0x844A, "send_to_fs")             # Send command to fileserver and handle reply loop
+label(0x847A, "check_escape")           # Check and handle escape condition
+
+# --- Pointer arithmetic helpers ---
+label(0x84A4, "add_5_to_y")             # INY * 5; RTS
+label(0x84A5, "add_4_to_y")             # INY * 4; RTS
+label(0x84AA, "sub_4_from_y")           # DEY * 4; RTS
+label(0x84AB, "sub_3_from_y")           # DEY * 3; RTS
+
+# --- Error messages and data tables ---
+label(0x84AF, "error_msg_table")        # Econet error message strings (8 entries)
+label(0x8146, "resume_after_remote")    # Resume after remote op: re-enable keyboard, send fn $0A
+label(0x815C, "clear_osbyte_ce_cf")     # Clear OSBYTE variables $CE/$CF (probably RS423 state)
+
+# --- Page $0F workspace (FS command buffer) ---
+label(0x0F00, "fs_cmd_type")            # FS command type byte
+label(0x0F01, "fs_cmd_y_param")         # FS command Y parameter
+label(0x0F02, "fs_cmd_urd")             # FS command URD handle
+label(0x0F03, "fs_cmd_csd")             # FS command CSD/LIB handle pair
+
+# Filing system section ($8500-$8DFF) — partially analysed.
 # Contains FS command implementations (*CAT, *LOAD, *SAVE, *INFO, etc.),
 # the FS protocol client that builds command packets and interprets
 # replies, and the print_inline subroutine at $853B.
 # The section also handles OSFILE, OSGBPB, OSBPUT, OSBGET, OSARGS,
 # and OSFIND calls when NFS is the active filing system.
-# Detailed analysis of individual routines is still needed.
-
-label(0x80AE, "return_1")
-label(0x8145, "return_2")
-label(0x8275, "return_3")
 
 # ============================================================
 # Named labels for ADLC NMI handler routines
@@ -787,6 +902,290 @@ to $813C to restore saved registers.""")
 
 comment(0x8137, "Y=0: base offset for service calls (index 1+)", inline=True)
 comment(0x8139, "JSR to dispatcher (returns here after handler completes)", inline=True)
+
+# ============================================================
+# Service handler entry ($80AF)
+# ============================================================
+comment(0x80AF, """\
+Service handler entry
+Intercepts three special service calls before normal dispatch:
+  $FE: Tube init — explode character definitions (OSBYTE $14, X=6)
+  $FF: Full init — set up WRCHV/RDCHV/BRKV/EVNTV, copy NMI handler
+       code from ROM to RAM pages $04-$06, copy workspace init to
+       $0016-$0076, then fall through to select NFS.
+  $12 with Y=5: Select NFS as active filing system.
+All other service calls dispatch via dispatch_service ($8127).""")
+
+# ============================================================
+# Init: set up vectors and copy code ($80C8)
+# ============================================================
+comment(0x80C8, """\
+NFS initialisation (service $FF: full reset)
+Sets up OS vectors for Tube co-processor support:
+  WRCHV = $051C (page 5 — WRCH handler)
+  RDCHV = $04E7 (page 4 — RDCH handler)
+  BRKV  = $0016 (workspace — BRK/error handler)
+  EVNTV = $06E8 (page 6 — event handler)
+Writes $8E to Tube control register ($FEE0).
+Then copies 3 pages of NMI handler code from ROM ($934C/$944C/$954C)
+to RAM ($0400/$0500/$0600), calls nmi_init_entry ($0414), and copies
+97 bytes of workspace init from ROM ($9307) to $0016-$0076.""")
+
+comment(0x80C8, "Set WRCHV = $051C (Tube WRCH handler)", inline=True)
+comment(0x80D2, "Set RDCHV = $04E7 (Tube RDCH handler)", inline=True)
+comment(0x80DC, "Set BRKV = $0016 (BRK handler in workspace)", inline=True)
+comment(0x80E6, "Set EVNTV = $06E8 (event handler in page 6)", inline=True)
+comment(0x80F0, "Write $8E to Tube control register", inline=True)
+
+# ============================================================
+# Select NFS as active filing system ($8184)
+# ============================================================
+comment(0x8184, """\
+Select NFS as active filing system
+Reached from service $12 (select FS) with Y=5, or when *NET command
+selects NFS. Notifies the current FS of shutdown via FSCV A=6, then
+sets up filing system vectors (FILEV-FSCV) and the extended vector
+table entries. Issues service $0F (vectors claimed) to notify other
+ROMs. If fs_temp_cd is zero (auto-boot not inhibited), runs the
+auto-boot sequence via c8b92 with the string "I .BOOT".""")
+
+# ============================================================
+# Set up filing system vectors ($8217)
+# ============================================================
+comment(0x8217, """\
+Set up filing system vectors
+Copies 14 bytes from fs_vector_addrs ($824D) into FILEV-FSCV ($0212).
+These set all 7 filing system vectors to the standard extended vector
+dispatch addresses ($FF1B, $FF1E, $FF21, $FF24, $FF27, $FF2A, $FF2D).
+Then calls setup_rom_ptrs_netv to install the extended vector table
+entries with the actual NFS handler addresses, and issues service
+requests to notify other ROMs.""")
+
+comment(0x8217, "Copy 14 bytes: FS vector addresses → FILEV-FSCV", inline=True)
+
+# ============================================================
+# Service 1: claim absolute workspace ($826F)
+# ============================================================
+comment(0x826F, """\
+Service 1: claim absolute workspace
+Claims pages up to $10 for NMI workspace ($0D), FS state ($0E),
+and FS command buffer ($0F). If Y >= $10, workspace already
+allocated — returns unchanged.""")
+
+# ============================================================
+# Service 2: claim private workspace ($8278)
+# ============================================================
+comment(0x8278, """\
+Service 2: claim private workspace and initialise NFS
+Y = next available workspace page on entry.
+Sets up net_rx_ptr (Y) and nfs_workspace (Y+1) page pointers.
+On hard/power-on break (OSBYTE $FD result non-zero):
+  - Sets FS server station to $FE (no server selected)
+  - Clears FS handles, protection mask, protocol state
+  - Initialises file handle workspace with '?' placeholders
+Reads station ID from $FE18, calls adlc_init to initialise
+the MC6854, sets rx_status_flags to $40.
+On soft break: skips FS state init, preserves existing config.""")
+
+comment(0x828F, "OSBYTE $FD: read type of last reset", inline=True)
+comment(0x8295, "Soft break (X=0): skip FS init", inline=True)
+comment(0x829B, "Station $FE = no server selected", inline=True)
+comment(0x82C3, "Read station ID (also INTOFF)", inline=True)
+comment(0x82C9, "Initialise ADLC hardware", inline=True)
+
+# ============================================================
+# Service 3: auto-boot ($81D1)
+# ============================================================
+comment(0x81D1, """\
+Service 3: auto-boot
+Notifies current FS of shutdown via FSCV A=6. Scans keyboard
+(OSBYTE $7A) to check for boot-inhibit key. Prints station
+number and clock status, then falls through to set up NFS
+vectors (effectively selecting NFS as the filing system).""")
+
+# ============================================================
+# Service 4: unrecognised * command ($8172)
+# ============================================================
+comment(0x8172, """\
+Service 4: unrecognised * command
+Matches the command text against ROM string table entries:
+  X=8: matches "ROFF" at $8010 (within copyright string) → *ROFF
+       (log off from fileserver) — jumps to resume_after_remote
+  X=1: matches "NET" at $8009 (ROM title) → *NET (select NFS)
+       — falls through to select_nfs
+If neither matches, returns with the service call unclaimed.""")
+
+# ============================================================
+# Service 9: *HELP ($81BC)
+# ============================================================
+comment(0x81BC, """\
+Service 9: *HELP
+Prints the ROM identification string using print_inline.""")
+
+# ============================================================
+# Match ROM string ($819B)
+# ============================================================
+comment(0x819B, """\
+Match command text against ROM string table
+Compares characters from (os_text_ptr)+Y against bytes starting
+at binary_version+X ($8008+X). Input is uppercased via AND $DF.
+Returns with Z=1 if the ROM string's NUL terminator was reached
+(match), or Z=0 if a mismatch was found. On match, Y points
+past the matched text; on return, skips trailing spaces.""")
+
+# ============================================================
+# Call FSCV shutdown ($81CC)
+# ============================================================
+comment(0x81CC, """\
+Notify filing system of shutdown
+Loads A=6 (FS shutdown notification) and JMP (FSCV).
+The FSCV handler's RTS returns to the caller of this routine
+(JSR/JMP trick saves one level of stack).""")
+
+# ============================================================
+# Issue service: vectors claimed ($822E)
+# ============================================================
+comment(0x822E, """\
+Issue 'vectors claimed' service and optionally auto-boot
+Issues service $0F (vectors claimed) via OSBYTE $8F, then
+service $0A. If fs_temp_cd is zero (auto-boot not inhibited),
+sets up the command string "I .BOOT" at $8245 and jumps to
+c8b92 to send it to the fileserver. The "I" prefix is probably
+a fileserver 'I am' login command.""")
+
+# ============================================================
+# Set up ROM pointer table and NETV ($82D1)
+# ============================================================
+comment(0x82D1, """\
+Set up ROM pointer table and NETV
+Reads the ROM pointer table base address via OSBYTE $A8, stores
+it in osrdsc_ptr ($F6). Sets NETV low byte to $36. Then copies
+one 3-byte extended vector entry (addr=$9007, rom=current) into
+the ROM pointer table at offset $36, installing osword_dispatch
+as the NETV handler.""")
+
+# ============================================================
+# FSCV shutdown: save FS state ($82FD)
+# ============================================================
+comment(0x82FD, """\
+FSCV 6: Filing system shutdown / save state
+Copies 10 bytes of FS state from fs_state_deb ($0DEB) offsets
+$14-$1D back to (net_rx_ptr), preserving state across FS
+switches. Then calls OSBYTE $7B (printer driver going dormant).""")
+
+# ============================================================
+# Init TX control block ($831C)
+# ============================================================
+comment(0x831C, """\
+Initialise TX control block at $00C0 from template
+Copies 12 bytes from tx_ctrl_template ($8334) to $00C0.
+For the first 2 bytes (Y=0,1), also copies the fileserver
+station/network from $0E00/$0E01 to $00C2/$00C3.
+The template sets up: control=$80, port=$99 (FS command port),
+command data length=$0F, plus padding bytes.""")
+
+comment(0x8334, """\
+TX control block template (12 bytes)
+$00C0: $80 (control flag)    $00C1: $99 (port — fileserver command port)
+$00C2: server station        $00C3: server network
+$00C4: $00 (data length)     $00C5: $0F (buffer page)
+$00C6-$00CB: $FF padding""")
+
+# ============================================================
+# Prepare FS command ($8350)
+# ============================================================
+comment(0x8350, """\
+Prepare FS command buffer (main entry — 12 references)
+Sets up the FS command buffer at $0F00:
+  $0F02 = URD handle (from $0E02)
+  $0F03-$0F04 = CSD/LIB handles (from $0E03/$0E04)
+  $0F01 = Y parameter
+  $0F00 = command type (set by caller or downstream)
+Also clears V flag. Called before building specific FS
+commands for transmission to the fileserver.""")
+
+# ============================================================
+# Build and send FS command ($836A)
+# ============================================================
+comment(0x836A, """\
+Build and send FS command
+Sets command type to $90 at $0F00, initialises the TX control
+block, adjusts the buffer length, and sends the command to the
+fileserver. If carry is set on entry, takes an alternate path
+through econet_tx_retry for direct transmission. Otherwise
+first sets up the TX pointer via sub_c8644, then falls through
+to send_fs_reply_cmd for reply handling.""")
+
+# ============================================================
+# Handle BPUT/BGET ($83A3)
+# ============================================================
+comment(0x83A3, """\
+Handle BPUT/BGET file byte I/O
+Entry: C=0 for BPUT (write byte), C=1 for BGET (read byte).
+BPUTV enters at $83A2 (CLC; fall through) and BGETV enters
+at $8485 (SEC; JSR here). Saves registers, converts the file
+handle, initialises the TX control block, and sends the
+appropriate command to the fileserver.""")
+
+# ============================================================
+# Send command to fileserver ($844A)
+# ============================================================
+comment(0x844A, """\
+Send command to fileserver and handle reply
+Sets bit 7 of rx_status_flags (mark FS transaction in progress),
+builds a TX frame from the data at (net_tx_ptr), and transmits
+it. Loops reading the reply: each response byte is processed
+until an end-of-data marker is found or an escape condition
+occurs. Handles multi-block replies from the fileserver.""")
+
+# ============================================================
+# Check escape ($847A)
+# ============================================================
+comment(0x847A, """\
+Check and handle escape condition
+Tests bit 7 of $FF (escape flag). If set, acknowledges the
+escape via OSBYTE $7E and initiates cleanup — notifies the
+fileserver, closes any affected file handles, and returns
+with the appropriate error indication.""")
+
+# ============================================================
+# Error message table ($84AF)
+# ============================================================
+comment(0x84AF, """\
+Econet error message table (8 entries)
+Each entry: error number byte followed by NUL-terminated string.
+  $A0: "Line Jammed"     $A1: "Net Error"
+  $A2: "Not listening"   $A3: "No Clock"
+  $A4: "Bad Txcb"        $11: "Escape"
+  $CB: "Bad Option"      $A5: "No reply"
+Indexed via the error dispatch at c8424/c842c.""")
+
+# ============================================================
+# Resume after remote operation ($8146)
+# ============================================================
+comment(0x8146, """\
+Resume after remote operation
+Checks byte 4 of (net_rx_ptr): if non-zero, the keyboard was
+disabled during a remote operation (peek/poke/boot). Clears
+the flag, re-enables the keyboard via OSBYTE $C9, and sends
+function $0A to notify completion. Also used as the *ROFF
+(log off) handler.""")
+
+# ============================================================
+# FSCV handler ($808C)
+# ============================================================
+comment(0x808C, """\
+FSCV dispatch entry
+Entered via the extended vector table when the MOS calls FSCV.
+Stores A/X/Y via sub_c8508, compares A (function code) against 8,
+and dispatches codes 0-7 via the shared dispatch table at $8020
+with base offset Y=$12 (table indices 19-26).
+Function codes: 0=*OPT, 1=EOF, 2=*/, 3=unrecognised *,
+4=*RUN, 5=*CAT, 6=shutdown, 7=read handles.""")
+
+comment(0x808C, "Store A/X/Y in FS workspace", inline=True)
+comment(0x808F, "Function code >= 8? Return (unsupported)", inline=True)
+comment(0x8095, "Y=$12: base offset for FSCV dispatch (indices 19+)", inline=True)
 
 # NMI handler init — ROM code copies to page $04/$05/$06
 # ============================================================
