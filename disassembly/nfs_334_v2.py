@@ -1144,18 +1144,22 @@ GBPBV, FINDV, FSCV). NFS repurposes CFS/RFS workspace locations:
 # Attribute decoding ($8513 / $851D)
 # ============================================================
 comment(0x8513, """\
-Decode file attributes (6-bit variant)
+Decode file attributes: FS → BBC format (FSBBC, 6-bit variant)
 Reads attribute byte at offset $0E from the parameter block,
 masks to 6 bits, then falls through to the shared bitmask
-builder. Probably converts fileserver attribute format to
-the MOS OSFILE attribute format.""")
+builder. Converts fileserver protection format (5-6 bits) to
+BBC OSFILE attribute format (8 bits) via the lookup table at
+$8530. The two formats use different bit layouts for file
+protection attributes.""")
 
 comment(0x851D, """\
-Decode file attributes (5-bit variant)
+Decode file attributes: BBC → FS format (BBCFS, 5-bit variant)
 Masks A to 5 bits and builds an access bitmask via the
 lookup table at $8530. Each input bit position maps to a
-different output bit via the table, translating between
-fileserver and MOS attribute representations.""")
+different output bit via the table. The conversion is done
+by iterating through the source bits and OR-ing in the
+corresponding destination bits from the table, translating
+between BBC (8-bit) and fileserver (5-bit) protection formats.""")
 
 # ============================================================
 # Skip spaces ($8555)
@@ -1182,13 +1186,18 @@ Returns: value in A and $B2, C=0 on normal termination.""")
 # File handle conversion ($8588-$858A)
 # ============================================================
 comment(0x858A, """\
-Convert file handle to bitmask
+Convert file handle to bitmask (Y2FS)
+Converts fileserver handles to single-bit masks segregated inside
+the BBC. This power-of-two encoding allows the EOF hint byte to
+track up to 8 files simultaneously with one bit per file, and
+enables fast set operations (ORA to add, EOR to toggle, AND to
+test) without loops. Handle 0 passes through unchanged (means
+"no file"). Invalid handles that don't map to a valid bit
+position result in Y=0, converted to Y=$FF as a sentinel.
 Entry: Y = handle number, C flag controls behaviour:
   C=0: convert handle to bitmask (subtract $1F base, shift bit)
   C=1 with Y=0: return Y unchanged (skip conversion)
   C=1 with Y≠0: convert (used by FINDOP for close-by-handle)
-Returns: Y = bitmask (single bit set at handle position),
-  original A and X preserved on stack/restored.
 Three entry points:
   $858A: direct entry (caller sets C and Y)
   $8589: CLC first (always convert)
@@ -1661,21 +1670,33 @@ byte-level operations.""")
 # Send command to fileserver ($844A)
 # ============================================================
 comment(0x844A, """\
-Send command to fileserver and handle reply
+Send command to fileserver and handle reply (WAITFS)
+Performs a complete FS transaction: transmit then wait for reply.
 Sets bit 7 of rx_status_flags (mark FS transaction in progress),
 builds a TX frame from the data at (net_tx_ptr), and transmits
-it. Loops reading the reply: each response byte is processed
-until an end-of-data marker is found or an escape condition
-occurs. Handles multi-block replies from the fileserver.""")
+it. The system RX flag (LFLAG bit 7) is only set when receiving
+into the page-zero control block — if RXCBP's high byte is
+non-zero, setting the system flag would interfere with other RX
+operations. The timeout counter uses the stack (indexed via TSX)
+rather than memory to avoid bus conflicts with Econet hardware
+during the tight polling loop. Handles multi-block replies and
+checks for escape conditions between blocks.""")
 
 # ============================================================
 # Check escape ($847A)
 # ============================================================
 comment(0x847A, """\
 Check and handle escape condition
-Tests bit 7 of $FF (escape flag). If set, acknowledges the
-escape via OSBYTE $7E and initiates cleanup — notifies the
-fileserver, closes any affected file handles, and returns
+The escape flag ($FF bit 7) is masked with ESCAP ($D0) to enable
+or disable escape detection: when ESCAP=$FF, the AND passes through
+the escape flag; when ESCAP=$00, escape is suppressed. ESCAP is
+set non-zero during data port operations (LOADOP stores the data
+port number $90, serving double duty as both the port number and
+the escape-enable flag). ESCAP is disabled via LSR during critical
+FS operations, which shifts out bit 7 so the AND always produces a
+positive result. If escape is detected, acknowledges via OSBYTE $7E
+and initiates cleanup — notifies the fileserver, checks SPOOL/EXEC
+handles (closing "SP." or "E." via OSCLI if affected), and returns
 with the appropriate error indication.""")
 
 # ============================================================
@@ -1755,7 +1776,11 @@ Copies 4-byte load/exec/length addresses from the parameter block
 to the FS command buffer, along with the filename. Sends FS
 command $91 with function $14 to initiate the save, then
 calls print_file_info to display the filename being saved.
-Handles both host and Tube-based data sources.""")
+Handles both host and Tube-based data sources.
+When receiving the save acknowledgement, the RX low pointer is
+incremented by 1 to skip the command code (CC) byte, which
+indicates the FS type and must be preserved. N.B. this assumes
+the RX buffer does not cross a page boundary.""")
 
 comment(0x87AD, """\
 Copy load address from parameter block
@@ -2030,15 +2055,18 @@ Then forwards the command to the fileserver via forward_star_cmd.""")
 # ============================================================
 comment(0x8D1F, """\
 Copy FS reply handles to workspace and execute boot command
-SEC entry: copies 4 bytes from $0F05-$0F08 (FS reply) to
+SEC entry (LOGIN): copies 4 bytes from $0F05-$0F08 (FS reply) to
 $0E02-$0E05 (URD, CSD, LIB handles and boot option), then
 looks up the boot option in boot_option_offsets to get the
 OSCLI command string and executes it via JMP oscli.
-Used after logging on to the fileserver.""")
+The carry flag distinguishes LOGIN (SEC) from SDISC (CLC) — both
+share the handle-copying code, but only LOGIN executes the boot
+command. This use of the carry flag to select behaviour between
+two callers avoids duplicating the handle-copy loop.""")
 
 comment(0x8D20, """\
 Copy FS reply handles to workspace (no boot)
-CLC entry: copies handles only, then jumps to c8cff.
+CLC entry (SDISC): copies handles only, then jumps to c8cff.
 Called when the FS reply contains updated handle values
 but no boot action is needed.""")
 
