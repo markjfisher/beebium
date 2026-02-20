@@ -121,7 +121,7 @@ constant(0xFC, "cb_fill")             # CBFILL: substitute page byte of pointer
 # ============================================================
 # Inline string subroutine hook
 # ============================================================
-# sub_c853b prints an inline string following the JSR, terminated by a
+# print_inline ($853B) prints an inline string following the JSR, terminated by a
 # byte with bit 7 set. The high-bit byte is the opcode of the next
 # instruction — the routine jumps there via JMP (fs_load_addr).
 hook_subroutine(0x853b, "print_inline", stringhi_hook)
