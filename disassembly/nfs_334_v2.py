@@ -2316,11 +2316,14 @@ C=0: copy X+1 bytes from (fs_crc_lo),Y to ($F0),Y (workspace to param)""")
 comment(0x8E33, """\
 OSWORD $0F handler: initiate transmit (CALLTX)
 Checks the TX semaphore (TXCLR at $0D62) via ASL — if carry is
-clear, a TX is already in progress and the call returns an error.
-Otherwise copies 16 bytes from the caller's OSWORD parameter block
-into the user TX control block (UTXCB) in static workspace, sets
-up the low-level TX CB pointer (LTXCBP at $A0), and calls BRIANX
-(the low-level transmit entry point) to initiate transmission.""")
+clear, a TX is already in progress and the call returns an error,
+preventing user code from corrupting a system transmit. Otherwise
+copies 16 bytes from the caller's OSWORD parameter block into the
+user TX control block (UTXCB) in static workspace. The TXCB
+pointer is copied to LTXCBP only after the semaphore is claimed,
+ensuring the low-level transmit code (BRIANX) sees a consistent
+pointer — if copied before claiming, another transmitter could
+modify TXCBP between the copy and the claim.""")
 
 comment(0x8E53, """\
 OSWORD $11 handler: read JSR arguments (READRA)
@@ -2608,13 +2611,20 @@ Entry point XMITFY allows a custom delay in Y.""")
 # Save palette and VDU state ($9291)
 # ============================================================
 comment(0x9291, """\
-Save palette and VDU state
+Save palette and VDU state (CVIEW)
+Part of the VIEW facility (second iteration, started 27/7/82).
+Uses dynamically allocated buffer store. The WORKP1 pointer
+($9E,$9F) serves double duty: non-zero indicates data ready AND
+provides the buffer address — an efficient use of scarce zero-
+page space. This code must be user-transparent as the NFS may not
+be the dominant filing system.
 Reads all 16 palette entries using OSWORD $0B (read palette) and
 stores the results. Then reads cursor position (OSBYTE $85),
 shadow RAM allocation (OSBYTE $C2), and screen start address
 (OSBYTE $C3) using the 3-entry table at $9304 (osbyte_vdu_table).
-Used to save display state before a remote operation or boot
-that will overwrite the screen.""")
+On completion, restores the JSR buffer protection bits (LSTAT)
+from OLDJSR to re-enable JSR reception, which was disabled during
+the screen data capture to prevent interference.""")
 
 # ============================================================
 # Post-ACK scout processing ($99BB)
