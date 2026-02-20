@@ -67,7 +67,11 @@ constant(0xFE20, "econet_nmi_enable")  # Read: INTON (re-enable NMIs). Any read 
 
 # Other hardware
 constant(0xFE30, "romsel")
-constant(0xFEE0, "tube_control")
+
+# Tube ULA registers ($FEE0-$FEE7) — named by acorn.bbc()
+# R1 ($FEE0/$FEE1): events and escape signalling (host↔parasite)
+# R2 ($FEE2/$FEE3): command bytes and general data transfer
+# R4 ($FEE6/$FEE7): one-byte transfers (error codes, BRK signalling)
 
 # Key ADLC register values (from original disassembly annotations):
 #   CR1=$C1: full reset (TX_RESET|RX_RESET|AC)
@@ -221,60 +225,118 @@ label(0x0E11, "fs_work_0e11")     # FS workspace
 label(0x0E16, "fs_work_0e16")     # FS workspace
 
 # Other workspace used by NFS
-# Relocated code — BRK handler (BRKV = $0016)
-label(0x0016, "brk_handler")
+# Relocated code — Tube host zero-page code (BRKV = $0016)
+# Reference: NFS11 (NEWBR, TSTART, MAIN)
+label(0x0016, "tube_brk_handler")    # BRKV target: send error to Tube via R2, then enter main loop
+label(0x0029, "tube_brk_send_loop")  # Loop: send error message bytes via R2 until zero terminator
+label(0x0032, "tube_reset_stack")    # Reset SP=$FF, CLI, fall through to main loop
+label(0x003A, "tube_main_loop")      # Poll R1 (WRCH) and R2 (commands), dispatch via table
+label(0x003F, "tube_handle_wrch")    # R1 data ready: read byte, call OSWRITCH ($FFCB)
+label(0x0045, "tube_poll_r2")        # Poll R2 status; if ready, read command and dispatch
+label(0x0054, "tube_dispatch_cmd")   # JMP ($0500) — dispatch to handler via table
+label(0x0057, "tube_transfer_addr")  # 4-byte transfer start address (written by address claim)
 entry(0x0016)
+entry(0x0032)
+entry(0x003A)
 
-# Relocated code — page 4 (NMI handlers, RDCH)
-label(0x0400, "nmi_handler_page4")   # NMI handler code copied from ROM
-label(0x0403, "nmi_tube_entry_2")    # JMP $06E2 (escape check for Tube)
-label(0x0406, "nmi_tube_helper")     # Tube data transfer helper (in copied code)
-label(0x0414, "nmi_init_entry")      # Called after page copy; sets $14=$80 (need_release_tube?)
-label(0x04E7, "rdch_handler")        # RDCHV target
-label(0x04EF, "tube_restore_xy")     # Restore X,Y from $10/$11, JSR c04F7
+# Relocated code — page 4 (Tube address claim, RDCH, data transfer)
+# Reference: NFS12 (BEGIN, ADRR, SENDW, TADDR, SETADR)
+label(0x0400, "tube_code_page4")     # Tube host code page 4 (copied from ROM at $934C)
+label(0x0403, "tube_escape_entry")   # JMP to tube_escape_check ($06E2)
+label(0x0406, "tube_addr_claim")     # Tube address claim protocol (ADRR in reference)
+label(0x0414, "tube_post_init")      # Called after ROM→RAM copy; initial Tube setup
+label(0x04E0, "tube_setup_transfer")  # Set Y=0, X=$57 (tube_transfer_addr), JMP tube_addr_claim
+label(0x04E7, "tube_rdch_handler")   # RDCHV target — send $01 via R2, enter main loop
+label(0x04EF, "tube_restore_regs")   # Restore X,Y from $10/$11 (dispatch entry 6)
+label(0x04F7, "tube_read_r2")        # Wait for R2 data ready, read byte to A
 entry(0x0400)
 entry(0x0403)
 entry(0x0406)
 entry(0x0414)
+entry(0x04E0)
 entry(0x04E7)
 entry(0x04EF)
+entry(0x04F7)
 
-# Relocated code — page 5 (WRCH, *NET command dispatch)
-# $0500-$051B: 14-entry dispatch table of word addresses used by
-# JMP ($0500) at $0054 and indexed command dispatch.
-# Table entries (tentative mapping — service call numbers 0-13):
-#   Entry  Addr   Handler
-#   ─────  ─────  ─────────────────────────────
-#     0    $055B  OSRDCH (read character)
-#     1    $05C5  OSCLI (execute command)
-#     2    $0626  OSBYTE 2-param (X result)
-#     3    $063B  OSBYTE 3-param (X,Y results)
-#     4    $065D  OSWORD variable-length
-#     5    $06A3  OSWORD fixed 5-byte
-#     6    $04EF  restore X/Y, poll Tube
-#     7    $053D  OSFIND close (probably)
-#     8    $058C  OSARGS
-#     9    $0550  OSBGET
-#    10    $0543  OSBPUT
-#    11    $0569  OSFIND open
-#    12    $05D8  OSFILE
-#    13    $0602  OSGBPB
-label(0x0500, "nmi_handler_page5")   # NMI handler code page 5
-label(0x051C, "wrch_handler")        # WRCHV target
+# Relocated code — page 5 (Tube dispatch table, WRCH, file I/O handlers)
+# Reference: NFS13 (TASKS table, BPUT, BGET, RDCHZ, FIND, ARGS, STRNG, CLI, FILE)
+#
+# $0500-$051B: 14-entry dispatch table of word addresses.
+# JMP ($0500) at $0054 dispatches Tube commands; the address claim
+# protocol at $0406 patches $0500-$0501 with the target handler address.
+#
+# Tube cmd  Entry  Addr   Handler
+# ────────  ─────  ─────  ─────────────────────────────
+#   $00       0    $055B  tube_osrdch (OSRDCH)
+#   $01       1    $05C5  tube_oscli (OSCLI)
+#   $02       2    $0626  tube_osbyte_short (2-param, X result)
+#   $03       3    $063B  tube_osbyte_long (3-param, X+Y results)
+#   $04       4    $065D  tube_osword (variable-length)
+#   $05       5    $06A3  tube_osword_rdln (OSWORD 0, read line)
+#   $06       6    $04EF  tube_restore_regs (release/no-op)
+#   $07       7    $053D  tube_release_return (restore regs, RTS)
+#   $08       8    $058C  tube_osargs (OSARGS)
+#   $09       9    $0550  tube_osbget (OSBGET)
+#   $0A      10    $0543  tube_osbput (OSBPUT)
+#   $0B      11    $0569  tube_osfind (OSFIND open)
+#   $0C      12    $05D8  tube_osfile (OSFILE)
+#   $0D      13    $0602  tube_osgbpb (OSGBPB)
+label(0x0500, "tube_dispatch_table")  # 14-entry handler address table
+label(0x051C, "tube_wrch_handler")    # WRCHV target — write character via Tube
+label(0x051F, "tube_send_and_poll")   # Send byte via R2, poll R2/R1 for reply
+label(0x0527, "tube_poll_r1_wrch")    # Service R1 WRCH requests while waiting for R2
+label(0x0532, "tube_resume_poll")     # JMP back to R2 poll loop after servicing R1
+label(0x053D, "tube_release_return")  # Restore X,Y from $10/$11, PLA, RTS
+label(0x0543, "tube_osbput")          # OSBPUT: read channel+byte from R2, call $FFD4
+label(0x0550, "tube_osbget")          # OSBGET: read channel from R2, call $FFD7
+label(0x055B, "tube_osrdch")          # OSRDCH: call $FFC8, send carry+byte reply
+label(0x0561, "tube_rdch_reply")      # Send carry in bit 7 + data byte as reply
+label(0x0569, "tube_osfind")          # OSFIND open: read arg+filename, call $FFCE
+label(0x0580, "tube_osfind_close")    # OSFIND close: read handle, call $FFCE with A=0
+label(0x058C, "tube_osargs")          # OSARGS: read handle+4 bytes+reason, call $FFDA
+label(0x0590, "tube_read_params")     # Read parameter bytes from R2 into zero page
+label(0x05B1, "tube_read_string")     # Read CR-terminated string from R2 into $0700
+label(0x05C5, "tube_oscli")           # OSCLI: read command string, call $FFF7
+label(0x05CB, "tube_reply_ack")       # Send $7F acknowledge, return to main loop
+label(0x05CD, "tube_reply_byte")      # Poll R2, send byte in A, return to main loop
+label(0x05D8, "tube_osfile")          # OSFILE: read 16 params+filename+reason, call $FFDD
 entry(0x051C)
-# Dispatch table targets (Tube service call handlers)
+# Dispatch table entry points
 for addr in [0x055B, 0x05C5, 0x0626, 0x063B, 0x065D, 0x06A3,
              0x04EF, 0x053D, 0x058C, 0x0550, 0x0543, 0x0569,
              0x05D8, 0x0602]:
     entry(addr)
 
-# Relocated code — page 6 (event handler, subroutines)
-label(0x0600, "nmi_handler_page6")   # NMI handler code page 6
-label(0x06E2, "tube_escape_check")   # LDA $FF; SEC; ROR; BMI to Tube write
-label(0x06E8, "event_handler")       # EVNTV target
+# Relocated code — page 6 (OSGBPB, OSBYTE, OSWORD, RDLN, event handler)
+# Reference: NFS13 (GBPB, SBYTE, BYTE, WORD, RDLN, RDCHA, WRIFOR, ESCAPE, EVENT, ESCA)
+label(0x0600, "tube_code_page6")      # Tube host code page 6 (copied from ROM at $954C)
+label(0x0602, "tube_osgbpb")          # OSGBPB: read 13 params+reason, call $FFD1
+label(0x0626, "tube_osbyte_short")    # OSBYTE 2-param: read X+A, call $FFF4, return X
+label(0x0630, "tube_osbyte_send_x")   # Poll R2, send X result
+label(0x063B, "tube_osbyte_long")     # OSBYTE 3-param: read X+Y+A, call $FFF4, return carry+Y+X
+label(0x0653, "tube_osbyte_send_y")   # Poll R2, send Y result, then fall through to send X
+label(0x065D, "tube_osword")          # OSWORD variable-length: read A+params, call $FFF1
+label(0x0661, "tube_osword_read")     # Poll R2 for param block length, read params
+label(0x066C, "tube_osword_read_lp")  # Read param block bytes from R2 into $0130
+label(0x0692, "tube_osword_write")    # Write param block bytes from $0130 back to R2
+label(0x0695, "tube_osword_write_lp") # Poll R2, send param block byte
+label(0x06A0, "tube_return_main")     # JMP tube_main_loop
+label(0x06A3, "tube_osword_rdln")     # OSWORD 0 (read line): read 5 params, call $FFF1
+label(0x06BB, "tube_rdln_send_line")  # Send input line bytes from $0700 back to Tube
+label(0x06C2, "tube_rdln_send_loop")  # Load byte from $0700+X
+label(0x06C5, "tube_rdln_send_byte")  # Send byte via R2, loop until CR
+label(0x06E2, "tube_escape_check")    # Check $FF escape flag, forward to Tube via R1
+label(0x06E8, "tube_event_handler")   # EVNTV target: forward event (A,X,Y) to Tube via R1
+label(0x06F7, "tube_send_r1")         # Poll R1 status, write A to R1 data (ESCA in reference)
 entry(0x0600)
+entry(0x0602)
+entry(0x0626)
+entry(0x063B)
+entry(0x065D)
+entry(0x06A3)
 entry(0x06E2)
 entry(0x06E8)
+entry(0x06F7)
 label(0x0DEB, "fs_state_deb")        # Filing system state
 
 # ============================================================
@@ -351,9 +413,9 @@ label(0x96B4, "restore_econet_state")# Restore status/protection/tube from RX bl
 label(0x96CD, "install_nmi_shim")    # Copy 32-byte NMI shim from ROM to $0D00
 
 # Tube co-processor I/O subroutines (in relocated page 6)
-label(0x06D0, "tube_write_data2")    # Poll Tube status 2, write A to data register 2
-label(0x06D9, "tube_write_data4")    # Poll Tube status 4, write A to data register 4
-label(0x06F7, "tube_write_ctrl1")    # Poll Tube control, write A to data register 1
+# Reference: RDCHA (R2 write), WRIFOR (R4 write), ESCA (R1 write)
+label(0x06D0, "tube_send_r2")       # Poll R2 status, write A to R2 data (RDCHA in reference)
+label(0x06D9, "tube_send_r4")       # Poll R4 status, write A to R4 data (WRIFOR in reference)
 
 # ============================================================
 # Service call handler labels ($8000-$84FF)
@@ -1250,8 +1312,8 @@ Sets up OS vectors for Tube co-processor support:
   BRKV  = $0016 (workspace — BRK/error handler)
   EVNTV = $06E8 (page 6 — event handler)
 Writes $8E to Tube control register ($FEE0).
-Then copies 3 pages of NMI handler code from ROM ($934C/$944C/$954C)
-to RAM ($0400/$0500/$0600), calls nmi_init_entry ($0414), and copies
+Then copies 3 pages of Tube host code from ROM ($934C/$944C/$954C)
+to RAM ($0400/$0500/$0600), calls tube_post_init ($0414), and copies
 97 bytes of workspace init from ROM ($9307) to $0016-$0076.""")
 
 comment(0x80C8, "Set WRCHV = $051C (Tube WRCH handler)", inline=True)
@@ -1812,7 +1874,7 @@ Send FS notify command and execute response
 Sets up an FS command with function $4A (probably "notify" or
 "boot response") using sub_c86d0. If a Tube co-processor is
 present (tx_in_progress != 0), transfers the response data
-to the Tube via nmi_tube_helper. Otherwise jumps via the
+to the Tube via tube_addr_claim. Otherwise jumps via the
 indirect pointer at ($0F09).""")
 
 # ============================================================
@@ -2137,52 +2199,67 @@ Copies 32 bytes. Interrupts are enabled during the copy.""")
 # Relocated code block comments
 # ============================================================
 comment(0x0016, """\
-BRK handler (BRKV target)
-Handles errors when a Tube co-processor is active. Reads the error
-message from zero page via ($FD), sends each byte to the Tube,
-resets the stack, then dispatches through the page 5 vector table
-via JMP ($0500). Also polls Tube registers for incoming data.""")
+Tube BRK handler (BRKV target) — reference: NFS11 NEWBR
+Sends error information to the Tube co-processor via R2 and R4:
+  1. Sends $FF to R4 (WRIFOR) to signal error
+  2. Reads R2 data (flush any pending byte)
+  3. Sends $00 via R2, then error number from ($FD),0
+  4. Loops sending error string bytes via R2 until zero terminator
+  5. Falls through to tube_reset_stack → tube_main_loop
+The main loop continuously polls R1 for WRCH requests (forwarded
+to OSWRITCH $FFCB) and R2 for command bytes (dispatched via the
+14-entry table at $0500). The R2 command byte is stored at $55
+before dispatch via JMP ($0500).""")
 
 comment(0x0400, """\
-NMI handler page 4 — Tube protocol and CLI dispatch
-Copied from ROM at $934C during init. Contains:
-  $0400: entry (JMP to CLI parser at $0473)
-  $0403: escape check for Tube (JMP $06E2)
-  $0406: nmi_tube_helper (Tube data transfer protocol)
-  $0414: nmi_init_entry (called after copy, sets $14=$80)
-  $0473: CLI command parser (ROM title, break type check)
-  $04E7: RDCHV handler (read character for Tube)
-  $04EF: restore X/Y, poll Tube status
-  $04F7: poll Tube status register 2, read data""")
+Tube host code page 4 — reference: NFS12 (BEGIN, ADRR, SENDW)
+Copied from ROM at $934C during init. The first 28 bytes ($0400-$041B)
+overlap with the end of the ZP block (the same ROM bytes serve both
+the ZP copy at $005B-$0076 and this page at $0400-$041B). Contains:
+  $0400: JMP $0473 (BEGIN — CLI parser / startup entry)
+  $0403: JMP $06E2 (tube_escape_check)
+  $0406: tube_addr_claim — Tube address claim protocol (ADRR)
+  $0414: tube_post_init — called after ROM→RAM copy
+  $0473: BEGIN — startup/CLI entry, break type check
+  $04E7: tube_rdch_handler — RDCHV target
+  $04EF: tube_restore_regs — restore X,Y, dispatch entry 6
+  $04F7: tube_read_r2 — poll R2 status, read data byte to A""")
 
 comment(0x0500, """\
-NMI handler page 5 — WRCHV and file I/O commands
+Tube host code page 5 — reference: NFS13 (TASKS, BPUT-FILE)
 Copied from ROM at $944C during init. Contains:
-  $0500-$051B: 14-entry dispatch table (word addresses)
-  $051C: WRCHV handler (write character via Tube)
-  $0543: OSBPUT (write byte to file via Tube)
-  $0550: OSBGET (read byte from file via Tube)
-  $055B: OSRDCH (read character via Tube)
-  $0569: OSFIND open (open file via Tube)
-  $058C: OSARGS (file attributes via Tube)
-  $05B1: read filename/command from Tube into $0700
-  $05C5: OSCLI (execute * command via Tube)
-  $05D8: OSFILE (whole file operation via Tube)""")
+  $0500: tube_dispatch_table — 14-entry handler address table
+  $051C: tube_wrch_handler — WRCHV target
+  $051F: tube_send_and_poll — send byte via R2, poll for reply
+  $0527: tube_poll_r1_wrch — service R1 WRCH while waiting for R2
+  $053D: tube_release_return — restore regs and RTS
+  $0543: tube_osbput — write byte to file
+  $0550: tube_osbget — read byte from file
+  $055B: tube_osrdch — read character
+  $0569: tube_osfind — open file
+  $0580: tube_osfind_close — close file (A=0)
+  $058C: tube_osargs — file argument read/write
+  $05B1: tube_read_string — read CR-terminated string into $0700
+  $05C5: tube_oscli — execute * command
+  $05CB: tube_reply_ack — send $7F acknowledge
+  $05CD: tube_reply_byte — send byte and return to main loop
+  $05D8: tube_osfile — whole file operation""")
 
 comment(0x0600, """\
-NMI handler page 6 — OSGBPB, OSBYTE/OSWORD, event handler
-Copied from ROM at $954C during init. Contains:
-  $0600: entry (BEQ to JMP $003A, else fall through)
-  $0602: OSGBPB (multi-byte file I/O via Tube)
-  $0626: OSBYTE 2-param (X result via Tube)
-  $063B: OSBYTE 3-param (X,Y results via Tube)
-  $065D: OSWORD variable-length (via Tube, buffer at $0130)
-  $06A3: OSWORD fixed 5-byte (via Tube)
-  $06D0: tube_write_data2 — poll+write to Tube data register 2
-  $06D9: tube_write_data4 — poll+write to Tube data register 4
-  $06E2: tube_escape_check — check $FF, forward escape to Tube
-  $06E8: EVNTV handler — forward event (A,X,Y) to Tube
-  $06F7: tube_write_ctrl1 — poll+write to Tube control register 1""")
+Tube host code page 6 — reference: NFS13 (GBPB-ESCA)
+Copied from ROM at $954C during init. $0600-$0601 is the tail
+of tube_osfile (BEQ to tube_reply_byte when done). Contains:
+  $0602: tube_osgbpb — multi-byte file I/O
+  $0626: tube_osbyte_short — 2-param OSBYTE (returns X)
+  $063B: tube_osbyte_long — 3-param OSBYTE (returns carry+Y+X)
+  $065D: tube_osword — variable-length OSWORD (buffer at $0130)
+  $06A3: tube_osword_rdln — OSWORD 0 (read line, 5-byte params)
+  $06BB: tube_rdln_send_line — send input line from $0700
+  $06D0: tube_send_r2 — poll R2 status, write A to R2 data
+  $06D9: tube_send_r4 — poll R4 status, write A to R4 data
+  $06E2: tube_escape_check — check $FF, forward escape to R1
+  $06E8: tube_event_handler — EVNTV: forward event (A,X,Y) via R1
+  $06F7: tube_send_r1 — poll R1 status, write A to R1 data""")
 
 # ============================================================
 # OSBYTE code table for VDU state save ($9304)
