@@ -613,7 +613,7 @@ label(0x84AB, "sub_3_from_y")           # DEY * 3; RTS
 # --- Error messages and data tables ---
 label(0x84AF, "error_msg_table")        # Econet error message strings (8 entries)
 label(0x8146, "resume_after_remote")    # Resume after remote op: re-enable keyboard, send fn $0A
-label(0x815C, "clear_osbyte_ce_cf")     # Clear OSBYTE variables $CE/$CF (probably RS423 state)
+label(0x815C, "clear_osbyte_ce_cf")     # Reset OSBYTE $CE/$CF intercept masks to $7F (restore MOS vectors)
 
 # --- * command forwarding and BYE ---
 label(0x8079, "forward_star_cmd")       # Forward unrecognised * command to fileserver
@@ -1186,7 +1186,7 @@ Convert file handle to bitmask
 Entry: Y = handle number, C flag controls behaviour:
   C=0: convert handle to bitmask (subtract $1F base, shift bit)
   C=1 with Y=0: return Y unchanged (skip conversion)
-  C=1 with Y≠0: convert (probably indicates close all)
+  C=1 with Y≠0: convert (used by FINDOP for close-by-handle)
 Returns: Y = bitmask (single bit set at handle position),
   original A and X preserved on stack/restored.
 Three entry points:
@@ -1240,8 +1240,14 @@ the specified bits. Falls through to set_fs_flag to store.""")
 
 comment(0x85E4, """\
 Set bit(s) in FS flags ($0E07)
-ORs A into fs_work_0e07. This byte probably tracks which
-file operations are active or which handles are in use.""")
+ORs A into fs_work_0e07 (EOF hint byte). Each bit represents
+one of up to 8 open file handles. When clear, the file is
+definitely NOT at EOF. When set, the fileserver must be queried
+to confirm EOF status. This negative-cache optimisation avoids
+expensive network round-trips for the common case. The hint is
+cleared when the file pointer is updated (since seeking away
+from EOF invalidates the hint) and set after BGET/OPEN/EOF
+operations that might have reached the end.""")
 
 # ============================================================
 # Print file info ($8600)
@@ -1531,8 +1537,9 @@ Issue 'vectors claimed' service and optionally auto-boot
 Issues service $0F (vectors claimed) via OSBYTE $8F, then
 service $0A. If fs_temp_cd is zero (auto-boot not inhibited),
 sets up the command string "I .BOOT" at $8245 and jumps to
-c8b92 to send it to the fileserver. The "I" prefix is probably
-a fileserver 'I am' login command.""")
+the FSCV 3 unrecognised-command handler (which matches against
+the command table at $8BD6). The "I." prefix triggers the
+catch-all entry which forwards the command to the fileserver.""")
 
 # ============================================================
 # Set up ROM pointer table and NETV ($82D1)
@@ -1684,11 +1691,13 @@ Dispatches by function code A:
 
 comment(0x86D0, """\
 Send FS examine command
-Sends FS command $92 (probably "examine file") to the fileserver.
-Sets $0F02=$92 and error pointer to '*'. Called for OSFILE $FF
+Sends FS command $03 (FCEXAM: examine file) to the fileserver.
+Sets $0F02=$03 and error pointer to '*'. Called for OSFILE $FF
 (load file) with the filename already in the command buffer.
 The FS reply contains load/exec addresses and file length which
-are used to set up the data transfer.""")
+are used to set up the data transfer. The header URD field
+is repurposed to carry the Econet data port number (PLDATA=$92)
+for the subsequent block data transfer.""")
 
 comment(0x8716, """\
 Send file data in multi-block chunks
@@ -1720,32 +1729,41 @@ parameter block with information returned by the fileserver.""")
 comment(0x87C8, """\
 Multi-block file data transfer
 Manages the transfer of file data in chunks between the local
-machine and the fileserver. Sets up source ($C4-$C7) and
-destination ($C8-$CB) addresses from the FS reply, sends $80-byte
-blocks with command $91, and continues until all data has been
+machine and the fileserver. Entry conditions: WORK ($B0-$B3) and
+WORK+4 ($B4-$B7) hold the low and high addresses of the data
+being sent/received. Sets up source ($C4-$C7) and destination
+($C8-$CB) from the FS reply, sends $80-byte (128-byte) blocks
+with command $91, and continues until all data has been
 transferred. Handles address overflow and Tube co-processor
-transfers.""")
+transfers. For SAVE, WORK+8 holds the port on which to receive
+byte-level ACKs for each data block (flow control).""")
 
 comment(0x881F, """\
 FSCV 1: EOF handler
 Checks whether a file handle has reached end-of-file. Converts
-the handle via handle_to_mask_clc, tests the result against
-fs_work_0e07 flags. If the handle is in the flags, sends FS
-command $11 to query the fileserver for EOF status. Returns
-the result in the X register.""")
+the handle via handle_to_mask_clc, tests the result against the
+EOF hint byte ($0E07). If the hint bit is clear, returns X=0
+immediately (definitely not at EOF — no network call needed).
+If the hint bit is set, sends FS command $11 (FCEOF) to query
+the fileserver for definitive EOF status. Returns X=$FF if at
+EOF, X=$00 if not. This two-level check avoids an expensive
+network round-trip when the file is known to not be at EOF.""")
 
 comment(0x8844, """\
 FILEV attribute dispatch (A=1-6)
 Dispatches OSFILE operations by function code:
-  A=1: write catalogue information (load/exec/length/attrs)
+  A=1: write catalogue info (load/exec/length/attrs) — FS $14
   A=2: write load address only
   A=3: write exec address only
   A=4: write file attributes
-  A=5: read catalogue information
-  A=6: delete named object
-  A>=7: fall through (probably generates an error)
+  A=5: read catalogue info, returns type in A — FS $12
+  A=6: delete named object — FS $14 (FCDEL)
+  A>=7: falls through to restore_args_return (no-op)
 Each handler builds the appropriate FS command, sends it to
-the fileserver, and copies the reply into the parameter block.""")
+the fileserver, and copies the reply into the parameter block.
+The control block layout uses dual-purpose fields: the 'data
+start' field doubles as 'length' and 'data end' doubles as
+'protection' depending on whether reading or writing attrs.""")
 
 comment(0x892C, """\
 Restore arguments and return
@@ -1755,11 +1773,11 @@ fs_block_offset ($BC) — the values saved at entry by
 save_fscv_args — and returns to the caller.""")
 
 comment(0x89A1, """\
-FSCV 0: *OPT handler
+FSCV 0: *OPT handler (OPTION)
 Handles *OPT X,Y to set filing system options:
-  *OPT 1,Y (Y=0/1): set user option in $0E06
-  *OPT 4,Y (Y=0-3): set boot option via FS command $16
-Other combinations generate error 7 ("bad option").""")
+  *OPT 1,Y (Y=0/1): set local user option in $0E06 (OPT)
+  *OPT 4,Y (Y=0-3): set boot option via FS command $16 (FCOPT)
+Other combinations generate error $CB (OPTER: "bad option").""")
 
 comment(0x89D2, """\
 Bidirectional 4-byte address adjustment
@@ -1785,8 +1803,8 @@ If CSD handle is zero (not logged in), returns without sending.""")
 # ============================================================
 comment(0x8349, """\
 *BYE handler (logoff)
-Closes any open *SPOOL and *EXEC files via OSBYTE $77, then
-falls into prepare_fs_cmd with Y=$17 (FS command type for BYE).
+Closes any open *SPOOL and *EXEC files via OSBYTE $77 (FXSPEX),
+then falls into prepare_fs_cmd with Y=$17 (FCBYE: logoff code).
 Dispatched from the command match table at $8BD6 for "BYE".""")
 
 # ============================================================
@@ -1966,12 +1984,12 @@ terminator). Used by cat_handler to display Dir. and Lib. paths.""")
 # Notify and execute ($8D84)
 # ============================================================
 comment(0x8D84, """\
-Send FS notify command and execute response
-Sets up an FS command with function $4A (probably "notify" or
-"boot response") using sub_c86d0. If a Tube co-processor is
+Send FS load-as-command and execute response
+Sets up an FS command with function code $05 (FCCMND: load as
+command) using send_fs_examine. If a Tube co-processor is
 present (tx_in_progress != 0), transfers the response data
 to the Tube via tube_addr_claim. Otherwise jumps via the
-indirect pointer at ($0F09).""")
+indirect pointer at ($0F09) to execute at the load address.""")
 
 # ============================================================
 # *NET sub-command handlers ($8DAF-$8DF5)
@@ -2150,35 +2168,51 @@ C=0: copy X+1 bytes from (fs_crc_lo),Y to ($F0),Y (workspace to param)""")
 # OSWORD handler block comments
 # ============================================================
 comment(0x8E33, """\
-OSWORD $0F handler: protection/status control
-Shifts tx_ctrl_status ($0D3A) left via ASL to extract the top bit,
-then returns it to the caller. Probably reports the current TX
-completion status. Exact semantics need verification.""")
+OSWORD $0F handler: initiate transmit (CALLTX)
+Checks the TX semaphore (TXCLR at $0D62) via ASL — if carry is
+clear, a TX is already in progress and the call returns an error.
+Otherwise copies 16 bytes from the caller's OSWORD parameter block
+into the user TX control block (UTXCB) in static workspace, sets
+up the low-level TX CB pointer (LTXCBP at $A0), and calls BRIANX
+(the low-level transmit entry point) to initiate transmission.""")
 
 comment(0x8E53, """\
-OSWORD $11 handler: read FS reply data
-Copies data from the FS workspace back to the caller's OSWORD
-parameter block using the bidirectional copy at $8E22 (with C=0,
-workspace to param direction). This is how the MOS retrieves
-reply data from a fileserver transaction.""")
+OSWORD $11 handler: read JSR arguments (READRA)
+Copies the JSR (remote procedure call) argument buffer from the
+static workspace page back to the caller's OSWORD parameter block.
+Reads the buffer size from workspace offset JSRSIZ, then copies
+that many bytes. After the copy, clears the old LSTAT byte via
+CLRJSR to reset the protection status. Also provides READRB as
+a sub-entry ($8E6A) to return just the buffer size and args size
+without copying the data.""")
 
 comment(0x8E7B, """\
-OSWORD $12 handler: read/write FS server station and config
-Handles reading and writing the fileserver station number
-($0E00/$0E01) and possibly other FS configuration state.
-Uses the bidirectional copy at $8E22. The direction (C flag)
-determines whether the caller is setting or querying the
-server address. This is the mechanism behind *NET (set FS)
-and *STNMAP-style queries.""")
+OSWORD $12 handler: read/set state information (RS)
+Dispatches on the sub-function code (0-9):
+  0: read FS station (FSLOCN at $0E00)
+  1: set FS station
+  2: read printer server station (PSLOCN)
+  3: set printer server station
+  4: read protection masks (LSTAT at $D63)
+  5: set protection masks
+  6: read context handles (URD/CSD/LIB, converted from
+     internal single-bit form back to handle numbers)
+  7: set context handles (converted to internal form)
+  8: read local station number
+  9: read JSR arguments buffer size
+Even-numbered sub-functions read; odd-numbered ones write.
+Uses the bidirectional copy at $8E22 for station read/set.""")
 
 comment(0x8EF0, """\
-OSWORD $10 handler: allocate RX slot and copy FS command
-Sets up a receive block for an FS transaction, copies the
-command data from the caller's OSWORD parameter block into
-the NFS workspace. This is the first step in sending a
-command to the fileserver — the caller provides the command
-block, and this handler prepares the RX slot to receive
-the reply.""")
+OSWORD $10 handler: open/read RX control block (OPENRX)
+If the first byte of the caller's parameter block is zero, scans
+for a free RXCB (flag byte = $3F = deleted) starting from RXCB #3
+(RXCBs 0-2 are dedicated: printer, remote, FS). Returns the RXCB
+number in the first byte, or zero if none free. If the first byte
+is non-zero, reads the specified RXCB's data back into the caller's
+parameter block (12 bytes) and then deletes the RXCB by setting
+its flag byte to $3F. The low-level user RX is disabled (via
+LFLAG at $D64) during the operation to prevent race conditions.""")
 
 # ============================================================
 # Remote operation handlers ($90FC / $912A / $913A / $914A)
@@ -2196,11 +2230,12 @@ Zeroes $0100-$0102 (safe BRK default), restores the protection mask,
 and JMP $0100 to execute code received over the network.""")
 
 comment(0x913A, """\
-Remote operation with source validation
-Validates that the source station/network of the received packet
-matches an expected or authorised sender before allowing the
-remote operation to proceed. Falls through to the specific
-operation handler. Exact validation criteria need verification.""")
+Remote operation with source validation (REMOT)
+Validates that the source station/network in the received packet
+matches the controlling station stored in the remote RXCB. This
+ensures that only the station that initiated the remote session
+can send commands. Falls through to the specific operation handler
+(CHARIN for keyboard input, or dispatches by tag byte).""")
 
 comment(0x914A, """\
 Insert remote keypress
@@ -2231,10 +2266,12 @@ into NFS workspace at offset $DB+. Used by function codes 7 and 8
 to stage data before dispatch.""")
 
 comment(0x91B5, """\
-Fn 5: remote display/character position setup
-Reads character position data from the RX block for use by the
-remote display handler. Exact display management semantics need
-verification.""")
+Fn 5: printer selection changed (SELECT)
+Called when the printer selection changes. Compares the new
+selection (in PARMX) against the network printer (buffer 4).
+If it matches, initialises the printer buffer pointer (PBUFFP)
+and sets the initial flag byte ($41). Otherwise just updates
+the printer status flags (PFLAGS).""")
 
 comment(0x91C7, """\
 Fn 1/2/3: remote print handler
@@ -2378,11 +2415,12 @@ Table of 3 OSBYTE codes used by save_palette_vdu_state ($9291):
 # Econet TX retry ($9248)
 # ============================================================
 comment(0x9248, """\
-Transmit with retry loop
-Calls the low-level transmit routine and retries if it fails,
-up to a timeout. Probably decrements a retry counter and checks
-the result code each iteration. The exact retry count and timeout
-mechanism need verification.""")
+Transmit with retry loop (XMITFS/XMITFY)
+Calls the low-level transmit routine (BRIANX) with FSTRY ($FF = 255)
+retries and FSDELY ($60 = 96) ms delay between attempts. On each
+iteration, checks the result code: zero means success, non-zero
+means retry. After all retries exhausted, reports a 'Net error'.
+Entry point XMITFY allows a custom delay in Y.""")
 
 # ============================================================
 # Save palette and VDU state ($9291)
@@ -2415,12 +2453,18 @@ comment(0x9A59, """\
 Immediate operation handler (port = 0)
 Handles immediate (non-data-transfer) operations received via
 scout frames with port byte = 0. The control byte ($0D3F)
-determines the operation type. Operations include machine
-peek, poke, halt, continue, and remote procedure call.
-The protection_mask ($0D63) controls which operations are
-permitted — each bit corresponds to an operation type.
+determines the operation type:
+  $81 = PEEK (read memory)
+  $82 = POKE (write memory)
+  $83 = JSR (remote procedure call)
+  $84 = user procedure
+  $85 = OS procedure
+  $86 = HALT
+  $87 = CONTINUE
+The protection mask (LSTAT at $D63) controls which operations
+are permitted — each bit enables or disables an operation type.
 If the operation is not permitted by the mask, it is silently
-ignored.""")
+ignored. LSTAT can be read/set via OSWORD $12 sub-functions 4/5.""")
 
 # ============================================================
 # Discard paths ($9A34 / $9A40 / $9A43)
@@ -2451,10 +2495,10 @@ used as the tail of both discard_reset_listen and discard_listen.""")
 comment(0x9F5B, """\
 Calculate transfer size
 Computes the number of bytes actually transferred during a data
-frame reception and stores the count into the RX control block.
-Probably calculates (final buffer offset - initial offset) and
-writes it to the appropriate field in the RX block. The exact
-fields used need verification.""")
+frame reception. Subtracts the low pointer (LPTR, offset 4 in
+the RXCB) from the current buffer position to get the byte count,
+and stores it back into the RXCB's high pointer field (HPTR,
+offset 8). This tells the caller how much data was received.""")
 
 # ============================================================
 # NMI shim at end of ROM ($9FCA-$9FFF)
@@ -2473,8 +2517,9 @@ comment(0x9FD9, """\
 ROM copy of set_nmi_vector + nmi_rti
 A version of the NMI vector-setting subroutine and RTI sequence
 that lives in ROM. The RAM workspace copy at $0D0E/$0D14 is the
-one normally used at runtime; this ROM copy is either the source
-for the initial copy or a fallback. Needs verification.""")
+one normally used at runtime; this ROM copy is used during early
+initialisation before the RAM workspace has been set up, and as
+the source for the initial copy to RAM.""")
 
 # ============================================================
 # Secondary dispatch entries (indices 19-32)
