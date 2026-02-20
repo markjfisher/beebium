@@ -53,6 +53,14 @@ constant(0xFEE0, "tube_control")
 #   CR2=$A7: TX in handshake (RTS|CLR_TX_ST|FC_TDRA|2_1_BYTE|PSE)
 
 # ============================================================
+# Inline string subroutine hook
+# ============================================================
+# sub_c853b prints an inline string following the JSR, terminated by a
+# byte with bit 7 set. The high-bit byte is the opcode of the next
+# instruction — the routine jumps there via JMP (fs_load_addr).
+hook_subroutine(0x853b, "print_inline", stringhi_hook)
+
+# ============================================================
 # Named constants for OSBYTE/OS values
 # ============================================================
 constant(20,  "osbyte_explode_chars")
@@ -190,8 +198,19 @@ label(0x0600, "nmi_handler_page6")   # NMI handler code page 6
 label(0x0DEB, "fs_state_deb")        # Filing system state
 
 # ============================================================
-# Named labels for key routines
+# Named labels for dispatch table and key routines
 # ============================================================
+
+# Dispatch tables: split low/high byte address tables
+label(0x8020, "dispatch_lo")            # Low bytes of (handler_addr - 1)
+label(0x8044, "dispatch_hi")            # High bytes of (handler_addr - 1)
+
+# Dispatcher and dispatch callers
+label(0x809F, "dispatch")               # PHA/PHA/RTS dispatcher entry
+label(0x8069, "dispatch_net_cmd")       # *NET command dispatch (Y=$20)
+# Note: $8099 is already labelled "language_handler" by acorn.is_sideways_rom()
+label(0x8127, "dispatch_service")       # Service call dispatch (Y=$00)
+
 label(0x80AE, "return_1")
 label(0x8145, "return_2")
 label(0x8275, "return_3")
@@ -349,11 +368,27 @@ Key ADLC register values:
 # ============================================================
 # Dispatch table at $8020 (low bytes) / $8044 (high bytes)
 # ============================================================
-# Used via PHA/PHA/RTS pattern at $80A4-$80AE.
-# Three dispatch paths use this table:
-#   - Service calls 0-12: index = svc_num + 1 (Y=0 at c809f)
-#   - Language entry 0-4:  index = reason + 14 (Y=$0D at c809f)
-#   - *NET1-4 commands:    index = char-'1' + 33 (Y=$20 at c809f)
+# Used via the PHA/PHA/RTS dispatch trick at $809F-$80AE.
+#
+# This is a standard 6502 computed-jump technique. The table stores
+# handler addresses minus 1, split into separate low-byte and high-byte
+# arrays. The dispatcher at $809F pushes the high byte then the low
+# byte onto the stack. When RTS executes, it pops the address and adds
+# 1, jumping to the handler.
+#
+# Multiple callers share this single table using different base offsets
+# in Y. The dispatcher loop at $809F adds Y to X (the command index),
+# so each caller maps its index into a different region of the table:
+#
+#   Caller              Y (base)  X (index)         Table indices
+#   ─────────────────   ────────  ────────────────  ─────────────
+#   Service calls        $00      svc_num            1-13
+#   Language entry       $0D      reason             14-18
+#   *NET1-4 commands     $20      char-'1'           33-36
+#
+# Index 0 and unused indices point to an RTS (null handler), so
+# unrecognised service calls or out-of-range values fall through
+# harmlessly.
 #
 # rts_code_ptr(lo_addr, hi_addr) decodes the address and adds entry().
 
@@ -365,7 +400,7 @@ for i in range(1, 14):
 for i in range(14, 19):
     rts_code_ptr(0x8020 + i, 0x8044 + i)
 
-# Indices 19-32: unknown dispatcher, but addresses are all in ROM
+# Indices 19-32: secondary dispatch (see callers at $8079, $808C)
 for i in range(19, 33):
     rts_code_ptr(0x8020 + i, 0x8044 + i)
 
@@ -465,6 +500,100 @@ entry(0x982D)   # LDA #$82; STA $FEA0; installs NMI handler $9839
 # ============================================================
 # Note: acorn.bbc()'s hooks auto-annotate OSBYTE/OSWORD calls, so
 # we only add comments where the auto-annotations don't reach.
+
+# ============================================================
+# print_inline subroutine ($853B)
+# ============================================================
+comment(0x853B, """\
+Print inline string (high-bit terminated)
+Pops the return address from the stack, prints each byte via OSASCI
+until a byte with bit 7 set is found, then jumps to that address.
+The high-bit byte serves as both the string terminator and the opcode
+of the first instruction after the string.""")
+
+comment(0x853B, "Pop return address (low) — points to last byte of JSR", inline=True)
+comment(0x853E, "Pop return address (high)", inline=True)
+comment(0x8543, "Advance pointer past return address / to next char", inline=True)
+comment(0x8549, "Load next byte from inline string", inline=True)
+comment(0x854B, "Bit 7 set? Done — this byte is the next opcode", inline=True)
+comment(0x8552, "Jump to address of high-bit byte (resumes code after string)", inline=True)
+
+# ============================================================
+# Dispatch table comments ($8020-$8068)
+# ============================================================
+comment(0x8020, """\
+Dispatch table: low bytes of (handler_address - 1)
+Each entry stores the low byte of a handler address minus 1,
+for use with the PHA/PHA/RTS dispatch trick at $809F.
+See dispatch_hi ($8044) for the corresponding high bytes.
+Indexed by service number (1-13), language reason (14-18),
+or *NET command (33-36), with a base offset added by the caller.""")
+
+comment(0x8044, """\
+Dispatch table: high bytes of (handler_address - 1)
+Paired with dispatch_lo ($8020). Together they form a table of
+37 handler addresses, used via the PHA/PHA/RTS trick at $809F.""")
+
+# ============================================================
+# *NET command dispatch ($8069)
+# ============================================================
+comment(0x8069, """\
+*NET command dispatcher
+Parses the character after *NET as '1'-'4', maps to table
+indices 33-36 via base offset Y=$20, and dispatches via $809F.
+Characters outside '1'-'4' fall through to return_1 (RTS).""")
+
+comment(0x8069, "Read command character following *NET", inline=True)
+comment(0x806B, "Subtract ASCII '1' to get 0-based command index", inline=True)
+comment(0x8075, "Y=$20: base offset for *NET commands (index 33+)", inline=True)
+
+# ============================================================
+# PHA/PHA/RTS dispatcher ($809F)
+# ============================================================
+comment(0x809F, """\
+PHA/PHA/RTS computed dispatch
+X = command index within caller's group (e.g. service number)
+Y = base offset into dispatch table (0, $0D, $20, etc.)
+The loop adds Y+1 to X, so final X = command index + base + 1.
+Then high and low bytes of (handler-1) are pushed onto the stack,
+and RTS pops them and jumps to handler_address.
+
+This is a standard 6502 trick: RTS increments the popped address
+by 1 before jumping, so the table stores (address - 1) to
+compensate. Multiple callers share one table via different Y
+base offsets.""")
+
+comment(0x809F, "Add base offset Y to index X (loop: X += Y+1)", inline=True)
+comment(0x80A4, "Load high byte of (handler - 1) from table", inline=True)
+comment(0x80A7, "Push high byte onto stack", inline=True)
+comment(0x80A8, "Load low byte of (handler - 1) from table", inline=True)
+comment(0x80AB, "Push low byte onto stack", inline=True)
+comment(0x80AC, "Restore X (fileserver options) for use by handler", inline=True)
+comment(0x80AE, "RTS pops address, adds 1, jumps to handler", inline=True)
+
+# ============================================================
+# Language entry dispatch ($8099)
+# ============================================================
+comment(0x8099, """\
+Language entry dispatcher
+Called when the NFS ROM is entered as a language. X = reason code
+(0-4). Dispatches via table indices 14-18 (base offset Y=$0D).""")
+
+comment(0x809D, "Y=$0D: base offset for language handlers (index 14+)", inline=True)
+
+# ============================================================
+# Service call dispatch ($8127)
+# ============================================================
+comment(0x8127, """\
+Service call dispatcher
+Dispatches MOS service calls 0-12 via the shared dispatch table.
+Uses base offset Y=0, so table index = service number + 1.
+Service numbers >= 13 are ignored (branch to return_2).
+Called via JSR $809F rather than fall-through, so it returns
+to $813C to restore saved registers.""")
+
+comment(0x8137, "Y=0: base offset for service calls (index 1+)", inline=True)
+comment(0x8139, "JSR to dispatcher (returns here after handler completes)", inline=True)
 
 # NMI handler init — ROM code copies to page $04/$05/$06
 comment(0x80F9, "Copy NMI handler code from ROM to RAM pages $04-$06")
