@@ -1286,15 +1286,19 @@ Sets A=$FF (retry count) and Y=$60 (timeout parameter).
 Falls through to tx_poll_core.""")
 
 comment(0x8650, """\
-Core transmit and poll routine
-Saves parameters, reads the control byte from (net_tx_ptr),
-waits for tx_ctrl_status ready (bit 7 shifts out via ASL),
-copies the TX pointer to nmi_tx_block, and calls the ADLC
-TX setup routine. Then polls the control byte for completion:
+Core transmit and poll routine (XMIT)
+Saves parameters, then claims the TX semaphore (tx_ctrl_status)
+via ASL — a busy-wait spinlock where carry=0 means the semaphore
+is held by another operation. Only after claiming the semaphore
+is the TX pointer copied to nmi_tx_block, ensuring the low-level
+transmit code sees a consistent pointer. Then calls the ADLC TX
+setup routine and polls the control byte for completion:
   bit 7 set = still busy (loop)
   bit 6 set = error (check escape or report)
   bit 6 clear = success (clean return)
-On error, checks for escape condition and handles retries.""")
+On error, checks for escape condition and handles retries.
+Two entry points: setup_tx_ptr_c0 always uses the standard TXCB
+(for fileserver traffic); tx_poll_core is general-purpose.""")
 
 # ============================================================
 # print_inline subroutine ($853B)
@@ -1466,13 +1470,17 @@ comment(0x8278, """\
 Service 2: claim private workspace and initialise NFS
 Y = next available workspace page on entry.
 Sets up net_rx_ptr (Y) and nfs_workspace (Y+1) page pointers.
-On hard/power-on break (OSBYTE $FD result non-zero):
-  - Sets FS server station to $FE (no server selected)
-  - Clears FS handles, protection mask, protocol state
-  - Initialises file handle workspace with '?' placeholders
-Reads station ID from $FE18, calls adlc_init to initialise
-the MC6854, sets rx_status_flags to $40.
-On soft break: skips FS state init, preserves existing config.""")
+On soft break (OSBYTE $FD returns 0): skips FS state init,
+preserving existing login state, file server selection, and
+control block configuration — this is why pressing BREAK
+keeps the user logged in.
+On power-up/CTRL-BREAK (result non-zero):
+  - Sets FS server station to $FE (FS, the default; no server)
+  - Sets printer server to $EB (PS, the default)
+  - Clears FS handles, OPT byte, message flag, SEQNOS
+  - Initialises all RXCBs with $3F flag (available)
+In both cases: reads station ID from $FE18 (only valid during
+reset), calls adlc_init, enables user-level RX (LFLAG=$40).""")
 
 comment(0x828F, "OSBYTE $FD: read type of last reset", inline=True)
 comment(0x8295, "Soft break (X=0): skip FS init", inline=True)
@@ -1486,9 +1494,13 @@ comment(0x82C9, "Initialise ADLC hardware", inline=True)
 comment(0x81D1, """\
 Service 3: auto-boot
 Notifies current FS of shutdown via FSCV A=6. Scans keyboard
-(OSBYTE $7A) to check for boot-inhibit key. Prints station
-number and clock status, then falls through to set up NFS
-vectors (effectively selecting NFS as the filing system).""")
+(OSBYTE $7A): if no key is pressed, auto-boot proceeds; if the
+'N' key is pressed (matrix address $55), the boot is declined
+and the key is forgotten via OSBYTE $78. Any other key also
+declines. Prints "Econet Station <n>" and checks the ADLC SR2
+for the network clock signal — prints "No Clock" if absent (no
+network communication possible without it). Then falls through
+to set up NFS vectors (selecting NFS as the filing system).""")
 
 # ============================================================
 # Service 4: unrecognised * command ($8172)
@@ -1556,10 +1568,14 @@ as the NETV handler.""")
 # FSCV shutdown: save FS state ($82FD)
 # ============================================================
 comment(0x82FD, """\
-FSCV 6: Filing system shutdown / save state
-Copies 10 bytes of FS state from fs_state_deb ($0DEB) offsets
-$14-$1D back to (net_rx_ptr), preserving state across FS
-switches. Then calls OSBYTE $7B (printer driver going dormant).""")
+FSCV 6: Filing system shutdown / save state (FSDIE)
+Called when another filing system (e.g. DFS) is selected. Saves
+the current NFS context (FSLOCN station number, URD/CSD/LIB
+handles, OPT byte, etc.) from page $0E into the dynamic workspace
+backup area. This allows the state to be restored when *NET is
+re-issued later, without losing the login session. Finally calls
+OSBYTE $77 (FXSPEX: close SPOOL and EXEC files) to avoid leaving
+dangling file handles across the FS switch.""")
 
 # ============================================================
 # Init TX control block ($831C)
@@ -1605,15 +1621,41 @@ first sets up the TX pointer via sub_c8644, then falls through
 to send_fs_reply_cmd for reply handling.""")
 
 # ============================================================
+# FS error handler ($8402)
+# ============================================================
+comment(0x8402, """\
+Handle fileserver error replies (FSERR)
+The fileserver returns errors as: zero command code + error number +
+CR-terminated message string. This routine converts the reply buffer
+in-place to a standard MOS BRK error packet by:
+  1. Storing the error code at fs_last_error ($0E09)
+  2. Normalizing error codes below $A8 to $A8 (the standard FS error
+     number), since the MOS error space below $A8 has other meanings
+  3. Scanning for the CR terminator and replacing it with $00
+  4. JMPing indirect through (l00c4) to execute the buffer as a BRK
+     instruction — the zero command code serves as the BRK opcode
+N.B. This relies on the fileserver always returning a zero command
+code in position 0 of the reply buffer.""")
+
+# ============================================================
 # Handle BPUT/BGET ($83A3)
 # ============================================================
 comment(0x83A3, """\
 Handle BPUT/BGET file byte I/O
 Entry: C=0 for BPUT (write byte), C=1 for BGET (read byte).
 BPUTV enters at $83A2 (CLC; fall through) and BGETV enters
-at $8485 (SEC; JSR here). Saves registers, converts the file
-handle, initialises the TX control block, and sends the
-appropriate command to the fileserver.""")
+at $8485 (SEC; JSR here). The carry flag is preserved via
+PHP/PLP through the call chain and tested later (BCS) to
+select byte-stream transmission (BSXMIT) vs normal FS
+transmission (FSXMIT) — a control-flow encoding using
+processor flags to avoid an extra flag variable.
+
+BSXMIT uses handle=0 for print stream transactions (which
+sidestep the SEQNOS sequence number manipulation) and non-zero
+handles for file operations. After transmission, the high
+pointer bytes of the CB are reset to $FF — "The BGET/PUT byte
+fix" which prevents stale buffer pointers corrupting subsequent
+byte-level operations.""")
 
 # ============================================================
 # Send command to fileserver ($844A)
@@ -1788,15 +1830,73 @@ Starting offset X=$FC means it reads from $0E06-$0E09 area.
 Used to convert between absolute and relative file positions.""")
 
 # ============================================================
+# ARGSV handler ($88E1)
+# ============================================================
+comment(0x88E1, """\
+ARGSV handler (OSARGS entry point)
+  A=0, Y=0: return filing system number (10 = network FS)
+  A=0, Y>0: read file pointer via FS command $0A (FCRDSE)
+  A=1, Y>0: write file pointer via FS command $14 (FCWRSE)
+  A>=3 (ensure): silently returns — NFS has no local write buffer
+     to flush, since all data is sent to the fileserver immediately
+The handle in Y is converted via handle_to_mask_clc. For writes
+(A=1), the carry flag from the mask conversion is used to branch
+to save_args_handle, which records the handle for later use.""")
+
+# ============================================================
+# FINDV handler ($8949)
+# ============================================================
+comment(0x8949, """\
+FINDV handler (OSFIND entry point)
+  A=0: close file — delegates to close_handle ($8985)
+  A>0: open file — modes $40=read, $80=write/update, $C0=read/write
+For open: the mode byte is converted to the fileserver's two-flag
+format by flipping bit 7 (EOR #$80) and shifting. This produces
+Flag 1 (read/write direction) and Flag 2 (create/existing),
+matching the fileserver protocol. After a successful open, the
+new handle's bit is OR'd into the EOF hint byte (marks it as
+"might be at EOF, query the server"), and into the sequence
+number tracking byte for the byte-stream protocol.""")
+
+# ============================================================
+# GBPBV handler ($89EA)
+# ============================================================
+comment(0x89EA, """\
+GBPBV handler (OSGBPB entry point)
+  A=1-4: file read/write operations (handle-based)
+  A=5-8: info queries (disc title, current dir, lib, filenames)
+Calls 1-4 are standard file data transfers via the fileserver.
+Calls 5-8 were a late addition to the MOS spec and are the only
+NFS operations requiring Tube data transfer — described in the
+original source as "untidy but useful in theory." The data format
+uses length-prefixed strings (<name length><object name>) rather
+than the CR-terminated strings used elsewhere in the FS.""")
+
+# ============================================================
+# OSGBPB info handler ($8AAD)
+# ============================================================
+comment(0x8AAD, """\
+OSGBPB 5-8 info handler (OSINFO)
+Handles the "messy interface tacked onto OSGBPB" (original source).
+Checks whether the destination address is in Tube space by comparing
+the high bytes against TBFLAG. If in Tube space, data must be
+copied via the Tube FIFO registers (with delays to accommodate the
+slow 16032 co-processor) instead of direct memory access.""")
+
+# ============================================================
 # Forward unrecognised * command to fileserver ($8079)
 # ============================================================
 comment(0x8079, """\
-Forward unrecognised * command to fileserver
+Forward unrecognised * command to fileserver (COMERR)
 Copies command text from (fs_crc_lo) to $0F05+ via copy_filename,
-prepares an FS command with type $16, and dispatches via the shared
-dispatch table. Called from the "I." and catch-all entries in the
-command match table at $8BD6, and from FSCV 2/3/4 indirectly.
-If CSD handle is zero (not logged in), returns without sending.""")
+prepares an FS command with function code 0, and sends it to the
+fileserver to request decoding. The server returns a command code
+indicating what action to take (e.g. code 4=INFO, 7=DIR, 9=LIB,
+5=load-as-command). This mechanism allows the fileserver to extend
+the client's command set without ROM updates. Called from the "I."
+and catch-all entries in the command match table at $8BD6, and
+from FSCV 2/3/4 indirectly. If CSD handle is zero (not logged
+in), returns without sending.""")
 
 # ============================================================
 # *BYE handler ($8349)
@@ -1811,10 +1911,14 @@ Dispatched from the command match table at $8BD6 for "BYE".""")
 # FSCV unrecognised * handler ($8B92)
 # ============================================================
 comment(0x8B92, """\
-FSCV 2/3/4: unrecognised * command handler
-Matches the command text against a table of known FS commands
-at $8BD6. The table uses case-insensitive comparison with
-abbreviation support (commands can be shortened with '.').
+FSCV 2/3/4: unrecognised * command handler (DECODE)
+CLI parser originally by Roger Wilson (later Sophie Wilson,
+co-designer of ARM). Matches command text against the table
+at $8BD6 using case-insensitive comparison with abbreviation
+support — commands can be shortened with '.' (e.g. "I." for
+"INFO"). The "I." entry is a special fudge placed first in the
+table: since "I." could match multiple commands, it jumps to
+forward_star_cmd to let the fileserver resolve the ambiguity.
 
 The matching loop compares input characters against table
 entries. On mismatch, it skips to the next entry. On match
@@ -1825,13 +1929,15 @@ After matching, adjusts fs_crc_lo/fs_crc_hi to point past
 the matched command text.""")
 
 comment(0x8BD6, """\
-FS command match table
+FS command match table (COMTAB)
 Format: command letters (bit 7 clear), then dispatch address
 as two bytes: high|(bit 7 set), low. The PHA/PHA/RTS trick
-adds 1 to the stored (address-1).
+adds 1 to the stored (address-1). Matching is case-insensitive
+(AND $DF) and supports '.' abbreviation (standard Acorn pattern).
 
 Entries:
-  "I."     → $8079 (forward_star_cmd: send to FS)
+  "I."     → $8079 (forward_star_cmd) — placed first as a fudge
+             to catch *I. abbreviation before matching *I AM
   "I AM"   → $8D06 (i_am_handler: parse station.net, logon)
   "EX "    → $8BF2 (ex_handler: extended catalogue)
   "EX"\\r   → $8BF2 (same, exact match at end of line)
@@ -1850,16 +1956,26 @@ $8C07, bypassing cat_handler's default 20-column setup.""")
 comment(0x8BFD, """\
 *CAT handler (directory catalogue)
 Sets column width $B6=$14 (20 columns, four files per 80-column
-line) and $B7=$03. Sends FS command $12 (examine directory) to
-the fileserver, then displays the directory listing:
+line) and $B7=$03. The catalogue protocol is multi-step: first
+sends FCUSER ($15: read user environment) to get CSD, disc, and
+library names, then sends FCREAD ($12: examine) repeatedly to
+fetch entries in batches until zero are returned (end of dir).
+The receive buffer abuts the examine request buffer and ends at
+RXBUFE, allowing seamless data handling across request cycles.
+
+The command code byte in the fileserver reply indicates FS type:
+zero means an old-format FS (client must format data locally),
+non-zero means new-format (server returns pre-formatted strings).
+This enables backward compatibility with older Acorn fileservers.
+
+Display format:
   - Station number in parentheses
   - "Owner" or "Public" access level
   - Boot option with name (Off/Load/Run/Exec)
   - Current directory and library paths
-  - Directory entries in columns
-
-Uses prepare_fs_cmd to build commands, and iterates through
-directory pages using $B4/$B5 as start/end counters.""")
+  - Directory entries: CRFLAG ($CF) cycles 0-3 for multi-column
+    layout; at count 0 a newline is printed, others get spaces.
+    *EX sets CRFLAG=$FF to force one entry per line.""")
 
 # ============================================================
 # Boot command strings ($8CEA)
@@ -2080,18 +2196,20 @@ comment(0x8FEF, "Test for end-of-data marker ($0D)", inline=True)
 # OSWORD-style function dispatch ($9007)
 # ============================================================
 comment(0x9007, """\
-Econet function dispatch handler
-Saves all registers, retrieves the function code from the stacked A,
-and dispatches to one of 9 handlers (codes 0-8) via the PHA/PHA/RTS
-trampoline at $9020. Function codes >= 9 are ignored.
+NETVEC dispatch handler (ENTRY)
+Indirected from NETVEC at $0224. Saves all registers and flags,
+retrieves the reason code from the stacked A, and dispatches to
+one of 9 handlers (codes 0-8) via the PHA/PHA/RTS trampoline at
+$9020. Reason codes >= 9 are ignored.
 
-Dispatch targets:
-  0,6: $8145 (return_2, no-op RTS)
-  1-3: $91C7 (shared handler)
-  4:   $903D (propagate carry into stacked P)
-  5:   $91B5
-  7:   $9063
-  8:   $90CD""")
+Dispatch targets (from NFS09):
+  0:   no-op (RTS)
+  1-3: PRINT — chars in printer buffer / Ctrl-B / Ctrl-C
+  4:   NWRCH — write character to screen (net write char)
+  5:   SELECT — printer selection changed
+  6:   no-op (net read char — not implemented)
+  7:   NBYTE — remote OSBYTE call
+  8:   NWORD — remote OSWORD call""")
 
 comment(0x900E, "Retrieve original A (function code) from stack", inline=True)
 comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", inline=True)
@@ -2211,8 +2329,12 @@ for a free RXCB (flag byte = $3F = deleted) starting from RXCB #3
 number in the first byte, or zero if none free. If the first byte
 is non-zero, reads the specified RXCB's data back into the caller's
 parameter block (12 bytes) and then deletes the RXCB by setting
-its flag byte to $3F. The low-level user RX is disabled (via
-LFLAG at $D64) during the operation to prevent race conditions.""")
+its flag byte to $3F — a consume-once semantic so user code reads
+received data and frees the CB in a single atomic operation,
+preventing double-reads. The low-level user RX flag (LFLAG) is
+temporarily disabled via ROR/ROL during the operation to prevent
+the interrupt-driven receive code from modifying a CB that is
+being read or opened.""")
 
 # ============================================================
 # Remote operation handlers ($90FC / $912A / $913A / $914A)
@@ -2234,8 +2356,13 @@ Remote operation with source validation (REMOT)
 Validates that the source station/network in the received packet
 matches the controlling station stored in the remote RXCB. This
 ensures that only the station that initiated the remote session
-can send commands. Falls through to the specific operation handler
-(CHARIN for keyboard input, or dispatches by tag byte).""")
+can send commands — characters from other stations are rejected.
+Full init sequence: 1) disable keyboard, 2) set workspace ptr,
+3) set status busy, 4) set R/W/byte/word masks, 5) set up CB,
+6) set MODE 7, 7) set auto repeat rates, 8) enter language.
+Bit 0 of the status byte disallows further remote takeover
+attempts (preventing re-entrant remote control), while bit 3
+marks the machine as currently remoted.""")
 
 comment(0x914A, """\
 Insert remote keypress
@@ -2252,18 +2379,32 @@ it at workspace offset $28. Also reads the data length from ($F0)+1
 and adds it to $F0 to compute the end address at offset $2C.""")
 
 comment(0x9063, """\
-Fn 7: dispatch received remote OSBYTE/OSWORD command
-Compares the received command byte against two tables of known
-OSBYTE/OSWORD codes (table at $90BE). If matched, copies the
-command parameters from NFS workspace to the stack area at $0106+
-and executes via a PHA/PHA/RTS trampoline. If no match, returns
-without action.""")
+Fn 7: remote OSBYTE handler (NBYTE)
+Full RPC mechanism for OSBYTE calls across the network. When a
+machine is remoted, OSBYTE/OSWORD calls that affect terminal-side
+hardware (keyboard scanning, flash rates, etc.) must be indirected
+across the net. OSBYTE calls are classified into three categories:
+  Y>0 (NCTBPL table): executed on BOTH machines (flash rates etc.)
+  Y<0 (NCTBMI table): executed on terminal only, result sent back
+  Y=0: not recognised, passed through unhandled
+Results returned via stack manipulation: the saved processor status
+byte at $0106 has V-flag (bit 6) forced on to tell the MOS the
+call was claimed (preventing dispatch to other ROMs), and the I-bit
+(bit 2) forced on to disable interrupts during register restoration,
+preventing race conditions. The carry flag in the saved P is also
+manipulated via ROR/ASL to zero it, signaling success to the caller.
+OSBYTE $81 (INKEY) gets special handling as it must read the
+terminal's keyboard.""")
 
 comment(0x90CD, """\
-Fn 7/8: copy received command data to workspace
-Copies received command parameters from the RX buffer at ($F0)+Y
-into NFS workspace at offset $DB+. Used by function codes 7 and 8
-to stage data before dispatch.""")
+Fn 8: remote OSWORD handler (NWORD)
+Only intercepts OSWORD 7 (make a sound) and OSWORD 8 (define an
+envelope). Unlike NBYTE which returns results, NWORD is entirely
+fire-and-forget — no return path is implemented. The developer
+explicitly noted this was acceptable since sound/envelope commands
+don't return meaningful results. Copies up to 14 parameter bytes
+from the RX buffer to workspace, tags the message as RWORD, and
+transmits.""")
 
 comment(0x91B5, """\
 Fn 5: printer selection changed (SELECT)
@@ -2274,10 +2415,23 @@ and sets the initial flag byte ($41). Otherwise just updates
 the printer status flags (PFLAGS).""")
 
 comment(0x91C7, """\
-Fn 1/2/3: remote print handler
-Handles characters received over the network for remote printing.
-Buffers output bytes and flushes complete blocks via
-flush_output_block ($9217).""")
+Fn 1/2/3: network printer handler (PRINT)
+Handles network printer output. Reason 1 = chars in buffer (extract
+from MOS buffer 3 and accumulate), reason 2 = Ctrl-B (start print),
+reason 3 = Ctrl-C (end print). The printer status byte PFLAGS uses:
+  bit 7 = sequence number (toggles per packet for dup detection)
+  bit 6 = always 1 (validity marker)
+  bit 0 = 0 when print active
+Print streams reuse the BSXMIT (byte-stream transmit) code with
+handle=0, which causes the AND SEQNOS to produce zero and sidestep
+per-file sequence tracking. After transmission, TXCB pointer bytes
+are filled with $FF to prevent stale values corrupting subsequent
+BGET/BPUT operations (a historically significant bug fix).
+N.B. The printer and REMOTE facility share the same dynamically
+allocated static workspace page via WORKP1 ($9E,$9F) — care must
+be taken to never leave the pointer corrupted, as corruption would
+cause one subsystem to overwrite the other's data.
+Only handles buffer 4 (network printer); others are ignored.""")
 
 comment(0x91EC, """\
 Store output byte to network buffer
