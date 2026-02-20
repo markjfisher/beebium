@@ -196,33 +196,45 @@ label(0x0D52, "tx_in_progress")     # Referenced by NMI handlers
 label(0x0D5C, "scout_status")       # Scout/packet status indicator
 label(0x0D5D, "rx_extra_byte")      # Extra byte read after data frame completion
 
-# Econet state ($0D60-$0D67)
-label(0x0D62, "osword_busy")        # b7=Transmission in progress
-label(0x0D63, "protection_mask")    # Protection mask (bit per remote op type: peek/poke/halt/etc.)
-label(0x0D64, "rx_flags")           # b7=Rx at $00C0, b2=Halted
-label(0x0D65, "saved_prot_mask")    # Saved protection mask
+# Econet state ($0D60-$0D67) — reference: NFS00 TXCLR-TBFLAG
+label(0x0D62, "tx_clear_flag")      # TXCLR: b7=Transmission in progress
+label(0x0D63, "prot_status")        # LSTAT: PEEK/POKE protection status bits
+label(0x0D64, "rx_flags")           # LFLAG: flag byte used for T/Rx (b7=Rx at $00C0, b2=Halted)
+label(0x0D65, "saved_jsr_mask")     # OLDJSR: old copy of JSR buffer protection bits
 label(0x0D66, "econet_init_flag")   # b7=Econet using NMI code ($00=no, $80=yes)
-label(0x0D67, "tube_flag")          # b7=Tube present ($00=no, $FF=yes)
+label(0x0D67, "tube_flag")          # TBFLAG: b7=Tube present ($00=no, $FF=yes)
 
 # ============================================================
-# Page $0E — Filing system workspace
+# Page $0E — Filing system context (reference: NFS00 FSLOCN-CMNDP)
 # ============================================================
-label(0x0E00, "fs_server_stn")      # File server station number
-label(0x0E01, "fs_server_net")      # File server network number
-label(0x0E05, "fs_sequence")        # FS command sequence number
-label(0x0E02, "fs_urd_handle")     # Probably user root directory handle (unverified)
-label(0x0E03, "fs_work_0e03")     # FS workspace (possibly part of user context)
-label(0x0E04, "fs_work_0e04")     # FS workspace (possibly part of user context)
-label(0x0E06, "fs_work_0e06")     # FS workspace (possibly protocol state)
-label(0x0E07, "fs_work_0e07")     # FS workspace (possibly protocol state)
-label(0x0E08, "fs_work_0e08")      # FS workspace
-label(0x0E09, "fs_csd_handle")     # Current selected directory handle
-label(0x0E0A, "fs_lib_handle")     # Library directory handle
-label(0x0E0B, "fs_work_0e0b")     # FS workspace (possibly related to command building)
-label(0x0E0C, "fs_work_0e0c")     # FS workspace (possibly related to command building)
-label(0x0E10, "fs_work_0e10")     # FS workspace
-label(0x0E11, "fs_work_0e11")     # FS workspace
-label(0x0E16, "fs_work_0e16")     # FS workspace
+# Layout from the original source (NFS00):
+#   $0E00  FSLOCN   File server station (2 bytes: station + network)
+#   $0E02  URD      User root directory handle
+#   $0E03  CSD      Current selected directory handle
+#   $0E04  LIB      Library directory handle
+#   $0E05  OPT      AUTOBOOT option number (*OPT 4,n)
+#   $0E06  MESS     Messages on/off flag
+#   $0E07  EOF      End-of-file flags
+#   $0E08  SEQNOS   Byte stream sequence numbers
+#   $0E09  ERROR    Slot for last unknown error code
+#   $0E0A  SPARE    (also JCMNDP)
+#   $0E0D  RSTAT    Status byte
+#   $0E0E  TARGET   Target station (2 bytes)
+#   $0E10  CMNDP    Pointer to rest of command line
+label(0x0E00, "fs_server_stn")      # FSLOCN: file server station number
+label(0x0E01, "fs_server_net")      # FSLOCN+1: file server network number
+label(0x0E02, "fs_urd_handle")      # URD: user root directory handle
+label(0x0E03, "fs_csd_handle")      # CSD: current selected directory handle
+label(0x0E04, "fs_lib_handle")      # LIB: library directory handle
+label(0x0E05, "fs_boot_option")     # OPT: AUTOBOOT option number
+label(0x0E06, "fs_messages_flag")   # MESS: messages on/off flag
+label(0x0E07, "fs_eof_flags")       # EOF: end-of-file flags
+label(0x0E08, "fs_sequence_nos")    # SEQNOS: byte stream sequence numbers
+label(0x0E09, "fs_last_error")      # ERROR: slot for last unknown error code
+label(0x0E0A, "fs_cmd_context")     # SPARE/JCMNDP: command context
+label(0x0E0D, "fs_reply_status")    # RSTAT: reply status byte
+label(0x0E0E, "fs_target_stn")      # TARGET: target station for remote ops (2 bytes)
+label(0x0E10, "fs_cmd_ptr")         # CMNDP: pointer to rest of command line
 
 # Other workspace used by NFS
 # Relocated code — Tube host zero-page code (BRKV = $0016)
