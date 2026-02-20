@@ -17,6 +17,32 @@ import acorn
 
 load(0x8000, "/Users/rjs/Code/beebium/roms/acorn-nfs_3_34.rom", "6502")
 
+# ============================================================
+# Relocated code blocks
+# ============================================================
+# The NFS ROM copies code from ROM into RAM at initialisation ($80C8-$8119).
+# These blocks execute at different addresses than their storage locations.
+# move(dest, src, length) tells py8dis the runtime address for each block.
+#
+# The page copy loop ($80F9) starts with Y=0, DEY/BNE wraps through
+# $FF..$01 — all 256 bytes of each page are copied.
+#
+# The workspace init ($8113) copies X=$60 downto 0 (BPL) = 97 bytes.
+#
+# Vectors set up during init:
+#   BRKV  = $0016 (in workspace block — BRK/error handler)
+#   RDCHV = $04E7 (in page 4 — RDCH handler)
+#   WRCHV = $051C (in page 5 — WRCH handler)
+#   EVNTV = $06E8 (in page 6 — event handler)
+
+# BRK handler + NMI workspace init code ($9307 → $0016-$0076)
+move(0x0016, 0x9307, 0x61)
+
+# NMI handler / CLI command code ($934C/$944C/$954C → pages $04/$05/$06)
+move(0x0400, 0x934C, 0x100)
+move(0x0500, 0x944C, 0x100)
+move(0x0600, 0x954C, 0x100)
+
 # acorn.bbc() provides: os_text_ptr ($F2), romsel_copy ($F4), osrdsc_ptr ($F6),
 # all OS vectors (brkv, wrchv, ..., netv), all OS entry points (osasci, osbyte, ...),
 # plus hooks for automatic OSBYTE/OSWORD annotation.
@@ -190,11 +216,43 @@ label(0x0E11, "fs_work_0e11")     # FS workspace
 label(0x0E16, "fs_work_0e16")     # FS workspace
 
 # Other workspace used by NFS
+# Relocated code — BRK handler (BRKV = $0016)
+label(0x0016, "brk_handler")
+entry(0x0016)
+
+# Relocated code — page 4 (NMI handlers, RDCH)
 label(0x0400, "nmi_handler_page4")   # NMI handler code copied from ROM
+label(0x0403, "nmi_tube_entry_2")    # JMP $06E2 (escape check for Tube)
 label(0x0406, "nmi_tube_helper")     # Tube data transfer helper (in copied code)
 label(0x0414, "nmi_init_entry")      # Entry point into copied NMI init code
+label(0x04E7, "rdch_handler")        # RDCHV target
+label(0x04EF, "tube_restore_xy")     # Restore X,Y from $10/$11, JSR c04F7
+entry(0x0400)
+entry(0x0403)
+entry(0x0406)
+entry(0x0414)
+entry(0x04E7)
+entry(0x04EF)
+
+# Relocated code — page 5 (WRCH, *NET command dispatch)
+# $0500-$051B: 14-entry dispatch table of word addresses used by
+# JMP ($0500) at $0054 and indexed command dispatch.
 label(0x0500, "nmi_handler_page5")   # NMI handler code page 5
+label(0x051C, "wrch_handler")        # WRCHV target
+entry(0x051C)
+# Dispatch table targets (all *NET command handlers)
+for addr in [0x055B, 0x05C5, 0x0626, 0x063B, 0x065D, 0x06A3,
+             0x04EF, 0x053D, 0x058C, 0x0550, 0x0543, 0x0569,
+             0x05D8, 0x0602]:
+    entry(addr)
+
+# Relocated code — page 6 (event handler, subroutines)
 label(0x0600, "nmi_handler_page6")   # NMI handler code page 6
+label(0x06E2, "tube_escape_check")   # LDA $FF; SEC; ROR; BMI to Tube write
+label(0x06E8, "event_handler")       # EVNTV target
+entry(0x0600)
+entry(0x06E2)
+entry(0x06E8)
 label(0x0DEB, "fs_state_deb")        # Filing system state
 
 # ============================================================
@@ -210,6 +268,56 @@ label(0x809F, "dispatch")               # PHA/PHA/RTS dispatcher entry
 label(0x8069, "dispatch_net_cmd")       # *NET command dispatch (Y=$20)
 # Note: $8099 is already labelled "language_handler" by acorn.is_sideways_rom()
 label(0x8127, "dispatch_service")       # Service call dispatch (Y=$00)
+
+# Filing system OSWORD dispatch ($8DF7-$8E01)
+label(0x8E01, "fs_osword_dispatch")    # PHA/PHA/RTS dispatch for FS OSWORDs
+label(0x8E18, "fs_osword_tbl_lo")      # Low bytes of FS OSWORD handler table
+label(0x8E1D, "fs_osword_tbl_hi")      # High bytes of FS OSWORD handler table
+
+# FS OSWORD handler routines
+label(0x8E22, "copy_param_block")     # Bidirectional copy: C=1 param→ws, C=0 ws→param
+label(0x8E33, "osword_0f_handler")    # OSWORD $0F: return TX result
+label(0x8E53, "osword_11_handler")    # OSWORD $11: read FS reply data
+label(0x8E7B, "osword_12_handler")    # OSWORD $12: read/write Econet state
+label(0x8EF0, "osword_10_handler")    # OSWORD $10: allocate RX slot, copy FS command
+
+# Econet TX/RX handler and OSWORD dispatch
+label(0x8F72, "econet_tx_rx")          # Main TX/RX handler (A=0: send, A>=1: result)
+label(0x9007, "osword_dispatch")       # OSWORD-style function dispatch (codes 0-8)
+label(0x9020, "osword_trampoline")     # PHA/PHA/RTS trampoline
+label(0x902B, "osword_tbl_lo")         # Dispatch table low bytes
+label(0x9034, "osword_tbl_hi")         # Dispatch table high bytes
+label(0x903D, "osword_fn4")            # Function 4: propagate carry
+label(0x904B, "setup_tx_and_send")    # Set up TX ctrl block at ws+$0C and transmit
+
+# Remote operation handlers
+label(0x90FC, "remote_boot_handler")  # Remote boot: set up, download, execute at $0100
+label(0x912A, "execute_at_0100")      # Zero $0100-$0102, JMP $0100
+label(0x913A, "remote_validated")     # Remote op with source address validation
+label(0x914A, "insert_remote_key")    # Insert char from RX block into keyboard buffer
+
+# Control block setup
+label(0x9159, "ctrl_block_setup_alt")  # Alternate entry into control block setup
+label(0x9162, "ctrl_block_setup")     # Main entry: X=$1A, Y=$17, V=0 (nfs_workspace)
+label(0x918E, "ctrl_block_template")  # Template table for control block initialisation
+
+# Network transmit
+label(0x9248, "econet_tx_retry")      # Transmit with retry until accepted or timeout
+
+# Palette/VDU state save
+label(0x9291, "save_palette_vdu")     # Save all 16 palette entries + VDU state
+
+# ADLC initialisation and state management
+label(0x966F, "adlc_init")           # Full init: reset ADLC, read station ID, install NMI shim
+label(0x9681, "adlc_init_workspace") # Init workspace: copy NMI shim, set station ID
+label(0x969D, "save_econet_state")   # Save status/protection/tube to RX block offsets 8-10
+label(0x96B4, "restore_econet_state")# Restore status/protection/tube from RX block
+label(0x96CD, "install_nmi_shim")    # Copy 32-byte NMI shim from ROM to $0D00
+
+# Tube co-processor I/O subroutines (in relocated page 6)
+label(0x06D0, "tube_write_data2")    # Poll Tube status 2, write A to data register 2
+label(0x06D9, "tube_write_data4")    # Poll Tube status 4, write A to data register 4
+label(0x06F7, "tube_write_ctrl1")    # Poll Tube control, write A to data register 1
 
 label(0x80AE, "return_1")
 label(0x8145, "return_2")
@@ -410,6 +518,23 @@ for i in range(33, 37):
     rts_code_ptr(0x8020 + i, 0x8044 + i)
 
 # ============================================================
+# Filing system OSWORD dispatch table at $8E18/$8E1D
+# ============================================================
+# Used by the PHA/PHA/RTS dispatch at $8E01 (entered from sub_c8df7).
+# sub_c8df7 subtracts $0F from the command code in $EF, giving a
+# 0-4 index for OSWORD calls $0F-$13 (15-19).
+#
+# Index  OSWORD  Target   Purpose
+# ─────  ──────  ───────  ────────────────────────────
+#   0      $0F   $8E33    Protection/status control
+#   1      $10   $8EF0    RX block read/setup
+#   2      $11   $8E53    Data block copy
+#   3      $12   $8E7B    FS server station lookup
+#   4      $13   $8F72    Econet TX/RX handler
+for i in range(5):
+    rts_code_ptr(0x8E18 + i, 0x8E1D + i)
+
+# ============================================================
 # NMI handler chain entry points
 # ============================================================
 # These are installed via self-modifying JMP at $0D0C/$0D0D,
@@ -485,6 +610,28 @@ entry(0x89EA)   # JSR $8508; ... (preceded by RTS, standalone entry)
 entry(0x8E33)   # ASL $0D3A; ... (preceded by RTS, NMI workspace handler)
 entry(0x9063)   # LDY zp; CMP#; ... (preceded by RTS, standalone entry)
 entry(0x99BB)   # Post-ACK: process received scout (check port, match RX block)
+
+# --- Econet TX/RX handler and OSWORD dispatch ($8F72-$904A) ---
+# $8F72: Main transmit/receive handler entry (A=0: set up and send, A>=1: handle result)
+# $9007: OSWORD-style dispatch handler (function codes 0-8, PHA/PHA/RTS)
+entry(0x8F72)   # Econet TX/RX handler (CMP #1; BCS)
+entry(0x9007)   # Econet function dispatch handler (PHP; PHA; save regs)
+entry(0x9020)   # Dispatch trampoline (PHA/PHA/RTS into table at $902B/$9034)
+entry(0x903D)   # Function 4 handler: propagate carry into stacked P
+
+# Dispatch table at $902B (low bytes) / $9034 (high bytes)
+# 9 entries for function codes 0-8, used via PHA/PHA/RTS at $9020.
+# Targets: 0=$8145(RTS), 1-3=$91C7, 4=$903D, 5=$91B5, 6=$8145(RTS), 7=$9063, 8=$90CD
+for i in range(9):
+    rts_code_ptr(0x902B + i, 0x9034 + i)
+
+# Alternate entry into sub_c9162 (ADLC register setup)
+entry(0x9159)   # ADLC setup: LDX #$0D; LDY #$7C; BIT $833A; BVS c9167
+
+# Dispatch targets found in equb data regions
+entry(0x91B5)   # Function 5 handler
+entry(0x91C7)   # Function 1/2/3 handler (shared)
+entry(0x90CD)   # Function 8 handler
 
 # --- Code found in third-pass remaining equb regions ---
 entry(0x8741)   # BEQ +3; JMP $8844 (called from $8743 region)
@@ -596,8 +743,245 @@ comment(0x8137, "Y=0: base offset for service calls (index 1+)", inline=True)
 comment(0x8139, "JSR to dispatcher (returns here after handler completes)", inline=True)
 
 # NMI handler init — ROM code copies to page $04/$05/$06
+# ============================================================
+# Filing system OSWORD dispatch ($8DF7 / $8E01)
+# ============================================================
+comment(0x8DF7, """\
+Filing system OSWORD entry
+Subtracts $0F from the command code in $EF, giving a 0-4 index
+for OSWORD calls $0F-$13 (15-19). Falls through to the
+PHA/PHA/RTS dispatch at $8E01.""")
+
+comment(0x8DF7, "Command code from $EF", inline=True)
+comment(0x8DF9, "Subtract $0F: OSWORD $0F-$13 become indices 0-4", inline=True)
+
+comment(0x8E01, """\
+PHA/PHA/RTS dispatch for filing system OSWORDs
+X = OSWORD number - $0F (0-4). Dispatches via the 5-entry table
+at $8E18 (low) / $8E1D (high).""")
+
+comment(0x8E18, "Dispatch table: low bytes for OSWORD $0F-$13 handlers", inline=True)
+comment(0x8E1D, "Dispatch table: high bytes for OSWORD $0F-$13 handlers", inline=True)
+
 comment(0x80F9, "Copy NMI handler code from ROM to RAM pages $04-$06")
 comment(0x8113, "Copy NMI workspace initialiser from ROM to $0016-$0076")
+
+# ============================================================
+# Econet TX/RX handler ($8F72)
+# ============================================================
+comment(0x8F72, """\
+Econet transmit/receive handler
+A=0: Initialise TX control block from ROM template at $8310
+     (zero entries substituted from NMI workspace $0DDA), transmit
+     it, set up RX control block, and receive reply.
+A>=1: Handle transmit result (branch to cleanup at $8F48).""")
+
+comment(0x8F72, "A=0: set up and transmit; A>=1: handle result", inline=True)
+comment(0x8F78, "Load from ROM template (zero = use NMI workspace value)", inline=True)
+comment(0x8FA3, "Enable interrupts before transmit", inline=True)
+comment(0x8FA9, "Dest station = $FFFF (accept reply from any station)", inline=True)
+comment(0x8FBB, "Initiate receive with timeout", inline=True)
+comment(0x8FBE, "Non-zero = error/timeout: jump to cleanup", inline=True)
+
+# Data transfer loop ($8FD7-$8FF3)
+comment(0x8FD7, "Receive data blocks until command byte = $00 or $0D", inline=True)
+comment(0x8FEF, "Test for end-of-data marker ($0D)", inline=True)
+
+# ============================================================
+# OSWORD-style function dispatch ($9007)
+# ============================================================
+comment(0x9007, """\
+Econet function dispatch handler
+Saves all registers, retrieves the function code from the stacked A,
+and dispatches to one of 9 handlers (codes 0-8) via the PHA/PHA/RTS
+trampoline at $9020. Function codes >= 9 are ignored.
+
+Dispatch targets:
+  0,6: $8145 (return_2, no-op RTS)
+  1-3: $91C7 (shared handler)
+  4:   $903D (propagate carry into stacked P)
+  5:   $91B5
+  7:   $9063
+  8:   $90CD""")
+
+comment(0x900E, "Retrieve original A (function code) from stack", inline=True)
+comment(0x9020, "PHA/PHA/RTS trampoline: push handler addr-1, RTS jumps to it", inline=True)
+
+# ============================================================
+# Function 4 handler ($903D)
+# ============================================================
+comment(0x903D, """\
+Function 4: propagate carry into stacked processor status
+The ROR/ASL pair on the stacked P register replaces the saved
+carry flag with the current carry, so the caller gets the
+updated carry after PLP restores the flags.""")
+
+comment(0x903E, "ROR then ASL the stacked P: replaces saved carry with current carry", inline=True)
+
+# ============================================================
+# Control block setup routine ($9159 / $9162)
+# ============================================================
+comment(0x9159, """\
+Alternate entry into control block setup
+Sets X=$0D, Y=$7C. Tests bit 6 of $833A to choose target:
+  V=0 (bit 6 clear): stores to (nfs_workspace)
+  V=1 (bit 6 set):   stores to (net_rx_ptr)""")
+
+comment(0x9162, """\
+Control block setup — main entry
+Sets X=$1A, Y=$17, clears V (stores to nfs_workspace).
+Reads the template table at $918E indexed by X, storing each
+value into the target workspace at offset Y. Both X and Y
+are decremented on each iteration.
+
+Template sentinel values:
+  $FE = stop (end of template for this entry path)
+  $FD = skip (leave existing value unchanged)
+  $FC = use page high byte of target pointer""")
+
+comment(0x9167, "Load template byte from ctrl_block_template[X]", inline=True)
+
+comment(0x918E, """\
+Control block initialisation template
+Read by the loop at $9167, indexed by X from a starting value
+down to 0. Values are stored into either (nfs_workspace) or
+(net_rx_ptr) at offset Y, depending on the V flag.
+
+Two entry paths read different slices of this table:
+  sub_c9162:          X=$1A (26) down, Y=$17 (23) down, V=0
+  ctrl_block_setup_alt: X=$0D (13) down, Y=$7C (124) down, V from BIT $833A
+
+Sentinel values:
+  $FE = stop processing
+  $FD = skip this offset (decrement Y but don't store)
+  $FC = substitute the page byte (net_rx_ptr_hi or nfs_workspace_hi)""")
+
+# ============================================================
+# Bidirectional block copy ($8E22)
+# ============================================================
+comment(0x8E22, """\
+Bidirectional block copy between OSWORD param block and workspace.
+C=1: copy X+1 bytes from ($F0),Y to (fs_crc_lo),Y (param to workspace)
+C=0: copy X+1 bytes from (fs_crc_lo),Y to ($F0),Y (workspace to param)""")
+
+# ============================================================
+# Remote operation handlers ($90FC / $912A / $913A / $914A)
+# ============================================================
+comment(0x90FC, """\
+Remote boot/execute handler
+Validates byte 4 of the RX control block (must be zero), copies the
+2-byte execution address from RX offsets $80/$81 into NFS workspace,
+sets up a control block, disables keyboard (OSBYTE $C9), then falls
+through to execute_at_0100.""")
+
+comment(0x912A, """\
+Execute downloaded code at $0100
+Zeroes $0100-$0102 (safe BRK default), restores the protection mask,
+and JMP $0100 to execute code received over the network.""")
+
+comment(0x914A, """\
+Insert remote keypress
+Reads a character from RX block offset $82 and inserts it into
+keyboard input buffer 0 via OSBYTE $99.""")
+
+# ============================================================
+# ADLC initialisation ($966F)
+# ============================================================
+comment(0x966F, """\
+ADLC initialisation
+Reads station ID (INTOFF side effect), performs full ADLC reset,
+checks for Tube presence (OSBYTE $EA), then falls through to
+adlc_init_workspace.""")
+
+comment(0x9681, """\
+Initialise NMI workspace
+Copies NMI shim from ROM to $0D00, stores current ROM bank number
+into shim self-modifying code, sets TX status to $80 (idle/complete),
+saves station ID from $FE18 into TX scout buffer, re-enables NMIs
+by reading $FE20.""")
+
+comment(0x969D, """\
+Save Econet state to RX control block
+Stores rx_status_flags, protection_mask, and tx_in_progress
+to (net_rx_ptr) at offsets 8-10. INTOFF side effect on entry.""")
+
+comment(0x96B4, """\
+Restore Econet state from RX control block
+Loads rx_status_flags, protection_mask, and tx_in_progress
+from (net_rx_ptr) at offsets 8-10, then reinitialises via
+adlc_init_workspace.""")
+
+comment(0x96CD, """\
+Copy NMI shim from ROM ($9FCA) to RAM ($0D00)
+Copies 32 bytes. Interrupts are enabled during the copy.""")
+
+# ============================================================
+# Relocated code block comments
+# ============================================================
+comment(0x0016, """\
+BRK handler (BRKV target)
+Handles errors when a Tube co-processor is active. Reads the error
+message from zero page via ($FD), sends each byte to the Tube,
+resets the stack, then dispatches through the page 5 vector table
+via JMP ($0500). Also polls Tube registers for incoming data.""")
+
+comment(0x0400, """\
+NMI handler page 4 — Tube protocol and CLI dispatch
+Copied from ROM at $934C during init. Contains:
+  $0400: entry (JMP to CLI parser at $0473)
+  $0403: escape check for Tube (JMP $06E2)
+  $0406: nmi_tube_helper (Tube data transfer protocol)
+  $0414: nmi_init_entry (called after copy, sets $14=$80)
+  $0473: CLI command parser (ROM title, break type check)
+  $04E7: RDCHV handler (read character for Tube)
+  $04EF: restore X/Y, poll Tube status
+  $04F7: poll Tube status register 2, read data""")
+
+comment(0x0500, """\
+NMI handler page 5 — WRCHV and file I/O commands
+Copied from ROM at $944C during init. Contains:
+  $0500-$051B: 14-entry dispatch table (word addresses)
+  $051C: WRCHV handler (write character via Tube)
+  $0543: OSBPUT (write byte to file via Tube)
+  $0550: OSBGET (read byte from file via Tube)
+  $055B: OSRDCH (read character via Tube)
+  $0569: OSFIND open (open file via Tube)
+  $058C: OSARGS (file attributes via Tube)
+  $05B1: read filename/command from Tube into $0700
+  $05C5: OSCLI (execute * command via Tube)
+  $05D8: OSFILE (whole file operation via Tube)""")
+
+comment(0x0600, """\
+NMI handler page 6 — OSGBPB, OSBYTE/OSWORD, event handler
+Copied from ROM at $954C during init. Contains:
+  $0600: entry (BEQ to JMP $003A, else fall through)
+  $0602: OSGBPB (multi-byte file I/O via Tube)
+  $0626: OSBYTE 2-param (X result via Tube)
+  $063B: OSBYTE 3-param (X,Y results via Tube)
+  $065D: OSWORD variable-length (via Tube, buffer at $0130)
+  $06A3: OSWORD fixed 5-byte (via Tube)
+  $06D0: tube_write_data2 — poll+write to Tube data register 2
+  $06D9: tube_write_data4 — poll+write to Tube data register 4
+  $06E2: tube_escape_check — check $FF, forward escape to Tube
+  $06E8: EVNTV handler — forward event (A,X,Y) to Tube
+  $06F7: tube_write_ctrl1 — poll+write to Tube control register 1""")
+
+# ============================================================
+# OSBYTE code table for VDU state save ($9304)
+# ============================================================
+label(0x9304, "osbyte_vdu_table")
+comment(0x9304, """\
+Table of 3 OSBYTE codes used by save_palette_vdu_state ($9291):
+  $85 = read cursor position
+  $C2 = read shadow RAM allocation
+  $C3 = read screen start address""")
+
+# ============================================================
+# Relocated code block sources ($9307, $934C, $944C, $954C)
+# ============================================================
+# These labels mark the ROM storage addresses. The code is
+# disassembled at its runtime addresses via move() declarations
+# near the top of this file. See the preamble for addresses.
 
 # ============================================================
 # ADLC full reset ($96DC)
