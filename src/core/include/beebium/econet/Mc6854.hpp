@@ -112,6 +112,13 @@ public:
     static constexpr uint8_t SR2_OVRN         = 0x40;  // Rx Overrun
     static constexpr uint8_t SR2_RDA          = 0x80;  // Receiver Data Available
 
+    // Prioritised Status Enable (PSE) group masks — used by apply_pse_filter()
+    // to cascade SR2 bits through priority levels P1 (highest) to P4 (lowest).
+    static constexpr uint8_t PSE_P1_MASK = SR2_FV | SR2_ABT | SR2_ERR | SR2_DCD | SR2_OVRN;
+    static constexpr uint8_t PSE_P2_MASK = SR2_INACTIVE;
+    static constexpr uint8_t PSE_P3_MASK = SR2_AP;
+    static constexpr uint8_t PSE_P4_MASK = SR2_RDA;
+
     // Frame field states — tracks which part of a frame we're processing
     enum class FrameField : uint8_t {
         Idle     = 0,  // Between frames
@@ -899,24 +906,19 @@ private:
     // frame is pushed to the FIFO (setting FV), FV at P1 immediately masks RDA
     // at P4. The handler sees FV=1/RDA=0 and enters the scout completion path.
     uint8_t apply_pse_filter(uint8_t sr2_raw) {
-        constexpr uint8_t P1_MASK = SR2_FV | SR2_ABT | SR2_ERR | SR2_DCD | SR2_OVRN;
-        constexpr uint8_t P2_MASK = SR2_INACTIVE;
-        constexpr uint8_t P3_MASK = SR2_AP;
-        constexpr uint8_t P4_MASK = SR2_RDA;
-
-        if (sr2_raw & P1_MASK) {
+        if (sr2_raw & PSE_P1_MASK) {
             pse_level_ = 1;
-            return sr2_raw & ~(P2_MASK | P3_MASK | P4_MASK);
+            return sr2_raw & ~(PSE_P2_MASK | PSE_P3_MASK | PSE_P4_MASK);
         }
-        if (sr2_raw & P2_MASK) {
+        if (sr2_raw & PSE_P2_MASK) {
             pse_level_ = 2;
-            return sr2_raw & ~(P3_MASK | P4_MASK);
+            return sr2_raw & ~(PSE_P3_MASK | PSE_P4_MASK);
         }
-        if (sr2_raw & P3_MASK) {
+        if (sr2_raw & PSE_P3_MASK) {
             pse_level_ = 3;
-            return sr2_raw & ~P4_MASK;
+            return sr2_raw & ~PSE_P4_MASK;
         }
-        if (sr2_raw & P4_MASK) {
+        if (sr2_raw & PSE_P4_MASK) {
             pse_level_ = 4;
             return sr2_raw;
         }
