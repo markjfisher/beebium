@@ -31,6 +31,22 @@ These decisions were made during planning and inform all phases:
 
 - **Observable backend decorator for frame events**: Frame observation uses a decorator in the backend chain (`FourWayHandshake -> ObservableBackend -> AunBackend`) rather than modifying the `NetworkBackend` interface. This follows the existing decorator pattern.
 
+- **Peer resolution must be an abstraction, not just static config**: The current `--aun-map` mechanism requires users to know IP addresses and ports up front, which is at odds with modern networking (DHCP, dynamic IPs, mDNS). The `AunBackend` already has the right runtime mutation API (`add_peer`/`remove_peer`), but the architecture must ensure this is accessible to multiple peer sources — not just CLI args and gRPC calls. Considerations:
+
+  - **`AunBackend` peer table as the single source of truth**: All peer sources (CLI, presets, gRPC, future discovery) converge on `add_peer`/`remove_peer`. This is already the case and should remain so.
+
+  - **`EconetSocket` must expose the backend chain**: The gRPC service, discovery mechanisms, and any future peer source need a path to reach `AunBackend::add_peer()`. Phase 2 adds `EconetSocket::backend()` for this. Any discovery mechanism running in-process can use the same accessor.
+
+  - **Peer provenance**: Currently all peers are equivalent. A future discovery mechanism (mDNS, AUN broadcast) may need to distinguish static peers (from config/presets — never expire) from discovered peers (expire after a timeout, refreshed by re-announcement). This could be modelled as a provenance tag on peer entries, or as a separate overlay that manages discovered peers and calls `add_peer`/`remove_peer` as they appear and disappear. The simpler overlay approach avoids complicating the core peer table.
+
+  - **Candidate discovery mechanisms** (future work, not part of the current programme):
+    - **Beebium mDNS**: Beebium already advertises itself via mDNS for gRPC service discovery. Econet station metadata (Phase 3) could be used by other Beebium instances to auto-discover peers. This is the most natural fit for Beebium-to-Beebium networking.
+    - **AUN broadcast discovery**: The original AUN protocol included broadcast announcements. This would enable interop with other AUN implementations (BeebEm, RISC OS).
+    - **User-specified discovery server**: A central rendezvous point for peers that aren't on the same subnet.
+    - **DSCP (Dynamic Station Configuration Protocol)**: A DHCP analogue for Econet — a DSCP server assigns station numbers from a pool, so instances can launch with `--station auto` rather than manually coordinating IDs. The client would query the server early in the `enable()` path and proceed with the assigned station ID. Just an idea for now, but potentially worth exploring as the number of Beebium instances on a network grows.
+
+  - **No changes needed now**: The current `add_peer`/`remove_peer` API on `AunBackend` is the right seam. Phase 2's `EconetSocket::backend()` accessor completes the access path. Future discovery work is additive — it calls into the existing API without requiring changes to `AunBackend`, `FourWayHandshake`, or `Mc6854`.
+
 ---
 
 ## Phase 0: Documentation Update
