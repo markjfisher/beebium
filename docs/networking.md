@@ -1,6 +1,6 @@
 # Econet and AUN Networking Support
 
-This document captures research and planning for implementing Econet and AUN (Acorn Universal Networking) support in Beebium.
+This document covers the design, research, and implementation of Econet and AUN (Acorn Universal Networking) support in Beebium. The core networking implementation (MC68B54 ADLC emulation, EconetSocket, AunBackend, FourWayHandshake) is complete and has been tested against a real Acorn Level 3 Fileserver running in BeebEm via AUN. See `docs/econet-integration.md` for the remaining integration work (presets, gRPC, service discovery, clients).
 
 ## Overview
 
@@ -10,10 +10,10 @@ AUN (Acorn Universal Networking) encapsulates Econet protocols over TCP/IP, orig
 
 ### Goals for Beebium
 
-1. **Emulate the MC68B54 ADLC** at the hardware level
-2. **Support AUN protocol** for network connectivity
-3. **Enable connectivity with Pi Econet Bridge** for access to real Econet networks
-4. **Support NFS/ANFS ROMs** for file server access
+1. **Emulate the MC68B54 ADLC** at the hardware level — **Done.** Cycle-accurate on the E-clock domain, with PSE, stored/present status, and full register semantics. See `Mc6854.hpp`.
+2. **Support AUN protocol** for network connectivity — **Done.** `AunBackend` handles UDP transport; `FourWayHandshake` bridges AUN's two-way protocol to the four-way handshake that NFS ROMs expect.
+3. **Enable connectivity with Pi Econet Bridge** for access to real Econet networks — **Untested.** The AUN implementation should be compatible but has not been tested with a Pi Econet Bridge. Tested successfully with BeebEm as an AUN peer.
+4. **Support NFS/ANFS ROMs** for file server access — **Done.** NFS 3.34 works correctly, including boot messages, `*I AM`, `*CAT`, `*DATE`, and file operations against a real Acorn Level 3 Fileserver.
 
 ## Hardware Architecture
 
@@ -780,7 +780,7 @@ On real hardware, data moves through the 3-byte FIFOs on **both phases** of the 
 - **tick_rising()**: Advance TX FIFO towards the serial output; advance RX FIFO from serial input towards CPU. Update FIFO pointers and frame boundary markers.
 - **tick_falling()**: Complete the transfer. Update status bits based on new FIFO state.
 
-The simulated "serial clock" determines when new bytes enter the RX FIFO or leave the TX FIFO. Rather than modelling individual bits at 200 kHz, the network backend delivers/consumes whole bytes at a configurable rate (default: one byte every 128 E-clock cycles, ~64 us, matching BeebEm's `TimeBetweenBytes`).
+The simulated "serial clock" determines when new bytes enter the RX FIFO or leave the TX FIFO. Rather than modelling individual bits at 200 kHz, the network backend delivers/consumes whole bytes at a configurable rate (default: one byte every 128 half-cycles of the 2MHz E-clock, i.e. 64 full cycles = ~32 us). Both rising and falling edges increment the byte timer, matching BeebEm's `TimeBetweenBytes` of 128 which counts in poll cycles (effectively CPU cycles).
 
 **FIFO entry encoding** (adopted from MAME's approach): Each FIFO position is a `uint16_t` where the lower 8 bits carry the data byte and upper bits carry co-located metadata:
 
@@ -884,60 +884,104 @@ step() {
 
 Note: No `if (econet_enabled)` guard needed — `EconetSocket::tick_rising()`, `tick_falling()`, and `nmi_pending()` are all no-ops when the socket is empty, matching the `DiscControllerSocket` pattern where the socket handles the null case internally.
 
-### Class Structure
+### Class Structure (as implemented)
 
 ```
-EconetSocket (member of Hardware policy — analogous to DiscControllerSocket)
-├── enabled_                         // Whether Econet hardware is "fitted"
+EconetSocket (member of MemoryMap — analogous to DiscControllerSocket)
+├── backend_                         // unique_ptr<NetworkBackend> — owns the backend chain
+├── handshake_                       // unique_ptr<FourWayHandshake> — AUN protocol bridge (optional)
+├── adlc_                            // unique_ptr<Mc6854> — ADLC instance
 ├── station_id_                      // Station number (from --station N)
+├── enabled_                         // Whether Econet hardware is "fitted"
 ├── nmi_enable_ff_                   // INTON/INTOFF flip-flop (IC97 glue logic)
-├── adlc_                            // Mc6854 instance
+├── last_bus_value_ptr_              // Pointer to MemoryMap's last_bus_value for open bus
+├── enable(station_id, backend, aun_mode)  // Fit Econet hardware
+│   └── When aun_mode: backend_ → FourWayHandshake → Mc6854
+│   └── When !aun_mode: backend_ → Mc6854 directly
+├── disable()                        // Remove Econet hardware
 ├── Station ID Region (mapped to &FE18-&FE1F)
-│   ├── read() -> station_id_        // Returns station number
-│   └── read side-effect: INTOFF     // Clears nmi_enable_ff_
+│   ├── read_station_id() -> uint8_t // When enabled: station_id_ + INTOFF. When empty: 0x00
+│   └── write_station_id()           // Ignored (read-only register) + INTOFF
 ├── ADLC Region (mapped to &FEA0-&FEBF)
-│   ├── read(offset) -> uint8_t      // Delegates to adlc_.read()
-│   └── write(offset, value)         // Delegates to adlc_.write()
+│   ├── read_adlc(offset) -> uint8_t // When enabled: adlc_->read(). When empty: last bus value
+│   └── write_adlc(offset, value)    // When enabled: adlc_->write(). When empty: ignored
 ├── on_inton()                       // Called from Video ULA hook; sets nmi_enable_ff_
-├── nmi_pending() -> bool            // enabled_ && nmi_enable_ff_ && adlc_.irq_output()
-├── tick_rising()                    // Delegates to adlc_ when enabled
-├── tick_falling()                   // Delegates to adlc_ when enabled
-└── enabled() -> bool                // For HasEconetSocket concept
+├── nmi_pending() -> bool            // enabled_ && nmi_enable_ff_ && adlc_->irq_output()
+├── tick_rising()                    // Ticks handshake_ then adlc_ when enabled
+├── tick_falling()                   // Ticks adlc_ when enabled
+└── reset()                          // Hard-resets adlc_ and handshake_
 
 Mc6854 (pure ADLC hardware — no knowledge of BBC-specific glue logic)
 ├── Registers
 │   ├── cr1_, cr2_, cr3_, cr4_       // Control register latches
-│   └── sr1_, sr2_                   // Derived status (updated on E edges)
+│   └── sr1_, sr2_                   // Derived status (updated synchronously)
 ├── TX Path
 │   ├── tx_fifo_[3]                  // uint16_t: data (0-7) + valid/last/AP metadata (8-10)
-│   ├── tx_state_                    // Frame field state machine (0=idle, 2=addr, 3-5=ctrl, 6=data)
+│   ├── tx_frame_field_              // FrameField enum: Idle/Flag/Address/Control/ExtCtrl/Lcf/Data
 │   └── tx_frame_buffer_             // Assembled frame awaiting network send
 ├── RX Path
 │   ├── rx_fifo_[3]                  // uint16_t: data (0-7) + valid/last/AP metadata (8-10)
-│   ├── rx_state_                    // Frame field state machine (0=idle, 1=flag, 2=addr, 3-6=...)
-│   └── rx_frame_buffer_             // Received frame being trickled into FIFO
+│   ├── rx_frame_field_              // FrameField enum (same as TX)
+│   ├── rx_frame_buffer_             // Received frame being trickled into FIFO
+│   └── rx_buffer_index_             // Position in rx_frame_buffer_
+├── Status Latches
+│   ├── fd_stored_, cts_stored_, txu_stored_        // SR1 stored conditions
+│   ├── fv_stored_, fv_deferred_, frame_boundary_   // FV timing state
+│   ├── err_stored_, abt_stored_, ovrn_stored_      // SR2 stored conditions
+│   ├── idle_stored_, dcd_stored_                    // SR2 dual-nature stored
+│   └── prev_dcd_input_, prev_cts_input_            // Edge detection state
 ├── Timing
 │   ├── byte_timer_                  // Countdown for next byte transfer
-│   └── byte_period_                 // Configurable (default 128 E-cycles)
-├── Protocol State
-│   ├── handshake_stage_             // 10-state FSM for AUN 4-way simulation
-│   ├── flag_fill_active_            // Pseudo flag fill state
-│   └── idle_                        // Line idle detection
+│   └── byte_period_                 // Configurable (default 128 half-cycles = 32us)
 ├── Interface
 │   ├── read(offset) -> uint8_t      // CPU register read (offsets 0-3)
 │   ├── write(offset, value)         // CPU register write (offsets 0-3)
-│   ├── tick_rising()                // E-clock rising edge
-│   ├── tick_falling()               // E-clock falling edge
-│   └── irq_output() -> bool         // ADLC IRQ pin state (active low on real chip)
-└── Network Backend (injected)
-    ├── send(frame) -> bool          // Send AUN packet via UDP
-    ├── receive() -> optional<frame> // Non-blocking receive
-    └── is_connected() -> bool       // Socket/clock status for DCD
+│   ├── tick_rising()                // E-clock rising edge (advance byte timer, update status)
+│   ├── tick_falling()               // E-clock falling edge (advance byte timer, update status)
+│   └── irq_output() -> bool         // ADLC IRQ pin state
+└── NetworkBackend& backend_         // Injected reference (not owned)
+
+FourWayHandshake (decorator: sits between Mc6854 and AunBackend)
+├── Implements NetworkBackend         // ADLC talks to this as if it were the real backend
+├── stage_                           // 10-state FSM (Idle, ScoutSent, ScoutAckReceived, ...)
+├── Timers
+│   ├── handshake_timer_             // Timeout for current handshake phase
+│   ├── watchdog_timer_              // Force-reset hung transactions (~250ms)
+│   ├── flag_fill_timer_             // Pseudo flag fill timeout (~250ms)
+│   └── idle_cooldown_               // Inter-handshake gap (~2.5ms)
+├── is_receiving_flags()             // Drives ADLC SR1 FD (flag fill simulation)
+├── is_expecting_frame()             // Suppresses INACTIVE during inter-frame gaps
+├── tick()                           // Called once per 2MHz rising edge, before ADLC tick
+└── NetworkBackend& backend_         // The real backend (AunBackend)
+
+AunBackend (UDP transport — implements NetworkBackend)
+├── send_frame(NetworkFrame)         // Encodes and sends AUN packet via UDP sendto()
+├── receive_frame() -> optional      // Non-blocking receive via select() + recvfrom()
+├── is_connected() -> bool           // Socket bound and valid
+├── add_peer(net, stn, ip, port)     // Explicit peer mapping
+├── remove_peer(net, stn)            // Remove peer mapping
+└── Peer Table
+    ├── forward_map_                 // (net,stn) → (ip,port)
+    └── reverse_map_                 // (ip,port) → (net,stn)
+
+NetworkBackend (abstract interface)
+├── send_frame(const NetworkFrame&)  // Send a typed frame
+├── receive_frame() -> optional      // Non-blocking receive
+├── is_connected() -> bool           // Carrier/clock status for DCD
+├── is_receiving_flags() -> bool     // Flag fill for SR1 FD (default: false)
+└── is_expecting_frame() -> bool     // Suppress INACTIVE in handshake gaps (default: false)
+
+TestBackend (test double — implements NetworkBackend)
+├── inject_rx_frame() / inject_rx_network_frame()  // Queue frames for ADLC to receive
+├── sent_frames() / sent_network_frames()          // Inspect what the ADLC transmitted
+└── set_connected() / set_flags_active()           // Control DCD and flag fill
 ```
 
-**Separation of concerns**: The `Mc6854` is a pure ADLC emulation with no knowledge of BBC-specific details (NMI gating, station ID register, address decoding). The `EconetSocket` provides the BBC-specific glue logic — the NMI enable flip-flop, station ID register, and the INTON/INTOFF side-effects. This mirrors the physical hardware: IC93 (ADLC) is a Motorola part; IC97 (flip-flop) and the address decoding are Acorn's glue logic.
+**Backend chain in AUN mode**: `Mc6854 → FourWayHandshake → AunBackend → UDP socket`. The FourWayHandshake is a decorator that implements `NetworkBackend` and wraps the real `AunBackend`. The ADLC sees raw Econet frames (scout, scout-ack, data, final-ack); the FourWayHandshake translates to/from typed AUN packets (Unicast, Ack, Broadcast, Immediate). Scout phases are generated locally with timeouts; only data and ack packets cross the real network.
 
-The network backend is injected into `Mc6854`, keeping it as pure hardware emulation. Test doubles can simulate specific Econet scenarios without any UDP.
+**Separation of concerns**: The `Mc6854` is a pure ADLC emulation with no knowledge of BBC-specific details (NMI gating, station ID register, address decoding) or AUN protocol details. The `EconetSocket` provides the BBC-specific glue logic. The `FourWayHandshake` provides the AUN↔Econet protocol bridge. This mirrors the physical hardware: IC93 (ADLC) is a Motorola part; IC97 (flip-flop) and the address decoding are Acorn's glue logic; the network protocol is handled by software and the clock box.
+
+The network backend is injected into `Mc6854`, keeping it as pure hardware emulation. `TestBackend` replaces the real UDP backend for deterministic testing.
 
 ### Comparison with BeebEm and MAME
 
@@ -1039,9 +1083,11 @@ NFS/ANFS ROMs:
 
 Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NET, etc.
 
-## Implementation Plan for Beebium
+## Implementation Status
 
-### Phase 1: Cycle-Accurate ADLC Hardware Emulation
+The core Econet/AUN implementation is complete. This section summarises what was planned, what was built, and what differs from the original design. For remaining integration work (presets, gRPC, service discovery, clients), see `docs/econet-integration.md`.
+
+### Completed: ADLC Hardware Emulation (Mc6854.hpp)
 
 1. **Create `Mc6854` class** as a `ClockSubscriber` and `NmiSource`
    - `clock_rate = Rate_2MHz`, `clock_edges = Both` — ticked every 2MHz half-cycle
@@ -1066,14 +1112,12 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    Following the same pattern as `DiscControllerSocket` for the FDC, `EconetSocket` represents the physical hardware socket on the BBC motherboard. On the Model B this was a set of discrete chip positions (IC93 for the MC68B54, IC97 for the NMI gating flip-flop, etc.); on the Master series it was a pin header for a carrier board. The socket abstraction covers both.
 
    **When empty** (no Econet hardware fitted):
-   - The ADLC and station ID regions are **not mapped** in the memory map
+   - The `EconetSocket` is always present in the memory map, but returns open bus values when disabled
    - Reads to &FEA0-&FEBF return the previous bus value (fast 2MHz open bus — capacitance holds)
    - Reads to &FE18 return 0x00 (slow 1MHz open bus — pull-down resistors discharge)
    - Writes to both regions are ignored (fall through to no-op)
    - NMI is never asserted from the Econet source
-   - The DNFS ROM detects this state and skips NFS initialisation
-   - This matches the existing `unmapped_read_value()` behaviour in `BusStretching.hpp`:
-     slow 1MHz → 0x00, fast 2MHz → last bus value, FRED/JIM → 0xFF
+   - The NFS ROM detects this state and skips NFS initialisation
 
    **When populated** (`--station N` specified):
    - Delegates ADLC register access (&FEA0-&FEA3 via `Mirror<0x03>`) to the `Mc6854`
@@ -1081,7 +1125,7 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - NMI gating logic (INTON/INTOFF) is active
    - ADLC is ticked on every 2MHz half-cycle
 
-   **Key difference from `DiscControllerSocket`**: The FDC socket uses runtime polymorphism (`unique_ptr<DiscControllerInterface>`) because multiple controller types can be installed (8271, WD1770, Opus, Watford). The Econet socket always contains the same hardware (MC68B54 ADLC + glue logic), so it can use a simpler `std::optional<Mc6854>` or a boolean enabled flag with a direct `Mc6854` member. No virtual dispatch needed.
+   **Key difference from `DiscControllerSocket`**: The FDC socket uses runtime polymorphism (`unique_ptr<DiscControllerInterface>`) because multiple controller types can be installed (8271, WD1770, Opus, Watford). The Econet socket always contains the same hardware (MC68B54 ADLC + glue logic), so it uses `unique_ptr<Mc6854>` (created by `enable()`, destroyed by `disable()`) with a boolean `enabled_` flag. No virtual dispatch needed for the ADLC; virtual dispatch is used only for the `NetworkBackend` interface.
 
    ```
    EconetSocket
@@ -1120,12 +1164,12 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
 
    ```
    &FE18-&FE1F: Station ID register (+ INTOFF side-effect)
-                Currently unmapped — falls through to unmapped_read_value()
-                Unmapped behaviour: returns 0x00 (slow 1MHz region — pull-downs discharge)
+                Mapped to EconetSocket::read_station_id() / write_station_id()
+                When empty: returns 0x00 (slow 1MHz open bus — pull-downs discharge)
 
    &FEA0-&FEBF: ADLC registers
-                Currently unmapped — falls through to unmapped_read_value()
-                Unmapped behaviour: returns last bus value (fast 2MHz region — capacitance holds)
+                Mapped to EconetSocket::read_adlc() / write_adlc()
+                When empty: returns last bus value (fast 2MHz open bus — capacitance holds)
    ```
 
    **Critical: these regions must produce correct open bus values when Econet is not fitted.** Unlike the `DiscControllerSocket` which always returns 0xFF when empty, the Econet regions have different open bus characteristics:
@@ -1169,7 +1213,7 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    }
    ```
 
-   All three current hardware variants (Model B, Model B+, Model B with ROM/RAM board) would have `EconetSocket econet_socket` as a member. The Master series (future) would also have it, with different INTON/INTOFF addresses.
+   All three current hardware variants (Model B, Model B+, Model B with ROM/RAM board) have `EconetSocket econet_socket` as a member of their MemoryMap. The Master series (future) would also have it, with different INTON/INTOFF addresses.
 
 6. **CTS/DCD logic**
    - DCD (SR2b5): low when network backend is connected (clock present), high otherwise
@@ -1180,9 +1224,15 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - Tick `EconetSocket` on every 2MHz cycle (rising + falling edges) — no-op when empty
    - `kEconetNmiDeviceMask = 0x02` alongside existing `kDiscNmiDeviceMask = 0x01`
    - Aggregate NMI: disc at 1MHz + Econet at 2MHz (different polling rates)
-   - Byte trickle rate: one TX/RX byte every 128 E-cycles (configurable)
+   - Byte trickle rate: one TX/RX byte every 128 half-cycles (configurable, ~32us per byte)
 
-### Phase 2: Econet Protocol Layer
+**All items above are implemented.** Key implementation differences from the original design:
+- `EconetSocket` uses `unique_ptr<Mc6854>` (not `optional<Mc6854>`) because the `Mc6854` constructor requires a `NetworkBackend&` reference at construction time.
+- The ADLC open bus value for the &FEA0 region is provided via `set_last_bus_value_ptr()` — the pointer-to-member approach from the options listed above.
+- The `HasEconetSocket` concept and `econet_present()` helper were not needed. The `EconetSocket` is a direct member of all MemoryMap variants, and its `enabled()` / `nmi_pending()` / `tick_*()` methods are all safe to call when the socket is empty.
+- Byte trickle rate is 128 half-cycles (32us per byte), not 128 E-cycles (64us per byte) as stated in BeebEm's comments. Both rising and falling edges advance the byte timer, so 128 half-cycles = 64 full E-clock cycles.
+
+### Completed: Econet Protocol Layer (originally Phase 2)
 
 1. **Frame assembly/disassembly**
    - TX: accumulate bytes from FIFO into frame buffer; send on TxLast
@@ -1207,7 +1257,11 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - Idle = RX not reset AND FIFO empty AND no FV AND no pending data
    - Drives SR2b2 (Inactive Idle) when `Idle && !FlagFillActive`
 
-### Phase 3: AUN Network Layer
+**All items above are implemented.** Key implementation difference: the four-way handshake is implemented as a **decorator** (`FourWayHandshake`) that implements `NetworkBackend`, rather than being embedded in the `Mc6854`. The ADLC talks to `FourWayHandshake` using raw Econet frames; `FourWayHandshake` translates to/from typed AUN packets on the wrapped `AunBackend`. This keeps the ADLC pure hardware emulation and the protocol bridging in a separate, testable class.
+
+The flag fill and idle detection are also in `FourWayHandshake` (via `is_receiving_flags()` and `is_expecting_frame()` on the `NetworkBackend` interface), not in `Mc6854`. The ADLC queries the backend for these signals and reflects them in the status registers.
+
+### Completed: AUN Network Layer (originally Phase 3)
 
 1. **UDP transport**
    - Socket management on port 32768 (configurable)
@@ -1223,7 +1277,7 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - No configuration needed for same-subnet peers
 
 3. **Explicit address mapping** (for cross-subnet / bridge)
-   - `--aun-map <net.stn>=<ip:port>` for explicit mappings
+   - `--aun-map <net.stn:ip[:port]>` for explicit mappings
    - Static mappings take precedence over discovered peers
 
 4. **Pi Econet Bridge compatibility**
@@ -1232,21 +1286,24 @@ Note: NFS can coexist with DFS/ADFS - users select filing system with *DISC, *NE
    - Handle bridge-specific behaviors
    - Bridge provides access to real Econet stations
 
-### Phase 4: Configuration and Integration
+**Items 1 and 3 are implemented.** Item 2 (local subnet discovery) is **not implemented** — all peer mappings are currently explicit via `--aun-map`. Item 4 (Pi Econet Bridge) is **untested** — the AUN implementation should be compatible but `--aun-bridge` has not been added as a CLI option. The port in `--aun-map` defaults to 32768 if omitted.
 
-1. **Command-line options**
+### Partially Complete: Configuration and Integration (originally Phase 4)
+
+1. **Command-line options** — **Done** (except `--aun-bridge`):
    - `--station <n>` - Enable Econet hardware and set station number (no flag = no Econet)
-   - `--aun-map <net.stn>=<ip:port>` - Explicit station-to-IP mapping (repeatable)
+   - `--aun-map <net.stn:ip[:port]>` - Explicit station-to-IP mapping (repeatable)
    - `--aun-port <port>` - Local UDP port (default 32768)
-   - `--aun-bridge <ip:port>` - Pi Econet Bridge address (optional)
+   - ~~`--aun-bridge <ip:port>`~~ - Not yet implemented
 
-2. **Frontend integration**
-   - Network status display
-   - Configuration UI
+2. **Frontend integration** — **Not yet done.** Planned as part of the broader Econet integration work programme (see `docs/econet-integration.md`):
+   - Preset integration (JSON format)
+   - gRPC EconetService
+   - Service discovery metadata
+   - Python client wrapper
+   - macOS client sidebar UI
 
-3. **ROM management**
-   - Include or document NFS/ANFS ROM acquisition
-   - ROM slot configuration for network ROMs
+3. **ROM management** — **Partially done.** NFS 3.34 ROM loading works via `--sideways 10:rom:acorn-nfs_3_34.rom`. ROM acquisition documentation is not yet written.
 
 ## Resolved: MC6854 FV/PSE Timing vs NFS ROM
 
@@ -1411,21 +1468,21 @@ All of these routines are in `disassembly/nfs_334_v2_96dc_9fff_adlc_nmi_handlers
 
 ## Open Questions
 
-1. **Timing accuracy**: ~~How cycle-accurate does the ADLC emulation need to be?~~ **Answered:** Beebium takes a cycle-accurate approach on the E-clock domain (2MHz, both phases), departing from BeebEm's poll-based model. The ADLC is ticked every 2MHz half-cycle with status bits updated synchronously on E-clock edges and NMI asserting on the same cycle as the triggering condition. The serial bit-level domain (TxC/RxC) is abstracted to byte-level timed events since Beebium uses AUN-over-UDP, not a real Econet wire. Byte trickle rate remains configurable (default 128 E-cycles per byte, ~64 us). See "Cycle-Accurate ADLC Design" section for full details.
+1. ~~**Timing accuracy**~~ **Resolved.** Beebium takes a cycle-accurate approach on the E-clock domain (2MHz, both phases), departing from BeebEm's poll-based model. The ADLC is ticked every 2MHz half-cycle with status bits updated synchronously on E-clock edges and NMI asserting on the same cycle as the triggering condition. The serial bit-level domain (TxC/RxC) is abstracted to byte-level timed events since Beebium uses AUN-over-UDP, not a real Econet wire. Byte trickle rate remains configurable (default 128 half-cycles per byte, ~32 us). See "Cycle-Accurate ADLC Design" section for full details.
 
-2. **Clock detection**: ~~How should we handle the "no clock" error condition?~~ **Answered:** BeebEm equates "socket open" with "clock present". DCD (SR2b5) is set when socket is invalid, cleared when socket is open. CTS depends on both DCD and RTS (CR2b7). For Beebium: when `--station` is used and the network backend is connected, report clock present (DCD low). No connection = no clock = DCD high = NFS reports "No clock". The ADLC E clock is definitively 2MHz (see "Cycle-Accurate ADLC Design" section for evidence).
+2. ~~**Clock detection**~~ **Resolved.** DCD (SR2b5) reflects `!backend.is_connected()`: high when disconnected (no clock), low when connected. CTS reflects `!(backend.is_connected() && CR2b7_RTS)`. The NFS ROM polls DCD during boot and reports "No Clock" when DCD is high. This is implemented and verified — see `test_boot_econet.cpp` for "No Clock" boot test.
 
-3. **Multi-network support**: Should we support multiple Econet network numbers for complex bridged setups? (Initial implementation: single network 0, expand later if needed. BeebEm supports MASSAGENETS for bit-7 translation between Econet 0-127 and AUN 128-255 ranges.)
+3. **Multi-network support**: The current implementation supports arbitrary network numbers via `--aun-map net.stn:ip[:port]` where `net` can be 0-255. Network number 0 is the default for local networks. MASSAGENETS (bit-7 translation) is not implemented. Sufficient for current needs.
 
-4. **ROM licensing**: What is the legal status of distributing NFS/ANFS ROMs?
+4. ~~**ROM licensing**~~ **Resolved.** The original copyright holder (Acorn Computers) is defunct. While the ROMs are technically still under copyright, there is no entity to enforce it. Widespread retro-computing community practice (distribution via mdfs.net, stardot.org.uk, etc.) demonstrates essentially zero risk. Beebium does not currently bundle NFS/ANFS ROMs but could do so if convenient.
 
-5. **Broadcast announcement format**: What packet format for local discovery? Could reuse AUN broadcast type, or define a simple Beebium-specific announcement.
+5. ~~**Broadcast announcement format**~~ **Deferred.** Local subnet discovery was not implemented. All peer mappings are currently explicit via `--aun-map`. May be revisited in a future phase.
 
-6. **Self-send prevention**: BeebEm notes that real Econet can't send to itself (a station can't be both transmitting and receiving on the shared bus). `*STATIONS` poll sends a packet to itself which causes confusion in AUN mode. Should we explicitly drop packets addressed to our own station?
+6. **Self-send prevention**: Not explicitly handled. The AunBackend will send packets to any configured peer address, including one that maps to the local station. In practice this hasn't caused problems because Beebium instances use different UDP ports.
 
-7. **NACK handling**: BeebEm has TODOs noting that NACKs are received but not properly handled - they're treated as ACKs. Should Beebium implement proper NACK/retry logic, or follow BeebEm's pragmatic approach?
+7. **NACK handling**: Beebium follows BeebEm's pragmatic approach — NACKs are not explicitly handled. The `FourWayHandshake` watchdog timeout resets hung transactions regardless of the cause.
 
-8. **Immediate operation data sizes**: Control byte 0x82 expects 8-byte scout payload, 0x83-0x85 expect 4-byte. These magic numbers are baked into BeebEm with comments like "We're assuming things here." Need to verify these against the NFS ROM source or Econet documentation.
+8. ~~**Immediate operation data sizes**~~ **Resolved.** Verified against the NFS 3.34 ROM disassembly and BeebEm's implementation. Implemented in `FourWayHandshake::scout_payload_size()`: control byte 0x02 (POKE) → 8 bytes, 0x03-0x05 (JSR, UserProc, OSProc) → 4 bytes, all others → 0 bytes.
 
 ## Design Considerations
 
@@ -1437,62 +1494,60 @@ BeebEm uses a sequential consumption model where each new instance takes the nex
 
 `--station N` both enables Econet hardware AND sets station number:
 ```
-beebium --station 254    # File server, Econet enabled
-beebium --station 1      # Workstation, finds server via broadcast
-beebium                  # No Econet hardware fitted
+beebium-model-b --station 254    # File server, Econet enabled
+beebium-model-b --station 1      # Workstation
+beebium-model-b                  # No Econet hardware fitted
 ```
 
-This mirrors physical hardware - you either have the Econet interface fitted or you don't. The DNFS ROM auto-detects hardware presence and behaves accordingly.
+This mirrors physical hardware — you either have the Econet interface fitted or you don't. The NFS ROM auto-detects hardware presence and behaves accordingly.
 
-**Local discovery via broadcast:**
-Stations on the same subnet discover each other automatically - no configuration needed for the common case. Cross-subnet or bridge connectivity uses explicit `--aun-map` or `--aun-bridge`.
+**Peer configuration:**
+Currently all peer mappings are explicit via `--aun-map`. Local subnet discovery was planned but not implemented.
 
-**Future enhancements** (not initial implementation):
-- Named profiles in config file for convenience
-- Per-window configuration for multi-window setups
+**Future enhancements:**
+- Preset integration (JSON format) for Econet configuration — see `docs/econet-integration.md`
+- gRPC-based runtime configuration (add/remove peers, enable/disable Econet)
+- Local subnet discovery via broadcast
 
 ### Usage Examples
 
-**Simple local network (same subnet, automatic discovery):**
+**Connecting to a BeebEm file server (tested and working):**
 ```bash
-# Terminal 1: File server
-beebium --station 254
+# Start BeebEm with Econet.cfg containing:
+#   AUNMODE 1
+#   LEARN 0
+#   AUNSTRICT 0
+#   0 254 127.0.0.1 32768
+#   0 101 127.0.0.1 10101
 
-# Terminal 2: Workstation - finds server automatically via broadcast
-beebium --station 1
+# Beebium workstation connecting to BeebEm file server
+beebium-model-b --station 101 --aun-port 10101 --aun-map 0.254:127.0.0.1:32768
 
-# On the workstation, log in to the file server:
-# *I AM 254 SYST
+# On the workstation:
+# *NET
+# *I AM SYST
+# *.
 ```
 
-**Mixed network with Pi Econet Bridge:**
+**Two Beebium instances on the same machine:**
 ```bash
-# Emulator connects to bridge, can talk to real BBC Micros on Econet segment
-beebium --station 1 --aun-bridge 192.168.1.100
+# Terminal 1: File server (station 254, port 32768)
+beebium-model-b --station 254 --aun-port 32768 --aun-map 0.1:127.0.0.1:32769
+
+# Terminal 2: Workstation (station 1, port 32769)
+beebium-model-b --station 1 --aun-port 32769 --aun-map 0.254:127.0.0.1:32768
 ```
 
 **Cross-subnet with explicit mapping:**
 ```bash
-# Workstation on different subnet, explicit server address
-beebium --station 1 --aun-map 254=192.168.2.50:32768
-```
-
-**Complex network (local emulators + bridge to real hardware):**
-```bash
-# File server (local emulator)
-beebium --station 254
-
-# Workstation (local, auto-discovers server, also connects to bridge)
-beebium --station 1 --aun-bridge 192.168.1.100
-
-# Real BBC Micros on Econet segment are accessible via the bridge
-# e.g., station 42 on real Econet can be reached through the bridge
+# Workstation connecting to a remote file server
+beebium-model-b --station 1 --aun-map 0.254:192.168.2.50:32768
 ```
 
 **No Econet (DFS only):**
 ```bash
 # Without --station, no Econet hardware is fitted
-beebium --drive0 games.ssd
+beebium-model-b --drive0 games.ssd
 ```
 
 ## References
