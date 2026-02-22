@@ -374,7 +374,7 @@ private:
     // --- RX packet routing ---
 
     // Route an incoming AUN packet based on current handshake stage.
-    bool handle_incoming(NetworkFrame& packet) {
+    bool handle_incoming(const NetworkFrame& packet) {
         switch (stage_) {
             case Stage::Idle:
                 return handle_rx_in_idle(packet);
@@ -426,7 +426,7 @@ private:
     }
 
     // Handle a received frame when the handshake is idle.
-    bool handle_rx_in_idle(NetworkFrame& packet) {
+    bool handle_rx_in_idle(const NetworkFrame& packet) {
         switch (packet.type) {
             case FrameType::Unicast: {
                 // Construct scout frame for the Beeb
