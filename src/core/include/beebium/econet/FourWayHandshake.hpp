@@ -65,6 +65,20 @@ public:
     static constexpr int FRAME_PORT     = 5;
     static constexpr int FRAME_DATA     = 6;
 
+    // Econet control byte values — classify port-0 operations.
+    // Control bytes 0x02-0x05 carry extra scout payload and use the
+    // full four-way handshake (Unicast). Other port-0 control bytes
+    // are Immediate operations.
+    static constexpr uint8_t CTRL_POKE     = 0x02;
+    static constexpr uint8_t CTRL_JSR      = 0x03;
+    static constexpr uint8_t CTRL_USERPROC = 0x04;
+    static constexpr uint8_t CTRL_OSPROC   = 0x05;
+
+    // Control byte encoding: bit 7 distinguishes inbound scouts from
+    // outbound in Econet framing. The lower 7 bits carry the function.
+    static constexpr uint8_t CTRL_FUNCTION_MASK = 0x7F;
+    static constexpr uint8_t CTRL_HIGH_BIT      = 0x80;
+
     explicit FourWayHandshake(NetworkBackend& backend)
         : backend_(backend) {}
 
@@ -202,9 +216,9 @@ public:
 
     // Number of extra scout payload bytes for a given control byte value.
     static int scout_payload_size(uint8_t ctrl) {
-        switch (ctrl & 0x7F) {
-            case 0x02: return 8;                      // POKE
-            case 0x03: case 0x04: case 0x05: return 4; // JSR, UserProc, OSProc
+        switch (ctrl & CTRL_FUNCTION_MASK) {
+            case CTRL_POKE: return 8;
+            case CTRL_JSR: case CTRL_USERPROC: case CTRL_OSPROC: return 4;
             default: return 0;
         }
     }
@@ -231,7 +245,7 @@ private:
             nf.src_stn = src_stn;
             nf.src_net = src_net;
             if (data.size() >= 6) {
-                nf.control_byte = data[FRAME_CONTROL] & 0x7F;
+                nf.control_byte = data[FRAME_CONTROL] & CTRL_FUNCTION_MASK;
                 nf.port = data[FRAME_PORT];
                 if (data.size() > 6) {
                     nf.data.assign(data.begin() + FRAME_DATA, data.end());
@@ -253,13 +267,13 @@ private:
         // four-way handshake — they are Unicast scouts, not Immediates.
         // All other port-0 operations (Machine Peek, Halt, etc.) are
         // Immediate. Matches BeebEm's classification.
-        uint8_t masked_ctrl = ctrl & 0x7F;
-        bool is_port0_unicast = (masked_ctrl >= 0x02 && masked_ctrl <= 0x05);
+        uint8_t masked_ctrl = ctrl & CTRL_FUNCTION_MASK;
+        bool is_port0_unicast = (masked_ctrl >= CTRL_POKE && masked_ctrl <= CTRL_OSPROC);
         if (port == 0x00 && !is_port0_unicast) {
             NetworkFrame nf;
             nf.type = FrameType::Immediate;
             nf.port = 0;
-            nf.control_byte = ctrl & 0x7F;
+            nf.control_byte = ctrl & CTRL_FUNCTION_MASK;
             nf.dest_stn = dest_stn;
             nf.dest_net = dest_net;
             nf.src_stn = src_stn;
@@ -288,7 +302,7 @@ private:
         NetworkFrame nf;
         nf.type = FrameType::Unicast;
         nf.port = saved_port_;
-        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.control_byte = saved_ctrl_ & CTRL_FUNCTION_MASK;
         nf.dest_stn = saved_dest_stn_;
         nf.dest_net = saved_dest_net_;
         nf.src_stn = saved_src_stn_;
@@ -326,7 +340,7 @@ private:
         NetworkFrame nf;
         nf.type = FrameType::Ack;
         nf.port = saved_port_;
-        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.control_byte = saved_ctrl_ & CTRL_FUNCTION_MASK;
         nf.dest_stn = saved_src_stn_;   // Ack goes TO the original source
         nf.dest_net = saved_src_net_;
         nf.src_stn = saved_dest_stn_;   // FROM us (we were the original destination)
@@ -345,7 +359,7 @@ private:
         NetworkFrame nf;
         nf.type = FrameType::ImmReply;
         nf.port = 0;
-        nf.control_byte = saved_ctrl_ & 0x7F;
+        nf.control_byte = saved_ctrl_ & CTRL_FUNCTION_MASK;
         nf.dest_stn = saved_src_stn_;   // Reply goes TO the requester
         nf.dest_net = saved_src_net_;
         nf.src_stn = saved_dest_stn_;   // FROM us
@@ -424,7 +438,7 @@ private:
                 scout.push_back(packet.dest_net);
                 scout.push_back(packet.src_stn);
                 scout.push_back(packet.src_net);
-                scout.push_back(packet.control_byte | 0x80);
+                scout.push_back(packet.control_byte | CTRL_HIGH_BIT);
                 scout.push_back(packet.port);
                 if (available > 0) {
                     scout.insert(scout.end(),
@@ -456,7 +470,7 @@ private:
                 frame.push_back(packet.dest_net);
                 frame.push_back(packet.src_stn);
                 frame.push_back(packet.src_net);
-                frame.push_back(packet.control_byte | 0x80);
+                frame.push_back(packet.control_byte | CTRL_HIGH_BIT);
                 frame.push_back(packet.port);
                 frame.insert(frame.end(),
                     packet.data.begin(), packet.data.end());
@@ -472,7 +486,7 @@ private:
                 frame.push_back(packet.dest_net);
                 frame.push_back(packet.src_stn);
                 frame.push_back(packet.src_net);
-                frame.push_back(packet.control_byte | 0x80);
+                frame.push_back(packet.control_byte | CTRL_HIGH_BIT);
                 frame.push_back(packet.port);
                 frame.insert(frame.end(),
                     packet.data.begin(), packet.data.end());
