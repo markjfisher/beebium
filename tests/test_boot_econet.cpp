@@ -26,72 +26,16 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <vector>
 
+#include "test_econet_helpers.hpp"
 #include "test_keyboard_helpers.hpp"
 
 using namespace beebium;
+using namespace beebium::test;
 
 namespace {
-
-std::vector<uint8_t> load_rom(const std::filesystem::path& filepath) {
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file) throw std::runtime_error("Failed to open ROM: " + filepath.string());
-    file.seekg(0, std::ios::end);
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> data(static_cast<size_t>(size));
-    file.read(reinterpret_cast<char*>(data.data()), size);
-    return data;
-}
-
-bool base_roms_available() {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    return std::filesystem::exists(rom_dirpath / "acorn-mos_1_20.rom") &&
-           std::filesystem::exists(rom_dirpath / "bbc-basic_2.rom");
-}
-
-bool nfs_rom_available() {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    return std::filesystem::exists(rom_dirpath / "acorn-nfs_3_34.rom");
-}
-
-// Search Mode 7 screen memory ($7C00-$7FFF) for a string.
-bool screen_contains(ModelB& machine, const std::string& text) {
-    for (uint16_t addr = 0x7C00; addr <= 0x7FFF - text.size(); ++addr) {
-        bool match = true;
-        for (size_t i = 0; i < text.size(); ++i) {
-            if (machine.state().memory.read(addr + static_cast<uint16_t>(i)) !=
-                static_cast<uint8_t>(text[i])) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return true;
-    }
-    return false;
-}
-
-// Dump first N rows of Mode 7 screen memory for debugging.
-std::string dump_screen(ModelB& machine, int rows = 6) {
-    std::string result;
-    for (int row = 0; row < rows; ++row) {
-        result += "Row " + std::to_string(row) + ": [";
-        for (int col = 0; col < 40; ++col) {
-            uint8_t ch = machine.state().memory.read(
-                0x7C00 + static_cast<uint16_t>(row * 40 + col));
-            if (ch >= 0x20 && ch < 0x7F) {
-                result += static_cast<char>(ch);
-            } else {
-                result += '.';
-            }
-        }
-        result += "]\n";
-    }
-    return result;
-}
 
 // Set up a Model B with MOS + BASIC + optional NFS ROM in slot 10 + Econet socket.
 void setup_econet_machine(ModelB& machine, uint8_t station_id, bool connected,
