@@ -261,6 +261,42 @@ std::string dump_adlc_state(ModelB& machine) {
     return result;
 }
 
+// --- Machine setup helper ---
+
+// Set up a Model B with MOS + BASIC + NFS ROM and an AUN backend connected
+// to the file server. Returns the LoggingBackend pointer for diagnostics.
+LoggingBackend* setup_fileserver_machine(ModelB& machine,
+                                         const FileserverConfig& config) {
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
+    auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");
+    machine.memory().load_mos(mos.data(), mos.size());
+    machine.memory().load_basic(basic.data(), basic.size());
+    machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
+    machine.memory().enable_video_output();
+
+    auto aun = std::make_unique<AunBackend>(
+        0, config.station, config.local_port);
+    if (!aun->is_connected()) return nullptr;
+    auto logging = std::make_unique<LoggingBackend>(std::move(aun));
+    auto* log_ptr = logging.get();
+    log_ptr->add_peer(config.net, config.stn, config.ip_addr, config.port);
+    machine.state().memory.econet_socket.enable(
+        config.station, std::move(logging), true);
+    return log_ptr;
+}
+
+// Boot the machine, verify startup, select NFS, and log out any stale session.
+void boot_and_select_nfs(ModelB& machine, FrameRenderer& renderer) {
+    machine.reset();
+    run_cycles(machine, renderer, 4'000'000);
+    type_string_with_shift(machine, renderer, "*NET\r", 100000);
+    run_cycles(machine, renderer, 2'000'000);
+    type_string_with_shift(machine, renderer, "*BYE\r", 100000);
+    run_cycles(machine, renderer, 10'000'000);
+}
+
 } // namespace
 
 // =============================================================================
@@ -564,69 +600,27 @@ TEST_CASE("Econet *I AM SYST then *. lists directory", "[econet][fileserver]") {
     if (!fs_config.valid) SKIP("BEEBIUM_FILESERVER not set "
         "(e.g. BEEBIUM_FILESERVER=0.254:127.0.0.1:32768 BEEBIUM_LOCAL_PORT=10101)");
 
-    // Set up Model B with MOS + BASIC + NFS ROM, no disc controller.
     ModelB machine;
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
-    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
-    auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");
-    machine.memory().load_mos(mos.data(), mos.size());
-    machine.memory().load_basic(basic.data(), basic.size());
-    machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
-    machine.memory().enable_video_output();
-
-    // Create AUN backend wrapped in logging decorator
-    auto aun = std::make_unique<AunBackend>(
-        0, fs_config.station, fs_config.local_port);
-    REQUIRE(aun->is_connected());
-    auto logging = std::make_unique<LoggingBackend>(std::move(aun));
-    auto* log_ptr = logging.get();
+    auto* log_ptr = setup_fileserver_machine(machine, fs_config);
+    REQUIRE(log_ptr != nullptr);
     INFO("Bound to UDP port " << log_ptr->local_port());
-
-    log_ptr->add_peer(fs_config.net, fs_config.stn, fs_config.ip_addr, fs_config.port);
-
-    machine.state().memory.econet_socket.enable(
-        fs_config.station, std::move(logging), true);
 
     HeapFrameAllocator allocator;
     FrameBuffer fb(&allocator, 640, 512);
     FrameRenderer renderer(&fb);
 
-    // Helper: run N cycles, processing video output
-    auto run_cycles = [&](uint64_t count) {
-        for (uint64_t i = 0; i < count; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
-            }
-        }
-    };
-
-    // Boot the machine
-    machine.reset();
-    run_cycles(4'000'000);
-
-    INFO("Screen after boot:\n" << dump_screen(machine, 8));
+    boot_and_select_nfs(machine, renderer);
     REQUIRE(screen_contains(machine, "BBC Computer 32K"));
     REQUIRE(screen_contains(machine, "Econet Station"));
 
-    // *NET — select the Network Filing System
-    type_string_with_shift(machine, renderer, "*NET\r", 100000);
-    run_cycles(2'000'000);
-    INFO("Screen after *NET:\n" << dump_screen(machine, 12));
-
-    // Log out any stale session from a previous test run.
-    type_string_with_shift(machine, renderer, "*BYE\r", 100000);
-    run_cycles(10'000'000);
-
     // *I AM SYST — log in as the SYST user
     type_string_with_shift(machine, renderer, "*I AM SYST\r", 100000);
-    run_cycles(10'000'000);
+    run_cycles(machine, renderer, 10'000'000);
     INFO("Screen after *I AM SYST:\n" << dump_screen(machine, 16));
 
     // *. — catalogue the current directory
     type_string_with_shift(machine, renderer, "*.\r", 100000);
-    run_cycles(20'000'000);
+    run_cycles(machine, renderer, 20'000'000);
 
     INFO("Screen after *.:\n" << dump_screen(machine));
     INFO("ADLC state:\n" << dump_adlc_state(machine));
@@ -656,7 +650,7 @@ TEST_CASE("Econet *I AM SYST then *. lists directory", "[econet][fileserver]") {
 
     // Log out so the file server forgets this station.
     type_string_with_shift(machine, renderer, "*BYE\r", 100000);
-    run_cycles(10'000'000);
+    run_cycles(machine, renderer, 10'000'000);
 }
 
 TEST_CASE("Econet *DATE runs library program from file server", "[econet][fileserver]") {
@@ -667,71 +661,29 @@ TEST_CASE("Econet *DATE runs library program from file server", "[econet][filese
     if (!fs_config.valid) SKIP("BEEBIUM_FILESERVER not set "
         "(e.g. BEEBIUM_FILESERVER=0.254:127.0.0.1:32768 BEEBIUM_LOCAL_PORT=10101)");
 
-    // Set up Model B with MOS + BASIC + NFS ROM, no disc controller.
     ModelB machine;
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
-    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
-    auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");
-    machine.memory().load_mos(mos.data(), mos.size());
-    machine.memory().load_basic(basic.data(), basic.size());
-    machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
-    machine.memory().enable_video_output();
-
-    // Create AUN backend wrapped in logging decorator
-    auto aun = std::make_unique<AunBackend>(
-        0, fs_config.station, fs_config.local_port);
-    REQUIRE(aun->is_connected());
-    auto logging = std::make_unique<LoggingBackend>(std::move(aun));
-    auto* log_ptr = logging.get();
+    auto* log_ptr = setup_fileserver_machine(machine, fs_config);
+    REQUIRE(log_ptr != nullptr);
     INFO("Bound to UDP port " << log_ptr->local_port());
-
-    log_ptr->add_peer(fs_config.net, fs_config.stn, fs_config.ip_addr, fs_config.port);
-
-    machine.state().memory.econet_socket.enable(
-        fs_config.station, std::move(logging), true);
 
     HeapFrameAllocator allocator;
     FrameBuffer fb(&allocator, 640, 512);
     FrameRenderer renderer(&fb);
 
-    // Helper: run N cycles, processing video output
-    auto run_cycles = [&](uint64_t count) {
-        for (uint64_t i = 0; i < count; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value()) {
-                renderer.process(machine.memory().video_output.value());
-            }
-        }
-    };
-
-    // Boot the machine
-    machine.reset();
-    run_cycles(4'000'000);
-
-    INFO("Screen after boot:\n" << dump_screen(machine, 8));
+    boot_and_select_nfs(machine, renderer);
     REQUIRE(screen_contains(machine, "BBC Computer 32K"));
     REQUIRE(screen_contains(machine, "Econet Station"));
 
-    // *NET — select the Network Filing System
-    type_string_with_shift(machine, renderer, "*NET\r", 100000);
-    run_cycles(2'000'000);
-    INFO("Screen after *NET:\n" << dump_screen(machine, 12));
-
-    // Log out any stale session from a previous test run.
-    type_string_with_shift(machine, renderer, "*BYE\r", 100000);
-    run_cycles(10'000'000);
-
     // *I AM SYST — log in as the privileged user
     type_string_with_shift(machine, renderer, "*I AM SYST\r", 100000);
-    run_cycles(10'000'000);
+    run_cycles(machine, renderer, 10'000'000);
     INFO("Screen after *I AM SYST:\n" << dump_screen(machine, 16));
 
     // *DATE — run the DATE utility from the Library directory.
     // The file server loads and executes the program, which prints
     // "Today is ..." with the server's date.
     type_string_with_shift(machine, renderer, "*DATE\r", 100000);
-    run_cycles(20'000'000);
+    run_cycles(machine, renderer, 20'000'000);
 
     INFO("Screen after *DATE:\n" << dump_screen(machine));
     INFO("ADLC state:\n" << dump_adlc_state(machine));
@@ -761,5 +713,5 @@ TEST_CASE("Econet *DATE runs library program from file server", "[econet][filese
 
     // Log out so the file server forgets this station.
     type_string_with_shift(machine, renderer, "*BYE\r", 100000);
-    run_cycles(10'000'000);
+    run_cycles(machine, renderer, 10'000'000);
 }
