@@ -1643,5 +1643,6 @@ beebium-model-b --drive0 games.ssd
 ### Online Resources
 
 - J.G. Harston's Econet pages: http://mdfs.net/Docs/Comp/Acorn/Econet/
+- Acorn NFS Disassembly https://acornaeology.uk/acorn-nfs/
 - BeebWiki Econet documentation
 - StarDot forums (retro computing community)
