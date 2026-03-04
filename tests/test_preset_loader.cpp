@@ -190,7 +190,7 @@ TEST_CASE("load_preset: non-object JSON returns error", "[preset][load_preset]")
 // ============================================================================
 
 TEST_CASE("PresetLoadResult: success() matches config presence", "[preset][PresetLoadResult]") {
-    PresetLoadResult success_result{PresetConfig{"Test", std::nullopt, std::nullopt, std::nullopt}, ""};
+    PresetLoadResult success_result{PresetConfig{"Test", std::nullopt, std::nullopt, std::nullopt, std::nullopt}, ""};
     REQUIRE(success_result.success());
     REQUIRE(static_cast<bool>(success_result));
 
@@ -292,4 +292,150 @@ TEST_CASE("load_preset: fdc_socket id 'none'", "[preset][load_preset]") {
     REQUIRE(result.config->storage->fdc_socket_id == "none");
 
     std::filesystem::remove(temp_filepath);
+}
+
+// ============================================================================
+// Econet section tests
+// ============================================================================
+
+TEST_CASE("load_preset: econet station only", "[preset][load_preset][econet]") {
+    auto result = load_preset(presets_dirpath() / "econet_station_only.preset.beebium");
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    REQUIRE(result.config->econet->station == 42);
+    REQUIRE_FALSE(result.config->econet->aun_port_set);
+}
+
+TEST_CASE("load_preset: econet with explicit port", "[preset][load_preset][econet]") {
+    auto result = load_preset(presets_dirpath() / "econet_with_port.preset.beebium");
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    REQUIRE(result.config->econet->station == 5);
+    REQUIRE(result.config->econet->aun_port_set);
+    REQUIRE(result.config->econet->aun_port.has_value());
+    REQUIRE(*result.config->econet->aun_port == 12345);
+}
+
+TEST_CASE("load_preset: econet no network (null port)", "[preset][load_preset][econet]") {
+    auto result = load_preset(presets_dirpath() / "econet_no_network.preset.beebium");
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    REQUIRE(result.config->econet->station == 10);
+    REQUIRE(result.config->econet->aun_port_set);
+    REQUIRE_FALSE(result.config->econet->aun_port.has_value());
+}
+
+TEST_CASE("load_preset: econet with storage", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_storage.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Econet and Storage",
+            "econet": { "station": 100 },
+            "storage": { "fdc_socket": { "id": "acorn-1770" } }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    REQUIRE(result.config->econet->station == 100);
+    REQUIRE(result.config->storage.has_value());
+    REQUIRE(result.config->storage->fdc_socket_id == "acorn-1770");
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: unknown econet keys ignored", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_unknown.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"name": "Unknown Keys", "econet": { "station": 1, "future_field": true }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    REQUIRE(result.config->econet->station == 1);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: econet station 0 is invalid", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_bad0.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"name": "Bad Station", "econet": { "station": 0 }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("between 1 and 254") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: econet station 255 is invalid", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_bad255.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"name": "Bad Station", "econet": { "station": 255 }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("between 1 and 254") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: econet station 300 is invalid", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_bad300.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"name": "Bad Station", "econet": { "station": 300 }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("between 1 and 254") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: econet missing station", "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_nostation.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"name": "No Station", "econet": { "aun_port": 12345 }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("requires a 'station' field") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+// ============================================================================
+// PresetEconetConfig tests
+// ============================================================================
+
+TEST_CASE("PresetEconetConfig: default state", "[preset][PresetEconetConfig]") {
+    PresetEconetConfig econet{};
+
+    REQUIRE(econet.station == 0);
+    REQUIRE_FALSE(econet.aun_port.has_value());
+    REQUIRE_FALSE(econet.aun_port_set);
+}
+
+TEST_CASE("PresetConfig: econet default state", "[preset][PresetConfig]") {
+    PresetConfig config;
+
+    REQUIRE_FALSE(config.econet.has_value());
 }

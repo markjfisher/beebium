@@ -1,0 +1,1 @@
+{ "name": "Econet With Port", "econet": { "station": 5, "aun_port": 12345 } }

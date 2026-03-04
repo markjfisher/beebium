@@ -711,6 +711,16 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
 
         // Cassette - future enhancement
     }
+
+    // Econet
+    if (preset.econet) {
+        const auto& econet = *preset.econet;
+        config.station_number = econet.station;
+
+        if (econet.aun_port_set) {
+            config.aun_port = econet.aun_port;  // may be nullopt (no network)
+        }
+    }
 }
 
 // Parse command-line arguments for the 'start' subcommand into a ServerConfig struct.
@@ -1670,7 +1680,19 @@ public:
             });
         }
 
-        output["sections"] = ojson::array({storage});
+        ojson sections = ojson::array();
+        sections.push_back(storage);
+
+        if constexpr (HasEconetSocket<Memory>) {
+            ojson networking;
+            networking["type"] = "networking";
+            networking["econet"]["station_range"] = ojson::array({1, 254});
+            networking["econet"]["default_enabled"] = false;
+            networking["aun"]["default_port"] = beebium::AUN_DEFAULT_PORT;
+            sections.push_back(networking);
+        }
+
+        output["sections"] = sections;
 
         std::cout << output.dump(2) << "\n";
         return ExitCode::OK;

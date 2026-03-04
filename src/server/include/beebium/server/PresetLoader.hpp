@@ -32,13 +32,21 @@ struct PresetStorageConfig {
     std::optional<std::string> cassette_image_uri;
 };
 
+// Preset Econet configuration
+struct PresetEconetConfig {
+    int station;                          // 1-254
+    std::optional<uint16_t> aun_port;     // port number, or nullopt = no network
+    bool aun_port_set = false;            // true if "aun_port" key was present (distinguishes absent from null)
+};
+
 // Top-level preset configuration
 struct PresetConfig {
     std::string name;
     std::optional<std::string> model;             // For validation against executable
     std::optional<PresetStorageConfig> storage;
+    std::optional<PresetEconetConfig> econet;
     std::optional<double> thumbnail_capture_delay_seconds;  // For capture-screenshot subcommand
-    // Future: sideways_bank, startup_options, networking, coprocessor, os_rom
+    // Future: sideways_bank, startup_options, coprocessor, os_rom
 };
 
 // Result of loading a preset file
@@ -155,6 +163,42 @@ inline std::optional<PresetStorageConfig> parse_storage_section(
     return storage;
 }
 
+// Parse the econet section from JSON.
+// Returns the parsed config on success, or nullopt with error message on failure.
+inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_section(
+    const nlohmann::json& econet_json) {
+
+    PresetEconetConfig econet;
+
+    // Station number (required within econet section)
+    if (!econet_json.contains("station")) {
+        return {std::nullopt, "Econet section requires a 'station' field"};
+    }
+    if (!econet_json["station"].is_number_integer()) {
+        return {std::nullopt, "Econet 'station' must be an integer"};
+    }
+    econet.station = econet_json["station"].get<int>();
+    if (econet.station < 1 || econet.station > 254) {
+        return {std::nullopt, "Econet station number must be between 1 and 254, got " +
+                              std::to_string(econet.station)};
+    }
+
+    // AUN port (optional)
+    if (econet_json.contains("aun_port")) {
+        econet.aun_port_set = true;
+        if (econet_json["aun_port"].is_null()) {
+            econet.aun_port = std::nullopt;  // Explicit no-network
+        } else if (econet_json["aun_port"].is_number_integer()) {
+            econet.aun_port = econet_json["aun_port"].get<uint16_t>();
+        } else {
+            return {std::nullopt, "Econet 'aun_port' must be an integer or null"};
+        }
+    }
+
+    // Unknown keys silently ignored for forward compatibility
+    return {std::move(econet), ""};
+}
+
 // Load and parse a preset file.
 //
 // Returns a PresetLoadResult containing either the parsed configuration or an error message.
@@ -205,6 +249,15 @@ inline PresetLoadResult load_preset(const std::filesystem::path& filepath) {
     // Storage section
     if (json.contains("storage") && json["storage"].is_object()) {
         config.storage = parse_storage_section(json["storage"], filepath.parent_path());
+    }
+
+    // Econet section
+    if (json.contains("econet") && json["econet"].is_object()) {
+        auto [econet, error] = parse_econet_section(json["econet"]);
+        if (!econet) {
+            return {std::nullopt, error + ": " + filepath.string()};
+        }
+        config.econet = std::move(*econet);
     }
 
     // Thumbnail capture delay (for capture-screenshot subcommand)
