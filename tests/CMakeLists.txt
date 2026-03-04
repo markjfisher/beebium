@@ -470,6 +470,17 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_sideways)
 
+    # Econet service tests
+    add_executable(test_grpc_econet test_grpc_econet.cpp)
+    target_link_libraries(test_grpc_econet PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_econet PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_grpc_econet)
+
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)
     target_link_libraries(test_grpc_system PRIVATE

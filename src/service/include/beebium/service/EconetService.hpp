@@ -1,0 +1,394 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+#ifndef BEEBIUM_SERVICE_ECONET_SERVICE_HPP
+#define BEEBIUM_SERVICE_ECONET_SERVICE_HPP
+
+#include "econet.grpc.pb.h"
+#include "beebium/econet/EconetConcepts.hpp"
+#include "beebium/econet/EconetSocket.hpp"
+#include "beebium/econet/AunBackend.hpp"
+#include "beebium/econet/AunPacket.hpp"
+#include "beebium/econet/TestBackend.hpp"
+#include "beebium/econet/Mc6854.hpp"
+#include "beebium/econet/FourWayHandshake.hpp"
+
+#include <grpcpp/grpcpp.h>
+#include <mutex>
+
+#include <arpa/inet.h>
+
+namespace beebium::service {
+
+using beebium::HasEconetSocket;
+
+namespace {
+
+inline std::string frame_field_to_string(Mc6854::FrameField field) {
+    switch (field) {
+        case Mc6854::FrameField::Idle:     return "idle";
+        case Mc6854::FrameField::Flag:     return "flag";
+        case Mc6854::FrameField::Address:  return "address";
+        case Mc6854::FrameField::Control:  return "control";
+        case Mc6854::FrameField::ExtCtrl:  return "ext_ctrl";
+        case Mc6854::FrameField::Lcf:      return "lcf";
+        case Mc6854::FrameField::Data:     return "data";
+    }
+    return "unknown";
+}
+
+inline std::string handshake_stage_to_string(FourWayHandshake::Stage stage) {
+    switch (stage) {
+        case FourWayHandshake::Stage::Idle:              return "idle";
+        case FourWayHandshake::Stage::ScoutSent:         return "scout_sent";
+        case FourWayHandshake::Stage::ScoutAckReceived:  return "scout_ack_received";
+        case FourWayHandshake::Stage::DataSent:          return "data_sent";
+        case FourWayHandshake::Stage::WaitForIdle:       return "wait_for_idle";
+        case FourWayHandshake::Stage::ScoutReceived:     return "scout_received";
+        case FourWayHandshake::Stage::ScoutAckSent:      return "scout_ack_sent";
+        case FourWayHandshake::Stage::DataReceived:      return "data_received";
+        case FourWayHandshake::Stage::ImmediateSent:     return "immediate_sent";
+        case FourWayHandshake::Stage::ImmediateReceived: return "immediate_received";
+    }
+    return "unknown";
+}
+
+inline std::string ip_addr_to_string(uint32_t ip_addr) {
+    char buf[INET_ADDRSTRLEN];
+    struct in_addr addr;
+    addr.s_addr = ip_addr;
+    if (inet_ntop(AF_INET, &addr, buf, sizeof(buf))) {
+        return buf;
+    }
+    return "0.0.0.0";
+}
+
+}  // anonymous namespace
+
+template<typename MachineType>
+class EconetServiceImpl final : public EconetService::Service {
+public:
+    explicit EconetServiceImpl(MachineType& machine)
+        : machine_(machine) {}
+
+    ~EconetServiceImpl() override = default;
+
+    EconetServiceImpl(const EconetServiceImpl&) = delete;
+    EconetServiceImpl& operator=(const EconetServiceImpl&) = delete;
+
+    grpc::Status GetEconetStatus(
+        grpc::ServerContext* context,
+        const GetEconetStatusRequest* request,
+        GetEconetStatusResponse* response) override
+    {
+        (void)context;
+        (void)request;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_has_econet_socket(false);
+            return grpc::Status::OK;
+        } else {
+            response->set_has_econet_socket(true);
+
+            auto& econet = machine_.state().memory.econet_socket;
+            response->set_enabled(econet.enabled());
+
+            if (!econet.enabled()) {
+                return grpc::Status::OK;
+            }
+
+            response->set_station_id(econet.station_id());
+            response->set_aun_mode(econet.aun_mode());
+
+            // AUN-specific info
+            if (auto* aun = dynamic_cast<AunBackend*>(econet.backend())) {
+                response->set_connected(aun->is_connected());
+                response->set_aun_port(aun->local_port());
+                response->set_peer_count(static_cast<uint32_t>(aun->peer_count()));
+            } else if (econet.backend()) {
+                response->set_connected(econet.backend()->is_connected());
+            }
+
+            // ADLC status
+            if (auto* adlc = econet.adlc()) {
+                auto* adlc_status = response->mutable_adlc();
+                adlc_status->set_cr1(adlc->cr1());
+                adlc_status->set_cr2(adlc->cr2());
+                adlc_status->set_cr3(adlc->cr3());
+                adlc_status->set_cr4(adlc->cr4());
+                adlc_status->set_sr1(adlc->sr1());
+                adlc_status->set_sr2(adlc->sr2());
+                adlc_status->set_irq_output(adlc->irq_output());
+                adlc_status->set_tx_fifo_empty(adlc->tx_fifo_empty());
+                adlc_status->set_tx_fifo_full(adlc->tx_fifo_full());
+                adlc_status->set_rx_fifo_empty(adlc->rx_fifo_empty());
+                adlc_status->set_rx_fifo_full(adlc->rx_fifo_full());
+                adlc_status->set_tx_frame_field(frame_field_to_string(adlc->tx_frame_field()));
+                adlc_status->set_rx_frame_field(frame_field_to_string(adlc->rx_frame_field()));
+                adlc_status->set_pse_level(adlc->pse_level());
+                adlc_status->set_cts_input(adlc->cts_input());
+            }
+
+            // Handshake status
+            if (auto* hs = econet.handshake()) {
+                auto* hs_status = response->mutable_handshake();
+                hs_status->set_stage(handshake_stage_to_string(hs->stage()));
+                hs_status->set_flag_fill_active(hs->flag_fill_active());
+            }
+
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status EnableEconet(
+        grpc::ServerContext* context,
+        const EnableEconetRequest* request,
+        EnableEconetResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet already enabled");
+                return grpc::Status::OK;
+            }
+
+            uint32_t station = request->station_id();
+            if (station < 1 || station > 254) {
+                response->set_success(false);
+                response->set_error("Station number must be between 1 and 254");
+                return grpc::Status::OK;
+            }
+
+            auto station_id = static_cast<uint8_t>(station);
+
+            if (request->no_network()) {
+                // Fit hardware with no network connection
+                auto backend = std::make_unique<TestBackend>();
+                backend->set_connected(false);
+                econet.enable(station_id, std::move(backend), true);
+                response->set_success(true);
+                return grpc::Status::OK;
+            }
+
+            // AUN networking: create UDP socket
+            uint16_t port = (request->aun_port() == 0)
+                ? AUN_DEFAULT_PORT
+                : static_cast<uint16_t>(request->aun_port());
+
+            auto backend = std::make_unique<AunBackend>(0, station_id, port);
+
+            if (!backend->is_connected()) {
+                response->set_success(false);
+                response->set_error("Failed to bind AUN socket to port " + std::to_string(port));
+                return grpc::Status::OK;
+            }
+
+            response->set_actual_aun_port(backend->local_port());
+            econet.enable(station_id, std::move(backend), true);
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status DisableEconet(
+        grpc::ServerContext* context,
+        const DisableEconetRequest* request,
+        DisableEconetResponse* response) override
+    {
+        (void)context;
+        (void)request;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet is not enabled");
+                return grpc::Status::OK;
+            }
+
+            econet.disable();
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status AddPeer(
+        grpc::ServerContext* context,
+        const AddPeerRequest* request,
+        AddPeerResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet is not enabled");
+                return grpc::Status::OK;
+            }
+
+            auto* aun = dynamic_cast<AunBackend*>(econet.backend());
+            if (!aun) {
+                response->set_success(false);
+                response->set_error("Econet is not in AUN mode");
+                return grpc::Status::OK;
+            }
+
+            // Parse IP address
+            struct in_addr addr;
+            if (inet_pton(AF_INET, request->ip_address().c_str(), &addr) != 1) {
+                response->set_success(false);
+                response->set_error("Invalid IP address: " + request->ip_address());
+                return grpc::Status::OK;
+            }
+
+            uint16_t port = (request->port() == 0)
+                ? AUN_DEFAULT_PORT
+                : static_cast<uint16_t>(request->port());
+
+            aun->add_peer(
+                static_cast<uint8_t>(request->net()),
+                static_cast<uint8_t>(request->stn()),
+                addr.s_addr,
+                port);
+
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status RemovePeer(
+        grpc::ServerContext* context,
+        const RemovePeerRequest* request,
+        RemovePeerResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet is not enabled");
+                return grpc::Status::OK;
+            }
+
+            auto* aun = dynamic_cast<AunBackend*>(econet.backend());
+            if (!aun) {
+                response->set_success(false);
+                response->set_error("Econet is not in AUN mode");
+                return grpc::Status::OK;
+            }
+
+            aun->remove_peer(
+                static_cast<uint8_t>(request->net()),
+                static_cast<uint8_t>(request->stn()));
+
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status ListPeers(
+        grpc::ServerContext* context,
+        const ListPeersRequest* request,
+        ListPeersResponse* response) override
+    {
+        (void)context;
+        (void)request;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                return grpc::Status::OK;
+            }
+
+            auto* aun = dynamic_cast<AunBackend*>(econet.backend());
+            if (!aun) {
+                return grpc::Status::OK;
+            }
+
+            for (const auto& peer : aun->list_peers()) {
+                auto* p = response->add_peers();
+                p->set_net(peer.net);
+                p->set_stn(peer.stn);
+                p->set_ip_address(ip_addr_to_string(peer.ip_addr));
+                p->set_port(peer.port);
+            }
+
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status SubscribeEconetEvents(
+        grpc::ServerContext* context,
+        const SubscribeEconetEventsRequest* request,
+        grpc::ServerWriter<EconetEvent>* writer) override
+    {
+        (void)context;
+        (void)request;
+        (void)writer;
+        return grpc::Status(grpc::StatusCode::UNIMPLEMENTED,
+                            "Event streaming not yet implemented");
+    }
+
+private:
+    MachineType& machine_;
+    std::mutex mutex_;
+};
+
+}  // namespace beebium::service
+
+#endif  // BEEBIUM_SERVICE_ECONET_SERVICE_HPP

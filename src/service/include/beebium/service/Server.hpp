@@ -21,6 +21,7 @@
 #include "beebium/service/SystemService.hpp"
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
+#include "beebium/service/EconetService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
@@ -103,6 +104,7 @@ private:
         std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
         std::unique_ptr<AudioServiceImpl<MachineType>> audio_service;
         std::unique_ptr<SidewaysServiceImpl<MachineType>> sideways_service;
+        std::unique_ptr<EconetServiceImpl<MachineType>> econet_service;
         std::unique_ptr<grpc::Server> grpc_server;
         std::unique_ptr<discovery::Advertiser> advertiser;
 
@@ -199,6 +201,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->sideways_service = std::make_unique<SidewaysServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->econet_service = std::make_unique<EconetServiceImpl<MachineType>>(
+        impl_->machine);
+
     // Build server address
     std::ostringstream addr_stream;
     addr_stream << impl_->address << ":" << impl_->port;
@@ -220,6 +225,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->system_service.get());
     builder.RegisterService(impl_->audio_service.get());
     builder.RegisterService(impl_->sideways_service.get());
+    builder.RegisterService(impl_->econet_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
 
@@ -290,6 +296,7 @@ void Server<MachineType>::stop() {
     impl_->system_service.reset();
     impl_->audio_service.reset();
     impl_->sideways_service.reset();
+    impl_->econet_service.reset();
 }
 
 template<typename MachineType>

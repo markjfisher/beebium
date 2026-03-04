@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+package beebium;
+
+// Econet/AUN networking management service.
+//
+// Provides hardware configuration (enable/disable Econet), network status
+// queries (ADLC registers, handshake state), and AUN peer management.
+service EconetService {
+    // Query Econet hardware status (enabled, station ID, ADLC state, peers).
+    rpc GetEconetStatus(GetEconetStatusRequest) returns (GetEconetStatusResponse);
+
+    // Fit Econet hardware: set station ID, optionally bind AUN socket.
+    rpc EnableEconet(EnableEconetRequest) returns (EnableEconetResponse);
+
+    // Remove Econet hardware (disable station, close AUN socket).
+    rpc DisableEconet(DisableEconetRequest) returns (DisableEconetResponse);
+
+    // Add an Econet address <-> UDP endpoint peer mapping.
+    rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
+
+    // Remove a peer mapping by Econet address.
+    rpc RemovePeer(RemovePeerRequest) returns (RemovePeerResponse);
+
+    // Enumerate all configured AUN peers.
+    rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+
+    // Stream Econet events (frame activity, handshake changes, connection state).
+    // Reserved for future implementation.
+    rpc SubscribeEconetEvents(SubscribeEconetEventsRequest) returns (stream EconetEvent);
+}
+
+// --- Status ---
+
+message GetEconetStatusRequest {
+    // Empty - returns full status.
+}
+
+message GetEconetStatusResponse {
+    // True if this machine variant has an Econet socket (compile-time).
+    bool has_econet_socket = 1;
+
+    // True if Econet hardware is currently fitted (runtime).
+    bool enabled = 2;
+
+    // Station number (1-254, 0 if disabled).
+    uint32 station_id = 3;
+
+    // True if AUN mode is active (FourWayHandshake present).
+    bool aun_mode = 4;
+
+    // True if network link is active (UDP socket bound and connected).
+    bool connected = 5;
+
+    // Local AUN UDP port (0 if not in AUN mode or disabled).
+    uint32 aun_port = 6;
+
+    // Number of configured AUN peers.
+    uint32 peer_count = 7;
+
+    // MC6854 ADLC register state (populated when enabled).
+    AdlcStatus adlc = 10;
+
+    // Four-way handshake state (populated when AUN mode active).
+    HandshakeStatus handshake = 11;
+}
+
+message AdlcStatus {
+    uint32 cr1 = 1;
+    uint32 cr2 = 2;
+    uint32 cr3 = 3;
+    uint32 cr4 = 4;
+    uint32 sr1 = 5;
+    uint32 sr2 = 6;
+    bool irq_output = 7;
+    bool tx_fifo_empty = 8;
+    bool tx_fifo_full = 9;
+    bool rx_fifo_empty = 10;
+    bool rx_fifo_full = 11;
+    string tx_frame_field = 12;
+    string rx_frame_field = 13;
+    int32 pse_level = 14;
+    bool cts_input = 15;
+}
+
+message HandshakeStatus {
+    string stage = 1;
+    bool flag_fill_active = 2;
+}
+
+// --- Enable/Disable ---
+
+message EnableEconetRequest {
+    // Station number (1-254).
+    uint32 station_id = 1;
+
+    // UDP port to bind for AUN networking.
+    // 0 = use default (32768).
+    // Ignored when no_network is true.
+    uint32 aun_port = 2;
+
+    // If true, fit hardware with no network connection.
+    // Station ID is readable and ADLC is present, but DCD is high (no carrier).
+    bool no_network = 3;
+}
+
+message EnableEconetResponse {
+    bool success = 1;
+    string error = 2;
+
+    // Actual port bound (useful when 0/default was requested).
+    uint32 actual_aun_port = 3;
+}
+
+message DisableEconetRequest {
+    // Empty.
+}
+
+message DisableEconetResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// --- Peer Management ---
+
+message AddPeerRequest {
+    // Econet network number (0-127).
+    uint32 net = 1;
+
+    // Econet station number (1-254).
+    uint32 stn = 2;
+
+    // Dotted-quad IP address (e.g. "192.168.1.100").
+    string ip_address = 3;
+
+    // UDP port (0 = use AUN default 32768).
+    uint32 port = 4;
+}
+
+message AddPeerResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message RemovePeerRequest {
+    uint32 net = 1;
+    uint32 stn = 2;
+}
+
+message RemovePeerResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message ListPeersRequest {
+    // Empty - returns all peers.
+}
+
+message ListPeersResponse {
+    repeated EconetPeer peers = 1;
+}
+
+message EconetPeer {
+    uint32 net = 1;
+    uint32 stn = 2;
+    string ip_address = 3;
+    uint32 port = 4;
+}
+
+// --- Event Streaming (reserved for future implementation) ---
+
+message SubscribeEconetEventsRequest {
+    // Future: filter by event type.
+}
+
+enum EconetEventType {
+    ECONET_EVENT_UNKNOWN = 0;
+    ECONET_EVENT_FRAME_SENT = 1;
+    ECONET_EVENT_FRAME_RECEIVED = 2;
+    ECONET_EVENT_HANDSHAKE_CHANGE = 3;
+    ECONET_EVENT_CONNECTION_CHANGE = 4;
+}
+
+message EconetEvent {
+    EconetEventType type = 1;
+    uint64 timestamp_cycles = 2;
+}

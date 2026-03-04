@@ -229,6 +229,20 @@ uint16_t AunBackend::local_port() const {
     return local_port_;
 }
 
+std::vector<PeerInfo> AunBackend::list_peers() const {
+    std::vector<PeerInfo> result;
+    result.reserve(forward_map_.size());
+    for (const auto& [key, endpoint] : forward_map_) {
+        result.push_back({
+            static_cast<uint8_t>(key >> 8),
+            static_cast<uint8_t>(key & 0xFF),
+            endpoint.first,
+            endpoint.second
+        });
+    }
+    return result;
+}
+
 uint16_t AunBackend::make_forward_key(uint8_t net, uint8_t stn) {
     return (static_cast<uint16_t>(net) << 8) | stn;
 }

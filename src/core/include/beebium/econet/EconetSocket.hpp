@@ -190,6 +190,10 @@ public:
     FourWayHandshake* handshake() { return handshake_.get(); }
     const FourWayHandshake* handshake() const { return handshake_.get(); }
 
+    NetworkBackend* backend() { return backend_.get(); }
+    const NetworkBackend* backend() const { return backend_.get(); }
+    bool aun_mode() const { return handshake_ != nullptr; }
+
 private:
     std::unique_ptr<NetworkBackend> backend_;
     std::unique_ptr<FourWayHandshake> handshake_;

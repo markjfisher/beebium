@@ -19,8 +19,17 @@
 #include <cstdint>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace beebium {
+
+// Information about a configured peer in the AUN peer table.
+struct PeerInfo {
+    uint8_t net;
+    uint8_t stn;
+    uint32_t ip_addr;   // Network byte order
+    uint16_t port;      // Host byte order
+};
 
 // UDP transport backend implementing the AUN (Acorn Universal Networking) protocol.
 //
@@ -67,6 +76,9 @@ public:
 
     // The local UDP port this backend is bound to.
     uint16_t local_port() const;
+
+    // Enumerate all configured peers.
+    std::vector<PeerInfo> list_peers() const;
 
 private:
     int socket_fd_ = -1;
