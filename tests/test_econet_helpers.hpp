@@ -51,6 +51,11 @@ inline bool nfs_rom_available() {
     return std::filesystem::exists(rom_dirpath / "acorn-nfs_3_34.rom");
 }
 
+inline bool nfs_rom_available(const std::string& nfs_rom_filename) {
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    return std::filesystem::exists(rom_dirpath / nfs_rom_filename);
+}
+
 // Search Mode 7 screen memory ($7C00-$7FFF) for a string.
 inline bool screen_contains(ModelB& machine, const std::string& text) {
     for (uint16_t addr = 0x7C00; addr <= 0x7FFF - text.size(); ++addr) {

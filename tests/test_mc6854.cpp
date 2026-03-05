@@ -1762,8 +1762,13 @@ TEST_CASE("SR2: INACTIVE and FD simultaneously set when idle with clock box", "[
     FourWayHandshake handshake(backend);
     Mc6854 adlc(handshake);
 
-    // Release from reset
+    // Release from reset with AC bit set so we can access CR3
+    adlc.write(0, Mc6854::CR1_AC);
+    // Enable Flag Detected reporting in CR3 (offset 1 when AC=1)
+    adlc.write(1, Mc6854::CR3_FD_ENABLE);
+    // Clear AC bit (remain out of reset)
     adlc.write(0, 0x00);
+
     adlc.tick_rising();
     adlc.tick_falling();
 

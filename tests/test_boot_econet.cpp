@@ -16,6 +16,7 @@
 // and that the machine doesn't hang during boot.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <beebium/Machines.hpp>
 #include <beebium/FrameAllocator.hpp>
 #include <beebium/FrameBuffer.hpp>
@@ -37,24 +38,39 @@ using namespace beebium::test;
 
 namespace {
 
-// Set up a Model B with MOS + BASIC + optional NFS ROM in slot 10 + Econet socket.
-void setup_econet_machine(ModelB& machine, uint8_t station_id, bool connected,
-                          bool load_nfs = true) {
+// Set up a Model B with MOS + BASIC + named NFS ROM in slot 10 + Econet socket.
+void setup_econet_machine_with_nfs(ModelB& machine, uint8_t station_id, bool connected,
+                                    const std::string& nfs_rom_filename) {
     const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
     auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
     auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
     machine.memory().load_mos(mos.data(), mos.size());
     machine.memory().load_basic(basic.data(), basic.size());
 
-    if (load_nfs) {
-        auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");
-        machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
-    }
+    auto nfs = load_rom(rom_dirpath / nfs_rom_filename);
+    machine.memory().load_sideways_rom(10, nfs.data(), nfs.size());
 
-    // Create backend and enable Econet socket
     auto backend = std::make_unique<TestBackend>();
     backend->set_connected(connected);
     machine.state().memory.econet_socket.enable(station_id, std::move(backend), true);
+}
+
+// Set up a Model B with MOS + BASIC + optional NFS ROM in slot 10 + Econet socket.
+void setup_econet_machine(ModelB& machine, uint8_t station_id, bool connected,
+                          bool load_nfs = true) {
+    if (load_nfs) {
+        setup_econet_machine_with_nfs(machine, station_id, connected, "acorn-nfs_3_34.rom");
+    } else {
+        const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+        auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+        auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
+        machine.memory().load_mos(mos.data(), mos.size());
+        machine.memory().load_basic(basic.data(), basic.size());
+
+        auto backend = std::make_unique<TestBackend>();
+        backend->set_connected(connected);
+        machine.state().memory.econet_socket.enable(station_id, std::move(backend), true);
+    }
 }
 
 // Boot the machine for a fixed number of instructions.
@@ -103,6 +119,83 @@ TEST_CASE("Boot message includes station number when Econet connected",
 
     REQUIRE(screen_contains(machine, "Econet Station"));
     REQUIRE(screen_contains(machine, "001"));
+}
+
+TEST_CASE("ADLC status registers are zero (masked) after reset",
+          "[boot][econet][diagnostic]") {
+    if (!base_roms_available()) SKIP("Base ROMs not available");
+
+    ModelB machine;
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
+    machine.memory().load_mos(mos.data(), mos.size());
+    machine.memory().load_basic(basic.data(), basic.size());
+
+    auto backend = std::make_unique<TestBackend>();
+    backend->set_connected(true);
+    machine.state().memory.econet_socket.enable(101, std::move(backend), true);
+
+    machine.reset();
+
+    // Read ADLC status registers immediately after reset (before any stepping)
+    uint8_t sr1_immediate = machine.state().memory.read(0xFEA0);
+    uint8_t sr2_immediate = machine.state().memory.read(0xFEA1);
+    INFO("Immediately after reset:");
+    INFO("  SR1 = 0x" << std::hex << (int)sr1_immediate << " (masked: 0x" << (int)(sr1_immediate & 0xED) << ")");
+    INFO("  SR2 = 0x" << std::hex << (int)sr2_immediate << " (masked: 0x" << (int)(sr2_immediate & 0xDB) << ")");
+
+    // Step a small number of instructions and check again
+    for (int i = 0; i < 100; ++i) machine.step_instruction();
+    uint8_t sr1_after100 = machine.state().memory.read(0xFEA0);
+    uint8_t sr2_after100 = machine.state().memory.read(0xFEA1);
+    INFO("After 100 instructions:");
+    INFO("  SR1 = 0x" << std::hex << (int)sr1_after100 << " (masked: 0x" << (int)(sr1_after100 & 0xED) << ")");
+    INFO("  SR2 = 0x" << std::hex << (int)sr2_after100 << " (masked: 0x" << (int)(sr2_after100 & 0xDB) << ")");
+
+    // Step to roughly when service call 1 fires (~2M instructions into boot)
+    for (uint64_t i = 0; i < 2'000'000; ++i) machine.step_instruction();
+    uint8_t sr1_at_svc = machine.state().memory.read(0xFEA0);
+    uint8_t sr2_at_svc = machine.state().memory.read(0xFEA1);
+    INFO("After ~2M instructions (around service call time):");
+    INFO("  SR1 = 0x" << std::hex << (int)sr1_at_svc << " (masked: 0x" << (int)(sr1_at_svc & 0xED) << ")");
+    INFO("  SR2 = 0x" << std::hex << (int)sr2_at_svc << " (masked: 0x" << (int)(sr2_at_svc & 0xDB) << ")");
+
+    // The NFS 3.62 check: SR1 & 0xED must be 0, SR2 & 0xDB must be 0
+    CHECK((sr1_immediate & 0xED) == 0);
+    CHECK((sr2_immediate & 0xDB) == 0);
+    CHECK((sr1_at_svc & 0xED) == 0);
+    CHECK((sr2_at_svc & 0xDB) == 0);
+}
+
+TEST_CASE("Boot message includes station number across NFS ROM versions",
+          "[boot][econet]") {
+    if (!base_roms_available()) SKIP("Base ROMs not available");
+
+    auto nfs_rom_filename = GENERATE(
+        "acorn-nfs_3_34.rom",
+        "acorn-nfs_3_34B.rom",
+        "acorn-nfs_3_35D.rom",
+        "acorn-nfs_3_35K.rom",
+        "acorn-nfs_3_40.rom",
+        "acorn-nfs_3_62.rom",
+        "acorn-nfs_3_65.rom"
+    );
+
+    if (!nfs_rom_available(nfs_rom_filename))
+        SKIP("NFS ROM not available: " + std::string(nfs_rom_filename));
+
+    CAPTURE(nfs_rom_filename);
+
+    ModelB machine;
+    setup_econet_machine_with_nfs(machine, 101, true, nfs_rom_filename);
+    boot_machine(machine);
+
+    INFO("NFS ROM: " << nfs_rom_filename);
+    INFO("Screen:\n" << dump_screen(machine));
+
+    REQUIRE(screen_contains(machine, "Econet Station"));
+    REQUIRE(screen_contains(machine, "101"));
 }
 
 TEST_CASE("Model B with Econet (no network) boots to BASIC prompt with No Clock",

@@ -792,8 +792,13 @@ private:
         // CTS present: reflects CTS input (high = not clear to send)
         bool cts_present = cts_input_;
 
-        // Flag Detected: driven by backend flag fill, or by stored latch
-        bool fd_condition = fd_stored_ || backend_.is_receiving_flags();
+        // Flag Detected: driven by backend flag fill, or by stored latch.
+        // Per the MC6854 datasheet, FD is only reported in SR1 when CR3 bit 3
+        // (FD_ENABLE) is set. After hardware reset CR3=0, so FD is suppressed.
+        // NFS 3.60+ probes SR1 during service call 1 and interprets a non-zero
+        // FD bit as "another ROM already initialised the ADLC", disabling itself.
+        bool fd_condition = (cr3_ & CR3_FD_ENABLE)
+            && (fd_stored_ || backend_.is_receiving_flags());
 
         // --- Stored condition edge detection ---
 
