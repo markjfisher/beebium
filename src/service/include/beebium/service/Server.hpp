@@ -23,6 +23,8 @@
 #include "beebium/service/SidewaysService.hpp"
 #include "beebium/service/EconetService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
+#include "beebium/econet/EconetConcepts.hpp"
+#include "beebium/econet/AunBackend.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
 #include <beebium/discovery/Advertiser.hpp>
@@ -256,6 +258,19 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
         info.txt_records["uuid"] = identity_uuid;
         info.txt_records["model"] = identity_model_type;
         info.txt_records["provenance"] = provenance_type;
+
+        using Memory = typename MachineType::Memory;
+        if constexpr (HasEconetSocket<Memory>) {
+            auto& econet = impl_->machine.state().memory.econet_socket;
+            if (econet.enabled()) {
+                info.txt_records["econet_station"] = std::to_string(econet.station_id());
+                if (auto* aun = dynamic_cast<AunBackend*>(econet.backend())) {
+                    info.txt_records["econet_net"] = std::to_string(aun->local_net());
+                    info.txt_records["econet_aun_port"] = std::to_string(aun->local_port());
+                }
+            }
+        }
+
         impl_->advertiser->start(info);
     }
 

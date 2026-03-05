@@ -229,6 +229,10 @@ uint16_t AunBackend::local_port() const {
     return local_port_;
 }
 
+uint8_t AunBackend::local_net() const {
+    return local_net_;
+}
+
 std::vector<PeerInfo> AunBackend::list_peers() const {
     std::vector<PeerInfo> result;
     result.reserve(forward_map_.size());

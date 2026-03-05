@@ -77,6 +77,9 @@ public:
     // The local UDP port this backend is bound to.
     uint16_t local_port() const;
 
+    // The local network number for this station.
+    uint8_t local_net() const;
+
     // Enumerate all configured peers.
     std::vector<PeerInfo> list_peers() const;
 

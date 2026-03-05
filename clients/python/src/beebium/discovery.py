@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -63,6 +63,9 @@ class DiscoveredMachine:
         model: Machine model type (from TXT record, e.g., "ModelB")
         provenance: Launch provenance type (from TXT record)
         version: Server version (from TXT record, may be empty)
+        econet_station: Econet station number (1-254), or None if Econet not enabled
+        econet_net: Econet network number, or None if not in AUN mode
+        econet_aun_port: AUN UDP port, or None if not in AUN mode
     """
 
     name: str
@@ -72,6 +75,9 @@ class DiscoveredMachine:
     model: str
     provenance: str
     version: str = ""
+    econet_station: int | None = None
+    econet_net: int | None = None
+    econet_aun_port: int | None = None
 
 
 class MachineDiscovery:
@@ -195,6 +201,9 @@ class MachineDiscovery:
             model=txt.get("model", ""),
             provenance=txt.get("provenance", ""),
             version=txt.get("version", ""),
+            econet_station=int(txt["econet_station"]) if "econet_station" in txt else None,
+            econet_net=int(txt["econet_net"]) if "econet_net" in txt else None,
+            econet_aun_port=int(txt["econet_aun_port"]) if "econet_aun_port" in txt else None,
         )
 
         is_new = instance_name not in self._machines

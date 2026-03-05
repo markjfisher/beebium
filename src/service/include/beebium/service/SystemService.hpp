@@ -18,6 +18,8 @@
 #include "beebium/service/ShutdownPolicy.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
 #include <beebium/discovery/Advertiser.hpp>
+#include "beebium/econet/EconetConcepts.hpp"
+#include "beebium/econet/AunBackend.hpp"
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
@@ -435,7 +437,18 @@ grpc::Status SystemServiceImpl<MachineType>::SetAdvertisement(
         info.txt_records["uuid"] = identity_.uuid;
         info.txt_records["model"] = identity_.model_type;
         info.txt_records["provenance"] = provenance_.type;
-        // Note: Version would need to be passed in; omit for now
+
+        using Memory = typename MachineType::Memory;
+        if constexpr (HasEconetSocket<Memory>) {
+            auto& econet = machine_.state().memory.econet_socket;
+            if (econet.enabled()) {
+                info.txt_records["econet_station"] = std::to_string(econet.station_id());
+                if (auto* aun = dynamic_cast<AunBackend*>(econet.backend())) {
+                    info.txt_records["econet_net"] = std::to_string(aun->local_net());
+                    info.txt_records["econet_aun_port"] = std::to_string(aun->local_port());
+                }
+            }
+        }
 
         advertiser_->start(info);
     } else {
