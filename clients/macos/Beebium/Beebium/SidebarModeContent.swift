@@ -432,10 +432,10 @@ struct NetworkModeView: View {
             } else {
                 ForEach(Array(econetClient.peers.enumerated()), id: \.offset) { _, peer in
                     HStack {
-                        Text("\(peer.net).\(peer.stn)")
+                        Text(verbatim: "\(peer.net).\(peer.stn)")
                             .font(.system(.body, design: .monospaced))
                             .frame(width: 50, alignment: .leading)
-                        Text("\(peer.ipAddress):\(peer.port)")
+                        Text(verbatim: "\(peer.ipAddress):\(peer.port)")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.secondary)
                         Spacer()
