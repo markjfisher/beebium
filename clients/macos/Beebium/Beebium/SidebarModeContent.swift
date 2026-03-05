@@ -333,29 +333,6 @@ struct NetworkModeView: View {
 
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Econet Station")
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(econetClient.stationId)")
-                    .fontWeight(.medium)
-                Button {
-                    showStationIdPopover = true
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.borderless)
-                .help("Edit Econet station")
-                .popover(isPresented: $showStationIdPopover, arrowEdge: .trailing) {
-                    StationIdPopover(
-                        currentStationId: econetClient.stationId,
-                        econetClient: econetClient,
-                        isPresented: $showStationIdPopover
-                    )
-                }
-            }
-
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Connection")
@@ -401,6 +378,29 @@ struct NetworkModeView: View {
                             .controlSize(.small)
                         }
                     }
+                }
+            }
+
+            HStack {
+                Text("Econet Station")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(econetClient.stationId)")
+                    .fontWeight(.medium)
+                Button {
+                    showStationIdPopover = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help("Edit Econet station")
+                .popover(isPresented: $showStationIdPopover, arrowEdge: .trailing) {
+                    StationIdPopover(
+                        currentStationId: econetClient.stationId,
+                        econetClient: econetClient,
+                        isPresented: $showStationIdPopover
+                    )
                 }
             }
 
