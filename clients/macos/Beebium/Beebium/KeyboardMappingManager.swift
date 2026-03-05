@@ -75,6 +75,25 @@ final class KeyboardMappingManager: ObservableObject {
         return (activeMapping?.disableableKeys.keys.sorted()) ?? []
     }
 
+    /// Host key label for the Break key in the active mapping (e.g. "⌥F12"), or nil if unmapped
+    var breakKeyLabel: String? {
+        guard let mapping = activeMapping else { return nil }
+        for entry in mapping.allEntries {
+            guard let macOSSpec = entry.macOS,
+                  let bbcSpec = entry.bbc,
+                  bbcSpec.keyName == "Break" else { continue }
+            var components: [String] = []
+            if macOSSpec.requiredModifiers.contains(.control) { components.append("⌃") }
+            if macOSSpec.requiredModifiers.contains(.option) { components.append("⌥") }
+            if macOSSpec.requiredModifiers.contains(.shift) { components.append("⇧") }
+            if macOSSpec.requiredModifiers.contains(.command) { components.append("⌘") }
+            let keyName = MacKeyCode.name(for: macOSSpec.keyCode) ?? "?"
+            components.append(keyName)
+            return components.joined()
+        }
+        return nil
+    }
+
     /// Represents a key mapping with action for display in reference table
     struct MappingReferenceEntry: Identifiable {
         let id = UUID()

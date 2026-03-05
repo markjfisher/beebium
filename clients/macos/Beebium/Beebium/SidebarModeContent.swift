@@ -60,7 +60,7 @@ struct SidebarModeContent: View {
             case .coprocessor:
                 CoprocessorModeView()
             case .network:
-                NetworkModeView(econetClient: econetClient)
+                NetworkModeView(econetClient: econetClient, keyboardMappingManager: keyboardMappingManager)
             }
         }
     }
@@ -254,6 +254,7 @@ struct CoprocessorModeView: View {
 /// Network mode view showing Econet status, connection controls, and peer list
 struct NetworkModeView: View {
     @ObservedObject var econetClient: EconetClient
+    @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var showStationIdPopover = false
 
     var body: some View {
@@ -399,6 +400,7 @@ struct NetworkModeView: View {
                     StationIdPopover(
                         currentStationId: econetClient.stationId,
                         econetClient: econetClient,
+                        breakKeyLabel: keyboardMappingManager.breakKeyLabel,
                         isPresented: $showStationIdPopover
                     )
                 }
@@ -450,6 +452,7 @@ struct NetworkModeView: View {
 private struct StationIdPopover: View {
     let currentStationId: UInt32
     @ObservedObject var econetClient: EconetClient
+    let breakKeyLabel: String?
     @Binding var isPresented: Bool
     @State private var stationIdText: String = ""
     @State private var isSaving: Bool = false
@@ -474,8 +477,13 @@ private struct StationIdPopover: View {
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
                     .font(.caption)
-                Text("Takes effect on next Ctrl-Break reset.")
-                    .font(.caption)
+                if let label = breakKeyLabel {
+                    Text("Takes effect on next Break (\(label)).")
+                        .font(.caption)
+                } else {
+                    Text("Takes effect on next Break.")
+                        .font(.caption)
+                }
             }
             .foregroundColor(.secondary)
 
