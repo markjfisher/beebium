@@ -179,7 +179,8 @@ TEST_CASE("Boot message includes station number across NFS ROM versions",
         "acorn-nfs_3_35K.rom",
         "acorn-nfs_3_40.rom",
         "acorn-nfs_3_62.rom",
-        "acorn-nfs_3_65.rom"
+        "acorn-nfs_3_65.rom",
+        "acorn-anfs_4_08_53.rom"
     );
 
     if (!nfs_rom_available(nfs_rom_filename))
