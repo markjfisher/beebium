@@ -200,7 +200,7 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
 }
 
 bool AunBackend::is_connected() const {
-    return connected_;
+    return connected_.load(std::memory_order_relaxed);
 }
 
 void AunBackend::add_peer(uint8_t net, uint8_t stn, uint32_t ip_addr, uint16_t port) {
@@ -245,6 +245,10 @@ std::vector<PeerInfo> AunBackend::list_peers() const {
         });
     }
     return result;
+}
+
+void AunBackend::set_connected(bool connected) {
+    connected_.store(connected, std::memory_order_relaxed);
 }
 
 uint16_t AunBackend::make_forward_key(uint8_t net, uint8_t stn) {

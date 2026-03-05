@@ -16,6 +16,7 @@
 #include "NetworkBackend.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <unordered_map>
 #include <utility>
@@ -83,12 +84,17 @@ public:
     // Enumerate all configured peers.
     std::vector<PeerInfo> list_peers() const;
 
+    // Simulate plugging/unplugging the network cable.
+    // When disconnected, the ADLC sees DCD high (no carrier) and CTS high
+    // (not clear to send). Takes effect on the next ADLC tick.
+    void set_connected(bool connected);
+
 private:
     int socket_fd_ = -1;
     uint16_t local_port_;
     uint8_t local_net_;
     uint8_t local_stn_;
-    bool connected_ = false;
+    std::atomic<bool> connected_ = false;
 
     // Handle generation: incremented by 4 for each outgoing request.
     // For Ack/ImmReply, the handle from the most recently received packet is echoed.

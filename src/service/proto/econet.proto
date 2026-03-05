@@ -16,6 +16,12 @@ service EconetService {
     // Remove Econet hardware (disable station, close AUN socket).
     rpc DisableEconet(DisableEconetRequest) returns (DisableEconetResponse);
 
+    // Set the station ID (takes effect on next machine reset).
+    rpc SetStationId(SetStationIdRequest) returns (SetStationIdResponse);
+
+    // Connect or disconnect the network cable (takes effect immediately).
+    rpc SetConnected(SetConnectedRequest) returns (SetConnectedResponse);
+
     // Add an Econet address <-> UDP endpoint peer mapping.
     rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
 
@@ -117,6 +123,30 @@ message DisableEconetRequest {
 }
 
 message DisableEconetResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// --- Station ID ---
+
+message SetStationIdRequest {
+    // Station number (1-254).
+    uint32 station_id = 1;
+}
+
+message SetStationIdResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// --- Network Cable ---
+
+message SetConnectedRequest {
+    // True to connect (plug in cable), false to disconnect (unplug cable).
+    bool connected = 1;
+}
+
+message SetConnectedResponse {
     bool success = 1;
     string error = 2;
 }

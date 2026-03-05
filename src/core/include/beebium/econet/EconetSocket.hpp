@@ -81,6 +81,14 @@ public:
 
     bool enabled() const { return enabled_; }
 
+    // Set the station ID without touching the ADLC or backend.
+    // On the Model B this is equivalent to changing the 8 address links.
+    // Takes effect on the next read of &FE18 (i.e. on Ctrl-Break when
+    // the NFS ROM re-reads the station number).
+    void set_station_id(uint8_t station_id) {
+        station_id_ = station_id;
+    }
+
     // Set pointer to the MemoryMap's last_bus_value for open bus emulation
     // in the ADLC region. Must be set before reads if accurate open bus is needed.
     void set_last_bus_value_ptr(const uint8_t* ptr) {

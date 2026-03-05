@@ -206,6 +206,41 @@ class Econet:
             raise EconetError(response.error)
         return response.actual_aun_port
 
+    def set_station_id(self, station_id: int) -> None:
+        """Set the station number (takes effect on next machine reset).
+
+        On the Model B this is equivalent to changing the 8 address links.
+        The NFS ROM re-reads the station number on Ctrl-Break.
+
+        Args:
+            station_id: Station number (1-254).
+
+        Raises:
+            EconetError: If the operation fails.
+        """
+        request = econet_pb2.SetStationIdRequest(station_id=station_id)
+        response = self._stub.SetStationId(request)
+        if not response.success:
+            raise EconetError(response.error)
+
+    def set_connected(self, connected: bool) -> None:
+        """Connect or disconnect the network cable.
+
+        Simulates plugging/unplugging the Econet cable. Takes effect
+        immediately — DCD and CTS update on the next ADLC tick.
+
+        Args:
+            connected: True to connect, False to disconnect.
+
+        Raises:
+            EconetError: If the operation fails (e.g. Econet not enabled,
+                or not in AUN mode).
+        """
+        request = econet_pb2.SetConnectedRequest(connected=connected)
+        response = self._stub.SetConnected(request)
+        if not response.success:
+            raise EconetError(response.error)
+
     def disable(self) -> None:
         """Remove Econet hardware (disable station, close AUN socket).
 

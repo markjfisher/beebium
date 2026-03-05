@@ -243,6 +243,78 @@ public:
         }
     }
 
+    grpc::Status SetStationId(
+        grpc::ServerContext* context,
+        const SetStationIdRequest* request,
+        SetStationIdResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet is not enabled");
+                return grpc::Status::OK;
+            }
+
+            uint32_t station = request->station_id();
+            if (station < 1 || station > 254) {
+                response->set_success(false);
+                response->set_error("Station number must be between 1 and 254");
+                return grpc::Status::OK;
+            }
+
+            econet.set_station_id(static_cast<uint8_t>(station));
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
+    grpc::Status SetConnected(
+        grpc::ServerContext* context,
+        const SetConnectedRequest* request,
+        SetConnectedResponse* response) override
+    {
+        (void)context;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response->set_success(false);
+            response->set_error("Machine has no Econet socket");
+            return grpc::Status::OK;
+        } else {
+            auto& econet = machine_.state().memory.econet_socket;
+
+            if (!econet.enabled()) {
+                response->set_success(false);
+                response->set_error("Econet is not enabled");
+                return grpc::Status::OK;
+            }
+
+            auto* aun = dynamic_cast<AunBackend*>(econet.backend());
+            if (!aun) {
+                response->set_success(false);
+                response->set_error("Econet is not in AUN mode");
+                return grpc::Status::OK;
+            }
+
+            aun->set_connected(request->connected());
+            response->set_success(true);
+            return grpc::Status::OK;
+        }
+    }
+
     grpc::Status AddPeer(
         grpc::ServerContext* context,
         const AddPeerRequest* request,

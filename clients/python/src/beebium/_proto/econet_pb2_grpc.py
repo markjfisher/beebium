@@ -65,6 +65,16 @@ class EconetServiceStub(object):
                 request_serializer=econet__pb2.DisableEconetRequest.SerializeToString,
                 response_deserializer=econet__pb2.DisableEconetResponse.FromString,
                 _registered_method=True)
+        self.SetStationId = channel.unary_unary(
+                '/beebium.EconetService/SetStationId',
+                request_serializer=econet__pb2.SetStationIdRequest.SerializeToString,
+                response_deserializer=econet__pb2.SetStationIdResponse.FromString,
+                _registered_method=True)
+        self.SetConnected = channel.unary_unary(
+                '/beebium.EconetService/SetConnected',
+                request_serializer=econet__pb2.SetConnectedRequest.SerializeToString,
+                response_deserializer=econet__pb2.SetConnectedResponse.FromString,
+                _registered_method=True)
         self.AddPeer = channel.unary_unary(
                 '/beebium.EconetService/AddPeer',
                 request_serializer=econet__pb2.AddPeerRequest.SerializeToString,
@@ -110,6 +120,20 @@ class EconetServiceServicer(object):
 
     def DisableEconet(self, request, context):
         """Remove Econet hardware (disable station, close AUN socket).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetStationId(self, request, context):
+        """Set the station ID (takes effect on next machine reset).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetConnected(self, request, context):
+        """Connect or disconnect the network cable (takes effect immediately).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -161,6 +185,16 @@ def add_EconetServiceServicer_to_server(servicer, server):
                     servicer.DisableEconet,
                     request_deserializer=econet__pb2.DisableEconetRequest.FromString,
                     response_serializer=econet__pb2.DisableEconetResponse.SerializeToString,
+            ),
+            'SetStationId': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetStationId,
+                    request_deserializer=econet__pb2.SetStationIdRequest.FromString,
+                    response_serializer=econet__pb2.SetStationIdResponse.SerializeToString,
+            ),
+            'SetConnected': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetConnected,
+                    request_deserializer=econet__pb2.SetConnectedRequest.FromString,
+                    response_serializer=econet__pb2.SetConnectedResponse.SerializeToString,
             ),
             'AddPeer': grpc.unary_unary_rpc_method_handler(
                     servicer.AddPeer,
@@ -268,6 +302,60 @@ class EconetService(object):
             '/beebium.EconetService/DisableEconet',
             econet__pb2.DisableEconetRequest.SerializeToString,
             econet__pb2.DisableEconetResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetStationId(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.EconetService/SetStationId',
+            econet__pb2.SetStationIdRequest.SerializeToString,
+            econet__pb2.SetStationIdResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetConnected(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.EconetService/SetConnected',
+            econet__pb2.SetConnectedRequest.SerializeToString,
+            econet__pb2.SetConnectedResponse.FromString,
             options,
             channel_credentials,
             insecure,

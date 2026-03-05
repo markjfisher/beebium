@@ -550,6 +550,242 @@ TEST_CASE("EconetService ListPeers multiple peers", "[grpc][econet]") {
 }
 
 // ============================================================================
+// SetStationId
+// ============================================================================
+
+TEST_CASE("EconetService SetStationId success", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable first
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Set station ID to a new value
+    {
+        grpc::ClientContext ctx;
+        beebium::SetStationIdRequest req;
+        beebium::SetStationIdResponse resp;
+        req.set_station_id(200);
+
+        auto status = fixture.stub().SetStationId(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        REQUIRE(resp.success());
+    }
+
+    // Verify via GetEconetStatus
+    {
+        grpc::ClientContext ctx;
+        beebium::GetEconetStatusRequest req;
+        beebium::GetEconetStatusResponse resp;
+        fixture.stub().GetEconetStatus(&ctx, req, &resp);
+        REQUIRE(resp.station_id() == 200);
+    }
+}
+
+TEST_CASE("EconetService SetStationId invalid zero", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable first
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    grpc::ClientContext context;
+    beebium::SetStationIdRequest request;
+    beebium::SetStationIdResponse response;
+    request.set_station_id(0);
+
+    auto status = fixture.stub().SetStationId(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE_FALSE(response.success());
+    REQUIRE(response.error().find("between 1 and 254") != std::string::npos);
+}
+
+TEST_CASE("EconetService SetStationId invalid 255", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable first
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    grpc::ClientContext context;
+    beebium::SetStationIdRequest request;
+    beebium::SetStationIdResponse response;
+    request.set_station_id(255);
+
+    auto status = fixture.stub().SetStationId(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE_FALSE(response.success());
+    REQUIRE(response.error().find("between 1 and 254") != std::string::npos);
+}
+
+TEST_CASE("EconetService SetStationId when disabled", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetStationIdRequest request;
+    beebium::SetStationIdResponse response;
+    request.set_station_id(42);
+
+    auto status = fixture.stub().SetStationId(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE_FALSE(response.success());
+    REQUIRE(response.error().find("not enabled") != std::string::npos);
+}
+
+// ============================================================================
+// SetConnected
+// ============================================================================
+
+TEST_CASE("EconetService SetConnected disconnect", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable with AUN
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        if (!resp.success()) {
+            SKIP("Could not bind AUN port: " + resp.error());
+        }
+    }
+
+    // Disconnect
+    {
+        grpc::ClientContext ctx;
+        beebium::SetConnectedRequest req;
+        beebium::SetConnectedResponse resp;
+        req.set_connected(false);
+
+        auto status = fixture.stub().SetConnected(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        REQUIRE(resp.success());
+    }
+
+    // Verify disconnected
+    {
+        grpc::ClientContext ctx;
+        beebium::GetEconetStatusRequest req;
+        beebium::GetEconetStatusResponse resp;
+        fixture.stub().GetEconetStatus(&ctx, req, &resp);
+        REQUIRE_FALSE(resp.connected());
+    }
+}
+
+TEST_CASE("EconetService SetConnected reconnect", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable with AUN
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        if (!resp.success()) {
+            SKIP("Could not bind AUN port: " + resp.error());
+        }
+    }
+
+    // Disconnect
+    {
+        grpc::ClientContext ctx;
+        beebium::SetConnectedRequest req;
+        beebium::SetConnectedResponse resp;
+        req.set_connected(false);
+        fixture.stub().SetConnected(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Reconnect
+    {
+        grpc::ClientContext ctx;
+        beebium::SetConnectedRequest req;
+        beebium::SetConnectedResponse resp;
+        req.set_connected(true);
+
+        auto status = fixture.stub().SetConnected(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        REQUIRE(resp.success());
+    }
+
+    // Verify connected
+    {
+        grpc::ClientContext ctx;
+        beebium::GetEconetStatusRequest req;
+        beebium::GetEconetStatusResponse resp;
+        fixture.stub().GetEconetStatus(&ctx, req, &resp);
+        REQUIRE(resp.connected());
+    }
+}
+
+TEST_CASE("EconetService SetConnected when disabled", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetConnectedRequest request;
+    beebium::SetConnectedResponse response;
+    request.set_connected(false);
+
+    auto status = fixture.stub().SetConnected(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE_FALSE(response.success());
+    REQUIRE(response.error().find("not enabled") != std::string::npos);
+}
+
+TEST_CASE("EconetService SetConnected in no_network mode", "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable with no_network (TestBackend, not AunBackend)
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    grpc::ClientContext context;
+    beebium::SetConnectedRequest request;
+    beebium::SetConnectedResponse response;
+    request.set_connected(true);
+
+    auto status = fixture.stub().SetConnected(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE_FALSE(response.success());
+    REQUIRE(response.error().find("not in AUN mode") != std::string::npos);
+}
+
+// ============================================================================
 // SubscribeEconetEvents
 // ============================================================================
 

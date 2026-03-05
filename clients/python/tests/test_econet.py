@@ -140,6 +140,22 @@ class MockRemovePeerResponse:
         self.error = error
 
 
+class MockSetStationIdResponse:
+    """Mock SetStationId response."""
+
+    def __init__(self, success=True, error=""):
+        self.success = success
+        self.error = error
+
+
+class MockSetConnectedResponse:
+    """Mock SetConnected response."""
+
+    def __init__(self, success=True, error=""):
+        self.success = success
+        self.error = error
+
+
 class MockEconetPeer:
     """Mock EconetPeer from proto."""
 
@@ -164,6 +180,8 @@ def mock_stub():
     stub.GetEconetStatus.return_value = MockGetEconetStatusResponse()
     stub.EnableEconet.return_value = MockEnableEconetResponse()
     stub.DisableEconet.return_value = MockDisableEconetResponse()
+    stub.SetStationId.return_value = MockSetStationIdResponse()
+    stub.SetConnected.return_value = MockSetConnectedResponse()
     stub.AddPeer.return_value = MockAddPeerResponse()
     stub.RemovePeer.return_value = MockRemovePeerResponse()
     stub.ListPeers.return_value = MockListPeersResponse()
@@ -330,6 +348,54 @@ class TestDisable:
         )
         with pytest.raises(EconetError, match="Econet not enabled"):
             econet.disable()
+
+
+class TestSetStationId:
+    """Tests for the set_station_id method."""
+
+    def test_set_station_id_success(self, mock_stub, econet):
+        """set_station_id succeeds without exception."""
+        econet.set_station_id(200)
+        mock_stub.SetStationId.assert_called_once()
+
+    def test_set_station_id_failure_raises(self, mock_stub, econet):
+        """set_station_id raises EconetError on failure."""
+        mock_stub.SetStationId.return_value = MockSetStationIdResponse(
+            success=False, error="Econet is not enabled"
+        )
+        with pytest.raises(EconetError, match="Econet is not enabled"):
+            econet.set_station_id(42)
+
+    def test_set_station_id_passes_args(self, mock_stub, econet):
+        """set_station_id passes station_id to stub."""
+        econet.set_station_id(123)
+        request = mock_stub.SetStationId.call_args[0][0]
+        assert request.station_id == 123
+
+
+class TestSetConnected:
+    """Tests for the set_connected method."""
+
+    def test_set_connected_true(self, mock_stub, econet):
+        """set_connected(True) succeeds and passes arg."""
+        econet.set_connected(True)
+        mock_stub.SetConnected.assert_called_once()
+        request = mock_stub.SetConnected.call_args[0][0]
+        assert request.connected is True
+
+    def test_set_connected_false(self, mock_stub, econet):
+        """set_connected(False) succeeds and passes arg."""
+        econet.set_connected(False)
+        request = mock_stub.SetConnected.call_args[0][0]
+        assert request.connected is False
+
+    def test_set_connected_failure_raises(self, mock_stub, econet):
+        """set_connected raises EconetError on failure."""
+        mock_stub.SetConnected.return_value = MockSetConnectedResponse(
+            success=False, error="Econet is not in AUN mode"
+        )
+        with pytest.raises(EconetError, match="Econet is not in AUN mode"):
+            econet.set_connected(True)
 
 
 class TestAddPeer:
