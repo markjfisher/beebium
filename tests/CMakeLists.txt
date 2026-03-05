@@ -216,8 +216,10 @@ add_executable(test_disc_integration test_disc_integration.cpp)
 target_link_libraries(test_disc_integration PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_disc_integration)
 
-# Tests requiring ROM files
-set(BEEBIUM_ROM_DIR "${CMAKE_SOURCE_DIR}/roms" CACHE PATH "Directory containing BBC Micro ROMs")
+# Tests use a dedicated ROM directory (separate from the shipping ROMs in roms/).
+# This allows test-only ROMs (e.g. multiple NFS versions) to be present without
+# bloating the shipping ROM set. Tests skip gracefully when ROMs are absent.
+set(BEEBIUM_ROM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/roms")
 
 # Disc images directory for integration tests
 set(BEEBIUM_DISCS_DIR "${CMAKE_SOURCE_DIR}/discs" CACHE PATH "Directory containing test disc images")
