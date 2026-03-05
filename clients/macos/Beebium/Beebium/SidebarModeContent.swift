@@ -334,7 +334,7 @@ struct NetworkModeView: View {
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Station ID")
+                Text("Econet Station")
                     .foregroundColor(.secondary)
                 Spacer()
                 Text("\(econetClient.stationId)")
@@ -346,7 +346,7 @@ struct NetworkModeView: View {
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.borderless)
-                .help("Edit station ID")
+                .help("Edit Econet station")
                 .popover(isPresented: $showStationIdPopover, arrowEdge: .trailing) {
                     StationIdPopover(
                         currentStationId: econetClient.stationId,
@@ -457,7 +457,7 @@ private struct StationIdPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Station ID")
+            Text("Econet Station")
                 .font(.headline)
 
             TextField("1\u{2013}254", text: $stationIdText)
@@ -502,7 +502,7 @@ private struct StationIdPopover: View {
     private func save() {
         guard let value = UInt32(stationIdText),
               value >= 1, value <= 254 else {
-            validationError = "Station ID must be between 1 and 254."
+            validationError = "Station number must be between 1 and 254."
             return
         }
         validationError = nil
