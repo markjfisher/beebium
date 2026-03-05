@@ -66,6 +66,7 @@ struct ContentView: View {
     @StateObject private var audioClient = AudioClient()
     @StateObject private var debuggerClient = DebuggerClient()
     @StateObject private var audioMixerState = AudioMixerState()
+    @StateObject private var econetClient = EconetClient()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
     let initialProvenanceUUID: String?
@@ -98,7 +99,8 @@ struct ContentView: View {
                     discClient: discClient,
                     keyboardMappingManager: keyboardMappingManager,
                     audioClient: audioClient,
-                    audioMixerState: audioMixerState
+                    audioMixerState: audioMixerState,
+                    econetClient: econetClient
                 )
             }
             .background(Color(nsColor: .windowBackgroundColor))
@@ -177,6 +179,7 @@ struct ContentView: View {
             clientGroup.register(discClient)
             clientGroup.register(audioClient)
             clientGroup.register(debuggerClient)
+            clientGroup.register(econetClient)
             clientGroup.registerVideoClient(videoClient)
 
             // Connection target was passed from MainWindowRouter (which consumed the
@@ -215,6 +218,7 @@ struct ContentView: View {
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
                 debuggerClient.connect(channel: channel)
+                econetClient.connect(channel: channel)
 
                 // Register this connection
                 if let window = currentWindow {
