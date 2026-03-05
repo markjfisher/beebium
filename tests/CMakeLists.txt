@@ -266,7 +266,9 @@ target_link_libraries(test_econet_fileserver PRIVATE beebium_core Catch2::Catch2
 target_compile_definitions(test_econet_fileserver PRIVATE
     BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
 )
-catch_discover_tests(test_econet_fileserver)
+catch_discover_tests(test_econet_fileserver
+    PROPERTIES SKIP_RETURN_CODE 4
+)
 
 # clearRAM test
 add_executable(test_clearram test_clearram.cpp)
