@@ -391,7 +391,7 @@ struct NetworkModeView: View {
                     showStationIdPopover = true
                 } label: {
                     Image(systemName: "pencil")
-                        .font(.system(size: 12))
+                        .font(.system(size: 14))
                 }
                 .buttonStyle(.borderless)
                 .help("Edit Econet station")
