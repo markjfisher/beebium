@@ -38,6 +38,7 @@ struct SidebarModeContent: View {
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @ObservedObject var audioClient: AudioClient
     @ObservedObject var audioMixerState: AudioMixerState
+    @ObservedObject var econetClient: EconetClient
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,7 +60,7 @@ struct SidebarModeContent: View {
             case .coprocessor:
                 CoprocessorModeView()
             case .network:
-                NetworkModeView()
+                NetworkModeView(econetClient: econetClient)
             }
         }
     }
@@ -250,10 +251,272 @@ struct CoprocessorModeView: View {
     }
 }
 
-/// Placeholder view for Network mode
+/// Network mode view showing Econet status, connection controls, and peer list
 struct NetworkModeView: View {
+    @ObservedObject var econetClient: EconetClient
+    @State private var showStationIdPopover = false
+
     var body: some View {
-        ModePlaceholder(mode: .network)
+        if !econetClient.isLoaded {
+            loadingView
+        } else if !econetClient.enabled {
+            notFittedView
+        } else {
+            econetContentView
+        }
+    }
+
+    // MARK: - Loading State
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            if let error = econetClient.errorMessage {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 24))
+                    .foregroundColor(.yellow)
+                Text("Connection Error")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                ProgressView()
+                Text("Loading...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Not Fitted State
+
+    private var notFittedView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "network")
+                .font(.system(size: 32))
+                .foregroundColor(.secondary)
+            Text("Econet Not Fitted")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Text("Econet hardware is not fitted in this machine configuration.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Enabled Content
+
+    private var econetContentView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                statusSection
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                Divider()
+                    .padding(.horizontal, 12)
+
+                peersSection
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+        }
+    }
+
+    // MARK: - Status Section
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Station ID")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(econetClient.stationId)")
+                    .fontWeight(.medium)
+                Button {
+                    showStationIdPopover = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help("Edit station ID")
+                .popover(isPresented: $showStationIdPopover, arrowEdge: .trailing) {
+                    StationIdPopover(
+                        currentStationId: econetClient.stationId,
+                        econetClient: econetClient,
+                        isPresented: $showStationIdPopover
+                    )
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Connection")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if econetClient.aunMode {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 8))
+                            .foregroundColor(econetClient.connected ? .green : .secondary)
+                        Text(econetClient.connected ? "Connected" : "Disconnected")
+                            .fontWeight(.medium)
+                    } else {
+                        Text("No network")
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if econetClient.aunMode {
+                    HStack {
+                        Spacer()
+                        if econetClient.connected {
+                            Button("Disconnect") {
+                                Task {
+                                    let result = await econetClient.disconnectNetwork()
+                                    if case .failure(let error) = result {
+                                        NSLog("[NetworkModeView] Disconnect failed: %@",
+                                              error.localizedDescription)
+                                    }
+                                }
+                            }
+                            .controlSize(.small)
+                        } else {
+                            Button("Connect") {
+                                Task {
+                                    let result = await econetClient.connectNetwork()
+                                    if case .failure(let error) = result {
+                                        NSLog("[NetworkModeView] Connect failed: %@",
+                                              error.localizedDescription)
+                                    }
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+
+            if econetClient.connected && econetClient.aunPort > 0 {
+                HStack {
+                    Text("AUN Port")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(verbatim: String(econetClient.aunPort))
+                        .fontWeight(.medium)
+                }
+            }
+        }
+    }
+
+    // MARK: - Peers Section
+
+    private var peersSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Peers (\(econetClient.peers.count))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            if econetClient.peers.isEmpty {
+                Text("No peers configured")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(Array(econetClient.peers.enumerated()), id: \.offset) { _, peer in
+                    HStack {
+                        Text("\(peer.net).\(peer.stn)")
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 50, alignment: .leading)
+                        Text("\(peer.ipAddress):\(peer.port)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Popover for editing the Econet station ID
+private struct StationIdPopover: View {
+    let currentStationId: UInt32
+    @ObservedObject var econetClient: EconetClient
+    @Binding var isPresented: Bool
+    @State private var stationIdText: String = ""
+    @State private var isSaving: Bool = false
+    @State private var validationError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Station ID")
+                .font(.headline)
+
+            TextField("1\u{2013}254", text: $stationIdText)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 120)
+                .onSubmit { save() }
+
+            if let error = validationError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                Text("Takes effect on next Ctrl-Break reset.")
+                    .font(.caption)
+            }
+            .foregroundColor(.secondary)
+
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Save") {
+                    save()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isSaving)
+            }
+        }
+        .padding(16)
+        .frame(width: 240)
+        .onAppear {
+            stationIdText = "\(currentStationId)"
+        }
+    }
+
+    private func save() {
+        guard let value = UInt32(stationIdText),
+              value >= 1, value <= 254 else {
+            validationError = "Station ID must be between 1 and 254."
+            return
+        }
+        validationError = nil
+        isSaving = true
+        Task {
+            let result = await econetClient.setStationId(value)
+            isSaving = false
+            switch result {
+            case .success:
+                isPresented = false
+            case .failure(let error):
+                validationError = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -279,7 +542,8 @@ struct SidebarModeContent_Previews: PreviewProvider {
             discClient: DiscClient(),
             keyboardMappingManager: KeyboardMappingManager(),
             audioClient: AudioClient(),
-            audioMixerState: AudioMixerState()
+            audioMixerState: AudioMixerState(),
+            econetClient: EconetClient()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))
