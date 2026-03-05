@@ -420,12 +420,12 @@ struct NetworkModeView: View {
 
     private var peersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Peers (\(econetClient.peers.count))")
+            Text("Peer Stations (\(econetClient.peers.count))")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
             if econetClient.peers.isEmpty {
-                Text("No peers configured")
+                Text("No peer stations configured")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.vertical, 4)
