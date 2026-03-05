@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -57,5 +57,11 @@ class TimeoutError(BeebiumError):
 
 class DiscError(BeebiumError):
     """A disc operation failed."""
+
+    pass
+
+
+class EconetError(BeebiumError):
+    """An Econet operation failed."""
 
     pass

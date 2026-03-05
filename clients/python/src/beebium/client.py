@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -26,6 +26,7 @@ from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
 from beebium.disc import Disc
+from beebium.econet import Econet
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
 from beebium.memory import Memory
@@ -88,6 +89,7 @@ class Beebium:
         self._sound: Sound | None = None
         self._system: System | None = None
         self._disc: Disc | None = None
+        self._econet: Econet | None = None
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -274,6 +276,13 @@ class Beebium:
         if self._disc is None:
             self._disc = Disc(self._connection.disc_stub)
         return self._disc
+
+    @property
+    def econet(self) -> Econet:
+        """Access Econet networking management."""
+        if self._econet is None:
+            self._econet = Econet(self._connection.econet_stub)
+        return self._econet
 
     def close(self) -> None:
         """Close the connection and stop any managed server.

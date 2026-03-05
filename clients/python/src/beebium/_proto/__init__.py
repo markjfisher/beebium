@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -22,6 +22,7 @@ try:
     from beebium._proto import debugger_pb2, debugger_pb2_grpc
     from beebium._proto import system_pb2, system_pb2_grpc
     from beebium._proto import disc_pb2, disc_pb2_grpc
+    from beebium._proto import econet_pb2, econet_pb2_grpc
 except ImportError:
     # Proto files not yet generated
     pass

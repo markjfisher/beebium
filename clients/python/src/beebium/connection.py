@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -19,6 +19,7 @@ import grpc
 from beebium._proto import (
     debugger_pb2_grpc,
     disc_pb2_grpc,
+    econet_pb2_grpc,
     keyboard_pb2_grpc,
     system_pb2_grpc,
     video_pb2_grpc,
@@ -46,6 +47,7 @@ class Connection:
         self._channel: grpc.Channel | None = None
         self._debugger_stub: debugger_pb2_grpc.DebuggerControlStub | None = None
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
+        self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
@@ -70,6 +72,7 @@ class Connection:
         # Create service stubs
         self._debugger_stub = debugger_pb2_grpc.DebuggerControlStub(self._channel)
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
+        self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
@@ -119,6 +122,13 @@ class Connection:
             raise ConnectionError("Not connected")
         return self._disc_stub
 
+    @property
+    def econet_stub(self) -> econet_pb2_grpc.EconetServiceStub:
+        """The EconetService stub."""
+        if self._econet_stub is None:
+            raise ConnectionError("Not connected")
+        return self._econet_stub
+
     def close(self) -> None:
         """Close the connection."""
         if self._channel is not None:
@@ -126,6 +136,7 @@ class Connection:
             self._channel = None
             self._debugger_stub = None
             self._disc_stub = None
+            self._econet_stub = None
             self._keyboard_stub = None
             self._system_stub = None
             self._video_stub = None

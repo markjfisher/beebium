@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -28,11 +28,18 @@ Usage:
 """
 
 from beebium.client import Beebium
+from beebium.econet import (
+    AdlcStatus,
+    EconetStatus,
+    HandshakeStatus,
+    PeerInfo,
+)
 from beebium.exceptions import (
     BeebiumError,
     ConnectionError,
     DebuggerError,
     DiscError,
+    EconetError,
     MemoryAccessError,
     ServerNotFoundError,
     ServerStartupError,
@@ -55,6 +62,7 @@ __version__ = "0.1.0"
 DEFAULT_GRPC_PORT = 0xBEEB
 
 __all__ = [
+    "AdlcStatus",
     "AdvertisementState",
     "Beebium",
     "BeebiumError",
@@ -62,8 +70,12 @@ __all__ = [
     "DebuggerError",
     "DEFAULT_GRPC_PORT",
     "DiscError",
+    "EconetError",
+    "EconetStatus",
+    "HandshakeStatus",
     "MachineIdentity",
     "MemoryAccessError",
+    "PeerInfo",
     "Provenance",
     "ServerNotFoundError",
     "ServerStartupError",
