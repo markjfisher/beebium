@@ -15,8 +15,9 @@
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <thread>
 #include <chrono>
+#include <set>
+#include <thread>
 
 using namespace beebium;
 
@@ -56,6 +57,19 @@ struct LoopbackPair {
 // Brief pause to allow UDP datagram delivery on loopback.
 void brief_pause() {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+// Poll receive_frame() until a frame arrives or the timeout expires.
+std::optional<NetworkFrame> receive_with_timeout(
+        AunBackend& backend,
+        std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto frame = backend.receive_frame();
+        if (frame.has_value()) return frame;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -344,11 +358,13 @@ TEST_CASE("AunBackend: large payload (1024 bytes) round-trip", "[econet][aun][ba
 // Multiple Frames
 // =============================================================================
 
-TEST_CASE("AunBackend: multiple frames delivered in order", "[econet][aun][backend]") {
+TEST_CASE("AunBackend: multiple frames all delivered", "[econet][aun][backend]") {
     LoopbackPair pair;
     if (!pair.ready) SKIP("Ports unavailable");
 
-    for (int i = 0; i < 5; ++i) {
+    constexpr int frame_count = 5;
+
+    for (int i = 0; i < frame_count; ++i) {
         NetworkFrame frame;
         frame.type = FrameType::Unicast;
         frame.port = static_cast<uint8_t>(i);
@@ -358,18 +374,27 @@ TEST_CASE("AunBackend: multiple frames delivered in order", "[econet][aun][backe
         pair.a->send_frame(frame);
     }
 
-    brief_pause();
-
-    for (int i = 0; i < 5; ++i) {
-        auto received = pair.b->receive_frame();
-        REQUIRE(received.has_value());
-        CHECK(received->port == static_cast<uint8_t>(i));
-        REQUIRE(received->data.size() == 1);
-        CHECK(received->data[0] == static_cast<uint8_t>(i));
+    // Collect all received frames using polling (UDP delivery timing varies).
+    std::vector<NetworkFrame> received;
+    for (int i = 0; i < frame_count; ++i) {
+        auto frame = receive_with_timeout(*pair.b);
+        if (!frame.has_value()) break;
+        received.push_back(std::move(*frame));
     }
 
-    // No more frames.
-    CHECK_FALSE(pair.b->receive_frame().has_value());
+    REQUIRE(received.size() == frame_count);
+
+    // Verify all expected port values were received (without assuming ordering,
+    // since UDP does not guarantee it).
+    std::set<uint8_t> received_ports;
+    for (const auto& f : received) {
+        REQUIRE(f.data.size() == 1);
+        CHECK(f.port == f.data[0]);
+        received_ports.insert(f.port);
+    }
+    for (int i = 0; i < frame_count; ++i) {
+        CHECK(received_ports.count(static_cast<uint8_t>(i)) == 1);
+    }
 }
 
 // =============================================================================
@@ -411,13 +436,13 @@ TEST_CASE("AunBackend: handles increment by 4 on successive sends", "[econet][au
     LoopbackPair pair;
     if (!pair.ready) SKIP("Ports unavailable");
 
-    // Send two Unicasts from A to B and decode the raw packets to check handles.
     // We can't directly inspect handles through the NetworkFrame interface,
-    // but we can verify they're different by checking the raw UDP data.
-    // For this test, we verify the mechanism works by sending and receiving
+    // but we can verify the mechanism works by sending and receiving
     // multiple frames successfully — the handle incrementing is an internal detail.
 
-    for (int i = 0; i < 3; ++i) {
+    constexpr int frame_count = 3;
+
+    for (int i = 0; i < frame_count; ++i) {
         NetworkFrame frame;
         frame.type = FrameType::Unicast;
         frame.port = 0x99;
@@ -427,12 +452,16 @@ TEST_CASE("AunBackend: handles increment by 4 on successive sends", "[econet][au
         pair.a->send_frame(frame);
     }
 
-    brief_pause();
-
-    for (int i = 0; i < 3; ++i) {
-        auto received = pair.b->receive_frame();
+    std::set<uint8_t> received_values;
+    for (int i = 0; i < frame_count; ++i) {
+        auto received = receive_with_timeout(*pair.b);
         REQUIRE(received.has_value());
-        CHECK(received->data[0] == static_cast<uint8_t>(i));
+        REQUIRE(received->data.size() == 1);
+        received_values.insert(received->data[0]);
+    }
+
+    for (int i = 0; i < frame_count; ++i) {
+        CHECK(received_values.count(static_cast<uint8_t>(i)) == 1);
     }
 }
 
