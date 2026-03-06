@@ -41,11 +41,16 @@
 #include <beebium/econet/FourWayHandshake.hpp>
 #include <beebium/econet/Mc6854.hpp>
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +61,25 @@ using namespace beebium;
 using namespace beebium::test;
 
 namespace {
+
+// Cross-platform getenv wrapper (avoids MSVC C4996 deprecation warning).
+std::optional<std::string> get_env(const char* name) {
+#ifdef _WIN32
+    char* value = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&value, &len, name) == 0 && value != nullptr) {
+        std::string result(value);
+        free(value);
+        return result;
+    }
+    return std::nullopt;
+#else
+    if (const char* value = std::getenv(name)) {
+        return std::string(value);
+    }
+    return std::nullopt;
+#endif
+}
 
 // --- Diagnostic backend decorator ---
 // Wraps an AunBackend to count and log all packets sent/received.
@@ -140,10 +164,10 @@ struct FileserverConfig {
 FileserverConfig parse_fileserver_env() {
     FileserverConfig config;
 
-    const char* env = std::getenv("BEEBIUM_FILESERVER");
+    auto env = get_env("BEEBIUM_FILESERVER");
     if (!env) return config;
 
-    std::string str(env);
+    const std::string& str = *env;
 
     // Parse net.stn
     auto colon1 = str.find(':');
@@ -168,16 +192,16 @@ FileserverConfig parse_fileserver_env() {
     if (::inet_pton(AF_INET, ip_str.c_str(), &config.ip_addr) != 1) return config;
 
     // Optional station number override
-    const char* stn_env = std::getenv("BEEBIUM_STATION");
+    auto stn_env = get_env("BEEBIUM_STATION");
     if (stn_env) {
-        config.station = static_cast<uint8_t>(std::stoi(stn_env));
+        config.station = static_cast<uint8_t>(std::stoi(*stn_env));
     }
 
     // Local AUN port — must match the station's entry in the file server's
     // Econet.cfg so that FindHost() can identify our packets.
-    const char* port_env = std::getenv("BEEBIUM_LOCAL_PORT");
+    auto port_env = get_env("BEEBIUM_LOCAL_PORT");
     if (port_env) {
-        config.local_port = static_cast<uint16_t>(std::stoi(port_env));
+        config.local_port = static_cast<uint16_t>(std::stoi(*port_env));
     }
 
     config.valid = true;

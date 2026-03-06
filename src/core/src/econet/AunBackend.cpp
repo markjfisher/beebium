@@ -36,6 +36,26 @@ namespace beebium {
 namespace {
 
 #ifdef _WIN32
+
+// Ensure Winsock is initialized before any socket operations.
+// Uses a static object whose constructor calls WSAStartup() exactly once.
+struct WinsockInitializer {
+    WinsockInitializer() {
+        WSADATA wsa_data;
+        int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+        if (result != 0) {
+            std::cerr << "AunBackend: WSAStartup failed with error " << result << "\n";
+        }
+    }
+    ~WinsockInitializer() {
+        WSACleanup();
+    }
+};
+
+void ensure_winsock_initialized() {
+    static WinsockInitializer init;
+}
+
 std::string socket_error_string() {
     int err = WSAGetLastError();
     char buf[256];
@@ -53,6 +73,10 @@ std::string socket_error_string() {
 
 AunBackend::AunBackend(uint8_t local_net, uint8_t local_stn, uint16_t local_port)
     : local_port_(local_port), local_net_(local_net), local_stn_(local_stn) {
+
+#ifdef _WIN32
+    ensure_winsock_initialized();
+#endif
 
     socket_fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd_ == invalid_socket) {

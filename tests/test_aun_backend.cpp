@@ -13,8 +13,13 @@
 #include <beebium/econet/AunBackend.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 #include <chrono>
 #include <set>
 #include <thread>
