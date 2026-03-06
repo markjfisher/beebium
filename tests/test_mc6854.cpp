@@ -706,7 +706,7 @@ TEST_CASE("S2RQ: clear when no SR2 conditions", "[econet][mc6854]") {
 // Phase 2: Stored vs Present Status (Dual-Nature Bits)
 // =============================================================================
 
-TEST_CASE("DCD: dual-nature — stored latch + present input", "[econet][mc6854][status]") {
+TEST_CASE("DCD: dual-nature - stored latch + present input", "[econet][mc6854][status]") {
     TestFixture t;
     t.release_reset();
 
@@ -883,7 +883,7 @@ TEST_CASE("PSE: not active by default (CR2b0=0)", "[econet][mc6854][pse]") {
     CHECK_FALSE(t.adlc.cr2() & Mc6854::CR2_PSE);
 }
 
-TEST_CASE("PSE: dynamic cascade — AP masks RDA, CLR_RX_ST reveals RDA", "[econet][mc6854][pse]") {
+TEST_CASE("PSE: dynamic cascade - AP masks RDA, CLR_RX_ST reveals RDA", "[econet][mc6854][pse]") {
     TestFixture t;
     t.release_reset();
     t.clear_ac();
@@ -1022,7 +1022,7 @@ TEST_CASE("PSE: INACTIVE visible when idle with PSE enabled", "[econet][mc6854][
     CHECK(t.adlc.sr2() & Mc6854::SR2_INACTIVE);
 }
 
-TEST_CASE("PSE: multi-byte data frame — FV set when last byte pushed", "[econet][mc6854][pse]") {
+TEST_CASE("PSE: multi-byte data frame - FV set when last byte pushed", "[econet][mc6854][pse]") {
     // FV is set when the last byte is pushed to the FIFO, whether by the
     // byte timer or inline refill. With PSE, FV at P1 masks RDA at P4.
     TestFixture t;
@@ -1207,7 +1207,7 @@ TEST_CASE("NFS Path 2: reply scout handler reads bytes then checks FV", "[econet
 // Phase 2: IRQ — Level-Sensitive
 // =============================================================================
 
-TEST_CASE("IRQ: level-sensitive — enabling TIE with existing TDRA triggers IRQ", "[econet][mc6854][irq]") {
+TEST_CASE("IRQ: level-sensitive - enabling TIE with existing TDRA triggers IRQ", "[econet][mc6854][irq]") {
     TestFixture t;
     t.release_reset();
     t.clear_ac();
@@ -1277,7 +1277,7 @@ TEST_CASE("IRQ: RIE + DCD triggers IRQ", "[econet][mc6854][irq]") {
     CHECK(t.adlc.irq_output());
 }
 
-TEST_CASE("IRQ: both RIE and TIE — either cause triggers", "[econet][mc6854][irq]") {
+TEST_CASE("IRQ: both RIE and TIE - either cause triggers", "[econet][mc6854][irq]") {
     TestFixture t;
 
     // Enable both, assert RTS so CTS clears for TDRA
