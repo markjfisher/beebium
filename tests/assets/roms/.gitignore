@@ -1,4 +1,0 @@
-# ROM images are copyrighted and not distributed with the source.
-# Copy the required ROMs into this directory to run integration tests.
-# Tests gracefully skip when ROMs are not available.
-*.rom

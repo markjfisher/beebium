@@ -41,7 +41,7 @@ namespace {
 // Set up a Model B with MOS + BASIC + named NFS ROM in slot 10 + Econet socket.
 void setup_econet_machine_with_nfs(ModelB& machine, uint8_t station_id, bool connected,
                                     const std::string& nfs_rom_filename) {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
     auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
     machine.memory().load_mos(mos.data(), mos.size());
@@ -61,7 +61,7 @@ void setup_econet_machine(ModelB& machine, uint8_t station_id, bool connected,
     if (load_nfs) {
         setup_econet_machine_with_nfs(machine, station_id, connected, "acorn-nfs_3_34.rom");
     } else {
-        const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+        const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
         auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
         auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
         machine.memory().load_mos(mos.data(), mos.size());
@@ -126,7 +126,7 @@ TEST_CASE("ADLC status registers are zero (masked) after reset",
     if (!base_roms_available()) SKIP("Base ROMs not available");
 
     ModelB machine;
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
     auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
     machine.memory().load_mos(mos.data(), mos.size());
@@ -266,7 +266,7 @@ TEST_CASE("NFS *. with no server triggers network activity",
 
     ModelB machine;
     // Manual setup (not setup_econet_machine) to keep a raw pointer to the backend
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
     auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
     machine.memory().load_mos(mos.data(), mos.size());

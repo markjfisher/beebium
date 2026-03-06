@@ -15,6 +15,12 @@
 #include "AunPacket.hpp"
 #include "NetworkBackend.hpp"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#endif
+
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -90,7 +96,15 @@ public:
     void set_connected(bool connected);
 
 private:
-    int socket_fd_ = -1;
+#ifdef _WIN32
+    using socket_type = SOCKET;
+    static constexpr socket_type invalid_socket = INVALID_SOCKET;
+#else
+    using socket_type = int;
+    static constexpr socket_type invalid_socket = -1;
+#endif
+
+    socket_type socket_fd_ = invalid_socket;
     uint16_t local_port_;
     uint8_t local_net_;
     uint8_t local_stn_;

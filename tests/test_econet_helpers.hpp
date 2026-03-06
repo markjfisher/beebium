@@ -41,18 +41,18 @@ inline std::vector<uint8_t> load_rom(const std::filesystem::path& filepath) {
 }
 
 inline bool base_roms_available() {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     return std::filesystem::exists(rom_dirpath / "acorn-mos_1_20.rom") &&
            std::filesystem::exists(rom_dirpath / "bbc-basic_2.rom");
 }
 
 inline bool nfs_rom_available() {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     return std::filesystem::exists(rom_dirpath / "acorn-nfs_3_34.rom");
 }
 
 inline bool nfs_rom_available(const std::string& nfs_rom_filename) {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     return std::filesystem::exists(rom_dirpath / nfs_rom_filename);
 }
 

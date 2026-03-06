@@ -216,10 +216,12 @@ add_executable(test_disc_integration test_disc_integration.cpp)
 target_link_libraries(test_disc_integration PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_disc_integration)
 
-# Tests use a dedicated ROM directory (separate from the shipping ROMs in roms/).
-# This allows test-only ROMs (e.g. multiple NFS versions) to be present without
-# bloating the shipping ROM set. Tests skip gracefully when ROMs are absent.
-set(BEEBIUM_ROM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/roms")
+# Shipping ROMs (tracked in roms/ at repo root).
+set(BEEBIUM_ROM_DIR "${CMAKE_SOURCE_DIR}/roms" CACHE PATH "Directory containing BBC Micro ROMs")
+
+# Extended test ROM directory with additional NFS/ANFS versions for Econet testing
+# (tracked in tests/assets/roms/).
+set(BEEBIUM_TEST_ROM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/roms")
 
 # Disc images directory for integration tests
 set(BEEBIUM_DISCS_DIR "${CMAKE_SOURCE_DIR}/discs" CACHE PATH "Directory containing test disc images")
@@ -259,6 +261,7 @@ add_executable(test_boot_econet test_boot_econet.cpp)
 target_link_libraries(test_boot_econet PRIVATE beebium_core Catch2::Catch2WithMain)
 target_compile_definitions(test_boot_econet PRIVATE
     BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
 )
 catch_discover_tests(test_boot_econet)
 
@@ -267,6 +270,7 @@ add_executable(test_econet_fileserver test_econet_fileserver.cpp)
 target_link_libraries(test_econet_fileserver PRIVATE beebium_core Catch2::Catch2WithMain)
 target_compile_definitions(test_econet_fileserver PRIVATE
     BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
 )
 catch_discover_tests(test_econet_fileserver
     PROPERTIES SKIP_RETURN_CODE 4

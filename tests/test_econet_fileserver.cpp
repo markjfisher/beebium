@@ -265,7 +265,7 @@ std::string dump_adlc_state(ModelB& machine) {
 // to the file server. Returns the LoggingBackend pointer for diagnostics.
 LoggingBackend* setup_fileserver_machine(ModelB& machine,
                                          const FileserverConfig& config) {
-    const auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+    const auto rom_dirpath = std::filesystem::path(BEEBIUM_TEST_ROM_DIR);
     auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
     auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
     auto nfs = load_rom(rom_dirpath / "acorn-nfs_3_34.rom");

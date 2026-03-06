@@ -12,11 +12,19 @@
 
 #include <beebium/econet/AunBackend.hpp>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 #include <cstring>
@@ -25,27 +33,47 @@
 
 namespace beebium {
 
+namespace {
+
+#ifdef _WIN32
+std::string socket_error_string() {
+    int err = WSAGetLastError();
+    char buf[256];
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                   nullptr, err, 0, buf, sizeof(buf), nullptr);
+    return buf;
+}
+#else
+std::string socket_error_string() {
+    return std::strerror(errno);
+}
+#endif
+
+}  // anonymous namespace
+
 AunBackend::AunBackend(uint8_t local_net, uint8_t local_stn, uint16_t local_port)
     : local_port_(local_port), local_net_(local_net), local_stn_(local_stn) {
 
     socket_fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd_ < 0) {
-        std::cerr << "AunBackend: socket() failed: " << std::strerror(errno) << "\n";
+    if (socket_fd_ == invalid_socket) {
+        std::cerr << "AunBackend: socket() failed: " << socket_error_string() << "\n";
         return;
     }
 
     // Allow rapid restart — avoids "Address already in use" after a crash.
     int reuse = 1;
-    if (::setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        std::cerr << "AunBackend: SO_REUSEADDR failed: " << std::strerror(errno) << "\n";
+    if (::setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR,
+                     reinterpret_cast<const char*>(&reuse), sizeof(reuse)) < 0) {
+        std::cerr << "AunBackend: SO_REUSEADDR failed: " << socket_error_string() << "\n";
         close_socket();
         return;
     }
 
     // Enable broadcast sends (for sending to all known peers).
     int broadcast = 1;
-    if (::setsockopt(socket_fd_, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0) {
-        std::cerr << "AunBackend: SO_BROADCAST failed: " << std::strerror(errno) << "\n";
+    if (::setsockopt(socket_fd_, SOL_SOCKET, SO_BROADCAST,
+                     reinterpret_cast<const char*>(&broadcast), sizeof(broadcast)) < 0) {
+        std::cerr << "AunBackend: SO_BROADCAST failed: " << socket_error_string() << "\n";
         close_socket();
         return;
     }
@@ -57,7 +85,7 @@ AunBackend::AunBackend(uint8_t local_net, uint8_t local_stn, uint16_t local_port
 
     if (::bind(socket_fd_, reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)) < 0) {
         std::cerr << "AunBackend: bind() to port " << local_port
-                  << " failed: " << std::strerror(errno) << "\n";
+                  << " failed: " << socket_error_string() << "\n";
         close_socket();
         return;
     }
@@ -80,7 +108,7 @@ AunBackend::~AunBackend() {
 }
 
 void AunBackend::send_frame(const NetworkFrame& frame) {
-    if (socket_fd_ < 0) return;
+    if (socket_fd_ == invalid_socket) return;
 
     // Choose handle: echo for Ack/ImmReply, increment for everything else.
     uint32_t handle;
@@ -101,12 +129,14 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
             dest_addr.sin_addr.s_addr = endpoint.first;
             dest_addr.sin_port = htons(endpoint.second);
 
-            auto sent = ::sendto(socket_fd_, packet.data(), packet.size(), 0,
+            auto sent = ::sendto(socket_fd_,
+                                 reinterpret_cast<const char*>(packet.data()),
+                                 static_cast<int>(packet.size()), 0,
                                  reinterpret_cast<const sockaddr*>(&dest_addr),
                                  sizeof(dest_addr));
             if (sent < 0) {
                 std::cerr << "AunBackend: sendto() broadcast failed: "
-                          << std::strerror(errno) << "\n";
+                          << socket_error_string() << "\n";
             }
         }
         return;
@@ -134,7 +164,7 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
 }
 
 std::optional<NetworkFrame> AunBackend::receive_frame() {
-    if (socket_fd_ < 0) return std::nullopt;
+    if (socket_fd_ == invalid_socket) return std::nullopt;
 
     // Non-blocking check: is there data waiting?
     fd_set readfds;
@@ -149,14 +179,16 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     sockaddr_in sender_addr{};
     socklen_t sender_len = sizeof(sender_addr);
 
-    auto received = ::recvfrom(socket_fd_, recv_buffer_.data(), recv_buffer_.size(), 0,
+    auto received = ::recvfrom(socket_fd_,
+                               reinterpret_cast<char*>(recv_buffer_.data()),
+                               static_cast<int>(recv_buffer_.size()), 0,
                                reinterpret_cast<sockaddr*>(&sender_addr), &sender_len);
     if (received < 0) {
-        std::cerr << "AunBackend: recvfrom() failed: " << std::strerror(errno) << "\n";
+        std::cerr << "AunBackend: recvfrom() failed: " << socket_error_string() << "\n";
         return std::nullopt;
     }
 
-    if (received < static_cast<ssize_t>(AUN_HEADER_SIZE)) {
+    if (static_cast<size_t>(received) < AUN_HEADER_SIZE) {
         return std::nullopt;  // Too short — discard
     }
 
@@ -260,9 +292,13 @@ uint64_t AunBackend::make_reverse_key(uint32_t ip_addr, uint16_t port) {
 }
 
 void AunBackend::close_socket() {
-    if (socket_fd_ >= 0) {
+    if (socket_fd_ != invalid_socket) {
+#ifdef _WIN32
+        ::closesocket(socket_fd_);
+#else
         ::close(socket_fd_);
-        socket_fd_ = -1;
+#endif
+        socket_fd_ = invalid_socket;
     }
     connected_ = false;
 }
