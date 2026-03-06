@@ -155,11 +155,13 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
     dest_addr.sin_addr.s_addr = it->second.first;
     dest_addr.sin_port = htons(it->second.second);
 
-    auto sent = ::sendto(socket_fd_, packet.data(), packet.size(), 0,
+    auto sent = ::sendto(socket_fd_,
+                         reinterpret_cast<const char*>(packet.data()),
+                         static_cast<int>(packet.size()), 0,
                          reinterpret_cast<const sockaddr*>(&dest_addr),
                          sizeof(dest_addr));
     if (sent < 0) {
-        std::cerr << "AunBackend: sendto() failed: " << std::strerror(errno) << "\n";
+        std::cerr << "AunBackend: sendto() failed: " << socket_error_string() << "\n";
     }
 }
 
@@ -172,7 +174,7 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     FD_SET(socket_fd_, &readfds);
 
     timeval timeout{};  // Zero timeout = non-blocking poll
-    int ready = ::select(socket_fd_ + 1, &readfds, nullptr, nullptr, &timeout);
+    int ready = ::select(static_cast<int>(socket_fd_ + 1), &readfds, nullptr, nullptr, &timeout);
     if (ready <= 0) return std::nullopt;
 
     // Read the datagram and capture the sender's address.
