@@ -24,6 +24,7 @@
 #include "beebium/tube/TubeConcepts.hpp"
 #include "beebium/tube/TubeSharedMemory.hpp"
 #include "beebium/service/Server.hpp"
+#include "beebium/server/SubprocessManager.hpp"
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/PresetPaths.hpp"
 #include "beebium/server/RomPaths.hpp"
@@ -1153,6 +1154,56 @@ std::optional<int> install_tube(
     return std::nullopt;
 }
 
+// Launch the Tube parasite subprocess.
+// Finds the parasite executable (beebium-tube-<stem>), spawns it with
+// --host=localhost:<port>, and returns the Subprocess handle.
+// Returns exit code on error, nullopt on success.
+template<typename MachineType>
+std::optional<int> launch_tube_parasite(
+    const ServerConfig<MachineType>& config,
+    uint16_t server_port,
+    const char* host_argv0,
+    std::optional<Subprocess>& parasite_process)
+{
+    if (config.tube_stem.empty()) {
+        return std::nullopt;
+    }
+
+    std::string executable_name = "beebium-tube-" + config.tube_stem;
+
+    auto executable_filepath = find_sibling_executable(
+        executable_name,
+        std::filesystem::path(host_argv0));
+
+    if (!executable_filepath) {
+        std::cerr << "Error: Tube parasite executable not found: " << executable_name << "\n"
+                  << "Searched: " << std::filesystem::path(host_argv0).parent_path().string()
+                  << " and PATH\n";
+        return ExitCode::NOINPUT;
+    }
+
+    // Build argument list
+    std::vector<std::string> args;
+    args.push_back(executable_filepath->string());
+    args.push_back("--host=localhost:" + std::to_string(server_port));
+
+    // Append forwarded --tube-* args (already prefix-stripped)
+    for (const auto& arg : config.tube_parasite_args) {
+        args.push_back(arg);
+    }
+
+    std::cout << "Launching Tube parasite: " << executable_filepath->string() << "\n";
+
+    auto subprocess = spawn_subprocess(*executable_filepath, args);
+    if (!subprocess) {
+        std::cerr << "Error: Failed to launch Tube parasite: " << executable_name << "\n";
+        return ExitCode::SOFTWARE;
+    }
+
+    parasite_process = std::move(*subprocess);
+    return std::nullopt;
+}
+
 // Load disc images into floppy drives.
 // Throws on error.
 template<typename MachineType>
@@ -1472,8 +1523,12 @@ public:
             std::cout << "Listening on port " << server.port() << std::endl;
             std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
 
-            // TODO: launch_tube_parasite() here (after server.start(), before emulation loop)
-            // The parasite needs the gRPC port to call TubeService.Connect.
+            // Launch Tube parasite subprocess (needs gRPC port for Connect handshake)
+            std::optional<Subprocess> tube_parasite;
+            if (auto exit_code = launch_tube_parasite(config, server.port(), argv[0], tube_parasite)) {
+                server.stop();
+                return *exit_code;
+            }
 
             // Handle wait mode
             handle_wait_mode(machine, config.wait_mode);
@@ -1482,7 +1537,24 @@ public:
             run_emulation_loop(machine, server);
 
             std::cout << "\nShutting down...\n";
-            // TODO: send SHUTDOWN to parasite via lifecycle mailbox, wait for exit
+
+            // Terminate Tube parasite if running
+            if (tube_parasite && tube_parasite->valid()) {
+                // Send SHUTDOWN via lifecycle mailbox
+                if (tube_shm) {
+                    tube_shm->get()->host_command.store(
+                        static_cast<uint8_t>(beebium::TubeLifecycleCommand::Shutdown),
+                        std::memory_order_release);
+                }
+
+                // Wait up to 2 seconds for graceful exit
+                if (!tube_parasite->wait(2000)) {
+                    std::cerr << "Warning: Tube parasite did not exit gracefully, terminating\n";
+                    tube_parasite->terminate();
+                    tube_parasite->wait(1000);
+                }
+            }
+
             server.stop();
 
         } catch (const std::exception& e) {
