@@ -12,9 +12,11 @@
 
 #pragma once
 
+#include "TubeHostPort.hpp"
 #include "TubeUla.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace beebium {
 
@@ -42,16 +44,28 @@ public:
 
     // --- Configuration ---
 
-    // Enable the Tube socket (attach a second processor).
-    // Phase 1: uses the in-process TubeUla owned by this socket.
-    // Phase 2 will accept a TubeShared* pointer to shared memory.
+    // Enable in in-process mode (Phase 1): both host and parasite sides
+    // are modelled by the TubeUla owned by this socket. Useful for
+    // single-process testing where parasite_write/parasite_read are
+    // called directly.
     void enable() {
+        host_port_.reset();
+        enabled_ = true;
+    }
+
+    // Enable in shared memory mode (Phase 2): the host side is handled
+    // by a TubeHostPort that communicates with a parasite process via
+    // atomics in the TubeShared region. The caller is responsible for
+    // the lifetime of the TubeShared memory.
+    void enable(TubeShared* shared) {
+        host_port_.emplace(shared);
         enabled_ = true;
     }
 
     // Disable the Tube socket (detach second processor).
     // Reverts to empty-socket behaviour.
     void disable() {
+        host_port_.reset();
         enabled_ = false;
     }
 
@@ -69,13 +83,18 @@ public:
     uint8_t read(uint16_t offset) {
         if (!enabled_)
             return last_bus_value_ptr_ ? *last_bus_value_ptr_ : 0xFF;
+        if (host_port_)
+            return host_port_->host_read(static_cast<uint8_t>(offset));
         return tube_ula_.host_read(static_cast<uint8_t>(offset));
     }
 
     void write(uint16_t offset, uint8_t value) {
         if (!enabled_)
             return;
-        tube_ula_.host_write(static_cast<uint8_t>(offset), value);
+        if (host_port_)
+            host_port_->host_write(static_cast<uint8_t>(offset), value);
+        else
+            tube_ula_.host_write(static_cast<uint8_t>(offset), value);
     }
 
     // --- IrqSource interface (satisfies IrqSource concept) ---
@@ -89,13 +108,18 @@ public:
     bool irq_pending() const {
         if (!enabled_)
             return false;
+        if (host_port_)
+            return host_port_->hirq();
         return tube_ula_.hirq();
     }
 
     // --- Reset ---
 
     void reset() {
-        tube_ula_.reset();
+        if (host_port_)
+            host_port_->reset();
+        else
+            tube_ula_.reset();
     }
 
     // --- Accessors for testing and Phase 2 integration ---
@@ -103,8 +127,12 @@ public:
     TubeUla& tube_ula() { return tube_ula_; }
     const TubeUla& tube_ula() const { return tube_ula_; }
 
+    // Returns true if the socket is in shared memory mode (Phase 2).
+    bool shared_mode() const { return host_port_.has_value(); }
+
 private:
     TubeUla tube_ula_;
+    std::optional<TubeHostPort> host_port_;
     bool enabled_ = false;
     const uint8_t* last_bus_value_ptr_ = nullptr;
 };

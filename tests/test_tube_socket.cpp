@@ -14,6 +14,7 @@
 
 #include <beebium/tube/TubeSocket.hpp>
 #include <beebium/tube/TubeConcepts.hpp>
+#include <beebium/tube/TubeShared.hpp>
 #include <beebium/IrqAggregator.hpp>
 #include <beebium/MemoryMap.hpp>
 #include <beebium/devices/Ram.hpp>
@@ -545,4 +546,177 @@ TEST_CASE("TubeSocket: MOS 1.20 Tube detection with bus cycle simulation", "[tub
         // This confirms that the instruction fetch cycles in the sections
         // above are essential for correct Tube detection.
     }
+}
+
+// ===========================================================================
+// Shared memory mode (Phase 2)
+// ===========================================================================
+
+TEST_CASE("TubeSocket: enable with TubeShared activates shared memory mode", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+
+    socket.enable(&shared);
+    CHECK(socket.enabled());
+    CHECK(socket.shared_mode());
+}
+
+TEST_CASE("TubeSocket: parameterless enable stays in in-process mode", "[tube][socket][shared]") {
+    TubeSocket socket;
+    socket.enable();
+    CHECK(socket.enabled());
+    CHECK_FALSE(socket.shared_mode());
+}
+
+TEST_CASE("TubeSocket: shared mode write is visible in shared memory", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    socket.enable(&shared);
+
+    // Host writes R1 H-to-P data via socket
+    socket.write(1, 0xAB);
+
+    // Data should be visible in shared memory
+    CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) != 0);
+    CHECK(shared.r1_h2p.value.load(std::memory_order_acquire) == 0xAB);
+}
+
+TEST_CASE("TubeSocket: shared mode read returns data from shared memory", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    socket.enable(&shared);
+
+    // Simulate parasite writing to R1 P-to-H FIFO
+    uint8_t tail = shared.r1_p2h.tail.load(std::memory_order_acquire);
+    shared.r1_p2h.data[tail].store(0xCD, std::memory_order_relaxed);
+    shared.r1_p2h.tail.store((tail + 1) % 24, std::memory_order_relaxed);
+    shared.r1_p2h.count.store(1, std::memory_order_release);
+
+    // R1 status should show DATA_AVAILABLE
+    uint8_t status = socket.read(0);
+    CHECK((status & TubeUla::DATA_AVAILABLE) != 0);
+
+    // R1 data read should return the byte
+    CHECK(socket.read(1) == 0xCD);
+}
+
+TEST_CASE("TubeSocket: shared mode HIRQ via irq_pending", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    socket.enable(&shared);
+
+    // No HIRQ initially (Q=0)
+    CHECK_FALSE(socket.irq_pending());
+
+    // Set Q flag
+    socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
+
+    // Still no HIRQ (no R4 P-to-H data)
+    CHECK_FALSE(socket.irq_pending());
+
+    // Simulate parasite writing R4 P-to-H
+    shared.r4_p2h.value.store(0x42, std::memory_order_relaxed);
+    shared.r4_p2h.ready.store(1, std::memory_order_release);
+
+    // HIRQ should now be asserted
+    CHECK(socket.irq_pending());
+
+    // Host reads R4 data (clears ready)
+    socket.read(7);
+    CHECK_FALSE(socket.irq_pending());
+}
+
+TEST_CASE("TubeSocket: shared mode control flags readable via status", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    socket.enable(&shared);
+
+    socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q | TubeUla::FLAG_M);
+
+    uint8_t status = socket.read(0);
+    CHECK((status & TubeUla::FLAG_Q) != 0);
+    CHECK((status & TubeUla::FLAG_M) != 0);
+    CHECK((status & TubeUla::FLAG_J) == 0);
+}
+
+TEST_CASE("TubeSocket: shared mode reset clears registers", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    socket.enable(&shared);
+
+    // Set flags and write some data
+    socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
+    socket.write(1, 0xAA);
+
+    socket.reset();
+
+    // Control flags cleared
+    uint8_t flags = shared.control_flags.load(std::memory_order_acquire);
+    CHECK(flags == 0);
+
+    // No HIRQ
+    CHECK_FALSE(socket.irq_pending());
+}
+
+TEST_CASE("TubeSocket: disable from shared mode reverts to empty socket", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+    uint8_t bus_value = 0x73;
+    socket.set_last_bus_value_ptr(&bus_value);
+
+    socket.enable(&shared);
+    CHECK(socket.shared_mode());
+
+    socket.disable();
+    CHECK_FALSE(socket.enabled());
+    CHECK_FALSE(socket.shared_mode());
+
+    // Reads return last bus value
+    CHECK(socket.read(0) == 0x73);
+    CHECK_FALSE(socket.irq_pending());
+}
+
+TEST_CASE("TubeSocket: switch from shared mode to in-process mode", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+
+    // Start in shared mode
+    socket.enable(&shared);
+    CHECK(socket.shared_mode());
+
+    // Switch to in-process mode
+    socket.enable();
+    CHECK(socket.enabled());
+    CHECK_FALSE(socket.shared_mode());
+
+    // Write/read should go through TubeUla
+    socket.write(1, 0x42);
+    CHECK(socket.tube_ula().parasite_read(1) == 0x42);
+}
+
+TEST_CASE("TubeSocket: switch from in-process mode to shared mode", "[tube][socket][shared]") {
+    TubeShared shared;
+    shared.init();
+    TubeSocket socket;
+
+    // Start in-process
+    socket.enable();
+    CHECK_FALSE(socket.shared_mode());
+
+    // Switch to shared mode
+    socket.enable(&shared);
+    CHECK(socket.shared_mode());
+
+    // Write should go through shared memory
+    socket.write(1, 0x42);
+    CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) != 0);
+    CHECK(shared.r1_h2p.value.load(std::memory_order_acquire) == 0x42);
 }
