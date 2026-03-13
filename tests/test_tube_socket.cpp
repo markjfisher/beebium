@@ -117,7 +117,7 @@ TEST_CASE("TubeSocket: enabled socket read delegates to TubeUla host_read", "[tu
     socket.enable();
 
     // Write data from the parasite side, then read from the host side via TubeSocket
-    socket.tube_ula().parasite_write(1, 0xAB);  // R1 P-to-H FIFO
+    socket.tube_ula()->parasite_write(1, 0xAB);  // R1 P-to-H FIFO
 
     // TubeSocket::read delegates to tube_ula_.host_read
     uint8_t status = socket.read(0);  // R1 status
@@ -135,7 +135,7 @@ TEST_CASE("TubeSocket: enabled socket write delegates to TubeUla host_write", "[
     socket.write(1, 0xCD);  // R1 H-to-P latch
 
     // Verify the parasite can read it
-    uint8_t data = socket.tube_ula().parasite_read(1);
+    uint8_t data = socket.tube_ula()->parasite_read(1);
     CHECK(data == 0xCD);
 }
 
@@ -158,19 +158,19 @@ TEST_CASE("TubeSocket: all register offsets accessible through socket", "[tube][
     // Write and read through each register pair to verify full delegation
     // R1: H-to-P latch
     socket.write(1, 0x11);
-    CHECK(socket.tube_ula().parasite_read(1) == 0x11);
+    CHECK(socket.tube_ula()->parasite_read(1) == 0x11);
 
     // R2: H-to-P latch
     socket.write(3, 0x22);
-    CHECK(socket.tube_ula().parasite_read(3) == 0x22);
+    CHECK(socket.tube_ula()->parasite_read(3) == 0x22);
 
     // R3: H-to-P FIFO
     socket.write(5, 0x33);
-    CHECK(socket.tube_ula().parasite_read(5) == 0x33);
+    CHECK(socket.tube_ula()->parasite_read(5) == 0x33);
 
     // R4: H-to-P latch
     socket.write(7, 0x44);
-    CHECK(socket.tube_ula().parasite_read(7) == 0x44);
+    CHECK(socket.tube_ula()->parasite_read(7) == 0x44);
 }
 
 // ===========================================================================
@@ -182,7 +182,7 @@ TEST_CASE("TubeSocket: irq_pending reflects HIRQ when enabled", "[tube][socket][
     socket.enable();
 
     SECTION("no IRQ when Q=0") {
-        socket.tube_ula().parasite_write(7, 0x42);  // R4 P-to-H data
+        socket.tube_ula()->parasite_write(7, 0x42);  // R4 P-to-H data
         CHECK_FALSE(socket.irq_pending());
     }
 
@@ -193,13 +193,13 @@ TEST_CASE("TubeSocket: irq_pending reflects HIRQ when enabled", "[tube][socket][
 
     SECTION("IRQ asserted when Q=1 and R4 P-to-H has data") {
         socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        socket.tube_ula().parasite_write(7, 0x42);
+        socket.tube_ula()->parasite_write(7, 0x42);
         CHECK(socket.irq_pending());
     }
 
     SECTION("IRQ deasserted when R4 P-to-H data consumed") {
         socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        socket.tube_ula().parasite_write(7, 0x42);
+        socket.tube_ula()->parasite_write(7, 0x42);
         CHECK(socket.irq_pending());
 
         socket.read(7);  // host reads R4 data, clearing the cause
@@ -208,7 +208,7 @@ TEST_CASE("TubeSocket: irq_pending reflects HIRQ when enabled", "[tube][socket][
 
     SECTION("IRQ deasserted when Q cleared") {
         socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        socket.tube_ula().parasite_write(7, 0x42);
+        socket.tube_ula()->parasite_write(7, 0x42);
         CHECK(socket.irq_pending());
 
         socket.write(0, TubeUla::FLAG_Q);  // S=0, clear Q
@@ -222,7 +222,7 @@ TEST_CASE("TubeSocket: irq_pending always false when disabled", "[tube][socket][
 
     // Set up HIRQ condition
     socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-    socket.tube_ula().parasite_write(7, 0x42);
+    socket.tube_ula()->parasite_write(7, 0x42);
     REQUIRE(socket.irq_pending());
 
     // Disable the socket -- IRQ should disappear
@@ -252,7 +252,7 @@ TEST_CASE("TubeSocket: HIRQ appears at correct bit in IrqAggregator", "[tube][so
 
     SECTION("HIRQ active: poll returns bit 2") {
         socket.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        socket.tube_ula().parasite_write(7, 0x42);
+        socket.tube_ula()->parasite_write(7, 0x42);
         CHECK(aggregator.poll() == 0x04);
     }
 }
@@ -281,7 +281,7 @@ TEST_CASE("TubeSocket: HIRQ coexists with VIA IRQs in aggregator", "[tube][socke
 
     SECTION("only Tube HIRQ: poll returns bit 2") {
         tube.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        tube.tube_ula().parasite_write(7, 0x42);
+        tube.tube_ula()->parasite_write(7, 0x42);
         CHECK(aggregator.poll() == 0x04);
     }
 
@@ -293,7 +293,7 @@ TEST_CASE("TubeSocket: HIRQ coexists with VIA IRQs in aggregator", "[tube][socke
     SECTION("System VIA and Tube: poll returns bits 0 and 2") {
         system_via.active = true;
         tube.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        tube.tube_ula().parasite_write(7, 0x42);
+        tube.tube_ula()->parasite_write(7, 0x42);
         CHECK(aggregator.poll() == 0x05);
     }
 
@@ -301,7 +301,7 @@ TEST_CASE("TubeSocket: HIRQ coexists with VIA IRQs in aggregator", "[tube][socke
         system_via.active = true;
         user_via.active = true;
         tube.write(0, TubeUla::FLAG_S | TubeUla::FLAG_Q);
-        tube.tube_ula().parasite_write(7, 0x42);
+        tube.tube_ula()->parasite_write(7, 0x42);
         CHECK(aggregator.poll() == 0x07);
     }
 }
@@ -322,16 +322,16 @@ TEST_CASE("TubeSocket: reset clears TubeUla state", "[tube][socket]") {
     socket.reset();
 
     // Control flags should be cleared
-    CHECK(socket.tube_ula().control_flags() == 0);
+    CHECK(socket.tube_ula()->control_flags() == 0);
 
     // No interrupts after reset
     CHECK_FALSE(socket.irq_pending());
-    CHECK_FALSE(socket.tube_ula().hirq());
-    CHECK_FALSE(socket.tube_ula().pirq());
-    CHECK_FALSE(socket.tube_ula().pnmi());
+    CHECK_FALSE(socket.tube_ula()->hirq());
+    CHECK_FALSE(socket.tube_ula()->pirq());
+    CHECK_FALSE(socket.tube_ula()->pnmi());
 
     // Registers should be empty (parasite side sees no data)
-    uint8_t r1_stat = socket.tube_ula().parasite_read(0);
+    uint8_t r1_stat = socket.tube_ula()->parasite_read(0);
     CHECK((r1_stat & TubeUla::DATA_AVAILABLE) == 0);
 }
 
@@ -699,7 +699,7 @@ TEST_CASE("TubeSocket: switch from shared mode to in-process mode", "[tube][sock
 
     // Write/read should go through TubeUla
     socket.write(1, 0x42);
-    CHECK(socket.tube_ula().parasite_read(1) == 0x42);
+    CHECK(socket.tube_ula()->parasite_read(1) == 0x42);
 }
 
 TEST_CASE("TubeSocket: switch from in-process mode to shared mode", "[tube][socket][shared]") {

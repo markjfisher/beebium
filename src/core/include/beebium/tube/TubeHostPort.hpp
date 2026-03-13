@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "TubeHostBackend.hpp"
 #include "TubeShared.hpp"
 #include "TubeUla.hpp"  // for FLAG_* constants
 
@@ -34,7 +35,7 @@ namespace beebium {
 // that data written by one side is visible when the other side reads
 // the corresponding flag/count.
 
-class TubeHostPort {
+class TubeHostPort : public TubeHostBackend {
 public:
     explicit TubeHostPort(TubeShared* shared)
         : shared_(shared)
@@ -42,12 +43,12 @@ public:
         assert(shared_ != nullptr);
     }
 
-    // --- TubeHostInterface ---
+    // --- TubeHostBackend interface ---
 
-    uint8_t host_read(uint8_t offset);
-    void host_write(uint8_t offset, uint8_t value);
-    bool hirq() const;
-    void reset();
+    uint8_t host_read(uint8_t offset) override;
+    void host_write(uint8_t offset, uint8_t value) override;
+    bool hirq() const override;
+    void reset() override;
 
     // --- Accessors for testing ---
 

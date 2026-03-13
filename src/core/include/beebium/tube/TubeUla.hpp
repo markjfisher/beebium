@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "TubeHostBackend.hpp"
+
 #include <array>
 #include <cstdint>
 
@@ -29,7 +31,7 @@ namespace beebium {
 // the perspective by calling host_read/host_write or parasite_read/
 // parasite_write.
 
-class TubeUla {
+class TubeUla : public TubeHostBackend {
 public:
     // Status flag bits (bits 7 and 6 of status register reads)
     static constexpr uint8_t DATA_AVAILABLE = 0x80;  // bit 7
@@ -48,11 +50,11 @@ public:
     TubeUla();
 
     // Full hardware reset (HRST) -- clears everything including control flags.
-    void reset();
+    void reset() override;
 
     // Host-side register access (offsets 0-7, mirrored from &FEE0-&FEE7).
-    uint8_t host_read(uint8_t offset);
-    void host_write(uint8_t offset, uint8_t value);
+    uint8_t host_read(uint8_t offset) override;
+    void host_write(uint8_t offset, uint8_t value) override;
 
     // Parasite-side register access (offsets 0-7, mirrored from &FEF8-&FEFF).
     uint8_t parasite_read(uint8_t offset);
@@ -64,7 +66,7 @@ public:
     //   pirq -- Parasite IRQ (active when I=1 and R1 has data, or J=1 and R4 has data)
     //   pnmi -- Parasite NMI (edge-triggered from R3 activity when M=1)
     // TubeSocket adapts hirq() to the generic IrqSource::irq_pending() interface.
-    bool hirq() const;
+    bool hirq() const override;
     bool pirq() const;
     bool pnmi() const;
 
