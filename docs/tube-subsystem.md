@@ -243,204 +243,314 @@ beebium-model-b (host)              beebium-tube-6502 (parasite)
 │                        │          │                        │
 │  ┌──────────────────┐  │          │  ┌──────────────────┐  │
 │  │ TubeHost         │  │          │  │ TubeParasite     │  │
-│  │ (Tube ULA model) │  │          │  │ (Tube ULA model) │  │
-│  │                  │  │          │  │                  │  │
-│  │  FIFO state      │  │          │  │  FIFO state      │  │
-│  │  IRQ/NMI logic   │  │          │  │  IRQ/NMI logic   │  │
-│  └────────┬─────────┘  │          │  └────────┬─────────┘  │
-│           │            │          │           │            │
-│  ┌────────┴─────────┐  │          │  ┌────────┴─────────┐  │
-│  │ SPSC staging     │  │          │  │ SPSC staging     │  │
-│  │ queue (outbound) │  │          │  │ queue (outbound) │  │
-│  │ queue (inbound)  │  │          │  │ queue (inbound)  │  │
-│  └────────┬─────────┘  │          │  └────────┬─────────┘  │
-│           │            │          │           │            │
-│  ┌────────┴─────────┐  │          │  ┌────────┴─────────┐  │
-│  │ IO thread        │  │          │  │ IO thread        │  │
-│  │ (socket R/W)     │  │          │  │ (socket R/W)     │  │
+│  │ (local wrapper)  │  │          │  │ (local wrapper)  │  │
 │  └────────┬─────────┘  │          │  └────────┬─────────┘  │
 │           │            │          │           │            │
 │  gRPC: Video, Audio,   │          │  gRPC: Debugger,       │
 │  Keyboard, Disc, etc   │          │  System (parasite)     │
 └───────────┼────────────┘          └───────────┼────────────┘
-            │    Unix domain socket              │
-            └────────────────────────────────────┘
+            │                                   │
+            │  ┌──────────────────────────────┐  │
+            └──┤   Shared memory region       ├──┘
+               │                              │
+               │  ┌────────────────────────┐  │
+               │  │ TubeUla (lock-free)    │  │
+               │  │                        │  │
+               │  │  FIFO data + counts    │  │
+               │  │  Status flags          │  │
+               │  │  Control flags         │  │
+               │  └────────────────────────┘  │
+               │                              │
+               │  Lifecycle mailbox (cold)    │
+               └──────────────────────────────┘
+              Setup via Unix domain socket
+              (handshake only, then closed)
 ```
 
-Each side maintains its own **authoritative Tube FIFO state**. The IO thread handles the
-socket transport. The CPU thread drives the Tube peripheral and never blocks on the socket.
+The Tube ULA state lives in a **shared memory region** mapped into both processes. Both CPU
+threads access the FIFOs and status flags directly through lock-free atomic operations. No
+IO threads, no staging queues, no syscalls on the data path.
 
-### Layered separation
+A Unix domain socket is used only for the initial handshake: the host creates the shared
+memory segment, the parasite connects, the host passes the shared memory file descriptor
+(via `SCM_RIGHTS` on Unix, or a named shared memory path), and then the socket can be
+closed. Lifecycle messages (reset, freeze, shutdown) use a small mailbox within the shared
+memory itself.
 
-The architecture has three distinct layers:
+### Why shared memory, not sockets
 
-**Layer 1: Tube ULA model** (the emulated hardware)
-- Owns the FIFO buffers with correct depths (R1: 24 bytes P-to-H, 1 byte H-to-P;
-  R2: 1 byte each; R3: 2 bytes each; R4: 1 byte each).
-- Implements status flag logic (data available, not full).
-- Computes interrupt outputs (HIRQ, PIRQ, PNMI) on every state change.
-- The host side's ULA model manages the host-writable FIFOs (H-to-P direction).
-  The parasite side's model manages the parasite-writable FIFOs (P-to-H direction).
+The real Tube ULA is physically shared hardware -- a chip sitting between two buses, with
+internal latches that both processors access directly. Shared memory is the closest software
+analogue. A socket introduces unnecessary indirection.
 
-**Layer 2: Staging queues** (transport buffer)
-- SPSC lock-free ring buffers, one per direction.
-- Absorb timing jitter between socket IO and CPU execution.
-- Much larger than Tube FIFO depth (e.g. 4 KB) to absorb bursts.
-- The CPU thread dequeues inbound bytes and feeds them into the Tube ULA model.
-- The CPU thread enqueues outbound bytes when the Tube ULA model accepts a write.
+Latency comparison at 2 MHz (500 ns/cycle) and 3 MHz (333 ns/cycle):
 
-**Layer 3: Socket transport** (IO thread)
-- Reads/writes framed messages on the Unix domain socket.
-- Never touches the Tube ULA model or interrupt state directly.
-- Batches bytes into frames for efficiency (never one syscall per Tube byte).
+| Transport        | Latency        | Host cycles | Parasite cycles |
+|------------------|----------------|-------------|-----------------|
+| Unix socket      | 1-5 us         | 2-10        | 3-15            |
+| Shared memory    | 50-100 ns      | < 1         | < 1             |
 
-### Key invariant
+With a socket, a parasite polling R2STAT in a tight loop pays a multi-microsecond penalty
+per iteration (two syscalls, kernel buffer copy, potential context switch). With shared
+memory, the same poll is a single atomic load from a cache line -- sub-cycle latency.
 
-The Tube ULA model is the sole authority for:
-- FIFO depth and fullness
-- Interrupt assertion/deassertion
-- Status flag values
-- Backpressure (writer polls status before writing)
+Both emulated CPUs are already running continuous pacing loops; neither sleeps waiting for
+Tube data. So there is no need for a wakeup mechanism like `eventfd` or `kqueue`. Each CPU
+thread simply checks the shared Tube state on every relevant register access, which it does
+anyway as part of normal instruction execution.
 
-The socket and staging queues are **not** the FIFO. They are transport infrastructure.
+### Shared memory layout
 
-### Asymmetric FIFO ownership
-
-Each side of the Tube owns the FIFOs that *its* processor writes to:
-
-| FIFO direction      | Depth    | Owner process   | Remote process  |
-|---------------------|----------|-----------------|-----------------|
-| R1 Host to Parasite | 1 byte   | Host            | Parasite reads  |
-| R1 Parasite to Host | 24 bytes | Parasite        | Host reads      |
-| R2 Host to Parasite | 1 byte   | Host            | Parasite reads  |
-| R2 Parasite to Host | 1 byte   | Parasite        | Host reads      |
-| R3 Host to Parasite | 2 bytes  | Host            | Parasite reads  |
-| R3 Parasite to Host | 2 bytes  | Parasite        | Host reads      |
-| R4 Host to Parasite | 1 byte   | Host            | Parasite reads  |
-| R4 Parasite to Host | 1 byte   | Parasite        | Host reads      |
-
-When the host CPU writes to R1DATA (H-to-P), the host's Tube ULA model:
-1. Places the byte in the local H-to-P latch.
-2. Updates local status flags.
-3. Enqueues a `WRITE_BYTE(register=1, value=X)` message to the outbound staging queue.
-4. Recomputes interrupt state.
-
-When the parasite's IO thread receives this message, it is dequeued by the parasite CPU
-thread and applied to the parasite's Tube ULA model, which updates its own status flags
-and interrupt state.
-
-The same logic applies in reverse for parasite-to-host writes.
-
-### Status flag synchronisation
-
-Both sides must agree on status flags for correct operation. The writer's local model
-updates immediately; the reader's model updates when the transport message arrives.
-
-This introduces a small window where the two sides disagree about status. In practice this
-does not cause problems because:
-- The writer only cares about "not full" (can it write another byte?).
-- The reader only cares about "data available" (is there a byte to read?).
-- These flags are owned by opposite sides.
-- The real hardware had propagation delay across the Tube ULA too.
-
-However, backpressure must be enforced on the **writer's** side. When the writer's local
-model shows "full", the emulated CPU must poll/wait -- it must not write further bytes into
-the staging queue. The staging queue may contain bytes in flight, but the FIFO depth limit
-is enforced by the writer's local model, not by queue capacity.
-
-### Interrupt proxying
-
-When data arrives at the reader's side via the staging queue:
-1. The CPU thread dequeues it into the local Tube ULA model.
-2. The Tube ULA model updates status flags and recomputes interrupt state.
-3. If HIRQ/PIRQ/PNMI changes, the interrupt line is asserted/deasserted on the local CPU.
-
-This means interrupts are generated locally based on local FIFO state, not signalled
-explicitly across the socket. This matches the hardware: the Tube ULA generates interrupts
-based on its internal register state, not on external signals.
-
-### When to drain the staging queue
-
-The CPU thread must periodically drain inbound bytes from the staging queue into the Tube
-ULA model. Options:
-
-1. **On every Tube register read** -- when the CPU reads a status or data register, first
-   drain any pending inbound bytes. This is the most natural point because it is when the
-   CPU actually observes Tube state.
-
-2. **On every instruction boundary** -- check once per instruction. More frequent, ensures
-   interrupts are noticed promptly.
-
-3. **On every N-cycle boundary** -- periodic check, tuneable.
-
-Option 1 is recommended as the primary mechanism, with option 2 as a supplement to ensure
-interrupt responsiveness. The real hardware had a propagation delay of 1-2 microseconds
-across the Tube; draining at instruction boundaries is well within this tolerance.
-
-## Transport Protocol
-
-### Socket type
-
-Unix domain socket (SOCK_STREAM), or TCP for remote parasite debugging.
-
-The host creates the socket and listens. The parasite connects on startup.
-
-### Frame format
-
-All messages are length-prefixed binary frames, little-endian:
+The shared region contains a single `TubeShared` structure, carefully laid out for
+lock-free access:
 
 ```
-┌──────────┬──────────┬───────────────────┐
-│ type: u8 │ len: u8  │ payload: [u8; len]│
-└──────────┴──────────┴───────────────────┘
+TubeShared (cache-line aligned, ~256 bytes)
+├── Header
+│   ├── magic: u32              // validation
+│   └── version: u32            // protocol version
+│
+├── Control (written by host, read by both)
+│   └── flags: atomic<u8>      // Q, I, J, M, V, P, T
+│
+├── H-to-P registers (written by host, read by parasite)
+│   ├── r1_h2p: { value: atomic<u8>, ready: atomic<bool> }
+│   ├── r2_h2p: { value: atomic<u8>, ready: atomic<bool> }
+│   ├── r3_h2p: { data: [atomic<u8>; 2], count: atomic<u8> }
+│   └── r4_h2p: { value: atomic<u8>, ready: atomic<bool> }
+│
+├── P-to-H registers (written by parasite, read by host)
+│   ├── r1_p2h: { data: [atomic<u8>; 24], head: atomic<u8>,
+│   │              tail: atomic<u8>, count: atomic<u8> }
+│   ├── r2_p2h: { value: atomic<u8>, ready: atomic<bool> }
+│   ├── r3_p2h: { data: [atomic<u8>; 2], count: atomic<u8> }
+│   └── r4_p2h: { value: atomic<u8>, ready: atomic<bool> }
+│
+├── Lifecycle mailbox (for reset/freeze/shutdown)
+│   ├── host_command: atomic<u8>
+│   └── parasite_ack: atomic<u8>
+│
+└── Padding to fill cache lines
 ```
 
-Maximum payload is 255 bytes. This is sufficient for all Tube operations (the largest
-meaningful payload is a batch of R1 FIFO bytes, max 24).
+All atomic fields use `std::memory_order_release` on writes and `std::memory_order_acquire`
+on reads. This provides the necessary happens-before ordering without full barriers.
 
-### Message types
+### Single-writer principle
 
-**Data messages** (hot path):
+Each field in the shared structure has exactly one writer:
 
-| Type | Name          | Payload                    | Direction |
-|------|---------------|----------------------------|-----------|
-| 0x01 | WRITE_BYTE    | register: u8, value: u8    | Both      |
-| 0x02 | WRITE_BATCH   | register: u8, count: u8, data: [u8] | Both |
-| 0x03 | STATUS_UPDATE | flags: u8                  | Both      |
+| Field             | Writer    | Reader(s)       |
+|-------------------|-----------|-----------------|
+| Control flags     | Host      | Both            |
+| H-to-P registers | Host      | Parasite        |
+| P-to-H registers | Parasite  | Host            |
+| host_command      | Host      | Parasite        |
+| parasite_ack      | Parasite  | Host            |
 
-WRITE_BYTE is the common case. WRITE_BATCH is an optimisation for R1 FIFO fills and R3
-two-byte writes -- batching reduces syscalls and context switches.
+This is the SPSC (single-producer, single-consumer) pattern applied per-field. No CAS
+operations are needed. No locks. Just loads and stores with acquire/release semantics.
 
-STATUS_UPDATE carries the writer's view of status flags for the registers it owns, allowing
-the reader to synchronise its "not full" view. This is sent when status transitions occur,
-not on every byte.
+The R1 parasite-to-host FIFO (24 bytes) requires slightly more care: the parasite writes
+at the tail and the host reads from the head. With separate atomic head/tail indices and
+a power-of-two-friendly size, this is a standard lock-free SPSC ring buffer.
 
-**Lifecycle messages** (cold path):
+### Status flags and interrupt computation
 
-| Type | Name          | Payload                           | Direction    |
-|------|---------------|-----------------------------------|--------------|
-| 0x10 | HELLO         | version: u8, parasite_type: u8    | P to H       |
-| 0x11 | HELLO_ACK     | version: u8                       | H to P       |
-| 0x12 | RESET         | reason: u8 (cold/warm/soft)       | H to P       |
-| 0x13 | RESET_ACK     | --                                | P to H       |
-| 0x14 | SHUTDOWN      | --                                | Both         |
+Each side computes its own interrupt state locally based on the shared data:
 
-**Debug/state messages** (cold path):
+**Host side** (on every Tube register access or periodic poll):
+1. Read `r4_p2h.ready` (acquire).
+2. Read `control.flags` (acquire).
+3. Compute: `hirq = flags.q && r4_p2h.ready`.
+4. Assert/deassert HIRQ on host CPU.
 
-| Type | Name          | Payload                           | Direction    |
-|------|---------------|-----------------------------------|--------------|
-| 0x20 | FREEZE        | --                                | H to P       |
-| 0x21 | FREEZE_ACK    | --                                | P to H       |
-| 0x22 | STATE_DUMP    | size: u16, data: [u8]             | Both         |
-| 0x23 | STATE_RESTORE | size: u16, data: [u8]             | H to P       |
+**Parasite side** (on every Tube register access or periodic poll):
+1. Read `r1_h2p.ready` and `r4_h2p.ready` (acquire).
+2. Read `control.flags` (acquire).
+3. Compute: `pirq = (flags.i && r1_h2p.ready) || (flags.j && r4_h2p.ready)`.
+4. Compute PNMI from R3 state and M/V flags.
+5. Assert/deassert PIRQ and PNMI (with edge detection for NMI).
 
-### Batching strategy
+No explicit interrupt signalling crosses the process boundary. Each side derives interrupt
+state from the shared register data, exactly as the real Tube ULA does internally.
 
-The IO thread should batch outbound messages and flush periodically (e.g. every 1 ms or
-when a batch reaches a size threshold). This amortises socket syscall overhead.
+### Backpressure
 
-For inbound messages, the IO thread should read as many bytes as available (non-blocking
-after initial blocking wait) and enqueue complete frames into the staging queue.
+When the host writes to a register that is already full (the parasite hasn't read the
+previous value), the host sees `not_full = false` by reading the shared state. The emulated
+6502 polls in a tight loop, just as real hardware did. The shared memory read completes in
+nanoseconds, so this polling is cheap.
+
+Similarly, when the parasite reads from an empty register, it sees `data_available = false`
+and polls. No special flow control protocol is needed -- the FIFO structure itself provides
+backpressure, as it did in hardware.
+
+### Latency characteristics
+
+The propagation delay from write to visibility is bounded by cache coherence latency
+(typically 50-100 ns on modern hardware). This is well under one emulated cycle on either
+processor. In practice, data written by one side becomes visible to the other within the
+same or next emulated instruction -- similar to the 1-2 microsecond across-tube transfer
+time documented in the Application Note, but actually faster in proportion to emulated
+clock speed.
+
+This means:
+- A host write to R4DATA is visible to the parasite essentially immediately.
+- The parasite's IRQ handler can respond within a few emulated instructions.
+- NMI-driven R3 transfers achieve maximum throughput without artificial delays.
+
+### When to check shared state
+
+Each CPU thread checks the shared Tube state:
+
+1. **On every Tube register access** -- the natural point. When the CPU reads R1STAT, the
+   wrapper reads the shared `r1_p2h.count` and `r1_h2p.ready` to compute status bits.
+
+2. **Periodically for interrupt responsiveness** -- when data arrives in a register with
+   interrupts enabled, the local CPU must notice. Checking at instruction boundaries
+   (once per instruction, not per cycle) is sufficient. The real hardware had interrupt
+   latency of at least one instruction anyway.
+
+### Lifecycle messages
+
+Reset, freeze, and shutdown are infrequent operations that do not need sub-cycle latency.
+These use a simple mailbox in the shared memory:
+
+- Host writes command to `host_command` (e.g. RESET=1, FREEZE=2, SHUTDOWN=3).
+- Parasite checks `host_command` periodically (e.g. every N instructions).
+- Parasite performs the action, writes acknowledgement to `parasite_ack`.
+- Host polls `parasite_ack` until acknowledged.
+
+For shutdown, if the parasite process crashes, the host detects this via `waitpid()` or
+equivalent. The shared memory region is cleaned up by the host.
+
+### Shared memory creation
+
+The host creates the shared memory segment before launching the parasite. The parasite
+learns the shared memory name via the `TubeService.Connect` gRPC call (see Connection
+and Negotiation section below).
+
+**macOS/Linux (POSIX)**:
+1. Host calls `shm_open("/beebium-tube-<pid>", O_CREAT | O_RDWR, ...)`.
+2. Host calls `ftruncate()` to set the size (e.g. 4096 bytes, page-aligned).
+3. Host calls `mmap()` to map it.
+4. Host initialises `TubeShared` header and reset state.
+5. Parasite receives the name via `TubeService.Connect`, calls `shm_open()` + `mmap()`.
+6. Both sides validate the header (magic number, version).
+
+**Windows**:
+- Use `CreateFileMapping(INVALID_HANDLE_VALUE, ...)` / `MapViewOfFile()` with a named
+  mapping (e.g. `"Local\\beebium-tube-<pid>"`).
+- Parasite receives the name via `TubeService.Connect` and calls `OpenFileMapping()`.
+
+The `shm_unlink()` (or equivalent) is called by the host during shutdown, after the
+parasite has exited.
+
+### Portability notes
+
+**Atomics across processes**: the `TubeShared` struct uses atomic operations on fields up
+to `uint8_t` in size, which are lock-free on all target architectures (x86-64, ARM64).
+Rather than placing `std::atomic<uint8_t>` directly in the shared memory layout (which
+would require constructor calls on mapped memory), we lay out plain `uint8_t` fields and
+access them via `std::atomic_ref<uint8_t>` (C++20). This gives us well-defined atomic
+semantics on memory that was not constructed by `std::atomic`.
+
+**Stale segment cleanup**: on POSIX, shared memory segments persist if the host crashes
+without calling `shm_unlink()`. On startup, the host should check for stale segments
+whose PID (embedded in the name) no longer exists, and unlink them. On Windows, named
+mappings are reference-counted and cleaned up automatically when all handles are closed,
+so no stale cleanup is needed.
+
+**Memory-mapped alignment**: the `TubeShared` struct should be sized to a whole number of
+pages (4096 bytes is more than sufficient). Fields accessed by different processes should
+be separated onto different cache lines (64 bytes) to avoid false sharing -- in particular,
+the H-to-P registers (written by host) and P-to-H registers (written by parasite) should
+be on separate cache lines.
+
+## Connection and Negotiation
+
+### gRPC TubeService
+
+The host process already runs a gRPC server for its frontends. The parasite process
+connects to this same server to negotiate the shared memory link via a new `TubeService`:
+
+```protobuf
+service TubeService {
+    // Parasite connects, receives shared memory details.
+    rpc Connect(TubeConnectRequest) returns (TubeConnectResponse);
+
+    // Host requests parasite state for save/restore.
+    rpc GetState(TubeGetStateRequest) returns (TubeGetStateResponse);
+
+    // Host sends saved state for restore.
+    rpc RestoreState(TubeRestoreStateRequest) returns (TubeRestoreStateResponse);
+}
+
+message TubeConnectRequest {
+    uint32 protocol_version = 1;
+    string parasite_type = 2;       // "6502", "z80", "arm", etc.
+    uint32 parasite_clock_hz = 3;
+}
+
+message TubeConnectResponse {
+    string shared_memory_name = 1;  // POSIX shm name or Windows mapping name
+    uint32 shared_memory_size = 2;
+    uint32 protocol_version = 3;
+}
+
+message TubeGetStateRequest {}
+
+message TubeGetStateResponse {
+    bytes cpu_state = 1;
+    bytes ram = 2;
+    bytes tube_state = 3;
+}
+
+message TubeRestoreStateRequest {
+    bytes cpu_state = 1;
+    bytes ram = 2;
+    bytes tube_state = 3;
+}
+
+message TubeRestoreStateResponse {}
+```
+
+### Connection sequence
+
+1. Host starts with Tube support enabled. Creates shared memory segment
+   (`shm_open` / `CreateFileMapping`), maps it, initialises the `TubeShared` header.
+2. Host launches the parasite process, passing the host's gRPC address
+   (e.g. `--host=localhost:50051`).
+3. Parasite connects to the host's gRPC server and calls `TubeService.Connect`.
+4. Host returns the shared memory name (e.g. `/beebium-tube-<pid>`).
+5. Parasite opens and maps the shared memory.
+6. Both sides validate the header (magic, version).
+7. Host deasserts PRST. Parasite CPU begins executing from Boot ROM reset vector.
+
+This reuses the existing gRPC infrastructure rather than introducing a second socket type.
+The gRPC connection also provides a natural channel for save-state coordination and other
+infrequent operations.
+
+### Lifecycle operations via shared memory
+
+Once the shared memory link is established, all hot-path data flows through shared memory
+(see Architecture section above). Infrequent lifecycle operations use the shared memory
+mailbox:
+
+| Command      | Value | Meaning                                      |
+|--------------|-------|----------------------------------------------|
+| NONE         | 0     | No pending command                           |
+| RESET        | 1     | Host requests parasite reset                 |
+| FREEZE       | 2     | Host requests parasite to stop and dump state|
+| SHUTDOWN     | 3     | Host requests parasite to exit               |
+
+The parasite polls `host_command` periodically (e.g. every 1000 instructions) and
+acknowledges via `parasite_ack`.
+
+For state dump/restore, the parasite receives FREEZE via the mailbox, then the host calls
+`TubeService.GetState` or `TubeService.RestoreState` over gRPC. This keeps bulk data
+transfer (64 KB+ of RAM) on gRPC rather than trying to squeeze it through the mailbox.
 
 ## Integration with Beebium
 
@@ -452,9 +562,8 @@ The host process needs a new `TubeSocket` peripheral following the pattern estab
 ```
 TubeSocket
 ├── implements MemoryMappedDevice (read/write at &FEE0-&FEE7)
-├── contains TubeHostModel (FIFO state, interrupt logic)
-├── contains SPSC queues (inbound/outbound staging)
-├── optional: IO thread handle
+├── pointer to TubeShared (in shared memory region)
+├── local interrupt state (HIRQ computation)
 └── methods: enable(), disable(), reset()
 ```
 
@@ -475,10 +584,10 @@ in the IRQ aggregator (alongside the existing VIA masks).
 **NMI**: the host does not receive NMI from the Tube. The Tube's NMI outputs (PNMI) go to
 the parasite only.
 
-**Clock**: the TubeSocket needs to drain the inbound staging queue. This can be done:
-- At 2 MHz (every cycle) via ClockBinding -- but this may be unnecessarily frequent.
-- On-demand when the CPU accesses Tube registers -- preferred.
-- Supplemented by a periodic poll (e.g. once per scanline) to ensure interrupts are timely.
+**Clock**: the TubeSocket reads directly from shared memory on every register access. For
+interrupt responsiveness, a periodic poll (e.g. once per scanline or per instruction) checks
+whether HIRQ should be asserted based on the current shared state. No IO thread or staging
+queue draining is needed.
 
 **Tube presence detection**: OSBYTE &EA with X=0, Y=&FF returns X=&FF if a Tube is present.
 The host-side Tube ROM code handles this; no special emulator support is needed beyond
@@ -493,11 +602,11 @@ beebium-tube-6502
 ├── 65C02 CPU emulator (3 MHz, CMOS instruction set)
 ├── 64 KB RAM
 ├── Boot ROM (2 KB at &F800-&FFFF, paged out after first Tube register access)
-├── TubeParasiteModel (FIFO state, interrupt logic)
-├── SPSC queues (inbound/outbound staging)
-├── IO thread (socket to host)
+├── Pointer to TubeShared (in shared memory, mapped on startup)
+├── Local interrupt state (PIRQ, PNMI computation with edge detection)
 ├── Clock pacing loop (independent, targets 3 MHz)
-├── gRPC server (DebuggerService, SystemService)
+├── gRPC connection to host (for TubeService.Connect handshake)
+├── gRPC server (DebuggerService, SystemService for parasite)
 └── Service discovery (Bonjour advertisement)
 ```
 
@@ -548,35 +657,48 @@ code; it is a binary image from the original Acorn hardware.
 
 ### Data structures
 
-Each side (host and parasite) holds a `TubeUla` struct representing the complete register
-state:
+The `TubeShared` struct lives in the shared memory region and is accessed by both
+processes. It uses atomic types for all fields to ensure correct cross-process visibility.
 
 ```
-TubeUla
-├── control_flags: {q, i, j, m, v, p, t, s}
+TubeShared (in shared memory, cache-line aligned)
+├── header
+│   ├── magic: u32              // 0x54554245 ("TUBE")
+│   └── version: u32
+│
+├── control_flags: atomic<u8>   // Q, I, J, M, V, P, T (written by host)
 │
 ├── Register 1
-│   ├── h2p: single byte latch + status {data_available, not_full}
-│   └── p2h: circular buffer [24] + head, tail, count + status
+│   ├── h2p: { value: atomic<u8>, ready: atomic<u8> }        // host writes
+│   └── p2h: { data: [u8; 24], head: atomic<u8>,             // parasite writes
+│               tail: atomic<u8>, count: atomic<u8> }
 │
 ├── Register 2
-│   ├── h2p: single byte latch + status
-│   └── p2h: single byte latch + status
+│   ├── h2p: { value: atomic<u8>, ready: atomic<u8> }        // host writes
+│   └── p2h: { value: atomic<u8>, ready: atomic<u8> }        // parasite writes
 │
 ├── Register 3
-│   ├── h2p: two byte buffer + count + status
-│   └── p2h: two byte buffer + count + status
+│   ├── h2p: { data: [u8; 2], count: atomic<u8> }            // host writes
+│   └── p2h: { data: [u8; 2], count: atomic<u8> }            // parasite writes
 │
 ├── Register 4
-│   ├── h2p: single byte latch + status
-│   └── p2h: single byte latch + status
+│   ├── h2p: { value: atomic<u8>, ready: atomic<u8> }        // host writes
+│   └── p2h: { value: atomic<u8>, ready: atomic<u8> }        // parasite writes
 │
-├── Interrupt outputs
-│   ├── hirq: bool
-│   ├── pirq: bool
-│   └── pnmi: bool (with edge detection state)
+├── lifecycle_mailbox
+│   ├── host_command: atomic<u8>
+│   └── parasite_ack: atomic<u8>
 │
-└── last read latch (for reads when FIFO empty)
+└── padding to cache line boundary
+```
+
+Each process also maintains **local** (non-shared) state for interrupt computation:
+
+```
+TubeLocalState (per-process, not shared)
+├── prev_pnmi: bool             // for NMI edge detection (parasite only)
+├── last_read_latch: u8         // value returned when FIFO empty
+└── boot_mode: bool             // ROM paging state (parasite only)
 ```
 
 ### FIFO implementation
@@ -632,35 +754,43 @@ On reset:
 ### Startup sequence
 
 1. Host process starts normally with Tube support enabled (configuration option).
-2. Host creates a Unix domain socket and begins listening.
-3. Host launches the parasite process, passing the socket path as a command-line argument.
-4. Parasite connects to the socket and sends HELLO (protocol version, processor type).
-5. Host sends HELLO_ACK.
-6. Host asserts PRST then deasserts it (or simply starts with Tube in reset state).
-7. Parasite CPU begins executing from Boot ROM reset vector.
-8. Boot ROM prints startup banner, enters idle loop.
-9. Host filing system detects Tube, loads language ROM across R3/R4, issues Execute.
-10. Normal operation begins.
+2. Host creates shared memory segment (`shm_open("/beebium-tube-<pid>", ...)`).
+3. Host maps the segment, initialises `TubeShared` header and reset state.
+4. Host launches the parasite process, passing the host's gRPC address
+   (e.g. `--host=localhost:50051`).
+5. Parasite connects to host gRPC server, calls `TubeService.Connect`.
+6. Host returns the shared memory name.
+7. Parasite opens and maps the shared memory, validates header.
+8. Host deasserts PRST (clears P flag in shared control register).
+9. Parasite CPU begins executing from Boot ROM reset vector.
+10. Boot ROM prints startup banner via OSWRCH (R1), enters idle loop.
+11. Host filing system detects Tube, loads language ROM across R3/R4, issues Execute.
+12. Normal operation begins.
 
 ### Shutdown sequence
 
-1. Host sends SHUTDOWN message.
-2. Parasite acknowledges, flushes gRPC streams, exits.
-3. Host cleans up socket.
+1. Host writes SHUTDOWN to the lifecycle mailbox in shared memory.
+2. Parasite detects command, flushes gRPC streams, exits.
+3. Host detects parasite exit via `waitpid()`.
+4. Host unmaps and unlinks shared memory segment.
 
-Or: parasite process crashes/exits unexpectedly. Host detects socket close, disables Tube,
-continues operating without second processor (graceful degradation, mirroring the real
-hardware where you could disconnect the Tube cable).
+Or: parasite process crashes/exits unexpectedly. Host detects via `waitpid()`, disables
+Tube, continues operating without second processor (graceful degradation, mirroring the
+real hardware where you could disconnect the Tube cable).
 
 ### Save state coordination
 
-1. Host sends FREEZE to parasite.
-2. Parasite stops CPU execution, drains staging queues, sends FREEZE_ACK.
-3. Both sides serialise their Tube ULA state.
-4. Parasite sends STATE_DUMP (CPU state + RAM + Tube state).
-5. Host combines its own state with parasite state into unified save file.
+1. Host writes FREEZE to the lifecycle mailbox.
+2. Parasite detects FREEZE, stops CPU execution, writes ACK.
+3. Host calls `TubeService.GetState` via gRPC.
+4. Parasite serialises CPU state + RAM and returns it.
+5. Host combines its own state with parasite state and shared Tube state into unified
+   save file.
 
-Restore is the reverse: host sends STATE_RESTORE to parasite after reconnection.
+Restore:
+1. Host creates shared memory and launches fresh parasite process.
+2. After `TubeService.Connect`, host calls `TubeService.RestoreState` with saved data.
+3. Parasite restores CPU state, RAM, and resumes execution.
 
 ## 6502 Second Processor Specifics
 
@@ -715,6 +845,240 @@ The parasite uses a CMOS 65C02, which adds instructions beyond the NMOS 6502:
 
 Beebium's existing 6502 library supports CMOS variants.
 
+### Code reuse from the host emulator
+
+The parasite is a much simpler machine than a BBC Micro, but it is still a machine: a CPU,
+a memory map, and a handful of peripherals. Much of Beebium's existing infrastructure can
+be reused directly or with minor adaptation.
+
+**Reused as-is**:
+- **6502 C library** (`src/6502/`): instantiate with `M6502_cmos6502_config` instead of
+  the NMOS config. The same cycle-accurate instruction execution, the same interrupt
+  handling, the same `M6502_SetDeviceIRQ` / `M6502_SetDeviceNMI` API.
+- **Ram<N> template** (`devices/Ram.hpp`): `Ram<65536>` for the parasite's 64 KB.
+- **Rom<N> template** (`devices/Rom.hpp`): `Rom<2048>` (or `Rom<4096>`) for the Boot ROM.
+- **Memory region/map pattern** (`MemoryRegion.hpp`, `MemoryMap.hpp`): `make_region` for
+  address decode, mirroring, first-match dispatch. The parasite memory map is trivial:
+  RAM at &0000-&FEF7, Tube at &FEF8-&FEFF, RAM/ROM at &FF00-&FFFF.
+- **CpuPolicy** (`CpuPolicy.hpp`): `Cmos65C02` policy already exists.
+- **ROM loading utilities**: the same file-loading code used for sideways ROMs and OS ROM
+  works for the Boot ROM.
+
+**New but following established patterns**:
+- **ParasiteHardware policy**: a new hardware policy analogous to `ModelBHardware`, but
+  vastly simpler. Contains only `Ram<65536>`, `Rom<2048>`, a Tube peripheral reference,
+  and a `boot_mode` flag. Implements `read()`, `write()`, `reset()`. No VIAs, no CRTC,
+  no Video ULA, no sound chip, no disc controller, no Econet.
+- **ParasiteMachine template**: the existing `Machine` template is tightly coupled to the
+  BBC Micro's specific tick ordering (VIA ticking, VideoBinding, bus stretching, sound
+  chip, Econet NMI). The parasite needs none of this. Rather than adding conditionals
+  to `Machine`, a dedicated `ParasiteMachine` template provides a clean, minimal
+  execution loop:
+  1. Execute CPU instruction.
+  2. Compute PIRQ and PNMI from shared Tube state.
+  3. Assert/deassert interrupt lines on CPU.
+  4. Check lifecycle mailbox (every N instructions).
+  5. Advance cycle count.
+
+  No VIA ticking, no video, no sound, no bus stretching. This is far simpler than
+  `Machine` -- perhaps 100 lines vs 500+.
+- **Clock pacing**: the same wall-clock pacing strategy as the host server (accumulate
+  emulated cycles, compare to real time, sleep if ahead), but targeting 3 MHz.
+- **gRPC service layer**: the parasite reuses the same `Cpu6502Debugger` and
+  `SystemService` proto definitions and C++ implementations as the host. See the
+  "gRPC Service Sharing" section for details.
+
+**Not needed for the parasite**:
+- Via6522, SystemViaPeripheral, AddressableLatch
+- Crtc6845, VideoUla, Saa5050, FrameRenderer, VideoBinding
+- Sn76489, AudioBuffer
+- DiscControllerSocket, WD1770
+- EconetSocket, Mc6854
+- BusStretching (parasite has no 1MHz bus)
+- OutputQueue (no video/audio streaming from parasite)
+- Indicators (no LEDs)
+
+The parasite executable links against the 6502 library and a subset of the core library
+(Ram, Rom, MemoryRegion, MemoryMap). It does not link against the full emulation core
+with its VIA, video, and sound dependencies.
+
+## gRPC Service Sharing
+
+The parasite process exposes its own gRPC server so debugger clients and frontends can
+interact with it independently. Rather than duplicating proto definitions and service
+implementations, Beebium should share as much as possible between host and parasite.
+
+### Services by category
+
+| Service          | Host | Parasite | Sharing strategy                          |
+|------------------|------|----------|-------------------------------------------|
+| DebuggerControl  | Yes  | Yes      | Split into generic + device-specific       |
+| SystemService    | Yes  | Yes      | Reuse as-is                               |
+| TubeService      | Yes  | No       | Host-only (connection negotiation)         |
+| VideoService     | Yes  | No       | Host-only                                 |
+| AudioService     | Yes  | No       | Host-only                                 |
+| KeyboardService  | Yes  | No       | Host-only                                 |
+| DiscService      | Yes  | No       | Host-only                                 |
+| IndicatorService | Yes  | No       | Host-only                                 |
+| SidewaysService  | Yes  | No       | Host-only                                 |
+
+### Splitting the debugger service
+
+The current `DebuggerControl` in `debugger.proto` contains two categories of RPC:
+
+**Generic 6502 methods** (work on any 6502 machine):
+- Execution control: `GetState`, `Run`, `Stop`, `Reset`, `StepInstruction`, `StepCycle`
+- Memory access: `ReadMemory`, `WriteMemory`, `PeekMemory`
+- Memory regions: `GetMemoryRegions`, `PeekRegion`, `ReadRegion`, `WriteRegion`
+- Breakpoints: `AddBreakpoint`, `RemoveBreakpoint`, `ListBreakpoints`, `ClearBreakpoints`
+- CPU state: `Get6502State`, `Set6502State`
+
+**BBC Micro device inspection** (host-specific hardware):
+- `GetSystemViaState`, `GetUserViaState`
+- `GetCrtcState`, `GetVideoUlaState`
+- `GetAddressableLatchState`
+- `GetSoundGeneratorState`
+
+The refactoring approach is to split `debugger.proto` into two service definitions:
+
+```protobuf
+// debugger.proto -- generic 6502 debugger (shared by host and parasite)
+service Cpu6502Debugger {
+    // Execution control
+    rpc GetState(Empty) returns (ExecutionState);
+    rpc Run(Empty) returns (RunResponse);
+    rpc Stop(Empty) returns (StopResponse);
+    rpc Reset(Empty) returns (ResetResponse);
+    rpc StepInstruction(StepRequest) returns (StepResponse);
+    rpc StepCycle(StepRequest) returns (StepResponse);
+
+    // Memory access
+    rpc ReadMemory(ReadMemoryRequest) returns (ReadMemoryResponse);
+    rpc WriteMemory(WriteMemoryRequest) returns (WriteMemoryResponse);
+    rpc PeekMemory(PeekMemoryRequest) returns (PeekMemoryResponse);
+
+    // Memory regions
+    rpc GetMemoryRegions(GetMemoryRegionsRequest) returns (GetMemoryRegionsResponse);
+    rpc PeekRegion(RegionAccessRequest) returns (RegionAccessResponse);
+    rpc ReadRegion(RegionAccessRequest) returns (RegionAccessResponse);
+    rpc WriteRegion(WriteRegionRequest) returns (WriteRegionResponse);
+
+    // Breakpoints
+    rpc AddBreakpoint(AddBreakpointRequest) returns (AddBreakpointResponse);
+    rpc RemoveBreakpoint(RemoveBreakpointRequest) returns (RemoveBreakpointResponse);
+    rpc ListBreakpoints(Empty) returns (ListBreakpointsResponse);
+    rpc ClearBreakpoints(Empty) returns (ClearBreakpointsResponse);
+
+    // CPU state
+    rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
+    rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+}
+
+// device_inspection.proto -- BBC Micro hardware (host-only)
+service DeviceInspection {
+    rpc GetSystemViaState(GetSystemViaStateRequest) returns (ViaState);
+    rpc GetUserViaState(GetUserViaStateRequest) returns (ViaState);
+    rpc GetCrtcState(GetCrtcStateRequest) returns (CrtcState);
+    rpc GetVideoUlaState(GetVideoUlaStateRequest) returns (VideoUlaState);
+    rpc GetAddressableLatchState(GetAddressableLatchStateRequest) returns (AddressableLatchState);
+    rpc GetSoundGeneratorState(GetSoundGeneratorStateRequest) returns (SoundGeneratorState);
+}
+```
+
+All message types remain in the same files or a shared messages file -- only the service
+definitions are split. The host server registers both `Cpu6502Debugger` and
+`DeviceInspection`; the parasite server registers only `Cpu6502Debugger`.
+
+**Backward compatibility**: this is a breaking change to the gRPC service name (from
+`DebuggerControl` to `Cpu6502Debugger`). Since there are no stable external clients yet,
+this is acceptable. The macOS frontend and Python client are updated at the same time.
+
+**`simulated_pc` field**: the optional `simulated_pc` field on memory read/write requests
+exists for Model B+ shadow RAM routing. On the parasite (which has flat 64 KB RAM), this
+field is simply ignored. Since it is `optional`, clients that do not use it pay no cost,
+and the parasite implementation can omit any shadow RAM logic.
+
+### C++ implementation
+
+The existing `DebuggerServiceImpl` is already templated on `MachineType`:
+
+```cpp
+template <typename MachineType>
+class DebuggerServiceImpl : public DebuggerControl::Service { ... };
+```
+
+After the split, this becomes two classes:
+
+```cpp
+template <typename MachineType>
+class Cpu6502DebuggerImpl : public Cpu6502Debugger::Service { ... };
+
+template <typename MachineType>
+class DeviceInspectionImpl : public DeviceInspection::Service { ... };
+```
+
+`Cpu6502DebuggerImpl` works with any machine type that provides the generic interface
+(execution control, memory access, CPU state). Both `Machine<ModelBHardware>` and
+`ParasiteMachine<ParasiteHardware>` satisfy this. `DeviceInspectionImpl` requires the
+device-specific accessors and is only instantiated for host machine types.
+
+### SystemService reuse
+
+`SystemService` is already generic. It deals with:
+- Machine identity (UUID, name, model type)
+- Launch provenance
+- Connection tracking
+- Shutdown coordination
+- mDNS advertisement
+
+None of these are host-specific. The parasite's `SystemService` works identically:
+the parasite has its own machine identity (`model_type: "6502Tube"`,
+`model_name: "65C02 Second Processor"`), its own UUID, and its own shutdown lifecycle.
+
+The proto `SystemInfo` message even has reserved fields for `cpu_type` and
+`coprocessor_type` (lines 94-95 of `system.proto`), anticipating this use case.
+
+No changes to `system.proto` are needed. The existing `SystemServiceImpl` template
+can be instantiated for both host and parasite machine types.
+
+### What a unified debugger client sees
+
+A debugger client (Python, macOS frontend, or future standalone debugger) connecting to
+either host or parasite sees the same `Cpu6502Debugger` service:
+
+```
+Host (beebium-model-b)          Parasite (beebium-tube-6502)
+├── Cpu6502Debugger              ├── Cpu6502Debugger        ← same interface
+├── DeviceInspection             ├── SystemService          ← same interface
+├── SystemService                └── (no other services)
+├── VideoService
+├── AudioService
+├── KeyboardService
+├── DiscService
+├── IndicatorService
+├── SidewaysService
+└── TubeService
+```
+
+A Python debugging script that sets breakpoints, inspects memory, and steps through
+6502 code works unmodified on either processor -- it just connects to a different
+gRPC endpoint. Device-specific inspection (VIA registers, CRTC state, etc.) is only
+available when connected to the host, and the client can discover this by checking
+which services the server advertises.
+
+### Service discovery
+
+The parasite advertises itself via mDNS (Bonjour/Avahi) with a distinct service type
+or TXT record field so clients can distinguish host from parasite:
+
+```
+Host:     _beebium._tcp  TXT: model=ModelB, role=host
+Parasite: _beebium._tcp  TXT: model=6502Tube, role=parasite, host_uuid=<uuid>
+```
+
+The `host_uuid` field in the parasite's advertisement links it to its host, enabling
+a client to show a tree view of host + attached coprocessors.
+
 ## Future Second Processors
 
 The process-separated architecture makes it straightforward to support additional second
@@ -728,53 +1092,64 @@ processor types. Each would be a new executable:
 | ARM2        | `beebium-tube-arm`      | 8 MHz   | 4 MB   |
 | 80186       | `beebium-tube-80186`    | 8 MHz   | 1 MB   |
 
-The Tube transport protocol is processor-agnostic. Only the HELLO message identifies the
-parasite type. All register semantics and software protocols are the same regardless of
-processor architecture.
+The shared memory `TubeShared` structure is processor-agnostic. All register semantics
+and software protocols are the same regardless of the parasite processor architecture.
 
-Different processors map the Tube registers at different addresses:
+Different processors map the Tube registers at different addresses in their own address
+spaces:
 - 6502: &FEF8-&FEFF
 - Z80: I/O ports or memory-mapped (varies by implementation)
-- ARM: &01000000-&0100001C (shifted right by 2)
+- ARM: &01000000-&0100001C (word-addressed)
 - 32016: memory-mapped in 32016 address space
 
-But the register semantics are identical. The TubeParasiteModel is the same; only the
-address decoding differs.
+But the underlying shared memory layout is identical. Each parasite executable simply
+wires its local address decode to the same `TubeShared` region.
 
 ## Implementation Phases
 
-### Phase 1: Host-side Tube peripheral
+### Phase 1: Tube ULA model and host peripheral
 
-- Implement TubeSocket as a MemoryMappedDevice.
-- Implement TubeUla struct with full register/FIFO/interrupt logic.
+- Define `TubeShared` struct (can be tested in-process initially, without shared memory).
+- Implement all register read/write logic with correct FIFO semantics.
+- Implement interrupt computation (HIRQ, PIRQ, PNMI with edge detection).
+- Implement TubeSocket as a MemoryMappedDevice wrapping the host side.
 - Wire into all three hardware policies.
 - Add HIRQ to host IRQ aggregator.
-- Unit tests for all register operations, FIFO behaviour, interrupt conditions.
-- No socket, no parasite process yet -- just the host-side hardware model.
+- **All Tier 1 tests pass** (register access, FIFO semantics, flags, interrupts, reset).
+- No shared memory or parasite process yet -- test with `TubeShared` on the heap.
 
-### Phase 2: Transport layer
+### Phase 2: Shared memory and connection
 
-- Define the binary frame protocol.
-- Implement framed socket reader/writer.
-- Implement SPSC staging queues.
-- Implement IO thread (both sides).
-- Integration tests with a mock parasite that exercises the protocol.
+- Implement shared memory creation/mapping (`shm_open`/`mmap`/platform abstraction).
+- Define `TubeService` proto and implement in gRPC service layer.
+- Implement `TubeService.Connect` RPC (returns shared memory name).
+- Implement lifecycle mailbox (reset/freeze/shutdown).
+- **All Tier 2 tests pass** (shared memory lifecycle, cross-thread visibility, stress,
+  lifecycle mailbox, TubeService handshake).
 
 ### Phase 3: 6502 parasite process
 
 - Create `beebium-tube-6502` executable.
 - 65C02 CPU with 64 KB RAM and Boot ROM.
-- TubeParasiteModel with Tube register handling.
+- gRPC client for `TubeService.Connect`.
+- Map shared memory, wire Tube registers to parasite address space.
 - Independent clock pacing loop.
-- Socket connection to host.
 - Boot ROM loading and paging logic.
-- End-to-end test: host launches parasite, parasite boots, runs BASIC.
+- **Tier 3 in-process tests pass** (boot sequence, language transfer, OSWRCH/OSRDCH,
+  block transfers, reset, Escape handling).
+- **Tier 3 cross-process tests pass** (subprocess launch, boot, shutdown, crash recovery).
 
-### Phase 4: Parasite gRPC services
+### Phase 4: Parasite gRPC services and debugger refactoring
 
-- DebuggerService for the parasite (breakpoints, memory inspection, step).
-- SystemService for parasite (pause/resume/reset).
-- Service discovery so the macOS frontend can attach to both host and parasite.
+- Split `debugger.proto` into `Cpu6502Debugger` (generic) and `DeviceInspection` (host-only).
+- Split `DebuggerServiceImpl` into `Cpu6502DebuggerImpl` and `DeviceInspectionImpl`.
+- Update host server registration to use both new services.
+- Update macOS frontend and Python client for new service names.
+- Instantiate `Cpu6502DebuggerImpl` and `SystemServiceImpl` for the parasite.
+- Parasite gRPC server with its own port, identity, and mDNS advertisement.
+- Service discovery with `role=parasite` and `host_uuid` TXT fields.
+- **Tier 3 cross-process debugger and SystemService tests pass**.
+- **End-to-end smoke tests pass** (BASIC program, disc load, dual debug session).
 
 ### Phase 5: Save state
 
@@ -784,40 +1159,478 @@ address decoding differs.
 
 ## Testing Strategy
 
-### Unit tests (Phase 1)
+Testing is organised into three tiers. The first two tiers use Catch2 C++ tests following
+the same patterns as the rest of the test suite (component instantiation, `TEST_CASE` with
+tags, `SECTION` nesting). The third tier adds process-level integration tests.
 
-- Register read/write for all 8 host-side and 8 parasite-side addresses.
-- R1 FIFO: fill to 24 bytes, verify full flag, drain, verify empty flag.
-- R3 one-byte and two-byte modes.
-- Control flag set/clear via S bit.
-- Interrupt conditions: HIRQ, PIRQ, PNMI with all enable combinations.
-- NMI edge detection.
-- Reset state including R3 dummy byte.
+### Tier 1: In-process Tube ULA tests (no shared memory, no processors)
 
-### Protocol tests (Phase 2)
+These tests instantiate `TubeShared` on the stack or heap within a single test process.
+Host-side and parasite-side access is simulated by calling the appropriate read/write
+functions directly -- there are no emulated processors, no shared memory mapping, and no
+gRPC. This makes the tests fast, deterministic, and easy to debug.
 
-- Frame encoding/decoding round-trip.
-- WRITE_BYTE delivery across socket.
-- WRITE_BATCH delivery.
-- STATUS_UPDATE synchronisation.
-- HELLO/HELLO_ACK handshake.
-- RESET/RESET_ACK sequence.
-- Connection drop handling.
+**File**: `test_tube_ula.cpp`
+**Tags**: `[tube]`, with sub-tags `[fifo]`, `[flags]`, `[interrupt]`, `[reset]`, `[nmi]`
 
-### Integration tests (Phase 3)
+#### Register access and FIFO semantics
 
-- Parasite boots and prints startup banner.
-- Host detects Tube via OSBYTE &EA.
-- Language ROM loads across Tube.
-- BASIC starts and executes simple program.
-- OSWRCH output appears on host display.
-- File loading from disc to parasite memory.
-- Escape handling across Tube.
+```
+TEST_CASE("R1 host-to-parasite latch", "[tube][fifo][r1]")
+  SECTION("Initial state: not-full on host side, empty on parasite side")
+  SECTION("Host write followed by parasite read returns same byte")
+  SECTION("Host write sets parasite data-available flag")
+  SECTION("Parasite read clears data-available flag")
+  SECTION("Second host write before parasite read overwrites (1-byte latch)")
 
-### Regression tests
+TEST_CASE("R1 parasite-to-host 24-byte FIFO", "[tube][fifo][r1]")
+  SECTION("Initial state: empty on host side, not-full on parasite side")
+  SECTION("Single byte round-trip: parasite write, host read")
+  SECTION("FIFO ordering: 3 bytes written are read in same order")
+  SECTION("Fill to 24 bytes: not-full flag clears on 24th write")
+  SECTION("Write when full: byte is dropped, FIFO contents unchanged")
+  SECTION("Read when empty: returns last byte read, flags unchanged")
+  SECTION("Drain: each host read advances FIFO, empty flag sets on last")
+  SECTION("Fill and drain cycle: repeatable without state leakage")
+  SECTION("Partial fill/drain interleaving")
 
-- BeebEm, B-Em test cases for known Tube-sensitive software.
-- Tube timing-sensitive demos (if any exist).
+TEST_CASE("R2 single-byte latches", "[tube][fifo][r2]")
+  SECTION("Host-to-parasite: write then read")
+  SECTION("Parasite-to-host: write then read")
+  SECTION("Overwrite before read replaces value")
+  SECTION("Read without prior write returns undefined/zero")
+
+TEST_CASE("R3 one-byte mode", "[tube][fifo][r3]")
+  SECTION("Default after reset is one-byte mode (V flag clear)")
+  SECTION("Host-to-parasite single byte")
+  SECTION("Parasite-to-host single byte")
+
+TEST_CASE("R3 two-byte mode", "[tube][fifo][r3]")
+  SECTION("Set V flag to enable two-byte mode")
+  SECTION("Host-to-parasite: two bytes required before data-available set")
+  SECTION("First byte alone does not set data-available")
+  SECTION("Second byte sets data-available; parasite reads both in order")
+  SECTION("Parasite-to-host: symmetric two-byte behaviour")
+  SECTION("Switch from two-byte to one-byte mode mid-transfer")
+
+TEST_CASE("R4 single-byte latches", "[tube][fifo][r4]")
+  SECTION("Host-to-parasite: write then read")
+  SECTION("Parasite-to-host: write then read")
+```
+
+#### Control flags
+
+```
+TEST_CASE("Control register flag manipulation", "[tube][flags]")
+  SECTION("S=0 clears bits specified by D0-D6")
+  SECTION("S=1 sets bits specified by D0-D6")
+  SECTION("Individual flag set/clear: Q, I, J, M, V, P, T")
+  SECTION("Multiple flags set in one write")
+  SECTION("Multiple flags cleared in one write")
+  SECTION("Setting and clearing in sequence")
+
+TEST_CASE("V flag controls R3 FIFO mode", "[tube][flags][r3]")
+  SECTION("V=0: R3 operates as 1-byte latch")
+  SECTION("V=1: R3 operates as 2-byte FIFO")
+  SECTION("Changing V resets R3 FIFO state")
+
+TEST_CASE("T flag controls HIRQ from R4", "[tube][flags][interrupt]")
+  SECTION("T=1 enables HIRQ when R4 parasite-to-host has data")
+  SECTION("T=0 disables HIRQ from R4 regardless of R4 state")
+
+TEST_CASE("P flag triggers parasite reset", "[tube][flags][reset]")
+  SECTION("Setting P clears all FIFOs")
+  SECTION("Setting P places dummy byte in R3 parasite-to-host")
+  SECTION("Setting P resets all status flags to initial state")
+```
+
+#### Interrupt generation
+
+```
+TEST_CASE("HIRQ generation", "[tube][interrupt][hirq]")
+  SECTION("No HIRQ when no flags enabled and no data pending")
+  SECTION("HIRQ asserted when T=1 and R4 parasite-to-host has data")
+  SECTION("HIRQ deasserted when R4 parasite-to-host data read by host")
+  SECTION("HIRQ deasserted when T cleared")
+  SECTION("HIRQ with Q flag (R1 parasite-to-host not empty)")
+  SECTION("HIRQ not affected by R2 or R3 state")
+  SECTION("Multiple simultaneous HIRQ sources")
+
+TEST_CASE("PIRQ generation", "[tube][interrupt][pirq]")
+  SECTION("No PIRQ when no flags enabled")
+  SECTION("PIRQ when I=1 and R1 host-to-parasite has data")
+  SECTION("PIRQ when J=1 and R4 host-to-parasite has data")
+  SECTION("PIRQ deasserted when R1 data read by parasite")
+  SECTION("PIRQ deasserted when R4 data read by parasite")
+  SECTION("Both I and J active simultaneously")
+
+TEST_CASE("PNMI generation", "[tube][interrupt][pnmi]")
+  SECTION("No PNMI when M=0")
+  SECTION("PNMI when M=1 and R3 host-to-parasite has data")
+  SECTION("PNMI is edge-sensitive: only triggers on 0-to-1 transition")
+  SECTION("No re-trigger if PNMI already high when new data arrives")
+  SECTION("PNMI clears when R3 data read by parasite")
+  SECTION("New PNMI edge after clear and fresh data arrival")
+  SECTION("V flag interaction: in two-byte mode, PNMI after second byte only")
+```
+
+#### Reset behaviour
+
+```
+TEST_CASE("Tube reset state", "[tube][reset]")
+  SECTION("All FIFOs empty after reset")
+  SECTION("All control flags clear after reset")
+  SECTION("R3 parasite-to-host contains one dummy byte after reset")
+  SECTION("Dummy byte prevents spurious PNMI on first R3 host-to-parasite write")
+  SECTION("No HIRQ or PIRQ asserted after reset")
+  SECTION("Reset during active transfer clears mid-transfer state")
+```
+
+#### Status register read format
+
+```
+TEST_CASE("Status register bit layout", "[tube][status]")
+  SECTION("R1STAT bit 7: parasite-to-host FIFO not empty (host perspective)")
+  SECTION("R1STAT bit 6: host-to-parasite latch not full (host perspective)")
+  SECTION("Parasite R1STAT bit 7: host-to-parasite data available")
+  SECTION("Parasite R1STAT bit 6: parasite-to-host FIFO not full")
+  SECTION("Status bits update immediately after data write")
+  SECTION("Status bits update immediately after data read")
+  SECTION("All four register status bytes report correct empty/full state")
+```
+
+#### Stress and boundary conditions
+
+```
+TEST_CASE("R1 FIFO boundary conditions", "[tube][fifo][boundary]")
+  SECTION("Rapid alternating read/write at FIFO depth boundary")
+  SECTION("Fill to exactly 23, verify not-full, add 24th, verify full")
+  SECTION("Read one from full FIFO, verify not-full, write one, verify full again")
+  SECTION("Interleaved host reads and parasite writes at varying rates")
+
+TEST_CASE("Register access ordering", "[tube][ordering]")
+  SECTION("Status read followed by data read is atomic (no race)")
+  SECTION("Status shows data-available, data read returns that data")
+  SECTION("Write to data register, immediate status read reflects new state")
+```
+
+### Tier 2: Shared memory tests (cross-process, no emulated processors)
+
+These tests verify that the shared memory transport works correctly. `TubeShared` is
+placed in a real shared memory region and accessed from two threads (or optionally two
+processes via a test helper). No emulated CPUs run -- the tests call read/write functions
+directly, as in Tier 1, but through the shared memory mapping.
+
+**File**: `test_tube_shared_memory.cpp`
+**Tags**: `[tube][shm]`
+
+#### Shared memory lifecycle
+
+```
+TEST_CASE("Shared memory creation and mapping", "[tube][shm][lifecycle]")
+  SECTION("Create shared memory region with expected size")
+  SECTION("Map into second mapping, both see same data")
+  SECTION("Header magic number and version are correct")
+  SECTION("Alignment: H-to-P and P-to-H regions on separate cache lines")
+  SECTION("Unmap and destroy: no leaks, region no longer accessible")
+
+TEST_CASE("Shared memory naming and cleanup", "[tube][shm][lifecycle]")
+  SECTION("Name includes host machine UUID for uniqueness")
+  SECTION("Stale region from crashed process can be unlinked and recreated")
+  SECTION("Two simultaneous Tube connections use distinct region names")
+```
+
+#### Cross-thread data visibility
+
+These use `std::thread` to verify that atomic operations on the shared region provide
+the expected ordering guarantees.
+
+```
+TEST_CASE("Cross-thread register writes are visible", "[tube][shm][atomics]")
+  SECTION("Host writes R1 data, parasite thread reads R1 data")
+  SECTION("Parasite writes R1 data, host thread reads R1 data")
+  SECTION("Flag updates visible across threads after data write")
+  SECTION("R1 24-byte FIFO: producer thread fills, consumer thread drains")
+
+TEST_CASE("Single-writer principle holds", "[tube][shm][atomics]")
+  SECTION("Only host writes to H-to-P fields; parasite reads are consistent")
+  SECTION("Only parasite writes to P-to-H fields; host reads are consistent")
+
+TEST_CASE("Cross-thread R3 two-byte mode", "[tube][shm][atomics]")
+  SECTION("Two bytes written by host thread, both read by parasite thread")
+  SECTION("PNMI flag only set after second byte visible to parasite thread")
+```
+
+#### Throughput stress tests
+
+```
+TEST_CASE("Sustained throughput via R1 FIFO", "[tube][shm][stress]")
+  SECTION("10000 bytes through R1: producer and consumer threads, all received in order")
+  SECTION("No lost or duplicated bytes under contention")
+
+TEST_CASE("Sustained throughput via R3 two-byte mode", "[tube][shm][stress]")
+  SECTION("Block transfer: 256 two-byte pairs, all received correctly")
+```
+
+#### Lifecycle mailbox
+
+```
+TEST_CASE("Lifecycle mailbox commands", "[tube][shm][lifecycle]")
+  SECTION("RESET command: host sets, parasite acknowledges")
+  SECTION("FREEZE command: host sets, parasite acknowledges with state snapshot")
+  SECTION("SHUTDOWN command: host sets, parasite acknowledges and prepares to exit")
+  SECTION("Commands are sequenced: no command lost under rapid succession")
+  SECTION("Parasite detects command within bounded poll interval")
+```
+
+#### Platform-specific tests
+
+```
+TEST_CASE("Shared memory portability", "[tube][shm][platform]")
+  SECTION("Region survives across fork (POSIX) or process creation (Windows)")
+  SECTION("std::atomic_ref operations on mapped memory have correct semantics")
+```
+
+### Tier 3: Integration tests (full system with processors, shared memory, gRPC)
+
+These tests run the complete system: a host machine (with Tube enabled), shared memory,
+the gRPC TubeService handshake, and a parasite process (or an in-process parasite for
+determinism). They verify end-to-end behaviour including the Tube software protocols.
+
+Two sub-tiers exist: **in-process integration** (parasite runs on a separate thread
+within the test process, for determinism and debuggability) and **cross-process
+integration** (parasite runs as a real `beebium-tube-6502` subprocess, as in production).
+
+#### In-process integration tests
+
+**File**: `test_tube_integration.cpp`
+**Tags**: `[tube][integration]`
+
+These instantiate both a host `Machine<ModelBHardware>` and a `ParasiteMachine` in the
+same process, connected via `TubeShared` on the heap (no shared memory mapping needed).
+A test driver alternates stepping both machines, simulating asynchronous execution.
+
+```
+TEST_CASE("Tube presence detection", "[tube][integration]")
+  SECTION("Host MOS OSBYTE &EA reports Tube present")
+  SECTION("Tube registers at &FEE0-&FEE7 respond to host reads/writes")
+
+TEST_CASE("Parasite boot sequence", "[tube][integration][boot]")
+  SECTION("Parasite executes Boot ROM reset vector")
+  SECTION("Boot ROM sends startup banner via R1 (OSWRCH)")
+  SECTION("Host receives banner characters from R1")
+  SECTION("First R1STAT read pages out Boot ROM, RAM visible underneath")
+  SECTION("Parasite sends zero byte to signal ready for language")
+
+TEST_CASE("Language transfer", "[tube][integration][boot]")
+  SECTION("Host sends language ROM bytes via R3 block transfer")
+  SECTION("PNMI fires for each byte/pair, parasite NMI handler stores to RAM")
+  SECTION("Transfer completes: parasite has language ROM in RAM")
+  SECTION("Parasite executes language entry point")
+
+TEST_CASE("OSWRCH across Tube", "[tube][integration][protocol]")
+  SECTION("Parasite writes character to R1 data")
+  SECTION("Host-side Tube code polls R1STAT, reads character")
+  SECTION("Character appears in host screen memory")
+  SECTION("Multiple characters form readable text")
+
+TEST_CASE("OSRDCH across Tube", "[tube][integration][protocol]")
+  SECTION("Parasite requests character via R2")
+  SECTION("Host reads keyboard, sends character back via R2")
+  SECTION("Parasite receives character")
+
+TEST_CASE("OSCLI across Tube", "[tube][integration][protocol]")
+  SECTION("Parasite sends command string via R2")
+  SECTION("Host executes command (e.g., *CAT)")
+  SECTION("Result communicated back to parasite")
+
+TEST_CASE("OSBYTE/OSWORD across Tube", "[tube][integration][protocol]")
+  SECTION("OSBYTE call: parasite sends via R2, host executes, result returned")
+  SECTION("OSWORD call: parameter block transferred via R3")
+
+TEST_CASE("R3 block transfer (NMI-driven)", "[tube][integration][transfer]")
+  SECTION("Type 0: 256-byte block transfer parasite-to-host")
+  SECTION("Type 1: 256-byte block transfer host-to-parasite")
+  SECTION("Each byte triggers PNMI on parasite for NMI handler")
+  SECTION("Transfer completes with correct data in destination memory")
+
+TEST_CASE("R4 single-byte transfer", "[tube][integration][transfer]")
+  SECTION("Single byte host-to-parasite via R4 with PIRQ")
+  SECTION("Single byte parasite-to-host via R4 with HIRQ")
+
+TEST_CASE("Tube reset during operation", "[tube][integration][reset]")
+  SECTION("Host asserts P flag: parasite re-enters boot sequence")
+  SECTION("Mid-transfer reset: no stale data in FIFOs after reset")
+  SECTION("Parasite re-boots and re-requests language")
+
+TEST_CASE("Escape handling across Tube", "[tube][integration][protocol]")
+  SECTION("Host sets Escape condition, parasite receives via R1/R4")
+  SECTION("Parasite acknowledges Escape")
+
+TEST_CASE("Interrupt behaviour under load", "[tube][integration][interrupt]")
+  SECTION("HIRQ fires promptly when parasite writes to R4 with T=1")
+  SECTION("PIRQ fires when host writes to R1 with I=1")
+  SECTION("PNMI edge detection correct during rapid R3 transfers")
+  SECTION("No spurious interrupts during idle periods")
+```
+
+#### Cross-process integration tests
+
+**File**: `test_tube_cross_process.cpp`
+**Tags**: `[tube][integration][process]`
+
+These launch `beebium-tube-6502` as a real subprocess via the gRPC `TubeService.Connect`
+handshake. They are slower and less deterministic than the in-process tests, but verify
+the production code path.
+
+```
+TEST_CASE("TubeService.Connect handshake", "[tube][integration][process][grpc]")
+  SECTION("Host gRPC server accepts Connect request from parasite client")
+  SECTION("Response contains shared memory region name")
+  SECTION("Parasite maps shared memory successfully")
+  SECTION("Both sides can exchange data through mapped TubeShared")
+
+TEST_CASE("Parasite process launch and boot", "[tube][integration][process]")
+  SECTION("beebium-tube-6502 starts and connects to host gRPC server")
+  SECTION("Parasite boot banner appears in host OSWRCH output")
+  SECTION("Parasite's own gRPC server starts and is reachable")
+  SECTION("Parasite advertises itself via mDNS with role=parasite")
+
+TEST_CASE("Parasite debugger via gRPC", "[tube][integration][process][grpc]")
+  SECTION("Connect to parasite's Cpu6502Debugger service")
+  SECTION("GetState reports parasite is running")
+  SECTION("Stop pauses parasite execution")
+  SECTION("ReadMemory returns parasite RAM contents")
+  SECTION("Get6502State returns parasite CPU registers")
+  SECTION("StepInstruction advances parasite by one instruction")
+  SECTION("AddBreakpoint + Run: parasite stops at breakpoint address")
+  SECTION("Same debugger client code works against host and parasite")
+
+TEST_CASE("Parasite SystemService via gRPC", "[tube][integration][process][grpc]")
+  SECTION("GetSystemInfo returns parasite identity (model=6502Tube)")
+  SECTION("SetMachineName updates parasite name")
+  SECTION("WatchServerStatus stream connects and receives READY")
+
+TEST_CASE("Host-initiated parasite shutdown", "[tube][integration][process]")
+  SECTION("Host sends SHUTDOWN via lifecycle mailbox")
+  SECTION("Parasite acknowledges and terminates cleanly")
+  SECTION("Shared memory region is cleaned up")
+  SECTION("Parasite's gRPC server stops")
+  SECTION("Parasite's mDNS advertisement is withdrawn")
+
+TEST_CASE("Parasite crash recovery", "[tube][integration][process]")
+  SECTION("Parasite process killed: host detects stale shared memory")
+  SECTION("Host cleans up shared memory region")
+  SECTION("Host can accept a new TubeService.Connect for a fresh parasite")
+
+TEST_CASE("Multiple simultaneous parasites", "[tube][integration][process]")
+  SECTION("Two TubeService.Connect calls get distinct shared memory regions")
+  SECTION("Each parasite boots independently")
+  SECTION("Host manages both Tube register sets correctly")
+```
+
+#### End-to-end smoke tests
+
+These are high-level scenario tests that verify real-world use cases.
+
+```
+TEST_CASE("Run BASIC program on second processor", "[tube][integration][e2e]")
+  SECTION("Boot host + parasite, BASIC starts on parasite")
+  SECTION("Type and RUN a simple program (e.g., PRINT 2+2)")
+  SECTION("Output appears on host display")
+
+TEST_CASE("Load and run program from disc on second processor", "[tube][integration][e2e]")
+  SECTION("Mount disc image containing a Tube-compatible program")
+  SECTION("*RUN transfers program to parasite via Tube")
+  SECTION("Program executes on parasite CPU")
+
+TEST_CASE("Debug session across host and parasite", "[tube][integration][e2e]")
+  SECTION("Connect debugger to host, set breakpoint in Tube polling loop")
+  SECTION("Connect debugger to parasite, set breakpoint in user code")
+  SECTION("Both breakpoints fire independently")
+  SECTION("Inspect memory on both sides simultaneously")
+```
+
+### Test helpers
+
+**File**: `test_tube_helpers.hpp`
+**Tags**: N/A (header only)
+
+Shared utilities for Tube tests across all three tiers:
+
+```cpp
+// Create a TubeShared on the heap with reset state applied.
+// Suitable for Tier 1 and in-process Tier 3 tests.
+std::unique_ptr<TubeShared> make_tube();
+
+// Host-side and parasite-side register access wrappers.
+// These mirror what TubeSocket and ParasiteTubeDevice do internally,
+// but are free functions for test convenience.
+uint8_t host_read(TubeShared& tube, uint8_t reg);
+void host_write(TubeShared& tube, uint8_t reg, uint8_t value);
+uint8_t parasite_read(TubeShared& tube, uint8_t reg);
+void parasite_write(TubeShared& tube, uint8_t reg, uint8_t value);
+
+// Interrupt state queries.
+bool hirq_asserted(const TubeShared& tube);
+bool pirq_asserted(const TubeShared& tube);
+bool pnmi_asserted(const TubeShared& tube);
+
+// Convenience: write a string byte-by-byte through R1 (parasite-to-host).
+void send_string_via_r1(TubeShared& tube, std::string_view s);
+
+// Convenience: read bytes from R1 (host side) until empty, return as string.
+std::string drain_r1_to_host(TubeShared& tube);
+
+// For Tier 3 in-process tests: step both machines in alternation.
+// Runs host_steps cycles on the host, then parasite_steps on the parasite,
+// repeated for the given number of rounds.
+template <typename HostMachine, typename ParasiteMachine>
+void interleave_step(HostMachine& host, ParasiteMachine& parasite,
+                     uint64_t host_steps, uint64_t parasite_steps,
+                     uint64_t rounds);
+```
+
+### Test build targets
+
+```cmake
+# Tier 1: Tube ULA logic (no shared memory, no machine)
+add_executable(test_tube_ula test_tube_ula.cpp)
+target_link_libraries(test_tube_ula PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_ula)
+
+# Tier 2: Shared memory transport
+add_executable(test_tube_shared_memory test_tube_shared_memory.cpp)
+target_link_libraries(test_tube_shared_memory PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared_memory)
+
+# Tier 3 (in-process): Full integration without subprocess
+add_executable(test_tube_integration test_tube_integration.cpp)
+target_link_libraries(test_tube_integration PRIVATE
+    beebium_core beebium_service Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_integration)
+
+# Tier 3 (cross-process): Real subprocess + gRPC
+add_executable(test_tube_cross_process test_tube_cross_process.cpp)
+target_link_libraries(test_tube_cross_process PRIVATE
+    beebium_core beebium_service Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_cross_process)
+```
+
+### Which tests run when
+
+| Tier | Speed    | Requires ROMs | Requires shared memory | Requires subprocess | When to run          |
+|------|----------|---------------|------------------------|---------------------|----------------------|
+| 1    | Fast     | No            | No                     | No                  | Always (CI + local)  |
+| 2    | Fast     | No            | Yes (in-process)       | No                  | Always (CI + local)  |
+| 3 in | Moderate | Yes           | No (heap)              | No                  | When ROMs available  |
+| 3 cp | Slow     | Yes           | Yes (OS-level)         | Yes                 | Integration CI only  |
+
+Tier 1 and Tier 2 tests have no external dependencies and should run in every CI build.
+Tier 3 in-process tests require ROM images (they skip gracefully if unavailable, following
+the pattern established by `test_boot.cpp` and `test_mode7_helpers.hpp`). Tier 3
+cross-process tests additionally require that the `beebium-tube-6502` executable has been
+built, and are gated behind a CMake option or CTest label.
 
 ## References
 
