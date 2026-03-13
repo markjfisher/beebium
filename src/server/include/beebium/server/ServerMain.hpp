@@ -21,6 +21,8 @@
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/AunBackend.hpp"
 #include "beebium/econet/TestBackend.hpp"
+#include "beebium/tube/TubeConcepts.hpp"
+#include "beebium/tube/TubeSharedMemory.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/PresetPaths.hpp"
@@ -555,6 +557,10 @@ struct ServerConfig {
     std::array<std::string, 2> floppy_filepaths;
     std::string fdc_type;
 
+    // Tube coprocessor configuration
+    std::string tube_stem;                            // Empty = no Tube (e.g. "65C02-3MHz")
+    std::vector<std::string> tube_parasite_args;      // Forwarded --tube-* args (prefix stripped)
+
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
     std::optional<uint16_t> aun_port = beebium::AUN_DEFAULT_PORT;  // nullopt = no network
@@ -624,6 +630,11 @@ void print_usage(const char* program_name) {
                   << beebium::AUN_DEFAULT_PORT << ", none = no network)\n"
                   << "  --aun-map <net.stn:ip[:port]>\n"
                   << "                           Map Econet address to IP (repeatable)\n";
+    }
+
+    if constexpr (HasTubeSocket<Memory>) {
+        std::cerr << "  --tube <stem>            Attach Tube coprocessor (e.g. 65C02-3MHz)\n"
+                  << "                           Launches beebium-tube-<stem> as subprocess\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -892,6 +903,16 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--machine-name" && i + 1 < argc) {
             config.machine_name = argv[++i];
+        } else if (arg == "--tube" && i + 1 < argc) {
+            config.tube_stem = argv[++i];
+        } else if (arg.rfind("--tube-", 0) == 0 && arg.size() > 7) {
+            // Forward --tube-X as --X to the parasite process
+            std::string forwarded = "--" + std::string(arg.substr(7));
+            config.tube_parasite_args.push_back(forwarded);
+            // If the next arg doesn't start with --, treat it as the value
+            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--", 0) != 0) {
+                config.tube_parasite_args.push_back(argv[++i]);
+            }
         } else if (arg == "--allow-shutdown") {
             config.allow_shutdown = true;
         } else if (arg == "--advertise") {
@@ -1087,6 +1108,46 @@ std::optional<int> install_econet(MachineType& machine, const ServerConfig<Machi
         }
     } else if (config.station_number >= 1) {
         std::cerr << "Warning: --station option ignored (machine has no Econet socket)\n";
+    }
+
+    return std::nullopt;
+}
+
+// Install Tube coprocessor for machines with Tube sockets.
+// Creates shared memory and enables the TubeSocket. The parasite subprocess
+// is launched later (after the gRPC server starts) by launch_tube_parasite().
+// Returns exit code on error, nullopt on success.
+// On success, tube_shm is set to the shared memory manager (caller must keep alive).
+template<typename MachineType>
+std::optional<int> install_tube(
+    MachineType& machine,
+    const ServerConfig<MachineType>& config,
+    std::unique_ptr<beebium::TubeSharedMemory>& tube_shm)
+{
+    using Memory = typename MachineType::Memory;
+
+    if constexpr (HasTubeSocket<Memory>) {
+        if (!config.tube_stem.empty()) {
+            // Generate shared memory name from machine UUID
+            std::string shm_suffix = config.machine_uuid.empty()
+                ? "tube_" + generate_uuid_v4()
+                : "tube_" + config.machine_uuid;
+
+            try {
+                tube_shm = std::make_unique<beebium::TubeSharedMemory>(
+                    shm_suffix, beebium::TubeSharedMemoryRole::Creator);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: Failed to create Tube shared memory: " << e.what() << "\n";
+                return ExitCode::SOFTWARE;
+            }
+
+            machine.state().memory.tube_socket.enable(tube_shm->get());
+
+            std::cout << "Tube coprocessor: " << config.tube_stem
+                      << " (shared memory: " << tube_shm->name() << ")\n";
+        }
+    } else if (!config.tube_stem.empty()) {
+        std::cerr << "Warning: --tube option ignored (machine has no Tube socket)\n";
     }
 
     return std::nullopt;
@@ -1325,6 +1386,13 @@ public:
                 return *exit_code;
             }
 
+            // Install Tube coprocessor (Phase 1: create shared memory, enable socket)
+            // The parasite subprocess is launched after the gRPC server starts.
+            std::unique_ptr<beebium::TubeSharedMemory> tube_shm;
+            if (auto exit_code = install_tube(machine, config, tube_shm)) {
+                return *exit_code;
+            }
+
             // Load disc images
             load_disc_images(machine, config);
 
@@ -1394,10 +1462,18 @@ public:
             server.start(std::move(provenance), std::move(identity),
                         config.advertise, shutdown_policy_config, std::move(shutdown_callback));
 
+            // Wire Tube shared memory to TubeService (Phase 2: after server starts)
+            if (tube_shm) {
+                server.tube_service()->set_shared_memory(tube_shm.get());
+            }
+
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block
             std::cout << "Listening on port " << server.port() << std::endl;
             std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
+
+            // TODO: launch_tube_parasite() here (after server.start(), before emulation loop)
+            // The parasite needs the gRPC port to call TubeService.Connect.
 
             // Handle wait mode
             handle_wait_mode(machine, config.wait_mode);
@@ -1406,6 +1482,7 @@ public:
             run_emulation_loop(machine, server);
 
             std::cout << "\nShutting down...\n";
+            // TODO: send SHUTDOWN to parasite via lifecycle mailbox, wait for exit
             server.stop();
 
         } catch (const std::exception& e) {

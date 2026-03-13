@@ -587,6 +587,13 @@ is not found, the server reports an error and exits.
 as itself (using the build/install `bin/` layout where all Beebium executables are
 co-located), falling back to a PATH search.
 
+**Forwarding options to the parasite**: any host CLI option beginning with `--tube-` (note
+the trailing hyphen) is forwarded to the parasite process with the `tube-` prefix stripped.
+For example, `--tube-rom client.rom` causes the parasite to receive `--rom client.rom`.
+This allows the host to pass through parasite-specific options without needing to enumerate
+them. The host does not validate forwarded options -- that is the parasite's responsibility.
+The `--tube` flag itself (the coprocessor stem) is not forwarded.
+
 #### Socket pattern
 
 The `TubeSocket` follows the same pattern as `DiscControllerSocket` and `EconetSocket`:
