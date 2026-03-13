@@ -262,8 +262,9 @@ public:
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
 
-        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -277,8 +278,9 @@ public:
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC88, SlotType::Rom);
         sideways.configure_socket(AliasedBankedMemory::SOCKET_IC101, SlotType::Rom);
 
-        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Destructor - stops indicator consumer thread

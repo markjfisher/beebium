@@ -684,36 +684,35 @@ TEST_CASE("MemoryMap bus value tracking", "[memory_map][open_bus]") {
     }
 }
 
-TEST_CASE("MemoryMap Tube detection sequence simulation", "[memory_map][open_bus]") {
-    // This test simulates the MOS ROM's Tube detection sequence
+TEST_CASE("MemoryMap unmapped 2MHz read returns last bus value", "[memory_map][open_bus]") {
+    // Tests the MemoryMap's open bus handling for unmapped 2MHz addresses.
+    // When no device is mapped, the data bus retains its previous value
+    // (capacitance effect on fast bus cycles).
+    //
+    // Note: this is a back-to-back write/read without intervening bus
+    // activity. On a real 6502, instruction fetch cycles between the STA
+    // and LDA would overwrite last_bus_value_, so the read would NOT echo
+    // the written value. See test_tube_socket.cpp for a cycle-accurate
+    // simulation of the MOS 1.20 Tube detection sequence.
     Ram<256> ram;
 
     auto memory = MemoryMap{
         make_region<0x0000, 0x00FF>(ram)
     };
 
-    SECTION("Tube detection with accurate mode") {
-        // MOS writes 0x81 to Tube register, then reads it back
-        // With no Tube hardware, the fast bus should return the last written value
-
-        // STA $FEE0 - Write 0x81 to Tube address
+    SECTION("accurate mode: unmapped 2MHz read echoes last bus value") {
         memory.write(0xFEE0, 0x81);
         REQUIRE(memory.last_bus_value() == 0x81);
 
-        // LDA $FEE0 - Read back from Tube address
         uint8_t value = memory.read(0xFEE0);
-
-        // Fast 2MHz unmapped should return last bus value
         REQUIRE(value == 0x81);
     }
 
-    SECTION("Tube detection with JsbeebCompat mode") {
+    SECTION("JsbeebCompat mode: unmapped read returns 0xFF") {
         memory.set_open_bus_mode(OpenBusMode::JsbeebCompat);
 
-        // STA $FEE0
         memory.write(0xFEE0, 0x81);
 
-        // LDA $FEE0 - In JsbeebCompat, always returns 0xFF
         uint8_t value = memory.read(0xFEE0);
         REQUIRE(value == 0xFF);
     }

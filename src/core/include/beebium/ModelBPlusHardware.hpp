@@ -374,8 +374,9 @@ public:
         disc_controller.attach_drive(1, &disc_drive_1);
         // Start the indicators consumer thread
         indicators.start();
-        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Constructor with custom peripherals (for testing or alternative configurations)
@@ -388,8 +389,9 @@ public:
         // Connect disc drives to disc controller
         disc_controller.attach_drive(0, &disc_drive_0);
         disc_controller.attach_drive(1, &disc_drive_1);
-        // Wire Econet ADLC region to memory map's last bus value for open bus emulation
+        // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Destructor - stops indicator consumer thread

@@ -25,7 +25,7 @@ namespace beebium {
 // the same empty/populated socket pattern as DiscControllerSocket and EconetSocket.
 //
 // When empty (no second processor attached):
-//   - Reads return 0xFF (active pull-ups on the Tube data bus)
+//   - Reads return last bus value (2MHz open bus -- capacitance)
 //   - Writes are ignored
 //   - irq_pending() returns false (no HIRQ source)
 //   - MOS OSBYTE &EA correctly detects no Tube present
@@ -57,11 +57,18 @@ public:
 
     bool enabled() const { return enabled_; }
 
+    // Set pointer to the MemoryMap's last_bus_value for open bus emulation.
+    // The Tube address range (&FEE0-&FEFF) is on the 2MHz bus, so when empty
+    // the data bus retains its previous value (capacitance).
+    void set_last_bus_value_ptr(const uint8_t* ptr) {
+        last_bus_value_ptr_ = ptr;
+    }
+
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
         if (!enabled_)
-            return 0xFF;
+            return last_bus_value_ptr_ ? *last_bus_value_ptr_ : 0xFF;
         return tube_ula_.host_read(static_cast<uint8_t>(offset));
     }
 
@@ -99,6 +106,7 @@ public:
 private:
     TubeUla tube_ula_;
     bool enabled_ = false;
+    const uint8_t* last_bus_value_ptr_ = nullptr;
 };
 
 }  // namespace beebium

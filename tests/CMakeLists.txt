@@ -402,6 +402,11 @@ add_executable(test_tube_ula test_tube_ula.cpp)
 target_link_libraries(test_tube_ula PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_ula)
 
+# Tube socket tests
+add_executable(test_tube_socket test_tube_socket.cpp)
+target_link_libraries(test_tube_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_socket)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests

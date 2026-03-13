@@ -215,6 +215,7 @@ public:
         system_via_peripheral.set_sound_chip(&sound_chip);
         indicators.start();
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     // Constructor with custom peripherals (for testing)
@@ -225,6 +226,7 @@ public:
         , irq_aggregator_(make_irq_aggregator())
     {
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
     ~ModelBRomRamBoardHardware() {
