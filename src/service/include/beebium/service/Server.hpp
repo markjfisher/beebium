@@ -22,6 +22,7 @@
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
 #include "beebium/service/EconetService.hpp"
+#include "beebium/service/TubeService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/AunBackend.hpp"
@@ -85,6 +86,9 @@ public:
     /// @param grace_ms Grace period in milliseconds for clients to disconnect
     void notify_shutdown(uint32_t grace_ms = 5000);
 
+    /// Access the TubeService (for host startup to set shared memory pointer).
+    TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
+
 private:
     struct Impl {
         MachineType& machine;
@@ -107,6 +111,7 @@ private:
         std::unique_ptr<AudioServiceImpl<MachineType>> audio_service;
         std::unique_ptr<SidewaysServiceImpl<MachineType>> sideways_service;
         std::unique_ptr<EconetServiceImpl<MachineType>> econet_service;
+        std::unique_ptr<TubeServiceImpl<MachineType>> tube_service;
         std::unique_ptr<grpc::Server> grpc_server;
         std::unique_ptr<discovery::Advertiser> advertiser;
 
@@ -206,6 +211,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->econet_service = std::make_unique<EconetServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->tube_service = std::make_unique<TubeServiceImpl<MachineType>>(
+        impl_->machine);
+
     // Build server address
     std::ostringstream addr_stream;
     addr_stream << impl_->address << ":" << impl_->port;
@@ -228,6 +236,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->audio_service.get());
     builder.RegisterService(impl_->sideways_service.get());
     builder.RegisterService(impl_->econet_service.get());
+    builder.RegisterService(impl_->tube_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
 
@@ -312,6 +321,7 @@ void Server<MachineType>::stop() {
     impl_->audio_service.reset();
     impl_->sideways_service.reset();
     impl_->econet_service.reset();
+    impl_->tube_service.reset();
 }
 
 template<typename MachineType>
