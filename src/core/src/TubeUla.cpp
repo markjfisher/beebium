@@ -1,0 +1,452 @@
+// Copyright © 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+#include <beebium/tube/TubeUla.hpp>
+
+namespace beebium {
+
+TubeUla::TubeUla()
+{
+    reset();
+}
+
+void TubeUla::reset()
+{
+    control_flags_ = 0;
+    soft_reset();
+}
+
+void TubeUla::soft_reset()
+{
+    // R1: clear latch and FIFO.
+    r1_.h2p_data = 0;
+    r1_.h2p_available = false;
+    r1_.h2p_full = false;
+    r1_.p2h_fifo.fill(0);
+    r1_.p2h_head = 0;
+    r1_.p2h_tail = 0;
+    r1_.p2h_count = 0;
+
+    // R2: clear latches.
+    r2_.h2p_data = 0;
+    r2_.h2p_available = false;
+    r2_.h2p_full = false;
+    r2_.p2h_data = 0;
+    r2_.p2h_available = false;
+    r2_.p2h_full = false;
+
+    // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI.
+    r3_.h2p_data.fill(0);
+    r3_.h2p_count = 0;
+    r3_.p2h_data.fill(0);
+    r3_.p2h_count = 1;  // dummy byte
+
+    // R4: clear latches.
+    r4_.h2p_data = 0;
+    r4_.h2p_available = false;
+    r4_.h2p_full = false;
+    r4_.p2h_data = 0;
+    r4_.p2h_available = false;
+    r4_.p2h_full = false;
+
+    // Interrupt state.
+    hirq_ = false;
+    pirq_ = false;
+    pnmi_level_ = false;
+    prev_pnmi_ = false;
+    pnmi_edge_ = false;
+
+    update_interrupts();
+}
+
+// ---------------------------------------------------------------------------
+// Host-side register access
+// ---------------------------------------------------------------------------
+
+uint8_t TubeUla::host_read(uint8_t offset)
+{
+    uint8_t result = 0;
+
+    switch (offset & 7) {
+    case 0: {
+        // R1 status + control flags.
+        // Bit 7: R1 P-to-H data available (host can read).
+        // Bit 6: R1 H-to-P not full (host can write).
+        // Bits 5-0: control flags (P, V, M, J, I, Q).
+        result = control_flags_ & 0x3F;
+        if (r1_.p2h_count > 0)
+            result |= DATA_AVAILABLE;
+        if (!r1_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 1: {
+        // R1 data: read from P-to-H 24-byte FIFO.
+        if (r1_.p2h_count > 0) {
+            result = r1_.p2h_fifo[r1_.p2h_head];
+            r1_.p2h_head = (r1_.p2h_head + 1) % 24;
+            r1_.p2h_count--;
+        }
+        break;
+    }
+
+    case 2: {
+        // R2 status.
+        // Bit 7: R2 P-to-H data available.
+        // Bit 6: R2 H-to-P not full.
+        if (r2_.p2h_available)
+            result |= DATA_AVAILABLE;
+        if (!r2_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 3: {
+        // R2 data: read from P-to-H latch.
+        result = r2_.p2h_data;
+        if (r2_.p2h_available) {
+            r2_.p2h_available = false;
+            r2_.p2h_full = false;
+        }
+        break;
+    }
+
+    case 4: {
+        // R3 status (host perspective).
+        // Bit 7: R3 P-to-H data available (count >= threshold).
+        // Bit 6: R3 H-to-P space available (count == 0; host must wait for
+        //         parasite to fully consume the previous transfer).
+        uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+        if (r3_.p2h_count >= threshold)
+            result |= DATA_AVAILABLE;
+        if (r3_.h2p_count == 0)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 5: {
+        // R3 data: read from P-to-H FIFO.
+        if (r3_.p2h_count > 0) {
+            result = r3_.p2h_data[0];
+            r3_.p2h_data[0] = r3_.p2h_data[1];
+            r3_.p2h_data[1] = 0;
+            r3_.p2h_count--;
+        }
+        break;
+    }
+
+    case 6: {
+        // R4 status.
+        // Bit 7: R4 P-to-H data available.
+        // Bit 6: R4 H-to-P not full.
+        if (r4_.p2h_available)
+            result |= DATA_AVAILABLE;
+        if (!r4_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 7: {
+        // R4 data: read from P-to-H latch.
+        result = r4_.p2h_data;
+        if (r4_.p2h_available) {
+            r4_.p2h_available = false;
+            r4_.p2h_full = false;
+        }
+        break;
+    }
+    }
+
+    update_interrupts();
+    return result;
+}
+
+void TubeUla::host_write(uint8_t offset, uint8_t value)
+{
+    switch (offset & 7) {
+    case 0: {
+        // Control flag register.
+        if (value & FLAG_S) {
+            // Set mode: OR specified bits into control flags.
+            // T flag (bit 6) triggers soft reset every time it is written.
+            // T is not stored in the control flags register -- it is an action,
+            // not a persistent state. B-Em confirms: r1stat only stores bits 0-5.
+            if (value & FLAG_T)
+                soft_reset();
+            control_flags_ |= (value & 0x3F);
+        } else {
+            // Clear mode: AND out specified bits.
+            control_flags_ &= ~(value & 0x3F);
+        }
+        break;
+    }
+
+    case 1: {
+        // R1 data: write to H-to-P latch.
+        r1_.h2p_data = value;
+        r1_.h2p_available = true;
+        r1_.h2p_full = true;
+        break;
+    }
+
+    case 2:
+        // R2 status: no writable effect from host.
+        break;
+
+    case 3: {
+        // R2 data: write to H-to-P latch.
+        r2_.h2p_data = value;
+        r2_.h2p_available = true;
+        r2_.h2p_full = true;
+        break;
+    }
+
+    case 4:
+        // R3 status: no writable effect from host.
+        break;
+
+    case 5: {
+        // R3 data: write to H-to-P FIFO.
+        if (r3_.h2p_count < 2) {
+            r3_.h2p_data[r3_.h2p_count] = value;
+            r3_.h2p_count++;
+        }
+        break;
+    }
+
+    case 6:
+        // R4 status: no writable effect from host.
+        break;
+
+    case 7: {
+        // R4 data: write to H-to-P latch.
+        r4_.h2p_data = value;
+        r4_.h2p_available = true;
+        r4_.h2p_full = true;
+        break;
+    }
+    }
+
+    update_interrupts();
+}
+
+// ---------------------------------------------------------------------------
+// Parasite-side register access
+// ---------------------------------------------------------------------------
+
+uint8_t TubeUla::parasite_read(uint8_t offset)
+{
+    uint8_t result = 0;
+
+    switch (offset & 7) {
+    case 0: {
+        // R1 status from parasite perspective.
+        // Bit 7: R1 H-to-P data available (parasite can read).
+        // Bit 6: R1 P-to-H FIFO not full (parasite can write).
+        // Bits 5-0: control flags.
+        result = control_flags_ & 0x3F;
+        if (r1_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (r1_.p2h_count < 24)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 1: {
+        // R1 data: read from H-to-P latch.
+        result = r1_.h2p_data;
+        if (r1_.h2p_available) {
+            r1_.h2p_available = false;
+            r1_.h2p_full = false;
+        }
+        break;
+    }
+
+    case 2: {
+        // R2 status from parasite perspective.
+        // Bit 7: R2 H-to-P data available.
+        // Bit 6: R2 P-to-H not full.
+        if (r2_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (!r2_.p2h_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 3: {
+        // R2 data: read from H-to-P latch.
+        result = r2_.h2p_data;
+        if (r2_.h2p_available) {
+            r2_.h2p_available = false;
+            r2_.h2p_full = false;
+        }
+        break;
+    }
+
+    case 4: {
+        // R3 status (parasite perspective).
+        // Bit 7: R3 H-to-P data available (count >= threshold).
+        // Bit 6: R3 P-to-H space available (count == 0; parasite must wait
+        //         for host to fully consume the previous transfer).
+        uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+        if (r3_.h2p_count >= threshold)
+            result |= DATA_AVAILABLE;
+        if (r3_.p2h_count == 0)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 5: {
+        // R3 data: read from H-to-P FIFO.
+        if (r3_.h2p_count > 0) {
+            result = r3_.h2p_data[0];
+            r3_.h2p_data[0] = r3_.h2p_data[1];
+            r3_.h2p_data[1] = 0;
+            r3_.h2p_count--;
+        }
+        break;
+    }
+
+    case 6: {
+        // R4 status from parasite perspective.
+        // Bit 7: R4 H-to-P data available.
+        // Bit 6: R4 P-to-H not full.
+        if (r4_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (!r4_.p2h_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+
+    case 7: {
+        // R4 data: read from H-to-P latch.
+        result = r4_.h2p_data;
+        if (r4_.h2p_available) {
+            r4_.h2p_available = false;
+            r4_.h2p_full = false;
+        }
+        break;
+    }
+    }
+
+    update_interrupts();
+    return result;
+}
+
+void TubeUla::parasite_write(uint8_t offset, uint8_t value)
+{
+    switch (offset & 7) {
+    case 0:
+        // Parasite cannot write to control register.
+        break;
+
+    case 1: {
+        // R1 data: write to P-to-H 24-byte FIFO.
+        if (r1_.p2h_count < 24) {
+            r1_.p2h_fifo[r1_.p2h_tail] = value;
+            r1_.p2h_tail = (r1_.p2h_tail + 1) % 24;
+            r1_.p2h_count++;
+        }
+        break;
+    }
+
+    case 2:
+        // R2 status: no writable effect from parasite.
+        break;
+
+    case 3: {
+        // R2 data: write to P-to-H latch.
+        r2_.p2h_data = value;
+        r2_.p2h_available = true;
+        r2_.p2h_full = true;
+        break;
+    }
+
+    case 4:
+        // R3 status: no writable effect from parasite.
+        break;
+
+    case 5: {
+        // R3 data: write to P-to-H FIFO.
+        if (r3_.p2h_count < 2) {
+            r3_.p2h_data[r3_.p2h_count] = value;
+            r3_.p2h_count++;
+        }
+        break;
+    }
+
+    case 6:
+        // R4 status: no writable effect from parasite.
+        break;
+
+    case 7: {
+        // R4 data: write to P-to-H latch.
+        r4_.p2h_data = value;
+        r4_.p2h_available = true;
+        r4_.p2h_full = true;
+        break;
+    }
+    }
+
+    update_interrupts();
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt computation
+// ---------------------------------------------------------------------------
+
+bool TubeUla::hirq() const
+{
+    return hirq_;
+}
+
+bool TubeUla::pirq() const
+{
+    return pirq_;
+}
+
+bool TubeUla::pnmi() const
+{
+    return pnmi_edge_;
+}
+
+void TubeUla::update_interrupts()
+{
+    // HIRQ: Q=1 AND R4 P-to-H has data available.
+    hirq_ = (control_flags_ & FLAG_Q) && r4_.p2h_available;
+
+    // PIRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data).
+    pirq_ = ((control_flags_ & FLAG_I) && r1_.h2p_available)
+          || ((control_flags_ & FLAG_J) && r4_.h2p_available);
+
+    // PNMI level computation.
+    bool new_pnmi = false;
+    if (control_flags_ & FLAG_M) {
+        uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+        // NMI when: H-to-P has enough data, OR P-to-H is empty (ready for write).
+        new_pnmi = (r3_.h2p_count >= threshold) || (r3_.p2h_count == 0);
+    }
+
+    // Edge detection: fire on 0-to-1 transition.
+    if (new_pnmi && !prev_pnmi_)
+        pnmi_edge_ = true;
+
+    // Clear edge when the level drops (cause removed).
+    if (!new_pnmi)
+        pnmi_edge_ = false;
+
+    prev_pnmi_ = new_pnmi;
+    pnmi_level_ = new_pnmi;
+}
+
+}  // namespace beebium

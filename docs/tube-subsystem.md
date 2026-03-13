@@ -9,9 +9,11 @@ independent clock domains and communicate exclusively through the Tube's registe
 
 Beebium's Tube implementation takes a fundamentally different approach from other emulators.
 Rather than lockstep single-threaded execution, each second processor runs as an **independent
-OS process** communicating with the host over a Unix domain socket. This mirrors the real
-hardware's fully asynchronous nature: two independent computers linked only by a narrow FIFO
-channel.
+OS process** communicating with the host via shared memory. This mirrors the real hardware's
+fully asynchronous nature: two independent computers linked only by a narrow FIFO channel.
+
+The Tube is configured at startup with `--tube <coprocessor-stem>` (e.g. `--tube 65C02-3MHz`),
+following the same optional-peripheral pattern as `--fdc` and `--station`.
 
 ### Design principles
 
@@ -19,10 +21,10 @@ channel.
    clock pacing, and gRPC debug server
 2. **Asynchronous fidelity** -- no global clock, no lockstep; each CPU runs at its own rate,
    just as the real hardware did
-3. **FIFO-authoritative model** -- the emulated Tube FIFO (not OS socket buffering) governs
-   backpressure and interrupt generation
-4. **Socket as transport only** -- the Unix domain socket carries framed messages; it does not
-   define timing or buffering semantics
+3. **Shared memory for latency** -- the Tube FIFO registers live in a shared memory region
+   accessed via lock-free atomics, giving sub-cycle latency at 2 MHz
+4. **FIFO-authoritative model** -- the emulated Tube FIFO governs backpressure and interrupt
+   generation; shared memory is the transport, not a buffering layer
 
 ## Hardware Reference
 
@@ -235,7 +237,7 @@ arguably more faithful to the original hardware's behaviour than lockstep emulat
 ### Process model
 
 ```
-beebium-model-b (host)              beebium-tube-6502 (parasite)
+beebium-model-b (host)              beebium-tube-65C02-3MHz (parasite)
 ┌────────────────────────┐          ┌────────────────────────┐
 │  6502 CPU (2 MHz)      │          │  65C02 CPU (3 MHz)     │
 │  System VIA, User VIA  │          │  64K RAM + Boot ROM    │
@@ -518,14 +520,17 @@ message TubeRestoreStateResponse {}
 
 ### Connection sequence
 
-1. Host starts with Tube support enabled. Creates shared memory segment
-   (`shm_open` / `CreateFileMapping`), maps it, initialises the `TubeShared` header.
-2. Host launches the parasite process, passing the host's gRPC address
-   (e.g. `--host=localhost:50051`).
-3. Parasite connects to the host's gRPC server and calls `TubeService.Connect`.
-4. Host returns the shared memory name (e.g. `/beebium-tube-<pid>`).
-5. Parasite opens and maps the shared memory.
-6. Both sides validate the header (magic, version).
+The host owns the entire lifecycle. It creates the shared memory, launches the parasite
+subprocess, and cleans up when done.
+
+1. Host creates shared memory segment during `install_tube()` (before `machine.reset()`).
+   The segment is named `/beebium-tube-<machine-uuid>` for uniqueness.
+2. Host starts gRPC server (with `TubeService` registered).
+3. Host launches the parasite executable: `beebium-tube-65C02-3MHz --host=localhost:<port>`.
+   The port is the actual bound gRPC port (known after `server.start()`).
+4. Parasite connects to the host's gRPC server and calls `TubeService.Connect`.
+5. Host returns the shared memory name and size.
+6. Parasite opens and maps the shared memory, validates header (magic, version).
 7. Host deasserts PRST. Parasite CPU begins executing from Boot ROM reset vector.
 
 This reuses the existing gRPC infrastructure rather than introducing a second socket type.
@@ -554,17 +559,102 @@ transfer (64 KB+ of RAM) on gRPC rather than trying to squeeze it through the ma
 
 ## Integration with Beebium
 
+### Host configuration
+
+The Tube is an optional peripheral configured at startup, following the pattern established
+by `--fdc` (disc controller) and `--station` (Econet). The CLI flag is:
+
+```
+--tube <coprocessor-stem>    Attach a Tube coprocessor
+```
+
+The stem maps directly to a parasite executable name: `beebium-tube-<stem>`.
+
+| `--tube` value      | Executable                        | Description                    |
+|----------------------|-----------------------------------|--------------------------------|
+| `65C02-3MHz`         | `beebium-tube-65C02-3MHz`         | Acorn 6502 Second Processor    |
+| `65C102-4MHz`        | `beebium-tube-65C102-4MHz`        | Master Turbo (future)          |
+| `32016-6MHz-1MB`     | `beebium-tube-32016-6MHz-1MB`     | 32016 Second Processor (future)|
+
+When `--tube` is omitted, the TubeSocket is empty: reads return `&FF` (open bus), writes
+are ignored, and OSBYTE &EA correctly reports no Tube present.
+
+No registry is needed (unlike the FDC, which maps names like `acorn-1770` to controller
+factories). The stem is simply used to construct the executable name. If the executable
+is not found, the server reports an error and exits.
+
+**Executable discovery**: the host looks for the parasite executable in the same directory
+as itself (using the build/install `bin/` layout where all Beebium executables are
+co-located), falling back to a PATH search.
+
+#### Socket pattern
+
+The `TubeSocket` follows the same pattern as `DiscControllerSocket` and `EconetSocket`:
+
+- A `HasTubeSocket` C++20 concept detects whether the hardware policy has a Tube socket.
+- All three hardware policies (`ModelBHardware`, `ModelBPlusHardware`,
+  `ModelBRomRamBoardHardware`) gain a `tube_socket` member, since all real BBC Micros
+  had the Tube connector on the underside of the board.
+- `install_tube()` in `ServerMain.hpp` checks `HasTubeSocket`, creates shared memory,
+  and calls `tube_socket.enable(shared)`.
+- `constexpr if` guards Tube-related CLI options, gRPC service registration, and
+  shutdown coordination.
+
+```cpp
+template<typename T>
+concept HasTubeSocket = requires(T& hw) {
+    { hw.tube_socket } -> std::same_as<TubeSocket&>;
+};
+```
+
+#### Two-phase startup
+
+The Tube setup must split across two points in the startup sequence:
+
+- **Phase 1 (before `machine.reset()`)**: create shared memory, populate TubeSocket.
+  The socket must be in the memory map before the first instruction executes, because
+  the MOS ROM probes `&FEE0-&FEE7` during reset to detect Tube presence.
+- **Phase 2 (after `server.start()`)**: launch the parasite subprocess. The parasite
+  needs the host's gRPC address to call `TubeService.Connect`, and the actual bound
+  port is only known after the gRPC server starts (especially with port 0 for dynamic
+  allocation).
+
+Revised startup flow (new steps marked):
+
+```
+ 1.  Parse CLI arguments -> ServerConfig (including tube_stem)
+ 2.  Create machine
+ 3.  Load ROMs (MOS, BASIC, filing system)
+ 4.  install_disc_controller() if --fdc specified
+ 5.  install_econet() if --station specified
+ 6.  install_tube() if --tube specified               <-- NEW: create shm, enable socket
+ 7.  Load disc images
+ 8.  Enable video/audio output
+ 9.  Apply startup options
+10.  machine.reset()                                  (MOS detects Tube via register probe)
+11.  Create gRPC server, register services (including TubeService)
+12.  server.start()
+13.  launch_tube_parasite() if --tube specified        <-- NEW: launch subprocess
+14.  Run emulation loop
+15.  Shutdown: terminate parasite, cleanup shared memory
+```
+
+Between steps 10 and 13, the host MOS has detected the Tube and will be polling R1STAT
+waiting for the parasite's startup banner. The parasite arrives shortly after step 13
+and begins executing its Boot ROM. This brief window where the host is polling an empty
+FIFO is harmless -- it matches the real hardware's behaviour when the second processor
+is powered on slightly after the host.
+
 ### Host-side integration
 
-The host process needs a new `TubeSocket` peripheral following the pattern established by
-`DiscControllerSocket` and `EconetSocket`:
+The host process needs a `TubeSocket` peripheral:
 
 ```
 TubeSocket
 ├── implements MemoryMappedDevice (read/write at &FEE0-&FEE7)
-├── pointer to TubeShared (in shared memory region)
+├── pointer to TubeShared (in shared memory region, nullptr when empty)
 ├── local interrupt state (HIRQ computation)
-└── methods: enable(), disable(), reset()
+└── methods: enable(TubeShared*), disable(), reset(), hirq_pending()
 ```
 
 **Memory map registration** in all three hardware policies:
@@ -578,8 +668,17 @@ window is mirrored across the 32-byte Sheila range &FEE0-&FEFF.
 **Bus timing**: the Tube is classified as a "fast" device in `BusStretching.hpp` (no 1MHz
 stretching). This is already correct in the existing code.
 
-**Interrupt routing**: HIRQ connects to the host CPU's IRQ line. A new device mask is needed
-in the IRQ aggregator (alongside the existing VIA masks).
+**Interrupt routing**: HIRQ connects to the host CPU's IRQ line via the IRQ aggregator,
+as a third binding alongside the System VIA and User VIA:
+```cpp
+using IrqAggregatorType = IrqAggregator<
+    IrqBinding<Via6522, 0>,      // System VIA
+    IrqBinding<Via6522, 1>,      // User VIA
+    IrqBinding<TubeSocket, 2>    // Tube HIRQ
+>;
+```
+When the socket is empty, `hirq_pending()` always returns false, so the third binding
+has no effect.
 
 **NMI**: the host does not receive NMI from the Tube. The Tube's NMI outputs (PNMI) go to
 the parasite only.
@@ -591,14 +690,14 @@ queue draining is needed.
 
 **Tube presence detection**: OSBYTE &EA with X=0, Y=&FF returns X=&FF if a Tube is present.
 The host-side Tube ROM code handles this; no special emulator support is needed beyond
-making the Tube registers respond.
+making the Tube registers respond (which they do when the socket is populated).
 
 ### Parasite-side integration
 
-The parasite process is a new executable (e.g. `beebium-tube-6502`) containing:
+The parasite process is a new executable (`beebium-tube-65C02-3MHz`) containing:
 
 ```
-beebium-tube-6502
+beebium-tube-65C02-3MHz
 ├── 65C02 CPU emulator (3 MHz, CMOS instruction set)
 ├── 64 KB RAM
 ├── Boot ROM (2 KB at &F800-&FFFF, paged out after first Tube register access)
@@ -753,11 +852,14 @@ On reset:
 
 ### Startup sequence
 
-1. Host process starts normally with Tube support enabled (configuration option).
-2. Host creates shared memory segment (`shm_open("/beebium-tube-<pid>", ...)`).
-3. Host maps the segment, initialises `TubeShared` header and reset state.
-4. Host launches the parasite process, passing the host's gRPC address
-   (e.g. `--host=localhost:50051`).
+See "Two-phase startup" above for how this fits into the host's overall startup flow.
+The detailed sequence is:
+
+1. Host `install_tube()`: creates shared memory `/beebium-tube-<machine-uuid>`, maps it,
+   initialises `TubeShared` header, populates `TubeSocket` with pointer to shared region.
+2. Host `machine.reset()`: MOS probes `&FEE0` and detects Tube present.
+3. Host gRPC server starts (with `TubeService` registered).
+4. Host `launch_tube_parasite()`: launches `beebium-tube-65C02-3MHz --host=localhost:<port>`.
 5. Parasite connects to host gRPC server, calls `TubeService.Connect`.
 6. Host returns the shared memory name.
 7. Parasite opens and maps the shared memory, validates header.
@@ -769,14 +871,31 @@ On reset:
 
 ### Shutdown sequence
 
-1. Host writes SHUTDOWN to the lifecycle mailbox in shared memory.
-2. Parasite detects command, flushes gRPC streams, exits.
-3. Host detects parasite exit via `waitpid()`.
-4. Host unmaps and unlinks shared memory segment.
+Normal shutdown (host-initiated):
 
-Or: parasite process crashes/exits unexpectedly. Host detects via `waitpid()`, disables
-Tube, continues operating without second processor (graceful degradation, mirroring the
-real hardware where you could disconnect the Tube cable).
+1. Host receives shutdown signal (SIGTERM, gRPC `RequestShutdown`, or window close).
+2. Host writes SHUTDOWN to the lifecycle mailbox in shared memory.
+3. Parasite detects command (within its polling interval), flushes gRPC streams, exits.
+4. Host detects parasite exit via `waitpid()` / `WaitForSingleObject()`.
+5. Host unmaps and unlinks shared memory segment.
+6. Host continues its own shutdown sequence.
+
+The host's signal handler is wired to trigger parasite shutdown before its own cleanup,
+following the existing pattern with `g_request_machine_shutdown` and `g_request_pacing_stop`
+function pointers.
+
+### Crash detection
+
+If the parasite process crashes or exits unexpectedly, the host detects this via periodic
+`waitpid(WNOHANG)` / `WaitForSingleObject(0)` polling during the emulation loop (e.g.
+once per frame). On detection:
+
+1. Host calls `tube_socket.disable()`, reverting to empty-socket behaviour (reads return
+   `&FF`, HIRQ deasserted).
+2. Host unmaps and unlinks shared memory.
+3. Host continues operating without second processor (graceful degradation, mirroring the
+   real hardware where you could disconnect the Tube cable).
+4. A log message records the crash for diagnostics.
 
 ### Save state coordination
 
@@ -801,7 +920,7 @@ Restore:
 | CPU               | 65C02 (CMOS, Rockwell or WDC)           |
 | Clock speed       | 3 MHz                                   |
 | RAM               | 64 KB                                   |
-| Boot ROM          | 2 KB (4 KB in some variants)            |
+| Boot ROM          | 2 KB                                    |
 | ROM address       | &F800-&FFFF (paged out after boot)       |
 | Tube registers    | &FEF8-&FEFF                             |
 | Reset vector      | &FFFC-&FFFD (in Boot ROM)               |
@@ -819,18 +938,33 @@ Restore:
 &0400-&07FF   Current language workspace
 &0800-&BFFF   User program area (OSHWM to HIMEM)
 &C000-&EFFF   Additional user area
-&F000-&F7FF   RAM (or Boot ROM when paged in)
-&F800-&FEFF   RAM (or Boot ROM when paged in)
-  &FEF8-&FEFF Tube registers (always active)
-&FF00-&FFFF   RAM (or Boot ROM; vectors here after boot)
+&F000-&F7FF   RAM (no ROM here -- always RAM)
+&F800-&FEF7   RAM (or Boot ROM when paged in)
+  &FEF8-&FEFF Tube registers (always active, even when ROM paged in)
+&FF00-&FFFF   RAM (or Boot ROM when paged in; vectors here)
 ```
 
 ### Boot ROM paging
 
-The Boot ROM occupies the top of the address space on reset. It is deselected (paged out,
-exposing RAM) when the parasite first reads R1STAT (address &FEF8, register offset 0).
-The Boot ROM's reset handler copies itself into RAM before this happens, so execution
-continues seamlessly.
+The Boot ROM is a 2 KB (2048-byte) image mapped at `&F800-&FFFF` on the parasite side.
+The real hardware uses a single 2 KB EPROM (or a 4 KB EPROM with code in the upper half
+and the lower half empty/`&FF`). There is no ROM at `&F000-&F7FF` -- that range is always
+RAM.
+
+Some ROM library images circulate as 4 KB files padded with `&FF` in the first 2 KB; these
+are full EPROM dumps. Beebium uses the canonical 2 KB image directly (`Rom<2048>` at
+`&F800-&FFFF`). The ROM file is `6502Tube.rom`, version 1.10 (MD5 `cd6ba85e22adec70b6d863de4c053db7`).
+
+On reset, the ROM is paged in and the reset vector at `&FFFC-&FFFD` points into it. The
+Boot ROM's reset handler copies itself into the underlying RAM before performing its first
+Tube register access. The ROM is deselected (paged out, exposing RAM) when the parasite
+first reads R1STAT (address `&FEF8`, register offset 0). Since the code is already in RAM
+at that point, execution continues seamlessly.
+
+Note: B-Em mirrors the 2 KB ROM across `&F000-&FFFF` (masking with `& 0x7FF`). BeebEm
+takes a different approach: it copies the ROM bytes directly into RAM at `&F800` on reset,
+avoiding a separate ROM device entirely. Beebium uses a proper `Rom<2048>` with a
+`boot_mode` flag that controls whether reads from `&F800-&FFFF` see ROM or RAM.
 
 ### 65C02 instruction set
 
@@ -856,7 +990,7 @@ be reused directly or with minor adaptation.
   the NMOS config. The same cycle-accurate instruction execution, the same interrupt
   handling, the same `M6502_SetDeviceIRQ` / `M6502_SetDeviceNMI` API.
 - **Ram<N> template** (`devices/Ram.hpp`): `Ram<65536>` for the parasite's 64 KB.
-- **Rom<N> template** (`devices/Rom.hpp`): `Rom<2048>` (or `Rom<4096>`) for the Boot ROM.
+- **Rom<N> template** (`devices/Rom.hpp`): `Rom<2048>` for the Boot ROM at `&F800-&FFFF`.
 - **Memory region/map pattern** (`MemoryRegion.hpp`, `MemoryMap.hpp`): `make_region` for
   address decode, mirroring, first-match dispatch. The parasite memory map is trivial:
   RAM at &0000-&FEF7, Tube at &FEF8-&FEFF, RAM/ROM at &FF00-&FFFF.
@@ -1047,7 +1181,7 @@ A debugger client (Python, macOS frontend, or future standalone debugger) connec
 either host or parasite sees the same `Cpu6502Debugger` service:
 
 ```
-Host (beebium-model-b)          Parasite (beebium-tube-6502)
+Host (beebium-model-b)          Parasite (beebium-tube-65C02-3MHz)
 ├── Cpu6502Debugger              ├── Cpu6502Debugger        ← same interface
 ├── DeviceInspection             ├── SystemService          ← same interface
 ├── SystemService                └── (no other services)
@@ -1072,25 +1206,27 @@ The parasite advertises itself via mDNS (Bonjour/Avahi) with a distinct service 
 or TXT record field so clients can distinguish host from parasite:
 
 ```
-Host:     _beebium._tcp  TXT: model=ModelB, role=host
-Parasite: _beebium._tcp  TXT: model=6502Tube, role=parasite, host_uuid=<uuid>
+Host:     _beebium._tcp  TXT: model=ModelB, role=host, tube=65C02-3MHz
+Parasite: _beebium._tcp  TXT: model=65C02-3MHz, role=parasite, host_uuid=<uuid>
 ```
 
-The `host_uuid` field in the parasite's advertisement links it to its host, enabling
-a client to show a tree view of host + attached coprocessors.
+The host's `tube` TXT field is only present when `--tube` is specified. The `host_uuid`
+field in the parasite's advertisement links it to its host, enabling a client to show a
+tree view of host + attached coprocessors.
 
 ## Future Second Processors
 
 The process-separated architecture makes it straightforward to support additional second
-processor types. Each would be a new executable:
+processor types. Each is a new executable, selected via the `--tube` flag:
 
-| Processor   | Executable              | Clock   | RAM    |
-|-------------|-------------------------|---------|--------|
-| 65C02       | `beebium-tube-6502`     | 3 MHz   | 64 KB  |
-| Z80         | `beebium-tube-z80`      | 6 MHz   | 64 KB  |
-| NS32016     | `beebium-tube-32016`    | 6 MHz   | 1 MB   |
-| ARM2        | `beebium-tube-arm`      | 8 MHz   | 4 MB   |
-| 80186       | `beebium-tube-80186`    | 8 MHz   | 1 MB   |
+| `--tube` stem        | Executable                          | Clock   | RAM    |
+|----------------------|-------------------------------------|---------|--------|
+| `65C02-3MHz`          | `beebium-tube-65C02-3MHz`           | 3 MHz   | 64 KB  |
+| `65C102-4MHz`         | `beebium-tube-65C102-4MHz`          | 4 MHz   | 64 KB  |
+| `Z80-6MHz`            | `beebium-tube-Z80-6MHz`             | 6 MHz   | 64 KB  |
+| `32016-6MHz-1MB`      | `beebium-tube-32016-6MHz-1MB`       | 6 MHz   | 1 MB   |
+| `ARM2-8MHz-4MB`       | `beebium-tube-ARM2-8MHz-4MB`        | 8 MHz   | 4 MB   |
+| `80186-8MHz-1MB`      | `beebium-tube-80186-8MHz-1MB`       | 8 MHz   | 1 MB   |
 
 The shared memory `TubeShared` structure is processor-agnostic. All register semantics
 and software protocols are the same regardless of the parasite processor architecture.
@@ -1129,7 +1265,7 @@ wires its local address decode to the same `TubeShared` region.
 
 ### Phase 3: 6502 parasite process
 
-- Create `beebium-tube-6502` executable.
+- Create `beebium-tube-65C02-3MHz` executable.
 - 65C02 CPU with 64 KB RAM and Boot ROM.
 - gRPC client for `TubeService.Connect`.
 - Map shared memory, wire Tube registers to parasite address space.
@@ -1399,7 +1535,7 @@ determinism). They verify end-to-end behaviour including the Tube software proto
 
 Two sub-tiers exist: **in-process integration** (parasite runs on a separate thread
 within the test process, for determinism and debuggability) and **cross-process
-integration** (parasite runs as a real `beebium-tube-6502` subprocess, as in production).
+integration** (parasite runs as a real `beebium-tube-65C02-3MHz` subprocess, as in production).
 
 #### In-process integration tests
 
@@ -1479,7 +1615,7 @@ TEST_CASE("Interrupt behaviour under load", "[tube][integration][interrupt]")
 **File**: `test_tube_cross_process.cpp`
 **Tags**: `[tube][integration][process]`
 
-These launch `beebium-tube-6502` as a real subprocess via the gRPC `TubeService.Connect`
+These launch `beebium-tube-65C02-3MHz` as a real subprocess via the gRPC `TubeService.Connect`
 handshake. They are slower and less deterministic than the in-process tests, but verify
 the production code path.
 
@@ -1491,7 +1627,7 @@ TEST_CASE("TubeService.Connect handshake", "[tube][integration][process][grpc]")
   SECTION("Both sides can exchange data through mapped TubeShared")
 
 TEST_CASE("Parasite process launch and boot", "[tube][integration][process]")
-  SECTION("beebium-tube-6502 starts and connects to host gRPC server")
+  SECTION("beebium-tube-65C02-3MHz starts and connects to host gRPC server")
   SECTION("Parasite boot banner appears in host OSWRCH output")
   SECTION("Parasite's own gRPC server starts and is reachable")
   SECTION("Parasite advertises itself via mDNS with role=parasite")
@@ -1629,7 +1765,7 @@ catch_discover_tests(test_tube_cross_process)
 Tier 1 and Tier 2 tests have no external dependencies and should run in every CI build.
 Tier 3 in-process tests require ROM images (they skip gracefully if unavailable, following
 the pattern established by `test_boot.cpp` and `test_mode7_helpers.hpp`). Tier 3
-cross-process tests additionally require that the `beebium-tube-6502` executable has been
+cross-process tests additionally require that the `beebium-tube-65C02-3MHz` executable has been
 built, and are gated behind a CMake option or CTest label.
 
 ## References

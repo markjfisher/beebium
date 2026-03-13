@@ -397,6 +397,11 @@ target_link_libraries(test_advertiser PRIVATE beebium_discovery Catch2::Catch2Wi
 # Allow skipped tests to pass (mDNS may not be available on CI)
 catch_discover_tests(test_advertiser EXTRA_ARGS --allow-running-no-tests)
 
+# Tube ULA tests
+add_executable(test_tube_ula test_tube_ula.cpp)
+target_link_libraries(test_tube_ula PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_ula)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests
