@@ -417,6 +417,11 @@ add_executable(test_tube_host_port test_tube_host_port.cpp)
 target_link_libraries(test_tube_host_port PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_host_port)
 
+# Parasite memory map tests (6502 second processor)
+add_executable(test_parasite_memory_map test_parasite_memory_map.cpp)
+target_link_libraries(test_parasite_memory_map PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_parasite_memory_map)
+
 # Tube parasite port tests
 add_executable(test_tube_parasite_port test_tube_parasite_port.cpp)
 target_link_libraries(test_tube_parasite_port PRIVATE beebium_core Catch2::Catch2WithMain)

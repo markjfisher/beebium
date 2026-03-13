@@ -739,18 +739,87 @@ provided by the filing system ROM (NFS, DFS, DNFS, ADFS etc). The host-side code
 For Beebium, this code is already present in the filing system ROMs. The only requirement is
 that the Tube registers respond correctly and the host ROM detects the Tube's presence.
 
-### Parasite Boot ROM
+### Parasite Boot ROM and boot mode
 
-The 6502 second processor uses `6502Tube.rom` (also called the Tube OS or Hi-BASIC ROM in
-some contexts). This is a small ROM (~2 KB) that:
-1. Prints a startup banner via OSWRCH (R1).
-2. Enters the main idle loop polling R1STAT and R2STAT.
-3. Handles incoming OS call results.
-4. Manages R3/R4 transfer protocols with NMI handlers.
-5. Implements the parasite side of all Tube software protocols.
+The 6502 second processor contains a 4 KB EPROM (IC3, a 2732) of which the top 2 KB is
+mapped at `&F800-&FFFF`. This boot ROM contains the parasite-side Tube Operating System
+(TOS), labelled "6502 BR" (boot ROM) on the physical chip.
 
-This ROM is loaded into the parasite process at startup. It is not part of Beebium's source
-code; it is a binary image from the original Acorn hardware.
+The boot ROM:
+1. Copies itself from ROM to underlying RAM at `&F800-&FFFF`.
+2. Prints the startup banner "Acorn TUBE 6502 64K" via OSWRCH (R1).
+3. Enters the main idle loop polling R1STAT and R2STAT.
+4. Handles incoming OS call results.
+5. Manages R3/R4 transfer protocols with NMI handlers.
+6. Implements the parasite side of all Tube software protocols.
+
+The ROM image (`acorn-tube-6502_1_10.rom`, 2048 bytes) is a binary from the original
+hardware and is not part of Beebium's source code.
+
+#### Hardware boot mode
+
+The 6502 second processor has a two-phase boot mechanism controlled by a D-type flip-flop
+(IC6, 74LS74). The boot mode latch is set by the power-on reset monostable (IC26, ~100 us
+pulse) and cleared by the first access to any Tube register address.
+
+**Boot mode** (from reset until first Tube register access):
+
+- **Clock**: 187.5 kHz (12 MHz / 64). The flip-flop enables a divide-by-16 counter (IC11)
+  which gates the divide-by-4 counter (IC12), giving 12 MHz / 4 / 16 = 187.5 kHz on PHI IN.
+- **ROM overlay**: the flip-flop enables the ROM chip select (IC3 pin 18).
+- **Read/write split**: a NAND gate (IC10 pins 4, 5, 6) suppresses DRAM CAS during read
+  cycles (R/W high) but allows CAS during write cycles (R/W low). This means:
+  - **Reads** at `&F800-&FFFF` return data from the ROM.
+  - **Writes** at `&F800-&FFFF` go to the underlying DRAM.
+  - The boot code exploits this to copy itself from ROM to RAM simply by reading each byte
+    and writing it back to the same address.
+- **Duration**: approximately 0.25 seconds at 187.5 kHz.
+
+**Boot mode termination**:
+
+- When the software accesses any Tube register (`&FEF8-&FEFF`), a NAND gate (IC4, 74LS00)
+  decodes the address and resets the flip-flop in IC6. This simultaneously:
+  - Deselects the ROM chip.
+  - Disables the divide-by-16 counter, allowing IC12 to generate PHI IN at 3 MHz.
+- This is a one-way transition: the ROM cannot be re-paged without a hardware reset.
+- The first Tube register access is typically the parasite reading R1STAT at `&FEF8` to
+  begin communication with the host.
+
+**Normal mode** (after boot mode termination):
+
+- Full 3 MHz clock.
+- All memory is RAM.
+- The same IC10 NAND gate now suppresses DRAM CAS only when the Tube chip (IC1) is being
+  accessed (IC4 pin 9 low). This is how the Tube registers at `&FEF8-&FEFF` "punch through"
+  the RAM -- the DRAM is electrically disconnected during Tube accesses.
+
+Reference: *6502 Second Processor Service Manual*, Acorn Computers, Part no 0408,003,
+Issue 1, May 1984, Sections 5.1-5.3.
+
+#### Emulation of boot mode
+
+For emulation, the boot mode clock speed difference is cosmetic -- the boot code behaves
+identically at any clock rate. The key behaviour to model is the memory map:
+
+```
+ParasiteMemoryMap states:
+
+  Boot mode (rom_enabled = true):
+    &0000-&F7FF  RAM read/write
+    &F800-&FEFF  Read: ROM (2 KB, masked to &7FF)
+                 Write: RAM
+    &FEF8-&FEFF  Tube registers (override ROM for reads AND writes)
+    &FF00-&FFFF  Read: ROM
+                 Write: RAM
+
+  Normal mode (rom_enabled = false):
+    &0000-&FFFF  RAM read/write
+    &FEF8-&FEFF  Tube registers (CAS suppressed, RAM not accessed)
+```
+
+The transition from boot mode to normal mode occurs on the first read or write to any
+address in `&FEF8-&FEFF`. The `rom_enabled` flag is cleared and cannot be set again
+except by reset.
 
 ## Tube ULA Model
 
