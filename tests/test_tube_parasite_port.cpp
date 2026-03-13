@@ -864,3 +864,82 @@ TEST_CASE("TubeParasitePort PIRQ matches TubeUla", "[tube][parasite][cross-valid
 
     CHECK(parasite.pirq() == ula.pirq());  // both true
 }
+
+// ===========================================================================
+// pnmi_level() -- raw combinational PNMI output
+// ===========================================================================
+
+TEST_CASE("TubeParasitePort pnmi_level false when M flag clear", "[tube][parasite][pnmi]") {
+    TubeShared shared;
+    shared.init();
+    TubeParasitePort parasite(&shared);
+
+    // R3 H-to-P has data, but M=0 -> level is false.
+    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
+    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
+    shared.r3_h2p.pending.store(1, std::memory_order_release);
+
+    CHECK_FALSE(parasite.pnmi_level());
+}
+
+TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 H-to-P has data", "[tube][parasite][pnmi]") {
+    TubeShared shared;
+    shared.init();
+    TubeParasitePort parasite(&shared);
+
+    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
+
+    // Deposit H-to-P data.
+    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
+    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
+    shared.r3_h2p.pending.store(1, std::memory_order_release);
+
+    CHECK(parasite.pnmi_level());
+}
+
+TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 P-to-H has space", "[tube][parasite][pnmi]") {
+    TubeShared shared;
+    shared.init();
+    TubeParasitePort parasite(&shared);
+
+    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
+
+    // P-to-H is empty (pending=0) -> space available -> level true.
+    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 0);
+    CHECK(parasite.pnmi_level());
+}
+
+TEST_CASE("TubeParasitePort pnmi_level false when M=1 but no data and no space", "[tube][parasite][pnmi]") {
+    TubeShared shared;
+    shared.init();
+    TubeParasitePort parasite(&shared);
+
+    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
+
+    // R3 H-to-P empty, R3 P-to-H full (pending=1) -> neither condition met.
+    shared.r3_p2h.count.store(1, std::memory_order_relaxed);
+    shared.r3_p2h.pending.store(1, std::memory_order_release);
+
+    CHECK_FALSE(parasite.pnmi_level());
+}
+
+TEST_CASE("TubeParasitePort pnmi_level responds to shared state changes without register access", "[tube][parasite][pnmi]") {
+    TubeShared shared;
+    shared.init();
+    TubeParasitePort parasite(&shared);
+
+    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
+
+    // Start with both conditions false.
+    shared.r3_p2h.count.store(1, std::memory_order_relaxed);
+    shared.r3_p2h.pending.store(1, std::memory_order_release);
+    CHECK_FALSE(parasite.pnmi_level());
+
+    // Host deposits H-to-P data (no parasite register access needed).
+    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
+    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
+    shared.r3_h2p.pending.store(1, std::memory_order_release);
+
+    // pnmi_level() should immediately reflect the change.
+    CHECK(parasite.pnmi_level());
+}

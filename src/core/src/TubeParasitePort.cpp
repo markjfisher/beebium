@@ -197,18 +197,23 @@ bool TubeParasitePort::pnmi() const
     return pnmi_edge_;
 }
 
-void TubeParasitePort::update_pnmi()
+bool TubeParasitePort::pnmi_level() const
 {
     auto flags = shared_->control_flags.load(std::memory_order_acquire);
 
-    bool new_pnmi = false;
-    if (flags & TubeUla::FLAG_M) {
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        bool h2p_data = shared_->r3_h2p.pending.load(std::memory_order_acquire) != 0
-                     || shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared_->r3_p2h.pending.load(std::memory_order_acquire) == 0;
-        new_pnmi = h2p_data || p2h_space;
-    }
+    if (!(flags & TubeUla::FLAG_M))
+        return false;
+
+    uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+    bool h2p_data = shared_->r3_h2p.pending.load(std::memory_order_acquire) != 0
+                 || shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+    bool p2h_space = shared_->r3_p2h.pending.load(std::memory_order_acquire) == 0;
+    return h2p_data || p2h_space;
+}
+
+void TubeParasitePort::update_pnmi()
+{
+    bool new_pnmi = pnmi_level();
 
     // Edge detection: fire on 0-to-1 transition.
     if (new_pnmi && !prev_pnmi_)

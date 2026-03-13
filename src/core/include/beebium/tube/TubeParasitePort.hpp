@@ -52,8 +52,17 @@ public:
     // PIRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data).
     bool pirq() const;
 
-    // PNMI: edge-triggered from R3 activity when M=1.
+    // PNMI (edge-detected): latched rising edge from R3 activity when M=1.
+    // Only updates during parasite_read/parasite_write calls.
+    // Prefer pnmi_level() when driving an M6502 NMI line, since the M6502
+    // performs its own edge detection.
     bool pnmi() const;
+
+    // PNMI level: raw combinational output, recomputed on each call from
+    // shared state. Active when M=1 AND (R3 H-to-P has data OR R3 P-to-H
+    // has space). Use this with M6502_SetDeviceNMI, which does its own
+    // edge detection internally.
+    bool pnmi_level() const;
 
     // --- Reset ---
 
