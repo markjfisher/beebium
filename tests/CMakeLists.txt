@@ -437,6 +437,14 @@ add_executable(test_parasite_runner test_parasite_runner.cpp)
 target_link_libraries(test_parasite_runner PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_parasite_runner)
 
+# Parasite boot integration tests (real ROM)
+add_executable(test_parasite_boot test_parasite_boot.cpp)
+target_link_libraries(test_parasite_boot PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_parasite_boot PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_parasite_boot)
+
 # Tube shared memory cross-thread tests
 add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
 target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
