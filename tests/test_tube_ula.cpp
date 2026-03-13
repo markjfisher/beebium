@@ -337,6 +337,62 @@ TEST_CASE("R3 two-byte mode", "[tube][fifo][r3]") {
         REQUIRE(tube.host_read(5) == 0xDD);
     }
 
+    SECTION("Space available between bytes of H-to-P two-byte transfer") {
+        tube.host_write(5, 0xAA);  // first byte
+        uint8_t host_stat = tube.host_read(4);
+        REQUIRE((host_stat & TubeUla::SPACE_AVAILABLE) != 0);  // can still write second byte
+
+        tube.host_write(5, 0xBB);  // second byte
+        host_stat = tube.host_read(4);
+        REQUIRE((host_stat & TubeUla::SPACE_AVAILABLE) == 0);  // now full
+    }
+
+    SECTION("Space available between bytes of P-to-H two-byte transfer") {
+        // Drain the reset dummy byte.
+        tube.host_read(5);
+
+        tube.parasite_write(5, 0xCC);  // first byte
+        uint8_t para_stat = tube.parasite_read(4);
+        REQUIRE((para_stat & TubeUla::SPACE_AVAILABLE) != 0);  // can still write second byte
+
+        tube.parasite_write(5, 0xDD);  // second byte
+        para_stat = tube.parasite_read(4);
+        REQUIRE((para_stat & TubeUla::SPACE_AVAILABLE) == 0);  // now full
+    }
+
+    SECTION("Data available persists while draining two-byte H-to-P transfer") {
+        tube.host_write(5, 0xAA);
+        tube.host_write(5, 0xBB);
+
+        // Data available after first parasite read (one byte still to go).
+        tube.parasite_read(5);
+        uint8_t para_stat = tube.parasite_read(4);
+        REQUIRE((para_stat & TubeUla::DATA_AVAILABLE) != 0);
+
+        // Data not available after second read.
+        tube.parasite_read(5);
+        para_stat = tube.parasite_read(4);
+        REQUIRE((para_stat & TubeUla::DATA_AVAILABLE) == 0);
+    }
+
+    SECTION("Data available persists while draining two-byte P-to-H transfer") {
+        // Drain dummy byte.
+        tube.host_read(5);
+
+        tube.parasite_write(5, 0xCC);
+        tube.parasite_write(5, 0xDD);
+
+        // Data available after first host read.
+        tube.host_read(5);
+        uint8_t host_stat = tube.host_read(4);
+        REQUIRE((host_stat & TubeUla::DATA_AVAILABLE) != 0);
+
+        // Data not available after second read.
+        tube.host_read(5);
+        host_stat = tube.host_read(4);
+        REQUIRE((host_stat & TubeUla::DATA_AVAILABLE) == 0);
+    }
+
     SECTION("Switch from two-byte to one-byte mode mid-transfer") {
         tube.host_write(5, 0xAA);  // first byte, no data-available yet
 
@@ -851,6 +907,76 @@ TEST_CASE("Status register bit layout", "[tube][status]") {
         REQUIRE((tube.parasite_read(0) & 0x80) == 0);
         // Host sees space available again.
         REQUIRE((tube.host_read(0) & 0x40) != 0);
+    }
+
+    SECTION("R2/R3/R4 status: unused bits read as 1 (App Note 004, note 11)") {
+        // R1 status has control flags in bits 0-5, so no unused bits.
+        // R2 host status: bits 5-0 should be 1.
+        uint8_t r2h = tube.host_read(2);
+        REQUIRE((r2h & 0x3F) == 0x3F);
+
+        // R2 parasite status: bits 5-0 should be 1.
+        uint8_t r2p = tube.parasite_read(2);
+        REQUIRE((r2p & 0x3F) == 0x3F);
+
+        // R3 host status: bits 5-0 should be 1.
+        uint8_t r3h = tube.host_read(4);
+        REQUIRE((r3h & 0x3F) == 0x3F);
+
+        // R3 parasite status: bits 4-0 should be 1 (bit 5 is the N flag).
+        uint8_t r3p = tube.parasite_read(4);
+        REQUIRE((r3p & 0x1F) == 0x1F);
+
+        // R4 host status: bits 5-0 should be 1.
+        uint8_t r4h = tube.host_read(6);
+        REQUIRE((r4h & 0x3F) == 0x3F);
+
+        // R4 parasite status: bits 5-0 should be 1.
+        uint8_t r4p = tube.parasite_read(6);
+        REQUIRE((r4p & 0x3F) == 0x3F);
+    }
+
+    SECTION("R1 status does not have unused bits (bits 0-5 are control flags)") {
+        // After reset, control flags are 0, so bits 0-5 should be 0.
+        uint8_t r1h = tube.host_read(0);
+        REQUIRE((r1h & 0x3F) == 0x00);
+
+        uint8_t r1p = tube.parasite_read(0);
+        REQUIRE((r1p & 0x3F) == 0x00);
+    }
+
+    SECTION("Parasite R3 status: N flag (bit 5) reflects NMI condition") {
+        // After reset: H-to-P empty, P-to-H has dummy byte (pending).
+        // N = (h2p data) || (p2h space) = false || false = 0.
+        uint8_t stat = tube.parasite_read(4);
+        REQUIRE((stat & 0x20) == 0);
+
+        // Drain dummy byte so P-to-H is empty (space available -> N = 1).
+        tube.host_read(5);
+        stat = tube.parasite_read(4);
+        REQUIRE((stat & 0x20) != 0);
+
+        // Write H-to-P data so h2p also has data (N still 1).
+        tube.host_write(5, 0x42);
+        stat = tube.parasite_read(4);
+        REQUIRE((stat & 0x20) != 0);
+
+        // Parasite writes P-to-H (pending, space gone) and reads H-to-P (pending cleared).
+        tube.parasite_write(5, 0x99);
+        tube.parasite_read(5);  // consume H-to-P
+        // Now: h2p empty (not pending), p2h pending -> N = false || false = 0.
+        stat = tube.parasite_read(4);
+        REQUIRE((stat & 0x20) == 0);
+    }
+
+    SECTION("N flag is independent of M flag") {
+        // Drain dummy byte.
+        tube.host_read(5);
+
+        // N should reflect the condition even with M=0 (no NMI enabled).
+        // P-to-H is empty -> space available -> N = 1.
+        uint8_t stat = tube.parasite_read(4);
+        REQUIRE((stat & 0x20) != 0);
     }
 
     SECTION("All four register status bytes accessible") {

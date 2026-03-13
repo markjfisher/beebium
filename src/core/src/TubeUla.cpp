@@ -47,8 +47,10 @@ void TubeUla::soft_reset()
     // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI.
     r3_.h2p_data.fill(0);
     r3_.h2p_count = 0;
+    r3_.h2p_pending = false;
     r3_.p2h_data.fill(0);
     r3_.p2h_count = 1;  // dummy byte
+    r3_.p2h_pending = true;  // dummy byte counts as a complete transfer
 
     // R4: clear latches.
     r4_.h2p_data = 0;
@@ -104,6 +106,8 @@ uint8_t TubeUla::host_read(uint8_t offset)
         // R2 status.
         // Bit 7: R2 P-to-H data available.
         // Bit 6: R2 H-to-P not full.
+        // Bits 5-0: read as 1 (App Note 004, note 11).
+        result = 0x3F;
         if (r2_.p2h_available)
             result |= DATA_AVAILABLE;
         if (!r2_.h2p_full)
@@ -123,13 +127,14 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
     case 4: {
         // R3 status (host perspective).
-        // Bit 7: R3 P-to-H data available (count >= threshold).
-        // Bit 6: R3 H-to-P space available (count == 0; host must wait for
-        //         parasite to fully consume the previous transfer).
+        // Bit 7: R3 P-to-H data available (pending transfer or count >= threshold).
+        // Bit 6: R3 H-to-P space available (no pending transfer awaiting read).
+        // Bits 5-0: read as 1 (App Note 004, note 11).
+        result = 0x3F;
         uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
-        if (r3_.p2h_count >= threshold)
+        if (r3_.p2h_pending || r3_.p2h_count >= threshold)
             result |= DATA_AVAILABLE;
-        if (r3_.h2p_count == 0)
+        if (!r3_.h2p_pending)
             result |= SPACE_AVAILABLE;
         break;
     }
@@ -141,6 +146,8 @@ uint8_t TubeUla::host_read(uint8_t offset)
             r3_.p2h_data[0] = r3_.p2h_data[1];
             r3_.p2h_data[1] = 0;
             r3_.p2h_count--;
+            if (r3_.p2h_count == 0)
+                r3_.p2h_pending = false;
         }
         break;
     }
@@ -149,6 +156,8 @@ uint8_t TubeUla::host_read(uint8_t offset)
         // R4 status.
         // Bit 7: R4 P-to-H data available.
         // Bit 6: R4 H-to-P not full.
+        // Bits 5-0: read as 1 (App Note 004, note 11).
+        result = 0x3F;
         if (r4_.p2h_available)
             result |= DATA_AVAILABLE;
         if (!r4_.h2p_full)
@@ -220,6 +229,9 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
         if (r3_.h2p_count < 2) {
             r3_.h2p_data[r3_.h2p_count] = value;
             r3_.h2p_count++;
+            uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+            if (r3_.h2p_count >= threshold)
+                r3_.h2p_pending = true;
         }
         break;
     }
@@ -276,6 +288,8 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
         // R2 status from parasite perspective.
         // Bit 7: R2 H-to-P data available.
         // Bit 6: R2 P-to-H not full.
+        // Bits 5-0: read as 1 (App Note 004, note 11).
+        result = 0x3F;
         if (r2_.h2p_available)
             result |= DATA_AVAILABLE;
         if (!r2_.p2h_full)
@@ -295,14 +309,20 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
 
     case 4: {
         // R3 status (parasite perspective).
-        // Bit 7: R3 H-to-P data available (count >= threshold).
-        // Bit 6: R3 P-to-H space available (count == 0; parasite must wait
-        //         for host to fully consume the previous transfer).
+        // Bit 7: R3 H-to-P data available (pending transfer or count >= threshold).
+        // Bit 6: R3 P-to-H space available (no pending transfer awaiting read).
+        // Bit 5: N flag -- NMI action required (raw condition, independent of M).
+        // Bits 4-0: read as 1 (App Note 004, note 11).
+        result = 0x1F;
         uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
-        if (r3_.h2p_count >= threshold)
+        bool h2p_data = r3_.h2p_pending || r3_.h2p_count >= threshold;
+        bool p2h_space = !r3_.p2h_pending;
+        if (h2p_data)
             result |= DATA_AVAILABLE;
-        if (r3_.p2h_count == 0)
+        if (p2h_space)
             result |= SPACE_AVAILABLE;
+        if (h2p_data || p2h_space)
+            result |= 0x20;  // N flag
         break;
     }
 
@@ -313,6 +333,8 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
             r3_.h2p_data[0] = r3_.h2p_data[1];
             r3_.h2p_data[1] = 0;
             r3_.h2p_count--;
+            if (r3_.h2p_count == 0)
+                r3_.h2p_pending = false;
         }
         break;
     }
@@ -321,6 +343,8 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
         // R4 status from parasite perspective.
         // Bit 7: R4 H-to-P data available.
         // Bit 6: R4 P-to-H not full.
+        // Bits 5-0: read as 1 (App Note 004, note 11).
+        result = 0x3F;
         if (r4_.h2p_available)
             result |= DATA_AVAILABLE;
         if (!r4_.p2h_full)
@@ -381,6 +405,9 @@ void TubeUla::parasite_write(uint8_t offset, uint8_t value)
         if (r3_.p2h_count < 2) {
             r3_.p2h_data[r3_.p2h_count] = value;
             r3_.p2h_count++;
+            uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+            if (r3_.p2h_count >= threshold)
+                r3_.p2h_pending = true;
         }
         break;
     }
@@ -433,8 +460,9 @@ void TubeUla::update_interrupts()
     bool new_pnmi = false;
     if (control_flags_ & FLAG_M) {
         uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
-        // NMI when: H-to-P has enough data, OR P-to-H is empty (ready for write).
-        new_pnmi = (r3_.h2p_count >= threshold) || (r3_.p2h_count == 0);
+        // NMI when: H-to-P has a complete transfer, OR P-to-H is ready for writing.
+        new_pnmi = (r3_.h2p_pending || r3_.h2p_count >= threshold)
+                || !r3_.p2h_pending;
     }
 
     // Edge detection: fire on 0-to-1 transition.

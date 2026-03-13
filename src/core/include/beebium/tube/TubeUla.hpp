@@ -106,12 +106,25 @@ private:
     } r2_;
 
     // Register 3: 2-byte FIFO in each direction, configurable as 1 or 2-byte.
+    //
+    // The pending flags track whether a complete transfer has been deposited
+    // and is awaiting consumption.  They provide hysteresis so that the
+    // space-available / data-available status bits remain correct when the
+    // count is between 0 and threshold during a multi-byte transfer.
+    //
+    //   pending = false  ->  writer phase (space available)
+    //   pending = true   ->  reader phase (data available)
+    //
+    // Transitions: set when count reaches threshold on write; cleared when
+    // count reaches 0 on read.
     struct {
         std::array<uint8_t, 2> h2p_data{};
         uint8_t h2p_count = 0;
+        bool h2p_pending = false;  // complete H-to-P transfer awaiting parasite read
 
         std::array<uint8_t, 2> p2h_data{};
         uint8_t p2h_count = 0;
+        bool p2h_pending = false;  // complete P-to-H transfer awaiting host read
     } r3_;
 
     // Register 4: 1-byte latch in each direction.
