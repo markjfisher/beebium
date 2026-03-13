@@ -445,6 +445,11 @@ target_compile_definitions(test_parasite_boot PRIVATE
 )
 catch_discover_tests(test_parasite_boot)
 
+# Tube POSIX shared memory manager tests
+add_executable(test_tube_shared_memory test_tube_shared_memory.cpp)
+target_link_libraries(test_tube_shared_memory PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared_memory)
+
 # Tube end-to-end tests (host + parasite via shared memory, real ROM)
 add_executable(test_tube_end_to_end test_tube_end_to_end.cpp)
 target_link_libraries(test_tube_end_to_end PRIVATE beebium_core Catch2::Catch2WithMain)

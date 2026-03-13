@@ -14,6 +14,7 @@ add_library(beebium_core STATIC
     src/TubeParasitePort.cpp
     src/ParasiteCpu.cpp
     src/ParasiteRunner.cpp
+    src/TubeSharedMemory.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
