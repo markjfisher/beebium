@@ -432,6 +432,11 @@ add_executable(test_parasite_cpu test_parasite_cpu.cpp)
 target_link_libraries(test_parasite_cpu PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_parasite_cpu)
 
+# Parasite runner tests
+add_executable(test_parasite_runner test_parasite_runner.cpp)
+target_link_libraries(test_parasite_runner PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_parasite_runner)
+
 # Tube shared memory cross-thread tests
 add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
 target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
