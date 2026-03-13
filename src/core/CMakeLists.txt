@@ -10,6 +10,7 @@ add_library(beebium_core STATIC
     src/disc/FileDiscImage.cpp
     src/econet/AunBackend.cpp
     src/TubeUla.cpp
+    src/TubeHostPort.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp

@@ -15,8 +15,27 @@
 #include "TubeSocket.hpp"
 
 #include <concepts>
+#include <cstdint>
 
 namespace beebium {
+
+// Host-side interface for the Tube ULA.
+//
+// Satisfied by TubeUla (full in-process model) and TubeHostPort (shared
+// memory adapter). TubeSocket delegates to whichever implementation is
+// active via std::variant.
+//
+// The four required operations are the host processor's view of the Tube:
+//   host_read/host_write -- register access at &FEE0-&FEE7
+//   hirq                 -- host IRQ output (active when Q=1 and R4 P-to-H has data)
+//   reset                -- full hardware reset (HRST)
+template<typename T>
+concept TubeHostInterface = requires(T& t, const T& ct, uint8_t offset, uint8_t value) {
+    { t.host_read(offset) } -> std::convertible_to<uint8_t>;
+    { t.host_write(offset, value) } -> std::same_as<void>;
+    { ct.hirq() } -> std::convertible_to<bool>;
+    { t.reset() } -> std::same_as<void>;
+};
 
 // Concept to detect if a hardware type has a Tube socket.
 // All current hardware variants (Model B, Model B+, Model B with ROM/RAM board) have this.
