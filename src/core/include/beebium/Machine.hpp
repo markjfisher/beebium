@@ -38,9 +38,9 @@
 namespace beebium {
 
 // IRQ device mask for M6502_SetDeviceIRQ
-// The 6502 library supports multiple IRQ sources; we use mask 0x03 for VIA IRQs
-// Bit 0: System VIA IRQ, Bit 1: User VIA IRQ
-constexpr uint8_t kViaIrqDeviceMask = 0x03;
+// The 6502 library supports multiple IRQ sources; each bit represents one source.
+// Bit 0: System VIA IRQ, Bit 1: User VIA IRQ, Bit 2: Tube HIRQ
+constexpr uint8_t kIrqDeviceMask = 0x07;
 
 // NMI device mask for M6502_SetDeviceNMI
 // The 6502 library supports multiple NMI sources; we use separate bits for each source.
@@ -269,7 +269,7 @@ public:
 
         // IRQ handling - poll aggregator and set CPU IRQ line
         uint8_t irq_mask = state_.memory.poll_irq();
-        M6502_SetDeviceIRQ(&state_.cpu, kViaIrqDeviceMask, irq_mask ? 1 : 0);
+        M6502_SetDeviceIRQ(&state_.cpu, kIrqDeviceMask, irq_mask ? 1 : 0);
 
         // NMI handling — disc controller at 1MHz, Econet at 2MHz.
         //

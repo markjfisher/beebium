@@ -35,6 +35,7 @@
 #include "disc/DiscDrive.hpp"
 #include "disc/WD1770.hpp"
 #include "econet/EconetSocket.hpp"
+#include "tube/TubeSocket.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
 #include <algorithm>
@@ -169,10 +170,11 @@ public:
     Via6522 system_via;
     Via6522 user_via;
 
-    // IRQ aggregator type - polls VIAs for IRQ status
+    // IRQ aggregator type - polls VIAs and Tube for IRQ status
     using IrqAggregatorType = IrqAggregator<
-        IrqBinding<Via6522, 0>,  // System VIA → bit 0
-        IrqBinding<Via6522, 1>   // User VIA → bit 1
+        IrqBinding<Via6522, 0>,     // System VIA → bit 0
+        IrqBinding<Via6522, 1>,     // User VIA → bit 1
+        IrqBinding<TubeSocket, 2>   // Tube HIRQ → bit 2
     >;
 
     // Video hardware
@@ -201,8 +203,11 @@ public:
     DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
     DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
 
-    // Econet subsystem — optional networking hardware
+    // Econet subsystem -- optional networking hardware
     EconetSocket econet_socket;
+
+    // Tube subsystem -- optional second processor interface
+    TubeSocket tube_socket;
 
     // Econet memory-mapped region adapters (thin wrappers for MemoryMappedDevice concept)
     struct EconetStationIdRegion {
@@ -346,6 +351,7 @@ public:
             make_region<0xFE80, 0xFE83, Mirror<0x03>>(std::declval<DiscControlRegister&>()),
             make_region<0xFE84, 0xFE87, Mirror<0x03>>(std::declval<WD1770&>()),
             make_region<0xFEA0, 0xFEBF, Mirror<0x03>>(std::declval<EconetAdlcRegion&>()),        // Econet ADLC
+            make_region<0xFEE0, 0xFEFF, Mirror<0x07>>(std::declval<TubeSocket&>()),              // Tube ULA
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),
             make_region<0x8000, 0xBFFF>(std::declval<SidewaysType&>()),
             make_region<0xC000, 0xFFFF>(std::declval<Rom<16384>&>())       // MOS ROM (occluded by I/O regions)
@@ -509,6 +515,7 @@ public:
         disc_control_ = 0;
         nmi_enabled_ = false;
         econet_socket.reset();
+        tube_socket.reset();
     }
 
     // Soft reset (Break key): reset peripherals but preserve System VIA state
@@ -528,6 +535,7 @@ public:
         disc_control_ = 0;
         nmi_enabled_ = false;
         econet_socket.reset();
+        tube_socket.reset();
         // Do NOT clear RAM
         // Do NOT reset romsel_, acccon_, or sideways bank selection
     }
@@ -979,7 +987,8 @@ private:
     IrqAggregatorType make_irq_aggregator() {
         return beebium::make_irq_aggregator(
             make_irq_binding<0>(system_via),
-            make_irq_binding<1>(user_via)
+            make_irq_binding<1>(user_via),
+            make_irq_binding<2>(tube_socket)
         );
     }
 
@@ -998,6 +1007,7 @@ private:
             make_region<0xFE80, 0xFE83, Mirror<0x03>>(disc_control_reg),
             make_region<0xFE84, 0xFE87, Mirror<0x03>>(disc_controller),
             make_region<0xFEA0, 0xFEBF, Mirror<0x03>>(econet_adlc_region_),       // Econet ADLC
+            make_region<0xFEE0, 0xFEFF, Mirror<0x07>>(tube_socket),               // Tube ULA
             make_region<0x0000, 0x7FFF>(main_ram),
             make_region<0x8000, 0xBFFF>(sideways),
             make_region<0xC000, 0xFFFF>(mos_rom)                                   // MOS ROM (occluded by I/O regions)

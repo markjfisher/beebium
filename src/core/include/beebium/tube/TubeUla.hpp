@@ -59,6 +59,11 @@ public:
     void parasite_write(uint8_t offset, uint8_t value);
 
     // Interrupt outputs (active high in this model; caller inverts if needed).
+    // These use the Tube-specific names from Application Note 004:
+    //   hirq -- Host IRQ (active when Q=1 and R4 has P-to-H data)
+    //   pirq -- Parasite IRQ (active when I=1 and R1 has data, or J=1 and R4 has data)
+    //   pnmi -- Parasite NMI (edge-triggered from R3 activity when M=1)
+    // TubeSocket adapts hirq() to the generic IrqSource::irq_pending() interface.
     bool hirq() const;
     bool pirq() const;
     bool pnmi() const;
