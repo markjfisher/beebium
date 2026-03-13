@@ -11,6 +11,7 @@ add_library(beebium_core STATIC
     src/econet/AunBackend.cpp
     src/TubeUla.cpp
     src/TubeHostPort.cpp
+    src/TubeParasitePort.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
