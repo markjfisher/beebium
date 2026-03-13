@@ -417,6 +417,11 @@ add_executable(test_tube_host_port test_tube_host_port.cpp)
 target_link_libraries(test_tube_host_port PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_host_port)
 
+# Tube shared memory cross-thread tests
+add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
+target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared_threads)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests
