@@ -228,7 +228,7 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
     auto* r3_h2p = response->mutable_r3_h2p();
     uint8_t r3_h2p_count = shared->r3_h2p.count.load(std::memory_order_acquire);
     r3_h2p->set_count(r3_h2p_count);
-    r3_h2p->set_pending(shared->r3_h2p.pending.load(std::memory_order_acquire) != 0);
+    r3_h2p->set_pending(r3_h2p_count >= threshold);
     r3_h2p->set_threshold(threshold);
     if (r3_h2p_count > 0) {
         std::string data;
@@ -244,7 +244,7 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
     auto* r3_p2h = response->mutable_r3_p2h();
     uint8_t r3_p2h_count = shared->r3_p2h.count.load(std::memory_order_acquire);
     r3_p2h->set_count(r3_p2h_count);
-    r3_p2h->set_pending(shared->r3_p2h.pending.load(std::memory_order_acquire) != 0);
+    r3_p2h->set_pending(r3_p2h_count >= threshold);
     r3_p2h->set_threshold(threshold);
     if (r3_p2h_count > 0) {
         std::string data;

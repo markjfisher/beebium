@@ -66,8 +66,7 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
     // Clear R3 H-to-P to a known empty state.
     shared.r3_h2p.data[0].store(0, std::memory_order_relaxed);
     shared.r3_h2p.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(0, std::memory_order_relaxed);
-    shared.r3_h2p.pending.store(0, std::memory_order_release);
+    shared.r3_h2p.count.store(0, std::memory_order_release);
 
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
@@ -123,8 +122,6 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
              << " of " << NUM_BYTES << " bytes");
         INFO("R3 H-to-P count: "
              << static_cast<int>(shared.r3_h2p.count.load(std::memory_order_acquire)));
-        INFO("R3 H-to-P pending: "
-             << static_cast<int>(shared.r3_h2p.pending.load(std::memory_order_acquire)));
         FAIL("Parasite timed out -- likely a lost byte due to the R3 count race");
     }
 
@@ -136,7 +133,6 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
 
     // FIFO should be empty.
     CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 0);
-    CHECK(shared.r3_h2p.pending.load(std::memory_order_acquire) == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,8 +152,7 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     // Clear R3 P-to-H (init places a dummy byte to prevent spurious PNMI).
     shared.r3_p2h.data[0].store(0, std::memory_order_relaxed);
     shared.r3_p2h.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_p2h.count.store(0, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(0, std::memory_order_release);
+    shared.r3_p2h.count.store(0, std::memory_order_release);
 
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
@@ -211,8 +206,6 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
              << " of " << NUM_BYTES << " bytes");
         INFO("R3 P-to-H count: "
              << static_cast<int>(shared.r3_p2h.count.load(std::memory_order_acquire)));
-        INFO("R3 P-to-H pending: "
-             << static_cast<int>(shared.r3_p2h.pending.load(std::memory_order_acquire)));
         FAIL("Host timed out -- likely a lost byte due to the R3 count race");
     }
 
@@ -222,7 +215,6 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     }
 
     CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +235,7 @@ TEST_CASE("R3 H-to-P concurrent multi-block transfer", "[tube][r3][race]") {
 
     shared.r3_h2p.data[0].store(0, std::memory_order_relaxed);
     shared.r3_h2p.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(0, std::memory_order_relaxed);
-    shared.r3_h2p.pending.store(0, std::memory_order_release);
+    shared.r3_h2p.count.store(0, std::memory_order_release);
 
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);

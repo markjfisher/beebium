@@ -65,7 +65,7 @@ bool parasite_enqueue_r1(TubeFifo24& fifo, uint8_t value) {
 
 // Parasite writes to R3 P-to-H register.
 // Returns true if written, false if full.
-bool parasite_write_r3(TubeReg3& reg, uint8_t value, uint8_t threshold) {
+bool parasite_write_r3(TubeReg3& reg, uint8_t value) {
     uint8_t count = reg.count.load(std::memory_order_acquire);
     if (count >= 2)
         return false;
@@ -73,9 +73,7 @@ bool parasite_write_r3(TubeReg3& reg, uint8_t value, uint8_t threshold) {
     uint8_t tail = reg.tail.load(std::memory_order_relaxed);
     reg.data[tail].store(value, std::memory_order_relaxed);
     reg.tail.store(tail ^ 1, std::memory_order_relaxed);
-    uint8_t new_count = reg.count.fetch_add(1, std::memory_order_release) + 1;
-    if (new_count >= threshold)
-        reg.pending.store(1, std::memory_order_release);
+    reg.count.fetch_add(1, std::memory_order_release);
     return true;
 }
 
@@ -403,15 +401,14 @@ TEST_CASE("TubeShared cross-thread: R3 two-byte transfer from parasite to host",
     host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
 
     // Clear the R3 P-to-H dummy byte from init
-    shared.r3_p2h.count.store(0, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(0, std::memory_order_release);
+    shared.r3_p2h.count.store(0, std::memory_order_release);
 
     std::atomic<bool> parasite_written{false};
 
     std::thread parasite([&] {
         // Write 2 bytes to R3 P-to-H
-        parasite_write_r3(shared.r3_p2h, 0xAA, 2);
-        parasite_write_r3(shared.r3_p2h, 0xBB, 2);
+        parasite_write_r3(shared.r3_p2h, 0xAA);
+        parasite_write_r3(shared.r3_p2h, 0xBB);
         parasite_written.store(true, std::memory_order_release);
     });
 
@@ -426,8 +423,8 @@ TEST_CASE("TubeShared cross-thread: R3 two-byte transfer from parasite to host",
     CHECK(host.host_read(5) == 0xAA);
     CHECK(host.host_read(5) == 0xBB);
 
-    // Pending should be cleared, data no longer available
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 0);
+    // Count should be zero, data no longer available
+    CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
     status = host.host_read(4);
     CHECK((status & TubeUla::DATA_AVAILABLE) == 0);
 }

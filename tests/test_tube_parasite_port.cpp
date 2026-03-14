@@ -291,8 +291,8 @@ TEST_CASE("TubeParasitePort R3 P-to-H write in 1-byte mode", "[tube][parasite]")
 
     // Clear the dummy byte from init
     host.host_read(5);  // consume dummy byte
-    // Verify P-to-H pending is cleared
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 0);
+    // Verify P-to-H count is cleared
+    CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
 
     // Parasite writes one byte (V=0, threshold=1)
     parasite.parasite_write(5, 0xBB);
@@ -330,18 +330,17 @@ TEST_CASE("TubeParasitePort R3 status shows P-to-H space available", "[tube][par
     shared.init();
     TubeParasitePort parasite(&shared);
 
-    // After init(), R3 P-to-H count=0, pending=0 -- space available
+    // After init(), R3 P-to-H count=0 -- space available
     uint8_t status = parasite.parasite_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) != 0);
 
-    // After reset(), R3 P-to-H has dummy byte (pending=1) -- no space
+    // After reset(), R3 P-to-H has dummy byte (count=1) -- no space
     parasite.reset();
     status = parasite.parasite_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) == 0);
 
     // Clear the dummy byte
-    shared.r3_p2h.count.store(0, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(0, std::memory_order_release);
+    shared.r3_p2h.count.store(0, std::memory_order_release);
 
     // Space available again
     status = parasite.parasite_read(4);
@@ -358,7 +357,7 @@ TEST_CASE("TubeParasitePort R3 status N flag set when data or space available", 
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // After reset(), R3 P-to-H has dummy byte (pending=1, no space),
+    // After reset(), R3 P-to-H has dummy byte (count=1, no space),
     // and no H-to-P data.
     // N = data_available OR space_available = false OR false = false
     parasite.reset();
@@ -366,8 +365,7 @@ TEST_CASE("TubeParasitePort R3 status N flag set when data or space available", 
     CHECK((status & 0x20) == 0);  // N flag clear
 
     // Clear dummy byte to make space available
-    shared.r3_p2h.count.store(0, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(0, std::memory_order_release);
+    shared.r3_p2h.count.store(0, std::memory_order_release);
 
     status = parasite.parasite_read(4);
     CHECK((status & 0x20) != 0);  // N flag set (space available)
@@ -613,7 +611,7 @@ TEST_CASE("TubeParasitePort PNMI asserted on rising edge when H-to-P data arrive
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // After reset(), R3 P-to-H has dummy byte (pending=1),
+    // After reset(), R3 P-to-H has dummy byte (count=1),
     // so space is not available. With no H-to-P data, PNMI level = false.
     parasite.reset();
 
@@ -638,7 +636,7 @@ TEST_CASE("TubeParasitePort PNMI clears when condition removed", "[tube][parasit
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // After reset(), R3 P-to-H has dummy byte (pending=1, no space).
+    // After reset(), R3 P-to-H has dummy byte (count=1, no space).
     parasite.reset();
 
     // Enable M flag
@@ -654,7 +652,7 @@ TEST_CASE("TubeParasitePort PNMI clears when condition removed", "[tube][parasit
     CHECK(parasite.pnmi());
 
     // Parasite reads the R3 data -- removes data_available condition.
-    // P-to-H is still pending (dummy byte), so space_available = false.
+    // P-to-H still has the dummy byte (count=1), so space_available = false.
     // Both conditions false -> PNMI level drops -> edge clears.
     parasite.parasite_read(5);
     CHECK_FALSE(parasite.pnmi());
@@ -666,7 +664,7 @@ TEST_CASE("TubeParasitePort PNMI edge: space available triggers NMI", "[tube][pa
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // After reset(), P-to-H has dummy byte (pending=1, no space), no H-to-P data.
+    // After reset(), P-to-H has dummy byte (count=1, no space), no H-to-P data.
     parasite.reset();
 
     // Enable M flag
@@ -676,7 +674,7 @@ TEST_CASE("TubeParasitePort PNMI edge: space available triggers NMI", "[tube][pa
     parasite.parasite_read(4);
     CHECK_FALSE(parasite.pnmi());
 
-    // Host reads the dummy byte -- clears pending, making P-to-H space available
+    // Host reads the dummy byte -- decrements count, making P-to-H space available
     host.host_read(5);
 
     // Parasite must do a register access to detect the edge
@@ -707,7 +705,6 @@ TEST_CASE("TubeParasitePort reset clears parasite-owned registers", "[tube][para
 
     // R3 P-to-H should have dummy byte (like soft_reset)
     CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 1);
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 1);
 }
 
 TEST_CASE("TubeParasitePort reset clears H-to-P registers", "[tube][parasite]") {
@@ -728,7 +725,6 @@ TEST_CASE("TubeParasitePort reset clears H-to-P registers", "[tube][parasite]") 
     CHECK(shared.r2_h2p.ready.load(std::memory_order_acquire) == 0);
     CHECK(shared.r4_h2p.ready.load(std::memory_order_acquire) == 0);
     CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 0);
-    CHECK(shared.r3_h2p.pending.load(std::memory_order_acquire) == 0);
 }
 
 TEST_CASE("TubeParasitePort reset clears interrupt state", "[tube][parasite]") {
@@ -876,8 +872,7 @@ TEST_CASE("TubeParasitePort pnmi_level false when M flag clear", "[tube][parasit
 
     // R3 H-to-P has data, but M=0 -> level is false.
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
-    shared.r3_h2p.pending.store(1, std::memory_order_release);
+    shared.r3_h2p.count.store(1, std::memory_order_release);
 
     CHECK_FALSE(parasite.pnmi_level());
 }
@@ -891,8 +886,7 @@ TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 H-to-P has data", "[
 
     // Deposit H-to-P data.
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
-    shared.r3_h2p.pending.store(1, std::memory_order_release);
+    shared.r3_h2p.count.store(1, std::memory_order_release);
 
     CHECK(parasite.pnmi_level());
 }
@@ -904,8 +898,8 @@ TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 P-to-H has space", "
 
     shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
 
-    // P-to-H is empty (pending=0) -> space available -> level true.
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_acquire) == 0);
+    // P-to-H is empty (count=0) -> space available -> level true.
+    CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
     CHECK(parasite.pnmi_level());
 }
 
@@ -916,9 +910,8 @@ TEST_CASE("TubeParasitePort pnmi_level false when M=1 but no data and no space",
 
     shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
 
-    // R3 H-to-P empty, R3 P-to-H full (pending=1) -> neither condition met.
-    shared.r3_p2h.count.store(1, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(1, std::memory_order_release);
+    // R3 H-to-P empty, R3 P-to-H count at threshold (count=1) -> neither condition met.
+    shared.r3_p2h.count.store(1, std::memory_order_release);
 
     CHECK_FALSE(parasite.pnmi_level());
 }
@@ -931,14 +924,12 @@ TEST_CASE("TubeParasitePort pnmi_level responds to shared state changes without 
     shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
 
     // Start with both conditions false.
-    shared.r3_p2h.count.store(1, std::memory_order_relaxed);
-    shared.r3_p2h.pending.store(1, std::memory_order_release);
+    shared.r3_p2h.count.store(1, std::memory_order_release);
     CHECK_FALSE(parasite.pnmi_level());
 
     // Host deposits H-to-P data (no parasite register access needed).
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_relaxed);
-    shared.r3_h2p.pending.store(1, std::memory_order_release);
+    shared.r3_h2p.count.store(1, std::memory_order_release);
 
     // pnmi_level() should immediately reflect the change.
     CHECK(parasite.pnmi_level());

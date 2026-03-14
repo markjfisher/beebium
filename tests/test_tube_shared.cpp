@@ -67,9 +67,7 @@ TEST_CASE("TubeShared: init clears all fields", "[tube][shared]") {
 
     // R3 cleared
     CHECK(shared.r3_h2p.count.load(std::memory_order_relaxed) == 0);
-    CHECK(shared.r3_h2p.pending.load(std::memory_order_relaxed) == 0);
     CHECK(shared.r3_p2h.count.load(std::memory_order_relaxed) == 0);
-    CHECK(shared.r3_p2h.pending.load(std::memory_order_relaxed) == 0);
 
     // P-to-H cleared
     CHECK(shared.r1_p2h.count.load(std::memory_order_relaxed) == 0);
