@@ -395,7 +395,7 @@ Each side computes its own interrupt state locally based on the shared data:
 2. Read `control.flags` (acquire).
 3. Compute: `pirq = (flags.i && r1_h2p.ready) || (flags.j && r4_h2p.ready)`.
 4. Compute PNMI from R3 state and M/V flags.
-5. Assert/deassert PIRQ and PNMI (with edge detection for NMI).
+5. Assert/deassert PIRQ and PNMI (edge-triggered NMI, gated by handler tracking).
 
 No explicit interrupt signalling crosses the process boundary. Each side derives interrupt
 state from the shared register data, exactly as the real Tube ULA does internally.
@@ -794,7 +794,7 @@ beebium-tube-65C02-3MHz (main_tube_65C02_3MHz.cpp)
 │   │   ├── Ram<65536> -- 64 KB RAM
 │   │   ├── Rom<2048> -- Boot ROM at &F800-&FFFF (paged out after boot)
 │   │   └── TubeParasitePort -- Tube registers at &FEF8-&FEFF
-│   └── Interrupt computation (PIRQ, PNMI with edge detection)
+│   └── Interrupt computation (PIRQ, PNMI with NMI handler tracking)
 ├── Pointer to TubeShared (in shared memory, mapped on startup)
 ├── Clock pacing loop (independent, targets 3 MHz)
 ├── gRPC connection to host (for TubeService.Connect handshake)
@@ -814,7 +814,9 @@ the ROM out, exposing RAM underneath. This matches the hardware boot sequence.
 **Interrupt routing**:
 - PIRQ connects to the 65C02 IRQ input.
 - PNMI connects to the 65C02 NMI input.
-- NMI requires edge detection: only trigger on 0-to-1 transitions of the PNMI signal.
+- NMI edge detection is handled by `M6502_SetDeviceNMI` (fires on 0-to-1 transitions).
+- NMI nesting is prevented by `ParasiteCpu`'s handler tracking: PNMI is not reasserted
+  while the CPU is inside an NMI handler (see "NMI handler tracking" above).
 
 **Clock pacing**: the parasite runs its own independent pacing loop targeting 3 MHz
 (for 6502 second processor). This uses the same wall-clock pacing mechanism as the host
@@ -959,7 +961,7 @@ Each process also maintains **local** (non-shared) state for interrupt computati
 
 ```
 TubeLocalState (per-process, not shared)
-├── prev_pnmi: bool             // for NMI edge detection (parasite only)
+├── in_nmi_handler: bool        // NMI handler tracking (parasite only)
 ├── last_read_latch: u8         // value returned when FIFO empty
 └── boot_mode: bool             // ROM paging state (parasite only)
 ```
@@ -1000,8 +1002,36 @@ else:
     pnmi = false
 ```
 
-NMI is edge-triggered on the parasite: only fires on 0-to-1 transitions. The model must
-track `prev_pnmi` to detect edges.
+NMI is edge-triggered on the parasite: only fires on 0-to-1 transitions. Edge detection
+is handled by the M6502 library's `M6502_SetDeviceNMI`, which internally tracks
+`device_nmi_flags` and only sets `nmi_flags` on 0-to-1 transitions of the device mask.
+
+#### NMI handler tracking and nesting prevention
+
+In the cross-process Tube model, the host writes R3 data bytes at native CPU speed
+(nanoseconds between writes), far faster than the 16-32 us per byte on real hardware.
+Without protection, a second PNMI could fire before the parasite's NMI handler has
+finished processing the first byte, corrupting the handler's state.
+
+`ParasiteCpu` tracks whether the CPU is currently inside an NMI handler:
+
+- **Entry**: detected when `cpu.read == M6502ReadType_Interrupt` and `cpu.nmi_flags != 0`
+  after the CPU's tick function. At this point the M6502 has begun the interrupt sequence
+  but `nmi_flags` has not yet been cleared (that happens at T4). The condition
+  `nmi_flags != 0` distinguishes NMI entry from IRQ entry, which is necessary because
+  `irq_flags` can be non-zero (PIRQ asserted) simultaneously.
+
+- **Exit**: detected when the CPU is about to execute an RTI instruction
+  (`M6502_IsAboutToExecute && dbus == 0x40`).
+
+While `in_nmi_handler` is true, PNMI reassertion is suppressed -- `M6502_SetDeviceNMI`
+is not called with the PNMI mask. On NMI entry, `device_nmi_flags` is cleared by calling
+`M6502_SetDeviceNMI(mask, 0)`, so that after RTI, reasserting PNMI produces a fresh
+0-to-1 edge.
+
+This approach replaces the earlier `prev_pnmi` edge-tracking model, which could not
+prevent NMI nesting in the asynchronous cross-process case where multiple PNMI edges
+could arrive within a single handler execution.
 
 ### Reset state
 
@@ -1010,7 +1040,7 @@ On reset:
 - All register latches and FIFOs cleared.
 - All status flags set to "not full" (writer can write), "data not available" (reader empty).
 - R3 parasite-to-host initialised with one dummy byte (count=1) to prevent spurious PNMI.
-- `prev_pnmi` set to false.
+- `in_nmi_handler` set to false.
 
 ## Process Lifecycle
 
@@ -1171,15 +1201,19 @@ be reused directly or with minor adaptation.
   host's `Machine` template (which is tightly coupled to the BBC Micro's tick ordering:
   VIA ticking, VideoBinding, bus stretching, sound chip, Econet NMI), `ParasiteRunner`
   provides a clean, minimal execution loop:
-  1. Execute CPU instruction via `ParasiteCpu`.
-  2. Compute PIRQ and PNMI from `TubeParasitePort` state.
-  3. Assert/deassert interrupt lines on CPU.
-  4. Check lifecycle mailbox (every N instructions).
-  5. Advance cycle count.
+  1. Tick `ParasiteCpu` (one CPU cycle, including interrupt computation).
+  2. Check lifecycle mailbox (every N cycles).
 
   No VIA ticking, no video, no sound, no host-side bus stretching.
-- **`ParasiteCpu`**: thin wrapper around the 6502 C library, instantiated with
-  `M6502_cmos6502_config` for the CMOS instruction set.
+- **`ParasiteCpu`**: wrapper around the 6502 C library, instantiated with
+  `M6502_cmos6502_config` for the CMOS instruction set. Each `tick()` call:
+  1. Executes one CPU cycle via the M6502 tick function.
+  2. Performs the memory read/write.
+  3. Asserts/deasserts PIRQ from `TubeParasitePort` state.
+  4. Detects NMI handler entry (interrupt sequence with `nmi_flags != 0`) and
+     exit (RTI opcode), tracking `in_nmi_handler`.
+  5. Reasserts PNMI from `TubeParasitePort` state only when not inside an NMI handler.
+  6. Advances the cycle count.
 - **Clock pacing**: the same wall-clock pacing strategy as the host server (accumulate
   emulated cycles, compare to real time, sleep if ahead), but targeting 3 MHz.
 - **gRPC service layer**: the parasite reuses the same `DebuggerControl` and
@@ -1470,8 +1504,11 @@ wires its local address decode to the same `TubeShared` region.
   `TubeConnectResponse` includes `host_uuid` for mDNS linkage.
 - Parasite mDNS TXT records: `role=parasite`, `processor=65C02`, `clock_mhz=3`,
   `host_uuid=<uuid>`.
-- New test file: `test_parasite_grpc.cpp` (8 test cases) verifying debugger RPCs on parasite
+- New test file: `test_parasite_grpc.cpp` (9 test cases) verifying debugger RPCs on parasite
   and `DeviceInspection` returning UNIMPLEMENTED.
+- `Cpu6502State` proto extended with interrupt handler tracking fields (`in_nmi_handler`,
+  `in_irq_handler`, `nmi_pending`, `irq_pending`, `device_irq_flags`, `device_nmi_flags`),
+  exposed via `Get6502State` for both host and parasite.
 
 ### Phase 5: Save state -- NOT STARTED
 
