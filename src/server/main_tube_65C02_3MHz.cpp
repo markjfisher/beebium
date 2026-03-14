@@ -186,12 +186,14 @@ int main(int argc, char* argv[]) {
 
     // --- Map shared memory ---
     // Extract the suffix from the shared memory name.
-    // The name is "/beebium_tube_<suffix>", so strip the "/beebium_tube_" prefix.
+    // POSIX name is "/<suffix>", Windows name is "beebium_tube_<suffix>".
+    // TubeSharedMemory reconstructs the platform name from the suffix.
     std::string shm_name = connect_resp.shared_memory_name();
-    static constexpr const char* SHM_PREFIX = "/beebium_tube_";
     std::string suffix;
-    if (shm_name.starts_with(SHM_PREFIX)) {
-        suffix = shm_name.substr(std::strlen(SHM_PREFIX));
+    if (shm_name.starts_with("/")) {
+        suffix = shm_name.substr(1);
+    } else if (shm_name.starts_with("beebium_tube_")) {
+        suffix = shm_name.substr(std::strlen("beebium_tube_"));
     } else {
         std::cerr << "Error: Unexpected shared memory name format: " << shm_name << "\n";
         return 70;

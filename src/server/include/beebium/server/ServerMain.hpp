@@ -1129,10 +1129,13 @@ std::optional<int> install_tube(
 
     if constexpr (HasTubeSocket<Memory>) {
         if (!config.tube_stem.empty()) {
-            // Generate shared memory name from machine UUID
-            std::string shm_suffix = config.machine_uuid.empty()
-                ? "tube_" + generate_uuid_v4()
-                : "tube_" + config.machine_uuid;
+            // Generate shared memory suffix from machine UUID.
+            // Strip hyphens and truncate to stay within macOS shm_open's
+            // 30-character name limit (PSHMNAMLEN - 1, excluding leading '/').
+            auto shm_id = config.machine_uuid.empty()
+                ? generate_uuid_v4() : config.machine_uuid;
+            std::erase(shm_id, '-');
+            std::string shm_suffix = "tube_" + shm_id.substr(0, 24);
 
             try {
                 tube_shm = std::make_unique<beebium::TubeSharedMemory>(

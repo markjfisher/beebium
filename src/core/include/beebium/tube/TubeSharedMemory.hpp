@@ -31,8 +31,12 @@ enum class TubeSharedMemoryRole {
 // (parasite) opens an existing region by name and validates its header.
 // Both sides unmap on destruction; the Creator also unlinks the name.
 //
-// The shared memory name is constructed as "/beebium_tube_<suffix>" where
-// the suffix is provided by the caller (typically a UUID or PID).
+// The shared memory name is constructed from a caller-provided suffix:
+//   POSIX:   "/<suffix>"                (e.g. "/tube_ca434c6bc34a41d2")
+//   Windows: "beebium_tube_<suffix>"    (e.g. "beebium_tube_ca434c6bc34a41d2")
+//
+// On macOS, shm_open names are limited to 30 characters (excluding the
+// leading '/'), so the suffix must be kept short.
 //
 // Usage (host):
 //   TubeSharedMemory shm("abc123", TubeSharedMemoryRole::Creator);
@@ -62,7 +66,7 @@ public:
     TubeShared* operator->() const { return mapped_; }
     TubeShared& operator*() const { return *mapped_; }
 
-    // The full POSIX shared memory name (e.g. "/beebium_tube_abc123").
+    // The platform-specific shared memory name (e.g. "/tube_abc123" on POSIX).
     const std::string& name() const { return shm_name_; }
 
     // The role of this process.
