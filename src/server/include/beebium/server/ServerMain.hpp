@@ -1166,6 +1166,7 @@ std::optional<int> launch_tube_parasite(
     const ServerConfig<MachineType>& config,
     uint16_t server_port,
     const char* host_argv0,
+    service::TubeServiceImpl<MachineType>& tube_service,
     std::optional<Subprocess>& parasite_process)
 {
     if (config.tube_stem.empty()) {
@@ -1211,16 +1212,33 @@ std::optional<int> launch_tube_parasite(
         return ExitCode::SOFTWARE;
     }
 
-    // Wait briefly to detect immediate startup failures (missing ROM, bad
-    // shared memory name, etc.). If the parasite exits within this window
-    // it never connected, so the host should not proceed.
-    if (subprocess->wait(500)) {
-        std::cerr << "Error: Tube parasite exited immediately after launch\n";
-        return ExitCode::SOFTWARE;
+    // Wait for the parasite to call TubeService.Connect, polling for
+    // either a successful connection or early process death.
+    static constexpr int CONNECT_TIMEOUT_MS = 10000;
+    static constexpr int POLL_INTERVAL_MS = 50;
+    int elapsed_ms = 0;
+
+    while (elapsed_ms < CONNECT_TIMEOUT_MS) {
+        // Check if the parasite has already connected
+        if (tube_service.wait_for_connection(POLL_INTERVAL_MS)) {
+            parasite_process = std::move(*subprocess);
+            return std::nullopt;
+        }
+        elapsed_ms += POLL_INTERVAL_MS;
+
+        // Check if the process died (missing ROM, bad args, etc.)
+        if (!subprocess->is_alive()) {
+            std::cerr << "Error: Tube parasite exited before connecting\n";
+            return ExitCode::SOFTWARE;
+        }
     }
 
-    parasite_process = std::move(*subprocess);
-    return std::nullopt;
+    // Timed out waiting for Connect
+    std::cerr << "Error: Tube parasite did not connect within "
+              << CONNECT_TIMEOUT_MS / 1000 << " seconds\n";
+    subprocess->terminate();
+    subprocess->wait(1000);
+    return ExitCode::SOFTWARE;
 }
 
 // Load disc images into floppy drives.
@@ -1544,7 +1562,7 @@ public:
 
             // Launch Tube parasite subprocess (needs gRPC port for Connect handshake)
             std::optional<Subprocess> tube_parasite;
-            if (auto exit_code = launch_tube_parasite(config, server.port(), argv[0], tube_parasite)) {
+            if (auto exit_code = launch_tube_parasite(config, server.port(), argv[0], *server.tube_service(), tube_parasite)) {
                 server.stop();
                 return *exit_code;
             }

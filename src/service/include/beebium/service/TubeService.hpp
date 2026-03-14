@@ -19,6 +19,8 @@
 #include "beebium/tube/TubeSharedMemory.hpp"
 
 #include <grpcpp/grpcpp.h>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 
@@ -89,6 +91,7 @@ public:
             parasite_type_ = request->parasite_type();
             parasite_clock_hz_ = request->parasite_clock_hz();
             parasite_connected_ = true;
+            connected_cv_.notify_all();
 
             // Return shared memory details
             response->set_shared_memory_name(shared_memory_->name());
@@ -164,6 +167,15 @@ public:
                             "State restore not yet implemented");
     }
 
+    // Block until the parasite calls Connect, or until timeout_ms elapses.
+    // Returns true if connected, false on timeout.
+    bool wait_for_connection(int timeout_ms) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        return connected_cv_.wait_for(lock,
+            std::chrono::milliseconds(timeout_ms),
+            [this] { return parasite_connected_; });
+    }
+
     // Called when the parasite process disconnects or crashes.
     void notify_parasite_disconnected() {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -175,6 +187,7 @@ public:
 private:
     MachineType& machine_;
     std::mutex mutex_;
+    std::condition_variable connected_cv_;
 
     // Non-owning pointer to the shared memory region (set by host startup).
     TubeSharedMemory* shared_memory_ = nullptr;
