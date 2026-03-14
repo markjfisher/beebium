@@ -144,6 +144,7 @@ void TubeParasitePort::parasite_write(uint8_t offset, uint8_t value)
 
     case 3: {
         // R2 data: write to P-to-H latch.
+        // No bus stretching on R2 (App Note 004).
         shared_->r2_p2h.value.store(value, std::memory_order_relaxed);
         shared_->r2_p2h.ready.store(1, std::memory_order_release);
         break;

@@ -112,6 +112,16 @@ public:
         backend_->host_write(static_cast<uint8_t>(offset), value);
     }
 
+    // --- Bus stretching ---
+
+    // Returns true if the last host access could not complete because
+    // the target register was full (write) or empty (read). Only
+    // meaningful in in-process mode (TubeUla); the shared memory
+    // TubeHostPort uses spin-waits instead.
+    bool stretched() const {
+        return backend_->stretched();
+    }
+
     // --- IrqSource interface (satisfies IrqSource concept) ---
     //
     // Named irq_pending() to satisfy the generic IrqSource concept used by

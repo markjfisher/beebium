@@ -62,9 +62,18 @@ TEST_CASE("R1 host-to-parasite latch", "[tube][fifo][r1]") {
         REQUIRE((host_stat & TubeUla::SPACE_AVAILABLE) != 0);  // host can write again
     }
 
-    SECTION("Second host write before parasite read overwrites (1-byte latch)") {
+    SECTION("Second host write to full latch causes bus stretching") {
         tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
+        REQUIRE_FALSE(tube.stretched());
+
+        tube.host_write(1, 0xBB);  // latch full -- deferred
+        REQUIRE(tube.stretched());
+
+        // Parasite reads the first value; pending write completes.
+        REQUIRE(tube.parasite_read(1) == 0xAA);
+        REQUIRE_FALSE(tube.stretched());
+
+        // Second value now available.
         REQUIRE(tube.parasite_read(1) == 0xBB);
     }
 }
@@ -1044,6 +1053,187 @@ TEST_CASE("R1 FIFO boundary conditions", "[tube][fifo][boundary]") {
             tube.parasite_write(1, static_cast<uint8_t>(100 + i));
         for (int i = 0; i < 24; i++)
             REQUIRE(tube.host_read(1) == static_cast<uint8_t>(100 + i));
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Bus stretching
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("Host write bus stretching on R1", "[tube][stretch][r1]") {
+    TubeUla tube;
+
+    SECTION("No stretching when latch is empty") {
+        tube.host_write(1, 0x42);
+        REQUIRE_FALSE(tube.stretched());
+    }
+
+    SECTION("Stretching when latch is full") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+        REQUIRE(tube.stretched());
+    }
+
+    SECTION("Stretching clears when parasite drains the latch") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+        REQUIRE(tube.stretched());
+
+        tube.parasite_read(1);  // drains 0xAA, pending 0xBB completes
+        REQUIRE_FALSE(tube.stretched());
+    }
+
+    SECTION("Pending write completes with correct value") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+
+        REQUIRE(tube.parasite_read(1) == 0xAA);
+        REQUIRE(tube.parasite_read(1) == 0xBB);
+    }
+
+    SECTION("Interrupts updated after pending write completes") {
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+        tube.host_write(1, 0xAA);
+        REQUIRE(tube.pirq());
+
+        tube.host_write(1, 0xBB);  // stretched
+        tube.parasite_read(1);     // drains 0xAA, 0xBB lands
+        REQUIRE(tube.pirq());      // still active from 0xBB
+    }
+}
+
+TEST_CASE("Host write bus stretching on R3", "[tube][stretch][r3]") {
+    TubeUla tube;
+
+    SECTION("No stretching with space in FIFO") {
+        tube.host_write(5, 0xAA);
+        REQUIRE_FALSE(tube.stretched());
+        tube.host_write(5, 0xBB);
+        REQUIRE_FALSE(tube.stretched());
+    }
+
+    SECTION("Stretching when 2-byte FIFO is physically full") {
+        tube.host_write(5, 0xAA);
+        tube.host_write(5, 0xBB);
+        tube.host_write(5, 0xCC);  // FIFO full -- stretched
+        REQUIRE(tube.stretched());
+    }
+
+    SECTION("Pending write completes after parasite drains one byte") {
+        tube.host_write(5, 0xAA);
+        tube.host_write(5, 0xBB);
+        tube.host_write(5, 0xCC);  // stretched
+        REQUIRE(tube.stretched());
+
+        tube.parasite_read(5);     // drains 0xAA, 0xCC lands
+        REQUIRE_FALSE(tube.stretched());
+
+        REQUIRE(tube.parasite_read(5) == 0xBB);
+        REQUIRE(tube.parasite_read(5) == 0xCC);
+    }
+
+    SECTION("Stretching in one-byte mode after two bytes") {
+        // V=0 (one-byte mode): threshold=1, but physical FIFO is still 2 bytes.
+        // Stretching occurs at count >= 2 (physical limit), not at threshold.
+        tube.host_write(5, 0xAA);
+        REQUIRE_FALSE(tube.stretched());
+        tube.host_write(5, 0xBB);  // count=2, physically full
+        REQUIRE_FALSE(tube.stretched());  // count was 1, write succeeded
+
+        tube.host_write(5, 0xCC);  // count=2, FIFO full -- stretched
+        REQUIRE(tube.stretched());
+    }
+
+    SECTION("Pending write sets pending flag correctly in two-byte mode") {
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
+
+        tube.host_write(5, 0xAA);
+        tube.host_write(5, 0xBB);  // count=2, pending=true
+        tube.host_write(5, 0xCC);  // stretched
+
+        // Drain first byte: count goes to 1, pending cleared (count == 0 check).
+        // Actually count goes 2->1, pending stays because count > 0.
+        // Pending write lands: count goes 1->2, pending set (threshold=2).
+        tube.parasite_read(5);
+        REQUIRE_FALSE(tube.stretched());
+
+        // Both remaining bytes available.
+        REQUIRE(tube.parasite_read(5) == 0xBB);
+        REQUIRE(tube.parasite_read(5) == 0xCC);
+    }
+}
+
+TEST_CASE("Host write bus stretching on R4", "[tube][stretch][r4]") {
+    TubeUla tube;
+
+    SECTION("No stretching when latch is empty") {
+        tube.host_write(7, 0x42);
+        REQUIRE_FALSE(tube.stretched());
+    }
+
+    SECTION("Stretching when latch is full") {
+        tube.host_write(7, 0xAA);
+        tube.host_write(7, 0xBB);
+        REQUIRE(tube.stretched());
+    }
+
+    SECTION("Pending write completes with correct value") {
+        tube.host_write(7, 0xAA);
+        tube.host_write(7, 0xBB);
+
+        REQUIRE(tube.parasite_read(7) == 0xAA);
+        REQUIRE_FALSE(tube.stretched());
+        REQUIRE(tube.parasite_read(7) == 0xBB);
+    }
+}
+
+TEST_CASE("R2 has no bus stretching", "[tube][stretch][r2]") {
+    TubeUla tube;
+
+    SECTION("Second host write overwrites without stretching") {
+        tube.host_write(3, 0xAA);
+        tube.host_write(3, 0xBB);
+        REQUIRE_FALSE(tube.stretched());
+        REQUIRE(tube.parasite_read(3) == 0xBB);
+    }
+}
+
+TEST_CASE("Bus stretching cleared by reset", "[tube][stretch][reset]") {
+    TubeUla tube;
+
+    SECTION("Hard reset clears stretched state") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+        REQUIRE(tube.stretched());
+
+        tube.reset();
+        REQUIRE_FALSE(tube.stretched());
+    }
+
+    SECTION("Soft reset (T flag) clears stretched state") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+        REQUIRE(tube.stretched());
+
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_T);
+        REQUIRE_FALSE(tube.stretched());
+    }
+}
+
+TEST_CASE("Bus stretching: reading unrelated register does not clear stretch",
+          "[tube][stretch]") {
+    TubeUla tube;
+
+    SECTION("R1 stretched, reading R4 does not clear it") {
+        tube.host_write(1, 0xAA);
+        tube.host_write(1, 0xBB);
+        REQUIRE(tube.stretched());
+
+        tube.parasite_read(7);  // R4 -- unrelated
+        REQUIRE(tube.stretched());  // still stretched on R1
+
+        tube.parasite_read(1);  // R1 -- drains the blocked register
+        REQUIRE_FALSE(tube.stretched());
     }
 }
 

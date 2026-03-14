@@ -108,11 +108,30 @@ void setup_tube_machine(ModelB& machine) {
     machine.memory().load_sideways_rom(13, dnfs.data(), dnfs.size());
 }
 
-// Interleave host and parasite execution.
+// Interleave host and parasite execution on a single thread.
 //
-// Approximates the 2 MHz / 3 MHz clock ratio by stepping the host for
-// host_batch instructions, then the parasite for parasite_batch instructions,
-// repeated for the given number of rounds.
+// The host_batch:parasite_batch ratio approximates the real clock ratio
+// between the two processors (e.g. 2:3 for a 2 MHz host and 3 MHz
+// parasite). This ratio is necessary for two reasons:
+//
+//   1. Realism: the parasite runs faster than the host in real hardware.
+//      A 1:1 ratio would under-clock the parasite relative to the host,
+//      potentially changing the observable behaviour of timing-sensitive
+//      transfer protocols.
+//
+//   2. Bus stretching: TubeHostPort implements bus stretching as a
+//      spin-wait, which is correct for multi-process operation (the
+//      parasite runs on a separate thread) but would deadlock in this
+//      single-threaded test if the host ever writes to a full register
+//      before the parasite has a chance to drain it. The ratio must
+//      give the parasite enough instructions between host batches to
+//      keep up with the data flow. The 2:3 ratio is sufficient for the
+//      65C02 3 MHz second processor boot sequence.
+//
+// Note: the ratio is a property of the test harness, not of the Tube
+// protocol itself. In production the host and parasite run on separate
+// threads and bus stretching (spin-wait) handles back-pressure
+// regardless of clock ratio.
 void interleaved_boot(ModelB& host, ParasiteRunner& parasite,
                       int rounds, int host_batch, int parasite_batch)
 {
@@ -164,14 +183,9 @@ TEST_CASE("Model B with 65C02 second processor boots with Tube banner",
     parasite.reset();
 
     // --- Interleaved boot ---
-    // Host at 2 MHz, parasite at 3 MHz. Step ratio ~2:3.
-    // 3500 rounds * 1000 instructions = 3.5M host instructions
-    // 3500 rounds * 1500 instructions = 5.25M parasite instructions
-    //
-    // The parasite boot completes in ~30K cycles. After that it spins
-    // in WaitByte polling R2 for host data. The host MOS needs ~200K
-    // instructions to reach Tube detection, then reads the banner.
-    interleaved_boot(machine, parasite, 3500, 1000, 1500);
+    // 2:3 ratio approximates the 2 MHz host / 3 MHz parasite clock speeds.
+    // See interleaved_boot() comment for why this ratio matters.
+    interleaved_boot(machine, parasite, 5000000, 2, 3);
 
     // --- Verify screen ---
     INFO("Screen:\n" << dump_screen(machine));
@@ -181,6 +195,9 @@ TEST_CASE("Model B with 65C02 second processor boots with Tube banner",
 
     // The normal "BBC Computer 32K" line should NOT appear
     CHECK_FALSE(screen_contains(machine, "BBC Computer 32K"));
+
+    // BASIC must have entered and printed its chevron prompt
+    CHECK(screen_contains(machine, ">"));
 }
 
 TEST_CASE("Model B with Tube shows 64K memory (not 32K)",
@@ -206,7 +223,8 @@ TEST_CASE("Model B with Tube shows 64K memory (not 32K)",
     ParasiteRunner parasite(&shared, tube_rom);
     parasite.reset();
 
-    interleaved_boot(machine, parasite, 3500, 1000, 1500);
+    // 2:3 ratio approximates the 2 MHz host / 3 MHz parasite clock speeds.
+    interleaved_boot(machine, parasite, 5000000, 2, 3);
 
     INFO("Screen:\n" << dump_screen(machine));
 

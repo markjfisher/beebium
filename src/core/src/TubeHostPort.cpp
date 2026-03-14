@@ -139,6 +139,9 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
 
     case 1: {
         // R1 data: write to H-to-P latch.
+        // Bus stretching: spin until the parasite has consumed any previous byte.
+        while (shared_->r1_h2p.ready.load(std::memory_order_acquire) != 0)
+            ;
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
         break;
@@ -161,16 +164,17 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
 
     case 5: {
         // R3 data: write to H-to-P register.
-        uint8_t count = shared_->r3_h2p.count.load(std::memory_order_acquire);
-        if (count < 2) {
-            shared_->r3_h2p.data[count].store(value, std::memory_order_relaxed);
-            count++;
-            shared_->r3_h2p.count.store(count, std::memory_order_release);
-            auto flags = shared_->control_flags.load(std::memory_order_acquire);
-            uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-            if (count >= threshold)
-                shared_->r3_h2p.pending.store(1, std::memory_order_release);
-        }
+        // Bus stretching: spin until the register has space.
+        uint8_t count;
+        while ((count = shared_->r3_h2p.count.load(std::memory_order_acquire)) >= 2)
+            ;
+        shared_->r3_h2p.data[count].store(value, std::memory_order_relaxed);
+        count++;
+        shared_->r3_h2p.count.store(count, std::memory_order_release);
+        auto flags = shared_->control_flags.load(std::memory_order_acquire);
+        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+        if (count >= threshold)
+            shared_->r3_h2p.pending.store(1, std::memory_order_release);
         break;
     }
 
@@ -180,6 +184,9 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
 
     case 7: {
         // R4 data: write to H-to-P latch.
+        // Bus stretching: spin until the parasite has consumed any previous byte.
+        while (shared_->r4_h2p.ready.load(std::memory_order_acquire) != 0)
+            ;
         shared_->r4_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r4_h2p.ready.store(1, std::memory_order_release);
         break;

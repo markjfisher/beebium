@@ -39,6 +39,18 @@ public:
     // Host IRQ output (HIRQ). Active when Q=1 and R4 P-to-H has data.
     virtual bool hirq() const = 0;
 
+    // Returns true if the last host_write (or host_read) could not complete
+    // because the target register was full (write) or empty (read).
+    //
+    // On real hardware the Tube ULA holds the host CPU's clock until the
+    // condition clears (the parasite drains or fills the register). In the
+    // in-process TubeUla model this is reported as a flag; the caller is
+    // responsible for stepping the parasite until stretched() returns false.
+    //
+    // TubeHostPort (shared memory) uses spin-waits instead, so it always
+    // returns false here.
+    virtual bool stretched() const { return false; }
+
     // Full hardware reset (HRST).
     virtual void reset() = 0;
 };
