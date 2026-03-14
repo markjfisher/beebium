@@ -139,7 +139,7 @@ int main(int argc, char* argv[]) {
     // --- Find and load ROM ---
     auto rom_filepath = find_rom(argv[0], config);
     if (rom_filepath.empty()) {
-        std::cerr << "Error: Tube 6502 ROM not found: " << ROM_FILENAME << "\n";
+        std::cerr << "Error: Tube Client ROM not found: " << ROM_FILENAME << "\n";
         return 66;  // EX_NOINPUT
     }
 
