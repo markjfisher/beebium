@@ -458,6 +458,15 @@ target_compile_definitions(test_tube_end_to_end PRIVATE
 )
 catch_discover_tests(test_tube_end_to_end)
 
+# Tube boot screen integration tests (host + parasite, real ROMs)
+add_executable(test_boot_tube test_boot_tube.cpp)
+target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_boot_tube PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
+)
+catch_discover_tests(test_boot_tube)
+
 # Tube shared memory cross-thread tests
 add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
 target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
