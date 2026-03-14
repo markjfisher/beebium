@@ -20,16 +20,17 @@
 
 #include <beebium/tube/TubeSharedMemory.hpp>
 
+#include <beebium/PlatformUtils.hpp>
+
 #include <string>
 #include <thread>
-#include <unistd.h>
 
 using namespace beebium;
 
 // Generate a unique suffix for each test to avoid collisions.
 static std::string unique_suffix() {
     static int counter = 0;
-    return "test_" + std::to_string(getpid()) + "_" + std::to_string(counter++);
+    return "test_" + std::to_string(platform::get_pid()) + "_" + std::to_string(counter++);
 }
 
 // ===========================================================================

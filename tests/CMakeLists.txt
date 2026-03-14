@@ -657,6 +657,7 @@ if(BEEBIUM_BUILD_SERVICE)
     # Preset subcommand integration tests
     add_executable(test_preset_subcommands test_preset_subcommands.cpp)
     target_link_libraries(test_preset_subcommands PRIVATE
+        beebium_core
         Catch2::Catch2WithMain
     )
     # Integration tests depend on executables being built

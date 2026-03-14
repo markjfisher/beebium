@@ -16,7 +16,7 @@
 // end-to-end behavior of the preset management workflow.
 
 #include <catch2/catch_test_macros.hpp>
-#include <cstdlib>
+#include <beebium/PlatformUtils.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -119,8 +119,8 @@ std::filesystem::path find_executable(const std::string& name) {
 #endif
 
     // Check environment variable first
-    if (const char* env = std::getenv("BEEBIUM_SERVERS_DIRPATH")) {
-        auto path = std::filesystem::path(env) / exe_name;
+    if (auto env = beebium::platform::get_env("BEEBIUM_SERVERS_DIRPATH")) {
+        auto path = std::filesystem::path(*env) / exe_name;
         if (std::filesystem::exists(path)) {
             return path;
         }

@@ -25,9 +25,10 @@
 #include "tube.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
+#include <beebium/PlatformUtils.hpp>
+
 #include <fstream>
 #include <string>
-#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -47,7 +48,7 @@ std::vector<uint8_t> load_rom(const std::string& filepath) {
 // Generate a unique suffix for shared memory names to avoid test collisions.
 std::string unique_shm_suffix() {
     static int counter = 0;
-    return "grpc_test_" + std::to_string(getpid()) + "_" + std::to_string(counter++);
+    return "grpc_test_" + std::to_string(beebium::platform::get_pid()) + "_" + std::to_string(counter++);
 }
 
 class TubeTestFixture {
