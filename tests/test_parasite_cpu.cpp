@@ -378,21 +378,34 @@ TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "
 
     CHECK(port.pnmi_level());
 
-    // Run enough cycles for the NMI to be taken. The 6502 takes 7 cycles
-    // to service an NMI: current instruction completes (up to ~6 cycles
-    // for longest instruction), then 7 cycles for NMI handler entry.
-    // After NMI, PC should be at the NMI vector (&F980).
-    cpu.run(20);
+    // Run cycle-by-cycle until the NMI handler is entered. The 6502 finishes
+    // the current instruction then takes 7 cycles for the NMI sequence.
+    bool entered_nmi = false;
+    for (int i = 0; i < 20; ++i) {
+        cpu.run(1);
+        if (cpu.in_nmi_handler()) {
+            entered_nmi = true;
+            break;
+        }
+    }
+    CHECK(entered_nmi);
 
-    // The NMI handler at &F980 contains RTI, which returns to the
-    // interrupted NOP stream. Verify the CPU visited the NMI vector
-    // by checking that opcode_pc passed through &F980 at some point.
-    // Since we ran 20 cycles, the NMI handler has executed RTI and
-    // returned. The simplest check: the NMI was taken (nmi_flags cleared).
-    CHECK(cpu.cpu().nmi_flags == 0);
+    // Simulate the NMI handler consuming the R3 data, which deasserts PNMI.
+    // Without this, RTI would immediately re-trigger NMI (correct behaviour
+    // -- the condition is still asserted).
+    shared.r3_h2p.count.store(0, std::memory_order_relaxed);
+    shared.r3_h2p.pending.store(0, std::memory_order_release);
+    CHECK_FALSE(port.pnmi_level());
 
-    // The CPU should have continued executing NOPs after RTI.
-    // Verify it's back in the ROM NOP stream (PC in &F800-&FFFF range).
+    // Run more cycles: the RTI at &F980 returns to the NOP stream.
+    // With PNMI deasserted, no further NMIs fire. Allow enough cycles
+    // for RTI (6) plus a potential second NMI+RTI (7+6) if the edge
+    // was already latched before we cleared the condition.
+    cpu.run(30);
+
+    CHECK_FALSE(cpu.in_nmi_handler());
+
+    // The CPU should be back executing NOPs in the ROM area.
     CHECK(cpu.cpu().abus.w >= 0xF800);
 }
 
