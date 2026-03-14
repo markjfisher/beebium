@@ -1211,6 +1211,14 @@ std::optional<int> launch_tube_parasite(
         return ExitCode::SOFTWARE;
     }
 
+    // Wait briefly to detect immediate startup failures (missing ROM, bad
+    // shared memory name, etc.). If the parasite exits within this window
+    // it never connected, so the host should not proceed.
+    if (subprocess->wait(500)) {
+        std::cerr << "Error: Tube parasite exited immediately after launch\n";
+        return ExitCode::SOFTWARE;
+    }
+
     parasite_process = std::move(*subprocess);
     return std::nullopt;
 }
