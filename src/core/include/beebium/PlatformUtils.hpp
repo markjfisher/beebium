@@ -18,6 +18,8 @@
 #include <string>
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <process.h>
 #else
 #include <unistd.h>
@@ -50,6 +52,17 @@ inline std::optional<std::string> get_env(const char* name) {
         return std::string(value);
     }
     return std::nullopt;
+#endif
+}
+
+// Cross-platform page size query.
+inline size_t get_page_size() {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwPageSize;
+#else
+    return static_cast<size_t>(sysconf(_SC_PAGESIZE));
 #endif
 }
 

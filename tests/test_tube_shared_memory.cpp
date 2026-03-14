@@ -77,10 +77,9 @@ TEST_CASE("TubeSharedMemory: size is page-aligned", "[tube][shm]") {
     auto suffix = unique_suffix();
     TubeSharedMemory shm(suffix, TubeSharedMemoryRole::Creator);
 
-    // Page size is always a power of 2
-    long ps = sysconf(_SC_PAGESIZE);
+    size_t ps = beebium::platform::get_page_size();
     REQUIRE(ps > 0);
-    CHECK((shm.size() % static_cast<size_t>(ps)) == 0);
+    CHECK((shm.size() % ps) == 0);
 }
 
 // ===========================================================================
