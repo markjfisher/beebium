@@ -312,6 +312,8 @@ TEST_CASE("TubeHostPort: R3 P-to-H read and consume", "[tube][host_port]") {
     // Simulate parasite writing 2 bytes to P-to-H
     shared.r3_p2h.data[0].store(0x66, std::memory_order_relaxed);
     shared.r3_p2h.data[1].store(0x77, std::memory_order_relaxed);
+    shared.r3_p2h.head.store(0, std::memory_order_relaxed);
+    shared.r3_p2h.tail.store(0, std::memory_order_relaxed);  // wrapped after writing 2
     shared.r3_p2h.count.store(2, std::memory_order_relaxed);
     shared.r3_p2h.pending.store(1, std::memory_order_release);
 
@@ -339,10 +341,10 @@ TEST_CASE("TubeHostPort: R3 status reflects H-to-P space", "[tube][host_port]") 
     uint8_t status = port.host_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) != 0);
 
-    // Write in 1-byte mode -> pending = true
+    // Write in 1-byte mode (V=0, threshold=1) -> count reaches threshold
     port.host_write(5, 0x88);
 
-    // No space available (pending transfer awaiting parasite read)
+    // No space available (transfer awaiting parasite read)
     status = port.host_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) == 0);
 }

@@ -70,15 +70,14 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 4: {
         // R3 status (parasite perspective).
-        // Bit 7: R3 H-to-P data available (pending or count >= threshold).
-        // Bit 6: R3 P-to-H space available (no pending transfer).
+        // Bit 7: R3 H-to-P data available (count >= threshold).
+        // Bit 6: R3 P-to-H space available (count < threshold).
         // Bit 5: N flag -- NMI action required (raw condition, independent of M).
         // Bits 4-0: read as 1 (App Note 004, note 11).
         result = 0x1F;
         uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        bool h2p_data = shared_->r3_h2p.pending.load(std::memory_order_acquire) != 0
-                     || shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared_->r3_p2h.pending.load(std::memory_order_acquire) == 0;
+        bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+        bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
         if (h2p_data)
             result |= TubeUla::DATA_AVAILABLE;
         if (p2h_space)
@@ -206,9 +205,8 @@ bool TubeParasitePort::pnmi_level() const
         return false;
 
     uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-    bool h2p_data = shared_->r3_h2p.pending.load(std::memory_order_acquire) != 0
-                 || shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-    bool p2h_space = shared_->r3_p2h.pending.load(std::memory_order_acquire) == 0;
+    bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+    bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
     return h2p_data || p2h_space;
 }
 
@@ -244,6 +242,8 @@ void TubeParasitePort::reset()
     // R3 P-to-H: initialise with dummy byte to prevent spurious PNMI.
     shared_->r3_p2h.data[0].store(0, std::memory_order_relaxed);
     shared_->r3_p2h.data[1].store(0, std::memory_order_relaxed);
+    shared_->r3_p2h.head.store(0, std::memory_order_relaxed);
+    shared_->r3_p2h.tail.store(1, std::memory_order_relaxed);
     shared_->r3_p2h.count.store(1, std::memory_order_relaxed);
     shared_->r3_p2h.pending.store(1, std::memory_order_relaxed);
 
@@ -260,6 +260,8 @@ void TubeParasitePort::reset()
 
     shared_->r3_h2p.data[0].store(0, std::memory_order_relaxed);
     shared_->r3_h2p.data[1].store(0, std::memory_order_relaxed);
+    shared_->r3_h2p.head.store(0, std::memory_order_relaxed);
+    shared_->r3_h2p.tail.store(0, std::memory_order_relaxed);
     shared_->r3_h2p.count.store(0, std::memory_order_relaxed);
     shared_->r3_h2p.pending.store(0, std::memory_order_relaxed);
 
@@ -296,15 +298,10 @@ uint8_t TubeParasitePort::dequeue_r3_h2p()
     if (count == 0)
         return 0;
 
-    uint8_t value = shared_->r3_h2p.data[0].load(std::memory_order_relaxed);
-    // Shift second byte down.
-    shared_->r3_h2p.data[0].store(
-        shared_->r3_h2p.data[1].load(std::memory_order_relaxed),
-        std::memory_order_relaxed);
-    shared_->r3_h2p.data[1].store(0, std::memory_order_relaxed);
-
-    uint8_t new_count = count - 1;
-    shared_->r3_h2p.count.store(new_count, std::memory_order_relaxed);
+    uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
+    uint8_t value = shared_->r3_h2p.data[head].load(std::memory_order_acquire);
+    shared_->r3_h2p.head.store(head ^ 1, std::memory_order_relaxed);
+    uint8_t new_count = shared_->r3_h2p.count.fetch_sub(1, std::memory_order_release) - 1;
     if (new_count == 0)
         shared_->r3_h2p.pending.store(0, std::memory_order_release);
 
@@ -317,13 +314,14 @@ void TubeParasitePort::enqueue_r3_p2h(uint8_t value)
     if (count >= 2)
         return;
 
-    shared_->r3_p2h.data[count].store(value, std::memory_order_relaxed);
-    count++;
-    shared_->r3_p2h.count.store(count, std::memory_order_relaxed);
+    uint8_t tail = shared_->r3_p2h.tail.load(std::memory_order_relaxed);
+    shared_->r3_p2h.data[tail].store(value, std::memory_order_relaxed);
+    shared_->r3_p2h.tail.store(tail ^ 1, std::memory_order_relaxed);
+    uint8_t new_count = shared_->r3_p2h.count.fetch_add(1, std::memory_order_release) + 1;
 
     auto flags = shared_->control_flags.load(std::memory_order_acquire);
     uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-    if (count >= threshold)
+    if (new_count >= threshold)
         shared_->r3_p2h.pending.store(1, std::memory_order_release);
 }
 

@@ -472,6 +472,11 @@ add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
 target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_shared_threads)
 
+# Tube R3 register race condition regression tests
+add_executable(test_tube_r3_race test_tube_r3_race.cpp)
+target_link_libraries(test_tube_r3_race PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_r3_race)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests

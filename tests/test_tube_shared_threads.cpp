@@ -70,10 +70,11 @@ bool parasite_write_r3(TubeReg3& reg, uint8_t value, uint8_t threshold) {
     if (count >= 2)
         return false;
 
-    reg.data[count].store(value, std::memory_order_relaxed);
-    count++;
-    reg.count.store(count, std::memory_order_relaxed);
-    if (count >= threshold)
+    uint8_t tail = reg.tail.load(std::memory_order_relaxed);
+    reg.data[tail].store(value, std::memory_order_relaxed);
+    reg.tail.store(tail ^ 1, std::memory_order_relaxed);
+    uint8_t new_count = reg.count.fetch_add(1, std::memory_order_release) + 1;
+    if (new_count >= threshold)
         reg.pending.store(1, std::memory_order_release);
     return true;
 }

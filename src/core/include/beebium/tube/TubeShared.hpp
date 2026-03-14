@@ -52,13 +52,17 @@ struct TubeFifo24 {
     std::atomic<uint8_t> count{0};
 };
 
-// 2-byte register (R3 in each direction).
+// 2-slot circular buffer (R3 in each direction).
 // Supports 1-byte or 2-byte transfer mode (selected by V flag).
+// Producer writes at data[tail], consumer reads from data[head].
+// Count uses fetch_add/fetch_sub for safe cross-process access.
 // The pending flag provides hysteresis: set when count reaches the threshold
 // on write, cleared when count reaches 0 on read.
 struct TubeReg3 {
     std::array<std::atomic<uint8_t>, 2> data{};
-    std::atomic<uint8_t> count{0};
+    std::atomic<uint8_t> head{0};     // consumer read index (0 or 1)
+    std::atomic<uint8_t> tail{0};     // producer write index (0 or 1)
+    std::atomic<uint8_t> count{0};    // shared; use fetch_add/fetch_sub
     std::atomic<uint8_t> pending{0};  // 0 = writer phase, 1 = reader phase
 };
 
@@ -127,6 +131,8 @@ struct alignas(64) TubeShared {
         r2_h2p.ready.store(0, std::memory_order_relaxed);
         r3_h2p.data[0].store(0, std::memory_order_relaxed);
         r3_h2p.data[1].store(0, std::memory_order_relaxed);
+        r3_h2p.head.store(0, std::memory_order_relaxed);
+        r3_h2p.tail.store(0, std::memory_order_relaxed);
         r3_h2p.count.store(0, std::memory_order_relaxed);
         r3_h2p.pending.store(0, std::memory_order_relaxed);
         r4_h2p.value.store(0, std::memory_order_relaxed);
@@ -140,6 +146,8 @@ struct alignas(64) TubeShared {
         r2_p2h.ready.store(0, std::memory_order_relaxed);
         r3_p2h.data[0].store(0, std::memory_order_relaxed);
         r3_p2h.data[1].store(0, std::memory_order_relaxed);
+        r3_p2h.head.store(0, std::memory_order_relaxed);
+        r3_p2h.tail.store(0, std::memory_order_relaxed);
         r3_p2h.count.store(0, std::memory_order_relaxed);
         r3_p2h.pending.store(0, std::memory_order_relaxed);
         r4_p2h.value.store(0, std::memory_order_relaxed);
