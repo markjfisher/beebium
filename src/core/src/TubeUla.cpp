@@ -186,6 +186,120 @@ uint8_t TubeUla::host_read(uint8_t offset)
     return result;
 }
 
+uint8_t TubeUla::host_peek(uint8_t offset) const
+{
+    uint8_t result = 0;
+
+    switch (offset & 7) {
+    case 0: {
+        result = control_flags_ & 0x3F;
+        if (r1_.p2h_count > 0)
+            result |= DATA_AVAILABLE;
+        if (!r1_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 1:
+        result = (r1_.p2h_count > 0) ? r1_.p2h_fifo[r1_.p2h_head] : 0;
+        break;
+    case 2: {
+        result = 0x3F;
+        if (r2_.p2h_available)
+            result |= DATA_AVAILABLE;
+        if (!r2_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 3:
+        result = r2_.p2h_data;
+        break;
+    case 4: {
+        result = 0x3F;
+        uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+        if (r3_.p2h_pending || r3_.p2h_count >= threshold)
+            result |= DATA_AVAILABLE;
+        if (!r3_.h2p_pending)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 5:
+        result = (r3_.p2h_count > 0) ? r3_.p2h_data[0] : 0;
+        break;
+    case 6: {
+        result = 0x3F;
+        if (r4_.p2h_available)
+            result |= DATA_AVAILABLE;
+        if (!r4_.h2p_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 7:
+        result = r4_.p2h_data;
+        break;
+    }
+
+    return result;
+}
+
+uint8_t TubeUla::parasite_peek(uint8_t offset) const
+{
+    uint8_t result = 0;
+
+    switch (offset & 7) {
+    case 0: {
+        result = control_flags_ & 0x3F;
+        if (r1_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (r1_.p2h_count < 24)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 1:
+        result = r1_.h2p_data;
+        break;
+    case 2: {
+        result = 0x3F;
+        if (r2_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (!r2_.p2h_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 3:
+        result = r2_.h2p_data;
+        break;
+    case 4: {
+        result = 0x1F;
+        uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
+        bool h2p_data = r3_.h2p_pending || r3_.h2p_count >= threshold;
+        bool p2h_space = !r3_.p2h_pending;
+        if (h2p_data)
+            result |= DATA_AVAILABLE;
+        if (p2h_space)
+            result |= SPACE_AVAILABLE;
+        if (h2p_data || p2h_space)
+            result |= 0x20;  // N flag
+        break;
+    }
+    case 5:
+        result = (r3_.h2p_count > 0) ? r3_.h2p_data[0] : 0;
+        break;
+    case 6: {
+        result = 0x3F;
+        if (r4_.h2p_available)
+            result |= DATA_AVAILABLE;
+        if (!r4_.p2h_full)
+            result |= SPACE_AVAILABLE;
+        break;
+    }
+    case 7:
+        result = r4_.h2p_data;
+        break;
+    }
+
+    return result;
+}
+
 void TubeUla::host_write(uint8_t offset, uint8_t value)
 {
     switch (offset & 7) {

@@ -463,6 +463,10 @@ public:
         if (addr >= 0xFE60 && addr <= 0xFE7F) {
             return user_via.peek(addr & 0x0F);
         }
+        // Tube registers have side effects (FIFO dequeue, flag clear)
+        if (addr >= 0xFEE0 && addr <= 0xFEFF) {
+            return tube_socket.peek(addr & 0x07);
+        }
         // Handle ANDY RAM for debugger
         if (addr >= 0x8000 && addr < 0xB000 && (romsel_ & 0x80)) {
             return andy_ram.read(addr - 0x8000);

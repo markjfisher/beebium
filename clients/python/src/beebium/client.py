@@ -37,6 +37,7 @@ from beebium.server import ServerProcess
 from beebium.sound import Sound
 from beebium.system import System
 from beebium.tube import Tube
+from beebium.tube_ula import TubeUlaInspection
 from beebium.via import Via, ViaId
 from beebium.video import Video
 from beebium.video_ula import VideoUla
@@ -95,6 +96,7 @@ class Beebium:
         self._disc: Disc | None = None
         self._econet: Econet | None = None
         self._tube: Tube | None = None
+        self._tube_ula: TubeUlaInspection | None = None
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -268,6 +270,13 @@ class Beebium:
         if self._sound is None:
             self._sound = Sound(self._connection.device_inspection_stub)
         return self._sound
+
+    @property
+    def tube_ula(self) -> TubeUlaInspection:
+        """Access Tube ULA device state (side-effect-free inspection)."""
+        if self._tube_ula is None:
+            self._tube_ula = TubeUlaInspection(self._connection.device_inspection_stub)
+        return self._tube_ula
 
     @property
     def system(self) -> System:

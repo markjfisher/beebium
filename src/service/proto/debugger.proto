@@ -44,6 +44,7 @@ service DeviceInspection {
     rpc GetVideoUlaState(GetVideoUlaStateRequest) returns (VideoUlaState);
     rpc GetAddressableLatchState(GetAddressableLatchStateRequest) returns (AddressableLatchState);
     rpc GetSoundGeneratorState(GetSoundGeneratorStateRequest) returns (SoundGeneratorState);
+    rpc GetTubeState(GetTubeStateRequest) returns (TubeState);
 }
 
 message Empty {}
@@ -345,4 +346,109 @@ message SoundChannelState {
     uint32 noise_rate = 8;        // 2-bit rate select (0-3, where 3=Tone2)
     bool white_noise = 9;         // true=white noise, false=periodic
     uint32 lfsr_state = 10;       // 15-bit LFSR state
+}
+
+// === Tube ULA ===
+
+message GetTubeStateRequest {}
+
+// Complete Tube ULA state, modelling the real hardware's registers, FIFOs,
+// latches, control flags, and interrupt outputs.
+//
+// The Tube ULA has four register pairs (R1-R4), each with a host-to-parasite
+// (H-to-P) and parasite-to-host (P-to-H) direction. Each direction uses
+// specific hardware: latches, FIFOs, or 2-byte shift registers.
+//
+// Status bits are provided from both host and parasite perspectives, since
+// each side sees different views of the same registers.
+message TubeState {
+    // Control flags (6 bits, written by host via R1 status register).
+    TubeControlFlags control_flags = 1;
+
+    // Register 1: H-to-P is a 1-byte latch; P-to-H is a 24-byte FIFO.
+    TubeLatchState r1_h2p = 2;      // Host-to-parasite latch
+    TubeFifo24State r1_p2h = 3;     // Parasite-to-host 24-byte FIFO
+
+    // Register 2: 1-byte latch in each direction (no bus stretching).
+    TubeLatchState r2_h2p = 4;
+    TubeLatchState r2_p2h = 5;
+
+    // Register 3: 2-byte shift register in each direction.
+    // Threshold mode (1 or 2 bytes) is selected by the V flag.
+    TubeReg3State r3_h2p = 6;
+    TubeReg3State r3_p2h = 7;
+
+    // Register 4: 1-byte latch in each direction.
+    TubeLatchState r4_h2p = 8;
+    TubeLatchState r4_p2h = 9;
+
+    // Status registers (as read by host at offsets 0/2/4/6).
+    TubeHostStatus host_status = 10;
+
+    // Status registers (as read by parasite at offsets 0/2/4/6).
+    TubeParasiteStatus parasite_status = 11;
+
+    // Interrupt outputs.
+    TubeInterrupts interrupts = 12;
+
+    // Bus stretching state.
+    bool host_stretched = 13;
+
+    // Whether the Tube socket is populated (has a second processor attached).
+    bool enabled = 14;
+}
+
+// Tube ULA control flags (bits 0-5 of the control register).
+message TubeControlFlags {
+    bool q = 1;   // Bit 0: Enable HIRQ from R4
+    bool i = 2;   // Bit 1: Enable PIRQ from R1
+    bool j = 3;   // Bit 2: Enable PIRQ from R4
+    bool m = 4;   // Bit 3: Enable PNMI from R3
+    bool v = 5;   // Bit 4: Two-byte mode for R3
+    bool p = 6;   // Bit 5: Parasite reset
+}
+
+// Single-byte latch state (R1 H-to-P, R2 both directions, R4 both directions).
+message TubeLatchState {
+    uint32 value = 1;           // Current data byte in the latch
+    bool data_available = 2;    // Latch contains unread data
+}
+
+// 24-byte FIFO state (R1 P-to-H only).
+message TubeFifo24State {
+    uint32 count = 1;           // Number of bytes currently in the FIFO (0-24)
+    bytes data = 2;             // FIFO contents in read order (head to tail)
+    bool data_available = 3;    // count > 0
+}
+
+// 2-byte shift register state (R3 in each direction).
+message TubeReg3State {
+    uint32 count = 1;           // Number of bytes in the register (0-2)
+    bytes data = 2;             // Register contents in read order (up to 2 bytes)
+    bool pending = 3;           // Complete transfer awaiting consumption
+    uint32 threshold = 4;       // Current threshold (1 or 2, from V flag)
+}
+
+// Host-perspective status registers (what the host reads at offsets 0/2/4/6).
+message TubeHostStatus {
+    uint32 r1_status = 1;   // Offset 0: control flags + R1 status bits
+    uint32 r2_status = 2;   // Offset 2: R2 status bits (bits 7:6 + 0x3F)
+    uint32 r3_status = 3;   // Offset 4: R3 status bits
+    uint32 r4_status = 4;   // Offset 6: R4 status bits
+}
+
+// Parasite-perspective status registers (what the parasite reads at offsets 0/2/4/6).
+message TubeParasiteStatus {
+    uint32 r1_status = 1;   // Offset 0: control flags + R1 status bits
+    uint32 r2_status = 2;   // Offset 2: R2 status bits
+    uint32 r3_status = 3;   // Offset 4: R3 status bits (includes N flag at bit 5)
+    uint32 r4_status = 4;   // Offset 6: R4 status bits
+}
+
+// Tube interrupt output state.
+message TubeInterrupts {
+    bool hirq = 1;           // Host IRQ: Q=1 AND R4 P-to-H has data
+    bool pirq = 2;           // Parasite IRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data)
+    bool pnmi_level = 3;     // PNMI level (combinational, before edge detection)
+    bool pnmi_edge = 4;      // PNMI latched rising edge
 }

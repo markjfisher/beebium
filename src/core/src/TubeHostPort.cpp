@@ -112,6 +112,76 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 }
 
 // ---------------------------------------------------------------------------
+// Host-side side-effect-free register read (debugger inspection)
+// ---------------------------------------------------------------------------
+
+uint8_t TubeHostPort::host_peek(uint8_t offset) const
+{
+    uint8_t result = 0;
+    auto flags = shared_->control_flags.load(std::memory_order_acquire);
+
+    switch (offset & 7) {
+    case 0: {
+        result = flags & 0x3F;
+        if (shared_->r1_p2h.count.load(std::memory_order_acquire) > 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r1_h2p.ready.load(std::memory_order_acquire) == 0)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 1: {
+        uint8_t count = shared_->r1_p2h.count.load(std::memory_order_acquire);
+        if (count > 0) {
+            uint8_t head = shared_->r1_p2h.head.load(std::memory_order_relaxed);
+            result = shared_->r1_p2h.data[head].load(std::memory_order_relaxed);
+        }
+        break;
+    }
+    case 2: {
+        result = 0x3F;
+        if (shared_->r2_p2h.ready.load(std::memory_order_acquire) != 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r2_h2p.ready.load(std::memory_order_acquire) == 0)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 3:
+        result = shared_->r2_p2h.value.load(std::memory_order_acquire);
+        break;
+    case 4: {
+        result = 0x3F;
+        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+        if (shared_->r3_p2h.count.load(std::memory_order_acquire) >= threshold)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r3_h2p.count.load(std::memory_order_acquire) < threshold)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 5: {
+        uint8_t count = shared_->r3_p2h.count.load(std::memory_order_acquire);
+        if (count > 0) {
+            uint8_t head = shared_->r3_p2h.head.load(std::memory_order_relaxed);
+            result = shared_->r3_p2h.data[head].load(std::memory_order_acquire);
+        }
+        break;
+    }
+    case 6: {
+        result = 0x3F;
+        if (shared_->r4_p2h.ready.load(std::memory_order_acquire) != 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r4_h2p.ready.load(std::memory_order_acquire) == 0)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 7:
+        result = shared_->r4_p2h.value.load(std::memory_order_acquire);
+        break;
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Host-side register write
 // ---------------------------------------------------------------------------
 

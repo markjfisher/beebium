@@ -46,6 +46,7 @@ public:
     // --- TubeHostBackend interface ---
 
     uint8_t host_read(uint8_t offset) override;
+    uint8_t host_peek(uint8_t offset) const override;
     void host_write(uint8_t offset, uint8_t value) override;
     bool hirq() const override;
     void reset() override;

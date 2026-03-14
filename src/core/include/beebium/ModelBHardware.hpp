@@ -298,7 +298,8 @@ public:
     }
 
     // Side-effect-free read for debugger inspection.
-    // Uses peek() for VIAs to avoid clearing interrupt flags.
+    // Uses peek() for VIAs and Tube to avoid clearing interrupt flags,
+    // dequeuing FIFOs, or other side effects.
     uint8_t peek(uint16_t addr) const {
         // VIA regions need special handling to avoid side effects
         if (addr >= 0xFE40 && addr <= 0xFE5F) {
@@ -306,6 +307,10 @@ public:
         }
         if (addr >= 0xFE60 && addr <= 0xFE7F) {
             return user_via.peek(addr & 0x0F);
+        }
+        // Tube registers have side effects (FIFO dequeue, flag clear)
+        if (addr >= 0xFEE0 && addr <= 0xFEFF) {
+            return tube_socket.peek(addr & 0x07);
         }
         // All other regions have no read side effects
         return memory_map_.read(addr);

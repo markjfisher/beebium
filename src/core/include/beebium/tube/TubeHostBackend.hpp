@@ -33,6 +33,11 @@ public:
     // Host-side register read (offset 0-7, mirrored from &FEE0-&FEE7).
     virtual uint8_t host_read(uint8_t offset) = 0;
 
+    // Side-effect-free read for debugger inspection.
+    // Returns the same value as host_read() for status registers, but does not
+    // dequeue FIFOs, clear ready flags, or update interrupt state.
+    virtual uint8_t host_peek(uint8_t offset) const = 0;
+
     // Host-side register write.
     virtual void host_write(uint8_t offset, uint8_t value) = 0;
 

@@ -98,9 +98,13 @@ public:
     const uint8_t& ram(uint16_t address) const { return ram_[address]; }
 
     // Side-effect-free read for debugger inspection.
-    // Always reads RAM directly (no Tube register access, no ROM disable).
+    // Uses parasite_peek() for Tube registers to avoid clearing ready flags
+    // or dequeuing FIFOs. Does not disable boot ROM.
     uint8_t peek(uint16_t address) const {
-        if (rom_enabled_ && address >= 0xF800 && !is_tube_address(address)) {
+        if (is_tube_address(address)) {
+            return tube_port_.parasite_peek(static_cast<uint8_t>(address & 7));
+        }
+        if (rom_enabled_ && address >= 0xF800) {
             return rom_[address & 0x7FF];
         }
         return ram_[address];
@@ -139,7 +143,10 @@ public:
             return rom_[address & 0x7FF];
         }
         if (name == REGION_TUBE) {
-            return 0xFF;  // Tube registers have side effects; return open bus
+            if (address < 0xFEF8 || address > 0xFEFF) {
+                throw std::invalid_argument("address out of bounds for tube_registers region");
+            }
+            return tube_port_.parasite_peek(static_cast<uint8_t>(address & 7));
         }
         throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
     }

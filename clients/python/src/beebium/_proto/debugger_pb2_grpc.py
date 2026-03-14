@@ -935,6 +935,11 @@ class DeviceInspectionStub(object):
                 request_serializer=debugger__pb2.GetSoundGeneratorStateRequest.SerializeToString,
                 response_deserializer=debugger__pb2.SoundGeneratorState.FromString,
                 _registered_method=True)
+        self.GetTubeState = channel.unary_unary(
+                '/beebium.DeviceInspection/GetTubeState',
+                request_serializer=debugger__pb2.GetTubeStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.TubeState.FromString,
+                _registered_method=True)
 
 
 class DeviceInspectionServicer(object):
@@ -978,6 +983,12 @@ class DeviceInspectionServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetTubeState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DeviceInspectionServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1010,6 +1021,11 @@ def add_DeviceInspectionServicer_to_server(servicer, server):
                     servicer.GetSoundGeneratorState,
                     request_deserializer=debugger__pb2.GetSoundGeneratorStateRequest.FromString,
                     response_serializer=debugger__pb2.SoundGeneratorState.SerializeToString,
+            ),
+            'GetTubeState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTubeState,
+                    request_deserializer=debugger__pb2.GetTubeStateRequest.FromString,
+                    response_serializer=debugger__pb2.TubeState.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1176,6 +1192,33 @@ class DeviceInspection(object):
             '/beebium.DeviceInspection/GetSoundGeneratorState',
             debugger__pb2.GetSoundGeneratorStateRequest.SerializeToString,
             debugger__pb2.SoundGeneratorState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetTubeState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DeviceInspection/GetTubeState',
+            debugger__pb2.GetTubeStateRequest.SerializeToString,
+            debugger__pb2.TubeState.FromString,
             options,
             channel_credentials,
             insecure,

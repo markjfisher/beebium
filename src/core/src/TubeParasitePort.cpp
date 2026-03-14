@@ -121,6 +121,75 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 }
 
 // ---------------------------------------------------------------------------
+// Parasite-side side-effect-free register read (debugger inspection)
+// ---------------------------------------------------------------------------
+
+uint8_t TubeParasitePort::parasite_peek(uint8_t offset) const
+{
+    uint8_t result = 0;
+    auto flags = shared_->control_flags.load(std::memory_order_acquire);
+
+    switch (offset & 7) {
+    case 0: {
+        result = flags & 0x3F;
+        if (shared_->r1_h2p.ready.load(std::memory_order_acquire) != 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r1_p2h.count.load(std::memory_order_acquire) < 24)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 1:
+        result = shared_->r1_h2p.value.load(std::memory_order_acquire);
+        break;
+    case 2: {
+        result = 0x3F;
+        if (shared_->r2_h2p.ready.load(std::memory_order_acquire) != 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r2_p2h.ready.load(std::memory_order_acquire) == 0)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 3:
+        result = shared_->r2_h2p.value.load(std::memory_order_acquire);
+        break;
+    case 4: {
+        result = 0x1F;
+        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+        bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+        bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+        if (h2p_data)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (p2h_space)
+            result |= TubeUla::SPACE_AVAILABLE;
+        if (h2p_data || p2h_space)
+            result |= 0x20;  // N flag
+        break;
+    }
+    case 5: {
+        uint8_t count = shared_->r3_h2p.count.load(std::memory_order_acquire);
+        if (count > 0) {
+            uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
+            result = shared_->r3_h2p.data[head].load(std::memory_order_acquire);
+        }
+        break;
+    }
+    case 6: {
+        result = 0x3F;
+        if (shared_->r4_h2p.ready.load(std::memory_order_acquire) != 0)
+            result |= TubeUla::DATA_AVAILABLE;
+        if (shared_->r4_p2h.ready.load(std::memory_order_acquire) == 0)
+            result |= TubeUla::SPACE_AVAILABLE;
+        break;
+    }
+    case 7:
+        result = shared_->r4_h2p.value.load(std::memory_order_acquire);
+        break;
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Parasite-side register write
 // ---------------------------------------------------------------------------
 

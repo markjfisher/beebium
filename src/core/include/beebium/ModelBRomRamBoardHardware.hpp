@@ -249,6 +249,9 @@ public:
         if (addr >= 0xFE60 && addr <= 0xFE7F) {
             return user_via.peek(addr & 0x0F);
         }
+        if (addr >= 0xFEE0 && addr <= 0xFEFF) {
+            return tube_socket.peek(addr & 0x07);
+        }
         return memory_map_.read(addr);
     }
 

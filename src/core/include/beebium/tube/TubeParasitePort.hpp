@@ -45,6 +45,7 @@ public:
     // --- Parasite register access (offsets 0-7) ---
 
     uint8_t parasite_read(uint8_t offset);
+    uint8_t parasite_peek(uint8_t offset) const;
     void parasite_write(uint8_t offset, uint8_t value);
 
     // --- Interrupt outputs ---

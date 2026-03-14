@@ -167,11 +167,11 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Host execution: error reading - {e}")
 
-    # Disassemble around host PC
+    # Disassemble around host PC + key MOS routines
     if host_pc is not None:
         try:
             dis_start = max(0, host_pc - 16)
-            lines = _disassemble_region(bbc.memory, dis_start, 48)
+            lines = _disassemble_region(bbc.memory, dis_start, 64)
             print(f"Host code around PC=${host_pc:04X}:")
             for line in lines:
                 addr_str = line.strip().split(":")[0]
@@ -180,6 +180,27 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
                 print(f"{line}{marker}")
         except (BeebiumError, grpc.RpcError) as e:
             print(f"Host disassembly: error - {e}")
+
+        # Disassemble key MOS Tube routines
+        for label, addr, length in [
+            ("$FB50 (Tube OSRDCH setup)", 0xFB50, 64),
+            ("$F720 (Tube OSRDCH handler)", 0xF720, 48),
+            ("$DC93 (IRQ1V handler)", 0xDC93, 64),
+        ]:
+            try:
+                lines = _disassemble_region(bbc.memory, addr, length)
+                print(f"Host code at {label}:")
+                for line in lines:
+                    print(f"{line}")
+            except (BeebiumError, grpc.RpcError) as e:
+                print(f"Host code at {label}: error - {e}")
+
+        # Read host ZP $C2 (state variable from OSRDCH loop)
+        try:
+            c2 = bbc.memory.address.peek[0x00C2]
+            print(f"Host ZP $C2 (OSRDCH state): ${c2:02X}")
+        except (BeebiumError, grpc.RpcError) as e:
+            print(f"Host ZP $C2: error - {e}")
 
     # Tube status
     try:
@@ -231,19 +252,53 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Disc: error reading - {e}")
 
-    # MOS Tube flag at &027A
+    # MOS workspace variables
     try:
         tube_flag = bbc.memory.address.peek[0x027A]
-        print(f"MOS Tube flag (&027A): ${tube_flag:02X}")
-    except (BeebiumError, grpc.RpcError) as e:
-        print(f"MOS Tube flag: error reading - {e}")
-
-    # MOS filing system at &028C
-    try:
         fs_byte = bbc.memory.address.peek[0x028C]
+        exec_handle = bbc.memory.address.peek[0x0257]
+        spool_handle = bbc.memory.address.peek[0x0256]
+        zp_eb = bbc.memory.address.peek[0x00EB]
+        zp_ff = bbc.memory.address.peek[0x00FF]
+        print(f"MOS Tube flag (&027A): ${tube_flag:02X}")
         print(f"MOS filing system (&028C): ${fs_byte:02X}")
+        print(f"MOS exec handle (&0257): ${exec_handle:02X}")
+        print(f"MOS spool handle (&0256): ${spool_handle:02X}")
+        print(f"MOS ZP $EB (exec check): ${zp_eb:02X}")
+        print(f"MOS ZP $FF (escape flag): ${zp_ff:02X}")
+        # OSRDCH vector
+        rdch_lo = bbc.memory.address.peek[0x0238]
+        rdch_hi = bbc.memory.address.peek[0x0239]
+        print(f"OSRDCH vector (&0238): ${rdch_hi:02X}{rdch_lo:02X}")
+        # IRQ1V
+        irq1v_lo = bbc.memory.address.peek[0x0204]
+        irq1v_hi = bbc.memory.address.peek[0x0205]
+        print(f"IRQ1V (&0204): ${irq1v_hi:02X}{irq1v_lo:02X}")
+        # IRQ2V
+        irq2v_lo = bbc.memory.address.peek[0x0206]
+        irq2v_hi = bbc.memory.address.peek[0x0207]
+        print(f"IRQ2V (&0206): ${irq2v_hi:02X}{irq2v_lo:02X}")
     except (BeebiumError, grpc.RpcError) as e:
-        print(f"MOS filing system: error reading - {e}")
+        print(f"MOS workspace: error reading - {e}")
+
+    # Host stack
+    if host_pc is not None:
+        try:
+            sp = bbc.cpu.registers.sp
+            stack = bbc.memory.address.peek.read(0x0100, 256)
+            stack_top = sp + 1
+            if stack_top < 256:
+                stack_bytes = stack[stack_top:min(stack_top + 32, 256)]
+                hex_str = " ".join(f"{b:02X}" for b in stack_bytes)
+                print(f"Host stack (${0x100 + stack_top:04X}+): {hex_str}")
+                # Decode return addresses
+                i = 0
+                while i + 1 < len(stack_bytes):
+                    addr = stack_bytes[i] | (stack_bytes[i+1] << 8)
+                    print(f"  Stack ${0x100 + stack_top + i:04X}: ${addr:04X} (return to ${addr+1:04X}?)")
+                    i += 2
+        except (BeebiumError, grpc.RpcError) as e:
+            print(f"Host stack: error reading - {e}")
 
     # Host screen
     try:
@@ -303,6 +358,21 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
                   f"[b7={'DATA' if pr4s & 0x80 else 'empty'}]")
         except (BeebiumError, grpc.RpcError) as e:
             print(f"Parasite Tube regs: error reading - {e}")
+
+        # Parasite MOS workspace
+        try:
+            p_exec = parasite.memory.address.peek[0x0257]
+            p_spool = parasite.memory.address.peek[0x0256]
+            p_tube = parasite.memory.address.peek[0x027A]
+            p_fs = parasite.memory.address.peek[0x028C]
+            p_eb = parasite.memory.address.peek[0x00EB]
+            print(f"Parasite exec handle (&0257): ${p_exec:02X}")
+            print(f"Parasite spool handle (&0256): ${p_spool:02X}")
+            print(f"Parasite Tube flag (&027A): ${p_tube:02X}")
+            print(f"Parasite FS (&028C): ${p_fs:02X}")
+            print(f"Parasite ZP $EB (exec check): ${p_eb:02X}")
+        except (BeebiumError, grpc.RpcError) as e:
+            print(f"Parasite MOS workspace: error reading - {e}")
 
         # Full parasite zero page
         try:
@@ -438,6 +508,52 @@ class TestTubeEliteBoot:
         assert drive_status.state.value == "loaded", (
             f"Drive 0 should be loaded, got {drive_status.state.value}"
         )
+
+    def test_cat_disc(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
+        """Type *. to catalog the disc and check output appears."""
+        parasite = None
+        try:
+            try:
+                parasite = bbc_tube.connect_parasite()
+            except (BeebiumConnectionError, grpc.RpcError):
+                pass
+
+            if not bbc_tube.debugger.is_running:
+                bbc_tube.debugger.run()
+            time.sleep(0.5)
+
+            bbc_tube.keyboard.type("*.")
+            bbc_tube.keyboard.press_return()
+
+            # Wait for catalog to display
+            time.sleep(5.0)
+            bbc_tube.debugger.stop()
+
+            # Check for any catalog output on screen
+            has_output = False
+            rows = []
+            try:
+                from beebium.screen import read_mode7_screen
+                rows = read_mode7_screen(bbc_tube.memory)
+                # After boot banner + ">*." + Return, there should be catalog output
+                for i, row in enumerate(rows):
+                    stripped = row.strip()
+                    if stripped and stripped != ">" and "BASIC" not in stripped \
+                            and "Acorn TUBE" not in stripped and "*." not in stripped:
+                        has_output = True
+                        break
+            except Exception:
+                pass
+
+            if not has_output:
+                print("\nScreen after *. command:")
+                for i, row in enumerate(rows):
+                    print(f"Row {i:2d}: [{row}]")
+                _dump_diagnostics(bbc_tube, parasite)
+                pytest.fail("Expected disc catalog output after *. command")
+        finally:
+            if parasite is not None:
+                parasite.close()
 
     def test_exec_boot(self, bbc_tube: Beebium) -> None:
         """Type *EXEC !BOOT and check for Elite loading screen."""

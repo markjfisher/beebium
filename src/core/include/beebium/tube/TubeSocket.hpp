@@ -39,6 +39,9 @@ public:
     uint8_t host_read(uint8_t) override {
         return (bus_value_ptr_ && *bus_value_ptr_) ? **bus_value_ptr_ : 0xFF;
     }
+    uint8_t host_peek(uint8_t) const override {
+        return (bus_value_ptr_ && *bus_value_ptr_) ? **bus_value_ptr_ : 0xFF;
+    }
     void host_write(uint8_t, uint8_t) override {}
     bool hirq() const override { return false; }
     void reset() override {}
@@ -108,6 +111,11 @@ public:
         return backend_->host_read(static_cast<uint8_t>(offset));
     }
 
+    // Side-effect-free read for debugger inspection.
+    uint8_t peek(uint16_t offset) const {
+        return backend_->host_peek(static_cast<uint8_t>(offset));
+    }
+
     void write(uint16_t offset, uint8_t value) {
         backend_->host_write(static_cast<uint8_t>(offset), value);
     }
@@ -147,6 +155,15 @@ public:
     }
     const TubeUla* tube_ula() const {
         return dynamic_cast<const TubeUla*>(backend_.get());
+    }
+
+    // Access the underlying TubeHostPort (only valid in shared memory mode).
+    // Returns nullptr if the socket is empty or in in-process mode.
+    TubeHostPort* tube_host_port() {
+        return dynamic_cast<TubeHostPort*>(backend_.get());
+    }
+    const TubeHostPort* tube_host_port() const {
+        return dynamic_cast<const TubeHostPort*>(backend_.get());
     }
 
     // Returns true if the socket is in shared memory mode.

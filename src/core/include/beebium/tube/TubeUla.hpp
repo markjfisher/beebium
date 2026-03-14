@@ -54,10 +54,12 @@ public:
 
     // Host-side register access (offsets 0-7, mirrored from &FEE0-&FEE7).
     uint8_t host_read(uint8_t offset) override;
+    uint8_t host_peek(uint8_t offset) const override;
     void host_write(uint8_t offset, uint8_t value) override;
 
     // Parasite-side register access (offsets 0-7, mirrored from &FEF8-&FEFF).
     uint8_t parasite_read(uint8_t offset);
+    uint8_t parasite_peek(uint8_t offset) const;
     void parasite_write(uint8_t offset, uint8_t value);
 
     // Interrupt outputs (active high in this model; caller inverts if needed).
