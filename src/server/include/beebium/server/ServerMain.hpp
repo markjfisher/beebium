@@ -1190,6 +1190,14 @@ std::optional<int> launch_tube_parasite(
     args.push_back(executable_filepath->string());
     args.push_back("--host=localhost:" + std::to_string(server_port));
 
+    // Forward the ROM directory so the parasite can find its boot ROM
+    try {
+        auto rom_dirpath = RomPaths::find_rom_directory();
+        args.push_back("--rom-dir=" + rom_dirpath.string());
+    } catch (...) {
+        // ROM directory not found; let the parasite try its own search
+    }
+
     // Append forwarded --tube-* args (already prefix-stripped)
     for (const auto& arg : config.tube_parasite_args) {
         args.push_back(arg);

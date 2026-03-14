@@ -277,3 +277,34 @@ TEST_CASE("TubeSharedMemory: operator-> and operator* access", "[tube][shm]") {
     TubeShared& ref = *shm;
     CHECK(ref.valid());
 }
+
+// ===========================================================================
+// macOS shm_open name length limit
+// ===========================================================================
+
+// macOS limits shm_open names to 30 characters (PSHMNAMLEN - 1, excluding
+// the mandatory leading '/'). This test verifies that a suffix matching the
+// length produced by ServerMain's UUID-based generation stays within limits.
+TEST_CASE("TubeSharedMemory: 29-char suffix fits macOS shm_open limit", "[tube][shm]") {
+    // Simulate ServerMain: "tube_" (5) + 24 hex chars from stripped UUID = 29
+    std::string suffix = "tube_" + std::string(24, 'a');
+    TubeSharedMemory shm(suffix, TubeSharedMemoryRole::Creator);
+
+#ifndef _WIN32
+    // POSIX name is "/<suffix>", so 30 chars total (within macOS limit)
+    CHECK(shm.name() == "/" + suffix);
+    CHECK(shm.name().size() == 30);
+#endif
+    CHECK(shm.get() != nullptr);
+    CHECK(shm.get()->valid());
+}
+
+TEST_CASE("TubeSharedMemory: 31-char suffix exceeds macOS shm_open limit", "[tube][shm]") {
+    // PSHMNAMLEN is 31 on macOS, so the full name (including '/') can be at
+    // most 31 chars. A 31-char suffix makes a 32-char name: too long.
+    std::string suffix = "tube_" + std::string(26, 'b');
+
+#ifdef __APPLE__
+    CHECK_THROWS(TubeSharedMemory(suffix, TubeSharedMemoryRole::Creator));
+#endif
+}
