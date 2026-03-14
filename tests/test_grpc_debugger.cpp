@@ -515,6 +515,29 @@ TEST_CASE("DebuggerControl Set6502State can set PC", "[grpc][debugger]") {
     CHECK(fixture.machine().pc() == 0xC000);
 }
 
+TEST_CASE("DebuggerControl Get6502State returns interrupt handler state", "[grpc][debugger]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::Get6502StateRequest request;
+    beebium::Cpu6502State response;
+
+    auto status = fixture.debugger().Get6502State(&context, request, &response);
+
+    REQUIRE(status.ok());
+
+    // At rest, not inside any interrupt handler
+    CHECK_FALSE(response.in_nmi_handler());
+    CHECK_FALSE(response.in_irq_handler());
+
+    // Interrupt line state fields are present and reasonable
+    // (nmi_pending/irq_pending depend on machine state, just check they're accessible)
+    CHECK_FALSE(response.nmi_pending());
+    // device flags are bitmasks -- just verify they're accessible
+    (void)response.device_irq_flags();
+    (void)response.device_nmi_flags();
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Sequence Counter Tests
 //////////////////////////////////////////////////////////////////////////////

@@ -153,6 +153,8 @@ public:
         video_binding_.reset();
         state_.cycle_count = 0;
         in_reset_ = false;
+        in_nmi_handler_ = false;
+        in_irq_handler_ = false;
         ++sequence_;
     }
 
@@ -167,6 +169,8 @@ public:
         video_binding_.reset();
         // Do NOT reset cycle_count - maintains timing continuity
         in_reset_ = false;
+        in_nmi_handler_ = false;
+        in_irq_handler_ = false;
         ++sequence_;
     }
 
@@ -293,6 +297,25 @@ public:
             M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
         }
 
+        // Interrupt handler tracking: detect entry via M6502ReadType_Interrupt
+        // and exit via RTI (opcode $40).  NMI has priority: if nmi_flags is
+        // set at interrupt entry, it's an NMI; otherwise it's IRQ/BRK.
+        if (state_.cpu.read == M6502ReadType_Interrupt) {
+            if (state_.cpu.nmi_flags != 0) {
+                in_nmi_handler_ = true;
+            } else {
+                in_irq_handler_ = true;
+            }
+        }
+        if (M6502_IsAboutToExecute(&state_.cpu) && state_.cpu.dbus == 0x40) {
+            // RTI: NMI exit takes priority (NMI can nest inside IRQ).
+            if (in_nmi_handler_) {
+                in_nmi_handler_ = false;
+            } else if (in_irq_handler_) {
+                in_irq_handler_ = false;
+            }
+        }
+
         ++state_.cycle_count;
         ++sequence_;
     }
@@ -395,6 +418,10 @@ public:
     uint16_t pc() const { return state_.cpu.pc.w; }
     uint8_t p() const { return state_.cpu.p.value; }
 
+    // Interrupt handler tracking
+    bool in_nmi_handler() const { return in_nmi_handler_; }
+    bool in_irq_handler() const { return in_irq_handler_; }
+
     // CPU register setters (for debugger) - each increments sequence_
     void set_a(uint8_t value) { state_.cpu.a = value; ++sequence_; }
     void set_x(uint8_t value) { state_.cpu.x = value; ++sequence_; }
@@ -468,6 +495,10 @@ private:
 
     // Break key state (true when Break is held, CPU halted)
     bool in_reset_ = false;
+
+    // Interrupt handler tracking (for debugger)
+    bool in_nmi_handler_ = false;
+    bool in_irq_handler_ = false;
 
     // 1MHz bus stretch handling
     // When CPU accesses a 1MHz peripheral, we insert extra cycles

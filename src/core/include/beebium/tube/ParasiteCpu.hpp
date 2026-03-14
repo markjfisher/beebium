@@ -59,6 +59,9 @@ public:
     // Cycle counter.
     uint64_t cycle_count() const { return cycle_count_; }
 
+    // Interrupt handler tracking.
+    bool in_nmi_handler() const { return in_nmi_handler_; }
+
     // CPU state access.
     M6502& cpu() { return cpu_; }
     const M6502& cpu() const { return cpu_; }

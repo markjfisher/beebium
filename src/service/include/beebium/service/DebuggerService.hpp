@@ -652,6 +652,17 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Get6502State(
     response->set_pc(machine_.pc());
     response->set_p(machine_.p());
 
+    // Interrupt handler tracking
+    response->set_in_nmi_handler(machine_.in_nmi_handler());
+    response->set_in_irq_handler(machine_.in_irq_handler());
+
+    // M6502 interrupt line state
+    response->set_nmi_pending(machine_.cpu().nmi_flags != 0);
+    response->set_irq_pending(machine_.cpu().irq_flags != 0
+                              && !(machine_.p() & 0x04));
+    response->set_device_irq_flags(machine_.cpu().device_irq_flags);
+    response->set_device_nmi_flags(machine_.cpu().device_nmi_flags);
+
     return grpc::Status::OK;
 }
 

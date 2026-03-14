@@ -143,6 +143,22 @@ TEST_CASE("Parasite DebuggerControl Get6502State returns CPU registers", "[grpc]
     CHECK(response.pc() <= 0xF803);
 }
 
+TEST_CASE("Parasite Get6502State includes interrupt handler state", "[grpc][parasite]") {
+    ParasiteGrpcFixture fixture;
+
+    grpc::ClientContext ctx;
+    beebium::Get6502StateRequest request;
+    beebium::Cpu6502State response;
+
+    auto status = fixture.debugger().Get6502State(&ctx, request, &response);
+
+    REQUIRE(status.ok());
+    // At rest, not inside any interrupt handler
+    CHECK_FALSE(response.in_nmi_handler());
+    CHECK_FALSE(response.in_irq_handler());
+    CHECK_FALSE(response.nmi_pending());
+}
+
 TEST_CASE("Parasite DebuggerControl ReadMemory reads parasite RAM", "[grpc][parasite]") {
     ParasiteGrpcFixture fixture;
 

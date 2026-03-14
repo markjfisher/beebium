@@ -93,6 +93,10 @@ public:
     uint16_t pc() const { return cpu_.cpu().pc.w; }
     uint8_t p() const { return cpu_.cpu().p.value; }
 
+    // Interrupt handler tracking
+    bool in_nmi_handler() const { return cpu_.in_nmi_handler(); }
+    bool in_irq_handler() const { return false; }
+
     void set_a(uint8_t value) { cpu_.cpu().a = value; ++sequence_; }
     void set_x(uint8_t value) { cpu_.cpu().x = value; ++sequence_; }
     void set_y(uint8_t value) { cpu_.cpu().y = value; ++sequence_; }
