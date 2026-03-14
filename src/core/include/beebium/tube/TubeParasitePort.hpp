@@ -98,6 +98,7 @@ private:
     // PNMI edge detection state (parasite-local, not shared).
     bool prev_pnmi_ = false;
     bool pnmi_edge_ = false;
+
 };
 
 }  // namespace beebium

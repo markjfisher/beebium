@@ -71,6 +71,18 @@ private:
     TubeParasitePort& tube_port_;
     M6502 cpu_;
     uint64_t cycle_count_ = 0;
+
+    // NMI handler tracking: while inside an NMI handler, PNMI updates are
+    // suppressed to prevent NMI nesting.  In the cross-process Tube model,
+    // the host thread can write the next R3 byte before the parasite's NMI
+    // handler completes, which would cause a new NMI edge during the
+    // handler.  In real hardware, the host is limited to 2 MHz and disc
+    // byte rate (~16-32 us), giving the parasite time to finish before new
+    // data arrives.
+    //
+    // Entry: detected when M6502ReadType_Interrupt and it's an NMI (not IRQ).
+    // Exit:  detected when an RTI instruction (opcode $40) is about to execute.
+    bool in_nmi_handler_ = false;
 };
 
 }  // namespace beebium

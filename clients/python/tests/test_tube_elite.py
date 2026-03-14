@@ -33,6 +33,7 @@ import pytest
 from beebium.client import Beebium
 from beebium.exceptions import BeebiumError, ConnectionError as BeebiumConnectionError, ServerNotFoundError
 from beebium.screen import dump_screen, screen_contains
+from beebium.tube_ula import TubeUlaInspection
 
 
 ELITE_DISC_FILENAME = "Disc999-EliteSNG45.ssd"
@@ -213,32 +214,12 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Tube: error reading - {e}")
 
-    # Host-side Tube register status bytes
-    # $FEE0=R1 status, $FEE2=R3 status, $FEE4=R3 status, $FEE6=R4 status
+    # Tube ULA device inspection (side-effect-free)
     try:
-        r1s = bbc.memory.address.peek[0xFEE0]
-        r1d = bbc.memory.address.peek[0xFEE1]
-        r2s = bbc.memory.address.peek[0xFEE2]
-        r2d = bbc.memory.address.peek[0xFEE3]
-        r3s = bbc.memory.address.peek[0xFEE4]
-        r3d = bbc.memory.address.peek[0xFEE5]
-        r4s = bbc.memory.address.peek[0xFEE6]
-        r4d = bbc.memory.address.peek[0xFEE7]
-        print(f"Host Tube regs (host view):")
-        print(f"  R1: status=${r1s:02X} data=${r1d:02X}  "
-              f"[b7={'DATA' if r1s & 0x80 else 'empty'}, b6={'SPACE' if r1s & 0x40 else 'full'}]")
-        print(f"  R2: status=${r2s:02X} data=${r2d:02X}")
-        print(f"  R3: status=${r3s:02X} data=${r3d:02X}  "
-              f"[b7={'DATA' if r3s & 0x80 else 'empty'}, b6={'SPACE' if r3s & 0x40 else 'full'}]")
-        print(f"  R4: status=${r4s:02X} data=${r4d:02X}  "
-              f"[b7={'DATA' if r4s & 0x80 else 'empty'}, b6={'SPACE' if r4s & 0x40 else 'full'}]")
-        # Decode control flags from R1 status
-        print(f"  R1 status flags: S={int(bool(r1s & 0x80))}, Q={int(bool(r1s & 0x40))}, "
-              f"I={int(bool(r1s & 0x20))}, J={int(bool(r1s & 0x10))}, "
-              f"M={int(bool(r1s & 0x08))}, V={int(bool(r1s & 0x04))}, "
-              f"P={int(bool(r1s & 0x02))}, T={int(bool(r1s & 0x01))}")
+        tube_ula_state = bbc.tube_ula.state
+        print(tube_ula_state)
     except (BeebiumError, grpc.RpcError) as e:
-        print(f"Host Tube regs: error reading - {e}")
+        print(f"Tube ULA inspection: error - {e}")
 
     # Disc drive status
     try:

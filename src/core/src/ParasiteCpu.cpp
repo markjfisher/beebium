@@ -32,6 +32,7 @@ void ParasiteCpu::reset() {
     memory_.reset();
     tube_port_.reset();
     cycle_count_ = 0;
+    in_nmi_handler_ = false;
 }
 
 void ParasiteCpu::tick() {
@@ -48,13 +49,33 @@ void ParasiteCpu::tick() {
 
     // Route Tube interrupt lines to CPU.
     // PIRQ is level-sensitive (directly drives IRQ).
-    // PNMI level is passed to M6502_SetDeviceNMI, which handles edge
-    // detection internally (6502 NMI is edge-triggered on falling edge).
-    // We use pnmi_level() rather than pnmi() because the latter only
-    // updates during parasite_read/write and would miss host-initiated
-    // R3 changes between register accesses.
     M6502_SetDeviceIRQ(&cpu_, kPirqMask, tube_port_.pirq() ? 1 : 0);
-    M6502_SetDeviceNMI(&cpu_, kPnmiMask, tube_port_.pnmi_level() ? 1 : 0);
+
+    // Detect NMI handler entry: CPU is in the interrupt sequence and
+    // nmi_flags is still set (cleared later at T4).  We check nmi_flags
+    // directly rather than using M6502_IsProbablyIRQ because that macro
+    // only tests irq_flags != 0, which is true whenever PIRQ is asserted
+    // -- even when the CPU is actually taking the higher-priority NMI.
+    if (cpu_.read == M6502ReadType_Interrupt && cpu_.nmi_flags != 0) {
+        in_nmi_handler_ = true;
+        // Clear device_nmi_flags so that reasserting PNMI after RTI
+        // produces a clean 0-to-1 edge in M6502_SetDeviceNMI.
+        M6502_SetDeviceNMI(&cpu_, kPnmiMask, 0);
+    }
+
+    // Detect NMI handler exit: about to execute RTI (opcode $40).
+    if (in_nmi_handler_ && M6502_IsAboutToExecute(&cpu_) && cpu_.dbus == 0x40) {
+        in_nmi_handler_ = false;
+    }
+
+    // PNMI: only forward the level to M6502 when not inside an NMI handler.
+    // This prevents NMI nesting in the cross-process Tube model where the
+    // host thread can write the next R3 byte before the parasite's NMI
+    // handler completes.  When the handler returns (RTI), suppression ends
+    // and the current PNMI level produces a clean edge if still asserted.
+    if (!in_nmi_handler_) {
+        M6502_SetDeviceNMI(&cpu_, kPnmiMask, tube_port_.pnmi_level() ? 1 : 0);
+    }
 
     ++cycle_count_;
 }
