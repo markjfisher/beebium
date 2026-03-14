@@ -12,6 +12,7 @@
 
 #include <beebium/tube/TubeSharedMemory.hpp>
 
+#include <cstring>
 #include <stdexcept>
 
 #ifdef _WIN32
