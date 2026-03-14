@@ -441,6 +441,7 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+          BEEBIUM_ROM_DIR: ${{ github.workspace }}/roms
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-windows:
@@ -470,6 +471,7 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/Release/beebium-model-b.exe
+          BEEBIUM_ROM_DIR: ${{ github.workspace }}/roms
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-macos-arm64:
@@ -502,6 +504,7 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+          BEEBIUM_ROM_DIR: ${{ github.workspace }}/roms
         run: uv run --with pytest python -m pytest tests/ -v
 
   python-integration-macos-x86_64:
@@ -534,4 +537,5 @@ jobs:
         working-directory: clients/python
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+          BEEBIUM_ROM_DIR: ${{ github.workspace }}/roms
         run: uv run --with pytest python -m pytest tests/ -v
