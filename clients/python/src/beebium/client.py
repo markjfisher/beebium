@@ -222,42 +222,42 @@ class Beebium:
     def system_via(self) -> Via:
         """Access System VIA (6522) state."""
         if self._system_via is None:
-            self._system_via = Via(self._connection.debugger_stub, ViaId.SYSTEM)
+            self._system_via = Via(self._connection.device_inspection_stub, ViaId.SYSTEM)
         return self._system_via
 
     @property
     def user_via(self) -> Via:
         """Access User VIA (6522) state."""
         if self._user_via is None:
-            self._user_via = Via(self._connection.debugger_stub, ViaId.USER)
+            self._user_via = Via(self._connection.device_inspection_stub, ViaId.USER)
         return self._user_via
 
     @property
     def crtc(self) -> Crtc:
         """Access CRTC (6845) state."""
         if self._crtc is None:
-            self._crtc = Crtc(self._connection.debugger_stub)
+            self._crtc = Crtc(self._connection.device_inspection_stub)
         return self._crtc
 
     @property
     def video_ula(self) -> VideoUla:
         """Access Video ULA state."""
         if self._video_ula is None:
-            self._video_ula = VideoUla(self._connection.debugger_stub)
+            self._video_ula = VideoUla(self._connection.device_inspection_stub)
         return self._video_ula
 
     @property
     def addressable_latch(self) -> AddressableLatch:
         """Access addressable latch state."""
         if self._addressable_latch is None:
-            self._addressable_latch = AddressableLatch(self._connection.debugger_stub)
+            self._addressable_latch = AddressableLatch(self._connection.device_inspection_stub)
         return self._addressable_latch
 
     @property
     def sound(self) -> Sound:
         """Access SN76489 sound chip state."""
         if self._sound is None:
-            self._sound = Sound(self._connection.debugger_stub)
+            self._sound = Sound(self._connection.device_inspection_stub)
         return self._sound
 
     @property

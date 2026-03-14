@@ -63,6 +63,7 @@ public:
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         debugger_stub_ = beebium::DebuggerControl::NewStub(channel_);
+        device_inspection_stub_ = beebium::DeviceInspection::NewStub(channel_);
     }
 
     ~DebuggerTestFixture() {
@@ -71,12 +72,14 @@ public:
 
     beebium::ModelB& machine() { return machine_; }
     beebium::DebuggerControl::Stub& debugger() { return *debugger_stub_; }
+    beebium::DeviceInspection::Stub& device_inspection() { return *device_inspection_stub_; }
 
 private:
     beebium::ModelB machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
+    std::unique_ptr<beebium::DeviceInspection::Stub> device_inspection_stub_;
 };
 
 } // anonymous namespace

@@ -1,0 +1,229 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+#ifndef BEEBIUM_SERVICE_DEVICE_INSPECTION_SERVICE_HPP
+#define BEEBIUM_SERVICE_DEVICE_INSPECTION_SERVICE_HPP
+
+#include "debugger.grpc.pb.h"
+#include <grpcpp/grpcpp.h>
+#include <mutex>
+#include <string>
+
+namespace beebium::service {
+
+// Helper function to fill ViaState from a Via6522 instance
+template<typename ViaType>
+void fill_via_state(ViaType& via, ViaState* response) {
+    const auto& state = via.state();
+
+    // Port state
+    response->set_ora(state.port_a.or_);
+    response->set_orb(state.port_b.or_);
+    response->set_ddra(state.port_a.ddr);
+    response->set_ddrb(state.port_b.ddr);
+
+    // Computed input values (port pins masked by DDR for inputs)
+    response->set_ira(state.port_a.p & ~state.port_a.ddr);
+    response->set_irb(state.port_b.p & ~state.port_b.ddr);
+
+    // Timer 1 - use effective value for accurate counter
+    response->set_t1c(via.effective_t1());
+    response->set_t1l((static_cast<uint16_t>(state.t1lh) << 8) | state.t1ll);
+
+    // Timer 2 - use effective value for accurate counter
+    response->set_t2c(via.effective_t2());
+    response->set_t2l(state.t2ll);  // Only low byte is latched
+
+    // Control registers
+    response->set_acr(state.acr.value);
+    response->set_pcr(state.pcr.value);
+    response->set_sr(state.sr);
+
+    // Interrupt registers
+    response->set_ifr(state.ifr.value);
+    response->set_ier(state.ier.value);
+
+    // Internal state
+    response->set_t1_pending(state.t1_pending);
+    response->set_t2_pending(state.t2_pending);
+    response->set_t1_pb7(state.t1_pb7);
+
+    // Control lines
+    response->set_ca1(state.port_a.c1 != 0);
+    response->set_ca2(state.port_a.c2 != 0);
+    response->set_cb1(state.port_b.c1 != 0);
+    response->set_cb2(state.port_b.c2 != 0);
+}
+
+// gRPC service implementation for DeviceInspection.
+// Provides access to BBC Micro device state (VIAs, CRTC, Video ULA, etc.).
+// Only meaningful on the host; parasite has no BBC Micro devices.
+template<typename MachineType>
+class DeviceInspectionServiceImpl final : public DeviceInspection::Service {
+public:
+    explicit DeviceInspectionServiceImpl(MachineType& machine)
+        : machine_(machine) {}
+
+    ~DeviceInspectionServiceImpl() override = default;
+
+    DeviceInspectionServiceImpl(const DeviceInspectionServiceImpl&) = delete;
+    DeviceInspectionServiceImpl& operator=(const DeviceInspectionServiceImpl&) = delete;
+
+    grpc::Status GetSystemViaState(
+        grpc::ServerContext* /*context*/,
+        const GetSystemViaStateRequest* /*request*/,
+        ViaState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        fill_via_state(machine_.memory().system_via, response);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetUserViaState(
+        grpc::ServerContext* /*context*/,
+        const GetUserViaStateRequest* /*request*/,
+        ViaState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        fill_via_state(machine_.memory().user_via, response);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetCrtcState(
+        grpc::ServerContext* /*context*/,
+        const GetCrtcStateRequest* /*request*/,
+        CrtcState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto& crtc = machine_.memory().crtc;
+
+        // All 18 registers (R0-R17)
+        for (int i = 0; i < 18; ++i) {
+            response->add_registers(crtc.reg(static_cast<uint8_t>(i)));
+        }
+
+        // Current timing state
+        response->set_address_register(crtc.address_register());
+        response->set_column(crtc.column());
+        response->set_row(crtc.row());
+        response->set_raster(crtc.raster());
+        response->set_char_addr(crtc.address());
+
+        // Computed values
+        response->set_screen_start(crtc.screen_start());
+        response->set_cursor_position(crtc.cursor_position());
+
+        // Sync and display state
+        response->set_in_hsync(crtc.in_hsync());
+        response->set_in_vsync(crtc.in_vsync());
+        response->set_display_enabled(crtc.display_enabled());
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetVideoUlaState(
+        grpc::ServerContext* /*context*/,
+        const GetVideoUlaStateRequest* /*request*/,
+        VideoUlaState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto& ula = machine_.memory().video_ula;
+
+        // Control register
+        response->set_control(ula.control());
+
+        // Palette (16 entries, logical -> physical)
+        for (int i = 0; i < 16; ++i) {
+            response->add_palette(ula.palette(static_cast<uint8_t>(i)));
+        }
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetAddressableLatchState(
+        grpc::ServerContext* /*context*/,
+        const GetAddressableLatchStateRequest* /*request*/,
+        AddressableLatchState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto& latch = machine_.memory().addressable_latch;
+
+        // Raw 8-bit value
+        response->set_value(latch.value);
+
+        // Decoded fields
+        response->set_screen_base(latch.screen_base());
+        response->set_sound_write_enable(latch.sound_write_enabled());
+        response->set_speech_read((latch.value & 0x02) == 0);  // Bit 1, active low
+        response->set_speech_write((latch.value & 0x04) == 0);  // Bit 2, active low
+        response->set_keyboard_write(latch.keyboard_enabled());
+        response->set_caps_lock_led(latch.caps_lock_led());
+        response->set_shift_lock_led(latch.shift_lock_led());
+
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetSoundGeneratorState(
+        grpc::ServerContext* /*context*/,
+        const GetSoundGeneratorStateRequest* /*request*/,
+        SoundGeneratorState* response) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        auto& chip = machine_.memory().sound_chip;
+
+        // Always return chip-native ordering: Tone0, Tone1, Tone2, Noise
+        // MOS channel mapping is a client-side concern
+
+        // Tone channels (indices 0, 1, 2)
+        for (int i = 0; i < 3; ++i) {
+            auto tone = chip.get_tone_channel_state(static_cast<size_t>(i));
+            auto* channel = response->add_channels();
+
+            channel->set_channel_id(static_cast<uint32_t>(i));
+            channel->set_channel_name("Tone" + std::to_string(i));
+            channel->set_frequency_divider(tone.frequency);
+            channel->set_counter(tone.counter);
+            channel->set_output_bit(tone.output_bit);
+            channel->set_volume(tone.volume);
+            channel->set_frequency_hz(tone.frequency_hz);
+        }
+
+        // Noise channel (index 3)
+        auto noise = chip.get_noise_channel_state();
+        auto* noise_channel = response->add_channels();
+
+        noise_channel->set_channel_id(3);
+        noise_channel->set_channel_name("Noise");
+        noise_channel->set_noise_rate(noise.rate_select);
+        noise_channel->set_white_noise(noise.white_mode);
+        noise_channel->set_lfsr_state(noise.lfsr);
+        noise_channel->set_volume(noise.volume);
+        noise_channel->set_frequency_hz(noise.rate_hz);
+
+        // Latched register
+        response->set_latched_register(chip.latched_register());
+
+        return grpc::Status::OK;
+    }
+
+private:
+    MachineType& machine_;
+    std::mutex mutex_;
+};
+
+} // namespace beebium::service
+
+#endif // BEEBIUM_SERVICE_DEVICE_INSPECTION_SERVICE_HPP

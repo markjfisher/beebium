@@ -45,8 +45,20 @@ void ParasiteRunner::run(uint64_t cycles) {
         // Execute a batch of cycles (up to the next mailbox poll or remaining)
         uint64_t batch = std::min(remaining, mailbox_poll_interval);
         uint64_t batch_end = cpu_.cycle_count() + batch;
-        while (cpu_.cycle_count() < batch_end) {
-            cpu_.tick();
+
+        if (on_instruction_) {
+            // With instruction callback: step instruction-by-instruction
+            while (cpu_.cycle_count() < batch_end) {
+                if (!on_instruction_(cpu_.cpu().pc.w, cpu_.cycle_count())) {
+                    return;  // Callback requested stop
+                }
+                cpu_.step_instruction();
+            }
+        } else {
+            // No callback: tick cycle-by-cycle (original fast path)
+            while (cpu_.cycle_count() < batch_end) {
+                cpu_.tick();
+            }
         }
         remaining -= batch;
     }
@@ -54,6 +66,11 @@ void ParasiteRunner::run(uint64_t cycles) {
 
 uint64_t ParasiteRunner::step_instruction() {
     return cpu_.step_instruction();
+}
+
+void ParasiteRunner::step() {
+    cpu_.tick();
+    ++sequence_;
 }
 
 void ParasiteRunner::pause() {

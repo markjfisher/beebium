@@ -11,6 +11,9 @@ service TubeService {
     // Parasite connects, receives shared memory name and size.
     rpc Connect(TubeConnectRequest) returns (TubeConnectResponse);
 
+    // Parasite registers its gRPC endpoint after starting its own server.
+    rpc RegisterEndpoint(RegisterEndpointRequest) returns (RegisterEndpointResponse);
+
     // Query current Tube status (enabled, parasite type, shared memory info).
     rpc GetStatus(GetTubeStatusRequest) returns (GetTubeStatusResponse);
 
@@ -44,6 +47,20 @@ message TubeConnectResponse {
 
     // Protocol version accepted by host.
     uint32 protocol_version = 3;
+
+    // Host machine UUID for mDNS linkage.
+    string host_uuid = 4;
+}
+
+// --- RegisterEndpoint ---
+
+message RegisterEndpointRequest {
+    // The parasite's gRPC address (e.g. "localhost:50052").
+    string grpc_address = 1;
+}
+
+message RegisterEndpointResponse {
+    // Empty on success; RPC status indicates errors.
 }
 
 // --- Status ---
@@ -70,6 +87,10 @@ message GetTubeStatusResponse {
 
     // Shared memory name (populated when enabled).
     string shared_memory_name = 6;
+
+    // Parasite's gRPC address (e.g. "localhost:50052").
+    // Populated after RegisterEndpoint is called.
+    string parasite_grpc_address = 7;
 }
 
 // --- State Save/Restore ---

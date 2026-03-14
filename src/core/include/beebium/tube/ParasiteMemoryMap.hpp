@@ -14,9 +14,15 @@
 
 #include "TubeParasitePort.hpp"
 
+#include "beebium/MemoryRegion.hpp"
+
 #include <array>
 #include <cstdint>
 #include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace beebium {
 
@@ -39,6 +45,11 @@ namespace beebium {
 
 class ParasiteMemoryMap {
 public:
+    static constexpr std::string_view MACHINE_TYPE = "Tube65C02";
+
+    static constexpr std::string_view REGION_RAM = "ram";
+    static constexpr std::string_view REGION_ROM = "rom";
+    static constexpr std::string_view REGION_TUBE = "tube_registers";
     // Construct with a reference to the Tube port and a 2 KB ROM image.
     // The ROM span must be exactly 2048 bytes.
     ParasiteMemoryMap(TubeParasitePort& tube_port, std::span<const uint8_t, 2048> rom)
@@ -85,6 +96,92 @@ public:
     // Direct RAM access for testing and DMA-like operations.
     uint8_t& ram(uint16_t address) { return ram_[address]; }
     const uint8_t& ram(uint16_t address) const { return ram_[address]; }
+
+    // Side-effect-free read for debugger inspection.
+    // Always reads RAM directly (no Tube register access, no ROM disable).
+    uint8_t peek(uint16_t address) const {
+        if (rom_enabled_ && address >= 0xF800 && !is_tube_address(address)) {
+            return rom_[address & 0x7FF];
+        }
+        return ram_[address];
+    }
+
+    // Memory region discovery for debugger.
+    std::vector<MemoryRegionDescriptor> get_memory_regions() const {
+        std::vector<MemoryRegionDescriptor> regions;
+
+        // Full 64 KB RAM
+        regions.push_back({REGION_RAM, 0x0000, 0x10000,
+            RegionFlags::Readable | RegionFlags::Writable | RegionFlags::Populated | RegionFlags::Active});
+
+        // 2 KB boot ROM at 0xF800-0xFFFF
+        regions.push_back({REGION_ROM, 0xF800, 0x0800,
+            RegionFlags::Readable | RegionFlags::Populated |
+            (rom_enabled_ ? RegionFlags::Active : RegionFlags::None)});
+
+        // Tube registers at 0xFEF8-0xFEFF (8 bytes, has side effects)
+        regions.push_back({REGION_TUBE, 0xFEF8, 0x0008,
+            RegionFlags::Readable | RegionFlags::Writable | RegionFlags::HasSideEffects |
+            RegionFlags::Populated | RegionFlags::Active});
+
+        return regions;
+    }
+
+    // Read from a named memory region without side effects.
+    uint8_t peek_region(std::string_view name, uint32_t address) const {
+        if (name == REGION_RAM) {
+            return ram_[static_cast<uint16_t>(address)];
+        }
+        if (name == REGION_ROM) {
+            if (address < 0xF800 || address > 0xFFFF) {
+                throw std::invalid_argument("address out of bounds for rom region");
+            }
+            return rom_[address & 0x7FF];
+        }
+        if (name == REGION_TUBE) {
+            return 0xFF;  // Tube registers have side effects; return open bus
+        }
+        throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
+    }
+
+    // Read from a named memory region (may have side effects).
+    uint8_t read_region(std::string_view name, uint32_t address) {
+        if (name == REGION_RAM) {
+            return ram_[static_cast<uint16_t>(address)];
+        }
+        if (name == REGION_ROM) {
+            if (address < 0xF800 || address > 0xFFFF) {
+                throw std::invalid_argument("address out of bounds for rom region");
+            }
+            return rom_[address & 0x7FF];
+        }
+        if (name == REGION_TUBE) {
+            if (address < 0xFEF8 || address > 0xFEFF) {
+                throw std::invalid_argument("address out of bounds for tube_registers region");
+            }
+            return tube_port_.parasite_read(static_cast<uint8_t>(address & 7));
+        }
+        throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
+    }
+
+    // Write to a named memory region.
+    void write_region(std::string_view name, uint32_t address, uint8_t value) {
+        if (name == REGION_RAM) {
+            ram_[static_cast<uint16_t>(address)] = value;
+            return;
+        }
+        if (name == REGION_ROM) {
+            throw std::invalid_argument("ROM region is read-only");
+        }
+        if (name == REGION_TUBE) {
+            if (address < 0xFEF8 || address > 0xFEFF) {
+                throw std::invalid_argument("address out of bounds for tube_registers region");
+            }
+            tube_port_.parasite_write(static_cast<uint8_t>(address & 7), value);
+            return;
+        }
+        throw std::invalid_argument("unknown region: '" + std::string(name) + "'");
+    }
 
 private:
     static bool is_tube_address(uint16_t address) {

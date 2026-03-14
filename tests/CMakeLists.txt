@@ -575,6 +575,14 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_tube)
 
+    # Parasite gRPC service tests
+    add_executable(test_parasite_grpc test_parasite_grpc.cpp)
+    target_link_libraries(test_parasite_grpc PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_parasite_grpc)
+
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)
     target_link_libraries(test_grpc_system PRIVATE

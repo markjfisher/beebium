@@ -21,6 +21,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <span>
 
@@ -46,6 +47,8 @@ namespace beebium {
 
 class ParasiteRunner {
 public:
+    using Memory = ParasiteMemoryMap;
+    using InstructionCallback = std::function<bool(uint16_t pc, uint64_t cycle)>;
     // Construct with a pointer to the shared memory region and a 2 KB ROM image.
     ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom);
     ~ParasiteRunner() = default;
@@ -76,6 +79,43 @@ public:
     // Request clean shutdown. Unblocks wait_if_paused() and freeze waits.
     void request_shutdown();
     bool shutdown_requested() const { return shutdown_requested_.load(std::memory_order_acquire); }
+
+    // --- Sequence counter (increments on mutations, for change detection) ---
+
+    uint64_t sequence() const { return sequence_.load(std::memory_order_acquire); }
+
+    // --- CPU register accessors (debugger convenience) ---
+
+    uint8_t a() const { return cpu_.cpu().a; }
+    uint8_t x() const { return cpu_.cpu().x; }
+    uint8_t y() const { return cpu_.cpu().y; }
+    uint8_t sp() const { return cpu_.cpu().s.b.l; }
+    uint16_t pc() const { return cpu_.cpu().pc.w; }
+    uint8_t p() const { return cpu_.cpu().p.value; }
+
+    void set_a(uint8_t value) { cpu_.cpu().a = value; ++sequence_; }
+    void set_x(uint8_t value) { cpu_.cpu().x = value; ++sequence_; }
+    void set_y(uint8_t value) { cpu_.cpu().y = value; ++sequence_; }
+    void set_sp(uint8_t value) { cpu_.cpu().s.b.l = value; ++sequence_; }
+    void set_pc(uint16_t value) { cpu_.cpu().pc.w = value; ++sequence_; }
+    void set_p(uint8_t value) { cpu_.cpu().p.value = value; ++sequence_; }
+
+    // --- Memory access ---
+
+    uint8_t read(uint16_t addr) { return memory_.read(addr); }
+    void write(uint16_t addr, uint8_t value) { memory_.write(addr, value); ++sequence_; }
+    uint8_t peek(uint16_t addr) const { return memory_.peek(addr); }
+
+    ParasiteMemoryMap& memory() { return memory_; }
+    const ParasiteMemoryMap& memory() const { return memory_; }
+
+    // --- Single-cycle step ---
+
+    void step();
+
+    // --- Instruction callback ---
+
+    void set_instruction_callback(InstructionCallback cb) { on_instruction_ = std::move(cb); }
 
     // --- Component access ---
 
@@ -115,6 +155,12 @@ private:
     std::condition_variable pause_cv_;
     std::atomic<bool> paused_{false};
     std::atomic<bool> shutdown_requested_{false};
+
+    // Sequence counter
+    std::atomic<uint64_t> sequence_{0};
+
+    // Instruction callback (checked at instruction boundaries in run())
+    InstructionCallback on_instruction_;
 };
 
 }  // namespace beebium

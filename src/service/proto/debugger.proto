@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package beebium;
 
-// Generic debugger service (CPU-agnostic, stateless)
+// Generic debugger service for 6502-based machines.
+// Can be instantiated for both host (Machine<Hardware>) and parasite (ParasiteRunner).
 service DebuggerControl {
     // Execution control
     rpc GetState(Empty) returns (ExecutionState);
@@ -32,8 +33,11 @@ service DebuggerControl {
     // CPU state
     rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
     rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+}
 
-    // Device state inspection (debugger access to write-only registers and internal state)
+// BBC Micro device state inspection.
+// Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
+service DeviceInspection {
     rpc GetSystemViaState(GetSystemViaStateRequest) returns (ViaState);
     rpc GetUserViaState(GetUserViaStateRequest) returns (ViaState);
     rpc GetCrtcState(GetCrtcStateRequest) returns (CrtcState);

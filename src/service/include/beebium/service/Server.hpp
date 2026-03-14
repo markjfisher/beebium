@@ -16,6 +16,7 @@
 #include "beebium/service/VideoService.hpp"
 #include "beebium/service/KeyboardService.hpp"
 #include "beebium/service/DebuggerService.hpp"
+#include "beebium/service/DeviceInspectionService.hpp"
 #include "beebium/service/DiscService.hpp"
 #include "beebium/service/IndicatorService.hpp"
 #include "beebium/service/SystemService.hpp"
@@ -105,6 +106,7 @@ private:
         std::unique_ptr<VideoServiceImpl> video_service;
         std::unique_ptr<KeyboardServiceImpl> keyboard_service;
         std::unique_ptr<DebuggerControlServiceImpl<MachineType>> debugger_control_service;
+        std::unique_ptr<DeviceInspectionServiceImpl<MachineType>> device_inspection_service;
         std::unique_ptr<DiscServiceImpl<MachineType>> disc_service;
         std::unique_ptr<IndicatorServiceImpl<MachineType>> indicator_service;
         std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
@@ -191,6 +193,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->debugger_control_service = std::make_unique<DebuggerControlServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->device_inspection_service = std::make_unique<DeviceInspectionServiceImpl<MachineType>>(
+        impl_->machine);
+
     impl_->disc_service = std::make_unique<DiscServiceImpl<MachineType>>(
         impl_->machine);
 
@@ -230,6 +235,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->video_service.get());
     builder.RegisterService(impl_->keyboard_service.get());
     builder.RegisterService(impl_->debugger_control_service.get());
+    builder.RegisterService(impl_->device_inspection_service.get());
     builder.RegisterService(impl_->disc_service.get());
     builder.RegisterService(impl_->indicator_service.get());
     builder.RegisterService(impl_->system_service.get());
@@ -265,6 +271,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
         info.instance_name = identity_name;
         info.port = impl_->port;
         info.txt_records["uuid"] = identity_uuid;
+        info.txt_records["role"] = "host";
         info.txt_records["model"] = identity_model_type;
         info.txt_records["provenance"] = provenance_type;
 
@@ -315,6 +322,7 @@ void Server<MachineType>::stop() {
     impl_->video_service.reset();
     impl_->keyboard_service.reset();
     impl_->debugger_control_service.reset();
+    impl_->device_inspection_service.reset();
     impl_->disc_service.reset();
     impl_->indicator_service.reset();
     impl_->system_service.reset();

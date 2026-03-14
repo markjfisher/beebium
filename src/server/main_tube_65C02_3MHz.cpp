@@ -25,6 +25,7 @@
 #include <beebium/PacingClock.hpp>
 #include <beebium/tube/ParasiteRunner.hpp>
 #include <beebium/tube/TubeSharedMemory.hpp>
+#include <beebium/service/ParasiteServer.hpp>
 
 #include "tube.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
@@ -54,6 +55,8 @@ void signal_handler(int) {
 struct ParasiteConfig {
     std::string host_address;     // e.g. "localhost:50051"
     std::string rom_dirpath;      // Optional ROM directory override
+    uint16_t port = 0;            // gRPC server port (0 = dynamic)
+    bool advertise = false;       // Enable mDNS advertisement
 };
 
 bool parse_args(int argc, char* argv[], ParasiteConfig& config) {
@@ -64,12 +67,18 @@ bool parse_args(int argc, char* argv[], ParasiteConfig& config) {
             config.host_address = arg.substr(7);
         } else if (arg.starts_with("--rom-dir=")) {
             config.rom_dirpath = arg.substr(10);
+        } else if (arg.starts_with("--port=")) {
+            config.port = static_cast<uint16_t>(std::stoi(arg.substr(7)));
+        } else if (arg == "--advertise") {
+            config.advertise = true;
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "Usage: " << argv[0] << " --host=HOST:PORT [OPTIONS]\n"
                       << "\n"
                       << "Options:\n"
                       << "  --host=HOST:PORT  Host server address (required)\n"
                       << "  --rom-dir=DIR     ROM directory override\n"
+                      << "  --port=PORT       Parasite gRPC server port (default: dynamic)\n"
+                      << "  --advertise       Enable mDNS advertisement\n"
                       << "  --help            Show this help\n";
             return false;
         } else {
@@ -206,6 +215,40 @@ int main(int argc, char* argv[]) {
     beebium::ParasiteRunner runner(shm.get(), rom);
     runner.reset();
 
+    // --- Start parasite gRPC server ---
+    beebium::service::ParasiteServer parasite_server(runner, "127.0.0.1", config.port);
+
+    beebium::service::Provenance provenance;
+    provenance.type = "tube-parasite";
+    provenance.timestamp = std::chrono::system_clock::now();
+
+    beebium::service::MachineIdentity identity;
+    identity.model_type = "Tube65C02";
+    identity.model_name = "65C02 3 MHz Second Processor";
+
+    parasite_server.start(std::move(provenance), std::move(identity),
+                          config.advertise,
+                          [&runner]() { runner.request_shutdown(); });
+
+    std::cout << "Parasite gRPC server on port " << parasite_server.port() << "\n";
+
+    // --- Register parasite's gRPC endpoint with the host ---
+    {
+        grpc::ClientContext register_ctx;
+        beebium::RegisterEndpointRequest register_req;
+        beebium::RegisterEndpointResponse register_resp;
+        register_req.set_grpc_address(
+            "localhost:" + std::to_string(parasite_server.port()));
+        auto register_status = stub->RegisterEndpoint(
+            &register_ctx, register_req, &register_resp);
+        if (register_status.ok()) {
+            std::cout << "Registered gRPC endpoint with host.\n";
+        } else {
+            std::cerr << "Warning: Failed to register endpoint: "
+                      << register_status.error_message() << "\n";
+        }
+    }
+
     // --- Pacing clock (3 MHz, 200 Hz tick rate) ---
     beebium::PacingConfig pacing_config{
         .base_clock_hz = PARASITE_CLOCK_HZ,
@@ -230,6 +273,7 @@ int main(int argc, char* argv[]) {
     }
 
     clock.stop();
+    parasite_server.stop();
 
     std::cout << "Parasite shutdown. Cycles: " << runner.cycle_count() << "\n";
     return 0;

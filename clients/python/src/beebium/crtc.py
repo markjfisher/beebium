@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -185,11 +185,11 @@ class Crtc:
         print(f"Horizontal total: {htotal}")
     """
 
-    def __init__(self, stub: debugger_pb2_grpc.DebuggerControlStub):
+    def __init__(self, stub: debugger_pb2_grpc.DeviceInspectionStub):
         """Create a CRTC interface.
 
         Args:
-            stub: The gRPC stub for the DebuggerControl service.
+            stub: The gRPC stub for the DeviceInspection service.
         """
         self._stub = stub
         self._registers = CrtcRegisters(self)

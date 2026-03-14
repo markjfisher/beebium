@@ -54,6 +54,12 @@ public:
         shared_memory_ = shm;
     }
 
+    // Set the host UUID for inclusion in Connect responses.
+    void set_host_uuid(const std::string& uuid) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        host_uuid_ = uuid;
+    }
+
     // --- RPC implementations ---
 
     grpc::Status Connect(
@@ -98,9 +104,28 @@ public:
             response->set_shared_memory_size(
                 static_cast<uint32_t>(shared_memory_->size()));
             response->set_protocol_version(1);
+            response->set_host_uuid(host_uuid_);
 
             return grpc::Status::OK;
         }
+    }
+
+    grpc::Status RegisterEndpoint(
+        grpc::ServerContext* context,
+        const RegisterEndpointRequest* request,
+        RegisterEndpointResponse* response) override
+    {
+        (void)context;
+        (void)response;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if (!parasite_connected_) {
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                "No parasite connected");
+        }
+
+        parasite_grpc_address_ = request->grpc_address();
+        return grpc::Status::OK;
     }
 
     grpc::Status GetStatus(
@@ -132,6 +157,9 @@ public:
             if (parasite_connected_) {
                 response->set_parasite_type(parasite_type_);
                 response->set_parasite_clock_hz(parasite_clock_hz_);
+                if (!parasite_grpc_address_.empty()) {
+                    response->set_parasite_grpc_address(parasite_grpc_address_);
+                }
             }
 
             if (shared_memory_) {
@@ -182,6 +210,7 @@ public:
         parasite_connected_ = false;
         parasite_type_.clear();
         parasite_clock_hz_ = 0;
+        parasite_grpc_address_.clear();
     }
 
 private:
@@ -196,6 +225,8 @@ private:
     bool parasite_connected_ = false;
     std::string parasite_type_;
     uint32_t parasite_clock_hz_ = 0;
+    std::string parasite_grpc_address_;
+    std::string host_uuid_;
 };
 
 }  // namespace beebium::service
