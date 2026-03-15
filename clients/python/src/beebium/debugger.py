@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from beebium._proto import debugger_pb2, debugger_pb2_grpc
@@ -210,6 +211,28 @@ class Debugger:
         """Pause execution if not already stopped."""
         if self.is_running:
             self.stop()
+
+    @contextmanager
+    def running(self):
+        """Context manager that ensures the emulator is running on entry
+        and restores the previous execution state on exit.
+
+        Usage::
+
+            with bbc.debugger.running():
+                # emulator is executing
+                ...
+            # emulator restored to whatever state it was in before
+        """
+        was_running = self.is_running
+        self.ensure_running()
+        try:
+            yield
+        finally:
+            if was_running:
+                self.ensure_running()
+            else:
+                self.ensure_stopped()
 
     # Breakpoints
 

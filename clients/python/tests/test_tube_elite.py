@@ -63,13 +63,11 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
     start_cycles = bbc.debugger.cycle_count
     target_cycles = start_cycles + cycle_budget
 
-    bbc.debugger.ensure_running()
-    try:
+    with bbc.debugger.running():
         while True:
             time.sleep(poll_interval)
             current_cycles = bbc.debugger.cycle_count
             if current_cycles >= target_cycles:
-                bbc.debugger.stop()
                 return predicate()
             # Only check the predicate once enough emulated time has passed
             # for the BBC to have processed keyboard input and produced output.
@@ -79,8 +77,6 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                 if predicate():
                     return True
                 bbc.debugger.run()
-    finally:
-        bbc.debugger.ensure_stopped()
 
 # DFS ROM for the Acorn 1770 disc controller.
 # DNFS ROMs contain an 8271-only DFS and are NOT compatible with the 1770.
