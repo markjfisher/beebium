@@ -375,19 +375,90 @@ same divergence.
    at the back-reference points in B-Em vs Beebium. Even one bit
    difference would desync the entire decompression.
 
-3. **Consider a fix.** The real hardware behaviour is: writes to
-   `$FEF8-$FEFF` go to the Tube ULA (data lost to RAM), reads from
-   `$FEF8-$FEFF` return Tube register status. The decompressor handles
-   writes correctly (skips I/O space) but doesn't handle reads. On real
-   hardware, the decompressor would produce the same output as B-Em
-   because the Tube register state is deterministic in the single-bus
-   model. The fix for Beebium is to ensure Tube register reads during
-   decompression return the same values as they would in a single-process
-   model. This could be achieved by:
-   - Shadow RAM for the I/O range (return last CPU write instead of
-     register status)
-   - Ensuring Tube register status is deterministic regardless of host
-     timing (harder, but more correct)
+## Root Cause Confirmed
+
+The decompressor's back-reference reads from `$FEF8-$FEFF` go through
+`ParasiteMemoryMap::read()` → `TubeParasitePort::parasite_read()`, which
+has **side effects**:
+
+- Reading R1 data (`$FEF9`) **clears the ready flag** and **increments
+  the transfer counter**. If the host had written a compressed data byte,
+  the back-reference read consumes it instead of the bitstream reader.
+
+- Reading R1 status (`$FEF8`) returns live register status.
+
+This means:
+1. Some of the 702 "R1 reads" counted by the transfer counter were
+   **back-reference reads**, not bitstream reads
+2. The decompressor's bitstream reader received fewer than 702 compressed
+   bytes
+3. The decompressor never reaches its termination marker
+
+In B-Em's single-process model, when the back-reference reads R1 data, the
+host hasn't had a chance to write the next compressed byte yet (execution
+alternates). So `ready` is 0, the read returns the old value without side
+effects, and the counter doesn't increment. The bitstream reader gets all
+702 bytes.
+
+In Beebium's concurrent model, the host has likely already written the next
+byte by the time the back-reference executes. So `ready` is 1, the back-
+reference consumes the byte, and the bitstream reader gets fewer bytes.
+
+## Fix
+
+The fix should prevent decompressor back-reference reads from having Tube
+register side effects. Options:
+
+1. **Track read intent.** The decompressor reads R1 data at two points:
+   `$09D6: LDA $FEF9` (bitstream read) and `$09EB: LDA ($33),Y` (back-ref
+   that might hit `$FEF9`). The memory system can't distinguish these.
+
+2. **Only clear ready on intentional Tube reads.** The 6502 instruction
+   decode determines whether a read is from LDA absolute ($AD $F9 $FE) vs
+   LDA indirect-Y. But the memory system doesn't see the opcode.
+
+3. **Don't clear ready on data reads; clear on status reads.** This matches
+   real hardware more closely: the real Tube ULA clears "data available"
+   when the data register is read, regardless of intent. But the real
+   hardware is synchronous — the read happens at a specific bus cycle and
+   the effect is immediate.
+
+4. **(Preferred) Accept that this is a real hardware behaviour difference
+   in the cross-process model.** The real 6502 Second Processor's Tube ULA
+   is on the same bus as the CPU. Reads from `$FEF8-$FEFF` always go to
+   the Tube ULA, with side effects. The decompressor game code relies on the
+   timing guarantee that the host hasn't written to R1 yet when the back-
+   reference fires. In the concurrent model, this guarantee doesn't hold.
+
+   The pragmatic fix: ensure the host's R1 write doesn't complete until
+   the parasite has read the status register showing "data available" —
+   i.e., the R1 latch write should be **visible** to the parasite only
+   after the parasite polls R1 status. This is already the case (the
+   blocking write spin-waits on `ready`). But the issue is that the
+   host ALREADY wrote and set ready, and the back-reference accidentally
+   reads it.
+
+   The real fix is: **make R1 data reads NOT clear the ready flag when
+   the previous instruction was not a status poll.** But this requires
+   instruction-level tracking in the memory system.
+
+5. **(Simplest) Suppress Tube register side effects for indirect addressing
+   modes.** On real hardware, the 6502's indirect addressing modes generate
+   bus cycles that look identical to direct reads. But in the emulator, we
+   could heuristically suppress side effects for reads that "look like"
+   back-references rather than intentional Tube reads. This is fragile.
+
+6. **(Most pragmatic) For the specific case of R1 data reads: only clear
+   ready and consume the byte if the R1 status was recently polled.** Add
+   a "status was checked" flag that's set when R1 status is read and cleared
+   when R1 data is read. Only consume the byte (clear ready) if the flag is
+   set. This ensures that accidental reads from the back-reference (which
+   don't poll status first) don't consume compressed data.
+
+   This matches real hardware behaviour: on the real 6502, you poll status
+   (BIT $FEF8) before reading data (LDA $FEF9). The hardware doesn't
+   actually have a "status checked" gate, but the synchronous bus guarantees
+   the same ordering. Option 6 simulates this guarantee in the async model.
 
 ## Files
 
