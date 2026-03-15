@@ -133,36 +133,75 @@ The protocol has exactly one R4 P→H write from the parasite (at `$0810`). The 
 
 **The second R4 ack is expected to come from the decompressed game code**, after `JMP ($FFFC)` executes the new reset vector. In the working case (B-Em), the decompression completes, the game starts, and whatever initialisation the game does sends the R4 ack.
 
-## Why It Hangs
+## Transfer Counter Results
 
-The parasite decompressor is still waiting for R1 data at `$09D1` when the host has already finished sending all 702 bytes (pointer reached `$654B`). The decompression destination pointer is at `$0000`, far from completion.
+Per-register byte counters (added to `TubeShared`) show the state at the hang point:
 
-This means the **decompressor consumed all 702 R1 bytes but hasn't finished decompressing**. The decompressor expects more input data than the host sent.
+| Register | Direction | Writes | Reads | Delta |
+|----------|-----------|--------|-------|-------|
+| R1 | H→P | 702 | 702 | 0 |
+| R2 | H→P | 24 | 24 | 0 |
+| R3 | H→P | 16950 | 16950 | 0 |
+| R4 | H→P | 471 | 471 | 0 |
+| R4 | P→H | 1 | 1 | 0 |
 
-### Hypotheses
+**All deltas are zero. No bytes were lost on any register.** Every byte the host
+wrote was read by the parasite, and vice versa. The R3 NMI transfer (16950 bytes
+during boot + game setup) completed cleanly.
 
-1. **R1 byte loss in cross-process model.** The R1 H→P latch uses a `ready` flag with atomic acquire/release. If a byte is lost (host writes but parasite doesn't see the ready flag), the compressed bitstream would become misaligned. The decompressor would consume bytes at wrong boundaries and potentially loop forever or request more data than exists.
+The R3 data was verified by comparing the first 256 bytes at the parasite
+destination (`$0800`) with the host source (`$6057`): **exact match**.
 
-2. **R3 NMI data loss in Phase 1.** The first phase transfers data via R3 using NMI. If PNMI edge detection has a race condition in the cross-process model, the parasite might miss R3 data. This data is written into parasite memory (not via the decompressor), so missing bytes would corrupt the lookup tables the decompressor uses, causing it to decompress more slowly (requesting more R1 bytes per output byte).
+### What this rules out
 
-3. **Timing-dependent protocol.** The Phase 1 R3 transfer happens with M and V flags still active (enabling PNMI). The game clears M and V at `$6A38`, then clears all flags at `$6A45`. If the parasite hasn't finished processing R3 NMI data before the flags are cleared, it would lose pending NMI deliveries. In lockstep (B-Em) this can't happen because the parasite processes each NMI before the host can clear the flags.
+- ~~R1 byte loss~~ — All 702 R1 bytes received
+- ~~R3 NMI data loss~~ — All R3 bytes received and data matches
+- ~~PNMI edge detection race~~ — R3 counters balanced
 
-### Hypothesis 2 seems most likely because:
+## Why It Actually Hangs
 
-- The R1 H→P blocking write (`BVC` loop) guarantees synchronisation for R1 — the host can't write faster than the parasite reads
-- R3 uses NMI-driven transfer which depends on PNMI edge detection
-- The PNMI edge detection in the cross-process model has had bugs before (the `pending` field race that was fixed earlier in this branch)
-- The R3 P→H still has pending data (`count=1/1, [00]`) that the host hasn't read, suggesting the R3 protocol didn't complete cleanly
+The parasite decompressor consumed all 702 R1 bytes and hasn't finished. The
+decompression destination pointer wrapped through the entire 64K address space
+(from `$FC00` back to `$0000`) but the decompressor is still requesting more
+input bits from R1.
+
+The decompressor at `$0819` uses a bit-serial reader (`$09C8`) that reads one
+byte at a time from R1 and extracts bits via `LSR $31`. When `$31` is exhausted
+(zero), it fetches the next byte from R1. With the bit buffer empty (`$31=$00`)
+and no more R1 data, the decompressor polls R1 forever.
+
+### The real question
+
+**Is the R1 stream endpoint wrong?** The host sends bytes from `$628D` to
+`$654A` inclusive (702 bytes). The endpoint `$654B` is hardcoded in the game's
+host-side transfer loop. If the compressed stream is actually 703+ bytes, the
+host would stop one byte short, leaving the decompressor hanging on the missing
+end-of-stream marker.
+
+This same code works on B-Em, so either:
+
+1. **B-Em's R3 NMI transfer delivers data in a different order or timing** that
+   causes the decompressor to interpret the bitstream differently (e.g. if a
+   256-byte NMI block boundary falls at a different point).
+
+2. **The host-side endpoint is computed earlier** and something in the earlier
+   setup phase went differently, resulting in a different endpoint value being
+   stored.
+
+3. **The decompressor's behaviour depends on the initial state of memory** that
+   differs between Beebium and B-Em (e.g. memory not cleared to zero on the
+   parasite before the transfer).
 
 ## Next Steps
 
-1. **Instrument R1 byte counting.** Add counters to TubeHostPort R1 H→P write and TubeParasitePort R1 H→P read to verify the byte count matches on both sides.
+1. **Compare with B-Em.** Run the same disc on B-Em with instrumentation to
+   capture the exact R1 byte count and the decompressor exit condition.
 
-2. **Instrument R3 transfer.** Count R3 H→P writes (host) and reads (parasite) during Phase 1 to check for lost bytes.
+2. **Check endpoint computation.** Trace where `$654B` comes from — is it
+   hardcoded in the disc data, or computed from the R3 transfer size?
 
-3. **Check PNMI edge detection during flag transitions.** When the host clears M at `$6A38`, any pending PNMI edge should still be delivered. Verify this works correctly in the cross-process model.
-
-4. **Compare R3 data.** Dump the parasite memory region that was filled by R3 NMI transfer and compare with the host source data (`$6057-$628D`) to check for corruption.
+3. **Check parasite initial memory state.** Verify that parasite RAM is
+   initialised to the same values as on B-Em before the R3 transfer begins.
 
 ## Files
 
