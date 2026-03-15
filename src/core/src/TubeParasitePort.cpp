@@ -77,16 +77,18 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
         // R3 status (parasite perspective).
         // Bit 7: R3 H-to-P data available (count >= threshold).
         // Bit 6: R3 P-to-H space available (count < threshold).
-        // Bit 5: N flag -- mirrors bit 7 (data available).
+        // Bit 5: N flag -- NMI action required (raw condition, independent of M).
         // Bits 4-0: read as 1 (App Note 004, note 11).
         result = 0x1F;
         uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
         bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
         bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
         if (h2p_data)
-            result |= TubeUla::DATA_AVAILABLE | 0x20;  // N mirrors data available
+            result |= TubeUla::DATA_AVAILABLE;
         if (p2h_space)
             result |= TubeUla::SPACE_AVAILABLE;
+        if (h2p_data || p2h_space)
+            result |= 0x20;  // N flag
         break;
     }
 
@@ -285,12 +287,21 @@ bool TubeParasitePort::pnmi_level() const
     if (!(flags & TubeUla::FLAG_M))
         return false;
 
-    // PNMI fires when R3 H-to-P has data available (count >= threshold).
-    // Unlike the in-process TubeUla which also checks P-to-H space, the
-    // real hardware PNMI is driven only by H-to-P data availability.
-    // See B-Em tube.c line 105 and Stardot forum discussion on R3 behaviour.
+    // PNMI fires when M=1 AND either:
+    //   - R3 H-to-P has data available (count >= threshold), OR
+    //   - R3 P-to-H FIFO is empty (count < threshold) -- space available
+    //
+    // This matches jsbeeb (tube.js line 109) and the Tube Application Note:
+    //   "M=1, V=0: 1 or 2 bytes in H-to-P R3 FIFO or 0 bytes in P-to-H R3 FIFO"
+    //   "M=1, V=1: 2 bytes in H-to-P R3 FIFO"
+    //
+    // Note: B-Em only checks H-to-P data, but jsbeeb checks both and works
+    // with CE2023. The Tube Application Note explicitly describes the P-to-H
+    // space condition for 1-byte mode.
     uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-    return shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+    bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
+    bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+    return h2p_data || p2h_space;
 }
 
 void TubeParasitePort::update_pnmi()

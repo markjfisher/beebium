@@ -364,17 +364,17 @@ TEST_CASE("TubeParasitePort R3 status N flag set when data or space available", 
     uint8_t status = parasite.parasite_read(4);
     CHECK((status & 0x20) == 0);  // N flag clear
 
-    // Clear dummy byte to make space available (P-to-H space doesn't set N)
+    // Clear dummy byte to make space available
     shared.r3_p2h.count.store(0, std::memory_order_release);
 
     status = parasite.parasite_read(4);
-    CHECK((status & 0x20) == 0);  // N flag still clear (no H-to-P data)
+    CHECK((status & 0x20) != 0);  // N flag set (space available)
 
     // Write H-to-P data from host
     host.host_write(5, 0x42);
 
     status = parasite.parasite_read(4);
-    CHECK((status & 0x20) != 0);  // N flag set (H-to-P data available)
+    CHECK((status & 0x20) != 0);  // N flag still set (data available)
 }
 
 TEST_CASE("TubeParasitePort R3 status bits 4-0 read as 1", "[tube][parasite]") {
@@ -674,14 +674,10 @@ TEST_CASE("TubeParasitePort PNMI edge: space available triggers NMI", "[tube][pa
     parasite.parasite_read(4);
     CHECK_FALSE(parasite.pnmi());
 
-    // Host reads the dummy byte -- P-to-H space available, but PNMI
-    // should NOT fire (PNMI is driven by H-to-P data, not P-to-H space).
+    // Host reads the dummy byte -- decrements count, making P-to-H space available
     host.host_read(5);
-    parasite.parasite_read(4);
-    CHECK_FALSE(parasite.pnmi());
 
-    // Write H-to-P data from host -- THIS should trigger PNMI
-    host.host_write(5, 0x42);
+    // Parasite must do a register access to detect the edge
     parasite.parasite_read(4);
     CHECK(parasite.pnmi());
 }
@@ -895,17 +891,17 @@ TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 H-to-P has data", "[
     CHECK(parasite.pnmi_level());
 }
 
-TEST_CASE("TubeParasitePort pnmi_level false when M=1 and only R3 P-to-H has space", "[tube][parasite][pnmi]") {
+TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 P-to-H has space", "[tube][parasite][pnmi]") {
     TubeShared shared;
     shared.init();
     TubeParasitePort parasite(&shared);
 
     shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
 
-    // P-to-H is empty (count=0) -> space available, but no H-to-P data.
-    // PNMI is driven only by H-to-P data, not P-to-H space.
+    // P-to-H is empty (count=0) -> space available -> level true.
+    // Per Tube Application Note: PNMI fires on H-to-P data OR P-to-H space.
     CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
-    CHECK_FALSE(parasite.pnmi_level());
+    CHECK(parasite.pnmi_level());
 }
 
 TEST_CASE("TubeParasitePort pnmi_level false when M=1 but no data and no space", "[tube][parasite][pnmi]") {
@@ -1106,7 +1102,7 @@ TEST_CASE("R1 parasite data read clears ready even when empty", "[tube][r1][hw]"
 
 // --- PNMI only fires on H-to-P data, not P-to-H space ---
 
-TEST_CASE("PNMI does not fire from P-to-H space available alone", "[tube][pnmi][hw]") {
+TEST_CASE("PNMI fires from P-to-H space available in 1-byte mode", "[tube][pnmi][hw]") {
     TubePair t;
     // Enable M flag
     t.host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
@@ -1114,8 +1110,9 @@ TEST_CASE("PNMI does not fire from P-to-H space available alone", "[tube][pnmi][
     // Clear P-to-H so it has space available
     t.shared.r3_p2h.count.store(0, std::memory_order_release);
 
-    // PNMI should NOT fire just because P-to-H has space
-    CHECK_FALSE(t.parasite.pnmi_level());
+    // Per Tube Application Note: M=1, V=0: PNMI fires when P-to-H has 0 bytes
+    // (space available for single-byte transfer).
+    CHECK(t.parasite.pnmi_level());
 }
 
 TEST_CASE("PNMI fires when H-to-P has data and M is set", "[tube][pnmi][hw]") {
