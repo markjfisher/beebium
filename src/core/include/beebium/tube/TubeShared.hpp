@@ -66,6 +66,36 @@ struct TubeReg3 {
     std::atomic<uint8_t> count{0};    // shared; use fetch_add/fetch_sub
 };
 
+// Per-register transfer counters for diagnostics.
+// Each counter tracks the total number of bytes written to or read from
+// a register direction. The writer-side process increments its own counters
+// (single-writer principle), and both sides can read all counters.
+//
+// Field ownership follows the register direction:
+//   Host increments:     h2p_writes (R1-R4), p2h_reads (R1-R4)
+//   Parasite increments: p2h_writes (R1-R4), h2p_reads (R1-R4)
+struct TubeCounters {
+    // Host-to-parasite direction
+    std::atomic<uint64_t> r1_h2p_writes{0};  // host wrote to R1 H→P
+    std::atomic<uint64_t> r1_h2p_reads{0};   // parasite read from R1 H→P
+    std::atomic<uint64_t> r2_h2p_writes{0};
+    std::atomic<uint64_t> r2_h2p_reads{0};
+    std::atomic<uint64_t> r3_h2p_writes{0};
+    std::atomic<uint64_t> r3_h2p_reads{0};
+    std::atomic<uint64_t> r4_h2p_writes{0};
+    std::atomic<uint64_t> r4_h2p_reads{0};
+
+    // Parasite-to-host direction
+    std::atomic<uint64_t> r1_p2h_writes{0};  // parasite wrote to R1 P→H
+    std::atomic<uint64_t> r1_p2h_reads{0};   // host read from R1 P→H
+    std::atomic<uint64_t> r2_p2h_writes{0};
+    std::atomic<uint64_t> r2_p2h_reads{0};
+    std::atomic<uint64_t> r3_p2h_writes{0};
+    std::atomic<uint64_t> r3_p2h_reads{0};
+    std::atomic<uint64_t> r4_p2h_writes{0};
+    std::atomic<uint64_t> r4_p2h_reads{0};
+};
+
 // Lifecycle commands sent from host to parasite via the mailbox.
 enum class TubeLifecycleCommand : uint8_t {
     None     = 0,
@@ -107,6 +137,9 @@ struct alignas(64) TubeShared {
     TubeLatch r2_p2h;               // R2: 1-byte latch
     TubeReg3  r3_p2h;               // R3: 2-byte register
     TubeLatch r4_p2h;               // R4: 1-byte latch
+
+    // --- Transfer counters (both sides read, single-writer per counter) ---
+    alignas(64) TubeCounters counters;
 
     // --- Lifecycle mailbox ---
     alignas(64) std::atomic<uint8_t> host_command{0};
@@ -150,6 +183,23 @@ struct alignas(64) TubeShared {
         r3_p2h.count.store(0, std::memory_order_relaxed);
         r4_p2h.value.store(0, std::memory_order_relaxed);
         r4_p2h.ready.store(0, std::memory_order_relaxed);
+
+        counters.r1_h2p_writes.store(0, std::memory_order_relaxed);
+        counters.r1_h2p_reads.store(0, std::memory_order_relaxed);
+        counters.r2_h2p_writes.store(0, std::memory_order_relaxed);
+        counters.r2_h2p_reads.store(0, std::memory_order_relaxed);
+        counters.r3_h2p_writes.store(0, std::memory_order_relaxed);
+        counters.r3_h2p_reads.store(0, std::memory_order_relaxed);
+        counters.r4_h2p_writes.store(0, std::memory_order_relaxed);
+        counters.r4_h2p_reads.store(0, std::memory_order_relaxed);
+        counters.r1_p2h_writes.store(0, std::memory_order_relaxed);
+        counters.r1_p2h_reads.store(0, std::memory_order_relaxed);
+        counters.r2_p2h_writes.store(0, std::memory_order_relaxed);
+        counters.r2_p2h_reads.store(0, std::memory_order_relaxed);
+        counters.r3_p2h_writes.store(0, std::memory_order_relaxed);
+        counters.r3_p2h_reads.store(0, std::memory_order_relaxed);
+        counters.r4_p2h_writes.store(0, std::memory_order_relaxed);
+        counters.r4_p2h_reads.store(0, std::memory_order_relaxed);
 
         host_command.store(0, std::memory_order_relaxed);
         parasite_ack.store(0, std::memory_order_relaxed);

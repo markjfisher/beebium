@@ -407,6 +407,34 @@ message TubeState {
 
     // Whether the Tube socket is populated (has a second processor attached).
     bool enabled = 14;
+
+    // Per-register transfer counters (bytes transferred since reset).
+    TubeTransferCounters counters = 15;
+}
+
+// Per-register byte transfer counters for Tube diagnostics.
+// Each counter records total bytes written or read for a register direction.
+// Stored in shared memory so both host and parasite can read all counters.
+message TubeTransferCounters {
+    // Host-to-parasite direction
+    uint64 r1_h2p_writes = 1;
+    uint64 r1_h2p_reads = 2;
+    uint64 r2_h2p_writes = 3;
+    uint64 r2_h2p_reads = 4;
+    uint64 r3_h2p_writes = 5;
+    uint64 r3_h2p_reads = 6;
+    uint64 r4_h2p_writes = 7;
+    uint64 r4_h2p_reads = 8;
+
+    // Parasite-to-host direction
+    uint64 r1_p2h_writes = 9;
+    uint64 r1_p2h_reads = 10;
+    uint64 r2_p2h_writes = 11;
+    uint64 r2_p2h_reads = 12;
+    uint64 r3_p2h_writes = 13;
+    uint64 r3_p2h_reads = 14;
+    uint64 r4_p2h_writes = 15;
+    uint64 r4_p2h_reads = 16;
 }
 
 // Tube ULA control flags (bits 0-5 of the control register).

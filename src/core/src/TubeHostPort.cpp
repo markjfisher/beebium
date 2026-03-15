@@ -40,6 +40,7 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
     case 1: {
         // R1 data: read from P-to-H 24-byte FIFO.
         result = dequeue_r1_p2h();
+        shared_->counters.r1_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -61,6 +62,7 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
         result = shared_->r2_p2h.value.load(std::memory_order_acquire);
         if (shared_->r2_p2h.ready.load(std::memory_order_acquire) != 0) {
             shared_->r2_p2h.ready.store(0, std::memory_order_release);
+            shared_->counters.r2_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
     }
@@ -82,6 +84,7 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
     case 5: {
         // R3 data: read from P-to-H register.
         result = dequeue_r3_p2h();
+        shared_->counters.r3_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -103,6 +106,7 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
         result = shared_->r4_p2h.value.load(std::memory_order_acquire);
         if (shared_->r4_p2h.ready.load(std::memory_order_acquire) != 0) {
             shared_->r4_p2h.ready.store(0, std::memory_order_release);
+            shared_->counters.r4_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
     }
@@ -212,6 +216,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
             ;
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
+        shared_->counters.r1_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -223,6 +228,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         // R2 data: write to H-to-P latch.
         shared_->r2_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r2_h2p.ready.store(1, std::memory_order_release);
+        shared_->counters.r2_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -239,6 +245,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         shared_->r3_h2p.data[tail].store(value, std::memory_order_relaxed);
         shared_->r3_h2p.tail.store(tail ^ 1, std::memory_order_relaxed);
         shared_->r3_h2p.count.fetch_add(1, std::memory_order_release);
+        shared_->counters.r3_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -253,6 +260,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
             ;
         shared_->r4_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r4_h2p.ready.store(1, std::memory_order_release);
+        shared_->counters.r4_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         break;
     }
     }

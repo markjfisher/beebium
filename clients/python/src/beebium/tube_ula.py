@@ -162,6 +162,44 @@ class TubeInterrupts:
 
 
 @dataclass
+class TubeTransferCounters:
+    """Per-register byte transfer counters for Tube diagnostics."""
+
+    r1_h2p_writes: int = 0
+    r1_h2p_reads: int = 0
+    r2_h2p_writes: int = 0
+    r2_h2p_reads: int = 0
+    r3_h2p_writes: int = 0
+    r3_h2p_reads: int = 0
+    r4_h2p_writes: int = 0
+    r4_h2p_reads: int = 0
+
+    r1_p2h_writes: int = 0
+    r1_p2h_reads: int = 0
+    r2_p2h_writes: int = 0
+    r2_p2h_reads: int = 0
+    r3_p2h_writes: int = 0
+    r3_p2h_reads: int = 0
+    r4_p2h_writes: int = 0
+    r4_p2h_reads: int = 0
+
+    def __str__(self) -> str:
+        lines = ["Transfer counters:"]
+        for reg in range(1, 5):
+            h2p_w = getattr(self, f"r{reg}_h2p_writes")
+            h2p_r = getattr(self, f"r{reg}_h2p_reads")
+            p2h_w = getattr(self, f"r{reg}_p2h_writes")
+            p2h_r = getattr(self, f"r{reg}_p2h_reads")
+            h2p_delta = h2p_w - h2p_r
+            p2h_delta = p2h_w - p2h_r
+            lines.append(
+                f"  R{reg}: H->P w={h2p_w} r={h2p_r} (delta={h2p_delta})"
+                f"  P->H w={p2h_w} r={p2h_r} (delta={p2h_delta})"
+            )
+        return "\n".join(lines)
+
+
+@dataclass
 class TubeUlaState:
     """Complete Tube ULA state snapshot."""
 
@@ -182,6 +220,7 @@ class TubeUlaState:
     interrupts: TubeInterrupts = field(default_factory=TubeInterrupts)
 
     host_stretched: bool = False
+    counters: TubeTransferCounters = field(default_factory=TubeTransferCounters)
 
     def __str__(self) -> str:
         if not self.enabled:
@@ -202,6 +241,7 @@ class TubeUlaState:
         ]
         if self.host_stretched:
             lines.append("  Host: STRETCHED")
+        lines.append(f"  {self.counters}")
         return "\n".join(lines)
 
 
@@ -293,4 +333,22 @@ def _from_proto(pb: debugger_pb2.TubeState) -> TubeUlaState:
             pnmi_edge=pb.interrupts.pnmi_edge,
         ),
         host_stretched=pb.host_stretched,
+        counters=TubeTransferCounters(
+            r1_h2p_writes=pb.counters.r1_h2p_writes,
+            r1_h2p_reads=pb.counters.r1_h2p_reads,
+            r2_h2p_writes=pb.counters.r2_h2p_writes,
+            r2_h2p_reads=pb.counters.r2_h2p_reads,
+            r3_h2p_writes=pb.counters.r3_h2p_writes,
+            r3_h2p_reads=pb.counters.r3_h2p_reads,
+            r4_h2p_writes=pb.counters.r4_h2p_writes,
+            r4_h2p_reads=pb.counters.r4_h2p_reads,
+            r1_p2h_writes=pb.counters.r1_p2h_writes,
+            r1_p2h_reads=pb.counters.r1_p2h_reads,
+            r2_p2h_writes=pb.counters.r2_p2h_writes,
+            r2_p2h_reads=pb.counters.r2_p2h_reads,
+            r3_p2h_writes=pb.counters.r3_p2h_writes,
+            r3_p2h_reads=pb.counters.r3_p2h_reads,
+            r4_p2h_writes=pb.counters.r4_p2h_writes,
+            r4_p2h_reads=pb.counters.r4_p2h_reads,
+        ),
     )

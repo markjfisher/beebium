@@ -332,6 +332,25 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
     // No bus stretching in shared memory mode (uses spin-waits instead).
     response->set_host_stretched(false);
     response->set_enabled(true);
+
+    // Transfer counters (stored in shared memory, readable by both sides).
+    auto* ctr = response->mutable_counters();
+    ctr->set_r1_h2p_writes(shared->counters.r1_h2p_writes.load(std::memory_order_relaxed));
+    ctr->set_r1_h2p_reads(shared->counters.r1_h2p_reads.load(std::memory_order_relaxed));
+    ctr->set_r2_h2p_writes(shared->counters.r2_h2p_writes.load(std::memory_order_relaxed));
+    ctr->set_r2_h2p_reads(shared->counters.r2_h2p_reads.load(std::memory_order_relaxed));
+    ctr->set_r3_h2p_writes(shared->counters.r3_h2p_writes.load(std::memory_order_relaxed));
+    ctr->set_r3_h2p_reads(shared->counters.r3_h2p_reads.load(std::memory_order_relaxed));
+    ctr->set_r4_h2p_writes(shared->counters.r4_h2p_writes.load(std::memory_order_relaxed));
+    ctr->set_r4_h2p_reads(shared->counters.r4_h2p_reads.load(std::memory_order_relaxed));
+    ctr->set_r1_p2h_writes(shared->counters.r1_p2h_writes.load(std::memory_order_relaxed));
+    ctr->set_r1_p2h_reads(shared->counters.r1_p2h_reads.load(std::memory_order_relaxed));
+    ctr->set_r2_p2h_writes(shared->counters.r2_p2h_writes.load(std::memory_order_relaxed));
+    ctr->set_r2_p2h_reads(shared->counters.r2_p2h_reads.load(std::memory_order_relaxed));
+    ctr->set_r3_p2h_writes(shared->counters.r3_p2h_writes.load(std::memory_order_relaxed));
+    ctr->set_r3_p2h_reads(shared->counters.r3_p2h_reads.load(std::memory_order_relaxed));
+    ctr->set_r4_p2h_writes(shared->counters.r4_p2h_writes.load(std::memory_order_relaxed));
+    ctr->set_r4_p2h_reads(shared->counters.r4_p2h_reads.load(std::memory_order_relaxed));
 }
 
 // gRPC service implementation for DeviceInspection.
