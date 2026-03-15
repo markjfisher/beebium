@@ -44,6 +44,11 @@ TubeSharedMemory::TubeSharedMemory(const std::string& suffix, TubeSharedMemoryRo
             0, static_cast<DWORD>(mapping_size_), shm_name_.c_str());
         if (!file_mapping_handle_)
             throw std::runtime_error("CreateFileMapping failed for " + shm_name_);
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            CloseHandle(file_mapping_handle_);
+            file_mapping_handle_ = nullptr;
+            throw std::runtime_error("Shared memory already exists: " + shm_name_);
+        }
     } else {
         file_mapping_handle_ = OpenFileMappingA(
             FILE_MAP_ALL_ACCESS, FALSE, shm_name_.c_str());
