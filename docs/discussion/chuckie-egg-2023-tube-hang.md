@@ -192,16 +192,70 @@ This same code works on B-Em, so either:
    differs between Beebium and B-Em (e.g. memory not cleared to zero on the
    parasite before the transfer).
 
+## Additional Verification
+
+### Parasite RAM initialisation
+
+Both B-Em and Beebium zero all 64K of parasite RAM:
+- B-Em: `memset(tuberam, 0, memsize)` in `common_init()` (`src/6502tube.c`)
+- Beebium: `ram_.fill(0)` in `ParasiteMemoryMap` constructor
+
+**Ruled out** as a cause.
+
+### R3 NMI data integrity
+
+The full 566 bytes of R3 data at the parasite destination (`$0800`) were compared
+with the host source (`$6057-$628C`): **exact match, all 566 bytes**.
+
+### Decompressor output volume
+
+The decompressor has written exactly 65536 bytes — the **entire 64K address
+space** — from `$FC00` wrapping through `$FFFF` and back to `$0000`. Despite
+producing a full 64K of output from 702 bytes of compressed input, it has not
+terminated. The exit condition depends on a specific bit pattern in the
+compressed bitstream that was never encountered.
+
+### Endpoint analysis
+
+The R1 stream endpoint `$654B` is hardcoded in the host code (literal bytes
+`$4B` and `$65` at addresses `$6A5D` and `$6A63`). This code is loaded from
+disc into host RAM at `$6000`. The same disc produces working results on B-Em.
+
+## Current Hypothesis
+
+The compressed data stream at `$628D-$654A` (702 bytes) is genuinely incomplete
+for Beebium's decompressor but works on B-Em. Since all bytes transfer
+correctly and the data matches, the difference must be in **how the decompressor
+processes the stream**. Possible causes:
+
+1. **65C02 vs NMOS 6502 behavioural difference.** Beebium's parasite runs a
+   65C02 (CMOS). B-Em may use an NMOS 6502. Some instructions behave
+   differently (BCD mode, read-modify-write, undocumented opcodes). If the
+   decompressor uses an instruction that differs between variants, the
+   compressed bitstream would be consumed differently.
+
+2. **Cycle-exact timing of R1 reads.** The decompressor's bit reader at `$09C8`
+   polls R1 status and reads R1 data as separate operations. In a concurrent
+   model, the value read might differ from what the status indicated (though
+   the latch should prevent this).
+
+3. **NMI handler behaviour during decompression.** If a stale PNMI fires
+   during the R1 decompression phase (after flags are cleared), the NMI
+   handler would execute and potentially corrupt state. The NMI vector at
+   `$FE65` contains RTI, which is harmless, but if the NMI fires before
+   the vector is overwritten by decompression, it would execute the original
+   Tube Client ROM NMI handler.
+
 ## Next Steps
 
-1. **Compare with B-Em.** Run the same disc on B-Em with instrumentation to
-   capture the exact R1 byte count and the decompressor exit condition.
+1. **Check B-Em's 6502 variant.** Does B-Em use a CMOS or NMOS 6502 for the
+   Tube parasite? If NMOS, check if any decompressor instructions differ.
 
-2. **Check endpoint computation.** Trace where `$654B` comes from — is it
-   hardcoded in the disc data, or computed from the R3 transfer size?
+2. **Instrument B-Em.** Add a counter to B-Em's R1 H→P read path to capture
+   the exact byte count when the decompressor terminates.
 
-3. **Check parasite initial memory state.** Verify that parasite RAM is
-   initialised to the same values as on B-Em before the R3 transfer begins.
+3. **Check for spurious NMI.** Add logging to Beebium's PNMI path to detect
+   if any NMI fires during the R1 decompression phase (when M=0).
 
 ## Files
 
