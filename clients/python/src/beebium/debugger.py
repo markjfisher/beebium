@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -200,6 +200,16 @@ class Debugger:
     def cycle_count(self) -> int:
         """Current CPU cycle count."""
         return self.get_state().cycle_count
+
+    def ensure_running(self) -> None:
+        """Resume execution if not already running."""
+        if not self.is_running:
+            self.run()
+
+    def ensure_stopped(self) -> None:
+        """Pause execution if not already stopped."""
+        if self.is_running:
+            self.stop()
 
     # Breakpoints
 

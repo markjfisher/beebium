@@ -60,12 +60,10 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
         True if the predicate was satisfied, False on timeout.
     """
     cycle_budget = int(emulated_seconds * HOST_CLOCK_HZ)
-    already_running = bbc.debugger.is_running
     start_cycles = bbc.debugger.cycle_count
     target_cycles = start_cycles + cycle_budget
 
-    if not already_running:
-        bbc.debugger.run()
+    bbc.debugger.ensure_running()
     try:
         while True:
             time.sleep(poll_interval)
@@ -82,9 +80,7 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                     return True
                 bbc.debugger.run()
     except Exception:
-        # Ensure we leave the emulator stopped even on error.
-        if bbc.debugger.is_running:
-            bbc.debugger.stop()
+        bbc.debugger.ensure_stopped()
         raise
 
 # DFS ROM for the Acorn 1770 disc controller.
@@ -488,10 +484,8 @@ class TestTubeEliteBoot:
                         return True
                 return False
 
-            # Ensure the emulator is running before typing so keystrokes
-            # are scanned by the keyboard matrix.
-            if not bbc_tube.debugger.is_running:
-                bbc_tube.debugger.run()
+            # Ensure the emulator is running so keystrokes are scanned.
+            bbc_tube.debugger.ensure_running()
             bbc_tube.keyboard.type("*.")
             bbc_tube.keyboard.press_return()
 
@@ -520,8 +514,7 @@ class TestTubeEliteBoot:
             except (BeebiumConnectionError, grpc.RpcError):
                 pass  # Diagnostics are optional
 
-            if not bbc_tube.debugger.is_running:
-                bbc_tube.debugger.run()
+            bbc_tube.debugger.ensure_running()
             bbc_tube.keyboard.type("*RUN !BOOT")
             bbc_tube.keyboard.press_return()
 
