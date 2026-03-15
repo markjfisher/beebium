@@ -1642,6 +1642,7 @@ pattern established by `test_boot.cpp`.
 
 - Acorn Tube Application Note 004 (`docs/datasheets/Tube_Application_Note_004.pdf`)
 - Acorn Tube Software Protocol Specification (ref: SOtube8, included in Application Note)
+- Acorn 6502 Tube Client v1.10 annotated disassembly: https://acornaeology.uk/acorn-6502-tube-client/1.10.html
 - BBC Advanced User Guide, Chapter 27: The Tube
 - BBC Master Advanced User Guide, Chapter 18: 2nd Proc/Tube
 - BeebEm source: `Src/Tube.cpp`, `Src/Tube.h`

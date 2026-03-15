@@ -38,10 +38,9 @@ from beebium.tube_ula import TubeUlaInspection
 
 ELITE_DISC_FILENAME = "Disc999-EliteSNG45.ssd"
 
-# DNFS ROM provides DFS + NFS + Tube Host Code
-DNFS_ROM_CANDIDATES = [
-    "acorn-dnfs_3_02.rom",
-    "acorn-dnfs_3_34.rom",
+# DFS ROM for the Acorn 1770 disc controller.
+# DNFS ROMs contain an 8271-only DFS and are NOT compatible with the 1770.
+DFS_1770_ROM_CANDIDATES = [
     "acorn-dfs_2_26.rom",
 ]
 
@@ -64,9 +63,9 @@ def _find_elite_disc() -> Path | None:
     return None
 
 
-def _find_dnfs_rom(roms_dirpath: Path) -> Path | None:
-    """Find a DNFS/DFS ROM in the ROM directory."""
-    for name in DNFS_ROM_CANDIDATES:
+def _find_dfs_1770_rom(roms_dirpath: Path) -> Path | None:
+    """Find a 1770 DFS ROM in the ROM directory."""
+    for name in DFS_1770_ROM_CANDIDATES:
         candidate = roms_dirpath / name
         if candidate.exists():
             return candidate
@@ -418,12 +417,12 @@ def elite_disc_filepath() -> Path:
 
 
 @pytest.fixture(scope="module")
-def dnfs_rom_filepath(beebium_roms_dirpath: Path) -> Path:
-    """Path to a DNFS/DFS ROM file."""
-    path = _find_dnfs_rom(beebium_roms_dirpath)
+def dfs_1770_rom_filepath(beebium_roms_dirpath: Path) -> Path:
+    """Path to a 1770 DFS ROM file."""
+    path = _find_dfs_1770_rom(beebium_roms_dirpath)
     if path is None:
         pytest.skip(
-            f"DNFS/DFS ROM not found. Expected one of: {', '.join(DNFS_ROM_CANDIDATES)}"
+            f"1770 DFS ROM not found. Expected one of: {', '.join(DFS_1770_ROM_CANDIDATES)}"
         )
     return path
 
@@ -433,14 +432,14 @@ def bbc_tube(
     mos_filepath: Path,
     basic_filepath: Path | None,
     beebium_server_filepath: Path | None,
-    dnfs_rom_filepath: Path,
+    dfs_1770_rom_filepath: Path,
 ) -> Beebium:
     """A BBC Micro instance with Tube and disc controller enabled.
 
     Configures:
     - Tube with 65C02 3MHz parasite
     - Acorn 1770 disc controller
-    - DNFS ROM in sideways slot 14 (provides DFS + Tube Host Code)
+    - 1770 DFS ROM in sideways slot 14
 
     Uses a longer startup timeout to allow the parasite process to connect.
     """
@@ -452,7 +451,7 @@ def bbc_tube(
             extra_args=[
                 "--tube", "65C02-3MHz",
                 "--fdc", "acorn-1770",
-                "--sideways", f"14:rom:{dnfs_rom_filepath}",
+                "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
             ],
             startup_timeout=20.0,
         ) as instance:
@@ -529,7 +528,8 @@ class TestTubeEliteBoot:
                 for i, row in enumerate(rows):
                     stripped = row.strip()
                     if stripped and stripped != ">" and "BASIC" not in stripped \
-                            and "Acorn TUBE" not in stripped and "*." not in stripped:
+                            and "Acorn TUBE" not in stripped and "Acorn 1770" not in stripped \
+                            and "*." not in stripped:
                         has_output = True
                         break
             except Exception:
@@ -545,8 +545,8 @@ class TestTubeEliteBoot:
             if parasite is not None:
                 parasite.close()
 
-    def test_exec_boot(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
-        """Type *EXEC !BOOT and check for Elite loading screen."""
+    def test_run_boot(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
+        """Type *RUN !BOOT and check for Elite loading screen."""
         parasite = None
         try:
             # Connect to the parasite for diagnostics
@@ -560,22 +560,25 @@ class TestTubeEliteBoot:
                 bbc_tube.debugger.run()
             time.sleep(0.5)
 
-            bbc_tube.keyboard.type("*EXEC !BOOT")
+            bbc_tube.keyboard.type("*RUN !BOOT")
             bbc_tube.keyboard.press_return()
 
-            # Wait for loading -- Elite takes a while
-            time.sleep(15.0)
+            # Poll for Elite loading text. The !BOOT loader briefly displays
+            # "6502 Second Processor ELITE" in Mode 7 before switching to a
+            # graphics mode for the game, so we need to catch it early.
+            found_elite = False
+            for _ in range(10):
+                time.sleep(1.0)
+                bbc_tube.debugger.stop()
+                if screen_contains(bbc_tube.memory, "ELITE"):
+                    found_elite = True
+                    break
+                bbc_tube.debugger.run()
 
-            bbc_tube.debugger.stop()
-
-            # Check for the Elite loading screen text
-            found_acornsoft = screen_contains(bbc_tube.memory, "ACORNSOFT")
-            found_elite = screen_contains(bbc_tube.memory, "ELITE")
-
-            if not (found_acornsoft or found_elite):
+            if not found_elite:
                 _dump_diagnostics(bbc_tube, parasite)
                 pytest.fail(
-                    "Expected 'ACORNSOFT' or 'ELITE' on screen after *EXEC !BOOT"
+                    "Expected 'ELITE' on screen after *RUN !BOOT"
                 )
         finally:
             if parasite is not None:
