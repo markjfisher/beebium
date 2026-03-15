@@ -490,6 +490,22 @@ and was reverted as the wrong approach.
 
 - Sam Skivington's Tube test cases were used to validate B-Em's fix
 
+- Stardot Chuckie Egg 2023 thread: https://www.stardot.org.uk/forums/viewtopic.php?t=28163
+  Sam Skivington documents compatibility across emulators. Key finding:
+  MAME also hangs at "Initialising" (same as Beebium/B2). The game's
+  custom protocol relies on replacing the reset vector and JMP ($FFFC).
+
+- Stardot Tube ULA Re-Implementation thread: https://stardot.org.uk/forums/viewtopic.php?p=409877
+  hoglet's comprehensive R3 hardware tests with Ferranti ULA. Test disc:
+  tube_r3_tests.ssd. Tests cover: reset state, empty reads, all access
+  patterns (W, R, WR, WRR, WWR, WWRR, WRWR, WWRR), 1-byte and 2-byte
+  modes. See also: https://stardot.org.uk/forums/viewtopic.php?p=412565
+
+- B-Em commit e04aab0: "implement behaviour from Hoglet's all register test cases"
+  Key changes: unconditionally clear flags on data reads, fixed empty read
+  values (R1=$01, R3 host=$96, R3 parasite=$E4), removed conditional flag
+  clearing for R2 and R4
+
 ## Files
 
 - Test suite: `clients/python/tests/test_tube_chuckie_egg.py`
