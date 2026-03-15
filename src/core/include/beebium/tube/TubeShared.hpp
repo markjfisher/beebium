@@ -138,6 +138,15 @@ struct alignas(64) TubeShared {
     TubeReg3  r3_p2h;               // R3: 2-byte register
     TubeLatch r4_p2h;               // R4: 1-byte latch
 
+    // --- Data bus latches ---
+    // The real Tube ULA's data bus retains the last written value. Empty
+    // register reads return this latch value rather than zero. Each side
+    // has its own latch: host_data_latch for the last host write, and
+    // parasite_data_latch for the last parasite write.
+    // Reference: B-Em commit 97f0ad6, hoglet's hardware tests.
+    alignas(64) std::atomic<uint8_t> host_data_latch{0};
+    std::atomic<uint8_t> parasite_data_latch{0};
+
     // --- Transfer counters (both sides read, single-writer per counter) ---
     alignas(64) TubeCounters counters;
 
@@ -183,6 +192,9 @@ struct alignas(64) TubeShared {
         r3_p2h.count.store(0, std::memory_order_relaxed);
         r4_p2h.value.store(0, std::memory_order_relaxed);
         r4_p2h.ready.store(0, std::memory_order_relaxed);
+
+        host_data_latch.store(0, std::memory_order_relaxed);
+        parasite_data_latch.store(0, std::memory_order_relaxed);
 
         counters.r1_h2p_writes.store(0, std::memory_order_relaxed);
         counters.r1_h2p_reads.store(0, std::memory_order_relaxed);

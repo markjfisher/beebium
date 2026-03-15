@@ -193,6 +193,10 @@ uint8_t TubeHostPort::host_peek(uint8_t offset) const
 
 void TubeHostPort::host_write(uint8_t offset, uint8_t value)
 {
+    // Update the host data bus latch (last value written to any register).
+    // Empty register reads return this latch value on real hardware.
+    shared_->host_data_latch.store(value, std::memory_order_relaxed);
+
     switch (offset & 7) {
     case 0: {
         // Control flag register.
@@ -346,7 +350,7 @@ uint8_t TubeHostPort::dequeue_r1_p2h()
 {
     uint8_t count = shared_->r1_p2h.count.load(std::memory_order_acquire);
     if (count == 0)
-        return 0;
+        return shared_->parasite_data_latch.load(std::memory_order_relaxed);
 
     uint8_t head = shared_->r1_p2h.head.load(std::memory_order_relaxed);
     uint8_t value = shared_->r1_p2h.data[head].load(std::memory_order_relaxed);
@@ -360,7 +364,7 @@ uint8_t TubeHostPort::dequeue_r3_p2h()
 {
     uint8_t count = shared_->r3_p2h.count.load(std::memory_order_acquire);
     if (count == 0)
-        return 0;
+        return shared_->parasite_data_latch.load(std::memory_order_relaxed);
 
     uint8_t head = shared_->r3_p2h.head.load(std::memory_order_relaxed);
     uint8_t value = shared_->r3_p2h.data[head].load(std::memory_order_acquire);
