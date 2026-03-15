@@ -31,6 +31,7 @@ import grpc
 import pytest
 
 from beebium.client import Beebium
+from beebium.disassemble import disassemble
 from beebium.exceptions import BeebiumError, ConnectionError as BeebiumConnectionError, ServerNotFoundError
 from beebium.screen import dump_screen, screen_contains
 from beebium.tube_ula import TubeUlaInspection
@@ -50,7 +51,7 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
     host machine speed.  The emulator is left stopped on return.
 
     Args:
-        bbc: The Beebium instance (must be stopped on entry).
+        bbc: The Beebium instance (may be running or stopped on entry).
         predicate: Callable returning True when the desired condition is met.
         emulated_seconds: Maximum BBC-time seconds to run.
         poll_interval: Real-time seconds between cycle-count polls.
@@ -59,10 +60,12 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
         True if the predicate was satisfied, False on timeout.
     """
     cycle_budget = int(emulated_seconds * HOST_CLOCK_HZ)
+    already_running = bbc.debugger.is_running
     start_cycles = bbc.debugger.cycle_count
     target_cycles = start_cycles + cycle_budget
 
-    bbc.debugger.run()
+    if not already_running:
+        bbc.debugger.run()
     try:
         while True:
             time.sleep(poll_interval)
@@ -70,12 +73,14 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
             if current_cycles >= target_cycles:
                 bbc.debugger.stop()
                 return predicate()
-            # Check the predicate periodically without stopping the emulator.
-            # We need to stop briefly to read screen memory coherently.
-            bbc.debugger.stop()
-            if predicate():
-                return True
-            bbc.debugger.run()
+            # Only check the predicate once enough emulated time has passed
+            # for the BBC to have processed keyboard input and produced output.
+            # Stopping and restarting too early can disrupt the Tube protocol.
+            if current_cycles - start_cycles >= HOST_CLOCK_HZ:
+                bbc.debugger.stop()
+                if predicate():
+                    return True
+                bbc.debugger.run()
     except Exception:
         # Ensure we leave the emulator stopped even on error.
         if bbc.debugger.is_running:
@@ -116,88 +121,10 @@ def _find_dfs_1770_rom(roms_dirpath: Path) -> Path | None:
     return None
 
 
-_OPCODE_NAMES = {
-    0x00: ("BRK", 1), 0x01: ("ORA (zp,X)", 2), 0x05: ("ORA zp", 2),
-    0x06: ("ASL zp", 2), 0x08: ("PHP", 1), 0x09: ("ORA #imm", 2),
-    0x0A: ("ASL A", 1), 0x0D: ("ORA abs", 3), 0x0E: ("ASL abs", 3),
-    0x10: ("BPL rel", 2), 0x11: ("ORA (zp),Y", 2), 0x15: ("ORA zp,X", 2),
-    0x18: ("CLC", 1), 0x19: ("ORA abs,Y", 3), 0x1A: ("INC A", 1),
-    0x20: ("JSR abs", 3), 0x21: ("AND (zp,X)", 2), 0x24: ("BIT zp", 2),
-    0x25: ("AND zp", 2), 0x26: ("ROL zp", 2), 0x28: ("PLP", 1),
-    0x29: ("AND #imm", 2), 0x2A: ("ROL A", 1), 0x2C: ("BIT abs", 3),
-    0x2D: ("AND abs", 3), 0x2E: ("ROL abs", 3), 0x30: ("BMI rel", 2),
-    0x38: ("SEC", 1), 0x3D: ("AND abs,X", 3),
-    0x40: ("RTI", 1), 0x41: ("EOR (zp,X)", 2), 0x45: ("EOR zp", 2),
-    0x46: ("LSR zp", 2), 0x48: ("PHA", 1), 0x49: ("EOR #imm", 2),
-    0x4A: ("LSR A", 1), 0x4C: ("JMP abs", 3), 0x4D: ("EOR abs", 3),
-    0x50: ("BVC rel", 2), 0x51: ("EOR (zp),Y", 2),
-    0x58: ("CLI", 1), 0x59: ("EOR abs,Y", 3), 0x5A: ("PHY", 1),
-    0x60: ("RTS", 1), 0x61: ("ADC (zp,X)", 2), 0x64: ("STZ zp", 2),
-    0x65: ("ADC zp", 2), 0x66: ("ROR zp", 2), 0x68: ("PLA", 1),
-    0x69: ("ADC #imm", 2), 0x6A: ("ROR A", 1), 0x6C: ("JMP (abs)", 3),
-    0x6D: ("ADC abs", 3), 0x70: ("BVS rel", 2),
-    0x78: ("SEI", 1), 0x7A: ("PLY", 1), 0x7C: ("JMP (abs,X)", 3),
-    0x80: ("BRA rel", 2), 0x81: ("STA (zp,X)", 2), 0x84: ("STY zp", 2),
-    0x85: ("STA zp", 2), 0x86: ("STX zp", 2), 0x88: ("DEY", 1),
-    0x89: ("BIT #imm", 2), 0x8A: ("TXA", 1), 0x8C: ("STY abs", 3),
-    0x8D: ("STA abs", 3), 0x8E: ("STX abs", 3), 0x90: ("BCC rel", 2),
-    0x91: ("STA (zp),Y", 2), 0x92: ("STA (zp)", 2), 0x95: ("STA zp,X", 2),
-    0x98: ("TYA", 1), 0x99: ("STA abs,Y", 3), 0x9A: ("TXS", 1),
-    0x9C: ("STZ abs", 3), 0x9D: ("STA abs,X", 3),
-    0xA0: ("LDY #imm", 2), 0xA1: ("LDA (zp,X)", 2), 0xA2: ("LDX #imm", 2),
-    0xA4: ("LDY zp", 2), 0xA5: ("LDA zp", 2), 0xA6: ("LDX zp", 2),
-    0xA8: ("TAY", 1), 0xA9: ("LDA #imm", 2), 0xAA: ("TAX", 1),
-    0xAC: ("LDY abs", 3), 0xAD: ("LDA abs", 3), 0xAE: ("LDX abs", 3),
-    0xB0: ("BCS rel", 2), 0xB1: ("LDA (zp),Y", 2), 0xB2: ("LDA (zp)", 2),
-    0xB5: ("LDA zp,X", 2), 0xB9: ("LDA abs,Y", 3), 0xBA: ("TSX", 1),
-    0xBD: ("LDA abs,X", 3),
-    0xC0: ("CPY #imm", 2), 0xC1: ("CMP (zp,X)", 2), 0xC4: ("CPY zp", 2),
-    0xC5: ("CMP zp", 2), 0xC6: ("DEC zp", 2), 0xC8: ("INY", 1),
-    0xC9: ("CMP #imm", 2), 0xCA: ("DEX", 1), 0xCC: ("CPY abs", 3),
-    0xCD: ("CMP abs", 3), 0xCE: ("DEC abs", 3), 0xD0: ("BNE rel", 2),
-    0xD1: ("CMP (zp),Y", 2), 0xD5: ("CMP zp,X", 2), 0xD8: ("CLD", 1),
-    0xD9: ("CMP abs,Y", 3), 0xDA: ("PHX", 1),
-    0xE0: ("CPX #imm", 2), 0xE1: ("SBC (zp,X)", 2), 0xE4: ("CPX zp", 2),
-    0xE5: ("SBC zp", 2), 0xE6: ("INC zp", 2), 0xE8: ("INX", 1),
-    0xE9: ("SBC #imm", 2), 0xEA: ("NOP", 1), 0xEC: ("CPX abs", 3),
-    0xED: ("SBC abs", 3), 0xEE: ("INC abs", 3), 0xF0: ("BEQ rel", 2),
-    0xF1: ("SBC (zp),Y", 2), 0xF5: ("SBC zp,X", 2), 0xF8: ("SED", 1),
-    0xF9: ("SBC abs,Y", 3), 0xFA: ("PLX", 1), 0xFD: ("SBC abs,X", 3),
-}
-
-
 def _disassemble_region(memory: Memory, start: int, length: int) -> list[str]:
     """Disassemble a region of memory, returning formatted lines."""
     data = memory.address.peek.read(start, length)
-    lines = []
-    offset = 0
-    while offset < length:
-        addr = start + offset
-        opcode = data[offset]
-        entry = _OPCODE_NAMES.get(opcode)
-        if entry is None:
-            lines.append(f"  ${addr:04X}: {opcode:02X}          ???")
-            offset += 1
-            continue
-        name, size = entry
-        if offset + size > length:
-            break
-        raw = " ".join(f"{data[offset + i]:02X}" for i in range(size))
-        if size == 3:
-            operand = data[offset + 1] | (data[offset + 2] << 8)
-            detail = name.replace("abs", f"${operand:04X}").replace("imm", f"${data[offset+1]:02X}")
-        elif size == 2:
-            if "rel" in name:
-                rel = data[offset + 1]
-                target = addr + 2 + (rel if rel < 128 else rel - 256)
-                detail = name.replace("rel", f"${target:04X}")
-            else:
-                detail = name.replace("zp", f"${data[offset+1]:02X}").replace("imm", f"${data[offset+1]:02X}")
-        else:
-            detail = name
-        lines.append(f"  ${addr:04X}: {raw:<8s}  {detail}")
-        offset += size
-    return lines
+    return [f"  {line}" for line in disassemble(data, start=start, length=length)]
 
 
 def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
@@ -520,9 +447,6 @@ class TestTubeEliteBoot:
 
     def test_tube_banner(self, bbc_tube: Beebium) -> None:
         """After boot, screen should show the Tube banner."""
-        if bbc_tube.debugger.is_running:
-            bbc_tube.debugger.stop()
-
         found = _run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, "Acorn TUBE"),
@@ -553,16 +477,6 @@ class TestTubeEliteBoot:
             except (BeebiumConnectionError, grpc.RpcError):
                 pass
 
-            if bbc_tube.debugger.is_running:
-                bbc_tube.debugger.stop()
-
-            # Type the catalog command; give 1s emulated time for keystrokes.
-            bbc_tube.debugger.run()
-            time.sleep(0.1)
-            bbc_tube.keyboard.type("*.")
-            bbc_tube.keyboard.press_return()
-            bbc_tube.debugger.stop()
-
             def _catalog_visible():
                 from beebium.screen import read_mode7_screen
                 rows = read_mode7_screen(bbc_tube.memory)
@@ -573,6 +487,13 @@ class TestTubeEliteBoot:
                             and "*." not in stripped:
                         return True
                 return False
+
+            # Ensure the emulator is running before typing so keystrokes
+            # are scanned by the keyboard matrix.
+            if not bbc_tube.debugger.is_running:
+                bbc_tube.debugger.run()
+            bbc_tube.keyboard.type("*.")
+            bbc_tube.keyboard.press_return()
 
             found = _run_until_or_timeout(
                 bbc_tube, _catalog_visible, emulated_seconds=10.0,
@@ -599,15 +520,10 @@ class TestTubeEliteBoot:
             except (BeebiumConnectionError, grpc.RpcError):
                 pass  # Diagnostics are optional
 
-            if bbc_tube.debugger.is_running:
-                bbc_tube.debugger.stop()
-
-            # Type the boot command.
-            bbc_tube.debugger.run()
-            time.sleep(0.1)
+            if not bbc_tube.debugger.is_running:
+                bbc_tube.debugger.run()
             bbc_tube.keyboard.type("*RUN !BOOT")
             bbc_tube.keyboard.press_return()
-            bbc_tube.debugger.stop()
 
             # Poll for Elite loading text. The !BOOT loader briefly displays
             # "6502 Second Processor ELITE" in Mode 7 before switching to a
