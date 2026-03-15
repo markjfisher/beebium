@@ -505,14 +505,15 @@ class TestTubeEliteBoot:
         # Poll for Elite loading text. The !BOOT loader briefly displays
         # "6502 Second Processor ELITE" in Mode 7 before switching to a
         # graphics mode for the game.
+        elite_banner = "6502 Second Processor ELITE"
         found = _run_until_or_timeout(
             bbc_tube,
-            lambda: screen_contains(bbc_tube.memory, "ELITE"),
+            lambda: screen_contains(bbc_tube.memory, elite_banner),
             emulated_seconds=15.0,
         )
 
         if not found:
             _dump_diagnostics(bbc_tube)
             pytest.fail(
-                "Expected 'ELITE' on screen after *RUN !BOOT"
+                f"Expected '{elite_banner}' on screen after *RUN !BOOT"
             )
