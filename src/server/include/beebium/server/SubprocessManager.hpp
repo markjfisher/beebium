@@ -158,10 +158,21 @@ inline std::optional<std::filesystem::path> find_sibling_executable(
 {
     namespace fs = std::filesystem;
 
+    // On Windows, executables have a .exe suffix
+    std::vector<std::string> names_to_try = { executable_name };
+#ifdef _WIN32
+    if (executable_name.size() < 4 ||
+        executable_name.substr(executable_name.size() - 4) != ".exe") {
+        names_to_try.push_back(executable_name + ".exe");
+    }
+#endif
+
     // Try sibling directory first
-    auto sibling = host_executable_filepath.parent_path() / executable_name;
-    if (fs::exists(sibling) && fs::is_regular_file(sibling)) {
-        return sibling;
+    for (const auto& name : names_to_try) {
+        auto sibling = host_executable_filepath.parent_path() / name;
+        if (fs::exists(sibling) && fs::is_regular_file(sibling)) {
+            return sibling;
+        }
     }
 
     // Fall back to PATH search
@@ -181,9 +192,11 @@ inline std::optional<std::filesystem::path> find_sibling_executable(
         if (end == std::string::npos) end = path_str.size();
 
         auto dirpath = fs::path(path_str.substr(start, end - start));
-        auto candidate = dirpath / executable_name;
-        if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
-            return candidate;
+        for (const auto& name : names_to_try) {
+            auto candidate = dirpath / name;
+            if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
+                return candidate;
+            }
         }
 
         start = end + 1;
