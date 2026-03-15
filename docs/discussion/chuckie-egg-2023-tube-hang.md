@@ -460,6 +460,36 @@ register side effects. Options:
    actually have a "status checked" gate, but the synchronous bus guarantees
    the same ordering. Option 6 simulates this guarantee in the async model.
 
+## Fixes Applied
+
+### PNMI condition (committed, doesn't fix CE2023)
+
+`TubeParasitePort::pnmi_level()` was firing on `h2p_data || p2h_space`.
+Fixed to only fire on `h2p_data`, matching B-Em and real hardware. This
+is correct but doesn't resolve the Chuckie Egg hang — the game's custom
+transfer runs with M=0 (PNMI disabled) during the R1 phase.
+
+### R1 status-checked gate (tested, reverted)
+
+Attempted to gate R1 data consumption on prior R1 status poll to prevent
+back-reference reads from consuming compressed data. Did not fix the hang
+and was reverted as the wrong approach.
+
+## External References
+
+- B-Em issue #216 (R3 2-byte transfer bug): https://github.com/stardot/b-em/issues/216
+  The B-Em bug was an operator precedence error in the PNMI threshold
+  calculation. Beebium doesn't have this specific bug.
+
+- Stardot forum R3 FIFO analysis: https://stardot.org.uk/forums/viewtopic.php?p=409877#p409877
+  Detailed real-hardware testing of R3 behaviour by hoglet. Key findings:
+  - V flag only affects status flags, not FIFO depth
+  - Writes when full are ignored (not overwriting)
+  - Empty reads return fixed values: host=$96, parasite=$E4
+  - Data available and space available flags are logical inverses
+
+- Sam Skivington's Tube test cases were used to validate B-Em's fix
+
 ## Files
 
 - Test suite: `clients/python/tests/test_tube_chuckie_egg.py`
@@ -468,3 +498,4 @@ register side effects. Options:
 - Parasite decompressor: loaded into parasite RAM at `$0800-$0A35` (with copy at `$FC00-$FC1A`)
 - Tube register I/O: `src/core/src/TubeHostPort.cpp`, `src/core/src/TubeParasitePort.cpp`
 - PNMI edge detection: `TubeParasitePort::update_pnmi()`
+- Transfer counters: `TubeShared::TubeCounters` in `TubeShared.hpp`
