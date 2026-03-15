@@ -22,6 +22,7 @@ struct DiscoveredMachine: Identifiable, Hashable {
     let port: Int
     let isLocal: Bool        // True if running on this Mac
     let uuid: String         // Machine UUID from TXT record
+    let role: String         // "host" or "parasite" from TXT record
     let econetStation: Int?  // Econet station number (1-254), nil if not enabled
     let econetNet: Int?      // Econet network number, nil if not in AUN mode
     let econetAunPort: Int?  // AUN UDP port, nil if not in AUN mode
@@ -48,14 +49,14 @@ class DiscoveryClient: ObservableObject {
     @Published private(set) var machines: [DiscoveredMachine] = []
     @Published private(set) var isDiscoveryAvailable: Bool = true
 
-    /// Local machines (running on this Mac)
+    /// Local host machines (running on this Mac, excluding parasites)
     var localMachines: [DiscoveredMachine] {
-        machines.filter { $0.isLocal }
+        machines.filter { $0.isLocal && $0.role == "host" }
     }
 
-    /// Remote machines (running on other hosts)
+    /// Remote host machines (running on other hosts, excluding parasites)
     var remoteMachines: [DiscoveredMachine] {
-        machines.filter { !$0.isLocal }
+        machines.filter { !$0.isLocal && $0.role == "host" }
     }
 
     private var browser: NWBrowser?
@@ -203,6 +204,7 @@ class DiscoveryClient: ObservableObject {
             port: service.port,
             isLocal: isLocal,
             uuid: txtDict["uuid"] ?? "",
+            role: txtDict["role"] ?? "host",
             econetStation: txtDict["econet_station"].flatMap(Int.init),
             econetNet: txtDict["econet_net"].flatMap(Int.init),
             econetAunPort: txtDict["econet_aun_port"].flatMap(Int.init)

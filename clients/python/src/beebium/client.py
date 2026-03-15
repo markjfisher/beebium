@@ -19,9 +19,12 @@ import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
+import grpc
+
 import beebium
 from beebium.basic import Basic
 from beebium.connection import Connection
+from beebium.exceptions import BeebiumError, ConnectionError as BeebiumConnectionError
 from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
@@ -33,6 +36,8 @@ from beebium.memory import Memory
 from beebium.server import ServerProcess
 from beebium.sound import Sound
 from beebium.system import System
+from beebium.tube import Tube
+from beebium.tube_ula import TubeUlaInspection
 from beebium.via import Via, ViaId
 from beebium.video import Video
 from beebium.video_ula import VideoUla
@@ -90,6 +95,8 @@ class Beebium:
         self._system: System | None = None
         self._disc: Disc | None = None
         self._econet: Econet | None = None
+        self._tube: Tube | None = None
+        self._tube_ula: TubeUlaInspection | None = None
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -130,6 +137,7 @@ class Beebium:
         port: int = 0,
         startup_timeout: float = 10.0,
         connection_timeout: float = 5.0,
+        extra_args: list[str] | None = None,
     ) -> Iterator[Beebium]:
         """Start a beebium-server process and connect to it.
 
@@ -142,6 +150,8 @@ class Beebium:
             port: Port to listen on. If 0 (default), a free port is allocated.
             startup_timeout: Maximum time to wait for server to start (seconds).
             connection_timeout: Maximum time to wait for connection (seconds).
+            extra_args: Additional command-line arguments to pass to the server
+                (e.g., ["--tube", "65C02-3MHz"]).
 
         Yields:
             A connected Beebium client.
@@ -155,6 +165,7 @@ class Beebium:
             basic_filepath=basic_filepath,
             server_filepath=server_filepath,
             port=port,
+            extra_args=extra_args,
         )
 
         try:
@@ -222,43 +233,50 @@ class Beebium:
     def system_via(self) -> Via:
         """Access System VIA (6522) state."""
         if self._system_via is None:
-            self._system_via = Via(self._connection.debugger_stub, ViaId.SYSTEM)
+            self._system_via = Via(self._connection.device_inspection_stub, ViaId.SYSTEM)
         return self._system_via
 
     @property
     def user_via(self) -> Via:
         """Access User VIA (6522) state."""
         if self._user_via is None:
-            self._user_via = Via(self._connection.debugger_stub, ViaId.USER)
+            self._user_via = Via(self._connection.device_inspection_stub, ViaId.USER)
         return self._user_via
 
     @property
     def crtc(self) -> Crtc:
         """Access CRTC (6845) state."""
         if self._crtc is None:
-            self._crtc = Crtc(self._connection.debugger_stub)
+            self._crtc = Crtc(self._connection.device_inspection_stub)
         return self._crtc
 
     @property
     def video_ula(self) -> VideoUla:
         """Access Video ULA state."""
         if self._video_ula is None:
-            self._video_ula = VideoUla(self._connection.debugger_stub)
+            self._video_ula = VideoUla(self._connection.device_inspection_stub)
         return self._video_ula
 
     @property
     def addressable_latch(self) -> AddressableLatch:
         """Access addressable latch state."""
         if self._addressable_latch is None:
-            self._addressable_latch = AddressableLatch(self._connection.debugger_stub)
+            self._addressable_latch = AddressableLatch(self._connection.device_inspection_stub)
         return self._addressable_latch
 
     @property
     def sound(self) -> Sound:
         """Access SN76489 sound chip state."""
         if self._sound is None:
-            self._sound = Sound(self._connection.debugger_stub)
+            self._sound = Sound(self._connection.device_inspection_stub)
         return self._sound
+
+    @property
+    def tube_ula(self) -> TubeUlaInspection:
+        """Access Tube ULA device state (side-effect-free inspection)."""
+        if self._tube_ula is None:
+            self._tube_ula = TubeUlaInspection(self._connection.device_inspection_stub)
+        return self._tube_ula
 
     @property
     def system(self) -> System:
@@ -284,6 +302,57 @@ class Beebium:
             self._econet = Econet(self._connection.econet_stub)
         return self._econet
 
+    @property
+    def tube(self) -> Tube:
+        """Access Tube coprocessor management."""
+        if self._tube is None:
+            self._tube = Tube(self._connection.tube_stub)
+        return self._tube
+
+    def connect_parasite(self, timeout: float = 5.0) -> Beebium:
+        """Connect to the parasite's gRPC server.
+
+        Queries the host's Tube status for the parasite's gRPC address,
+        then returns a new Beebium instance connected to the parasite.
+        This gives access to the parasite's debugger, CPU, and memory.
+
+        Args:
+            timeout: Connection timeout in seconds.
+
+        Returns:
+            A Beebium client connected to the parasite's gRPC server.
+
+        Raises:
+            BeebiumConnectionError: If the parasite is not connected or the
+                connection cannot be established.
+        """
+        status = self.tube.status
+        if not status.parasite_connected:
+            raise BeebiumConnectionError("No parasite is connected")
+        address = status.parasite_grpc_address
+        if not address:
+            raise BeebiumConnectionError("Parasite has not registered its gRPC endpoint")
+        return Beebium.connect(target=address, timeout=timeout)
+
+    @contextlib.contextmanager
+    def parasite(self, timeout: float = 5.0) -> Iterator[Beebium]:
+        """Context manager that connects to the parasite and closes on exit.
+
+        Usage::
+
+            with bbc.parasite() as parasite:
+                print(parasite.cpu.registers)
+
+        Raises:
+            BeebiumConnectionError: If the parasite is not connected or the
+                connection cannot be established.
+        """
+        parasite = self.connect_parasite(timeout=timeout)
+        try:
+            yield parasite
+        finally:
+            parasite.close()
+
     def close(self) -> None:
         """Close the connection and stop any managed server.
 
@@ -300,7 +369,7 @@ class Beebium:
                 if response.accepted:
                     import time
                     time.sleep(0.1)  # Brief wait for graceful shutdown to start
-            except Exception:
+            except (BeebiumError, grpc.RpcError):
                 # If RPC fails, fall back to SIGTERM
                 pass
 

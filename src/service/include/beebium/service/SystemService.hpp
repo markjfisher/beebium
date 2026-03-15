@@ -63,6 +63,7 @@ public:
                       ConnectionTracker* connection_tracker,
                       discovery::Advertiser* advertiser = nullptr,
                       uint16_t server_port = 0,
+                      uint32_t clock_speed_hz = 0,
                       ShutdownPolicyConfig policy_config = {},
                       ShutdownCoordinator* shutdown_coordinator = nullptr,
                       ShutdownCallback shutdown_callback = nullptr);
@@ -134,6 +135,7 @@ private:
     ShutdownCoordinator* shutdown_coordinator_;
     ShutdownCallback shutdown_callback_;
     uint16_t server_port_;
+    uint32_t clock_speed_hz_;
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -153,6 +155,7 @@ SystemServiceImpl<MachineType>::SystemServiceImpl(
     ConnectionTracker* connection_tracker,
     discovery::Advertiser* advertiser,
     uint16_t server_port,
+    uint32_t clock_speed_hz,
     ShutdownPolicyConfig policy_config,
     ShutdownCoordinator* shutdown_coordinator,
     ShutdownCallback shutdown_callback)
@@ -164,7 +167,8 @@ SystemServiceImpl<MachineType>::SystemServiceImpl(
     , policy_evaluator_(provenance.instance_uuid, policy_config)
     , shutdown_coordinator_(shutdown_coordinator)
     , shutdown_callback_(std::move(shutdown_callback))
-    , server_port_(server_port) {
+    , server_port_(server_port)
+    , clock_speed_hz_(clock_speed_hz) {
 }
 
 template<typename MachineType>
@@ -202,6 +206,9 @@ grpc::Status SystemServiceImpl<MachineType>::GetSystemInfo(
     // Set connection information
     auto* conn = response->mutable_connections();
     conn->set_client_count(connection_tracker_ ? connection_tracker_->client_count() : 0);
+
+    // Set clock frequency
+    response->set_clock_speed_hz(clock_speed_hz_);
 
     return grpc::Status::OK;
 }

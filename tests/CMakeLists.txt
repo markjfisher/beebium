@@ -397,6 +397,86 @@ target_link_libraries(test_advertiser PRIVATE beebium_discovery Catch2::Catch2Wi
 # Allow skipped tests to pass (mDNS may not be available on CI)
 catch_discover_tests(test_advertiser EXTRA_ARGS --allow-running-no-tests)
 
+# Tube ULA tests
+add_executable(test_tube_ula test_tube_ula.cpp)
+target_link_libraries(test_tube_ula PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_ula)
+
+# Tube socket tests
+add_executable(test_tube_socket test_tube_socket.cpp)
+target_link_libraries(test_tube_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_socket)
+
+# Tube shared memory layout tests
+add_executable(test_tube_shared test_tube_shared.cpp)
+target_link_libraries(test_tube_shared PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared)
+
+# Tube host port tests
+add_executable(test_tube_host_port test_tube_host_port.cpp)
+target_link_libraries(test_tube_host_port PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_host_port)
+
+# Parasite memory map tests (6502 second processor)
+add_executable(test_parasite_memory_map test_parasite_memory_map.cpp)
+target_link_libraries(test_parasite_memory_map PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_parasite_memory_map)
+
+# Tube parasite port tests
+add_executable(test_tube_parasite_port test_tube_parasite_port.cpp)
+target_link_libraries(test_tube_parasite_port PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_parasite_port)
+
+# Parasite CPU tests
+add_executable(test_parasite_cpu test_parasite_cpu.cpp)
+target_link_libraries(test_parasite_cpu PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_parasite_cpu)
+
+# Parasite runner tests
+add_executable(test_parasite_runner test_parasite_runner.cpp)
+target_link_libraries(test_parasite_runner PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_parasite_runner)
+
+# Parasite boot integration tests (real ROM)
+add_executable(test_parasite_boot test_parasite_boot.cpp)
+target_link_libraries(test_parasite_boot PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_parasite_boot PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_parasite_boot)
+
+# Tube POSIX shared memory manager tests
+add_executable(test_tube_shared_memory test_tube_shared_memory.cpp)
+target_link_libraries(test_tube_shared_memory PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared_memory)
+
+# Tube end-to-end tests (host + parasite via shared memory, real ROM)
+add_executable(test_tube_end_to_end test_tube_end_to_end.cpp)
+target_link_libraries(test_tube_end_to_end PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_tube_end_to_end PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_tube_end_to_end)
+
+# Tube boot screen integration tests (host + parasite, real ROMs)
+add_executable(test_boot_tube test_boot_tube.cpp)
+target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_boot_tube PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
+)
+catch_discover_tests(test_boot_tube)
+
+# Tube shared memory cross-thread tests
+add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
+target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_shared_threads)
+
+# Tube R3 register race condition regression tests
+add_executable(test_tube_r3_race test_tube_r3_race.cpp)
+target_link_libraries(test_tube_r3_race PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_r3_race)
+
 # gRPC service tests (only if service layer is built)
 if(BEEBIUM_BUILD_SERVICE)
     # Video service tests
@@ -489,6 +569,25 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_econet)
 
+    # Tube service tests
+    add_executable(test_grpc_tube test_grpc_tube.cpp)
+    target_link_libraries(test_grpc_tube PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_grpc_tube PRIVATE
+        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    )
+    catch_discover_tests(test_grpc_tube)
+
+    # Parasite gRPC service tests
+    add_executable(test_parasite_grpc test_parasite_grpc.cpp)
+    target_link_libraries(test_parasite_grpc PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_parasite_grpc)
+
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)
     target_link_libraries(test_grpc_system PRIVATE
@@ -563,6 +662,7 @@ if(BEEBIUM_BUILD_SERVICE)
     # Preset subcommand integration tests
     add_executable(test_preset_subcommands test_preset_subcommands.cpp)
     target_link_libraries(test_preset_subcommands PRIVATE
+        beebium_core
         Catch2::Catch2WithMain
     )
     # Integration tests depend on executables being built

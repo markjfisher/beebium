@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -110,11 +110,11 @@ class VideoUla:
         print(f"Logical 7 -> Physical {physical}")
     """
 
-    def __init__(self, stub: debugger_pb2_grpc.DebuggerControlStub):
+    def __init__(self, stub: debugger_pb2_grpc.DeviceInspectionStub):
         """Create a Video ULA interface.
 
         Args:
-            stub: The gRPC stub for the DebuggerControl service.
+            stub: The gRPC stub for the DeviceInspection service.
         """
         self._stub = stub
         self._palette = VideoUlaPalette(self)

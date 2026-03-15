@@ -11,6 +11,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/audio.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/sideways.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/econet.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/tube.proto
 )
 
 # Output directories for generated code

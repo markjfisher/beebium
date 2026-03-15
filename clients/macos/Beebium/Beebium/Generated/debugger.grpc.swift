@@ -11,7 +11,8 @@ import NIOConcurrencyHelpers
 import SwiftProtobuf
 
 
-/// Generic debugger service (CPU-agnostic, stateless)
+/// Generic debugger service for 6502-based machines.
+/// Can be instantiated for both host (Machine<Hardware>) and parasite (ParasiteRunner).
 ///
 /// Usage: instantiate `Beebium_DebuggerControlClient`, then call methods of this protocol to make API calls.
 internal protocol Beebium_DebuggerControlClientProtocol: GRPCClient {
@@ -112,36 +113,6 @@ internal protocol Beebium_DebuggerControlClientProtocol: GRPCClient {
     _ request: Beebium_Set6502StateRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_Set6502StateRequest, Beebium_Set6502StateResponse>
-
-  func getSystemViaState(
-    _ request: Beebium_GetSystemViaStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState>
-
-  func getUserViaState(
-    _ request: Beebium_GetUserViaStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState>
-
-  func getCrtcState(
-    _ request: Beebium_GetCrtcStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState>
-
-  func getVideoUlaState(
-    _ request: Beebium_GetVideoUlaStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>
-
-  func getAddressableLatchState(
-    _ request: Beebium_GetAddressableLatchStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>
-
-  func getSoundGeneratorState(
-    _ request: Beebium_GetSoundGeneratorStateRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>
 }
 
 extension Beebium_DebuggerControlClientProtocol {
@@ -490,114 +461,6 @@ extension Beebium_DebuggerControlClientProtocol {
       interceptors: self.interceptors?.makeSet6502StateInterceptors() ?? []
     )
   }
-
-  /// Device state inspection (debugger access to write-only registers and internal state)
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetSystemViaState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getSystemViaState(
-    _ request: Beebium_GetSystemViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSystemViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetUserViaState
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetUserViaState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getUserViaState(
-    _ request: Beebium_GetUserViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getUserViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetCrtcState
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetCrtcState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getCrtcState(
-    _ request: Beebium_GetCrtcStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getCrtcState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetVideoUlaState
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetVideoUlaState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getVideoUlaState(
-    _ request: Beebium_GetVideoUlaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getVideoUlaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetAddressableLatchState
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetAddressableLatchState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getAddressableLatchState(
-    _ request: Beebium_GetAddressableLatchStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getAddressableLatchState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
-    )
-  }
-
-  /// Unary call to GetSoundGeneratorState
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to GetSoundGeneratorState.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func getSoundGeneratorState(
-    _ request: Beebium_GetSoundGeneratorStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState> {
-    return self.makeUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSoundGeneratorState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
-    )
-  }
 }
 
 @available(*, deprecated)
@@ -657,7 +520,8 @@ internal struct Beebium_DebuggerControlNIOClient: Beebium_DebuggerControlClientP
   }
 }
 
-/// Generic debugger service (CPU-agnostic, stateless)
+/// Generic debugger service for 6502-based machines.
+/// Can be instantiated for both host (Machine<Hardware>) and parasite (ParasiteRunner).
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
 internal protocol Beebium_DebuggerControlAsyncClientProtocol: GRPCClient {
   static var serviceDescriptor: GRPCServiceDescriptor { get }
@@ -757,36 +621,6 @@ internal protocol Beebium_DebuggerControlAsyncClientProtocol: GRPCClient {
     _ request: Beebium_Set6502StateRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_Set6502StateRequest, Beebium_Set6502StateResponse>
-
-  func makeGetSystemViaStateCall(
-    _ request: Beebium_GetSystemViaStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState>
-
-  func makeGetUserViaStateCall(
-    _ request: Beebium_GetUserViaStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState>
-
-  func makeGetCrtcStateCall(
-    _ request: Beebium_GetCrtcStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState>
-
-  func makeGetVideoUlaStateCall(
-    _ request: Beebium_GetVideoUlaStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>
-
-  func makeGetAddressableLatchStateCall(
-    _ request: Beebium_GetAddressableLatchStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>
-
-  func makeGetSoundGeneratorStateCall(
-    _ request: Beebium_GetSoundGeneratorStateRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1026,78 +860,6 @@ extension Beebium_DebuggerControlAsyncClientProtocol {
       interceptors: self.interceptors?.makeSet6502StateInterceptors() ?? []
     )
   }
-
-  internal func makeGetSystemViaStateCall(
-    _ request: Beebium_GetSystemViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSystemViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetUserViaStateCall(
-    _ request: Beebium_GetUserViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getUserViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetCrtcStateCall(
-    _ request: Beebium_GetCrtcStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getCrtcState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetVideoUlaStateCall(
-    _ request: Beebium_GetVideoUlaStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getVideoUlaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetAddressableLatchStateCall(
-    _ request: Beebium_GetAddressableLatchStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getAddressableLatchState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
-    )
-  }
-
-  internal func makeGetSoundGeneratorStateCall(
-    _ request: Beebium_GetSoundGeneratorStateRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSoundGeneratorState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
-    )
-  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1329,78 +1091,6 @@ extension Beebium_DebuggerControlAsyncClientProtocol {
       interceptors: self.interceptors?.makeSet6502StateInterceptors() ?? []
     )
   }
-
-  internal func getSystemViaState(
-    _ request: Beebium_GetSystemViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_ViaState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSystemViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
-    )
-  }
-
-  internal func getUserViaState(
-    _ request: Beebium_GetUserViaStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_ViaState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getUserViaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
-    )
-  }
-
-  internal func getCrtcState(
-    _ request: Beebium_GetCrtcStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_CrtcState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getCrtcState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
-    )
-  }
-
-  internal func getVideoUlaState(
-    _ request: Beebium_GetVideoUlaStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_VideoUlaState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getVideoUlaState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
-    )
-  }
-
-  internal func getAddressableLatchState(
-    _ request: Beebium_GetAddressableLatchStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_AddressableLatchState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getAddressableLatchState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
-    )
-  }
-
-  internal func getSoundGeneratorState(
-    _ request: Beebium_GetSoundGeneratorStateRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_SoundGeneratorState {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_DebuggerControlClientMetadata.Methods.getSoundGeneratorState.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
-    )
-  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -1478,24 +1168,6 @@ internal protocol Beebium_DebuggerControlClientInterceptorFactoryProtocol: Senda
 
   /// - Returns: Interceptors to use when invoking 'set6502State'.
   func makeSet6502StateInterceptors() -> [ClientInterceptor<Beebium_Set6502StateRequest, Beebium_Set6502StateResponse>]
-
-  /// - Returns: Interceptors to use when invoking 'getSystemViaState'.
-  func makeGetSystemViaStateInterceptors() -> [ClientInterceptor<Beebium_GetSystemViaStateRequest, Beebium_ViaState>]
-
-  /// - Returns: Interceptors to use when invoking 'getUserViaState'.
-  func makeGetUserViaStateInterceptors() -> [ClientInterceptor<Beebium_GetUserViaStateRequest, Beebium_ViaState>]
-
-  /// - Returns: Interceptors to use when invoking 'getCrtcState'.
-  func makeGetCrtcStateInterceptors() -> [ClientInterceptor<Beebium_GetCrtcStateRequest, Beebium_CrtcState>]
-
-  /// - Returns: Interceptors to use when invoking 'getVideoUlaState'.
-  func makeGetVideoUlaStateInterceptors() -> [ClientInterceptor<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>]
-
-  /// - Returns: Interceptors to use when invoking 'getAddressableLatchState'.
-  func makeGetAddressableLatchStateInterceptors() -> [ClientInterceptor<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>]
-
-  /// - Returns: Interceptors to use when invoking 'getSoundGeneratorState'.
-  func makeGetSoundGeneratorStateInterceptors() -> [ClientInterceptor<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>]
 }
 
 internal enum Beebium_DebuggerControlClientMetadata {
@@ -1522,12 +1194,6 @@ internal enum Beebium_DebuggerControlClientMetadata {
       Beebium_DebuggerControlClientMetadata.Methods.clearBreakpoints,
       Beebium_DebuggerControlClientMetadata.Methods.get6502State,
       Beebium_DebuggerControlClientMetadata.Methods.set6502State,
-      Beebium_DebuggerControlClientMetadata.Methods.getSystemViaState,
-      Beebium_DebuggerControlClientMetadata.Methods.getUserViaState,
-      Beebium_DebuggerControlClientMetadata.Methods.getCrtcState,
-      Beebium_DebuggerControlClientMetadata.Methods.getVideoUlaState,
-      Beebium_DebuggerControlClientMetadata.Methods.getAddressableLatchState,
-      Beebium_DebuggerControlClientMetadata.Methods.getSoundGeneratorState,
     ]
   )
 
@@ -1645,46 +1311,508 @@ internal enum Beebium_DebuggerControlClientMetadata {
       path: "/beebium.DebuggerControl/Set6502State",
       type: GRPCCallType.unary
     )
+  }
+}
 
+/// BBC Micro device state inspection.
+/// Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
+///
+/// Usage: instantiate `Beebium_DeviceInspectionClient`, then call methods of this protocol to make API calls.
+internal protocol Beebium_DeviceInspectionClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? { get }
+
+  func getSystemViaState(
+    _ request: Beebium_GetSystemViaStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState>
+
+  func getUserViaState(
+    _ request: Beebium_GetUserViaStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState>
+
+  func getCrtcState(
+    _ request: Beebium_GetCrtcStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState>
+
+  func getVideoUlaState(
+    _ request: Beebium_GetVideoUlaStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>
+
+  func getAddressableLatchState(
+    _ request: Beebium_GetAddressableLatchStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>
+
+  func getSoundGeneratorState(
+    _ request: Beebium_GetSoundGeneratorStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>
+}
+
+extension Beebium_DeviceInspectionClientProtocol {
+  internal var serviceName: String {
+    return "beebium.DeviceInspection"
+  }
+
+  /// Unary call to GetSystemViaState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetSystemViaState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getSystemViaState(
+    _ request: Beebium_GetSystemViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSystemViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetUserViaState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetUserViaState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getUserViaState(
+    _ request: Beebium_GetUserViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getUserViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetCrtcState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetCrtcState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getCrtcState(
+    _ request: Beebium_GetCrtcStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getCrtcState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetVideoUlaState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetVideoUlaState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getVideoUlaState(
+    _ request: Beebium_GetVideoUlaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getVideoUlaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetAddressableLatchState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetAddressableLatchState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getAddressableLatchState(
+    _ request: Beebium_GetAddressableLatchStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getAddressableLatchState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetSoundGeneratorState
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetSoundGeneratorState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getSoundGeneratorState(
+    _ request: Beebium_GetSoundGeneratorStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState> {
+    return self.makeUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSoundGeneratorState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Beebium_DeviceInspectionClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Beebium_DeviceInspectionNIOClient")
+internal final class Beebium_DeviceInspectionClient: Beebium_DeviceInspectionClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the beebium.DeviceInspection service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Beebium_DeviceInspectionNIOClient: Beebium_DeviceInspectionClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the beebium.DeviceInspection service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// BBC Micro device state inspection.
+/// Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Beebium_DeviceInspectionAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? { get }
+
+  func makeGetSystemViaStateCall(
+    _ request: Beebium_GetSystemViaStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState>
+
+  func makeGetUserViaStateCall(
+    _ request: Beebium_GetUserViaStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState>
+
+  func makeGetCrtcStateCall(
+    _ request: Beebium_GetCrtcStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState>
+
+  func makeGetVideoUlaStateCall(
+    _ request: Beebium_GetVideoUlaStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>
+
+  func makeGetAddressableLatchStateCall(
+    _ request: Beebium_GetAddressableLatchStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>
+
+  func makeGetSoundGeneratorStateCall(
+    _ request: Beebium_GetSoundGeneratorStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Beebium_DeviceInspectionAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Beebium_DeviceInspectionClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeGetSystemViaStateCall(
+    _ request: Beebium_GetSystemViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetSystemViaStateRequest, Beebium_ViaState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSystemViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetUserViaStateCall(
+    _ request: Beebium_GetUserViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetUserViaStateRequest, Beebium_ViaState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getUserViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetCrtcStateCall(
+    _ request: Beebium_GetCrtcStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetCrtcStateRequest, Beebium_CrtcState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getCrtcState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetVideoUlaStateCall(
+    _ request: Beebium_GetVideoUlaStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getVideoUlaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetAddressableLatchStateCall(
+    _ request: Beebium_GetAddressableLatchStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getAddressableLatchState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetSoundGeneratorStateCall(
+    _ request: Beebium_GetSoundGeneratorStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSoundGeneratorState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Beebium_DeviceInspectionAsyncClientProtocol {
+  internal func getSystemViaState(
+    _ request: Beebium_GetSystemViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_ViaState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSystemViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? []
+    )
+  }
+
+  internal func getUserViaState(
+    _ request: Beebium_GetUserViaStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_ViaState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getUserViaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? []
+    )
+  }
+
+  internal func getCrtcState(
+    _ request: Beebium_GetCrtcStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_CrtcState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getCrtcState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? []
+    )
+  }
+
+  internal func getVideoUlaState(
+    _ request: Beebium_GetVideoUlaStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_VideoUlaState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getVideoUlaState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? []
+    )
+  }
+
+  internal func getAddressableLatchState(
+    _ request: Beebium_GetAddressableLatchStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_AddressableLatchState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getAddressableLatchState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? []
+    )
+  }
+
+  internal func getSoundGeneratorState(
+    _ request: Beebium_GetSoundGeneratorStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SoundGeneratorState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DeviceInspectionClientMetadata.Methods.getSoundGeneratorState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Beebium_DeviceInspectionAsyncClient: Beebium_DeviceInspectionAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Beebium_DeviceInspectionClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Beebium_DeviceInspectionClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'getSystemViaState'.
+  func makeGetSystemViaStateInterceptors() -> [ClientInterceptor<Beebium_GetSystemViaStateRequest, Beebium_ViaState>]
+
+  /// - Returns: Interceptors to use when invoking 'getUserViaState'.
+  func makeGetUserViaStateInterceptors() -> [ClientInterceptor<Beebium_GetUserViaStateRequest, Beebium_ViaState>]
+
+  /// - Returns: Interceptors to use when invoking 'getCrtcState'.
+  func makeGetCrtcStateInterceptors() -> [ClientInterceptor<Beebium_GetCrtcStateRequest, Beebium_CrtcState>]
+
+  /// - Returns: Interceptors to use when invoking 'getVideoUlaState'.
+  func makeGetVideoUlaStateInterceptors() -> [ClientInterceptor<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>]
+
+  /// - Returns: Interceptors to use when invoking 'getAddressableLatchState'.
+  func makeGetAddressableLatchStateInterceptors() -> [ClientInterceptor<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>]
+
+  /// - Returns: Interceptors to use when invoking 'getSoundGeneratorState'.
+  func makeGetSoundGeneratorStateInterceptors() -> [ClientInterceptor<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>]
+}
+
+internal enum Beebium_DeviceInspectionClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "DeviceInspection",
+    fullName: "beebium.DeviceInspection",
+    methods: [
+      Beebium_DeviceInspectionClientMetadata.Methods.getSystemViaState,
+      Beebium_DeviceInspectionClientMetadata.Methods.getUserViaState,
+      Beebium_DeviceInspectionClientMetadata.Methods.getCrtcState,
+      Beebium_DeviceInspectionClientMetadata.Methods.getVideoUlaState,
+      Beebium_DeviceInspectionClientMetadata.Methods.getAddressableLatchState,
+      Beebium_DeviceInspectionClientMetadata.Methods.getSoundGeneratorState,
+    ]
+  )
+
+  internal enum Methods {
     internal static let getSystemViaState = GRPCMethodDescriptor(
       name: "GetSystemViaState",
-      path: "/beebium.DebuggerControl/GetSystemViaState",
+      path: "/beebium.DeviceInspection/GetSystemViaState",
       type: GRPCCallType.unary
     )
 
     internal static let getUserViaState = GRPCMethodDescriptor(
       name: "GetUserViaState",
-      path: "/beebium.DebuggerControl/GetUserViaState",
+      path: "/beebium.DeviceInspection/GetUserViaState",
       type: GRPCCallType.unary
     )
 
     internal static let getCrtcState = GRPCMethodDescriptor(
       name: "GetCrtcState",
-      path: "/beebium.DebuggerControl/GetCrtcState",
+      path: "/beebium.DeviceInspection/GetCrtcState",
       type: GRPCCallType.unary
     )
 
     internal static let getVideoUlaState = GRPCMethodDescriptor(
       name: "GetVideoUlaState",
-      path: "/beebium.DebuggerControl/GetVideoUlaState",
+      path: "/beebium.DeviceInspection/GetVideoUlaState",
       type: GRPCCallType.unary
     )
 
     internal static let getAddressableLatchState = GRPCMethodDescriptor(
       name: "GetAddressableLatchState",
-      path: "/beebium.DebuggerControl/GetAddressableLatchState",
+      path: "/beebium.DeviceInspection/GetAddressableLatchState",
       type: GRPCCallType.unary
     )
 
     internal static let getSoundGeneratorState = GRPCMethodDescriptor(
       name: "GetSoundGeneratorState",
-      path: "/beebium.DebuggerControl/GetSoundGeneratorState",
+      path: "/beebium.DeviceInspection/GetSoundGeneratorState",
       type: GRPCCallType.unary
     )
   }
 }
 
-/// Generic debugger service (CPU-agnostic, stateless)
+/// Generic debugger service for 6502-based machines.
+/// Can be instantiated for both host (Machine<Hardware>) and parasite (ParasiteRunner).
 ///
 /// To build a server, implement a class that conforms to this protocol.
 internal protocol Beebium_DebuggerControlProvider: CallHandlerProvider {
@@ -1732,19 +1860,6 @@ internal protocol Beebium_DebuggerControlProvider: CallHandlerProvider {
   func get6502State(request: Beebium_Get6502StateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_Cpu6502State>
 
   func set6502State(request: Beebium_Set6502StateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_Set6502StateResponse>
-
-  /// Device state inspection (debugger access to write-only registers and internal state)
-  func getSystemViaState(request: Beebium_GetSystemViaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ViaState>
-
-  func getUserViaState(request: Beebium_GetUserViaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ViaState>
-
-  func getCrtcState(request: Beebium_GetCrtcStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_CrtcState>
-
-  func getVideoUlaState(request: Beebium_GetVideoUlaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_VideoUlaState>
-
-  func getAddressableLatchState(request: Beebium_GetAddressableLatchStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_AddressableLatchState>
-
-  func getSoundGeneratorState(request: Beebium_GetSoundGeneratorStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SoundGeneratorState>
 }
 
 extension Beebium_DebuggerControlProvider {
@@ -1930,67 +2045,14 @@ extension Beebium_DebuggerControlProvider {
         userFunction: self.set6502State(request:context:)
       )
 
-    case "GetSystemViaState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetSystemViaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
-        interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? [],
-        userFunction: self.getSystemViaState(request:context:)
-      )
-
-    case "GetUserViaState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetUserViaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
-        interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? [],
-        userFunction: self.getUserViaState(request:context:)
-      )
-
-    case "GetCrtcState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetCrtcStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_CrtcState>(),
-        interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? [],
-        userFunction: self.getCrtcState(request:context:)
-      )
-
-    case "GetVideoUlaState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetVideoUlaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_VideoUlaState>(),
-        interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? [],
-        userFunction: self.getVideoUlaState(request:context:)
-      )
-
-    case "GetAddressableLatchState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetAddressableLatchStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_AddressableLatchState>(),
-        interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? [],
-        userFunction: self.getAddressableLatchState(request:context:)
-      )
-
-    case "GetSoundGeneratorState":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetSoundGeneratorStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_SoundGeneratorState>(),
-        interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? [],
-        userFunction: self.getSoundGeneratorState(request:context:)
-      )
-
     default:
       return nil
     }
   }
 }
 
-/// Generic debugger service (CPU-agnostic, stateless)
+/// Generic debugger service for 6502-based machines.
+/// Can be instantiated for both host (Machine<Hardware>) and parasite (ParasiteRunner).
 ///
 /// To implement a server, implement an object which conforms to this protocol.
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2097,37 +2159,6 @@ internal protocol Beebium_DebuggerControlAsyncProvider: CallHandlerProvider, Sen
     request: Beebium_Set6502StateRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_Set6502StateResponse
-
-  /// Device state inspection (debugger access to write-only registers and internal state)
-  func getSystemViaState(
-    request: Beebium_GetSystemViaStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_ViaState
-
-  func getUserViaState(
-    request: Beebium_GetUserViaStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_ViaState
-
-  func getCrtcState(
-    request: Beebium_GetCrtcStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_CrtcState
-
-  func getVideoUlaState(
-    request: Beebium_GetVideoUlaStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_VideoUlaState
-
-  func getAddressableLatchState(
-    request: Beebium_GetAddressableLatchStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_AddressableLatchState
-
-  func getSoundGeneratorState(
-    request: Beebium_GetSoundGeneratorStateRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_SoundGeneratorState
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -2320,60 +2351,6 @@ extension Beebium_DebuggerControlAsyncProvider {
         wrapping: { try await self.set6502State(request: $0, context: $1) }
       )
 
-    case "GetSystemViaState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetSystemViaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
-        interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? [],
-        wrapping: { try await self.getSystemViaState(request: $0, context: $1) }
-      )
-
-    case "GetUserViaState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetUserViaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
-        interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? [],
-        wrapping: { try await self.getUserViaState(request: $0, context: $1) }
-      )
-
-    case "GetCrtcState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetCrtcStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_CrtcState>(),
-        interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? [],
-        wrapping: { try await self.getCrtcState(request: $0, context: $1) }
-      )
-
-    case "GetVideoUlaState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetVideoUlaStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_VideoUlaState>(),
-        interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? [],
-        wrapping: { try await self.getVideoUlaState(request: $0, context: $1) }
-      )
-
-    case "GetAddressableLatchState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetAddressableLatchStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_AddressableLatchState>(),
-        interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? [],
-        wrapping: { try await self.getAddressableLatchState(request: $0, context: $1) }
-      )
-
-    case "GetSoundGeneratorState":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_GetSoundGeneratorStateRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_SoundGeneratorState>(),
-        interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? [],
-        wrapping: { try await self.getSoundGeneratorState(request: $0, context: $1) }
-      )
-
     default:
       return nil
     }
@@ -2457,30 +2434,6 @@ internal protocol Beebium_DebuggerControlServerInterceptorFactoryProtocol: Senda
   /// - Returns: Interceptors to use when handling 'set6502State'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSet6502StateInterceptors() -> [ServerInterceptor<Beebium_Set6502StateRequest, Beebium_Set6502StateResponse>]
-
-  /// - Returns: Interceptors to use when handling 'getSystemViaState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetSystemViaStateInterceptors() -> [ServerInterceptor<Beebium_GetSystemViaStateRequest, Beebium_ViaState>]
-
-  /// - Returns: Interceptors to use when handling 'getUserViaState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetUserViaStateInterceptors() -> [ServerInterceptor<Beebium_GetUserViaStateRequest, Beebium_ViaState>]
-
-  /// - Returns: Interceptors to use when handling 'getCrtcState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetCrtcStateInterceptors() -> [ServerInterceptor<Beebium_GetCrtcStateRequest, Beebium_CrtcState>]
-
-  /// - Returns: Interceptors to use when handling 'getVideoUlaState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetVideoUlaStateInterceptors() -> [ServerInterceptor<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>]
-
-  /// - Returns: Interceptors to use when handling 'getAddressableLatchState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetAddressableLatchStateInterceptors() -> [ServerInterceptor<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>]
-
-  /// - Returns: Interceptors to use when handling 'getSoundGeneratorState'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeGetSoundGeneratorStateInterceptors() -> [ServerInterceptor<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>]
 }
 
 internal enum Beebium_DebuggerControlServerMetadata {
@@ -2507,12 +2460,6 @@ internal enum Beebium_DebuggerControlServerMetadata {
       Beebium_DebuggerControlServerMetadata.Methods.clearBreakpoints,
       Beebium_DebuggerControlServerMetadata.Methods.get6502State,
       Beebium_DebuggerControlServerMetadata.Methods.set6502State,
-      Beebium_DebuggerControlServerMetadata.Methods.getSystemViaState,
-      Beebium_DebuggerControlServerMetadata.Methods.getUserViaState,
-      Beebium_DebuggerControlServerMetadata.Methods.getCrtcState,
-      Beebium_DebuggerControlServerMetadata.Methods.getVideoUlaState,
-      Beebium_DebuggerControlServerMetadata.Methods.getAddressableLatchState,
-      Beebium_DebuggerControlServerMetadata.Methods.getSoundGeneratorState,
     ]
   )
 
@@ -2630,40 +2577,294 @@ internal enum Beebium_DebuggerControlServerMetadata {
       path: "/beebium.DebuggerControl/Set6502State",
       type: GRPCCallType.unary
     )
+  }
+}
+/// BBC Micro device state inspection.
+/// Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Beebium_DeviceInspectionProvider: CallHandlerProvider {
+  var interceptors: Beebium_DeviceInspectionServerInterceptorFactoryProtocol? { get }
 
+  func getSystemViaState(request: Beebium_GetSystemViaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ViaState>
+
+  func getUserViaState(request: Beebium_GetUserViaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ViaState>
+
+  func getCrtcState(request: Beebium_GetCrtcStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_CrtcState>
+
+  func getVideoUlaState(request: Beebium_GetVideoUlaStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_VideoUlaState>
+
+  func getAddressableLatchState(request: Beebium_GetAddressableLatchStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_AddressableLatchState>
+
+  func getSoundGeneratorState(request: Beebium_GetSoundGeneratorStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SoundGeneratorState>
+}
+
+extension Beebium_DeviceInspectionProvider {
+  internal var serviceName: Substring {
+    return Beebium_DeviceInspectionServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "GetSystemViaState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetSystemViaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
+        interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? [],
+        userFunction: self.getSystemViaState(request:context:)
+      )
+
+    case "GetUserViaState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetUserViaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
+        interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? [],
+        userFunction: self.getUserViaState(request:context:)
+      )
+
+    case "GetCrtcState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetCrtcStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_CrtcState>(),
+        interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? [],
+        userFunction: self.getCrtcState(request:context:)
+      )
+
+    case "GetVideoUlaState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetVideoUlaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_VideoUlaState>(),
+        interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? [],
+        userFunction: self.getVideoUlaState(request:context:)
+      )
+
+    case "GetAddressableLatchState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAddressableLatchStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_AddressableLatchState>(),
+        interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? [],
+        userFunction: self.getAddressableLatchState(request:context:)
+      )
+
+    case "GetSoundGeneratorState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetSoundGeneratorStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SoundGeneratorState>(),
+        interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? [],
+        userFunction: self.getSoundGeneratorState(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// BBC Micro device state inspection.
+/// Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Beebium_DeviceInspectionAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Beebium_DeviceInspectionServerInterceptorFactoryProtocol? { get }
+
+  func getSystemViaState(
+    request: Beebium_GetSystemViaStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_ViaState
+
+  func getUserViaState(
+    request: Beebium_GetUserViaStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_ViaState
+
+  func getCrtcState(
+    request: Beebium_GetCrtcStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_CrtcState
+
+  func getVideoUlaState(
+    request: Beebium_GetVideoUlaStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_VideoUlaState
+
+  func getAddressableLatchState(
+    request: Beebium_GetAddressableLatchStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_AddressableLatchState
+
+  func getSoundGeneratorState(
+    request: Beebium_GetSoundGeneratorStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SoundGeneratorState
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Beebium_DeviceInspectionAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Beebium_DeviceInspectionServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Beebium_DeviceInspectionServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Beebium_DeviceInspectionServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "GetSystemViaState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetSystemViaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
+        interceptors: self.interceptors?.makeGetSystemViaStateInterceptors() ?? [],
+        wrapping: { try await self.getSystemViaState(request: $0, context: $1) }
+      )
+
+    case "GetUserViaState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetUserViaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ViaState>(),
+        interceptors: self.interceptors?.makeGetUserViaStateInterceptors() ?? [],
+        wrapping: { try await self.getUserViaState(request: $0, context: $1) }
+      )
+
+    case "GetCrtcState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetCrtcStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_CrtcState>(),
+        interceptors: self.interceptors?.makeGetCrtcStateInterceptors() ?? [],
+        wrapping: { try await self.getCrtcState(request: $0, context: $1) }
+      )
+
+    case "GetVideoUlaState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetVideoUlaStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_VideoUlaState>(),
+        interceptors: self.interceptors?.makeGetVideoUlaStateInterceptors() ?? [],
+        wrapping: { try await self.getVideoUlaState(request: $0, context: $1) }
+      )
+
+    case "GetAddressableLatchState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetAddressableLatchStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_AddressableLatchState>(),
+        interceptors: self.interceptors?.makeGetAddressableLatchStateInterceptors() ?? [],
+        wrapping: { try await self.getAddressableLatchState(request: $0, context: $1) }
+      )
+
+    case "GetSoundGeneratorState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetSoundGeneratorStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SoundGeneratorState>(),
+        interceptors: self.interceptors?.makeGetSoundGeneratorStateInterceptors() ?? [],
+        wrapping: { try await self.getSoundGeneratorState(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Beebium_DeviceInspectionServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'getSystemViaState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetSystemViaStateInterceptors() -> [ServerInterceptor<Beebium_GetSystemViaStateRequest, Beebium_ViaState>]
+
+  /// - Returns: Interceptors to use when handling 'getUserViaState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetUserViaStateInterceptors() -> [ServerInterceptor<Beebium_GetUserViaStateRequest, Beebium_ViaState>]
+
+  /// - Returns: Interceptors to use when handling 'getCrtcState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetCrtcStateInterceptors() -> [ServerInterceptor<Beebium_GetCrtcStateRequest, Beebium_CrtcState>]
+
+  /// - Returns: Interceptors to use when handling 'getVideoUlaState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetVideoUlaStateInterceptors() -> [ServerInterceptor<Beebium_GetVideoUlaStateRequest, Beebium_VideoUlaState>]
+
+  /// - Returns: Interceptors to use when handling 'getAddressableLatchState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetAddressableLatchStateInterceptors() -> [ServerInterceptor<Beebium_GetAddressableLatchStateRequest, Beebium_AddressableLatchState>]
+
+  /// - Returns: Interceptors to use when handling 'getSoundGeneratorState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetSoundGeneratorStateInterceptors() -> [ServerInterceptor<Beebium_GetSoundGeneratorStateRequest, Beebium_SoundGeneratorState>]
+}
+
+internal enum Beebium_DeviceInspectionServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "DeviceInspection",
+    fullName: "beebium.DeviceInspection",
+    methods: [
+      Beebium_DeviceInspectionServerMetadata.Methods.getSystemViaState,
+      Beebium_DeviceInspectionServerMetadata.Methods.getUserViaState,
+      Beebium_DeviceInspectionServerMetadata.Methods.getCrtcState,
+      Beebium_DeviceInspectionServerMetadata.Methods.getVideoUlaState,
+      Beebium_DeviceInspectionServerMetadata.Methods.getAddressableLatchState,
+      Beebium_DeviceInspectionServerMetadata.Methods.getSoundGeneratorState,
+    ]
+  )
+
+  internal enum Methods {
     internal static let getSystemViaState = GRPCMethodDescriptor(
       name: "GetSystemViaState",
-      path: "/beebium.DebuggerControl/GetSystemViaState",
+      path: "/beebium.DeviceInspection/GetSystemViaState",
       type: GRPCCallType.unary
     )
 
     internal static let getUserViaState = GRPCMethodDescriptor(
       name: "GetUserViaState",
-      path: "/beebium.DebuggerControl/GetUserViaState",
+      path: "/beebium.DeviceInspection/GetUserViaState",
       type: GRPCCallType.unary
     )
 
     internal static let getCrtcState = GRPCMethodDescriptor(
       name: "GetCrtcState",
-      path: "/beebium.DebuggerControl/GetCrtcState",
+      path: "/beebium.DeviceInspection/GetCrtcState",
       type: GRPCCallType.unary
     )
 
     internal static let getVideoUlaState = GRPCMethodDescriptor(
       name: "GetVideoUlaState",
-      path: "/beebium.DebuggerControl/GetVideoUlaState",
+      path: "/beebium.DeviceInspection/GetVideoUlaState",
       type: GRPCCallType.unary
     )
 
     internal static let getAddressableLatchState = GRPCMethodDescriptor(
       name: "GetAddressableLatchState",
-      path: "/beebium.DebuggerControl/GetAddressableLatchState",
+      path: "/beebium.DeviceInspection/GetAddressableLatchState",
       type: GRPCCallType.unary
     )
 
     internal static let getSoundGeneratorState = GRPCMethodDescriptor(
       name: "GetSoundGeneratorState",
-      path: "/beebium.DebuggerControl/GetSoundGeneratorState",
+      path: "/beebium.DeviceInspection/GetSoundGeneratorState",
       type: GRPCCallType.unary
     )
   }

@@ -48,6 +48,7 @@ class ServerProcess:
         basic_filepath: str | Path | None = None,
         server_filepath: str | Path | None = None,
         port: int = 0,
+        extra_args: list[str] | None = None,
     ):
         """Create a server process manager.
 
@@ -58,11 +59,14 @@ class ServerProcess:
                 If not provided, searches BEEBIUM_SERVER env var, PATH, and
                 common build locations.
             port: Port to listen on. If 0 (default), a free port is allocated.
+            extra_args: Additional command-line arguments to pass to the server
+                (e.g., ["--tube", "65C02-3MHz"]).
         """
         self._mos_filepath = Path(mos_filepath)
         self._basic_filepath = Path(basic_filepath) if basic_filepath else None
         self._server_filepath = self._find_server(server_filepath)
         self._port = port if port != 0 else self._find_free_port()
+        self._extra_args = extra_args or []
         self._process: subprocess.Popen[bytes] | None = None
         self._provenance_instance_uuid = str(uuid.uuid4())
 
@@ -129,6 +133,9 @@ class ServerProcess:
             "--provenance-uuid", self._provenance_instance_uuid,
             "--provenance-version", beebium.__version__,
         ])
+
+        # Add any extra arguments (e.g., --tube 65C02-3MHz)
+        cmd.extend(self._extra_args)
 
         # Start the server process
         self._process = subprocess.Popen(

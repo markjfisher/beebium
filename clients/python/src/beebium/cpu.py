@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -30,6 +30,14 @@ class Registers:
     sp: int  # Stack pointer (0-255, stack at $0100-$01FF)
     pc: int  # Program counter (0-65535)
     p: int  # Processor status flags
+
+    # Interrupt handler tracking
+    in_nmi_handler: bool = False
+    in_irq_handler: bool = False
+    nmi_pending: bool = False
+    irq_pending: bool = False
+    device_irq_flags: int = 0
+    device_nmi_flags: int = 0
 
     # Flag accessors
 
@@ -80,10 +88,22 @@ class Registers:
             + ("Z" if self.zero else "z")
             + ("C" if self.carry else "c")
         )
-        return (
+        result = (
             f"A={self.a:02X} X={self.x:02X} Y={self.y:02X} "
             f"SP={self.sp:02X} PC={self.pc:04X} P={self.p:02X} [{flags}]"
         )
+        interrupts = []
+        if self.in_nmi_handler:
+            interrupts.append("in-NMI")
+        if self.in_irq_handler:
+            interrupts.append("in-IRQ")
+        if self.nmi_pending:
+            interrupts.append("NMI-pending")
+        if self.irq_pending:
+            interrupts.append("IRQ-pending")
+        if interrupts:
+            result += f" {{{', '.join(interrupts)}}}"
+        return result
 
 
 class CPU:
@@ -125,6 +145,12 @@ class CPU:
             sp=response.sp,
             pc=response.pc,
             p=response.p,
+            in_nmi_handler=response.in_nmi_handler,
+            in_irq_handler=response.in_irq_handler,
+            nmi_pending=response.nmi_pending,
+            irq_pending=response.irq_pending,
+            device_irq_flags=response.device_irq_flags,
+            device_nmi_flags=response.device_nmi_flags,
         )
 
     # Individual register properties (read)

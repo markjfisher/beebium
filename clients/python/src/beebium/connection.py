@@ -22,6 +22,7 @@ from beebium._proto import (
     econet_pb2_grpc,
     keyboard_pb2_grpc,
     system_pb2_grpc,
+    tube_pb2_grpc,
     video_pb2_grpc,
 )
 from beebium.exceptions import ConnectionError
@@ -46,10 +47,12 @@ class Connection:
         self._target = target
         self._channel: grpc.Channel | None = None
         self._debugger_stub: debugger_pb2_grpc.DebuggerControlStub | None = None
+        self._device_inspection_stub: debugger_pb2_grpc.DeviceInspectionStub | None = None
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
+        self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
 
         self._connect(timeout)
@@ -71,10 +74,12 @@ class Connection:
 
         # Create service stubs
         self._debugger_stub = debugger_pb2_grpc.DebuggerControlStub(self._channel)
+        self._device_inspection_stub = debugger_pb2_grpc.DeviceInspectionStub(self._channel)
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
+        self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
 
     @property
@@ -93,6 +98,13 @@ class Connection:
         if self._debugger_stub is None:
             raise ConnectionError("Not connected")
         return self._debugger_stub
+
+    @property
+    def device_inspection_stub(self) -> debugger_pb2_grpc.DeviceInspectionStub:
+        """The DeviceInspection service stub."""
+        if self._device_inspection_stub is None:
+            raise ConnectionError("Not connected")
+        return self._device_inspection_stub
 
     @property
     def keyboard_stub(self) -> keyboard_pb2_grpc.KeyboardServiceStub:
@@ -129,16 +141,25 @@ class Connection:
             raise ConnectionError("Not connected")
         return self._econet_stub
 
+    @property
+    def tube_stub(self) -> tube_pb2_grpc.TubeServiceStub:
+        """The TubeService stub."""
+        if self._tube_stub is None:
+            raise ConnectionError("Not connected")
+        return self._tube_stub
+
     def close(self) -> None:
         """Close the connection."""
         if self._channel is not None:
             self._channel.close()
             self._channel = None
             self._debugger_stub = None
+            self._device_inspection_stub = None
             self._disc_stub = None
             self._econet_stub = None
             self._keyboard_stub = None
             self._system_stub = None
+            self._tube_stub = None
             self._video_stub = None
 
     def __enter__(self) -> Connection:

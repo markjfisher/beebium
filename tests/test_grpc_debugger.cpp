@@ -63,6 +63,7 @@ public:
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
         debugger_stub_ = beebium::DebuggerControl::NewStub(channel_);
+        device_inspection_stub_ = beebium::DeviceInspection::NewStub(channel_);
     }
 
     ~DebuggerTestFixture() {
@@ -71,12 +72,14 @@ public:
 
     beebium::ModelB& machine() { return machine_; }
     beebium::DebuggerControl::Stub& debugger() { return *debugger_stub_; }
+    beebium::DeviceInspection::Stub& device_inspection() { return *device_inspection_stub_; }
 
 private:
     beebium::ModelB machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
+    std::unique_ptr<beebium::DeviceInspection::Stub> device_inspection_stub_;
 };
 
 } // anonymous namespace
@@ -510,6 +513,29 @@ TEST_CASE("DebuggerControl Set6502State can set PC", "[grpc][debugger]") {
     REQUIRE(status.ok());
     CHECK(response.success());
     CHECK(fixture.machine().pc() == 0xC000);
+}
+
+TEST_CASE("DebuggerControl Get6502State returns interrupt handler state", "[grpc][debugger]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::Get6502StateRequest request;
+    beebium::Cpu6502State response;
+
+    auto status = fixture.debugger().Get6502State(&context, request, &response);
+
+    REQUIRE(status.ok());
+
+    // At rest, not inside any interrupt handler
+    CHECK_FALSE(response.in_nmi_handler());
+    CHECK_FALSE(response.in_irq_handler());
+
+    // Interrupt line state fields are present and reasonable
+    // (nmi_pending/irq_pending depend on machine state, just check they're accessible)
+    CHECK_FALSE(response.nmi_pending());
+    // device flags are bitmasks -- just verify they're accessible
+    (void)response.device_irq_flags();
+    (void)response.device_nmi_flags();
 }
 
 //////////////////////////////////////////////////////////////////////////////

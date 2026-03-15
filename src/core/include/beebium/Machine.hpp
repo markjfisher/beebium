@@ -38,9 +38,9 @@
 namespace beebium {
 
 // IRQ device mask for M6502_SetDeviceIRQ
-// The 6502 library supports multiple IRQ sources; we use mask 0x03 for VIA IRQs
-// Bit 0: System VIA IRQ, Bit 1: User VIA IRQ
-constexpr uint8_t kViaIrqDeviceMask = 0x03;
+// The 6502 library supports multiple IRQ sources; each bit represents one source.
+// Bit 0: System VIA IRQ, Bit 1: User VIA IRQ, Bit 2: Tube HIRQ
+constexpr uint8_t kIrqDeviceMask = 0x07;
 
 // NMI device mask for M6502_SetDeviceNMI
 // The 6502 library supports multiple NMI sources; we use separate bits for each source.
@@ -153,6 +153,8 @@ public:
         video_binding_.reset();
         state_.cycle_count = 0;
         in_reset_ = false;
+        in_nmi_handler_ = false;
+        in_irq_handler_ = false;
         ++sequence_;
     }
 
@@ -167,6 +169,8 @@ public:
         video_binding_.reset();
         // Do NOT reset cycle_count - maintains timing continuity
         in_reset_ = false;
+        in_nmi_handler_ = false;
+        in_irq_handler_ = false;
         ++sequence_;
     }
 
@@ -248,6 +252,9 @@ public:
             state_.memory.sound_chip.tick(state_.memory.audio_buffer.value());
         }
 
+        // Tick the type-ahead queue to process queued keystrokes
+        state_.memory.system_via_peripheral.tick_type_ahead();
+
         // Tick Econet ADLC at 2MHz (no-op when socket is empty).
         // The ADLC sits on the 2MHz bus at &FEA0-&FEBF and needs clocking
         // on every E-clock edge to drive the byte trickle timer.
@@ -269,7 +276,7 @@ public:
 
         // IRQ handling - poll aggregator and set CPU IRQ line
         uint8_t irq_mask = state_.memory.poll_irq();
-        M6502_SetDeviceIRQ(&state_.cpu, kViaIrqDeviceMask, irq_mask ? 1 : 0);
+        M6502_SetDeviceIRQ(&state_.cpu, kIrqDeviceMask, irq_mask ? 1 : 0);
 
         // NMI handling — disc controller at 1MHz, Econet at 2MHz.
         //
@@ -291,6 +298,25 @@ public:
         if constexpr (HasEconetSocket<MemoryPolicy>) {
             uint8_t econet_nmi = state_.memory.econet_socket.nmi_pending() ? 1 : 0;
             M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
+        }
+
+        // Interrupt handler tracking: detect entry via M6502ReadType_Interrupt
+        // and exit via RTI (opcode $40).  NMI has priority: if nmi_flags is
+        // set at interrupt entry, it's an NMI; otherwise it's IRQ/BRK.
+        if (state_.cpu.read == M6502ReadType_Interrupt) {
+            if (state_.cpu.nmi_flags != 0) {
+                in_nmi_handler_ = true;
+            } else {
+                in_irq_handler_ = true;
+            }
+        }
+        if (M6502_IsAboutToExecute(&state_.cpu) && state_.cpu.dbus == 0x40) {
+            // RTI: NMI exit takes priority (NMI can nest inside IRQ).
+            if (in_nmi_handler_) {
+                in_nmi_handler_ = false;
+            } else if (in_irq_handler_) {
+                in_irq_handler_ = false;
+            }
         }
 
         ++state_.cycle_count;
@@ -395,6 +421,10 @@ public:
     uint16_t pc() const { return state_.cpu.pc.w; }
     uint8_t p() const { return state_.cpu.p.value; }
 
+    // Interrupt handler tracking
+    bool in_nmi_handler() const { return in_nmi_handler_; }
+    bool in_irq_handler() const { return in_irq_handler_; }
+
     // CPU register setters (for debugger) - each increments sequence_
     void set_a(uint8_t value) { state_.cpu.a = value; ++sequence_; }
     void set_x(uint8_t value) { state_.cpu.x = value; ++sequence_; }
@@ -468,6 +498,10 @@ private:
 
     // Break key state (true when Break is held, CPU halted)
     bool in_reset_ = false;
+
+    // Interrupt handler tracking (for debugger)
+    bool in_nmi_handler_ = false;
+    bool in_irq_handler_ = false;
 
     // 1MHz bus stretch handling
     // When CPU accesses a 1MHz peripheral, we insert extra cycles

@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -301,6 +301,13 @@ class System:
                 identity=identity,
                 shutdown_conditions=conditions,
             )
+
+    @property
+    def clock_speed_hz(self) -> int:
+        """Nominal CPU clock frequency in Hz (e.g. 2000000 for 2 MHz)."""
+        request = system_pb2.GetSystemInfoRequest()
+        response = self._stub.GetSystemInfo(request)
+        return response.clock_speed_hz
 
     @property
     def client_count(self) -> int:

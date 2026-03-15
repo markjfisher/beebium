@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -26,10 +26,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import grpc
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
+from beebium.exceptions import BeebiumError, ServerNotFoundError
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -225,5 +226,34 @@ def stopped_bbc(bbc: Beebium) -> Beebium:
     if bbc.debugger.is_stopped:
         try:
             bbc.debugger.run()
-        except Exception:
+        except (BeebiumError, grpc.RpcError):
             pass  # Ignore errors during cleanup
+
+
+@pytest.fixture(scope="function")
+def bbc_tube(
+    mos_filepath: Path,
+    basic_filepath: Path | None,
+    beebium_server_filepath: Path | None,
+) -> Beebium:
+    """A BBC Micro instance with Tube coprocessor enabled.
+
+    Launches the server with --tube 65C02-3MHz and uses a longer
+    startup timeout to allow the parasite process to connect.
+
+    Usage:
+        def test_tube_feature(bbc_tube):
+            status = bbc_tube.tube.status
+            assert status.parasite_connected
+    """
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+            extra_args=["--tube", "65C02-3MHz"],
+            startup_timeout=20.0,
+        ) as instance:
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))

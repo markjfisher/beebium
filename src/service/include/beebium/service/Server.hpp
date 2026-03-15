@@ -16,12 +16,14 @@
 #include "beebium/service/VideoService.hpp"
 #include "beebium/service/KeyboardService.hpp"
 #include "beebium/service/DebuggerService.hpp"
+#include "beebium/service/DeviceInspectionService.hpp"
 #include "beebium/service/DiscService.hpp"
 #include "beebium/service/IndicatorService.hpp"
 #include "beebium/service/SystemService.hpp"
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
 #include "beebium/service/EconetService.hpp"
+#include "beebium/service/TubeService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/AunBackend.hpp"
@@ -85,6 +87,9 @@ public:
     /// @param grace_ms Grace period in milliseconds for clients to disconnect
     void notify_shutdown(uint32_t grace_ms = 5000);
 
+    /// Access the TubeService (for host startup to set shared memory pointer).
+    TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
+
 private:
     struct Impl {
         MachineType& machine;
@@ -101,12 +106,14 @@ private:
         std::unique_ptr<VideoServiceImpl> video_service;
         std::unique_ptr<KeyboardServiceImpl> keyboard_service;
         std::unique_ptr<DebuggerControlServiceImpl<MachineType>> debugger_control_service;
+        std::unique_ptr<DeviceInspectionServiceImpl<MachineType>> device_inspection_service;
         std::unique_ptr<DiscServiceImpl<MachineType>> disc_service;
         std::unique_ptr<IndicatorServiceImpl<MachineType>> indicator_service;
         std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
         std::unique_ptr<AudioServiceImpl<MachineType>> audio_service;
         std::unique_ptr<SidewaysServiceImpl<MachineType>> sideways_service;
         std::unique_ptr<EconetServiceImpl<MachineType>> econet_service;
+        std::unique_ptr<TubeServiceImpl<MachineType>> tube_service;
         std::unique_ptr<grpc::Server> grpc_server;
         std::unique_ptr<discovery::Advertiser> advertiser;
 
@@ -186,6 +193,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->debugger_control_service = std::make_unique<DebuggerControlServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->device_inspection_service = std::make_unique<DeviceInspectionServiceImpl<MachineType>>(
+        impl_->machine);
+
     impl_->disc_service = std::make_unique<DiscServiceImpl<MachineType>>(
         impl_->machine);
 
@@ -195,6 +205,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
         impl_->machine, std::move(provenance), std::move(identity),
         &impl_->connection_tracker, impl_->advertiser.get(), 0,
+        static_cast<uint32_t>(MachineType::Memory::default_pacing_config().base_clock_hz),
         policy_config, nullptr, std::move(shutdown_callback));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(
@@ -204,6 +215,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
         impl_->machine);
 
     impl_->econet_service = std::make_unique<EconetServiceImpl<MachineType>>(
+        impl_->machine);
+
+    impl_->tube_service = std::make_unique<TubeServiceImpl<MachineType>>(
         impl_->machine);
 
     // Build server address
@@ -222,12 +236,14 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->video_service.get());
     builder.RegisterService(impl_->keyboard_service.get());
     builder.RegisterService(impl_->debugger_control_service.get());
+    builder.RegisterService(impl_->device_inspection_service.get());
     builder.RegisterService(impl_->disc_service.get());
     builder.RegisterService(impl_->indicator_service.get());
     builder.RegisterService(impl_->system_service.get());
     builder.RegisterService(impl_->audio_service.get());
     builder.RegisterService(impl_->sideways_service.get());
     builder.RegisterService(impl_->econet_service.get());
+    builder.RegisterService(impl_->tube_service.get());
 
     impl_->grpc_server = builder.BuildAndStart();
 
@@ -256,6 +272,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
         info.instance_name = identity_name;
         info.port = impl_->port;
         info.txt_records["uuid"] = identity_uuid;
+        info.txt_records["role"] = "host";
         info.txt_records["model"] = identity_model_type;
         info.txt_records["provenance"] = provenance_type;
 
@@ -306,12 +323,14 @@ void Server<MachineType>::stop() {
     impl_->video_service.reset();
     impl_->keyboard_service.reset();
     impl_->debugger_control_service.reset();
+    impl_->device_inspection_service.reset();
     impl_->disc_service.reset();
     impl_->indicator_service.reset();
     impl_->system_service.reset();
     impl_->audio_service.reset();
     impl_->sideways_service.reset();
     impl_->econet_service.reset();
+    impl_->tube_service.reset();
 }
 
 template<typename MachineType>
