@@ -462,6 +462,18 @@ register side effects. Options:
 
 ## Fixes Applied
 
+### Data bus latch for empty reads (committed, doesn't fix CE2023)
+
+`TubeHostPort` and `TubeParasitePort` empty register reads now return
+the data bus latch value (last value written to any register from the
+respective side) instead of 0. Matches B-Em commit 97f0ad6 and real
+Ferranti Tube ULA behaviour.
+
+### Atomic exchange for latch ready flags (committed, doesn't fix CE2023)
+
+Replaced load-check-store pattern with atomic exchange to eliminate
+TOCTOU race on latch ready flags. Matches B-Em commit e04aab0.
+
 ### PNMI condition (committed, doesn't fix CE2023)
 
 `TubeParasitePort::pnmi_level()` was firing on `h2p_data || p2h_space`.
