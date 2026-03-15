@@ -820,6 +820,7 @@ The following features are not implemented. They may be needed for compatibility
 
 ### Low Priority (copy protection)
 
+- **Track-level synthesis from sector images**: Read Track currently returns concatenated raw sector data. Real hardware (and correctly-emulating emulators) returns the full track structure: gap bytes, sync bytes, ID address marks, sector ID fields (track/side/sector/size + CRC), data address marks, sector data, data CRC, and inter-sector gaps. Software that uses Read Track to inspect track structure (e.g. QuicDisc, copy protection checks) will see incorrect data. Implementing this requires synthesizing a standard DFS track layout from the sector data in SSD/DSD images. See [Stardot discussion](https://stardot.org.uk/forums/viewtopic.php?p=479299#p479299) for context on emulator differences.
 - **Write Track format parsing**: Format data stream not parsed for sync bytes, address marks.
 - **Deleted data address mark**: RECORD_TYPE status bit not supported.
 - **I0/I1 ready transition detection**: Rarely used by BBC software.
@@ -867,6 +868,7 @@ The variety of third-party disc controllers confirms the need for the pluggable 
 | WD1772 Annotated | [PDF](http://info-coach.fr/atari/documents/_mydoc/WD1772-JLG.pdf) | Corrected diagrams/tables |
 | Cloud9 WD1770 Docs | [HTML](https://www.cloud9.co.uk/james/BBCMicro/Documentation/wd1770.html) | Signal descriptions, timing |
 | Stardot NMI Timing | [Forum](https://stardot.org.uk/forums/viewtopic.php?t=16114) | Real hardware measurements |
+| Stardot Read Track | [Forum](https://stardot.org.uk/forums/viewtopic.php?p=479299#p479299) | Track-level synthesis, QuicDisc compatibility across emulators |
 | Atari-Forum WD1772 | [Forum](https://www.atari-forum.com/viewtopic.php?t=27448) | Undocumented behaviors |
 
 ### Reference Implementations
