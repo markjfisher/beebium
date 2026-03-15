@@ -205,6 +205,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->system_service = std::make_unique<SystemServiceImpl<MachineType>>(
         impl_->machine, std::move(provenance), std::move(identity),
         &impl_->connection_tracker, impl_->advertiser.get(), 0,
+        static_cast<uint32_t>(MachineType::Memory::default_pacing_config().base_clock_hz),
         policy_config, nullptr, std::move(shutdown_callback));
 
     impl_->audio_service = std::make_unique<AudioServiceImpl<MachineType>>(

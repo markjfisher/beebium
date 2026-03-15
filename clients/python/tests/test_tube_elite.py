@@ -39,16 +39,14 @@ from beebium.tube_ula import TubeUlaInspection
 
 ELITE_DISC_FILENAME = "Disc999-EliteSNG45.ssd"
 
-# BBC Micro host CPU clock frequency.
-HOST_CLOCK_HZ = 2_000_000
-
 
 def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                           poll_interval: float = 0.1):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
     Uses the emulator's own cycle counter so the timeout is independent of
-    host machine speed.  The emulator is left stopped on return.
+    host machine speed.  The emulator is left in whatever execution state
+    it was in on entry.
 
     Args:
         bbc: The Beebium instance (may be running or stopped on entry).
@@ -59,7 +57,8 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
-    cycle_budget = int(emulated_seconds * HOST_CLOCK_HZ)
+    clock_hz = bbc.system.clock_speed_hz or 2_000_000
+    cycle_budget = int(emulated_seconds * clock_hz)
     start_cycles = bbc.debugger.cycle_count
     target_cycles = start_cycles + cycle_budget
 
@@ -72,7 +71,7 @@ def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
             # Only check the predicate once enough emulated time has passed
             # for the BBC to have processed keyboard input and produced output.
             # Stopping and restarting too early can disrupt the Tube protocol.
-            if current_cycles - start_cycles >= HOST_CLOCK_HZ:
+            if current_cycles - start_cycles >= clock_hz:
                 bbc.debugger.stop()
                 if predicate():
                     return True

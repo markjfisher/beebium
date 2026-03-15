@@ -228,6 +228,7 @@ int main(int argc, char* argv[]) {
 
     parasite_server.start(std::move(provenance), std::move(identity),
                           config.advertise,
+                          static_cast<uint32_t>(PARASITE_CLOCK_HZ),
                           [&runner]() { runner.request_shutdown(); });
 
     std::cout << "Parasite gRPC server on port " << parasite_server.port() << "\n";

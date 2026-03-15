@@ -51,6 +51,7 @@ public:
 
     void start(Provenance provenance, MachineIdentity identity,
                bool enable_advertisement = false,
+               uint32_t clock_speed_hz = 0,
                ShutdownCallback shutdown_callback = nullptr) {
         if (running_) return;
 
@@ -65,7 +66,7 @@ public:
 
         system_service_ = std::make_unique<SystemServiceImpl<ParasiteRunner>>(
             runner_, std::move(provenance), std::move(identity),
-            &connection_tracker_, advertiser_.get(), 0,
+            &connection_tracker_, advertiser_.get(), 0, clock_speed_hz,
             ShutdownPolicyConfig{}, nullptr, std::move(shutdown_callback));
 
         // Build server

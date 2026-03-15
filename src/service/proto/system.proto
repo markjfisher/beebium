@@ -89,8 +89,10 @@ message SystemInfo {
     // Connection tracking (active client count)
     ConnectionInfo connections = 5;
 
+    // Nominal CPU clock frequency in Hz (e.g. 2000000 for 2 MHz).
+    uint32 clock_speed_hz = 6;
+
     // Future expansion:
-    // uint32 clock_speed_hz = 6;    // Nominal CPU clock (e.g., 2000000 for 2MHz)
     // string cpu_type = 7;          // Primary CPU (e.g., "6502", "65C02")
     // string coprocessor_type = 8;  // Second processor if present (e.g., "Z80", "32016")
 }
