@@ -252,6 +252,9 @@ public:
             state_.memory.sound_chip.tick(state_.memory.audio_buffer.value());
         }
 
+        // Tick the type-ahead queue to process queued keystrokes
+        state_.memory.system_via_peripheral.tick_type_ahead();
+
         // Tick Econet ADLC at 2MHz (no-op when socket is empty).
         // The ADLC sits on the 2MHz bus at &FEA0-&FEBF and needs clocking
         // on every E-clock edge to drive the byte trickle timer.

@@ -190,6 +190,7 @@ static constexpr std::array kMappingTable = {
     KeyMapping{'\n', 0x49, false, "\\n"},
     KeyMapping{'\t', 0x60, false, "\\t"},
     KeyMapping{'\x1b', 0x70, false, "\\e"},
+    KeyMapping{'\x7f', 0x59, false, "DEL"},
 };
 
 // Case-insensitive string comparison

@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -56,9 +56,8 @@ class Keyboard:
     Provides both low-level matrix access and high-level text input.
 
     Usage:
-        # Type text
-        bbc.keyboard.type("PRINT 42")
-        bbc.keyboard.press_return()
+        # Type text (cycle-paced, use \\r for RETURN)
+        bbc.keyboard.type("PRINT 42\\r")
 
         # Press specific keys
         bbc.keyboard.key_down('A')
@@ -77,69 +76,52 @@ class Keyboard:
         self._stub = stub
         self._pressed_keys: set[tuple[str, bool]] = set()
 
-    # High-level text input
+    # High-level text input (cycle-paced via server-side TypeAheadQueue)
 
-    def type(
-        self,
-        text: str,
-        inter_key_delay: float = 0.05,
-        release_delay: float = 0.02,
-    ) -> None:
-        """Type a string of text.
+    def type(self, text: str, cycles_per_key: int = 0) -> int:
+        """Type a string of text, paced in emulator cycles.
 
-        Each character is pressed and released with configurable delays.
-        Handles shift automatically for uppercase and symbols.
+        The text is enqueued and typed character-by-character as the
+        emulator runs. Use ``\\r`` for RETURN, ``\\x1b`` for ESCAPE,
+        ``\\x7f`` for DELETE, and ``\\t`` for TAB.
+
+        Returns immediately; the emulator must be running for the
+        keystrokes to be processed.
 
         Args:
             text: The text to type.
-            inter_key_delay: Delay between key presses (seconds).
-            release_delay: Delay between press and release (seconds).
+            cycles_per_key: CPU cycles per keystroke (0 = use server default).
+
+        Returns:
+            Total pending characters in queue after enqueue.
+
+        Raises:
+            ValueError: If text contains unmappable characters.
         """
-        for char in text:
-            if self.key_down(char):
-                time.sleep(release_delay)
-                self.key_up(char)
-                time.sleep(inter_key_delay)
+        request = keyboard_pb2.TypeQuicklyRequest(
+            text=text,
+            cycles_per_key=cycles_per_key,
+        )
+        response = self._stub.TypeQuickly(request)
+        if not response.accepted:
+            raise ValueError(f"Text rejected: {response.error}")
+        return response.pending_characters
 
-    def press_return(self, hold_time: float = 0.02) -> None:
-        """Press and release the RETURN key.
+    def press_return(self) -> None:
+        """Enqueue a RETURN keypress."""
+        self.type("\r")
 
-        Args:
-            hold_time: How long to hold the key (seconds).
-        """
-        self.matrix_down(*RETURN_KEY)
-        time.sleep(hold_time)
-        self.matrix_up(*RETURN_KEY)
+    def press_escape(self) -> None:
+        """Enqueue an ESCAPE keypress."""
+        self.type("\x1b")
 
-    def press_escape(self, hold_time: float = 0.02) -> None:
-        """Press and release the ESCAPE key.
+    def press_delete(self) -> None:
+        """Enqueue a DELETE keypress."""
+        self.type("\x7f")
 
-        Args:
-            hold_time: How long to hold the key (seconds).
-        """
-        self.matrix_down(*ESCAPE_KEY)
-        time.sleep(hold_time)
-        self.matrix_up(*ESCAPE_KEY)
-
-    def press_delete(self, hold_time: float = 0.02) -> None:
-        """Press and release the DELETE key.
-
-        Args:
-            hold_time: How long to hold the key (seconds).
-        """
-        self.matrix_down(*DELETE_KEY)
-        time.sleep(hold_time)
-        self.matrix_up(*DELETE_KEY)
-
-    def press_space(self, hold_time: float = 0.02) -> None:
-        """Press and release the SPACE key.
-
-        Args:
-            hold_time: How long to hold the key (seconds).
-        """
-        self.matrix_down(*SPACE_KEY)
-        time.sleep(hold_time)
-        self.matrix_up(*SPACE_KEY)
+    def press_space(self) -> None:
+        """Enqueue a SPACE keypress."""
+        self.type(" ")
 
     # Character-level input
 
@@ -257,32 +239,7 @@ class Keyboard:
         response = self._stub.GetState(request)
         return KeyboardState(pressed_rows=list(response.pressed_rows))
 
-    # Type-ahead (TypeQuickly)
-
-    def type_quickly(self, text: str, cycles_per_key: int = 0) -> int:
-        """Enqueue text for typing at machine speed (non-blocking).
-
-        The text is added to a queue and typed character-by-character
-        as the emulator runs. Returns immediately.
-
-        Args:
-            text: The text to type.
-            cycles_per_key: CPU cycles per keystroke (0 = use default 100000).
-
-        Returns:
-            Total pending characters in queue after enqueue.
-
-        Raises:
-            ValueError: If text contains unmappable characters.
-        """
-        request = keyboard_pb2.TypeQuicklyRequest(
-            text=text,
-            cycles_per_key=cycles_per_key,
-        )
-        response = self._stub.TypeQuickly(request)
-        if not response.accepted:
-            raise ValueError(f"Text rejected: {response.error}")
-        return response.pending_characters
+    # Type-ahead status
 
     def typing_status(self) -> tuple[bool, int, int]:
         """Get type-ahead queue status.
