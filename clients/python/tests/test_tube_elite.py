@@ -38,6 +38,50 @@ from beebium.tube_ula import TubeUlaInspection
 
 ELITE_DISC_FILENAME = "Disc999-EliteSNG45.ssd"
 
+# BBC Micro host CPU clock frequency.
+HOST_CLOCK_HZ = 2_000_000
+
+
+def _run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
+                          poll_interval: float = 0.1):
+    """Run the emulator until predicate() returns True or a cycle budget expires.
+
+    Uses the emulator's own cycle counter so the timeout is independent of
+    host machine speed.  The emulator is left stopped on return.
+
+    Args:
+        bbc: The Beebium instance (must be stopped on entry).
+        predicate: Callable returning True when the desired condition is met.
+        emulated_seconds: Maximum BBC-time seconds to run.
+        poll_interval: Real-time seconds between cycle-count polls.
+
+    Returns:
+        True if the predicate was satisfied, False on timeout.
+    """
+    cycle_budget = int(emulated_seconds * HOST_CLOCK_HZ)
+    start_cycles = bbc.debugger.cycle_count
+    target_cycles = start_cycles + cycle_budget
+
+    bbc.debugger.run()
+    try:
+        while True:
+            time.sleep(poll_interval)
+            current_cycles = bbc.debugger.cycle_count
+            if current_cycles >= target_cycles:
+                bbc.debugger.stop()
+                return predicate()
+            # Check the predicate periodically without stopping the emulator.
+            # We need to stop briefly to read screen memory coherently.
+            bbc.debugger.stop()
+            if predicate():
+                return True
+            bbc.debugger.run()
+    except Exception:
+        # Ensure we leave the emulator stopped even on error.
+        if bbc.debugger.is_running:
+            bbc.debugger.stop()
+        raise
+
 # DFS ROM for the Acorn 1770 disc controller.
 # DNFS ROMs contain an 8271-only DFS and are NOT compatible with the 1770.
 DFS_1770_ROM_CANDIDATES = [
@@ -476,13 +520,15 @@ class TestTubeEliteBoot:
 
     def test_tube_banner(self, bbc_tube: Beebium) -> None:
         """After boot, screen should show the Tube banner."""
-        # Let the machine run for a few seconds (may already be running)
-        if not bbc_tube.debugger.is_running:
-            bbc_tube.debugger.run()
-        time.sleep(3.0)
-        bbc_tube.debugger.stop()
+        if bbc_tube.debugger.is_running:
+            bbc_tube.debugger.stop()
 
-        if not screen_contains(bbc_tube.memory, "Acorn TUBE"):
+        found = _run_until_or_timeout(
+            bbc_tube,
+            lambda: screen_contains(bbc_tube.memory, "Acorn TUBE"),
+            emulated_seconds=10.0,
+        )
+        if not found:
             _dump_diagnostics(bbc_tube)
             pytest.fail("Expected 'Acorn TUBE' banner on screen after boot")
 
@@ -507,35 +553,34 @@ class TestTubeEliteBoot:
             except (BeebiumConnectionError, grpc.RpcError):
                 pass
 
-            if not bbc_tube.debugger.is_running:
-                bbc_tube.debugger.run()
-            time.sleep(0.5)
+            if bbc_tube.debugger.is_running:
+                bbc_tube.debugger.stop()
 
+            # Type the catalog command; give 1s emulated time for keystrokes.
+            bbc_tube.debugger.run()
+            time.sleep(0.1)
             bbc_tube.keyboard.type("*.")
             bbc_tube.keyboard.press_return()
-
-            # Wait for catalog to display
-            time.sleep(5.0)
             bbc_tube.debugger.stop()
 
-            # Check for any catalog output on screen
-            has_output = False
-            rows = []
-            try:
+            def _catalog_visible():
                 from beebium.screen import read_mode7_screen
                 rows = read_mode7_screen(bbc_tube.memory)
-                # After boot banner + ">*." + Return, there should be catalog output
-                for i, row in enumerate(rows):
+                for row in rows:
                     stripped = row.strip()
                     if stripped and stripped != ">" and "BASIC" not in stripped \
                             and "Acorn TUBE" not in stripped and "Acorn 1770" not in stripped \
                             and "*." not in stripped:
-                        has_output = True
-                        break
-            except Exception:
-                pass
+                        return True
+                return False
 
-            if not has_output:
+            found = _run_until_or_timeout(
+                bbc_tube, _catalog_visible, emulated_seconds=10.0,
+            )
+
+            if not found:
+                from beebium.screen import read_mode7_screen
+                rows = read_mode7_screen(bbc_tube.memory)
                 print("\nScreen after *. command:")
                 for i, row in enumerate(rows):
                     print(f"Row {i:2d}: [{row}]")
@@ -549,33 +594,31 @@ class TestTubeEliteBoot:
         """Type *RUN !BOOT and check for Elite loading screen."""
         parasite = None
         try:
-            # Connect to the parasite for diagnostics
             try:
                 parasite = bbc_tube.connect_parasite()
             except (BeebiumConnectionError, grpc.RpcError):
                 pass  # Diagnostics are optional
 
-            # Resume execution, type the boot command
-            if not bbc_tube.debugger.is_running:
-                bbc_tube.debugger.run()
-            time.sleep(0.5)
+            if bbc_tube.debugger.is_running:
+                bbc_tube.debugger.stop()
 
+            # Type the boot command.
+            bbc_tube.debugger.run()
+            time.sleep(0.1)
             bbc_tube.keyboard.type("*RUN !BOOT")
             bbc_tube.keyboard.press_return()
+            bbc_tube.debugger.stop()
 
             # Poll for Elite loading text. The !BOOT loader briefly displays
             # "6502 Second Processor ELITE" in Mode 7 before switching to a
-            # graphics mode for the game, so we need to catch it early.
-            found_elite = False
-            for _ in range(10):
-                time.sleep(1.0)
-                bbc_tube.debugger.stop()
-                if screen_contains(bbc_tube.memory, "ELITE"):
-                    found_elite = True
-                    break
-                bbc_tube.debugger.run()
+            # graphics mode for the game.
+            found = _run_until_or_timeout(
+                bbc_tube,
+                lambda: screen_contains(bbc_tube.memory, "ELITE"),
+                emulated_seconds=15.0,
+            )
 
-            if not found_elite:
+            if not found:
                 _dump_diagnostics(bbc_tube, parasite)
                 pytest.fail(
                     "Expected 'ELITE' on screen after *RUN !BOOT"
