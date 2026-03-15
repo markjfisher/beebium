@@ -74,18 +74,16 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
         // R3 status (parasite perspective).
         // Bit 7: R3 H-to-P data available (count >= threshold).
         // Bit 6: R3 P-to-H space available (count < threshold).
-        // Bit 5: N flag -- NMI action required (raw condition, independent of M).
+        // Bit 5: N flag -- mirrors bit 7 (data available).
         // Bits 4-0: read as 1 (App Note 004, note 11).
         result = 0x1F;
         uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
         bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
         bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
         if (h2p_data)
-            result |= TubeUla::DATA_AVAILABLE;
+            result |= TubeUla::DATA_AVAILABLE | 0x20;  // N mirrors data available
         if (p2h_space)
             result |= TubeUla::SPACE_AVAILABLE;
-        if (h2p_data || p2h_space)
-            result |= 0x20;  // N flag
         break;
     }
 
@@ -283,10 +281,12 @@ bool TubeParasitePort::pnmi_level() const
     if (!(flags & TubeUla::FLAG_M))
         return false;
 
+    // PNMI fires when R3 H-to-P has data available (count >= threshold).
+    // Unlike the in-process TubeUla which also checks P-to-H space, the
+    // real hardware PNMI is driven only by H-to-P data availability.
+    // See B-Em tube.c line 105 and Stardot forum discussion on R3 behaviour.
     uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-    bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-    bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
-    return h2p_data || p2h_space;
+    return shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
 }
 
 void TubeParasitePort::update_pnmi()
