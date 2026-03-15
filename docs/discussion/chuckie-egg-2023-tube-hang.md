@@ -246,16 +246,148 @@ processes the stream**. Possible causes:
    the vector is overwritten by decompression, it would execute the original
    Tube Client ROM NMI handler.
 
+## B-Em Implementation Analysis
+
+B-Em's Tube implementation (in `src/tube.c` and `src/6502tube.c`) reveals
+several important details:
+
+### B-Em is not lockstep
+
+B-Em runs the parasite in **batches**, not cycle-for-cycle lockstep. The host
+accumulates fractional cycles, and when the total exceeds 3.0, the parasite
+runs a batch. However, **parasite Tube register writes set `endtimeslice=1`**,
+which forces the host to yield after the current instruction. This gives
+pseudo-lockstep behaviour during Tube transfers.
+
+### R3 empty-read behaviour
+
+When the parasite reads R3 data and the FIFO is empty (`hp3pos == 0`):
+- **B-Em**: returns `tubeula.hpl` (a latch holding the last R3 value)
+- **Beebium**: returns 0
+
+This is a behavioural difference, but the Chuckie Egg decompressor reads R1
+(not R3) during the hanging phase, so this is unlikely to be the direct cause.
+
+### PNMI is level-triggered in B-Em
+
+B-Em's PNMI condition is: `(r1stat & M) && (pstat[2] & DATA_AVAIL)`. This is
+a **level-sensitive** signal. The parasite detects NMI on the **rising edge**
+of `tube_irq & 2` (comparing with `tube_6502_oldnmi`). Beebium's PNMI uses
+similar edge detection in `TubeParasitePort::update_pnmi()`.
+
+### B2 also fails
+
+The B2 emulator (which also uses a multi-process architecture) fails at
+the same "Initialising" stage. This confirms the issue is specific to
+**concurrent/multi-process Tube implementations**, not a Beebium-specific bug.
+Both B-Em (batched single-process) succeeds and B2/Beebium (multi-process)
+fail. The difference is in how host and parasite synchronise during Tube
+register access.
+
+## Refined Hypothesis: Host-Parasite Synchronisation During R1 Transfer
+
+In B-Em's batched model, when the host writes to R1 H→P (`STA $FEE1`):
+1. The write completes in the host's timeslice
+2. The host continues until it writes again or the timeslice ends
+3. The parasite then runs, reads R1, and processes the byte
+
+In Beebium's concurrent model:
+1. The host writes R1 H→P (sets ready flag)
+2. The parasite (running concurrently) may or may not read it immediately
+3. The host's next write spin-waits on the ready flag
+
+The blocking write should guarantee synchronisation. But there's a subtlety:
+in B-Em, the host writes data AND the status update happens atomically (same
+function call, same thread). In Beebium, the `value.store()` and
+`ready.store()` are two separate atomic operations. Between them, the parasite
+could read the status (seeing old value) and the data (also old value).
+
+Wait — this shouldn't matter because the parasite polls status first, then
+reads data only when status shows data available. The `ready` flag is the
+gate. The sequence is:
+
+Host: `value.store(X, relaxed); ready.store(1, release);`
+Parasite: `if (ready.load(acquire)) { value.load(acquire); ready.store(0, release); }`
+
+The release-acquire pair on `ready` ensures the parasite sees the correct
+`value` after observing `ready==1`. This should be correct.
+
+## B2 Also Fails
+
+The B2 emulator (which also uses a multi-process architecture) fails at
+the same "Initialising" step. This confirms the issue is specific to
+concurrent/multi-process Tube implementations. B-Em (batched single-process)
+succeeds; B2 and Beebium (multi-process) fail.
+
+## Stale R1 Byte Check
+
+Verified: R1 H→P is empty (data_available=False, value=$00) at the
+"Initialising" screen, before the game's custom R1 transfer begins. No
+stale byte from the MOS protocol. The R1 source data matches the disc
+image with 0 mismatches.
+
+## Decompressor I/O Area Back-Reference Issue
+
+The LZ decompressor copies previously-written data via back-references
+using `LDA ($33),Y` at `$09EB`. The decompressor skips WRITES to the
+I/O area (`$FEE0-$FEFF`) at `$09F0-$09FC`, but does NOT protect READS
+(back-references). When `$33/$34` points into the `$FEF8-$FEFF` range,
+the back-reference reads Tube register status instead of decompressed data.
+
+On real hardware, the Tube ULA suppresses RAM access at `$FEF8-$FEFF`.
+Writes to this range go to the Tube ULA, and the data is never stored
+in RAM. Back-reference reads from this range return Tube register values,
+not previously-written data.
+
+This means the decompressor's output depends on the **Tube register state
+at the moment of the back-reference read**. If the register state differs
+between B-Em and Beebium at those moments, the decompressed output diverges,
+the bitstream desyncs, and the decompressor never reaches its termination
+marker.
+
+### Key Observation
+
+The back-reference pointer `$33/$34 = $FEFE` was observed during the hang.
+`$FEFE` is the R4 status register (parasite perspective). Reading it returns:
+- Bit 7: R4 H→P data available
+- Bit 6: R4 P→H space available
+- Bits 5-0: `$3F` (reserved, read as 1)
+
+In B-Em (single-process), R4 status during decompression is deterministic.
+In Beebium (concurrent), the value depends on the host's concurrent state.
+If the host has written to R4 H→P, bit 7 changes, giving a different
+back-reference value and different decompressed output.
+
+### Why This Explains B2's Failure Too
+
+B2 also uses a multi-process architecture. The same timing difference in
+Tube register reads during decompressor back-references would cause the
+same divergence.
+
 ## Next Steps
 
-1. **Check B-Em's 6502 variant.** Does B-Em use a CMOS or NMOS 6502 for the
-   Tube parasite? If NMOS, check if any decompressor instructions differ.
+1. **Verify back-reference reads from I/O space.** Add logging to the
+   parasite's `ParasiteMemoryMap::read()` to detect reads from
+   `$FEF8-$FEFF` during the decompression phase. Count how many
+   back-reference reads hit the I/O area and what values they return.
 
-2. **Instrument B-Em.** Add a counter to B-Em's R1 H→P read path to capture
-   the exact byte count when the decompressor terminates.
+2. **Compare R4 status timing.** Check what R4 status the parasite reads
+   at the back-reference points in B-Em vs Beebium. Even one bit
+   difference would desync the entire decompression.
 
-3. **Check for spurious NMI.** Add logging to Beebium's PNMI path to detect
-   if any NMI fires during the R1 decompression phase (when M=0).
+3. **Consider a fix.** The real hardware behaviour is: writes to
+   `$FEF8-$FEFF` go to the Tube ULA (data lost to RAM), reads from
+   `$FEF8-$FEFF` return Tube register status. The decompressor handles
+   writes correctly (skips I/O space) but doesn't handle reads. On real
+   hardware, the decompressor would produce the same output as B-Em
+   because the Tube register state is deterministic in the single-bus
+   model. The fix for Beebium is to ensure Tube register reads during
+   decompression return the same values as they would in a single-process
+   model. This could be achieved by:
+   - Shadow RAM for the I/O range (return last CPU write instead of
+     register status)
+   - Ensuring Tube register status is deterministic regardless of host
+     timing (harder, but more correct)
 
 ## Files
 
