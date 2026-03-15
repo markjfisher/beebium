@@ -396,21 +396,27 @@ def dfs_1770_rom_filepath(beebium_roms_dirpath: Path) -> Path:
     return path
 
 
-@pytest.fixture(scope="module")
+# Tube OSRDCH is slower than native (each keystroke traverses the R1/R2
+# protocol), so use a longer per-key delay than the default.
+TUBE_CYCLES_PER_KEY = 200_000
+
+
+@pytest.fixture
 def bbc_tube(
     mos_filepath: Path,
     basic_filepath: Path | None,
     beebium_server_filepath: Path | None,
     dfs_1770_rom_filepath: Path,
 ) -> Beebium:
-    """A BBC Micro instance with Tube and disc controller enabled.
+    """A fresh BBC Micro with Tube, booted and ready at the BASIC prompt.
+
+    Each test gets its own emulator instance, booted from cold.
+    The fixture waits for the Tube banner before yielding.
 
     Configures:
     - Tube with 65C02 3MHz parasite
     - Acorn 1770 disc controller
     - 1770 DFS ROM in sideways slot 14
-
-    Uses a longer startup timeout to allow the parasite process to connect.
     """
     try:
         with Beebium.launch(
@@ -423,8 +429,17 @@ def bbc_tube(
                 "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
             ],
             startup_timeout=20.0,
-        ) as instance:
-            yield instance
+        ) as bbc:
+            found = _run_until_or_timeout(
+                bbc,
+                lambda: screen_contains(bbc.memory, "Acorn TUBE"),
+                emulated_seconds=10.0,
+            )
+            if not found:
+                _dump_diagnostics(bbc)
+                pytest.fail("Tube banner not visible after boot")
+            with bbc.debugger.running():
+                yield bbc
     except ServerNotFoundError as e:
         pytest.skip(str(e))
 
@@ -434,6 +449,7 @@ class TestTubeEliteBoot:
 
     def test_tube_enabled(self, bbc_tube: Beebium) -> None:
         """Verify Tube hardware is enabled and parasite is connected."""
+
         status = bbc_tube.tube.status
         assert status.has_tube_socket, "Machine should have a Tube socket"
         assert status.enabled, "Tube should be enabled"
@@ -445,19 +461,13 @@ class TestTubeEliteBoot:
 
     def test_tube_banner(self, bbc_tube: Beebium) -> None:
         """After boot, screen should show the Tube banner."""
-        found = _run_until_or_timeout(
-            bbc_tube,
-            lambda: screen_contains(bbc_tube.memory, "Acorn TUBE"),
-            emulated_seconds=10.0,
-        )
-        if not found:
-            _dump_diagnostics(bbc_tube)
-            pytest.fail("Expected 'Acorn TUBE' banner on screen after boot")
+        assert screen_contains(bbc_tube.memory, "Acorn TUBE")
 
     def test_insert_elite_disc(
         self, bbc_tube: Beebium, elite_disc_filepath: Path
     ) -> None:
         """Insert the Elite disc into drive 0."""
+
         metadata = bbc_tube.disc.drive(0).insert(elite_disc_filepath)
         assert metadata.name, "Disc should have a name"
 
@@ -468,6 +478,9 @@ class TestTubeEliteBoot:
 
     def test_cat_disc(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *. to catalog the disc and check output appears."""
+
+        bbc_tube.disc.drive(0).insert(elite_disc_filepath)
+
         def _catalog_visible():
             from beebium.screen import read_mode7_screen
             rows = read_mode7_screen(bbc_tube.memory)
@@ -479,9 +492,7 @@ class TestTubeEliteBoot:
                     return True
             return False
 
-        bbc_tube.debugger.ensure_running()
-        bbc_tube.keyboard.type("*.")
-        bbc_tube.keyboard.press_return()
+        bbc_tube.keyboard.type("*.\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
 
         found = _run_until_or_timeout(
             bbc_tube, _catalog_visible, emulated_seconds=10.0,
@@ -498,9 +509,10 @@ class TestTubeEliteBoot:
 
     def test_run_boot(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *RUN !BOOT and check for Elite loading screen."""
-        bbc_tube.debugger.ensure_running()
-        bbc_tube.keyboard.type("*RUN !BOOT")
-        bbc_tube.keyboard.press_return()
+
+        bbc_tube.disc.drive(0).insert(elite_disc_filepath)
+
+        bbc_tube.keyboard.type("*RUN !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
 
         # Poll for Elite loading text. The !BOOT loader briefly displays
         # "6502 Second Processor ELITE" in Mode 7 before switching to a
