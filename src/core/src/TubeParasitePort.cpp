@@ -91,8 +91,10 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from H-to-P register (shift down).
+        uint8_t pre_count = shared_->r3_h2p.count.load(std::memory_order_acquire);
         result = dequeue_r3_h2p();
-        shared_->counters.r3_h2p_reads.fetch_add(1, std::memory_order_relaxed);
+        if (pre_count > 0)
+            shared_->counters.r3_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 

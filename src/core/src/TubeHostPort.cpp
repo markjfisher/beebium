@@ -39,8 +39,10 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 
     case 1: {
         // R1 data: read from P-to-H 24-byte FIFO.
+        uint8_t pre_count = shared_->r1_p2h.count.load(std::memory_order_acquire);
         result = dequeue_r1_p2h();
-        shared_->counters.r1_p2h_reads.fetch_add(1, std::memory_order_relaxed);
+        if (pre_count > 0)
+            shared_->counters.r1_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -83,8 +85,10 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from P-to-H register.
+        uint8_t pre_count = shared_->r3_p2h.count.load(std::memory_order_acquire);
         result = dequeue_r3_p2h();
-        shared_->counters.r3_p2h_reads.fetch_add(1, std::memory_order_relaxed);
+        if (pre_count > 0)
+            shared_->counters.r3_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
