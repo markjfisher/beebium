@@ -1048,7 +1048,7 @@ std::optional<int> install_disc_controller(MachineType& machine, const ServerCon
                 machine.state().memory.install_disc_controller(std::move(controller), config.fdc_type);
             } else {
                 std::cerr << "Error: Unknown disc controller type: " << config.fdc_type << "\n"
-                          << "Use --list-fdc to see available controllers.\n";
+                          << "Use the list-fdcs command to see available disc controllers.\n";
                 return 1;
             }
         }
