@@ -481,6 +481,43 @@ Fixed to only fire on `h2p_data`, matching B-Em and real hardware. This
 is correct but doesn't resolve the Chuckie Egg hang — the game's custom
 transfer runs with M=0 (PNMI disabled) during the R1 phase.
 
+## jsbeeb R3 1-Byte Mode Discovery
+
+**Critical finding:** jsbeeb's R3 write in 1-byte mode (V=0) is fundamentally
+different from Beebium:
+
+**jsbeeb** (`tube.js` line 228-233):
+```javascript
+// 1-byte mode: OVERWRITE position [0], set count=1
+this.hostToParasiteData[R3][0] = value;
+this.hostToParasiteFifoByteCount3 = 1;
+this.parasiteStatus[R3] |= DATA_AVAILABLE;
+this.hostStatus[R3] &= ~DATA_REGISTER_NOT_FULL;
+```
+
+**Beebium** (`TubeHostPort::host_write` case 5):
+```cpp
+// Spin-wait for space, then ENQUEUE into 2-slot circular buffer
+while (count >= 2) ;
+data[tail].store(value);
+tail.store(tail ^ 1);
+count.fetch_add(1);
+```
+
+In jsbeeb's 1-byte mode, each write REPLACES the current data (count always
+becomes 1). There's no accumulation. In Beebium, writes accumulate up to 2
+bytes in the circular buffer.
+
+This means in the concurrent model, the host can write 2 R3 bytes before the
+parasite processes the first NMI. The NMI handler reads byte 1, then on return
+finds byte 2 waiting (triggering another NMI immediately). In jsbeeb's model,
+the second write would overwrite the first, so the NMI handler only ever sees
+the most recent byte.
+
+**This is the most likely root cause of the CE2023 hang.** The R3 NMI transfer
+delivers different data because 1-byte mode R3 behaves as a latch (jsbeeb)
+vs a 2-slot FIFO (Beebium).
+
 ### R1 status-checked gate (tested, reverted)
 
 Attempted to gate R1 data consumption on prior R1 status poll to prevent
