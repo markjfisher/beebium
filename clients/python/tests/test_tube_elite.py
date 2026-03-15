@@ -32,7 +32,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.disassemble import disassemble
-from beebium.exceptions import BeebiumError, ConnectionError as BeebiumConnectionError, ServerNotFoundError
+from beebium.exceptions import BeebiumError, ServerNotFoundError
 from beebium.screen import dump_screen, screen_contains
 from beebium.tube_ula import TubeUlaInspection
 
@@ -117,8 +117,11 @@ def _disassemble_region(memory: Memory, start: int, length: int) -> list[str]:
     return [f"  {line}" for line in disassemble(data, start=start, length=length)]
 
 
-def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
-    """Print comprehensive diagnostics for debugging boot failures."""
+def _dump_diagnostics(bbc: Beebium) -> None:
+    """Print comprehensive diagnostics for debugging boot failures.
+
+    Attempts to connect to the parasite for additional diagnostics.
+    """
     print("\n=== DIAGNOSTICS ===")
 
     # Host CPU state
@@ -258,114 +261,119 @@ def _dump_diagnostics(bbc: Beebium, parasite: Beebium | None = None) -> None:
         print(f"Host screen: error reading - {e}")
 
     # Parasite diagnostics
-    if parasite is not None:
-        parasite_pc = None
-        try:
-            p_regs = parasite.cpu.registers
-            parasite_pc = p_regs.pc
-            print(f"Parasite CPU: {p_regs}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite CPU: error reading - {e}")
-
-        try:
-            p_state = parasite.debugger.get_state()
-            print(f"Parasite execution: running={p_state.is_running}, "
-                  f"cycles={p_state.cycle_count}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite execution: error reading - {e}")
-
-        # Disassemble around parasite PC
-        if parasite_pc is not None:
-            try:
-                dis_start = max(0, parasite_pc - 16)
-                lines = _disassemble_region(parasite.memory, dis_start, 48)
-                print(f"Parasite code around PC=${parasite_pc:04X}:")
-                for line in lines:
-                    addr_str = line.strip().split(":")[0]
-                    addr_val = int(addr_str.lstrip("$"), 16)
-                    marker = " >>>" if addr_val == parasite_pc else ""
-                    print(f"{line}{marker}")
-            except (BeebiumError, grpc.RpcError) as e:
-                print(f"Parasite disassembly: error - {e}")
-
-        # Parasite Tube register status (parasite view)
-        try:
-            pr1s = parasite.memory.address.peek[0xFEF8]
-            pr1d = parasite.memory.address.peek[0xFEF9]
-            pr2s = parasite.memory.address.peek[0xFEFA]
-            pr2d = parasite.memory.address.peek[0xFEFB]
-            pr3s = parasite.memory.address.peek[0xFEFC]
-            pr3d = parasite.memory.address.peek[0xFEFD]
-            pr4s = parasite.memory.address.peek[0xFEFE]
-            pr4d = parasite.memory.address.peek[0xFEFF]
-            print(f"Parasite Tube regs (parasite view):")
-            print(f"  R1: status=${pr1s:02X} data=${pr1d:02X}  "
-                  f"[b7={'DATA' if pr1s & 0x80 else 'empty'}]")
-            print(f"  R2: status=${pr2s:02X} data=${pr2d:02X}")
-            print(f"  R3: status=${pr3s:02X} data=${pr3d:02X}  "
-                  f"[b7={'DATA' if pr3s & 0x80 else 'empty'}]")
-            print(f"  R4: status=${pr4s:02X} data=${pr4d:02X}  "
-                  f"[b7={'DATA' if pr4s & 0x80 else 'empty'}]")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite Tube regs: error reading - {e}")
-
-        # Parasite MOS workspace
-        try:
-            p_exec = parasite.memory.address.peek[0x0257]
-            p_spool = parasite.memory.address.peek[0x0256]
-            p_tube = parasite.memory.address.peek[0x027A]
-            p_fs = parasite.memory.address.peek[0x028C]
-            p_eb = parasite.memory.address.peek[0x00EB]
-            print(f"Parasite exec handle (&0257): ${p_exec:02X}")
-            print(f"Parasite spool handle (&0256): ${p_spool:02X}")
-            print(f"Parasite Tube flag (&027A): ${p_tube:02X}")
-            print(f"Parasite FS (&028C): ${p_fs:02X}")
-            print(f"Parasite ZP $EB (exec check): ${p_eb:02X}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite MOS workspace: error reading - {e}")
-
-        # Full parasite zero page
-        try:
-            zp = parasite.memory.address.peek.read(0x0000, 256)
-            print("Parasite zero page:")
-            for row in range(16):
-                offset = row * 16
-                hex_str = " ".join(f"{zp[offset + i]:02X}" for i in range(16))
-                print(f"  ${offset:02X}: {hex_str}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite ZP: error reading - {e}")
-
-        # Parasite vectors and NMIV
-        try:
-            nmiv = parasite.memory.address.peek.read(0x0200, 2)
-            nmiv_addr = nmiv[0] | (nmiv[1] << 8)
-            irqv = parasite.memory.address.peek.read(0x0202, 2)
-            irqv_addr = irqv[0] | (irqv[1] << 8)
-            nmi_vec = parasite.memory.address.peek.read(0xFFFA, 2)
-            nmi_addr = nmi_vec[0] | (nmi_vec[1] << 8)
-            irq_vec = parasite.memory.address.peek.read(0xFFFE, 2)
-            irq_addr = irq_vec[0] | (irq_vec[1] << 8)
-            print(f"Parasite vectors: NMIV=$0200={nmiv_addr:04X}, "
-                  f"IRQ1V=$0202={irqv_addr:04X}")
-            print(f"Parasite HW vectors: NMI=$FFFA={nmi_addr:04X}, "
-                  f"IRQ=$FFFE={irq_addr:04X}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite vectors: error reading - {e}")
-
-        # Parasite stack
-        try:
-            stack = parasite.memory.address.peek.read(0x0100, 256)
-            sp = p_regs.sp if parasite_pc is not None else 0xFF
-            # Show stack from SP+1 upwards (what's been pushed)
-            stack_top = sp + 1
-            if stack_top < 256:
-                stack_bytes = stack[stack_top:min(stack_top + 16, 256)]
-                hex_str = " ".join(f"{b:02X}" for b in stack_bytes)
-                print(f"Parasite stack (${0x100 + stack_top:04X}+): {hex_str}")
-        except (BeebiumError, grpc.RpcError) as e:
-            print(f"Parasite stack: error reading - {e}")
+    if bbc.tube.parasite_connected:
+        with bbc.parasite() as parasite:
+            _dump_parasite_diagnostics(parasite)
 
     print("=== END DIAGNOSTICS ===\n")
+
+
+def _dump_parasite_diagnostics(parasite: Beebium) -> None:
+    """Print parasite-side diagnostics."""
+    parasite_pc = None
+    try:
+        p_regs = parasite.cpu.registers
+        parasite_pc = p_regs.pc
+        print(f"Parasite CPU: {p_regs}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite CPU: error reading - {e}")
+
+    try:
+        p_state = parasite.debugger.get_state()
+        print(f"Parasite execution: running={p_state.is_running}, "
+              f"cycles={p_state.cycle_count}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite execution: error reading - {e}")
+
+    # Disassemble around parasite PC
+    if parasite_pc is not None:
+        try:
+            dis_start = max(0, parasite_pc - 16)
+            lines = _disassemble_region(parasite.memory, dis_start, 48)
+            print(f"Parasite code around PC=${parasite_pc:04X}:")
+            for line in lines:
+                addr_str = line.strip().split(":")[0]
+                addr_val = int(addr_str.lstrip("$"), 16)
+                marker = " >>>" if addr_val == parasite_pc else ""
+                print(f"{line}{marker}")
+        except (BeebiumError, grpc.RpcError) as e:
+            print(f"Parasite disassembly: error - {e}")
+
+    # Parasite Tube register status (parasite view)
+    try:
+        pr1s = parasite.memory.address.peek[0xFEF8]
+        pr1d = parasite.memory.address.peek[0xFEF9]
+        pr2s = parasite.memory.address.peek[0xFEFA]
+        pr2d = parasite.memory.address.peek[0xFEFB]
+        pr3s = parasite.memory.address.peek[0xFEFC]
+        pr3d = parasite.memory.address.peek[0xFEFD]
+        pr4s = parasite.memory.address.peek[0xFEFE]
+        pr4d = parasite.memory.address.peek[0xFEFF]
+        print(f"Parasite Tube regs (parasite view):")
+        print(f"  R1: status=${pr1s:02X} data=${pr1d:02X}  "
+              f"[b7={'DATA' if pr1s & 0x80 else 'empty'}]")
+        print(f"  R2: status=${pr2s:02X} data=${pr2d:02X}")
+        print(f"  R3: status=${pr3s:02X} data=${pr3d:02X}  "
+              f"[b7={'DATA' if pr3s & 0x80 else 'empty'}]")
+        print(f"  R4: status=${pr4s:02X} data=${pr4d:02X}  "
+              f"[b7={'DATA' if pr4s & 0x80 else 'empty'}]")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite Tube regs: error reading - {e}")
+
+    # Parasite MOS workspace
+    try:
+        p_exec = parasite.memory.address.peek[0x0257]
+        p_spool = parasite.memory.address.peek[0x0256]
+        p_tube = parasite.memory.address.peek[0x027A]
+        p_fs = parasite.memory.address.peek[0x028C]
+        p_eb = parasite.memory.address.peek[0x00EB]
+        print(f"Parasite exec handle (&0257): ${p_exec:02X}")
+        print(f"Parasite spool handle (&0256): ${p_spool:02X}")
+        print(f"Parasite Tube flag (&027A): ${p_tube:02X}")
+        print(f"Parasite FS (&028C): ${p_fs:02X}")
+        print(f"Parasite ZP $EB (exec check): ${p_eb:02X}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite MOS workspace: error reading - {e}")
+
+    # Full parasite zero page
+    try:
+        zp = parasite.memory.address.peek.read(0x0000, 256)
+        print("Parasite zero page:")
+        for row in range(16):
+            offset = row * 16
+            hex_str = " ".join(f"{zp[offset + i]:02X}" for i in range(16))
+            print(f"  ${offset:02X}: {hex_str}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite ZP: error reading - {e}")
+
+    # Parasite vectors and NMIV
+    try:
+        nmiv = parasite.memory.address.peek.read(0x0200, 2)
+        nmiv_addr = nmiv[0] | (nmiv[1] << 8)
+        irqv = parasite.memory.address.peek.read(0x0202, 2)
+        irqv_addr = irqv[0] | (irqv[1] << 8)
+        nmi_vec = parasite.memory.address.peek.read(0xFFFA, 2)
+        nmi_addr = nmi_vec[0] | (nmi_vec[1] << 8)
+        irq_vec = parasite.memory.address.peek.read(0xFFFE, 2)
+        irq_addr = irq_vec[0] | (irq_vec[1] << 8)
+        print(f"Parasite vectors: NMIV=$0200={nmiv_addr:04X}, "
+              f"IRQ1V=$0202={irqv_addr:04X}")
+        print(f"Parasite HW vectors: NMI=$FFFA={nmi_addr:04X}, "
+              f"IRQ=$FFFE={irq_addr:04X}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite vectors: error reading - {e}")
+
+    # Parasite stack
+    try:
+        stack = parasite.memory.address.peek.read(0x0100, 256)
+        sp = p_regs.sp if parasite_pc is not None else 0xFF
+        stack_top = sp + 1
+        if stack_top < 256:
+            stack_bytes = stack[stack_top:min(stack_top + 16, 256)]
+            hex_str = " ".join(f"{b:02X}" for b in stack_bytes)
+            print(f"Parasite stack (${0x100 + stack_top:04X}+): {hex_str}")
+    except (BeebiumError, grpc.RpcError) as e:
+        print(f"Parasite stack: error reading - {e}")
 
 
 @pytest.fixture(scope="module")
@@ -460,72 +468,51 @@ class TestTubeEliteBoot:
 
     def test_cat_disc(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *. to catalog the disc and check output appears."""
-        parasite = None
-        try:
-            try:
-                parasite = bbc_tube.connect_parasite()
-            except (BeebiumConnectionError, grpc.RpcError):
-                pass
+        def _catalog_visible():
+            from beebium.screen import read_mode7_screen
+            rows = read_mode7_screen(bbc_tube.memory)
+            for row in rows:
+                stripped = row.strip()
+                if stripped and stripped != ">" and "BASIC" not in stripped \
+                        and "Acorn TUBE" not in stripped and "Acorn 1770" not in stripped \
+                        and "*." not in stripped:
+                    return True
+            return False
 
-            def _catalog_visible():
-                from beebium.screen import read_mode7_screen
-                rows = read_mode7_screen(bbc_tube.memory)
-                for row in rows:
-                    stripped = row.strip()
-                    if stripped and stripped != ">" and "BASIC" not in stripped \
-                            and "Acorn TUBE" not in stripped and "Acorn 1770" not in stripped \
-                            and "*." not in stripped:
-                        return True
-                return False
+        bbc_tube.debugger.ensure_running()
+        bbc_tube.keyboard.type("*.")
+        bbc_tube.keyboard.press_return()
 
-            # Ensure the emulator is running so keystrokes are scanned.
-            bbc_tube.debugger.ensure_running()
-            bbc_tube.keyboard.type("*.")
-            bbc_tube.keyboard.press_return()
+        found = _run_until_or_timeout(
+            bbc_tube, _catalog_visible, emulated_seconds=10.0,
+        )
 
-            found = _run_until_or_timeout(
-                bbc_tube, _catalog_visible, emulated_seconds=10.0,
-            )
-
-            if not found:
-                from beebium.screen import read_mode7_screen
-                rows = read_mode7_screen(bbc_tube.memory)
-                print("\nScreen after *. command:")
-                for i, row in enumerate(rows):
-                    print(f"Row {i:2d}: [{row}]")
-                _dump_diagnostics(bbc_tube, parasite)
-                pytest.fail("Expected disc catalog output after *. command")
-        finally:
-            if parasite is not None:
-                parasite.close()
+        if not found:
+            from beebium.screen import read_mode7_screen
+            rows = read_mode7_screen(bbc_tube.memory)
+            print("\nScreen after *. command:")
+            for i, row in enumerate(rows):
+                print(f"Row {i:2d}: [{row}]")
+            _dump_diagnostics(bbc_tube)
+            pytest.fail("Expected disc catalog output after *. command")
 
     def test_run_boot(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *RUN !BOOT and check for Elite loading screen."""
-        parasite = None
-        try:
-            try:
-                parasite = bbc_tube.connect_parasite()
-            except (BeebiumConnectionError, grpc.RpcError):
-                pass  # Diagnostics are optional
+        bbc_tube.debugger.ensure_running()
+        bbc_tube.keyboard.type("*RUN !BOOT")
+        bbc_tube.keyboard.press_return()
 
-            bbc_tube.debugger.ensure_running()
-            bbc_tube.keyboard.type("*RUN !BOOT")
-            bbc_tube.keyboard.press_return()
+        # Poll for Elite loading text. The !BOOT loader briefly displays
+        # "6502 Second Processor ELITE" in Mode 7 before switching to a
+        # graphics mode for the game.
+        found = _run_until_or_timeout(
+            bbc_tube,
+            lambda: screen_contains(bbc_tube.memory, "ELITE"),
+            emulated_seconds=15.0,
+        )
 
-            # Poll for Elite loading text. The !BOOT loader briefly displays
-            # "6502 Second Processor ELITE" in Mode 7 before switching to a
-            # graphics mode for the game.
-            found = _run_until_or_timeout(
-                bbc_tube,
-                lambda: screen_contains(bbc_tube.memory, "ELITE"),
-                emulated_seconds=15.0,
+        if not found:
+            _dump_diagnostics(bbc_tube)
+            pytest.fail(
+                "Expected 'ELITE' on screen after *RUN !BOOT"
             )
-
-            if not found:
-                _dump_diagnostics(bbc_tube, parasite)
-                pytest.fail(
-                    "Expected 'ELITE' on screen after *RUN !BOOT"
-                )
-        finally:
-            if parasite is not None:
-                parasite.close()

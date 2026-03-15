@@ -334,6 +334,25 @@ class Beebium:
             raise BeebiumConnectionError("Parasite has not registered its gRPC endpoint")
         return Beebium.connect(target=address, timeout=timeout)
 
+    @contextlib.contextmanager
+    def parasite(self, timeout: float = 5.0) -> Iterator[Beebium]:
+        """Context manager that connects to the parasite and closes on exit.
+
+        Usage::
+
+            with bbc.parasite() as parasite:
+                print(parasite.cpu.registers)
+
+        Raises:
+            BeebiumConnectionError: If the parasite is not connected or the
+                connection cannot be established.
+        """
+        parasite = self.connect_parasite(timeout=timeout)
+        try:
+            yield parasite
+        finally:
+            parasite.close()
+
     def close(self) -> None:
         """Close the connection and stop any managed server.
 
