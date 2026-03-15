@@ -364,17 +364,17 @@ TEST_CASE("TubeParasitePort R3 status N flag set when data or space available", 
     uint8_t status = parasite.parasite_read(4);
     CHECK((status & 0x20) == 0);  // N flag clear
 
-    // Clear dummy byte to make space available
+    // Clear dummy byte to make space available (P-to-H space doesn't set N)
     shared.r3_p2h.count.store(0, std::memory_order_release);
 
     status = parasite.parasite_read(4);
-    CHECK((status & 0x20) != 0);  // N flag set (space available)
+    CHECK((status & 0x20) == 0);  // N flag still clear (no H-to-P data)
 
     // Write H-to-P data from host
     host.host_write(5, 0x42);
 
     status = parasite.parasite_read(4);
-    CHECK((status & 0x20) != 0);  // N flag still set (data available)
+    CHECK((status & 0x20) != 0);  // N flag set (H-to-P data available)
 }
 
 TEST_CASE("TubeParasitePort R3 status bits 4-0 read as 1", "[tube][parasite]") {
@@ -674,10 +674,14 @@ TEST_CASE("TubeParasitePort PNMI edge: space available triggers NMI", "[tube][pa
     parasite.parasite_read(4);
     CHECK_FALSE(parasite.pnmi());
 
-    // Host reads the dummy byte -- decrements count, making P-to-H space available
+    // Host reads the dummy byte -- P-to-H space available, but PNMI
+    // should NOT fire (PNMI is driven by H-to-P data, not P-to-H space).
     host.host_read(5);
+    parasite.parasite_read(4);
+    CHECK_FALSE(parasite.pnmi());
 
-    // Parasite must do a register access to detect the edge
+    // Write H-to-P data from host -- THIS should trigger PNMI
+    host.host_write(5, 0x42);
     parasite.parasite_read(4);
     CHECK(parasite.pnmi());
 }
@@ -891,16 +895,17 @@ TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 H-to-P has data", "[
     CHECK(parasite.pnmi_level());
 }
 
-TEST_CASE("TubeParasitePort pnmi_level true when M=1 and R3 P-to-H has space", "[tube][parasite][pnmi]") {
+TEST_CASE("TubeParasitePort pnmi_level false when M=1 and only R3 P-to-H has space", "[tube][parasite][pnmi]") {
     TubeShared shared;
     shared.init();
     TubeParasitePort parasite(&shared);
 
     shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
 
-    // P-to-H is empty (count=0) -> space available -> level true.
+    // P-to-H is empty (count=0) -> space available, but no H-to-P data.
+    // PNMI is driven only by H-to-P data, not P-to-H space.
     CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
-    CHECK(parasite.pnmi_level());
+    CHECK_FALSE(parasite.pnmi_level());
 }
 
 TEST_CASE("TubeParasitePort pnmi_level false when M=1 but no data and no space", "[tube][parasite][pnmi]") {
@@ -933,4 +938,193 @@ TEST_CASE("TubeParasitePort pnmi_level responds to shared state changes without 
 
     // pnmi_level() should immediately reflect the change.
     CHECK(parasite.pnmi_level());
+}
+
+// ===========================================================================
+// Hardware-validated R3 behaviour tests
+//
+// Based on hoglet's comprehensive R3 tests with real Ferranti Tube ULA.
+// Reference: https://stardot.org.uk/forums/viewtopic.php?p=409877
+//            https://stardot.org.uk/forums/viewtopic.php?p=412565
+// B-Em fix:  commit e04aab0 and 97f0ad6
+// ===========================================================================
+
+// Helper: set up host and parasite ports on a shared TubeShared
+struct TubePair {
+    TubeShared shared;
+    TubeHostPort host;
+    TubeParasitePort parasite;
+
+    TubePair() : host(&shared), parasite(&shared) {
+        shared.init();
+    }
+
+    // Host writes to R3 H-to-P (offset 5)
+    void host_write_r3(uint8_t value) { host.host_write(5, value); }
+    // Parasite reads R3 H-to-P data (offset 5)
+    uint8_t parasite_read_r3() { return parasite.parasite_read(5); }
+    // Parasite reads R3 status (offset 4)
+    uint8_t parasite_read_r3_status() { return parasite.parasite_read(4); }
+    // Host reads R3 status (offset 4)
+    uint8_t host_read_r3_status() { return host.host_read(4); }
+
+    // Parasite writes to R3 P-to-H (offset 5)
+    void parasite_write_r3(uint8_t value) { parasite.parasite_write(5, value); }
+    // Host reads R3 P-to-H data (offset 5)
+    uint8_t host_read_r3() { return host.host_read(5); }
+
+    // Check parasite R3 status bits
+    bool parasite_r3_data_available() {
+        return (parasite_read_r3_status() & TubeUla::DATA_AVAILABLE) != 0;
+    }
+    bool parasite_r3_space_available() {
+        return (parasite_read_r3_status() & TubeUla::SPACE_AVAILABLE) != 0;
+    }
+    // Check host R3 status bits
+    bool host_r3_data_available() {
+        return (host_read_r3_status() & TubeUla::DATA_AVAILABLE) != 0;
+    }
+    bool host_r3_space_available() {
+        return (host_read_r3_status() & TubeUla::SPACE_AVAILABLE) != 0;
+    }
+
+    // Set V flag (2-byte mode) via control register
+    void set_v_flag(bool enable) {
+        if (enable)
+            host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
+        else
+            host.host_write(0, TubeUla::FLAG_V);  // S=0 clears V
+    }
+};
+
+// --- R3 H-to-P: 1-byte mode (V=0) ---
+
+TEST_CASE("R3 H-to-P 1-byte mode: write-read", "[tube][r3][hw]") {
+    TubePair t;
+    t.host_write_r3(0x42);
+    CHECK(t.parasite_r3_data_available());
+    CHECK(t.parasite_read_r3() == 0x42);
+}
+
+TEST_CASE("R3 H-to-P 1-byte mode: write-write-read-read", "[tube][r3][hw]") {
+    TubePair t;
+    t.host_write_r3(0x11);
+    t.host_write_r3(0x22);
+    CHECK(t.parasite_read_r3() == 0x11);
+    CHECK(t.parasite_read_r3() == 0x22);
+}
+
+TEST_CASE("R3 H-to-P 1-byte mode: data available after single write", "[tube][r3][hw]") {
+    TubePair t;
+    CHECK_FALSE(t.parasite_r3_data_available());
+    t.host_write_r3(0x42);
+    CHECK(t.parasite_r3_data_available());
+}
+
+TEST_CASE("R3 H-to-P 1-byte mode: data not available after read drains", "[tube][r3][hw]") {
+    TubePair t;
+    t.host_write_r3(0x42);
+    t.parasite_read_r3();
+    CHECK_FALSE(t.parasite_r3_data_available());
+}
+
+TEST_CASE("R3 H-to-P 1-byte mode: host space available after drain", "[tube][r3][hw]") {
+    TubePair t;
+    t.host_write_r3(0x42);
+    CHECK_FALSE(t.host_r3_space_available());
+    t.parasite_read_r3();
+    CHECK(t.host_r3_space_available());
+}
+
+// TODO: R3 writes when full should be silently ignored (real hardware),
+// but Beebium currently spin-waits (bus stretching). Need to add a
+// non-blocking write path or timeout. Test disabled to avoid hang.
+// TEST_CASE("R3 H-to-P 1-byte mode: third write ignored when full")
+
+TEST_CASE("R3 H-to-P 1-byte mode: interleaved write-read-write-read", "[tube][r3][hw]") {
+    TubePair t;
+    t.host_write_r3(0xAA);
+    CHECK(t.parasite_read_r3() == 0xAA);
+    t.host_write_r3(0xBB);
+    CHECK(t.parasite_read_r3() == 0xBB);
+}
+
+// --- R3 H-to-P: 2-byte mode (V=1) ---
+
+TEST_CASE("R3 H-to-P 2-byte mode: data available only after 2 writes", "[tube][r3][hw]") {
+    TubePair t;
+    t.set_v_flag(true);
+    t.host_write_r3(0x11);
+    CHECK_FALSE(t.parasite_r3_data_available());
+    t.host_write_r3(0x22);
+    CHECK(t.parasite_r3_data_available());
+}
+
+TEST_CASE("R3 H-to-P 2-byte mode: read both bytes", "[tube][r3][hw]") {
+    TubePair t;
+    t.set_v_flag(true);
+    t.host_write_r3(0x11);
+    t.host_write_r3(0x22);
+    CHECK(t.parasite_read_r3() == 0x11);
+    CHECK(t.parasite_read_r3() == 0x22);
+}
+
+// --- R3 P-to-H: 1-byte mode ---
+
+TEST_CASE("R3 P-to-H 1-byte mode: write-read", "[tube][r3][hw]") {
+    TubePair t;
+    // Clear the dummy P-to-H byte from init
+    t.shared.r3_p2h.count.store(0, std::memory_order_release);
+    t.shared.r3_p2h.head.store(0, std::memory_order_release);
+    t.shared.r3_p2h.tail.store(0, std::memory_order_release);
+
+    t.parasite_write_r3(0x55);
+    CHECK(t.host_r3_data_available());
+    CHECK(t.host_read_r3() == 0x55);
+}
+
+// --- R1 unconditional flag clearing ---
+
+TEST_CASE("R1 parasite data read clears ready even when empty", "[tube][r1][hw]") {
+    TubePair t;
+    // Write a byte from host
+    t.host.host_write(1, 0x42);
+    // Parasite reads it
+    CHECK(t.parasite.parasite_read(1) == 0x42);
+
+    // Now R1 is empty. Host writes another byte.
+    t.host.host_write(1, 0x99);
+    // Parasite reads data WITHOUT checking status first (stray read).
+    // This should still consume the byte (unconditional clear).
+    uint8_t val = t.parasite.parasite_read(1);
+    CHECK(val == 0x99);
+
+    // The ready flag should now be cleared
+    uint8_t status = t.parasite.parasite_read(0);
+    CHECK((status & TubeUla::DATA_AVAILABLE) == 0);
+}
+
+// --- PNMI only fires on H-to-P data, not P-to-H space ---
+
+TEST_CASE("PNMI does not fire from P-to-H space available alone", "[tube][pnmi][hw]") {
+    TubePair t;
+    // Enable M flag
+    t.host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+
+    // Clear P-to-H so it has space available
+    t.shared.r3_p2h.count.store(0, std::memory_order_release);
+
+    // PNMI should NOT fire just because P-to-H has space
+    CHECK_FALSE(t.parasite.pnmi_level());
+}
+
+TEST_CASE("PNMI fires when H-to-P has data and M is set", "[tube][pnmi][hw]") {
+    TubePair t;
+    // Enable M flag
+    t.host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+
+    // Write H-to-P data
+    t.host_write_r3(0x42);
+
+    CHECK(t.parasite.pnmi_level());
 }
