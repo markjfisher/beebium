@@ -47,11 +47,20 @@ DNFS_ROM_CANDIDATES = [
 
 
 def _find_elite_disc() -> Path | None:
-    """Find the Elite disc image relative to the repo root."""
+    """Find the Elite disc image.
+
+    Search order:
+    1. Test assets directory (tests/assets/discs/)
+    2. Development disc collection (discs/games/)
+    """
     repo_root = Path(__file__).parent.parent.parent.parent
-    candidate = repo_root / "discs" / "games" / ELITE_DISC_FILENAME
-    if candidate.exists():
-        return candidate
+    candidates = [
+        repo_root / "tests" / "assets" / "discs" / ELITE_DISC_FILENAME,
+        repo_root / "discs" / "games" / ELITE_DISC_FILENAME,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
     return None
 
 
@@ -536,7 +545,7 @@ class TestTubeEliteBoot:
             if parasite is not None:
                 parasite.close()
 
-    def test_exec_boot(self, bbc_tube: Beebium) -> None:
+    def test_exec_boot(self, bbc_tube: Beebium, elite_disc_filepath: Path) -> None:
         """Type *EXEC !BOOT and check for Elite loading screen."""
         parasite = None
         try:
