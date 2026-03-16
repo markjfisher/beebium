@@ -1025,7 +1025,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Get6502State(
     response->set_x(machine_.x());
     response->set_y(machine_.y());
     response->set_sp(machine_.sp());
-    response->set_pc(machine_.pc());
+    response->set_pc(machine_.cpu().opcode_pc.w);
     response->set_p(machine_.p());
 
     // Interrupt handler tracking
@@ -1063,7 +1063,14 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Set6502State(
         machine_.set_sp(static_cast<uint8_t>(request->sp()));
     }
     if (request->has_pc()) {
-        machine_.set_pc(static_cast<uint16_t>(request->pc()));
+        uint16_t new_pc = static_cast<uint16_t>(request->pc());
+        // M6502_NextInstruction's post-increment means pc.w must be one
+        // past the opcode. Set opcode_pc to the target address and pc to
+        // target+1. Also set dbus to the opcode byte so Cycle0_All decodes
+        // the correct instruction.
+        machine_.set_pc(new_pc + 1);
+        machine_.cpu().opcode_pc.w = new_pc;
+        machine_.cpu().dbus = machine_.peek(new_pc);
     }
     if (request->has_p()) {
         machine_.set_p(static_cast<uint8_t>(request->p()));

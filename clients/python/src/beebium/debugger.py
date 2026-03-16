@@ -283,11 +283,20 @@ class Debugger:
 
     # Breakpoints
 
-    def add_breakpoint(self, address: int) -> int:
+    def add_breakpoint(
+        self,
+        address: int,
+        *,
+        condition: str = "",
+        stop_counterpart: bool = False,
+    ) -> int:
         """Add a breakpoint at the given address.
 
         Args:
             address: The address to break on (0x0000-0xFFFF).
+            condition: Optional expression evaluated on hit. Empty = unconditional.
+                Use ``hits`` for hit-count logic, e.g. ``"hits == 5"``.
+            stop_counterpart: Signal the other processor to stop.
 
         Returns:
             The breakpoint ID.
@@ -295,7 +304,11 @@ class Debugger:
         Raises:
             DebuggerError: If the breakpoint cannot be added.
         """
-        request = debugger_pb2.AddBreakpointRequest(address=address)
+        request = debugger_pb2.AddBreakpointRequest(
+            address=address,
+            condition=condition,
+            stop_counterpart=stop_counterpart,
+        )
         response = self._stub.AddBreakpoint(request)
         if not response.success:
             raise DebuggerError(f"Failed to add breakpoint at ${address:04X}")
@@ -341,6 +354,9 @@ class Debugger:
         start_address: int,
         end_address: int,
         type: str = "both",
+        *,
+        condition: str = "",
+        stop_counterpart: bool = False,
     ) -> int:
         """Add a watchpoint on an address range.
 
@@ -348,6 +364,10 @@ class Debugger:
             start_address: Start of range (inclusive).
             end_address: End of range (exclusive).
             type: "read", "write", or "both".
+            condition: Optional expression evaluated on hit. Empty = unconditional.
+                Use ``hits`` for hit-count logic, e.g. ``"hits == 5"``.
+                Use ``"false"`` for recording-only (never stops).
+            stop_counterpart: Signal the other processor to stop.
 
         Returns:
             The watchpoint ID.
@@ -361,6 +381,8 @@ class Debugger:
             start_address=start_address,
             end_address=end_address,
             type=type_map.get(type, debugger_pb2.WATCHPOINT_BOTH),
+            condition=condition,
+            stop_counterpart=stop_counterpart,
         )
         response = self._stub.AddWatchpoint(request)
         if not response.success:
