@@ -85,38 +85,37 @@ describe('Tube CE2023 Differential', () => {
             console.log(`  jsbeeb screen row ${row}: [${text}]`);
         }
 
-        // Boot Beebium: run to banner, insert disc, type command
-        await host.debugger.run();
-        // Wait for Tube banner first (the server auto-boots from cold)
-        await new Promise(r => setTimeout(r, 3000));
-        await host.debugger.stop();
-        // Insert disc and type the command
+        // Boot Beebium: run for 8 emulated seconds (reaches BASIC prompt)
+        await host.runForEmulatedSeconds(8);
+        // Insert disc
         await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
+        // Type the command while running — type() enqueues to the server
         await host.debugger.run();
         await host.keyboard.type("*EXEC !BOOT\r");
+        // Give 2 emulated seconds for keystrokes to be processed
+        await host.runForEmulatedSeconds(2);
 
-        // Wait for game to reach Initialising screen
-        const clockHz = await host.system.getClockSpeedHz() || 2_000_000;
-        const startCycles = (await host.debugger.getState()).cycleCount;
-        const targetCycles = startCycles + (30 * clockHz);
-
-        let found = false;
-        while ((await host.debugger.getState()).cycleCount < targetCycles) {
-            await new Promise(r => setTimeout(r, 100));
-            await host.debugger.stop();
-            try {
+        // Wait for game to reach Initialising screen (emulated time)
+        const found = await host.runUntilOrTimeout(
+            async () => {
                 const screenData = await host.memory.address.peek.read(0x7C00, 1000);
                 const text = Buffer.from(screenData).toString('latin1');
-                if (text.includes('Initialising')) {
-                    found = true;
-                    break;
-                }
-            } catch { /* ignore */ }
-            await host.debugger.run();
+                return text.includes('Initialising') || text.includes('Chuckie Egg');
+            },
+            60, // 60 emulated seconds
+        );
+        if (!found) {
+            await host.debugger.stop();
+            // Debug: dump screen to see what went wrong
+            const beeScreen = await host.memory.address.peek.read(0x7C00, 25 * 40);
+            for (let row = 0; row < 10; row++) {
+                const rowData = beeScreen.slice(row * 40, (row + 1) * 40);
+                const text = Buffer.from(rowData).toString('latin1').replace(/[\x00-\x1f\x80-\xff]/g, '.');
+                console.log(`  Beebium screen row ${row}: [${text}]`);
+            }
         }
-        if (!found) await host.debugger.stop();
 
-        console.log(`Beebium reached Initialising: ${found}`);
+        console.log(`Beebium reached game: ${found}`);
         expect(found).toBe(true);
 
         // Connect to the parasite

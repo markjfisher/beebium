@@ -353,6 +353,67 @@ class Beebium:
         finally:
             parasite.close()
 
+    # =========================================================================
+    # Emulated time helpers
+    # =========================================================================
+
+    def run_for_emulated_seconds(self, seconds: float, poll_interval: float = 0.02) -> None:
+        """Run the emulator for the specified number of emulated seconds.
+
+        Uses the emulator's cycle counter for timing, not wall-clock time.
+        The emulator is left stopped on return.
+
+        Args:
+            seconds: Number of emulated BBC-time seconds to run.
+            poll_interval: Real-time seconds between cycle count polls.
+        """
+        import time as _time
+        clock_hz = self.system.clock_speed_hz or 2_000_000
+        cycle_budget = int(seconds * clock_hz)
+        start_cycles = self.debugger.cycle_count
+        target_cycles = start_cycles + cycle_budget
+
+        with self.debugger.running():
+            while True:
+                _time.sleep(poll_interval)
+                current = self.debugger.cycle_count
+                if current >= target_cycles:
+                    return
+
+    def run_until_or_timeout(
+        self, predicate, emulated_seconds: float, poll_interval: float = 0.02
+    ) -> bool:
+        """Run until predicate() returns True or the emulated time budget expires.
+
+        The predicate is called periodically (after at least 1 emulated
+        second). The emulator is left in whatever state it was in on entry.
+
+        Args:
+            predicate: Callable returning True when the condition is met.
+            emulated_seconds: Maximum emulated BBC-time seconds to run.
+            poll_interval: Real-time seconds between polls.
+
+        Returns:
+            True if the predicate was satisfied, False on timeout.
+        """
+        import time as _time
+        clock_hz = self.system.clock_speed_hz or 2_000_000
+        cycle_budget = int(emulated_seconds * clock_hz)
+        start_cycles = self.debugger.cycle_count
+        target_cycles = start_cycles + cycle_budget
+
+        with self.debugger.running():
+            while True:
+                _time.sleep(poll_interval)
+                current = self.debugger.cycle_count
+                if current >= target_cycles:
+                    return predicate()
+                if current - start_cycles >= clock_hz:
+                    self.debugger.stop()
+                    if predicate():
+                        return True
+                    self.debugger.run()
+
     def close(self) -> None:
         """Close the connection and stop any managed server.
 

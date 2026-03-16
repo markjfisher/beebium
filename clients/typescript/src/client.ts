@@ -300,6 +300,97 @@ export class Beebium {
         return Beebium.connect(address, timeoutMs);
     }
 
+    // =========================================================================
+    // Emulated time helpers
+    // =========================================================================
+
+    /**
+     * Run the emulator for the specified number of emulated seconds.
+     *
+     * Uses the emulator's cycle counter for timing, not wall-clock time.
+     * The emulator is left stopped on return. If it was already running,
+     * execution continues; if stopped, it is started first.
+     *
+     * @param seconds - Number of emulated BBC-time seconds to run.
+     * @param pollIntervalMs - Real-time ms between cycle count polls (default 20).
+     */
+    async runForEmulatedSeconds(seconds: number, pollIntervalMs = 20): Promise<void> {
+        const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
+        const cycleBudget = Math.round(seconds * clockHz);
+        const startCycles = (await this.debugger.getState()).cycleCount;
+        const targetCycles = startCycles + cycleBudget;
+
+        if (await this.debugger.isStopped()) {
+            await this.debugger.run();
+        }
+        try {
+            while (true) {
+                await new Promise(r => setTimeout(r, pollIntervalMs));
+                const state = await this.debugger.getState();
+                if (state.cycleCount >= targetCycles || !state.isRunning) {
+                    break;
+                }
+            }
+        } finally {
+            if (await this.debugger.isRunning()) {
+                await this.debugger.stop();
+            }
+        }
+    }
+
+    /**
+     * Run the emulator until predicate returns true or the emulated time
+     * budget expires.
+     *
+     * The predicate is called periodically (after at least 1 emulated
+     * second to allow keyboard input and Tube protocol processing).
+     * The emulator is stopped during predicate evaluation and left
+     * stopped on return.
+     *
+     * @param predicate - Async function returning true when the condition is met.
+     * @param emulatedSeconds - Maximum emulated time to run.
+     * @param pollIntervalMs - Real-time ms between polls (default 20).
+     * @returns true if the predicate was satisfied, false on timeout.
+     */
+    async runUntilOrTimeout(
+        predicate: () => Promise<boolean>,
+        emulatedSeconds: number,
+        pollIntervalMs = 20,
+    ): Promise<boolean> {
+        const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
+        const cycleBudget = Math.round(emulatedSeconds * clockHz);
+        const startCycles = (await this.debugger.getState()).cycleCount;
+        const targetCycles = startCycles + cycleBudget;
+        const minCyclesBeforeCheck = clockHz; // 1 emulated second
+
+        if (await this.debugger.isStopped()) {
+            await this.debugger.run();
+        }
+        try {
+            while (true) {
+                await new Promise(r => setTimeout(r, pollIntervalMs));
+                const state = await this.debugger.getState();
+
+                if (state.cycleCount >= targetCycles) {
+                    await this.debugger.stop();
+                    return predicate();
+                }
+
+                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
+                    await this.debugger.stop();
+                    if (await predicate()) {
+                        return true;
+                    }
+                    await this.debugger.run();
+                }
+            }
+        } finally {
+            if (await this.debugger.isRunning()) {
+                await this.debugger.stop();
+            }
+        }
+    }
+
     /**
      * Close the connection and stop any managed server process.
      *
