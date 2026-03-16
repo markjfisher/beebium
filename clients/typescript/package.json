@@ -8,6 +8,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude tests/integration.test.ts",
+    "test:integration": "vitest run tests/integration.test.ts",
     "test:watch": "vitest",
     "generate-protos": "bash scripts/generate-protos.sh"
   },

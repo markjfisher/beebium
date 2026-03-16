@@ -69,6 +69,10 @@ export class ServerProcess {
 
         if (options?.executableFilepath) {
             this.executableFilepath = options.executableFilepath;
+        } else if (process.env["BEEBIUM_SERVER"]) {
+            // Environment variable override (used in CI and when the server
+            // is not in the default build location).
+            this.executableFilepath = process.env["BEEBIUM_SERVER"];
         } else {
             const model = options?.model ?? "B";
             const suffix = MODEL_SUFFIXES[model];
@@ -79,7 +83,8 @@ export class ServerProcess {
             const filepath = join(DEFAULT_BUILD_DIRPATH, executableName);
             if (!existsSync(filepath)) {
                 throw new ServerNotFoundError(
-                    `Server executable not found at ${filepath}`,
+                    `Server executable not found at ${filepath}. ` +
+                    `Set the BEEBIUM_SERVER environment variable to the path of the server executable.`,
                 );
             }
             this.executableFilepath = filepath;

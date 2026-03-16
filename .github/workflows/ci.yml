@@ -379,6 +379,161 @@ jobs:
           path: clients/macos/Beebium/build/Build/Products/Release/Beebium.app
           retention-days: 7
 
+  typescript-client:
+
+    name: TypeScript Client Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install dependencies
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Generate proto stubs
+        working-directory: clients/typescript
+        run: npm run generate-protos
+
+      - name: Type-check
+        working-directory: clients/typescript
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        working-directory: clients/typescript
+        run: npm run test:unit
+
+  typescript-integration-linux:
+    name: TypeScript Client Integration Tests (Linux)
+    runs-on: ubuntu-latest
+    needs: server-linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gRPC runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgrpc++-dev protobuf-compiler
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-linux
+          path: build/src/server
+
+      - name: Make server executable
+        run: chmod +x build/src/server/beebium-model-b
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Generate proto stubs
+        working-directory: clients/typescript
+        run: npm run generate-protos
+
+      - name: Run all tests (unit + integration)
+        working-directory: clients/typescript
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+        run: npm test
+
+  typescript-integration-macos-arm64:
+    name: TypeScript Client Integration Tests (macOS arm64)
+    runs-on: macos-14
+    needs: server-macos-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos-arm64
+          path: build/src/server
+
+      - name: Make server executable
+        run: chmod +x build/src/server/beebium-model-b
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Install dependencies
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Generate proto stubs
+        working-directory: clients/typescript
+        run: npm run generate-protos
+
+      - name: Run all tests (unit + integration)
+        working-directory: clients/typescript
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+        run: npm test
+
+  typescript-integration-macos-x86_64:
+    name: TypeScript Client Integration Tests (macOS x86_64)
+    runs-on: macos-15-intel
+    needs: server-macos-x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download server binary
+        uses: actions/download-artifact@v4
+        with:
+          name: beebium-server-macos-x86_64
+          path: build/src/server
+
+      - name: Make server executable
+        run: chmod +x build/src/server/beebium-model-b
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install protoc
+        run: brew install protobuf
+
+      - name: Install dependencies
+        working-directory: clients/typescript
+        run: npm ci
+
+      - name: Generate proto stubs
+        working-directory: clients/typescript
+        run: npm run generate-protos
+
+      - name: Run all tests (unit + integration)
+        working-directory: clients/typescript
+        env:
+          BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
+        run: npm test
+
   python-client:
 
     name: Python Client Unit Tests
