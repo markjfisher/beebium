@@ -318,12 +318,49 @@ mode, matching the Python test fixture pattern):
   does not. This means some decompressed byte(s) differ, causing
   different LZ control flow that consumes more bits.
 
-## Next Step: Memory Comparison
+## Differential Memory Comparison Results
 
-The most pragmatic approach: run both emulators past the decompression
-phase, then compare the full 64K parasite memory. The first differing
-byte reveals where the bit-serial decompression diverged. No breakpoints
-needed -- just run to timeout and dump memory.
+Comparing parasite memory when jsbeeb exits the decompressor (`$0816`)
+vs Beebium hangs in R1 poll (`$09D6`). Only 1225/65280 bytes differ.
+
+Differing pages: `$0000, $0100, $0B00, $0C00, $0D00, $FC00, $FD00, $FF00`
+
+Per-page first divergence:
+
+| Address | jsbeeb | Beebium | Notes |
+|---------|--------|---------|-------|
+| `$0030` | `$00`  | `$FC`   | Dest pointer low byte (decompressor state) |
+| `$01EE` | `$C1`  | `$41`   | Stack area (bit 7 differs) |
+| `$0BD2` | `$0A`  | `$00`   | First decompressed data divergence |
+| `$0C00` | `$0A`  | `$00`   | Continuation |
+| `$0D00` | `$E8`  | `$4A`   | Continuation |
+| `$FC00` | `$2C`  | `$20`   | First output byte (decompressor writes from $FC00) |
+| `$FD00` | `$85`  | `$BD`   | Second output page |
+| `$FF00` | `$20`  | `$FF`   | Near end of first output pass |
+
+The decompressor writes from `$FC00`, wrapping through the full 64K
+address space. In output order, `$FC00` is byte 0 of the output. The
+divergence at `$FC00` (`$2C` vs `$20`) means the **very first output
+byte** differs.
+
+### Leading hypothesis: parasite RAM initialisation
+
+The LZ decompressor uses back-references to previously written output.
+If the parasite RAM at `$FC00+` has different initial values before
+decompression starts, back-references into uninitialised memory would
+produce different output even with identical R1 input data.
+
+Both B-Em and Beebium zero the parasite's 64K RAM on startup (confirmed
+in the earlier investigation). But jsbeeb may initialise it differently,
+or the Tube Client ROM's boot sequence may write values to specific
+addresses that the decompressor later back-references.
+
+### Next step
+
+Compare parasite memory at `$FC00-$FFFF` on both emulators BEFORE the
+decompressor starts writing (i.e. at `$0810`, the first R4 ack). If
+the pre-decompression memory differs, the RAM initialisation hypothesis
+is confirmed and the fix is to match jsbeeb's initialisation pattern.
 
 ## External References
 
