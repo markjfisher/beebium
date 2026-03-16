@@ -317,9 +317,12 @@ public:
                 for (auto& bp : breakpoint_entries_) {
                     if (bp.address == pc) {
                         if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
-                        return;
+                        if (paused_.load()) return;
+                        // Continue checking: multiple breakpoints at the same
+                        // address may have different conditions.
+                    } else if (bp.address > pc) {
+                        break;
                     }
-                    if (bp.address > pc) break;  // sorted: early exit
                 }
             }
 

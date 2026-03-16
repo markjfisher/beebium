@@ -1330,6 +1330,266 @@ TEST_CASE("Watchpoint on address range fires for any address in range", "[grpc][
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// Conditional Breakpoint Tests (Phase 4)
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("Conditional breakpoint fires only when A == 0x42", "[grpc][debugger][breakpoint][conditional][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Loop: LDA values from a table, INX, BNE loop
+    //   $0400: LDX #$00
+    //   $0402: LDA $0420,X   ; load from table at $0420
+    //   $0405: INX
+    //   $0406: CPX #$04      ; 4 entries
+    //   $0408: BNE $0402
+    //   $040A: NOP
+    plant_code(fixture.machine(), 0x0400, {
+        0xA2, 0x00,             // LDX #$00
+        0xBD, 0x20, 0x04,       // LDA $0420,X
+        0xE8,                   // INX
+        0xE0, 0x04,             // CPX #$04
+        0xD0, 0xF8,             // BNE $0402 (relative -8)
+        0xEA,                   // NOP
+    });
+    // Table at $0420: values to load
+    fixture.machine().write(0x0420, 0x10);  // iteration 0: A=$10
+    fixture.machine().write(0x0421, 0x42);  // iteration 1: A=$42 <- should fire
+    fixture.machine().write(0x0422, 0x99);  // iteration 2: A=$99
+    fixture.machine().write(0x0423, 0xFF);  // iteration 3: A=$FF
+    ready_to_run(fixture.machine());
+
+    // Conditional breakpoint at LDA instruction: stop only when A == 0x42
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        req.set_condition("A == 0x42");
+        beebium::AddBreakpointResponse resp;
+        auto status = fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(status.ok());
+        REQUIRE(resp.success());
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(500);
+
+    CHECK(fixture.machine().is_paused());
+    // The breakpoint fires BEFORE executing the instruction at $0402.
+    // A was set to $0x42 by the previous iteration's LDA, and the condition
+    // evaluated to true, so we stopped. X should be 2 (two INX executed).
+    CHECK(static_cast<int>(fixture.machine().a()) == 0x42);
+    CHECK(static_cast<int>(fixture.machine().x()) == 0x02);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearBreakpointsResponse resp;
+        fixture.debugger().ClearBreakpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Breakpoint with hits == 3 fires on third hit", "[grpc][debugger][breakpoint][conditional][hits][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Tight loop: INX, JMP back
+    //   $0400: LDX #$00
+    //   $0402: INX
+    //   $0403: JMP $0402
+    plant_code(fixture.machine(), 0x0400, {
+        0xA2, 0x00,             // LDX #$00
+        0xE8,                   // INX
+        0x4C, 0x02, 0x04,       // JMP $0402
+    });
+    ready_to_run(fixture.machine());
+
+    // Breakpoint at $0402 with condition "hits == 3"
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        req.set_condition("hits == 3");
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(500);
+
+    CHECK(fixture.machine().is_paused());
+    // X should be 2: the breakpoint fires before the 3rd INX executes.
+    // hits 1 (X=0), hits 2 (X=1), hits 3 (X=2) -> stops
+    CHECK(static_cast<int>(fixture.machine().x()) == 0x02);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearBreakpointsResponse resp;
+        fixture.debugger().ClearBreakpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Invalid condition string returns gRPC error", "[grpc][debugger][breakpoint][conditional]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext ctx;
+    beebium::AddBreakpointRequest req;
+    req.set_address(0x1000);
+    req.set_condition("invalid garbage !@#");
+    beebium::AddBreakpointResponse resp;
+
+    auto status = fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_CASE("Invalid watchpoint condition returns gRPC error", "[grpc][debugger][watchpoint][conditional]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext ctx;
+    beebium::AddWatchpointRequest req;
+    req.set_start_address(0x1000);
+    req.set_end_address(0x1001);
+    req.set_condition("foo bar");
+    beebium::AddWatchpointResponse resp;
+
+    auto status = fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_CASE("Conditional watchpoint fires only when value matches", "[grpc][debugger][watchpoint][conditional][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Write three different values to $0500
+    //   LDA #$10 ; STA $0500
+    //   LDA #$42 ; STA $0500   <- watchpoint should fire here (value $42)
+    //   LDA #$99 ; STA $0500
+    //   NOP
+    plant_code(fixture.machine(), 0x0400, {
+        0xA9, 0x10,             // LDA #$10
+        0x8D, 0x00, 0x05,       // STA $0500
+        0xA9, 0x42,             // LDA #$42
+        0x8D, 0x00, 0x05,       // STA $0500
+        0xA9, 0x99,             // LDA #$99
+        0x8D, 0x00, 0x05,       // STA $0500
+        0xEA,                   // NOP
+    });
+    ready_to_run(fixture.machine());
+
+    // Write watchpoint on $0500 with condition: stop only when A == 0x42
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x0500);
+        req.set_end_address(0x0501);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        req.set_condition("A == 0x42");
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(500);
+
+    CHECK(fixture.machine().is_paused());
+    // The first STA (A=$10) matched the address but the condition was false.
+    // The second STA (A=$42) matched and condition was true -> stopped.
+    CHECK(fixture.machine().peek(0x0500) == 0x42);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearWatchpointsResponse resp;
+        fixture.debugger().ClearWatchpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Multiple breakpoints at same address with different conditions", "[grpc][debugger][breakpoint][conditional][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Loop: increment A from 0, breakpoint at loop top
+    //   $0400: LDA #$00
+    //   $0402: CLC ; ADC #$01 ; JMP $0402
+    plant_code(fixture.machine(), 0x0400, {
+        0xA9, 0x00,             // LDA #$00
+        0x18,                   // CLC
+        0x69, 0x01,             // ADC #$01
+        0x4C, 0x02, 0x04,       // JMP $0402
+    });
+    ready_to_run(fixture.machine());
+
+    // Two breakpoints at $0402 with different conditions
+    uint32_t bp1_id, bp2_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        req.set_condition("A == 0x03");
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        bp1_id = resp.id();
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        req.set_condition("A == 0x05");
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        bp2_id = resp.id();
+    }
+
+    // A counts up: 0, 1, 2, 3... Should stop when A==3 (first matching condition)
+    fixture.machine().resume();
+    fixture.machine().run(500);
+
+    CHECK(fixture.machine().is_paused());
+    int a_val = static_cast<int>(fixture.machine().a());
+    CHECK((a_val == 0x03 || a_val == 0x05));
+
+    if (a_val == 0x03) {
+        // Remove the A==3 breakpoint and resume to hit A==5
+        grpc::ClientContext ctx;
+        beebium::RemoveBreakpointRequest req;
+        req.set_id(bp1_id);
+        beebium::RemoveBreakpointResponse resp;
+        fixture.debugger().RemoveBreakpoint(&ctx, req, &resp);
+    } else {
+        // Remove the A==5 breakpoint and resume to hit A==3... wait, we passed it.
+        // This case shouldn't happen since A==3 comes before A==5 chronologically.
+        FAIL("A==5 fired before A==3 -- unexpected ordering");
+    }
+
+    fixture.machine().step_instruction();
+    fixture.machine().resume();
+    fixture.machine().run(500);
+
+    CHECK(fixture.machine().is_paused());
+    CHECK(static_cast<int>(fixture.machine().a()) == 0x05);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearBreakpointsResponse resp;
+        fixture.debugger().ClearBreakpoints(&ctx, req, &resp);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Original watchpoint lifecycle test
+//////////////////////////////////////////////////////////////////////////////
+
 TEST_CASE("Watchpoint lifecycle: add/remove/list/clear", "[grpc][debugger][watchpoint]") {
     DebuggerTestFixture fixture;
 

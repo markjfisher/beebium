@@ -55,9 +55,10 @@ void ParasiteRunner::run(uint64_t cycles) {
                 for (auto& bp : breakpoint_entries_) {
                     if (bp.address == pc) {
                         if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
-                        return;
+                        if (paused_.load(std::memory_order_acquire)) return;
+                    } else if (bp.address > pc) {
+                        break;
                     }
-                    if (bp.address > pc) break;  // sorted: early exit
                 }
             }
 
