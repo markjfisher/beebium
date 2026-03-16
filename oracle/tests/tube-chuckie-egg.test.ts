@@ -356,8 +356,22 @@ describe('Tube CE2023 Differential', () => {
                         console.log(`         ${markers}`);
                     }
                 }
+                // For each divergent page, show the first differing offset
+                console.log('\nPer-page first divergence:');
+                for (const page of diffPages) {
+                    const addr = page * 256;
+                    const jsData = oracle.readParasiteMemory(addr, 256);
+                    const beeData = await parasite.memory.address.peek.read(addr, 256);
+                    for (let i = 0; i < 256; i++) {
+                        if (jsData[i] !== beeData[i]) {
+                            const a = addr + i;
+                            console.log(`  $${a.toString(16).toUpperCase().padStart(4, '0')}: js=$${jsData[i].toString(16).toUpperCase().padStart(2, '0')} bee=$${beeData[i].toString(16).toUpperCase().padStart(2, '0')}`);
+                            break;
+                        }
+                    }
+                }
             } else {
-                console.log('\nAll bytes match -- state is identical at $0810!');
+                console.log('\nAll bytes match!');
             }
 
             await parasite.close();
