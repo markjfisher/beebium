@@ -434,14 +434,14 @@ export class Beebium {
                     return predicate();
                 }
 
+                // Check predicate without stopping -- peek-based reads
+                // are side-effect-free and don't require a stopped machine.
                 if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
-                    await this.debugger.stop();
-                    if (await counterpart.debugger.isRunning()) await counterpart.debugger.stop();
                     if (await predicate()) {
+                        await this.debugger.stop();
+                        if (await counterpart.debugger.isRunning()) await counterpart.debugger.stop();
                         return true;
                     }
-                    try { await counterpart.debugger.run(); } catch { /* already running */ }
-                    await this.debugger.run();
                 }
             }
         } finally {

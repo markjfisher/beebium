@@ -453,13 +453,13 @@ class Beebium:
                     self.debugger.ensure_stopped()
                     counterpart.debugger.ensure_stopped()
                     return predicate()
+                # Check predicate without stopping -- peek-based reads
+                # are side-effect-free and don't require a stopped machine.
                 if current - start_cycles >= clock_hz:
-                    self.debugger.stop()
-                    counterpart.debugger.ensure_stopped()
                     if predicate():
+                        self.debugger.ensure_stopped()
+                        counterpart.debugger.ensure_stopped()
                         return True
-                    counterpart.debugger.ensure_running()
-                    self.debugger.run()
         finally:
             self.debugger.ensure_stopped()
             counterpart.debugger.ensure_stopped()
