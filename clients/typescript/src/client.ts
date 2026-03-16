@@ -6,6 +6,7 @@
  * and managing a server subprocess.
  */
 
+import { randomUUID } from "node:crypto";
 import { Connection } from "./connection.js";
 import { ServerProcess, type ServerProcessOptions } from "./server-process.js";
 import { Debugger } from "./debugger.js";
@@ -87,7 +88,7 @@ export class Beebium {
     ) {
         this.connection = connection;
         this.server = server ?? null;
-        this.instanceUuid = instanceUuid ?? crypto.randomUUID();
+        this.instanceUuid = instanceUuid ?? randomUUID();
     }
 
     /**
