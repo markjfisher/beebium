@@ -333,8 +333,9 @@ class Debugger:
     def wait_for_stop(self) -> ExecutionStateEvent:
         """Wait for the machine to stop executing.
 
-        Subscribes to the execution state stream and returns the first
-        event where the machine is not running.
+        Subscribes to the execution state stream and waits for a transition
+        to the stopped state. If the machine is already stopped when this is
+        called, it waits until the machine runs and then stops again.
 
         Returns:
             The event that caused the machine to stop.
@@ -342,8 +343,11 @@ class Debugger:
         Raises:
             DebuggerError: If the stream ends without a stop event.
         """
+        saw_running = False
         for event in self.watch_execution_state():
-            if not event.state.is_running:
+            if event.state.is_running:
+                saw_running = True
+            elif saw_running:
                 return event
         raise DebuggerError("Execution state stream ended without a stop event")
 

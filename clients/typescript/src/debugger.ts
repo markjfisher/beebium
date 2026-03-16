@@ -242,12 +242,16 @@ export class Debugger {
     /**
      * Wait for the machine to stop executing.
      *
-     * Subscribes to the execution state stream and returns the first
-     * event where the machine is not running.
+     * Subscribes to the execution state stream and waits for a transition
+     * to the stopped state. If the machine is already stopped when this is
+     * called, it waits until the machine runs and then stops again.
      */
     async waitForStop(): Promise<ExecutionStateEvent> {
+        let sawRunning = false;
         for await (const event of this.watchExecutionState()) {
-            if (!event.state.isRunning) {
+            if (event.state.isRunning) {
+                sawRunning = true;
+            } else if (sawRunning) {
                 return event;
             }
         }

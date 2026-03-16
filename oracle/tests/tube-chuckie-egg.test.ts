@@ -85,14 +85,13 @@ async function bootBeebiumToParasiteAddress(
     // Insert disc BEFORE typing command
     await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
 
-    // Resume parasite first (so it's running when we subscribe),
-    // then subscribe to stop events, then resume the host.
-    await parasite.debugger.run();
+    // Subscribe to stop events BEFORE resuming. waitForStop() waits for
+    // a running->stopped transition, so it won't return on the initial
+    // "already stopped" state.
     const stopPromise = parasite.debugger.waitForStop();
+    await parasite.debugger.run();
     await host.debugger.run();
     await host.keyboard.type("*EXEC !BOOT\r");
-
-    // Wait for the parasite to hit the breakpoint via event stream.
     await stopPromise;
 
     // Clean up breakpoint
@@ -182,11 +181,10 @@ describe('Tube CE2023 Differential', () => {
                     // jsbeeb side: run to next R1 read
                     await oracle.runUntilParasiteAddress(AFTER_R1_READ, 5);
 
-                    // Beebium side: resume parasite (so it's running when we
-                    // subscribe), then subscribe, then resume host.
-                    await parasite.debugger.run();
+                    // Beebium side: subscribe, resume both, wait for breakpoint.
                     const parasiteStopPromise = parasite.debugger.waitForStop();
                     await host.debugger.run();
+                    await parasite.debugger.run();
                     await parasiteStopPromise;
                     if (await host.debugger.isRunning()) await host.debugger.stop();
 
