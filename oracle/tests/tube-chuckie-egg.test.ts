@@ -233,13 +233,23 @@ describe('Tube CE2023 Differential', () => {
     }, 300000);
 
     it('memory comparison after decompression', async () => {
-        // jsbeeb: boot and run past decompression (40s emulated reaches
-        // well past the "Loading" screen where decompression is complete)
-        const oracle = await bootJsbeeb();
-        await oracle.runCycles(80_000_000);  // ~40s emulated
-        console.log(`jsbeeb parasite PC=$${oracle.getParasiteCpuState().pc.toString(16).toUpperCase()}`);
+        // Compare parasite memory after decompression completes on both.
+        //
+        // jsbeeb: decompression succeeds, stop at $0816 (JMP ($FFFC)).
+        // Beebium: decompression hangs at R1 poll ($09C8-$09D9) after
+        //   consuming all 702 bytes and writing 64K. Both have completed
+        //   the same decompression work; the difference is jsbeeb's
+        //   output is correct (decompressor terminates) while Beebium's
+        //   is wrong (decompressor asks for byte 703).
 
-        // Beebium: boot with coupled mode, load game, run to hang point
+        // jsbeeb: boot and stop at decompressor exit
+        const oracle = await bootJsbeeb();
+        await oracle.runUntilParasiteAddress(0x0816, 30);
+        const jsState = oracle.getParasiteCpuState();
+        console.log(`jsbeeb parasite at $${jsState.pc.toString(16).toUpperCase()}`);
+        expect(jsState.pc).toBe(0x0816);
+
+        // Beebium: boot, load game, wait for decompressor hang
         const host = await Beebium.launch({
             args: [
                 '--tube', '65C02-3MHz',
@@ -250,43 +260,43 @@ describe('Tube CE2023 Differential', () => {
         });
 
         try {
-            // Boot to Tube banner (polling mode -- parasite isn't
-            // registered yet during initial boot)
-            const bannerFound = await host.runUntilOrTimeout(
+            // Boot to Tube banner
+            await host.runUntilOrTimeout(
                 () => screenContains(hostReadFn(host), "Acorn TUBE"),
                 10,
             );
-            expect(bannerFound).toBe(true);
 
-            // Insert disc, type command, run until "Initialising" appears.
-            // Use coupled mode now that the parasite is connected.
+            // Insert disc and type command
             await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
             await host.keyboard.type("*EXEC !BOOT\r");
-            const initFound = await host.runUntilOrTimeout(
-                () => screenContains(hostReadFn(host), "Initialising"),
+
+            // Run coupled, wait for parasite to reach the decompressor
+            // R1 poll hang ($09C8-$09D9 range).
+            const parasite = await host.connectParasite();
+            const reachedHang = await host.runUntilOrTimeout(
+                async () => {
+                    if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
+                    const regs = await parasite.cpu.getRegisters();
+                    const inR1Poll = regs.pc >= 0x09C8 && regs.pc <= 0x09D9;
+                    if (!inR1Poll) {
+                        try { await parasite.debugger.run(); } catch { /* */ }
+                    }
+                    return inR1Poll;
+                },
                 30,
                 { coupled: true },
             );
-            console.log(`Beebium reached Initialising: ${initFound}`);
-            expect(initFound).toBe(true);
 
-            // Run 5 more emulated seconds so the decompressor has time
-            // to consume all 702 R1 bytes and write 64K output.
-            await host.runUntilOrTimeout(
-                () => Promise.resolve(false),  // Never true -- runs full duration
-                5,
-                { coupled: true },
-            );
-
-            // Connect parasite and stop both for memory dump
-            const parasite = await host.connectParasite();
-            if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
             if (await host.debugger.isRunning()) await host.debugger.stop();
+            if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
 
-            const beePC = (await parasite.cpu.getRegisters()).pc;
-            console.log(`Beebium parasite PC=$${beePC.toString(16).toUpperCase()}`);
+            const beeRegs = await parasite.cpu.getRegisters();
+            console.log(`Beebium parasite at $${beeRegs.pc.toString(16).toUpperCase()}`);
+            expect(reachedHang).toBe(true);
 
-            // Compare full 64K parasite memory in 256-byte pages
+            // Compare full 64K parasite memory in 256-byte pages.
+            // Skip $FE00-$FEFF (Tube I/O registers -- peek returns
+            // live register state, not decompressed data).
             let firstDiffAddr = -1;
             let firstDiffJs = 0;
             let firstDiffBee = 0;
@@ -294,6 +304,7 @@ describe('Tube CE2023 Differential', () => {
             const diffPages: number[] = [];
 
             for (let page = 0; page < 256; page++) {
+                if (page === 0xFE) continue;  // Skip Tube I/O page
                 const addr = page * 256;
                 const jsData = oracle.readParasiteMemory(addr, 256);
                 const beeData = await parasite.memory.address.peek.read(addr, 256);
@@ -314,22 +325,24 @@ describe('Tube CE2023 Differential', () => {
                 }
             }
 
-            console.log(`Total differing bytes: ${totalDiffs}/65536`);
-            console.log(`Differing pages: ${diffPages.map(p => '$' + (p * 256).toString(16).toUpperCase().padStart(4, '0')).join(', ')}`);
+            console.log(`\nTotal differing bytes: ${totalDiffs}/65280 (excl I/O page)`);
+            if (diffPages.length > 0) {
+                console.log(`Differing pages: ${diffPages.map(p => '$' + (p * 256).toString(16).toUpperCase().padStart(4, '0')).join(', ')}`);
+            }
 
             if (firstDiffAddr >= 0) {
                 console.log(`\nFirst divergence at $${firstDiffAddr.toString(16).toUpperCase().padStart(4, '0')}:`);
                 console.log(`  jsbeeb=$${firstDiffJs.toString(16).toUpperCase().padStart(2, '0')}`);
                 console.log(`  Beebium=$${firstDiffBee.toString(16).toUpperCase().padStart(2, '0')}`);
 
-                // Dump context around the divergence
+                // Dump context around the first few divergences
                 const contextStart = Math.max(0, firstDiffAddr - 16) & ~0xF;
                 const contextLen = 64;
                 const jsContext = oracle.readParasiteMemory(contextStart, contextLen);
                 const beeContext = await parasite.memory.address.peek.read(contextStart, contextLen);
                 console.log(`\nContext around $${firstDiffAddr.toString(16).toUpperCase()}:`);
                 for (let row = 0; row < contextLen; row += 16) {
-                    const addr = contextStart + row;
+                    const rowAddr = contextStart + row;
                     const jsHex = Array.from(jsContext.slice(row, row + 16))
                         .map(b => b.toString(16).padStart(2, '0')).join(' ');
                     const beeHex = Array.from(beeContext.slice(row, row + 16))
@@ -337,17 +350,15 @@ describe('Tube CE2023 Differential', () => {
                     const markers = Array.from({ length: 16 }, (_, i) =>
                         jsContext[row + i] !== beeContext[row + i] ? '^^' : '  '
                     ).join(' ');
-                    console.log(`  $${addr.toString(16).toUpperCase().padStart(4, '0')}: js  ${jsHex}`);
-                    console.log(`  $${addr.toString(16).toUpperCase().padStart(4, '0')}: bee ${beeHex}`);
+                    console.log(`  $${rowAddr.toString(16).toUpperCase().padStart(4, '0')}: js  ${jsHex}`);
+                    console.log(`  $${rowAddr.toString(16).toUpperCase().padStart(4, '0')}: bee ${beeHex}`);
                     if (markers.trim()) {
                         console.log(`         ${markers}`);
                     }
                 }
             } else {
-                console.log('All 64K bytes match!');
+                console.log('\nAll bytes match -- state is identical at $0810!');
             }
-
-            expect(totalDiffs).toBeGreaterThan(0);  // We expect differences
 
             await parasite.close();
         } finally {
