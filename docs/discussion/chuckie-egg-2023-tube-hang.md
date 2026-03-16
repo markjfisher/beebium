@@ -514,9 +514,16 @@ finds byte 2 waiting (triggering another NMI immediately). In jsbeeb's model,
 the second write would overwrite the first, so the NMI handler only ever sees
 the most recent byte.
 
-**This is the most likely root cause of the CE2023 hang.** The R3 NMI transfer
-delivers different data because 1-byte mode R3 behaves as a latch (jsbeeb)
-vs a 2-slot FIFO (Beebium).
+****Update:** Fixed the R3 H-to-P bus stretching to use V-flag threshold
+(block when count >= 1 in 1-byte mode). This is correct but did NOT fix
+CE2023. The real hardware has a 2-byte FIFO (hoglet confirmed), and the
+bus stretching prevents the host from writing more than threshold bytes.
+The fix brings Beebium in line with B-Em but the hang persists.
+
+### PNMI revert (committed, correct per jsbeeb/App Note)
+
+Reverted the PNMI-only-on-H2P-data change. jsbeeb and the Tube Application
+Note both specify PNMI fires on H-to-P data OR P-to-H space in 1-byte mode.
 
 ### R1 status-checked gate (tested, reverted)
 
