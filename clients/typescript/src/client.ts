@@ -307,35 +307,19 @@ export class Beebium {
     /**
      * Run the emulator for the specified number of emulated seconds.
      *
-     * Uses the emulator's cycle counter for timing, not wall-clock time.
-     * The emulator is left stopped on return. If it was already running,
-     * execution continues; if stopped, it is started first.
+     * Computes the cycle count from the clock speed and steps that many
+     * cycles synchronously. The emulator must be stopped on entry and
+     * is left stopped on return.
      *
      * @param seconds - Number of emulated BBC-time seconds to run.
-     * @param pollIntervalMs - Real-time ms between cycle count polls (default 20).
      */
-    async runForEmulatedSeconds(seconds: number, pollIntervalMs = 20): Promise<void> {
+    async runForEmulatedSeconds(seconds: number): Promise<void> {
         const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
-        const cycleBudget = Math.round(seconds * clockHz);
-        const startCycles = (await this.debugger.getState()).cycleCount;
-        const targetCycles = startCycles + cycleBudget;
-
-        if (await this.debugger.isStopped()) {
-            await this.debugger.run();
+        const cycles = Math.round(seconds * clockHz);
+        if (await this.debugger.isRunning()) {
+            await this.debugger.stop();
         }
-        try {
-            while (true) {
-                await new Promise(r => setTimeout(r, pollIntervalMs));
-                const state = await this.debugger.getState();
-                if (state.cycleCount >= targetCycles || !state.isRunning) {
-                    break;
-                }
-            }
-        } finally {
-            if (await this.debugger.isRunning()) {
-                await this.debugger.stop();
-            }
-        }
+        await this.debugger.stepCycles(cycles);
     }
 
     /**

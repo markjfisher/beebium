@@ -357,28 +357,20 @@ class Beebium:
     # Emulated time helpers
     # =========================================================================
 
-    def run_for_emulated_seconds(self, seconds: float, poll_interval: float = 0.02) -> None:
+    def run_for_emulated_seconds(self, seconds: float) -> None:
         """Run the emulator for the specified number of emulated seconds.
 
-        Uses the emulator's cycle counter for timing, not wall-clock time.
-        The emulator is left stopped on return.
+        Computes the cycle count from the clock speed and steps that many
+        cycles synchronously. The emulator must be stopped on entry and
+        is left stopped on return.
 
         Args:
             seconds: Number of emulated BBC-time seconds to run.
-            poll_interval: Real-time seconds between cycle count polls.
         """
-        import time as _time
         clock_hz = self.system.clock_speed_hz or 2_000_000
-        cycle_budget = int(seconds * clock_hz)
-        start_cycles = self.debugger.cycle_count
-        target_cycles = start_cycles + cycle_budget
-
-        with self.debugger.running():
-            while True:
-                _time.sleep(poll_interval)
-                current = self.debugger.cycle_count
-                if current >= target_cycles:
-                    return
+        cycles = int(seconds * clock_hz)
+        self.debugger.ensure_stopped()
+        self.debugger.step_cycles(cycles)
 
     def run_until_or_timeout(
         self, predicate, emulated_seconds: float, poll_interval: float = 0.02

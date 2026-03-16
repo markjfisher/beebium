@@ -49,11 +49,13 @@ async function bootBeebium(): Promise<Beebium> {
         ],
         timeoutMs: 20000,
     });
-    // Boot for 5 emulated seconds (reaches BASIC prompt + Tube banner)
+    // Boot for 5 emulated seconds (BASIC prompt + Tube banner)
     await host.runForEmulatedSeconds(5);
+    // Insert disc and type command
     await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
-    await host.debugger.run();
     await host.keyboard.type("*EXEC !BOOT\r");
+    // Run 10 more emulated seconds for game to load
+    await host.runForEmulatedSeconds(10);
     return host;
 }
 
