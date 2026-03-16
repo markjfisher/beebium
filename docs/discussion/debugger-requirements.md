@@ -12,6 +12,38 @@ The requirements are driven by real needs encountered during differential
 testing of CE2023, where the decompressor running on the parasite produces
 different output on Beebium than on the reference emulator (jsbeeb).
 
+### Interim hacks to be replaced
+
+The following are functional workarounds committed during the CE2023
+investigation. They should be replaced by proper implementations based
+on the requirements in this document:
+
+- **`bus_stretch_cancel` flag in `TubeShared`**: Set by
+  `Machine::pause()` via callback, cleared by `resume()` and
+  `prepare_for_step()`. Works but bolted on via callbacks rather than
+  being integral to the Tube port design. See Section 6.2.
+
+- **`prepare_for_step()` on Machine and ParasiteRunner**: Clears the
+  bus stretch cancel flag before stepping RPCs. Should not be needed
+  once bus stretch cancellation is properly integrated.
+
+- **Coupled mode in `run_until_or_timeout`**: Connects to the parasite,
+  runs both, polls predicates without stopping. Works but the API is
+  messy (the `coupled` flag, auto-discovery of the counterpart inside
+  the method). Should be replaced by the `CoupledSystem` abstraction
+  (Section 3.2).
+
+- **Startup retry loop in TypeScript `runUntilOrTimeout`**: Retries
+  `run()` up to 50 times to handle the `WaitMode::Api` race where
+  the machine appears running before `handle_wait_mode` pauses it.
+  A proper fix would be for the server to not report ready until the
+  wait mode has been applied.
+
+- **`waitForStop()` transition semantics**: Skips the initial state and
+  waits for a running-to-stopped transition. This works around the
+  event coalescing problem (Section 4.3) but is fragile. A proper
+  event queue would make the semantics cleaner.
+
 ## 1. Single-Processor Debugging
 
 These requirements apply to both host and parasite independently.
