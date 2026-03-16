@@ -20,17 +20,31 @@ import { fake6502 } from '../../../jsbeeb/src/fake6502.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
 import { findModel } from '../../../jsbeeb/src/models.js';
 
+export interface JsbeebOracleOptions {
+    /** Use real Video class instead of FakeVideo for accurate vsync timing */
+    useRealVideo?: boolean;
+    /** Enable 65C02 Tube second processor */
+    tube?: boolean;
+}
+
 export class JsbeebOracle {
     private machine: TestMachine | null = null;
     private cycleCount: number = 0;
     private realVideo: boolean = false;
+    private tubeEnabled: boolean = false;
 
     /**
      * Initialize the oracle with the specified BBC model.
      * @param model - Model name (default: "B-DFS1.2")
-     * @param useRealVideo - Use real Video class instead of FakeVideo for accurate vsync timing
+     * @param options - Configuration options, or boolean for backwards compat (useRealVideo)
      */
-    async initialize(model: string = "B-DFS1.2", useRealVideo: boolean = true): Promise<void> {
+    async initialize(model: string = "B-DFS1.2", options: JsbeebOracleOptions | boolean = {}): Promise<void> {
+        // Backwards compatibility: second arg was previously a boolean (useRealVideo)
+        if (typeof options === 'boolean') {
+            options = { useRealVideo: options };
+        }
+        const useRealVideo = options.useRealVideo ?? true;
+        this.tubeEnabled = options.tube ?? false;
         this.realVideo = useRealVideo;
 
         if (useRealVideo) {
@@ -47,7 +61,7 @@ export class JsbeebOracle {
 
             // Create processor with real video
             // Use fake6502 with video option to create a custom Cpu6502
-            const processor = fake6502(modelInfo, { video });
+            const processor = fake6502(modelInfo, { video, tube: this.tubeEnabled });
 
             // Create a TestMachine-like wrapper
             this.machine = {
@@ -88,6 +102,9 @@ export class JsbeebOracle {
             await this.machine.initialise();
         } else {
             // Use standard TestMachine with FakeVideo
+            if (this.tubeEnabled) {
+                throw new Error("Tube requires useRealVideo: true (TestMachine does not support Tube)");
+            }
             this.machine = new TestMachine(model);
             await this.machine.initialise();
         }
@@ -376,5 +393,125 @@ export class JsbeebOracle {
      */
     getCycles(): number {
         return this.cycleCount;
+    }
+
+    // =========================================================================
+    // Tube second processor support
+    // =========================================================================
+
+    /**
+     * Whether the Tube is enabled and has a real parasite CPU.
+     */
+    hasTube(): boolean {
+        if (!this.machine) return false;
+        // FakeTube has no 'memory' property; real Tube6502 does
+        return this.tubeEnabled && this.processor.tube?.memory != null;
+    }
+
+    /**
+     * Get the parasite (Tube6502) object for direct access.
+     * @throws if Tube is not enabled
+     */
+    private get parasiteProcessor(): any {
+        if (!this.hasTube()) throw new Error("Tube not enabled");
+        return this.processor.tube;
+    }
+
+    /**
+     * Get parasite CPU register state.
+     */
+    getParasiteCpuState(): CpuState {
+        const p = this.parasiteProcessor;
+        return {
+            a: p.a,
+            x: p.x,
+            y: p.y,
+            sp: p.s,
+            pc: p.pc,
+            p: p.p.asByte() & P_STATUS_MASK,
+        };
+    }
+
+    /**
+     * Read parasite memory (side-effect-free, direct RAM access).
+     * Does NOT route through Tube registers at $FEF8-$FEFF.
+     */
+    readParasiteMemory(address: number, length: number): Uint8Array {
+        const mem = this.parasiteProcessor.memory;
+        return new Uint8Array(mem.buffer, address, length);
+    }
+
+    /**
+     * Run the host (and thus the parasite) until the parasite PC reaches
+     * the given address. Since jsbeeb has no parasite-level debug hook, we
+     * run the host in small cycle batches and check the parasite PC after each.
+     *
+     * @param address - Target parasite PC address
+     * @param timeoutSeconds - Timeout in seconds (default: 30)
+     */
+    async runUntilParasiteAddress(address: number, timeoutSeconds: number = 30): Promise<void> {
+        if (!this.hasTube()) throw new Error("Tube not enabled");
+        const batchSize = 200;
+        let remaining = timeoutSeconds * 2_000_000;
+        const parasiteCpu = this.parasiteProcessor;
+
+        while (remaining > 0) {
+            this.processor.execute(batchSize);
+            this.cycleCount += batchSize;
+            remaining -= batchSize;
+            if (parasiteCpu.pc === address) return;
+        }
+        throw new Error(
+            `Parasite did not reach $${address.toString(16).toUpperCase()} in ${timeoutSeconds}s`
+        );
+    }
+
+    /**
+     * Type text into the emulator via the system VIA keyboard matrix.
+     * Simulates keypresses with short cycle runs between them, following
+     * jsbeeb's TestMachine.type() pattern.
+     *
+     * @param text - Text to type (supports a-z, A-Z, 0-9, common symbols, \\r for RETURN)
+     */
+    async type(text: string): Promise<void> {
+        if (!this.machine) throw new Error("Machine not initialized");
+        const sysvia = this.processor.sysvia;
+        const cyclesPerKey = 40_000;
+
+        for (const ch of text) {
+            let code: number;
+            let shift = false;
+
+            if (ch === '\r') {
+                code = 13;  // RETURN
+            } else if (ch === ' ') {
+                code = 32;
+            } else if (ch === '*') {
+                code = '*'.charCodeAt(0);
+                shift = true;
+            } else if (ch === '!') {
+                code = '!'.charCodeAt(0);
+                shift = true;
+            } else if (ch === '.') {
+                code = '.'.charCodeAt(0);
+            } else if (ch >= 'A' && ch <= 'Z') {
+                code = ch.charCodeAt(0);
+                shift = true;
+            } else if (ch >= 'a' && ch <= 'z') {
+                code = ch.toUpperCase().charCodeAt(0);
+            } else if (ch >= '0' && ch <= '9') {
+                code = ch.charCodeAt(0);
+            } else {
+                code = ch.charCodeAt(0);
+            }
+
+            if (shift) sysvia.keyDown(16);  // SHIFT key code
+            await this.runCycles(cyclesPerKey);
+            sysvia.keyDown(code);
+            await this.runCycles(cyclesPerKey);
+            sysvia.keyUp(code);
+            if (shift) sysvia.keyUp(16);
+            await this.runCycles(cyclesPerKey);
+        }
     }
 }
