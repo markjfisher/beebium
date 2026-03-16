@@ -16,7 +16,6 @@
 #include "debugger.grpc.pb.h"
 #include "beebium/MemoryRegion.hpp"
 #include <grpcpp/grpcpp.h>
-#include <array>
 #include <mutex>
 #include <vector>
 #include <atomic>
@@ -204,16 +203,6 @@ private:
     std::string halt_reason_;
     StopReason last_stop_reason_{STOP_REASON_UNKNOWN};
 
-    // Lock-free breakpoint snapshot for the instruction callback.
-    // Updated under mutex_ by update_breakpoint_callback(), read
-    // without locking by the callback on every instruction.
-    static constexpr size_t MAX_FAST_BREAKPOINTS = 16;
-    struct BreakpointSnapshot {
-        std::atomic<uint32_t> count{0};
-        std::array<std::atomic<uint32_t>, MAX_FAST_BREAKPOINTS> addresses{};
-    };
-    BreakpointSnapshot bp_snapshot_;
-
     // Separate mutex/CV for execution state watchers to avoid deadlock
     // with mutex_ which is held during the breakpoint callback.
     mutable std::mutex execution_watchers_mutex_;
@@ -247,24 +236,14 @@ void DebuggerControlServiceImpl<MachineType>::notify_execution_state_change(Stop
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::update_breakpoint_callback() {
-    // Update the lock-free snapshot (called under mutex_).
-    uint32_t count = std::min(breakpoints_.size(), MAX_FAST_BREAKPOINTS);
-    for (uint32_t i = 0; i < count; ++i) {
-        bp_snapshot_.addresses[i].store(breakpoints_[i].address, std::memory_order_relaxed);
-    }
-    bp_snapshot_.count.store(count, std::memory_order_release);
-
     if (breakpoints_.empty()) {
         machine_.set_instruction_callback(nullptr);
     } else {
         machine_.set_instruction_callback(
             [this](uint16_t pc, uint64_t /*cycle*/) -> bool {
-                // Lock-free hot path: check the snapshot without mutex.
-                uint32_t n = bp_snapshot_.count.load(std::memory_order_acquire);
-                for (uint32_t i = 0; i < n; ++i) {
-                    if (bp_snapshot_.addresses[i].load(std::memory_order_relaxed) == pc) {
-                        // Breakpoint hit -- acquire mutex only for the rare case.
-                        std::lock_guard<std::mutex> lock(mutex_);
+                std::lock_guard<std::mutex> lock(mutex_);
+                for (const auto& bp : breakpoints_) {
+                    if (bp.address == pc) {
                         std::ostringstream oss;
                         oss << "breakpoint at $" << std::hex << std::uppercase
                             << std::setw(4) << std::setfill('0') << pc;
