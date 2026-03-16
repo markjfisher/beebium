@@ -379,4 +379,111 @@ describe('Tube CE2023 Differential', () => {
             await host.close();
         }
     }, 120000);
+
+    it('pre-decompression memory comparison at $FC00', async () => {
+        // Compare parasite memory at $FC00-$FFFF BEFORE the decompressor
+        // writes any output. This tests the RAM initialisation hypothesis:
+        // if this region differs, back-references into it will produce
+        // different decompressed output.
+        //
+        // jsbeeb: stop at $0810 (first R4 ack, before any output written).
+        // Beebium: read after Tube banner but before game loads.
+
+        // jsbeeb: boot and stop at decompressor entry
+        const oracle = await bootJsbeeb();
+        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 10);
+        expect(oracle.getParasiteCpuState().pc).toBe(FIRST_R4_ACK);
+
+        // Read jsbeeb parasite $FC00-$FFFF (1024 bytes, the first output region)
+        const jsFC = oracle.readParasiteMemory(0xFC00, 1024);
+        console.log(`jsbeeb $FC00-$FFFF at $0810 (first 32 bytes):`);
+        for (let row = 0; row < 2; row++) {
+            const hex = Array.from(jsFC.slice(row * 16, (row + 1) * 16))
+                .map(b => b.toString(16).padStart(2, '0')).join(' ');
+            console.log(`  $${(0xFC00 + row * 16).toString(16).toUpperCase()}: ${hex}`);
+        }
+
+        // Beebium: boot to Tube banner, read parasite memory before game loads
+        const host = await Beebium.launch({
+            args: [
+                '--tube', '65C02-3MHz',
+                '--fdc', 'acorn-1770',
+                '--sideways', `14:rom:${DFS_ROM_FILEPATH}`,
+            ],
+            timeoutMs: 20000,
+        });
+
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Acorn TUBE"),
+                10,
+            );
+
+            const parasite = await host.connectParasite();
+            if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
+
+            // Read Beebium parasite $FC00-$FFFF before game loads
+            const beeFC = await parasite.memory.address.peek.read(0xFC00, 1024);
+            console.log(`Beebium $FC00-$FFFF before game load (first 32 bytes):`);
+            for (let row = 0; row < 2; row++) {
+                const hex = Array.from(beeFC.slice(row * 16, (row + 1) * 16))
+                    .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                console.log(`  $${(0xFC00 + row * 16).toString(16).toUpperCase()}: ${hex}`);
+            }
+
+            // Compare
+            let diffs = 0;
+            let firstDiffOffset = -1;
+            for (let i = 0; i < 1024; i++) {
+                if (jsFC[i] !== beeFC[i]) {
+                    if (firstDiffOffset < 0) firstDiffOffset = i;
+                    diffs++;
+                }
+            }
+
+            console.log(`\n$FC00-$FFFF: ${diffs}/1024 bytes differ`);
+
+            if (diffs > 0) {
+                const addr = 0xFC00 + firstDiffOffset;
+                console.log(`First difference at $${addr.toString(16).toUpperCase()}: js=$${jsFC[firstDiffOffset].toString(16).toUpperCase().padStart(2, '0')} bee=$${beeFC[firstDiffOffset].toString(16).toUpperCase().padStart(2, '0')}`);
+
+                // Dump around first difference
+                const start = Math.max(0, firstDiffOffset - 16) & ~0xF;
+                for (let row = 0; row < 4; row++) {
+                    const off = start + row * 16;
+                    if (off >= 1024) break;
+                    const a = 0xFC00 + off;
+                    const jsHex = Array.from(jsFC.slice(off, Math.min(off + 16, 1024)))
+                        .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const beeHex = Array.from(beeFC.slice(off, Math.min(off + 16, 1024)))
+                        .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const markers = Array.from({ length: Math.min(16, 1024 - off) }, (_, i) =>
+                        jsFC[off + i] !== beeFC[off + i] ? '^^' : '  '
+                    ).join(' ');
+                    console.log(`  $${a.toString(16).toUpperCase().padStart(4, '0')}: js  ${jsHex}`);
+                    console.log(`  $${a.toString(16).toUpperCase().padStart(4, '0')}: bee ${beeHex}`);
+                    if (markers.trim()) console.log(`         ${markers}`);
+                }
+            } else {
+                console.log('$FC00-$FFFF matches -- RAM initialisation is identical.');
+                console.log('The divergence must be in the R1 data interpretation.');
+            }
+
+            // Also compare full range $0000-$FBFF for completeness
+            let fullDiffs = 0;
+            for (let page = 0; page < 0xFC; page++) {
+                const addr = page * 256;
+                const jsData = oracle.readParasiteMemory(addr, 256);
+                const beeData = await parasite.memory.address.peek.read(addr, 256);
+                for (let i = 0; i < 256; i++) {
+                    if (jsData[i] !== beeData[i]) fullDiffs++;
+                }
+            }
+            console.log(`$0000-$FBFF: ${fullDiffs}/64512 bytes differ`);
+
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 60000);
 });
