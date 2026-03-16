@@ -260,3 +260,105 @@ event is not acceptable.
 - **Cross-processor breakpoints**: "Stop the parasite when the host
   writes to address X" is not required. The Tube register interface
   provides this implicitly.
+
+## 6. Implementation Ideas
+
+### 6.1 Breakpoint Checking in the Tick Loop
+
+The current design uses an instruction callback (`set_instruction_callback`)
+which forces the emulation loop into a slow per-instruction path with
+function-call overhead on every cycle. A better approach: fold the
+breakpoint check into the fast tick loop.
+
+```cpp
+// In ParasiteRunner::run() and Machine::run()
+for (uint64_t i = 0; i < cycles; ++i) {
+    cpu_.tick();
+    if (M6502_IsAboutToExecute(&cpu_)) {
+        uint16_t pc = cpu_.pc.w;
+        // Linear scan of a small fixed-size array (max 16 entries).
+        // Updated only while the machine is stopped, so no
+        // synchronisation needed on the read path.
+        for (uint32_t j = 0; j < breakpoint_count_; ++j) {
+            if (breakpoint_addresses_[j] == pc) {
+                pause();
+                return;
+            }
+        }
+    }
+}
+```
+
+The breakpoint address array is a plain `std::array<uint16_t, 16>` with
+a plain `uint32_t` count. No atomics, no mutex on the hot path. Updates
+(add/remove) happen via gRPC RPCs which require the machine to be
+stopped, so there is no concurrent writer during the tick loop.
+
+The overhead per cycle is one branch (`IsAboutToExecute`). The overhead
+per instruction is a linear scan of at most 16 entries -- a handful of
+comparisons that fit in a cache line. At 3 MHz this is negligible.
+
+This eliminates the separate "fast path" vs "instruction callback path"
+distinction entirely. The tick loop is always the same; breakpoints are
+just a check at instruction boundaries.
+
+### 6.2 Bus-Stretch Cancellation
+
+Bus-stretching spin-waits in `TubeHostPort::host_write()` currently spin
+indefinitely. To support coupled stop (Section 2.3), the spin must be
+cancellable.
+
+The cancellation flag lives in `TubeShared` (shared memory) so both
+processes can see it. `Machine::pause()` sets the flag via a callback;
+`Machine::resume()` and the stepping RPCs clear it. The spin loops check
+it alongside the register-ready flag:
+
+```cpp
+while (shared_->r1_h2p.ready.load(acquire) != 0) {
+    if (shared_->bus_stretch_cancel.load(relaxed)) return;
+}
+```
+
+When a cancelled write returns without writing, the partially-written
+state must be handled. Options:
+
+- **Retry on resume**: Track that a write was cancelled and retry it
+  when the machine resumes. Guarantees no data loss.
+- **Abandon**: Accept the lost byte. Simple but breaks the Tube
+  protocol. Only acceptable if the machine is being reset.
+
+Retry-on-resume is preferred for correctness (Section 4.1).
+
+### 6.3 Event Queue
+
+Replace the single `atomic<bool> execution_state_changed_` flag with a
+bounded queue of events. Each state transition pushes an event with a
+sequence number. The `WatchExecutionState` loop drains the queue and
+sends each event individually. This guarantees no coalescing (Section
+4.3).
+
+A single-producer (emulation thread) single-consumer (gRPC stream
+thread) lock-free queue is sufficient. The producer is the emulation
+loop (breakpoint hit, pause, resume); the consumer is the streaming RPC
+handler.
+
+### 6.4 CoupledSystem
+
+The `CoupledSystem` abstraction (Section 3.2) can be implemented
+entirely in the client library. It holds two `Beebium` client instances
+(host and parasite) and coordinates their debugger APIs.
+
+Key implementation points:
+
+- **`stop()`**: Sets `bus_stretch_cancel` (via one side's pause
+  callback), then stops both. Order doesn't matter because the cancel
+  flag breaks the other side out of any spin-wait.
+- **`run()`**: Clears `bus_stretch_cancel`, then runs both.
+- **`run_until(predicate, budget)`**: Runs both, polls predicate via
+  peek (no stop needed), stops both when predicate fires or budget
+  exhausted.
+- **`run_for(seconds)`**: Computes cycle counts for each processor
+  based on their clock speeds, runs both, polls host cycle count,
+  stops both when budget reached.
+- **Counterpart discovery**: Uses `Tube.getStatus()` to find the
+  counterpart's gRPC address and connects automatically.
