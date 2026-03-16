@@ -211,10 +211,14 @@ export class Debugger {
     /**
      * Run until execution reaches the given address.
      *
-     * Sets a temporary breakpoint, starts execution, polls until stopped,
-     * then removes the breakpoint.
+     * Sets a temporary breakpoint, starts execution, waits for the machine
+     * to stop (breakpoint hit or other halt), then removes the breakpoint.
+     *
+     * TODO: Replace with a server-side RunUntilAddress RPC to eliminate
+     * client-side polling entirely. The current implementation polls
+     * getState() which adds gRPC round-trip overhead.
      */
-    async runUntil(address: number, pollIntervalMs: number = 1): Promise<ExecutionState> {
+    async runUntil(address: number, pollIntervalMs: number = 50): Promise<ExecutionState> {
         const bpId = await this.addBreakpoint(address);
         try {
             await this.run();

@@ -71,13 +71,11 @@ async function bootBeebiumToParasiteAddress(
     // to keep running while the parasite processes the game load
     await host.debugger.run();
 
-    // Wait for the parasite to stop at the breakpoint
-    for (let i = 0; i < 600; i++) {  // 60 seconds max
-        await new Promise(r => setTimeout(r, 100));
-        const state = await parasite.debugger.getState();
-        if (!state.isRunning) {
-            break;
-        }
+    // Wait for the parasite to stop at the breakpoint.
+    // TODO: Replace with a server-side WaitForStop or RunUntilAddress RPC.
+    for (let i = 0; i < 300; i++) {  // 60 seconds max (200ms * 300)
+        await new Promise(r => setTimeout(r, 200));
+        if (await parasite.debugger.isStopped()) break;
     }
 
     // Clean up breakpoint
