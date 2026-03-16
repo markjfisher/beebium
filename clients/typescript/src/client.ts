@@ -327,19 +327,41 @@ export class Beebium {
      * budget expires.
      *
      * The predicate is called periodically (after at least 1 emulated
-     * second to allow keyboard input and Tube protocol processing).
-     * The emulator is stopped during predicate evaluation and left
-     * stopped on return.
+     * second). The emulator is stopped during predicate evaluation and
+     * left stopped on return.
+     *
+     * When `coupled` is false (default), uses async run() with real-time
+     * polling. When `coupled` is true, uses synchronous stepCycles on
+     * both this machine and its Tube counterpart (discovered automatically),
+     * keeping both processors advancing in alternating chunks. Use coupled
+     * mode when a Tube parasite is attached and you need deterministic
+     * stepping without real-time pacing delays.
      *
      * @param predicate - Async function returning true when the condition is met.
      * @param emulatedSeconds - Maximum emulated time to run.
-     * @param pollIntervalMs - Real-time ms between polls (default 20).
+     * @param options - Optional settings.
+     * @param options.coupled - Step both host and parasite in sync (default false).
+     * @param options.pollIntervalMs - Real-time ms between polls when not coupled (default 20).
      * @returns true if the predicate was satisfied, false on timeout.
      */
     async runUntilOrTimeout(
         predicate: () => Promise<boolean>,
         emulatedSeconds: number,
-        pollIntervalMs = 20,
+        options: { coupled?: boolean; pollIntervalMs?: number } = {},
+    ): Promise<boolean> {
+        const { coupled = false, pollIntervalMs = 20 } = options;
+
+        if (coupled) {
+            return this.runUntilOrTimeoutCoupled(predicate, emulatedSeconds);
+        }
+
+        return this.runUntilOrTimeoutPolling(predicate, emulatedSeconds, pollIntervalMs);
+    }
+
+    private async runUntilOrTimeoutPolling(
+        predicate: () => Promise<boolean>,
+        emulatedSeconds: number,
+        pollIntervalMs: number,
     ): Promise<boolean> {
         const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
         const cycleBudget = Math.round(emulatedSeconds * clockHz);
@@ -382,6 +404,50 @@ export class Beebium {
             if (await this.debugger.isRunning()) {
                 await this.debugger.stop();
             }
+        }
+    }
+
+    private async runUntilOrTimeoutCoupled(
+        predicate: () => Promise<boolean>,
+        emulatedSeconds: number,
+    ): Promise<boolean> {
+        const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
+        const cycleBudget = Math.round(emulatedSeconds * clockHz);
+        const startCycles = (await this.debugger.getState()).cycleCount;
+        const targetCycles = startCycles + cycleBudget;
+        const minCyclesBeforeCheck = clockHz;
+
+        // Connect to the counterpart and ensure both are running
+        const counterpart = await this.connectParasite();
+
+        try {
+            try { await this.debugger.run(); } catch { /* already running */ }
+            try { await counterpart.debugger.run(); } catch { /* already running */ }
+
+            while (true) {
+                await new Promise(r => setTimeout(r, 20));
+                const state = await this.debugger.getState();
+
+                if (state.cycleCount >= targetCycles) {
+                    await this.debugger.stop();
+                    if (await counterpart.debugger.isRunning()) await counterpart.debugger.stop();
+                    return predicate();
+                }
+
+                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
+                    await this.debugger.stop();
+                    if (await counterpart.debugger.isRunning()) await counterpart.debugger.stop();
+                    if (await predicate()) {
+                        return true;
+                    }
+                    try { await counterpart.debugger.run(); } catch { /* already running */ }
+                    await this.debugger.run();
+                }
+            }
+        } finally {
+            if (await this.debugger.isRunning()) await this.debugger.stop();
+            if (await counterpart.debugger.isRunning()) await counterpart.debugger.stop();
+            await counterpart.close();
         }
     }
 

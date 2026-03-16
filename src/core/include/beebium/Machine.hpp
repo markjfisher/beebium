@@ -380,6 +380,7 @@ public:
 
     void pause() {
         paused_.store(true);
+        if (on_pause_) on_pause_();
         ++sequence_;
     }
 
@@ -388,9 +389,18 @@ public:
             std::lock_guard<std::mutex> lock(debug_mutex_);
             paused_.store(false);
         }
+        if (on_resume_) on_resume_();
         debug_cv_.notify_all();
         ++sequence_;
     }
+
+    // Set callbacks invoked on pause/resume and before stepping.
+    // Used by the server to cancel/restore bus stretching spin-waits.
+    void set_pause_callback(std::function<void()> cb) { on_pause_ = std::move(cb); }
+    void set_resume_callback(std::function<void()> cb) { on_resume_ = std::move(cb); }
+
+    // Call before stepping cycles to ensure bus stretch cancel is cleared.
+    void prepare_for_step() { if (on_resume_) on_resume_(); }
 
     // Block until not paused - call from emulation loop
     // Returns immediately if shutdown is requested, allowing clean exit.
@@ -495,6 +505,8 @@ private:
     std::atomic<bool> paused_{false};
     std::atomic<bool> shutdown_requested_{false};  // For clean server shutdown
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
+    std::function<void()> on_pause_;   // Called by pause() for bus stretch cancel
+    std::function<void()> on_resume_;  // Called by resume() to clear cancel flag
 
     // Break key state (true when Break is held, CPU halted)
     bool in_reset_ = false;

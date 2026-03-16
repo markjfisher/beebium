@@ -150,6 +150,14 @@ struct alignas(64) TubeShared {
     // --- Transfer counters (both sides read, single-writer per counter) ---
     alignas(64) TubeCounters counters;
 
+    // --- Bus stretch cancellation ---
+    // Set by either side's debugger to break out of bus stretching spin loops.
+    // Checked by both TubeHostPort and TubeParasitePort during writes that
+    // spin-wait for the other side to consume data. Without this, pausing a
+    // machine that is bus-stretched would hang indefinitely because the spin
+    // loop never checks the pause flag.
+    alignas(64) std::atomic<bool> bus_stretch_cancel{false};
+
     // --- Lifecycle mailbox ---
     alignas(64) std::atomic<uint8_t> host_command{0};
     std::atomic<uint8_t> parasite_ack{0};
@@ -213,6 +221,7 @@ struct alignas(64) TubeShared {
         counters.r4_p2h_writes.store(0, std::memory_order_relaxed);
         counters.r4_p2h_reads.store(0, std::memory_order_relaxed);
 
+        bus_stretch_cancel.store(false, std::memory_order_relaxed);
         host_command.store(0, std::memory_order_relaxed);
         parasite_ack.store(0, std::memory_order_relaxed);
 

@@ -347,6 +347,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::StepInstruction(
     uint32_t count = request->count();
     if (count == 0) count = 1;
 
+    machine_.prepare_for_step();
+
     uint64_t start_cycle = machine_.cycle_count();
     uint32_t instructions = 0;
 
@@ -379,6 +381,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::StepCycle(
 
     uint32_t count = request->count();
     if (count == 0) count = 1;
+
+    machine_.prepare_for_step();
 
     uint64_t start_cycle = machine_.cycle_count();
 

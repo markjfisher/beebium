@@ -75,6 +75,7 @@ public:
     void pause();
     void resume();
     bool is_paused() const { return paused_.load(std::memory_order_acquire); }
+    void prepare_for_step() {} // No bus stretching on parasite side
 
     // Request clean shutdown. Unblocks wait_if_paused() and freeze waits.
     void request_shutdown();

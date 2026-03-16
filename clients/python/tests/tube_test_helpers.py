@@ -12,12 +12,11 @@
 
 """Shared utilities for Tube integration tests.
 
-Provides cycle-based polling, diagnostic dump functions, and constants
+Provides coupled stepping, diagnostic dump functions, and constants
 used by multiple Tube game test suites (Elite, Chuckie Egg 2023, etc.).
 """
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import grpc
@@ -49,38 +48,25 @@ def find_dfs_1770_rom(roms_dirpath: Path) -> Path | None:
 
 
 def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
-                         poll_interval: float = 0.1):
+                         chunk_cycles: int = 20000):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
-    Uses async run() with real-time polling. This is necessary for Tube
-    tests because the parasite runs in a separate real-time-paced process;
-    synchronous stepCycles would block on Tube bus stretching.
+    Delegates to Beebium.run_until_or_timeout with coupled=True, stepping
+    both host and parasite in alternating chunks. This avoids the pacing
+    asymmetry that occurs when only one side is stepped synchronously.
 
     Args:
-        bbc: The Beebium instance (may be running or stopped on entry).
+        bbc: The Beebium instance (must be stopped on entry).
         predicate: Callable returning True when the desired condition is met.
         emulated_seconds: Maximum BBC-time seconds to run.
-        poll_interval: Real-time seconds between cycle-count polls.
+        chunk_cycles: Cycles per chunk (default 20000).
 
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
-    clock_hz = bbc.system.clock_speed_hz or 2_000_000
-    cycle_budget = int(emulated_seconds * clock_hz)
-    start_cycles = bbc.debugger.cycle_count
-    target_cycles = start_cycles + cycle_budget
-
-    with bbc.debugger.running():
-        while True:
-            time.sleep(poll_interval)
-            current_cycles = bbc.debugger.cycle_count
-            if current_cycles >= target_cycles:
-                return predicate()
-            if current_cycles - start_cycles >= clock_hz:
-                bbc.debugger.stop()
-                if predicate():
-                    return True
-                bbc.debugger.run()
+    return bbc.run_until_or_timeout(
+        predicate, emulated_seconds, coupled=True, chunk_cycles=chunk_cycles,
+    )
 
 
 def disassemble_region(memory, start: int, length: int) -> list[str]:

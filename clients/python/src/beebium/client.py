@@ -373,21 +373,44 @@ class Beebium:
         self.debugger.step_cycles(cycles)
 
     def run_until_or_timeout(
-        self, predicate, emulated_seconds: float, poll_interval: float = 0.02
+        self, predicate, emulated_seconds: float, *,
+        coupled: bool = False,
+        poll_interval: float = 0.02,
+        chunk_cycles: int = 20000,
     ) -> bool:
         """Run until predicate() returns True or the emulated time budget expires.
 
         The predicate is called periodically (after at least 1 emulated
-        second). The emulator is left in whatever state it was in on entry.
+        second). The emulator is left stopped on return.
+
+        When ``coupled`` is False (default), uses async run() with real-time
+        polling. When ``coupled`` is True, uses synchronous step_cycles on
+        both this machine and its Tube counterpart (discovered automatically),
+        keeping both processors advancing in alternating chunks. Use coupled
+        mode when a Tube parasite is attached and you need deterministic
+        stepping without real-time pacing delays.
 
         Args:
             predicate: Callable returning True when the condition is met.
             emulated_seconds: Maximum emulated BBC-time seconds to run.
-            poll_interval: Real-time seconds between polls.
+            coupled: Step both host and parasite in sync (default False).
+            poll_interval: Real-time seconds between polls when not coupled.
+            chunk_cycles: Cycles per chunk when coupled (default 20000).
 
         Returns:
             True if the predicate was satisfied, False on timeout.
         """
+        if coupled:
+            return self._run_until_or_timeout_coupled(
+                predicate, emulated_seconds, chunk_cycles,
+            )
+        return self._run_until_or_timeout_polling(
+            predicate, emulated_seconds, poll_interval,
+        )
+
+    def _run_until_or_timeout_polling(
+        self, predicate, emulated_seconds: float, poll_interval: float,
+    ) -> bool:
         import time as _time
         clock_hz = self.system.clock_speed_hz or 2_000_000
         cycle_budget = int(emulated_seconds * clock_hz)
@@ -405,6 +428,42 @@ class Beebium:
                     if predicate():
                         return True
                     self.debugger.run()
+
+    def _run_until_or_timeout_coupled(
+        self, predicate, emulated_seconds: float, chunk_cycles: int,
+    ) -> bool:
+        import time as _time
+
+        clock_hz = self.system.clock_speed_hz or 2_000_000
+        cycle_budget = int(emulated_seconds * clock_hz)
+        start_cycles = self.debugger.cycle_count
+        target_cycles = start_cycles + cycle_budget
+
+        counterpart = self.connect_parasite()
+
+        try:
+            # Ensure both are running
+            self.debugger.ensure_running()
+            counterpart.debugger.ensure_running()
+
+            while True:
+                _time.sleep(0.02)
+                current = self.debugger.cycle_count
+                if current >= target_cycles:
+                    self.debugger.ensure_stopped()
+                    counterpart.debugger.ensure_stopped()
+                    return predicate()
+                if current - start_cycles >= clock_hz:
+                    self.debugger.stop()
+                    counterpart.debugger.ensure_stopped()
+                    if predicate():
+                        return True
+                    counterpart.debugger.ensure_running()
+                    self.debugger.run()
+        finally:
+            self.debugger.ensure_stopped()
+            counterpart.debugger.ensure_stopped()
+            counterpart.close()
 
     def close(self) -> None:
         """Close the connection and stop any managed server.

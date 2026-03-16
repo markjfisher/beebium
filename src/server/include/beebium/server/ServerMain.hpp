@@ -1481,6 +1481,18 @@ public:
                 return *exit_code;
             }
 
+            // Wire up bus stretch cancellation so debugger pause breaks
+            // out of Tube bus stretching spin-waits.
+            if (tube_shm) {
+                auto* shared = tube_shm->get();
+                machine.set_pause_callback([shared]() {
+                    shared->bus_stretch_cancel.store(true, std::memory_order_release);
+                });
+                machine.set_resume_callback([shared]() {
+                    shared->bus_stretch_cancel.store(false, std::memory_order_release);
+                });
+            }
+
             // Load disc images
             load_disc_images(machine, config);
 

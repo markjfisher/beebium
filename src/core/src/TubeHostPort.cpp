@@ -218,8 +218,9 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
     case 1: {
         // R1 data: write to H-to-P latch.
         // Bus stretching: spin until the parasite has consumed any previous byte.
-        while (shared_->r1_h2p.ready.load(std::memory_order_acquire) != 0)
-            ;
+        while (shared_->r1_h2p.ready.load(std::memory_order_acquire) != 0) {
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+        }
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
         shared_->counters.r1_h2p_writes.fetch_add(1, std::memory_order_relaxed);
@@ -249,8 +250,9 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         // In 2-byte mode (V=1), space available when count < 2.
         auto flags = shared_->control_flags.load(std::memory_order_acquire);
         uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold)
-            ;
+        while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold) {
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+        }
         uint8_t tail = shared_->r3_h2p.tail.load(std::memory_order_relaxed);
         shared_->r3_h2p.data[tail].store(value, std::memory_order_relaxed);
         shared_->r3_h2p.tail.store(tail ^ 1, std::memory_order_relaxed);
@@ -266,8 +268,9 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
     case 7: {
         // R4 data: write to H-to-P latch.
         // Bus stretching: spin until the parasite has consumed any previous byte.
-        while (shared_->r4_h2p.ready.load(std::memory_order_acquire) != 0)
-            ;
+        while (shared_->r4_h2p.ready.load(std::memory_order_acquire) != 0) {
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+        }
         shared_->r4_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r4_h2p.ready.store(1, std::memory_order_release);
         shared_->counters.r4_h2p_writes.fetch_add(1, std::memory_order_relaxed);
