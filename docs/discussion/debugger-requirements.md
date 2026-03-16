@@ -345,9 +345,26 @@ time A == 0 at this address."
 
 - **Reverse debugging / time travel**: Not required.
 - **Multi-parasite**: Only one parasite is supported at a time.
-- **Cross-processor breakpoints**: "Stop the parasite when the host
-  writes to address X" is not required. The Tube register interface
-  provides this implicitly.
+- **Cross-processor breakpoints with arbitrary conditions**: "Stop the
+  parasite when the host writes to address X" is not required as an
+  explicit feature. The cross-processor stop signal (see 1.9) combined
+  with a host-side watchpoint achieves this implicitly.
+
+### 1.9 Cross-Processor Stop Signal
+
+When a breakpoint or watchpoint fires on one processor, it can
+optionally signal the other processor to stop too, via an atomic
+flag in shared memory (`TubeShared`).
+
+The other processor checks this flag in its tick loop (alongside
+its own watchpoint checks -- one extra atomic load per cycle, same
+cost as a single watchpoint range check). Both processors stop
+within one cycle of each other.
+
+This provides coupled stop as a natural consequence of the
+breakpoint/watchpoint mechanism. Each breakpoint and watchpoint
+has a `stop_counterpart` flag (default true for coupled debugging,
+false for single-processor debugging).
 
 ## 6. Implementation Ideas
 
