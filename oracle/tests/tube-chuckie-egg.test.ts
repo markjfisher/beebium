@@ -469,17 +469,38 @@ describe('Tube CE2023 Differential', () => {
                 console.log('The divergence must be in the R1 data interpretation.');
             }
 
-            // Also compare full range $0000-$FBFF for completeness
+            // Compare full range $0000-$FBFF, showing divergent pages
             let fullDiffs = 0;
+            const fullDiffPages: string[] = [];
             for (let page = 0; page < 0xFC; page++) {
                 const addr = page * 256;
                 const jsData = oracle.readParasiteMemory(addr, 256);
                 const beeData = await parasite.memory.address.peek.read(addr, 256);
+                let pageDiffs = 0;
+                let firstOff = -1;
                 for (let i = 0; i < 256; i++) {
-                    if (jsData[i] !== beeData[i]) fullDiffs++;
+                    if (jsData[i] !== beeData[i]) {
+                        if (firstOff < 0) firstOff = i;
+                        pageDiffs++;
+                        fullDiffs++;
+                    }
+                }
+                if (pageDiffs > 0) {
+                    const a = addr + firstOff;
+                    fullDiffPages.push(
+                        `$${a.toString(16).toUpperCase().padStart(4, '0')}(${pageDiffs}): ` +
+                        `js=$${jsData[firstOff].toString(16).toUpperCase().padStart(2, '0')} ` +
+                        `bee=$${beeData[firstOff].toString(16).toUpperCase().padStart(2, '0')}`
+                    );
                 }
             }
             console.log(`$0000-$FBFF: ${fullDiffs}/64512 bytes differ`);
+            if (fullDiffPages.length > 0) {
+                console.log('Divergent pages (first diff, count):');
+                for (const line of fullDiffPages) {
+                    console.log(`  ${line}`);
+                }
+            }
 
             await parasite.close();
         } finally {
