@@ -19,6 +19,8 @@ import { Video } from '../../../jsbeeb/src/video.js';
 import { fake6502 } from '../../../jsbeeb/src/fake6502.js';
 // @ts-expect-error - jsbeeb doesn't have TypeScript definitions
 import { findModel } from '../../../jsbeeb/src/models.js';
+// @ts-expect-error - jsbeeb doesn't have TypeScript definitions
+import * as utils from '../../../jsbeeb/src/utils.js';
 
 export interface JsbeebOracleOptions {
     /** Use real Video class instead of FakeVideo for accurate vsync timing */
@@ -478,40 +480,72 @@ export class JsbeebOracle {
         const sysvia = this.processor.sysvia;
         const cyclesPerKey = 40_000;
 
+        const kd = async (code: number) => {
+            sysvia.keyDown(code);
+            await this.runCycles(cyclesPerKey);
+            sysvia.keyUp(code);
+            await this.runCycles(cyclesPerKey);
+        };
+
         for (const ch of text) {
             let code: number;
             let shift = false;
 
-            if (ch === '\r') {
-                code = 13;  // RETURN
-            } else if (ch === ' ') {
-                code = 32;
-            } else if (ch === '*') {
-                code = '*'.charCodeAt(0);
-                shift = true;
-            } else if (ch === '!') {
-                code = '!'.charCodeAt(0);
-                shift = true;
-            } else if (ch === '.') {
-                code = '.'.charCodeAt(0);
-            } else if (ch >= 'A' && ch <= 'Z') {
-                code = ch.charCodeAt(0);
-                shift = true;
-            } else if (ch >= 'a' && ch <= 'z') {
-                code = ch.toUpperCase().charCodeAt(0);
-            } else if (ch >= '0' && ch <= '9') {
-                code = ch.charCodeAt(0);
-            } else {
-                code = ch.charCodeAt(0);
+            // Use jsbeeb key codes (DOM key codes), matching TestMachine.type()
+            switch (ch) {
+                case '\r':
+                    code = 13;
+                    break;
+                case ' ':
+                    code = 32;
+                    break;
+                case '*':
+                    code = utils.keyCodes.APOSTROPHE;
+                    shift = true;
+                    break;
+                case '!':
+                    code = utils.keyCodes.K1;
+                    shift = true;
+                    break;
+                case '"':
+                    code = 50;  // '2' key
+                    shift = true;
+                    break;
+                case '.':
+                    code = utils.keyCodes.PERIOD;
+                    break;
+                case ',':
+                    code = utils.keyCodes.COMMA;
+                    break;
+                case ';':
+                    code = utils.keyCodes.SEMICOLON;
+                    break;
+                case ':':
+                    code = utils.keyCodes.APOSTROPHE;
+                    break;
+                case '&':
+                    code = utils.keyCodes.K6;
+                    shift = true;
+                    break;
+                default:
+                    if (ch >= 'A' && ch <= 'Z') {
+                        code = ch.charCodeAt(0);
+                        shift = true;
+                    } else {
+                        code = ch.toUpperCase().charCodeAt(0);
+                    }
+                    break;
             }
 
-            if (shift) sysvia.keyDown(16);  // SHIFT key code
-            await this.runCycles(cyclesPerKey);
-            sysvia.keyDown(code);
-            await this.runCycles(cyclesPerKey);
-            sysvia.keyUp(code);
-            if (shift) sysvia.keyUp(16);
-            await this.runCycles(cyclesPerKey);
+            if (shift) {
+                sysvia.keyDown(16);  // SHIFT
+                await this.runCycles(cyclesPerKey);
+                await kd(code);
+                sysvia.keyUp(16);
+                await this.runCycles(cyclesPerKey);
+            } else {
+                await kd(code);
+            }
         }
     }
 }

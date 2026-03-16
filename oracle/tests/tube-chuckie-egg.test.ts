@@ -106,15 +106,30 @@ describe('Tube CE2023 Differential', () => {
 
     it('both should reach decompressor after *EXEC !BOOT', async () => {
         // Type the boot command on jsbeeb
+        console.log('Typing *EXEC !BOOT on jsbeeb...');
         await oracle.type("*EXEC !BOOT\r");
+        console.log('Type complete. Running 5M more cycles...');
+        await oracle.runCycles(5_000_000);
 
         // Type on Beebium
         await host.debugger.run();
         await host.keyboard.type("*EXEC !BOOT\r");
 
+        // Give jsbeeb more time to process the command
+        await oracle.runCycles(10_000_000);
+        const jsParasiteAfterType = oracle.getParasiteCpuState();
+        console.log(`jsbeeb parasite after typing + 10M cycles: PC=$${jsParasiteAfterType.pc.toString(16).toUpperCase()}`);
+
+        // Check host screen to see if the command was typed
+        const screenData = oracle.readMemory(0x7C00, 1000);
+        const screenText = Buffer.from(screenData).toString('latin1');
+        const hasExec = screenText.includes('EXEC');
+        const hasBoot = screenText.includes('BOOT');
+        console.log(`jsbeeb screen: EXEC=${hasExec}, BOOT=${hasBoot}`);
+
         // Run jsbeeb until parasite reaches the first R4 ack ($0810)
         console.log('Running jsbeeb to parasite $0810...');
-        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 30);
+        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 60);
 
         const jsState = oracle.getParasiteCpuState();
         console.log(`jsbeeb parasite at $${jsState.pc.toString(16).toUpperCase()}: A=$${jsState.a.toString(16)}`);
