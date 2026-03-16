@@ -256,15 +256,18 @@ that fires a callback on bus reads, writes, or both to an address range.
 This is not yet exposed via gRPC.
 
 Requirements:
-- **Add / Remove / List / Clear**: Manage a set of address-range
-  watchpoints, each specifying read, write, or both.
+- **Add / Remove / List / Clear**: Manage a set of up to 16 address-range
+  watchpoints, each specifying a half-open address range `[start, end)`
+  and an access type (read, write, or both).
+- A single-address watch is `[addr, addr+1)`. A range watch like
+  `[$FE00, $FF00)` covers all hardware I/O registers.
 - When a watchpoint fires, the processor stops and a notification is
   delivered via the event stream (Section 1.4), including the address,
   value, access type (read/write), and cycle count.
 - The watchpoint check fires on every bus access (every cycle), so it
-  must be extremely cheap. A linear scan of a small fixed-size array
-  (max 16 entries) of address ranges is acceptable. No function-call
-  indirection, no mutex, no `std::function` invocation per cycle.
+  must be extremely cheap. A linear scan of 16 half-open ranges is a
+  handful of comparisons -- acceptable at any clock rate. No function-
+  call indirection, no mutex, no `std::function` invocation per cycle.
 - As with breakpoints, the watchpoint list is modified only while the
   machine is stopped, so no synchronisation is needed on the read path.
 
