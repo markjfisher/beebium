@@ -241,202 +241,89 @@ clears the space-available flag after the first write (threshold=1),
 effectively preventing a second write until the parasite reads. Beebium
 now matches this behaviour after the bus stretching threshold fix.
 
-## Next Steps: Differential Testing with jsbeeb Oracle
+## Differential Testing Infrastructure
 
-The Beebium oracle at `oracle/` already supports host-side differential
-testing between jsbeeb and Beebium. Extending it for Tube:
-
-### jsbeeb Tube Architecture
+### jsbeeb Oracle
 
 - `Tube` ULA class in `src/tube.js` (349 lines)
 - `Tube6502` parasite CPU class in `src/6502.js` extending `Base6502`
 - `Tube65C02` model in `src/models.js` with ROM `tube/6502Tube.rom`
 - Host and parasite share one JS event loop (single-process)
 - CE2023 works correctly
+- `_debugInstruction` callback added to `Tube6502.execute()` for
+  parasite breakpoints from the oracle framework
 
-### Required Oracle Extensions
+### WatchExecutionState streaming RPC
 
-1. **TypeScript Beebium client** -- being developed as a first-class client
-   alongside the Python client. Will support Tube gRPC services.
+`WatchExecutionState` server-streaming RPC on `DebuggerControl`. Server
+pushes events on state transitions (breakpoint hit, manual stop, run
+resumed). `waitForStop()` waits for a running-to-stopped transition,
+skipping any initial "already stopped" state. Eliminates gRPC polling.
 
-2. **JsbeebOracle Tube support** -- configure model with `tube` property,
-   extract parasite CPU state and Tube ULA register state.
+### Coupled stepping for Tube
 
-3. **Targeted CE2023 test** -- boot both emulators, synchronise at
-   parasite decompressor entry ($0819), compare R1 read values byte-
-   by-byte. The first divergence reveals the root cause.
+`run_until_or_timeout(predicate, seconds, coupled=True)` connects to
+the Tube counterpart (discovered via `connectParasite()`) and ensures
+both host and parasite are running during the polling loop. This avoids
+pacing asymmetry where one side advances faster than the other.
 
-## Differential Testing Progress
+Key constraints discovered during implementation:
 
-### jsbeeb Tube6502 debug hook (committed to jsbeeb)
+- **stepCycles deadlocks with Tube**: Synchronous `stepCycles` on the
+  host blocks on Tube bus stretching (spin-wait on shared memory) until
+  the parasite reads. If the parasite is paced independently, the host
+  step call blocks for as long as the parasite takes to catch up.
+  Concurrent `stepCycles` on both sides via ThreadPoolExecutor also
+  deadlocks: when the host step blocks on a Tube write, the parasite
+  step may have already returned, and neither side can make progress.
 
-Added `_debugInstruction` callback to `Tube6502.execute()` in jsbeeb's
-`src/6502.js`. Fires at each parasite instruction with current PC.
-Return true to stop. Enables precise parasite breakpoints from oracle.
+- **Bus stretch cancel**: Added `bus_stretch_cancel` flag to `TubeShared`.
+  Machine::pause() sets it via callback; Machine::resume() and
+  `prepare_for_step()` clear it. The Tube bus stretching spin loops in
+  `TubeHostPort` check this flag, allowing debugger pause to break out
+  of an otherwise infinite spin.
 
-### Differential test results
+- **Server startup race**: The host server briefly appears "running"
+  (cycle 0) before `handle_wait_mode` pauses it at cycle 7. The
+  `runUntilOrTimeout` startup retry loop handles this by retrying
+  `run()` until cycles advance past 10.
 
-**jsbeeb (reference oracle):**
-- Boots CE2023 to "Loading" screen in ~5s emulated (~3s real)
-- Parasite breakpoint at `$0810` (first R4 ack): A=`$FC`, SP=`$F8`
-- Parasite breakpoint at `$0819` (decompression entry): hit successfully
-- Parasite reads R1 byte 0: A=`$C5` (correct, matches host `$628D`)
-- Decompressor destination pointer: `$FC00` (correct initial value)
+### Previous "R1 byte 0 divergence" was a test artefact
 
-**Beebium (system under test):**
-- Boots to game loading screen (reaches "Initialising")
-- Parasite breakpoint at `$0819`: **never hit** within timeout
-- Parasite PC at timeout: `$F976` (Tube Client ROM idle loop)
-- Parasite reads from R1: A=`$02` (WRONG — not compressed data)
-- Decompressor destination pointer: `$0000` (uninitialised)
+The earlier finding ("jsbeeb=$C5, Beebium=$02") was caused by bugs in
+the differential test: the parasite was stopped for breakpoint setup but
+never resumed, and the host was never properly started due to the
+WaitMode::Api startup race. The "divergence" compared jsbeeb's
+decompressor state against a Beebium parasite still in the Tube Client
+ROM idle loop.
 
-### Timing reference
+## Confirmed Findings
 
-- jsbeeb: boot to "Loading" screen ~5s emulated, to "A game of skill" ~39s
-- Beebium cross-process Tube overhead: ~4x slower than jsbeeb (~60s real
-  for 15s emulated) due to shared-memory spin-waits
+With the boot sequence fixed (using `runUntilOrTimeout` with coupled
+mode, matching the Python test fixture pattern):
 
-### Debugger API performance issue
+- **Game loads successfully**: Boots to "Initialising", decompressor
+  consumes all 702 R1 bytes, parasite reaches `$09D6`. Transfer
+  counters: R1 H2P 702/702, R3 H2P 16950/16950, R4 P2H 1/1.
 
-The current `runUntil(address)` implementation polls `getState()` over gRPC
-every 1-50ms, causing thousands of round-trips. This needs to be replaced
-with a server-side event-streaming RPC (`WatchDebuggerEvents`) that pushes
-breakpoint/halt/error events to the client. The `WatchServerStatus` streaming
-RPC on SystemService is the existing pattern to follow.
+- **Hang is after decompression**: The decompressor writes 64K of
+  output, then tries to read byte 703 which never arrives. The
+  bit-serial reader at `$09C8` has exhausted its byte buffer (`$31`
+  = `$00`) and is polling R1 for the next byte.
 
-## Key Finding: Divergence at R1 Byte 0
+- **The decompressed output must differ from jsbeeb's**: The
+  decompressor consumes the same 702 bytes on both emulators, but
+  the LZ bit-stream interpretation produces different output. On
+  jsbeeb the decompression terminates after 64K; on Beebium it
+  does not. This means some decompressed byte(s) differ, causing
+  different LZ control flow that consumes more bits.
 
-The differential test (`oracle/tests/tube-chuckie-egg.test.ts`) found that
-the **very first R1 byte** read by the decompressor differs between jsbeeb
-and Beebium:
+## Next Step: Memory Comparison
 
-```
-*** DIVERGENCE at R1 byte 0 ***
-  jsbeeb A=$C5      (correct — matches host source data at $628D)
-  Beebium A=$02     (WRONG — not from the compressed data stream)
-  jsbeeb dest=$FC00 (correct — decompressor writes from $FC00)
-  Beebium dest=$0000 (uninitialised — decompressor never ran setup code)
-```
-
-More significantly, the Beebium parasite **never reached the decompressor
-entry point at `$0819`**. The parasite PC was `$F976` (in the Tube Client
-ROM's idle loop) when the test gave up. This means the game's custom code
-at `$0800`— which was loaded via the MOS Tube type-6 R3 NMI transfer —
-was either not loaded, not executed, or not reached in time.
-
-### What this tells us
-
-The earlier register-level investigation (9 hypotheses, 6 fixes) was
-operating under the assumption that the decompressor had run and consumed
-all 702 R1 bytes. That was true when observed from the Python tests, which
-ran the emulator for many emulated seconds before inspecting state.
-
-The differential test reveals a different picture: the breakpoint-based
-approach catches the parasite **during** the boot sequence, and shows
-that the parasite never enters the game's custom code. The Tube Client
-ROM's type-4 "execute at address" command — which should jump the
-parasite to `$0800` — is either not received or not processed correctly.
-
-This is consistent with the earlier finding that B2 and MAME also fail
-at "Initialising". All three emulators use architectures where the host
-and parasite are not tightly coupled during the Tube protocol handshake.
-
-### Possible explanations
-
-1. **Timeout artefact**: The 60-second real-time timeout in the
-   differential test may simply be too short. With 4x Tube overhead,
-   60 real seconds = ~15 emulated seconds. If the game's loading
-   sequence takes >15 emulated seconds to reach the decompressor,
-   the test gives up before the breakpoint fires. The Python tests
-   use longer timeouts and DO observe the decompressor running.
-
-2. **Breakpoint timing**: The breakpoint at `$0819` was set before
-   the game loaded. But the parasite at `$F976` is in the Tube Client
-   ROM, which suggests the type-4 execute command hasn't been processed
-   yet. The host may need more time to complete the R3 NMI transfer
-   and send the execute command.
-
-3. **Genuine code loading failure**: The R3 NMI transfer or type-4
-   execute command genuinely fails in the cross-process model. The
-   parasite never receives the code or the jump command.
-
-Explanation 1 is most likely. The Python tests confirm that the
-decompressor DOES run eventually (it consumes all 702 R1 bytes and
-writes 64K of output). The differential test's breakpoint approach
-just needs more time, or a less chatty gRPC interaction pattern.
-
-### Previous R1 byte 0 divergence finding was an artefact
-
-The earlier finding ("divergence at R1 byte 0, jsbeeb=$C5, Beebium=$02")
-was caused by a bug in the differential test: the Beebium parasite was
-stopped for breakpoint setup but never resumed. The host server started
-in `WaitMode::Api` (paused at cycle 7) and was also never properly
-resumed due to a startup race condition. The "divergence" was comparing
-jsbeeb's decompressor state against a Beebium parasite that had never
-left the Tube Client ROM idle loop.
-
-### WatchExecutionState streaming RPC (implemented)
-
-`WatchExecutionState` server-streaming RPC added to `DebuggerControl`.
-Server pushes events on state transitions (breakpoint, manual stop,
-run resumed). `waitForStop()` waits for a running-to-stopped transition.
-Eliminates gRPC polling overhead.
-
-### Corrected diagnostic findings
-
-With the boot sequence fixed (using `runUntilOrTimeout` to wait for
-Tube banner, matching the Python test fixture pattern):
-
-- **Without breakpoints**: Game boots to "Initialising", decompressor
-  consumes all 702 R1 bytes, parasite reaches `$09D6` in the
-  decompressor. Transfer counters: R1 H2P 702/702, R3 H2P 16950/16950,
-  R4 P2H 1/1. This confirms the game DOES load and the decompression
-  DOES run. The hang is after decompression, not during loading.
-
-- **With parasite breakpoints**: Setting a breakpoint at `$0810` or
-  `$0819` causes the parasite to enter the slow instruction-by-instruction
-  execution path (`ParasiteRunner::run()` with instruction callback). The
-  parasite breakpoint at the decompressor entry never fires within 120s,
-  even though the game loads in ~20s without breakpoints. The instruction
-  callback may interact poorly with the real-time-paced Tube protocol.
-
-### Key constraint: stepCycles vs run() for Tube
-
-Synchronous `stepCycles` on the host cannot be used when a Tube parasite
-is attached. The host's Tube writes use bus stretching (spin-wait on
-shared memory), blocking the synchronous step call until the real-time-
-paced parasite reads the data. This causes near-deadlock. The host must
-use `run()` (asynchronous execution) so both host and parasite advance at
-real-time pace.
-
-### Path forward
-
-The fundamental question remains: **why does the decompressor not
-terminate after consuming 702 R1 bytes?**
-
-The decompressor runs, consumes all data, writes 64K of output, but
-then tries to read byte 703. This means the bit-serial decompression
-logic is consuming more bits than the compressed data contains. The
-decompressed output must differ from what jsbeeb produces.
-
-Options for finding the divergence:
-
-1. **Server-side `RunUntilAddress` RPC**: Implement the breakpoint check
-   entirely server-side without the instruction callback overhead. The
-   server runs the parasite normally and only pauses when the target
-   address is hit. This avoids the performance problem with client-set
-   breakpoints.
-
-2. **Memory comparison after full load**: Instead of breakpoint-based
-   differential testing, run both emulators to completion (or timeout),
-   then compare the parasite's memory contents. The first byte that
-   differs reveals the divergence point.
-
-3. **Trace-based comparison**: Add an instruction trace buffer to the
-   parasite that records the last N instructions. Run until the hang,
-   then compare the trace against jsbeeb's execution log.
-
-Option 2 is the most pragmatic immediate next step.
+The most pragmatic approach: run both emulators past the decompression
+phase, then compare the full 64K parasite memory. The first differing
+byte reveals where the bit-serial decompression diverged. No breakpoints
+needed -- just run to timeout and dump memory.
 
 ## External References
 
