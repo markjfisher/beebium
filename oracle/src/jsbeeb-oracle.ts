@@ -453,19 +453,38 @@ export class JsbeebOracle {
      */
     async runUntilParasiteAddress(address: number, timeoutSeconds: number = 30): Promise<void> {
         if (!this.hasTube()) throw new Error("Tube not enabled");
-        const batchSize = 200;
-        let remaining = timeoutSeconds * 2_000_000;
         const parasiteCpu = this.parasiteProcessor;
 
-        while (remaining > 0) {
-            this.processor.execute(batchSize);
-            this.cycleCount += batchSize;
-            remaining -= batchSize;
-            if (parasiteCpu.pc === address) return;
+        // Use the parasite's debug instruction hook to stop at the exact
+        // address. The hook fires at each parasite instruction boundary.
+        // Tube6502.execute() checks _debugInstruction when it's set.
+        let hit = false;
+        parasiteCpu._debugInstruction = (pc: number) => {
+            if (pc === address) {
+                hit = true;
+                return true;  // stop parasite execution
+            }
+            return false;
+        };
+
+        let remaining = timeoutSeconds * 2_000_000;
+        try {
+            while (remaining > 0 && !hit) {
+                const batch = Math.min(remaining, 100_000);
+                this.processor.execute(batch);
+                this.cycleCount += batch;
+                remaining -= batch;
+            }
+        } finally {
+            parasiteCpu._debugInstruction = null;
         }
-        throw new Error(
-            `Parasite did not reach $${address.toString(16).toUpperCase()} in ${timeoutSeconds}s`
-        );
+
+        if (!hit) {
+            throw new Error(
+                `Parasite did not reach $${address.toString(16).toUpperCase()} in ${timeoutSeconds}s ` +
+                `(parasite PC=$${parasiteCpu.pc.toString(16)})`
+            );
+        }
     }
 
     /**
