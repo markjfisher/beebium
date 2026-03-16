@@ -1,0 +1,262 @@
+# Debugger Requirements for Host-Parasite Systems
+
+## Context
+
+Beebium's multi-process architecture separates the host (BBC Micro) and
+parasite (second processor) into independent processes communicating via
+shared memory. Each process has its own gRPC debugger service. This
+document specifies what the debugger API needs to support for effective
+debugging of this coupled system.
+
+The requirements are driven by real needs encountered during differential
+testing of CE2023, where the decompressor running on the parasite produces
+different output on Beebium than on the reference emulator (jsbeeb).
+
+## 1. Single-Processor Debugging
+
+These requirements apply to both host and parasite independently.
+
+### 1.1 Execution Control
+
+- **Run**: Resume execution at the processor's native clock rate.
+- **Stop**: Halt execution promptly, even if the processor is blocked on
+  a bus-stretching spin-wait or other shared-memory operation.
+- **Step instruction**: Execute one complete instruction and stop.
+- **Step N cycles**: Execute exactly N clock cycles and stop.
+- **Run until address**: Execute until PC reaches a specified address,
+  then stop. Must not degrade execution speed -- the address check must
+  be as cheap as a branch prediction, not a mutex acquisition per
+  instruction.
+
+### 1.2 Run Until Address
+
+This is the critical primitive that was missing. Polling the PC from the
+client is too coarse (misses transient addresses). Setting a breakpoint
+via the existing callback mechanism works but must not introduce
+per-instruction overhead that slows the processor below its real-time
+pacing rate.
+
+Requirements:
+- The server handles the address check internally -- no gRPC round-trip
+  per instruction.
+- The check must be lock-free on the hot path. A compare of PC against
+  a small set of addresses (up to 16) using atomics is acceptable.
+- When the address is hit, the processor stops and a notification is
+  delivered to subscribed clients (see 1.4).
+- If a cycle budget is specified and exhausted before the address is
+  hit, the processor stops and the client is informed that the budget
+  was exceeded rather than the address being reached.
+
+### 1.3 Memory Access
+
+- **Read / Write**: Access the processor's address space with full side
+  effects (register reads, I/O triggers).
+- **Peek**: Read without side effects. Must work regardless of whether
+  the processor is running or stopped.
+- **Region access**: Read/write named memory regions (banks, shadow RAM)
+  by name rather than requiring knowledge of the current bank selection.
+
+### 1.4 Event Streaming
+
+Clients subscribe once and receive notifications on state transitions.
+No polling.
+
+Events:
+- **Stopped**: Processor stopped. Includes the reason (breakpoint hit,
+  address reached, manual stop, cycle budget exhausted, error).
+- **Running**: Processor resumed.
+- **Reset**: Processor was reset.
+
+Semantics:
+- The initial event on subscription reflects the current state.
+- `waitForStop()` must handle the case where the processor is already
+  stopped when the subscription starts. If the processor is stopped,
+  `waitForStop()` waits for a running-to-stopped transition rather than
+  returning the stale initial state.
+- Events must not be silently coalesced. If a run and stop happen in
+  rapid succession, both events must be delivered. A single atomic flag
+  is insufficient -- use a sequence counter or event queue.
+
+### 1.5 Breakpoints
+
+- **Add / Remove / List / Clear**: Manage a set of address breakpoints.
+- Breakpoint checks must be lock-free on the hot path (see 1.2).
+- The breakpoint mechanism must not reduce the processor's throughput
+  below its real-time pacing rate. At 3 MHz, the processor executes
+  ~1.5 million instructions per second. The per-instruction overhead
+  of a breakpoint check must be well under 1 microsecond.
+
+## 2. Coupled System Debugging
+
+These requirements apply when a host and parasite are connected via the
+Tube.
+
+### 2.1 The Fundamental Constraint
+
+The host and parasite communicate through bus-stretching spin-waits on
+shared memory. When the host writes to a Tube register, it spins until
+the parasite reads. When the parasite writes, it spins until the host
+reads. Neither side can make progress independently when a Tube transfer
+is in flight.
+
+This means:
+- **Stopping one side blocks the other.** If the parasite is stopped by
+  the debugger while the host is mid-Tube-write, the host spins forever.
+- **Synchronous stepping of one side deadlocks.** `stepCycles(N)` on the
+  host blocks when it hits a Tube write, because the parasite isn't
+  advancing.
+- **Both sides must advance together** during any operation that may
+  involve Tube I/O.
+
+### 2.2 Coupled Run
+
+Run both host and parasite together. Both advance at their natural clock
+rates. This is the normal operating mode. No special API is needed
+beyond calling `run()` on both.
+
+### 2.3 Coupled Stop
+
+Stop both host and parasite together. The stop must be prompt and must
+not deadlock on bus stretching.
+
+Requirements:
+- Stopping either processor must break the other out of any bus-stretch
+  spin-wait it may be in. The spin-wait must be cancellable.
+- After a coupled stop, both processors are in a consistent state: no
+  half-completed Tube transfers, no lost data. (This may require
+  abandoning a partially-written byte if the spin-wait was interrupted.)
+- A single API call stops both. The caller should not need to stop them
+  individually and hope the order is right.
+
+### 2.4 Coupled Run Until
+
+Run both processors until a condition is met on one of them. This is
+the key primitive for differential testing.
+
+Examples:
+- Run both until the parasite PC reaches $0810.
+- Run both until the host has advanced 10 million cycles.
+- Run both until a predicate on host memory is satisfied (e.g. screen
+  contains specific text).
+
+Requirements:
+- Both processors advance at their natural rates while the condition is
+  being evaluated.
+- The condition check does not stop either processor (for predicates
+  based on peek, which is side-effect-free).
+- When the condition is met, both processors are stopped promptly.
+- For address-based conditions, the check is server-side (no gRPC
+  round-trip per instruction).
+- A cycle or time budget can be specified. If exhausted, both stop and
+  the caller is informed.
+
+### 2.5 Coupled Step
+
+Step both processors together by a specified number of emulated seconds
+(or host cycles and proportionally-scaled parasite cycles).
+
+Requirements:
+- Both processors advance concurrently during the step. Neither blocks
+  on bus stretching because both are making progress.
+- The step is synchronous from the caller's perspective: the call
+  returns when both processors have completed their cycle budget.
+- The caller specifies emulated time (e.g. 1 second), and the
+  implementation converts to cycle counts based on each processor's
+  clock speed.
+
+### 2.6 Counterpart Discovery
+
+The debugger should automatically discover the coupled processor.
+
+- Given a host client, discover and connect to the parasite's debugger.
+- Given a parasite client, discover and connect to the host's debugger.
+- The connection is established via the existing Tube status gRPC service
+  which reports the counterpart's gRPC address.
+
+## 3. Client API Design
+
+The client libraries (Python, TypeScript) should provide a clean API
+that hides the complexity of coupled debugging.
+
+### 3.1 Single Processor
+
+```
+debugger.run()
+debugger.stop()
+debugger.step(count=1)
+debugger.step_cycles(count=1)
+debugger.run_until(address, cycle_budget=None) -> StopEvent
+debugger.wait_for_stop() -> StopEvent
+```
+
+### 3.2 Coupled System
+
+```
+# The system object manages both host and parasite as a unit.
+system = CoupledSystem(host, parasite)  # or auto-discovered
+
+system.run()           # Run both
+system.stop()          # Stop both (bus-stretch-safe)
+system.run_until(      # Run both until condition on either side
+    predicate,
+    cycle_budget=None,
+) -> StopEvent
+system.run_for(seconds)  # Run both for emulated time
+```
+
+The `CoupledSystem` encapsulates the constraints of Section 2. The
+caller does not need to know about bus stretching, pacing asymmetry,
+or stop ordering.
+
+### 3.3 Predicates
+
+Predicates for `run_until` can reference either processor:
+
+```
+# Stop when parasite PC reaches address
+system.run_until(parasite_pc == 0x0810)
+
+# Stop when host screen contains text
+system.run_until(host_screen_contains("Initialising"))
+
+# Stop when parasite memory at address equals value
+system.run_until(parasite_peek(0x0031) == 0x00)
+```
+
+Server-side predicates (PC comparison) are evaluated without gRPC
+round-trips. Client-side predicates (screen text) are evaluated
+periodically via peek without stopping either processor.
+
+## 4. Correctness Requirements
+
+### 4.1 No Silent Data Loss
+
+If a bus-stretch spin-wait is interrupted (e.g. by a debugger stop), the
+interrupted write must be retried or reported as failed. Silently
+dropping the byte corrupts the Tube protocol state.
+
+### 4.2 Deterministic Replay
+
+Given the same ROM images, disc images, and sequence of debugger
+commands, the system must produce the same execution trace. The debugger
+must not introduce non-determinism (e.g. from race conditions between
+the event stream and the stop mechanism).
+
+### 4.3 Event Ordering
+
+Events delivered via the streaming API must reflect the actual order of
+state transitions. A stop event must not be delivered before the
+corresponding run event. Coalescing multiple transitions into a single
+event is not acceptable.
+
+## 5. Non-Requirements
+
+- **Reverse debugging / time travel**: Not required.
+- **Hardware watchpoints**: Not required (address breakpoints suffice).
+- **Conditional breakpoints with expressions**: Not required. Simple
+  address matching is sufficient. Complex conditions can be implemented
+  client-side.
+- **Multi-parasite**: Only one parasite is supported at a time.
+- **Cross-processor breakpoints**: "Stop the parasite when the host
+  writes to address X" is not required. The Tube register interface
+  provides this implicitly.
