@@ -22,6 +22,7 @@ from pathlib import Path
 import grpc
 
 from beebium.client import Beebium
+from beebium.coupled import CoupledSystem
 from beebium.disassemble import disassemble
 from beebium.exceptions import BeebiumError
 from beebium.screen import dump_screen, screen_contains
@@ -51,22 +52,24 @@ def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                          chunk_cycles: int = 20000):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
-    Delegates to Beebium.run_until_or_timeout with coupled=True, stepping
-    both host and parasite in alternating chunks. This avoids the pacing
-    asymmetry that occurs when only one side is stepped synchronously.
+    Creates a CoupledSystem from the host, running both host and parasite
+    at their natural rates. The predicate is evaluated periodically via
+    peek (side-effect-free) without stopping either processor.
 
     Args:
-        bbc: The Beebium instance (must be stopped on entry).
+        bbc: The Beebium instance.
         predicate: Callable returning True when the desired condition is met.
         emulated_seconds: Maximum BBC-time seconds to run.
-        chunk_cycles: Cycles per chunk (default 20000).
+        chunk_cycles: Ignored (kept for backward compatibility).
 
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
-    return bbc.run_until_or_timeout(
-        predicate, emulated_seconds, coupled=True, chunk_cycles=chunk_cycles,
-    )
+    system = CoupledSystem.from_host(bbc)
+    try:
+        return system.run_until(predicate, emulated_seconds)
+    finally:
+        system.close()
 
 
 def disassemble_region(memory, start: int, length: int) -> list[str]:
