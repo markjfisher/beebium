@@ -40,7 +40,7 @@ Requirements:
 - The server handles the address check internally -- no gRPC round-trip
   per instruction.
 - The check must be lock-free on the hot path. A compare of PC against
-  a small set of addresses (up to 16) using atomics is acceptable.
+  a small set of addresses using a linear scan is acceptable.
 - When the address is hit, the processor stops and a notification is
   delivered to subscribed clients (see 1.4).
 - If a cycle budget is specified and exhausted before the address is
@@ -256,7 +256,7 @@ that fires a callback on bus reads, writes, or both to an address range.
 This is not yet exposed via gRPC.
 
 Requirements:
-- **Add / Remove / List / Clear**: Manage a set of up to 16 address-range
+- **Add / Remove / List / Clear**: Manage a set of address-range
   watchpoints, each specifying a half-open address range `[start, end)`
   and an access type (read, write, or both).
 - A single-address watch is `[addr, addr+1)`. A range watch like
@@ -265,9 +265,10 @@ Requirements:
   delivered via the event stream (Section 1.4), including the address,
   value, access type (read/write), and cycle count.
 - The watchpoint check fires on every bus access (every cycle), so it
-  must be extremely cheap. A linear scan of 16 half-open ranges is a
-  handful of comparisons -- acceptable at any clock rate. No function-
-  call indirection, no mutex, no `std::function` invocation per cycle.
+  must be extremely cheap. A linear scan of a vector of half-open
+  ranges is a handful of comparisons -- acceptable at any clock rate.
+  No function-call indirection, no mutex, no `std::function` invocation
+  per cycle.
 - As with breakpoints, the watchpoint list is modified only while the
   machine is stopped, so no synchronisation is needed on the read path.
 
@@ -363,11 +364,10 @@ for (uint64_t i = 0; i < cycles; ++i) {
     cpu_.tick();
     if (M6502_IsAboutToExecute(&cpu_)) {
         uint16_t pc = cpu_.pc.w;
-        // Linear scan of a small fixed-size array (max 16 entries).
-        // Updated only while the machine is stopped, so no
-        // synchronisation needed on the read path.
-        for (uint32_t j = 0; j < breakpoint_count_; ++j) {
-            if (breakpoint_addresses_[j] == pc) {
+        // Linear scan of a plain vector. Updated only while the
+        // machine is stopped, so no synchronisation needed.
+        for (uint16_t addr : breakpoint_addresses_) {
+            if (addr == pc) {
                 pause();
                 return;
             }
@@ -376,14 +376,15 @@ for (uint64_t i = 0; i < cycles; ++i) {
 }
 ```
 
-The breakpoint address array is a plain `std::array<uint16_t, 16>` with
-a plain `uint32_t` count. No atomics, no mutex on the hot path. Updates
-(add/remove) happen via gRPC RPCs which require the machine to be
-stopped, so there is no concurrent writer during the tick loop.
+The breakpoint address vector is a plain `std::vector<uint16_t>`. No
+atomics, no mutex on the hot path. Updates (add/remove) happen via gRPC
+RPCs which require the machine to be stopped, so there is no concurrent
+writer during the tick loop. The vector's contiguous memory gives the
+same cache behaviour as a fixed array.
 
 The overhead per cycle is one branch (`IsAboutToExecute`). The overhead
-per instruction is a linear scan of at most 16 entries -- a handful of
-comparisons that fit in a cache line. At 3 MHz this is negligible.
+per instruction is a linear scan of a typically small vector -- a
+handful of comparisons. At 3 MHz this is negligible.
 
 This eliminates the separate "fast path" vs "instruction callback path"
 distinction entirely. The tick loop is always the same; breakpoints are
