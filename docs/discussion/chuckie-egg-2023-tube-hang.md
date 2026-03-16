@@ -262,9 +262,34 @@ testing between jsbeeb and Beebium. Extending it for Tube:
 2. **JsbeebOracle Tube support** -- configure model with `tube` property,
    extract parasite CPU state and Tube ULA register state.
 
-3. **Targeted CE2023 test** -- boot both emulators to "Initialising", step
-   parasite through decompressor, compare R1 read values and output byte-
+3. **Targeted CE2023 test** -- boot both emulators, synchronise at
+   parasite decompressor entry ($0819), compare R1 read values byte-
    by-byte. The first divergence reveals the root cause.
+
+## Differential Testing Progress
+
+### jsbeeb Tube6502 debug hook (committed to jsbeeb)
+
+Added `_debugInstruction` callback to `Tube6502.execute()` in jsbeeb's
+`src/6502.js`. Fires at each parasite instruction with current PC.
+Return true to stop. Enables precise parasite breakpoints from oracle.
+
+### Oracle results so far
+
+- jsbeeb boots CE2023 to "Loading" screen in ~5s emulated
+- jsbeeb parasite breakpoint at $0810 works: A=$FC, SP=$F8
+- jsbeeb parasite breakpoint at $0819 works (decompression entry)
+- Beebium boots to game loading screen via TypeScript client
+- `runForEmulatedSeconds()` and `runUntilOrTimeout()` work on both
+  TypeScript and Python clients
+- R1 byte comparison test structurally complete; Beebium boot/connect
+  sequence still needs optimisation (takes ~5min vs jsbeeb's ~3s)
+
+### Timing reference (from manual jsbeeb testing)
+
+- Boot to "Loading" screen: ~5 seconds emulated
+- "Loading" to "A game of skill" screen: ~34 seconds emulated
+- "Initialising" text appears very briefly (too fast to see when working)
 
 ## External References
 
