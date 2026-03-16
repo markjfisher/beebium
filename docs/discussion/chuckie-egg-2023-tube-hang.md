@@ -286,7 +286,32 @@ Return true to stop. Enables precise parasite breakpoints from oracle.
 - Performance: jsbeeb side ~3s, Beebium side ~60s for 15 emulated
   seconds due to cross-process Tube spin-wait overhead. `stepCycles`
   is used directly (no polling), bottleneck is emulation speed itself.
-- Next: run R1 comparison to completion, find divergence point
+### DIVERGENCE FOUND (R1 byte 0)
+
+The differential test reveals that the **very first R1 byte** differs:
+
+```
+jsbeeb A=$C5 (correct, matches host $628D)
+Beebium A=$02 (WRONG)
+jsbeeb dest=$FC00 (correct decompressor start)
+Beebium dest=$0000 (uninitialised)
+```
+
+The Beebium parasite PC was `$F976` (Tube Client ROM), not `$0819`.
+The breakpoint at `$0819` was never hit — the decompressor was never
+entered. This reframes the problem: the issue is in the **game code
+loading/execution phase**, not the decompressor itself.
+
+The MOS Tube type-6 NMI transfer or the type-4 execute command is
+not working correctly in the cross-process model. The breakpoint
+polling timeout (60s real) may be too short given Tube overhead.
+
+### Next steps
+
+- Increase breakpoint timeout and verify `$0819` is eventually hit
+- Inspect parasite memory at `$0800` during the breakpoint wait to
+  see if the decompressor code was loaded
+- Compare the MOS Tube type-4 execute command handling
 
 ### Timing reference (from manual jsbeeb testing)
 
