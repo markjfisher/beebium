@@ -278,12 +278,71 @@ same approach as breakpoints should be used: a plain array checked
 inline in the tick loop, with the `std::function` callback invoked only
 when a watchpoint actually fires (the rare case).
 
+### 1.7 Conditional Expressions
+
+Breakpoints and watchpoints can have an optional condition expression.
+The condition is evaluated only when the address match fires (the rare
+case), so it does not need to be as fast as the address check itself.
+
+The expression language is a small C-like subset, passed as a string
+from any client (Python, TypeScript, future GUI), parsed once on the
+server, compiled to bytecode, and evaluated by a small stack VM.
+
+Grammar:
+
+```
+expr   := or
+or     := and ('||' and)*
+and    := cmp ('&&' cmp)*
+cmp    := bitop (('==' '!=' '<' '>' '<=' '>=') bitop)?
+bitop  := sum (('&' '|' '^') sum)*
+sum    := term (('+' '-') term)*
+term   := factor (('*' '/' '%') factor)*
+factor := number | register | 'mem[' expr ']' | '(' expr ')' | '!' factor
+```
+
+Available identifiers:
+- Registers: `A`, `X`, `Y`, `SP`, `PC`, `P`
+- Status flags: `C`, `Z`, `I`, `D`, `V`, `N` (individual bits of P)
+- Cycle counter: `cycles`
+- Memory dereference: `mem[expr]` (peek semantics, no side effects)
+
+Number literals: decimal, `0x` hex, `0b` binary.
+
+Examples:
+
+```
+A == 0x42 && mem[0x4000] == 0xFF
+PC == 0x8000 && cycles > 1000000
+mem[0xFE00] & 0x80
+X >= 5 && Y < 10
+```
+
+The condition string is sent with the `AddBreakpoint` or `AddWatchpoint`
+RPC. The server parses it once and stores the compiled bytecode with
+the breakpoint/watchpoint entry. Evaluation is a tight loop over a
+small bytecode array -- nanoseconds per evaluation.
+
+If the condition string is empty or absent, the breakpoint/watchpoint
+is unconditional (fires on every address match).
+
+### 1.8 Hit Counts
+
+Breakpoints and watchpoints can have an optional hit count. The
+breakpoint fires only on the Nth hit, or every Nth hit.
+
+Modes:
+- **exact**: Fire on hit number N, then disable.
+- **multiple**: Fire every N hits.
+- **greater**: Fire on every hit after N.
+
+The hit counter increments after the condition (if any) evaluates to
+true. This allows combining conditions with hit counts: "stop the 5th
+time A == 0 at this address."
+
 ## 5. Non-Requirements
 
 - **Reverse debugging / time travel**: Not required.
-- **Conditional breakpoints with expressions**: Not required. Simple
-  address matching is sufficient. Complex conditions can be implemented
-  client-side.
 - **Multi-parasite**: Only one parasite is supported at a time.
 - **Cross-processor breakpoints**: "Stop the parasite when the host
   writes to address X" is not required. The Tube register interface
