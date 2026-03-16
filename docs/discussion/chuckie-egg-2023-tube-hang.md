@@ -282,8 +282,11 @@ Return true to stop. Enables precise parasite breakpoints from oracle.
 - Beebium boots to game loading screen via TypeScript client
 - `runForEmulatedSeconds()` and `runUntilOrTimeout()` work on both
   TypeScript and Python clients
-- R1 byte comparison test structurally complete; Beebium boot/connect
-  sequence still needs optimisation (takes ~5min vs jsbeeb's ~3s)
+- R1 byte comparison test structurally complete
+- Performance: jsbeeb side ~3s, Beebium side ~60s for 15 emulated
+  seconds due to cross-process Tube spin-wait overhead. `stepCycles`
+  is used directly (no polling), bottleneck is emulation speed itself.
+- Next: run R1 comparison to completion, find divergence point
 
 ### Timing reference (from manual jsbeeb testing)
 
