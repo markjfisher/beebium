@@ -231,4 +231,127 @@ describe('Tube CE2023 Differential', () => {
             await host.close();
         }
     }, 300000);
+
+    it('memory comparison after decompression', async () => {
+        // jsbeeb: boot and run past decompression (40s emulated reaches
+        // well past the "Loading" screen where decompression is complete)
+        const oracle = await bootJsbeeb();
+        await oracle.runCycles(80_000_000);  // ~40s emulated
+        console.log(`jsbeeb parasite PC=$${oracle.getParasiteCpuState().pc.toString(16).toUpperCase()}`);
+
+        // Beebium: boot with coupled mode, load game, run to hang point
+        const host = await Beebium.launch({
+            args: [
+                '--tube', '65C02-3MHz',
+                '--fdc', 'acorn-1770',
+                '--sideways', `14:rom:${DFS_ROM_FILEPATH}`,
+            ],
+            timeoutMs: 20000,
+        });
+
+        try {
+            // Boot to Tube banner (polling mode -- parasite isn't
+            // registered yet during initial boot)
+            const bannerFound = await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Acorn TUBE"),
+                10,
+            );
+            expect(bannerFound).toBe(true);
+
+            // Insert disc, type command, run until "Initialising" appears.
+            // Use coupled mode now that the parasite is connected.
+            await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
+            await host.keyboard.type("*EXEC !BOOT\r");
+            const initFound = await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Initialising"),
+                30,
+                { coupled: true },
+            );
+            console.log(`Beebium reached Initialising: ${initFound}`);
+            expect(initFound).toBe(true);
+
+            // Run 5 more emulated seconds so the decompressor has time
+            // to consume all 702 R1 bytes and write 64K output.
+            await host.runUntilOrTimeout(
+                () => Promise.resolve(false),  // Never true -- runs full duration
+                5,
+                { coupled: true },
+            );
+
+            // Connect parasite and stop both for memory dump
+            const parasite = await host.connectParasite();
+            if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            const beePC = (await parasite.cpu.getRegisters()).pc;
+            console.log(`Beebium parasite PC=$${beePC.toString(16).toUpperCase()}`);
+
+            // Compare full 64K parasite memory in 256-byte pages
+            let firstDiffAddr = -1;
+            let firstDiffJs = 0;
+            let firstDiffBee = 0;
+            let totalDiffs = 0;
+            const diffPages: number[] = [];
+
+            for (let page = 0; page < 256; page++) {
+                const addr = page * 256;
+                const jsData = oracle.readParasiteMemory(addr, 256);
+                const beeData = await parasite.memory.address.peek.read(addr, 256);
+                let pageDiffs = 0;
+                for (let i = 0; i < 256; i++) {
+                    if (jsData[i] !== beeData[i]) {
+                        if (firstDiffAddr < 0) {
+                            firstDiffAddr = addr + i;
+                            firstDiffJs = jsData[i];
+                            firstDiffBee = beeData[i];
+                        }
+                        pageDiffs++;
+                        totalDiffs++;
+                    }
+                }
+                if (pageDiffs > 0) {
+                    diffPages.push(page);
+                }
+            }
+
+            console.log(`Total differing bytes: ${totalDiffs}/65536`);
+            console.log(`Differing pages: ${diffPages.map(p => '$' + (p * 256).toString(16).toUpperCase().padStart(4, '0')).join(', ')}`);
+
+            if (firstDiffAddr >= 0) {
+                console.log(`\nFirst divergence at $${firstDiffAddr.toString(16).toUpperCase().padStart(4, '0')}:`);
+                console.log(`  jsbeeb=$${firstDiffJs.toString(16).toUpperCase().padStart(2, '0')}`);
+                console.log(`  Beebium=$${firstDiffBee.toString(16).toUpperCase().padStart(2, '0')}`);
+
+                // Dump context around the divergence
+                const contextStart = Math.max(0, firstDiffAddr - 16) & ~0xF;
+                const contextLen = 64;
+                const jsContext = oracle.readParasiteMemory(contextStart, contextLen);
+                const beeContext = await parasite.memory.address.peek.read(contextStart, contextLen);
+                console.log(`\nContext around $${firstDiffAddr.toString(16).toUpperCase()}:`);
+                for (let row = 0; row < contextLen; row += 16) {
+                    const addr = contextStart + row;
+                    const jsHex = Array.from(jsContext.slice(row, row + 16))
+                        .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const beeHex = Array.from(beeContext.slice(row, row + 16))
+                        .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const markers = Array.from({ length: 16 }, (_, i) =>
+                        jsContext[row + i] !== beeContext[row + i] ? '^^' : '  '
+                    ).join(' ');
+                    console.log(`  $${addr.toString(16).toUpperCase().padStart(4, '0')}: js  ${jsHex}`);
+                    console.log(`  $${addr.toString(16).toUpperCase().padStart(4, '0')}: bee ${beeHex}`);
+                    if (markers.trim()) {
+                        console.log(`         ${markers}`);
+                    }
+                }
+            } else {
+                console.log('All 64K bytes match!');
+            }
+
+            expect(totalDiffs).toBeGreaterThan(0);  // We expect differences
+
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 120000);
 });
