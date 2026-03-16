@@ -51,7 +51,7 @@ namespace beebium {
 class ParasiteRunner {
 public:
     using Memory = ParasiteMemoryMap;
-    using BreakpointHitCallback = std::function<void(uint16_t pc)>;
+    using BreakpointHitCallback = std::function<void(const BreakpointEntry& bp, uint16_t pc)>;
     // Construct with a pointer to the shared memory region and a 2 KB ROM image.
     ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom);
     ~ParasiteRunner() = default;
@@ -123,10 +123,15 @@ public:
 
     // --- Breakpoint management (sorted vector, modified only while stopped) ---
 
-    void set_breakpoint_addresses(std::vector<uint16_t> addrs) {
-        std::sort(addrs.begin(), addrs.end());
-        breakpoint_addresses_ = std::move(addrs);
+    void set_breakpoint_entries(std::vector<BreakpointEntry> entries) {
+        std::sort(entries.begin(), entries.end(),
+                  [](const BreakpointEntry& a, const BreakpointEntry& b) {
+                      return a.address < b.address;
+                  });
+        breakpoint_entries_ = std::move(entries);
     }
+
+    const std::vector<BreakpointEntry>& breakpoint_entries() const { return breakpoint_entries_; }
 
     void set_breakpoint_hit_callback(BreakpointHitCallback cb) {
         on_breakpoint_hit_ = std::move(cb);
@@ -195,7 +200,7 @@ private:
     std::atomic<uint64_t> sequence_{0};
 
     // Breakpoint addresses (sorted, checked inline at instruction boundaries)
-    std::vector<uint16_t> breakpoint_addresses_;
+    std::vector<BreakpointEntry> breakpoint_entries_;
     BreakpointHitCallback on_breakpoint_hit_;
 
     // Watchpoint entries (sorted by start, checked inline on every bus access)

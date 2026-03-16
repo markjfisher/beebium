@@ -55,6 +55,22 @@ enum WatchType : uint8_t {
     WATCH_BOTH  = 0x03
 };
 
+// Debugger breakpoint entry -- checked inline in the tick loop at instruction boundaries.
+// Sorted by address. Modified only while the machine is stopped.
+struct BreakpointEntry {
+    uint32_t id;
+    uint16_t address;
+    bool stop_counterpart = false;
+
+    // Condition expression (evaluated on address match).
+    // Empty = unconditional (always stops). Uses the same expression syntax
+    // as watchpoints, including the `hits` pseudo-variable.
+    std::optional<CompiledExpression> condition;
+
+    // Hit counter: increments on every address match, available as `hits` in the condition.
+    uint64_t hit_count = 0;
+};
+
 // Debugger watchpoint entry -- checked inline in CpuBinding on every bus access.
 // Sorted by start address. Modified only while the machine is stopped.
 struct WatchpointEntry {

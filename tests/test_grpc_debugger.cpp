@@ -960,10 +960,10 @@ TEST_CASE("Direct inline breakpoint without gRPC", "[debugger][breakpoint][6502]
     CHECK(M6502_IsAboutToExecute(&machine.cpu()));
 
     // Set breakpoint at $0402
-    machine.set_breakpoint_addresses({0x0402});
+    machine.set_breakpoint_entries({beebium::BreakpointEntry{1, 0x0402}});
     bool hit = false;
     uint16_t hit_pc = 0;
-    machine.set_breakpoint_hit_callback([&](uint16_t pc) {
+    machine.set_breakpoint_hit_callback([&](const beebium::BreakpointEntry&, uint16_t pc) {
         hit = true;
         hit_pc = pc;
         machine.pause();

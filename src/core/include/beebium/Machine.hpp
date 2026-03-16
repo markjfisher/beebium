@@ -51,8 +51,9 @@ constexpr uint8_t kIrqDeviceMask = 0x07;
 constexpr uint8_t kDiscNmiDeviceMask = 0x01;
 constexpr uint8_t kEconetNmiDeviceMask = 0x02;
 
-// Breakpoint hit callback: called on the rare path when a breakpoint address matches
-using BreakpointHitCallback = std::function<void(uint16_t pc)>;
+// Breakpoint hit callback: called on the rare path when a breakpoint address matches.
+// Receives the entry (for condition evaluation) and the PC.
+using BreakpointHitCallback = std::function<void(const BreakpointEntry& bp, uint16_t pc)>;
 
 // Watchpoint hit callback: same type as CpuBinding's inline check callback
 using WatchpointHitCallback = CpuWatchpointHitCallback;
@@ -311,14 +312,14 @@ public:
             // read=Opcode.  Use opcode_pc (the address of the opcode about to
             // be decoded), not pc (which has already been advanced past it by
             // M6502_NextInstruction's post-increment).
-            if (!breakpoint_addresses_.empty() && M6502_IsAboutToExecute(&state_.cpu)) {
+            if (!breakpoint_entries_.empty() && M6502_IsAboutToExecute(&state_.cpu)) {
                 uint16_t pc = state_.cpu.opcode_pc.w;
-                for (uint16_t addr : breakpoint_addresses_) {
-                    if (addr == pc) {
-                        if (on_breakpoint_hit_) on_breakpoint_hit_(pc);
+                for (auto& bp : breakpoint_entries_) {
+                    if (bp.address == pc) {
+                        if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
                         return;
                     }
-                    if (addr > pc) break;  // sorted: no point continuing
+                    if (bp.address > pc) break;  // sorted: early exit
                 }
             }
 
@@ -446,15 +447,20 @@ public:
     // Side-effect-free read for debugger inspection
     uint8_t peek(uint16_t addr) const { return state_.memory.peek(addr); }
 
-    // Breakpoint address management (sorted vector, modified only while stopped)
-    void set_breakpoint_addresses(std::vector<uint16_t> addrs) {
-        std::sort(addrs.begin(), addrs.end());
-        breakpoint_addresses_ = std::move(addrs);
+    // Breakpoint entry management (sorted by address, modified only while stopped)
+    void set_breakpoint_entries(std::vector<BreakpointEntry> entries) {
+        std::sort(entries.begin(), entries.end(),
+                  [](const BreakpointEntry& a, const BreakpointEntry& b) {
+                      return a.address < b.address;
+                  });
+        breakpoint_entries_ = std::move(entries);
     }
 
     void set_breakpoint_hit_callback(BreakpointHitCallback cb) {
         on_breakpoint_hit_ = std::move(cb);
     }
+
+    const std::vector<BreakpointEntry>& breakpoint_entries() const { return breakpoint_entries_; }
 
     // Debugger watchpoint entry management (sorted by start, modified only while stopped)
     void set_watchpoint_entries(std::vector<WatchpointEntry> entries) {
@@ -503,7 +509,7 @@ private:
     VideoBindingType video_binding_;
     SystemClockType system_clock_;
 
-    std::vector<uint16_t> breakpoint_addresses_;       // sorted, modified only while stopped
+    std::vector<BreakpointEntry> breakpoint_entries_;    // sorted by address, modified only while stopped
     BreakpointHitCallback on_breakpoint_hit_;           // rare-path callback
     std::vector<WatchpointEntry> watchpoint_entries_;   // sorted by start, modified only while stopped
     WatchpointHitCallback on_watchpoint_hit_;           // rare-path callback

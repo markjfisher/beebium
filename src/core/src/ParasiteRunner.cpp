@@ -50,14 +50,14 @@ void ParasiteRunner::run(uint64_t cycles) {
             // Check breakpoints before tick(), when register updates are complete.
             // Use opcode_pc (the actual instruction address), not pc (already
             // advanced past the opcode by M6502_NextInstruction).
-            if (!breakpoint_addresses_.empty() && M6502_IsAboutToExecute(&cpu_.cpu())) {
+            if (!breakpoint_entries_.empty() && M6502_IsAboutToExecute(&cpu_.cpu())) {
                 uint16_t pc = cpu_.cpu().opcode_pc.w;
-                for (uint16_t addr : breakpoint_addresses_) {
-                    if (addr == pc) {
-                        if (on_breakpoint_hit_) on_breakpoint_hit_(pc);
+                for (auto& bp : breakpoint_entries_) {
+                    if (bp.address == pc) {
+                        if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
                         return;
                     }
-                    if (addr > pc) break;  // sorted: no point continuing
+                    if (bp.address > pc) break;  // sorted: early exit
                 }
             }
 

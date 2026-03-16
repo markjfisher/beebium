@@ -71,11 +71,12 @@ void write_with_optional_pc(Machine& machine, uint16_t addr, uint8_t val, bool h
     machine.write(addr, val);
 }
 
-/// Internal breakpoint representation
-struct BreakpointEntry {
+/// Internal breakpoint record (service-layer, holds parsed condition)
+struct BreakpointRecord {
     uint32_t id;
     uint32_t address;
     bool stop_counterpart = false;
+    std::optional<beebium::CompiledExpression> condition;
 };
 
 /// gRPC service implementation for DebuggerControl
@@ -218,7 +219,7 @@ public:
 
 private:
     void fill_execution_state(ExecutionState* state);
-    void update_breakpoint_addresses();
+    void update_breakpoint_entries();
     void update_watchpoint_entries();
     void enqueue_event(StopReason reason);
     void enqueue_event(StopReason reason, const WatchpointHitInfo& watchpoint_hit);
@@ -226,7 +227,7 @@ private:
 
     MachineType& machine_;
     std::mutex mutex_;
-    std::vector<BreakpointEntry> breakpoints_;
+    std::vector<BreakpointRecord> breakpoints_;
     std::atomic<uint32_t> next_breakpoint_id_{1};
     std::string halt_reason_;
 
@@ -267,19 +268,37 @@ private:
 template<typename MachineType>
 DebuggerControlServiceImpl<MachineType>::DebuggerControlServiceImpl(MachineType& machine)
     : machine_(machine) {
-    machine_.set_breakpoint_hit_callback([this](uint16_t pc) {
+    machine_.set_breakpoint_hit_callback([this](const beebium::BreakpointEntry& bp, uint16_t pc) {
+        // Increment hit counter
+        auto& mutable_bp = const_cast<beebium::BreakpointEntry&>(bp);
+        ++mutable_bp.hit_count;
+
+        // Evaluate condition (if present; absent = unconditional = stop)
+        bool should_stop = true;
+        if (bp.condition) {
+            beebium::ExprCpuState cpu_state{
+                machine_.a(), machine_.x(), machine_.y(),
+                machine_.sp(), machine_.p(),
+                machine_.cpu().opcode_pc.w, machine_.cycle_count(),
+                bp.hit_count
+            };
+            auto peek_fn = [](void* ctx, uint16_t a) -> uint8_t {
+                return static_cast<MachineType*>(ctx)->peek(a);
+            };
+            should_stop = beebium::evaluate(
+                *bp.condition, cpu_state, peek_fn, &machine_) != 0;
+        }
+
+        if (!should_stop) return;
+
         std::lock_guard<std::mutex> lock(mutex_);
         std::ostringstream oss;
         oss << "breakpoint at $" << std::hex << std::uppercase
             << std::setw(4) << std::setfill('0') << pc;
         halt_reason_ = oss.str();
 
-        // Check if this breakpoint should stop the counterpart processor
-        for (const auto& bp : breakpoints_) {
-            if (bp.address == pc && bp.stop_counterpart) {
-                signal_counterpart_stop();
-                break;
-            }
+        if (bp.stop_counterpart) {
+            signal_counterpart_stop();
         }
 
         machine_.pause();
@@ -354,12 +373,17 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(StopReason reason) {
 }
 
 template<typename MachineType>
-void DebuggerControlServiceImpl<MachineType>::update_breakpoint_addresses() {
-    std::vector<uint16_t> addrs;
-    addrs.reserve(breakpoints_.size());
-    for (const auto& bp : breakpoints_)
-        addrs.push_back(static_cast<uint16_t>(bp.address));
-    machine_.set_breakpoint_addresses(std::move(addrs));
+void DebuggerControlServiceImpl<MachineType>::update_breakpoint_entries() {
+    std::vector<beebium::BreakpointEntry> entries;
+    entries.reserve(breakpoints_.size());
+    for (const auto& bp : breakpoints_) {
+        entries.push_back({bp.id,
+                          static_cast<uint16_t>(bp.address),
+                          bp.stop_counterpart,
+                          bp.condition,
+                          0});  // reset hit_count
+    }
+    machine_.set_breakpoint_entries(std::move(entries));
 }
 
 template<typename MachineType>
@@ -700,9 +724,21 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddBreakpoint(
         return grpc::Status::OK;
     }
 
+    // Parse optional condition expression
+    std::optional<beebium::CompiledExpression> condition;
+    if (!request->condition().empty()) {
+        auto result = beebium::compile(request->condition());
+        if (std::holds_alternative<std::string>(result)) {
+            response->set_success(false);
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                std::get<std::string>(result));
+        }
+        condition = std::get<beebium::CompiledExpression>(std::move(result));
+    }
+
     uint32_t id = next_breakpoint_id_++;
-    breakpoints_.push_back({id, address, request->stop_counterpart()});
-    update_breakpoint_addresses();
+    breakpoints_.push_back({id, address, request->stop_counterpart(), std::move(condition)});
+    update_breakpoint_entries();
 
     response->set_success(true);
     response->set_id(id);
@@ -719,11 +755,11 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::RemoveBreakpoint(
 
     uint32_t id = request->id();
     auto it = std::find_if(breakpoints_.begin(), breakpoints_.end(),
-        [id](const BreakpointEntry& bp) { return bp.id == id; });
+        [id](const BreakpointRecord& bp) { return bp.id == id; });
 
     if (it != breakpoints_.end()) {
         breakpoints_.erase(it);
-        update_breakpoint_addresses();
+        update_breakpoint_entries();
         response->set_success(true);
     } else {
         response->set_success(false);
@@ -759,7 +795,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ClearBreakpoints(
 
     uint32_t count = static_cast<uint32_t>(breakpoints_.size());
     breakpoints_.clear();
-    update_breakpoint_addresses();
+    update_breakpoint_entries();
 
     response->set_count_removed(count);
     return grpc::Status::OK;
