@@ -249,10 +249,35 @@ state transitions. A stop event must not be delivered before the
 corresponding run event. Coalescing multiple transitions into a single
 event is not acceptable.
 
+### 1.6 Memory Watchpoints
+
+The core already has a watchpoint mechanism (`Machine::add_watchpoint`)
+that fires a callback on bus reads, writes, or both to an address range.
+This is not yet exposed via gRPC.
+
+Requirements:
+- **Add / Remove / List / Clear**: Manage a set of address-range
+  watchpoints, each specifying read, write, or both.
+- When a watchpoint fires, the processor stops and a notification is
+  delivered via the event stream (Section 1.4), including the address,
+  value, access type (read/write), and cycle count.
+- The watchpoint check fires on every bus access (every cycle), so it
+  must be extremely cheap. A linear scan of a small fixed-size array
+  (max 16 entries) of address ranges is acceptable. No function-call
+  indirection, no mutex, no `std::function` invocation per cycle.
+- As with breakpoints, the watchpoint list is modified only while the
+  machine is stopped, so no synchronisation is needed on the read path.
+
+The existing implementation uses `std::function<void(...)>` callbacks
+dispatched from `CpuBinding` via a `std::vector<Watchpoint>`. This has
+per-access overhead from the virtual dispatch and vector iteration. The
+same approach as breakpoints should be used: a plain array checked
+inline in the tick loop, with the `std::function` callback invoked only
+when a watchpoint actually fires (the rare case).
+
 ## 5. Non-Requirements
 
 - **Reverse debugging / time travel**: Not required.
-- **Hardware watchpoints**: Not required (address breakpoints suffice).
 - **Conditional breakpoints with expressions**: Not required. Simple
   address matching is sufficient. Complex conditions can be implemented
   client-side.
