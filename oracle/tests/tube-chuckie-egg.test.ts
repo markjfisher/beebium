@@ -69,14 +69,11 @@ async function bootBeebiumToParasiteAddress(
     // Run host — the parasite will hit the breakpoint and stop
     // Use run() + poll instead of stepCycles since the host needs
     // to keep running while the parasite processes the game load
+    const stopPromise = parasite.debugger.waitForStop();
     await host.debugger.run();
 
-    // Wait for the parasite to stop at the breakpoint.
-    // TODO: Replace with a server-side WaitForStop or RunUntilAddress RPC.
-    for (let i = 0; i < 300; i++) {  // 60 seconds max (200ms * 300)
-        await new Promise(r => setTimeout(r, 200));
-        if (await parasite.debugger.isStopped()) break;
-    }
+    // Wait for the parasite to stop at the breakpoint via event stream.
+    await stopPromise;
 
     // Clean up breakpoint
     await parasite.debugger.removeBreakpoint(bpId);
@@ -166,14 +163,11 @@ describe('Tube CE2023 Differential', () => {
                     await oracle.runUntilParasiteAddress(AFTER_R1_READ, 5);
 
                     // Beebium side: run host (which feeds data to parasite)
-                    // and wait for parasite to hit the breakpoint
+                    // and wait for parasite to hit the breakpoint via event stream
+                    const parasiteStopPromise = parasite.debugger.waitForStop();
                     await host.debugger.run();
                     await parasite.debugger.run();
-                    // Poll until parasite stops at breakpoint
-                    for (let poll = 0; poll < 1000; poll++) {
-                        await new Promise(r => setTimeout(r, 10));
-                        if (await parasite.debugger.isStopped()) break;
-                    }
+                    await parasiteStopPromise;
                     if (await host.debugger.isRunning()) await host.debugger.stop();
 
                     const jsA = oracle.getParasiteCpuState().a;

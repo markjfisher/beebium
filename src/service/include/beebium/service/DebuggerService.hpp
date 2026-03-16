@@ -19,6 +19,7 @@
 #include <mutex>
 #include <vector>
 #include <atomic>
+#include <condition_variable>
 #include <sstream>
 #include <iomanip>
 #include <concepts>
@@ -184,15 +185,29 @@ public:
         const Set6502StateRequest* request,
         Set6502StateResponse* response) override;
 
+    // Event streaming
+    grpc::Status WatchExecutionState(
+        grpc::ServerContext* context,
+        const WatchExecutionStateRequest* request,
+        grpc::ServerWriter<ExecutionStateEvent>* writer) override;
+
 private:
     void fill_execution_state(ExecutionState* state);
     void update_breakpoint_callback();
+    void notify_execution_state_change(StopReason reason);
 
     MachineType& machine_;
     std::mutex mutex_;
     std::vector<BreakpointEntry> breakpoints_;
     std::atomic<uint32_t> next_breakpoint_id_{1};
     std::string halt_reason_;
+    StopReason last_stop_reason_{STOP_REASON_UNKNOWN};
+
+    // Separate mutex/CV for execution state watchers to avoid deadlock
+    // with mutex_ which is held during the breakpoint callback.
+    mutable std::mutex execution_watchers_mutex_;
+    std::condition_variable execution_watchers_cv_;
+    std::atomic<bool> execution_state_changed_{false};
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -213,6 +228,13 @@ void DebuggerControlServiceImpl<MachineType>::fill_execution_state(ExecutionStat
 }
 
 template<typename MachineType>
+void DebuggerControlServiceImpl<MachineType>::notify_execution_state_change(StopReason reason) {
+    last_stop_reason_ = reason;
+    execution_state_changed_.store(true);
+    execution_watchers_cv_.notify_all();
+}
+
+template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::update_breakpoint_callback() {
     if (breakpoints_.empty()) {
         machine_.set_instruction_callback(nullptr);
@@ -227,6 +249,7 @@ void DebuggerControlServiceImpl<MachineType>::update_breakpoint_callback() {
                             << std::setw(4) << std::setfill('0') << pc;
                         halt_reason_ = oss.str();
                         machine_.pause();
+                        notify_execution_state_change(STOP_REASON_BREAKPOINT);
                         return false;  // Stop execution
                     }
                 }
@@ -263,6 +286,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Run(
 
     halt_reason_.clear();
     machine_.resume();
+    notify_execution_state_change(STOP_REASON_UNKNOWN);
     response->set_success(true);
     return grpc::Status::OK;
 }
@@ -277,6 +301,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Stop(
 
     machine_.pause();
     halt_reason_ = "stopped by debugger";
+    notify_execution_state_change(STOP_REASON_MANUAL);
     response->set_success(true);
     fill_execution_state(response->mutable_state());
     return grpc::Status::OK;
@@ -630,6 +655,57 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ClearBreakpoints(
     update_breakpoint_callback();
 
     response->set_count_removed(count);
+    return grpc::Status::OK;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Event Streaming - DebuggerControlServiceImpl
+//////////////////////////////////////////////////////////////////////////////
+
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
+    grpc::ServerContext* context,
+    const WatchExecutionStateRequest* /*request*/,
+    grpc::ServerWriter<ExecutionStateEvent>* writer) {
+
+    // Send initial state immediately
+    {
+        ExecutionStateEvent event;
+        event.set_reason(last_stop_reason_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            fill_execution_state(event.mutable_state());
+        }
+        if (!writer->Write(event)) {
+            return grpc::Status::OK;
+        }
+    }
+
+    // Wait for state changes in a loop
+    while (!context->IsCancelled()) {
+        std::unique_lock<std::mutex> lock(execution_watchers_mutex_);
+        execution_watchers_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, context] {
+            return execution_state_changed_.load() || context->IsCancelled();
+        });
+
+        if (context->IsCancelled()) {
+            break;
+        }
+
+        if (execution_state_changed_.exchange(false)) {
+            ExecutionStateEvent event;
+            event.set_reason(last_stop_reason_);
+            {
+                std::lock_guard<std::mutex> machine_lock(mutex_);
+                fill_execution_state(event.mutable_state());
+                event.set_message(halt_reason_);
+            }
+            if (!writer->Write(event)) {
+                break;
+            }
+        }
+    }
+
     return grpc::Status::OK;
 }
 

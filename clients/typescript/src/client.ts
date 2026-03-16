@@ -326,53 +326,36 @@ export class Beebium {
      * Run the emulator until predicate returns true or the emulated time
      * budget expires.
      *
-     * The predicate is called periodically (after at least 1 emulated
-     * second to allow keyboard input and Tube protocol processing).
-     * The emulator is stopped during predicate evaluation and left
-     * stopped on return.
+     * Uses chunked synchronous stepCycles calls, checking the predicate
+     * after each chunk. No real-time sleeps -- fully deterministic.
      *
      * @param predicate - Async function returning true when the condition is met.
      * @param emulatedSeconds - Maximum emulated time to run.
-     * @param pollIntervalMs - Real-time ms between polls (default 20).
+     * @param chunkSeconds - Emulated seconds per chunk (default 1.0).
      * @returns true if the predicate was satisfied, false on timeout.
      */
     async runUntilOrTimeout(
         predicate: () => Promise<boolean>,
         emulatedSeconds: number,
-        pollIntervalMs = 20,
+        chunkSeconds = 1.0,
     ): Promise<boolean> {
         const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
-        const cycleBudget = Math.round(emulatedSeconds * clockHz);
-        const startCycles = (await this.debugger.getState()).cycleCount;
-        const targetCycles = startCycles + cycleBudget;
-        const minCyclesBeforeCheck = clockHz; // 1 emulated second
+        const totalCycles = Math.round(emulatedSeconds * clockHz);
+        const chunkCycles = Math.round(chunkSeconds * clockHz);
+        let remaining = totalCycles;
 
-        if (await this.debugger.isStopped()) {
-            await this.debugger.run();
-        }
-        try {
-            while (true) {
-                await new Promise(r => setTimeout(r, pollIntervalMs));
-                const state = await this.debugger.getState();
-
-                if (state.cycleCount >= targetCycles) {
-                    await this.debugger.stop();
-                    return predicate();
-                }
-
-                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
-                    await this.debugger.stop();
-                    if (await predicate()) {
-                        return true;
-                    }
-                    await this.debugger.run();
-                }
-            }
-        } finally {
+        while (remaining > 0) {
+            const step = Math.min(remaining, chunkCycles);
             if (await this.debugger.isRunning()) {
                 await this.debugger.stop();
             }
+            await this.debugger.stepCycles(step);
+            remaining -= step;
+            if (await predicate()) {
+                return true;
+            }
         }
+        return false;
     }
 
     /**

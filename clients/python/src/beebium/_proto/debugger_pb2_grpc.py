@@ -78,6 +78,11 @@ class DebuggerControlStub(object):
                 request_serializer=debugger__pb2.StepRequest.SerializeToString,
                 response_deserializer=debugger__pb2.StepResponse.FromString,
                 _registered_method=True)
+        self.WatchExecutionState = channel.unary_stream(
+                '/beebium.DebuggerControl/WatchExecutionState',
+                request_serializer=debugger__pb2.WatchExecutionStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.ExecutionStateEvent.FromString,
+                _registered_method=True)
         self.ReadMemory = channel.unary_unary(
                 '/beebium.DebuggerControl/ReadMemory',
                 request_serializer=debugger__pb2.ReadMemoryRequest.SerializeToString,
@@ -183,6 +188,13 @@ class DebuggerControlServicer(object):
 
     def StepCycle(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WatchExecutionState(self, request, context):
+        """Event streaming
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -301,6 +313,11 @@ def add_DebuggerControlServicer_to_server(servicer, server):
                     servicer.StepCycle,
                     request_deserializer=debugger__pb2.StepRequest.FromString,
                     response_serializer=debugger__pb2.StepResponse.SerializeToString,
+            ),
+            'WatchExecutionState': grpc.unary_stream_rpc_method_handler(
+                    servicer.WatchExecutionState,
+                    request_deserializer=debugger__pb2.WatchExecutionStateRequest.FromString,
+                    response_serializer=debugger__pb2.ExecutionStateEvent.SerializeToString,
             ),
             'ReadMemory': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadMemory,
@@ -532,6 +549,33 @@ class DebuggerControl(object):
             '/beebium.DebuggerControl/StepCycle',
             debugger__pb2.StepRequest.SerializeToString,
             debugger__pb2.StepResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WatchExecutionState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/beebium.DebuggerControl/WatchExecutionState',
+            debugger__pb2.WatchExecutionStateRequest.SerializeToString,
+            debugger__pb2.ExecutionStateEvent.FromString,
             options,
             channel_credentials,
             insecure,

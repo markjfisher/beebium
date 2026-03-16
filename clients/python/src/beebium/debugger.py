@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -48,6 +49,32 @@ class StepResult:
     instructions_executed: int
     cycles_executed: int
     state: ExecutionState
+
+
+@dataclass(frozen=True)
+class ExecutionStateEvent:
+    """An execution state change event from the server."""
+
+    reason: int
+    state: ExecutionState
+    message: str
+
+
+def _to_execution_state(proto_state) -> ExecutionState:
+    return ExecutionState(
+        is_running=proto_state.is_running,
+        cycle_count=proto_state.cycle_count,
+        halt_reason=proto_state.halt_reason,
+        sequence=proto_state.sequence,
+    )
+
+
+def _to_execution_state_event(proto_event) -> ExecutionStateEvent:
+    return ExecutionStateEvent(
+        reason=proto_event.reason,
+        state=_to_execution_state(proto_event.state),
+        message=proto_event.message,
+    )
 
 
 class Debugger:
@@ -287,6 +314,39 @@ class Debugger:
         response = self._stub.ClearBreakpoints(debugger_pb2.Empty())
         return response.count_removed
 
+    # Event streaming
+
+    def watch_execution_state(self) -> Iterator[ExecutionStateEvent]:
+        """Stream execution state change events from the server.
+
+        The server sends the current state immediately, then pushes events
+        whenever the execution state changes (breakpoint hit, manual stop,
+        run resumed, etc.).
+
+        Yields:
+            ExecutionStateEvent for each state change.
+        """
+        request = debugger_pb2.WatchExecutionStateRequest()
+        for response in self._stub.WatchExecutionState(request):
+            yield _to_execution_state_event(response)
+
+    def wait_for_stop(self) -> ExecutionStateEvent:
+        """Wait for the machine to stop executing.
+
+        Subscribes to the execution state stream and returns the first
+        event where the machine is not running.
+
+        Returns:
+            The event that caused the machine to stop.
+
+        Raises:
+            DebuggerError: If the stream ends without a stop event.
+        """
+        for event in self.watch_execution_state():
+            if not event.state.is_running:
+                return event
+        raise DebuggerError("Execution state stream ended without a stop event")
+
     # Run-until helpers
 
     def run_until(
@@ -294,8 +354,8 @@ class Debugger:
     ) -> ExecutionState:
         """Run until the PC reaches the given address.
 
-        Sets a temporary breakpoint, runs, waits for the breakpoint,
-        and then clears the breakpoint.
+        Sets a temporary breakpoint, subscribes to execution state events,
+        starts execution, and waits for the machine to stop.
 
         Args:
             address: The address to run until.
@@ -307,20 +367,16 @@ class Debugger:
         Raises:
             DebuggerError: If the breakpoint cannot be set.
         """
-        # Set temporary breakpoint
         bp_id = self.add_breakpoint(address)
-
         try:
-            # Start execution
+            stream = self._stub.WatchExecutionState(
+                debugger_pb2.WatchExecutionStateRequest()
+            )
             self.run()
-
-            # Wait for execution to stop (polling)
-            import time
-
-            while self.is_running:
-                time.sleep(0.001)
-
-            return self.get_state()
+            for event in stream:
+                if not event.state.is_running:
+                    stream.cancel()
+                    return _to_execution_state(event.state)
+            raise DebuggerError("Stream ended without stop")
         finally:
-            # Always remove the temporary breakpoint
             self.remove_breakpoint(bp_id)

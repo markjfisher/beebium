@@ -13,6 +13,10 @@ service DebuggerControl {
     rpc StepInstruction(StepRequest) returns (StepResponse);
     rpc StepCycle(StepRequest) returns (StepResponse);
 
+    // Event streaming
+    rpc WatchExecutionState(WatchExecutionStateRequest)
+        returns (stream ExecutionStateEvent);
+
     // Memory access (16-bit address space)
     rpc ReadMemory(ReadMemoryRequest) returns (ReadMemoryResponse);
     rpc WriteMemory(WriteMemoryRequest) returns (WriteMemoryResponse);
@@ -80,6 +84,22 @@ message StepResponse {
     uint32 instructions_executed = 3;
     uint64 cycles_executed = 4;
     ExecutionState state = 5;
+}
+
+message WatchExecutionStateRequest {}
+
+enum StopReason {
+    STOP_REASON_UNKNOWN = 0;
+    STOP_REASON_BREAKPOINT = 1;
+    STOP_REASON_MANUAL = 2;
+    STOP_REASON_ERROR = 3;
+    STOP_REASON_STEP_COMPLETE = 4;
+}
+
+message ExecutionStateEvent {
+    StopReason reason = 1;
+    ExecutionState state = 2;
+    string message = 3;
 }
 
 message ReadMemoryRequest {

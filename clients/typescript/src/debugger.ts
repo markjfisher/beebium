@@ -7,10 +7,13 @@
 import type { DebuggerControlClient } from "./generated/debugger.js";
 import type {
     ExecutionState as ProtoExecutionState,
+    ExecutionStateEvent as ProtoExecutionStateEvent,
     StepResponse as ProtoStepResponse,
     Breakpoint as ProtoBreakpoint,
 } from "./generated/debugger.js";
+import { StopReason } from "./generated/debugger.js";
 import { promisify } from "./call-utils.js";
+import { toAsyncIterable } from "./stream-utils.js";
 import { DebuggerError } from "./exceptions.js";
 
 export interface ExecutionState {
@@ -25,6 +28,12 @@ export interface Breakpoint {
     address: number;
 }
 
+export interface ExecutionStateEvent {
+    reason: StopReason;
+    state: ExecutionState;
+    message: string;
+}
+
 export interface StepResult {
     success: boolean;
     error: string;
@@ -32,6 +41,8 @@ export interface StepResult {
     cyclesExecuted: number;
     state: ExecutionState;
 }
+
+export { StopReason };
 
 function toExecutionState(proto: ProtoExecutionState): ExecutionState {
     return {
@@ -61,8 +72,14 @@ function toBreakpoint(proto: ProtoBreakpoint): Breakpoint {
     };
 }
 
-function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+function toExecutionStateEvent(proto: ProtoExecutionStateEvent): ExecutionStateEvent {
+    return {
+        reason: proto.reason,
+        state: proto.state
+            ? toExecutionState(proto.state)
+            : { isRunning: false, cycleCount: 0, haltReason: "", sequence: 0 },
+        message: proto.message,
+    };
 }
 
 /**
@@ -209,26 +226,46 @@ export class Debugger {
     }
 
     /**
+     * Subscribe to execution state change events as an async iterable.
+     *
+     * The server sends the current state immediately, then pushes events
+     * whenever the execution state changes (breakpoint hit, manual stop,
+     * run resumed, etc.).
+     */
+    async *watchExecutionState(): AsyncGenerator<ExecutionStateEvent> {
+        const stream = this.stub.watchExecutionState({});
+        for await (const event of toAsyncIterable(stream)) {
+            yield toExecutionStateEvent(event);
+        }
+    }
+
+    /**
+     * Wait for the machine to stop executing.
+     *
+     * Subscribes to the execution state stream and returns the first
+     * event where the machine is not running.
+     */
+    async waitForStop(): Promise<ExecutionStateEvent> {
+        for await (const event of this.watchExecutionState()) {
+            if (!event.state.isRunning) {
+                return event;
+            }
+        }
+        throw new DebuggerError("Execution state stream ended without a stop event");
+    }
+
+    /**
      * Run until execution reaches the given address.
      *
-     * Sets a temporary breakpoint, starts execution, waits for the machine
-     * to stop (breakpoint hit or other halt), then removes the breakpoint.
-     *
-     * TODO: Replace with a server-side RunUntilAddress RPC to eliminate
-     * client-side polling entirely. The current implementation polls
-     * getState() which adds gRPC round-trip overhead.
+     * Sets a temporary breakpoint, subscribes to execution state events,
+     * starts execution, and waits for the machine to stop.
      */
-    async runUntil(address: number, pollIntervalMs: number = 50): Promise<ExecutionState> {
+    async runUntil(address: number): Promise<ExecutionStateEvent> {
         const bpId = await this.addBreakpoint(address);
         try {
+            const stopPromise = this.waitForStop();
             await this.run();
-            while (true) {
-                await delay(pollIntervalMs);
-                const state = await this.getState();
-                if (!state.isRunning) {
-                    return state;
-                }
-            }
+            return await stopPromise;
         } finally {
             await this.removeBreakpoint(bpId);
         }
