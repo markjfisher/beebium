@@ -86,6 +86,19 @@ Semantics:
   ~1.5 million instructions per second. The per-instruction overhead
   of a breakpoint check must be well under 1 microsecond.
 
+Each breakpoint entry contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `uint32_t` | Unique identifier for add/remove |
+| `address` | `uint16_t` | PC address to match |
+| `stop_counterpart` | `bool` | Signal the other processor to stop (Section 1.9) |
+| `condition` | compiled expression | Optional, evaluated only on address match (Section 1.7) |
+| `hit_count` | hit count config | Optional, checked after condition (Section 1.8) |
+
+The hot-path linear scan only examines `address`. All other fields
+are consulted only when the address matches (the rare case).
+
 ## 2. Coupled System Debugging
 
 These requirements apply when a host and parasite are connected via the
@@ -271,6 +284,21 @@ Requirements:
   per cycle.
 - As with breakpoints, the watchpoint list is modified only while the
   machine is stopped, so no synchronisation is needed on the read path.
+
+Each watchpoint entry contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `uint32_t` | Unique identifier for add/remove |
+| `start` | `uint16_t` | Start of address range (inclusive) |
+| `end` | `uint16_t` | End of address range (exclusive) |
+| `type` | read/write/both | Which bus accesses to match |
+| `stop_counterpart` | `bool` | Signal the other processor to stop (Section 1.9) |
+| `condition` | compiled expression | Optional, evaluated only on range match (Section 1.7) |
+| `hit_count` | hit count config | Optional, checked after condition (Section 1.8) |
+
+The hot-path linear scan examines `start`, `end`, and `type`. All
+other fields are consulted only when the range and type match.
 
 The existing implementation uses `std::function<void(...)>` callbacks
 dispatched from `CpuBinding` via a `std::vector<Watchpoint>`. This has
