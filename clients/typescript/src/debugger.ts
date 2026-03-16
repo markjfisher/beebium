@@ -34,6 +34,15 @@ export interface ExecutionStateEvent {
     message: string;
 }
 
+export type WatchpointType = "read" | "write" | "both";
+
+export interface WatchpointInfo {
+    id: number;
+    startAddress: number;
+    endAddress: number;
+    type: WatchpointType;
+}
+
 export interface StepResult {
     success: boolean;
     error: string;
@@ -220,6 +229,68 @@ export class Debugger {
         const response = await promisify<{}, { countRemoved: number }>(
             this.stub as unknown as Record<string, Function>,
             "clearBreakpoints",
+            {},
+        );
+        return response.countRemoved;
+    }
+
+    /** Add a watchpoint on an address range. Returns the watchpoint ID. */
+    async addWatchpoint(
+        startAddress: number,
+        endAddress: number,
+        type: WatchpointType = "both",
+    ): Promise<number> {
+        const typeMap: Record<WatchpointType, number> = { read: 0, write: 1, both: 2 };
+        const response = await promisify<
+            { startAddress: number; endAddress: number; type: number },
+            { success: boolean; id: number }
+        >(
+            this.stub as unknown as Record<string, Function>,
+            "addWatchpoint",
+            { startAddress, endAddress, type: typeMap[type] },
+        );
+        if (!response.success) {
+            throw new DebuggerError(
+                `addWatchpoint failed at 0x${startAddress.toString(16)}-0x${endAddress.toString(16)}`,
+            );
+        }
+        return response.id;
+    }
+
+    /** Remove a watchpoint by ID. Returns true if found and removed. */
+    async removeWatchpoint(id: number): Promise<boolean> {
+        const response = await promisify<{ id: number }, { success: boolean }>(
+            this.stub as unknown as Record<string, Function>,
+            "removeWatchpoint",
+            { id },
+        );
+        return response.success;
+    }
+
+    /** List all current watchpoints. */
+    async listWatchpoints(): Promise<WatchpointInfo[]> {
+        const typeMap: Record<number, WatchpointType> = { 0: "read", 1: "write", 2: "both" };
+        const response = await promisify<
+            {},
+            { watchpoints: Array<{ id: number; startAddress: number; endAddress: number; type: number }> }
+        >(
+            this.stub as unknown as Record<string, Function>,
+            "listWatchpoints",
+            {},
+        );
+        return response.watchpoints.map((wp) => ({
+            id: wp.id,
+            startAddress: wp.startAddress,
+            endAddress: wp.endAddress,
+            type: typeMap[wp.type] ?? "both",
+        }));
+    }
+
+    /** Clear all watchpoints. Returns the number of watchpoints removed. */
+    async clearWatchpoints(): Promise<number> {
+        const response = await promisify<{}, { countRemoved: number }>(
+            this.stub as unknown as Record<string, Function>,
+            "clearWatchpoints",
             {},
         );
         return response.countRemoved;

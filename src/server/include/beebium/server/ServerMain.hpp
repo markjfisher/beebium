@@ -1481,16 +1481,10 @@ public:
                 return *exit_code;
             }
 
-            // Wire up bus stretch cancellation so debugger pause breaks
-            // out of Tube bus stretching spin-waits.
+            // Wire TubeShared to Machine for bus stretch cancellation and
+            // cross-processor debugger stop signal.
             if (tube_shm) {
-                auto* shared = tube_shm->get();
-                machine.set_pause_callback([shared]() {
-                    shared->bus_stretch_cancel.store(true, std::memory_order_release);
-                });
-                machine.set_resume_callback([shared]() {
-                    shared->bus_stretch_cancel.store(false, std::memory_order_release);
-                });
+                machine.set_tube_shared(tube_shm->get());
             }
 
             // Load disc images

@@ -14,9 +14,11 @@
 
 #include "BusStretching.hpp"
 #include "ClockTypes.hpp"
+#include "Types.hpp"
 #include <6502/6502.h>
 #include <concepts>
 #include <functional>
+#include <vector>
 
 namespace beebium {
 
@@ -29,9 +31,12 @@ concept HasPcAwareMemory = requires(T& m, uint16_t addr, uint16_t pc, uint8_t va
     { m.write_with_pc(addr, val, pc) } -> std::same_as<void>;
 };
 
-// Callback types for CpuBinding debugging hooks
-using CpuWatchpointCallback = std::function<void(uint16_t addr, uint8_t value, bool is_write)>;
+
+// Instruction callback for PC histogram
 using CpuInstructionCallback = std::function<void(uint16_t pc)>;
+
+// Watchpoint hit callback type for CpuBinding inline checking
+using CpuWatchpointHitCallback = std::function<void(const WatchpointEntry& wp, uint16_t addr, uint8_t value, bool is_write)>;
 
 // CpuBinding wraps M6502 + MemoryPolicy for clock subscription.
 //
@@ -70,18 +75,14 @@ public:
     }
 
     // Runtime configuration
-    void set_watchpoint_callback(CpuWatchpointCallback cb) {
-        watchpoint_callback_ = std::move(cb);
-    }
-
     void set_instruction_callback(CpuInstructionCallback cb) {
         instruction_callback_ = std::move(cb);
     }
 
-    void clear_watchpoint_callback() { watchpoint_callback_ = nullptr; }
     void clear_instruction_callback() { instruction_callback_ = nullptr; }
 
     const CpuInstructionCallback& instruction_callback() const { return instruction_callback_; }
+
 
     // 1MHz bus stretch detection
     // After each cycle, check if the memory access was to a 1MHz peripheral.
@@ -100,9 +101,19 @@ public:
     // Set current cycle count (called by Machine before each tick)
     void set_current_cycle(uint64_t cycle) { current_cycle_ = cycle; }
 
+    // Debugger watchpoint entries (pointer to Machine's vector, checked inline)
+    void set_watchpoint_entries(const std::vector<WatchpointEntry>* entries) {
+        watchpoint_entries_ = entries;
+    }
+
+    void set_watchpoint_hit_callback(const CpuWatchpointHitCallback* cb) {
+        on_watchpoint_hit_ = cb;
+    }
+
 private:
-    CpuWatchpointCallback watchpoint_callback_;
     CpuInstructionCallback instruction_callback_;
+    const std::vector<WatchpointEntry>* watchpoint_entries_ = nullptr;
+    const CpuWatchpointHitCallback* on_watchpoint_hit_ = nullptr;
     bool needs_stretch_ = false;
     bool vias_pre_ticked_ = false;
     uint8_t stretch_count_ = 0;
@@ -192,10 +203,20 @@ private:
             }
         }
 
-        // Watchpoint callback (if set, caller handles address filtering)
-        if (watchpoint_callback_) {
-            watchpoint_callback_(addr, value, !cpu.read);
+        // Inline debugger watchpoint check (sorted by start, early-exit)
+        if (watchpoint_entries_ && !watchpoint_entries_->empty()) {
+            const bool is_write = !cpu.read;
+            for (const auto& wp : *watchpoint_entries_) {
+                if (wp.start > addr) break;
+                if (wp.matches(addr, is_write)) {
+                    if (on_watchpoint_hit_ && *on_watchpoint_hit_) {
+                        (*on_watchpoint_hit_)(wp, addr, value, is_write);
+                    }
+                    break;
+                }
+            }
         }
+
     }
 };
 

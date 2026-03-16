@@ -34,6 +34,12 @@ service DebuggerControl {
     rpc ListBreakpoints(Empty) returns (ListBreakpointsResponse);
     rpc ClearBreakpoints(Empty) returns (ClearBreakpointsResponse);
 
+    // Watchpoints (address range + access type)
+    rpc AddWatchpoint(AddWatchpointRequest) returns (AddWatchpointResponse);
+    rpc RemoveWatchpoint(RemoveWatchpointRequest) returns (RemoveWatchpointResponse);
+    rpc ListWatchpoints(Empty) returns (ListWatchpointsResponse);
+    rpc ClearWatchpoints(Empty) returns (ClearWatchpointsResponse);
+
     // CPU state
     rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
     rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
@@ -94,12 +100,28 @@ enum StopReason {
     STOP_REASON_MANUAL = 2;
     STOP_REASON_ERROR = 3;
     STOP_REASON_STEP_COMPLETE = 4;
+    STOP_REASON_WATCHPOINT = 5;
+    STOP_REASON_COUNTERPART = 6;
+}
+
+enum WatchpointType {
+    WATCHPOINT_READ = 0;
+    WATCHPOINT_WRITE = 1;
+    WATCHPOINT_BOTH = 2;
 }
 
 message ExecutionStateEvent {
     StopReason reason = 1;
     ExecutionState state = 2;
     string message = 3;
+    WatchpointHitInfo watchpoint_hit = 4;
+}
+
+message WatchpointHitInfo {
+    uint32 watchpoint_id = 1;
+    uint32 address = 2;
+    uint32 value = 3;
+    bool is_write = 4;
 }
 
 message ReadMemoryRequest {
@@ -140,6 +162,8 @@ message WriteMemoryResponse {
 
 message AddBreakpointRequest {
     uint32 address = 1;
+    bool stop_counterpart = 2;
+    string condition = 3;              // optional condition expression (use `hits` for hit counts)
 }
 
 message AddBreakpointResponse {
@@ -165,6 +189,44 @@ message Breakpoint {
 }
 
 message ClearBreakpointsResponse {
+    uint32 count_removed = 1;
+}
+
+// === Watchpoints ===
+
+message AddWatchpointRequest {
+    uint32 start_address = 1;
+    uint32 end_address = 2;     // exclusive [start, end)
+    WatchpointType type = 3;
+    bool stop_counterpart = 4;
+    string condition = 5;              // optional condition expression (use `hits` for hit counts)
+}
+
+message AddWatchpointResponse {
+    bool success = 1;
+    uint32 id = 2;
+}
+
+message RemoveWatchpointRequest {
+    uint32 id = 1;
+}
+
+message RemoveWatchpointResponse {
+    bool success = 1;
+}
+
+message ListWatchpointsResponse {
+    repeated WatchpointInfo watchpoints = 1;
+}
+
+message WatchpointInfo {
+    uint32 id = 1;
+    uint32 start_address = 2;
+    uint32 end_address = 3;
+    WatchpointType type = 4;
+}
+
+message ClearWatchpointsResponse {
     uint32 count_removed = 1;
 }
 

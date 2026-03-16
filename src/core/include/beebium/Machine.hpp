@@ -22,8 +22,10 @@
 #include "Via6522.hpp"
 #include "VideoBinding.hpp"
 #include "econet/EconetConcepts.hpp"
+#include "tube/TubeShared.hpp"
 
 #include <6502/6502.h>
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -49,34 +51,11 @@ constexpr uint8_t kIrqDeviceMask = 0x07;
 constexpr uint8_t kDiscNmiDeviceMask = 0x01;
 constexpr uint8_t kEconetNmiDeviceMask = 0x02;
 
-// Watchpoint callback: addr, value, is_write, cycle
-using WatchCallback = std::function<void(uint16_t addr, uint8_t value, bool is_write, uint64_t cycle)>;
+// Breakpoint hit callback: called on the rare path when a breakpoint address matches
+using BreakpointHitCallback = std::function<void(uint16_t pc)>;
 
-// PC callback: called before each instruction executes
-using InstructionCallback = std::function<bool(uint16_t pc, uint64_t cycle)>;  // return false to stop
-
-// Simple watchpoint structure
-struct Watchpoint {
-    uint32_t start_addr;
-    uint32_t end_addr;  // exclusive, allows 0x10000 for full address space
-    WatchType type;
-    WatchCallback callback;
-
-    Watchpoint(uint32_t start, uint32_t end, WatchType t, WatchCallback cb)
-        : start_addr(start), end_addr(end), type(t), callback(std::move(cb))
-    {
-        assert(start_addr <= 0xFFFF && "start_addr must fit in 16-bit address space");
-        assert(end_addr <= 0x10000 && "end_addr must be <= 0x10000");
-        assert(start_addr < end_addr && "start_addr must be less than end_addr");
-    }
-
-    bool matches(uint16_t addr, bool is_write) const {
-        if (addr < start_addr || addr >= end_addr) return false;
-        if (is_write && (type & WATCH_WRITE)) return true;
-        if (!is_write && (type & WATCH_READ)) return true;
-        return false;
-    }
-};
+// Watchpoint hit callback: same type as CpuBinding's inline check callback
+using WatchpointHitCallback = CpuWatchpointHitCallback;
 
 // Machine state that can be serialized/deserialized.
 // Parameterized by MemoryPolicy to include memory state.
@@ -326,24 +305,32 @@ public:
     // Execute for the given number of cycles, or until paused (e.g., by breakpoint)
     void run(uint64_t cycles) {
         const uint64_t target = state_.cycle_count + cycles;
-
-        // Fast path when no debug callback is registered
-        if (!on_instruction_) {
-            while (state_.cycle_count < target && !paused_.load()) {
-                step();
-            }
-            return;
-        }
-
-        // Debug path: check instruction callback at each instruction boundary
         while (state_.cycle_count < target && !paused_.load()) {
-            // Call callback at instruction boundary (before fetch)
-            if (M6502_IsAboutToExecute(&state_.cpu)) {
-                if (!on_instruction_(state_.cpu.pc.w, state_.cycle_count)) {
-                    return;  // Callback requested stop
+            // Check breakpoints before step(), when all register updates from
+            // the previous instruction have been applied by the T0 tfn that set
+            // read=Opcode.  Use opcode_pc (the address of the opcode about to
+            // be decoded), not pc (which has already been advanced past it by
+            // M6502_NextInstruction's post-increment).
+            if (!breakpoint_addresses_.empty() && M6502_IsAboutToExecute(&state_.cpu)) {
+                uint16_t pc = state_.cpu.opcode_pc.w;
+                for (uint16_t addr : breakpoint_addresses_) {
+                    if (addr == pc) {
+                        if (on_breakpoint_hit_) on_breakpoint_hit_(pc);
+                        return;
+                    }
+                    if (addr > pc) break;  // sorted: no point continuing
                 }
             }
+
             step();
+
+            // Check cross-processor debugger stop signal
+            if (tube_shared_ &&
+                tube_shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
+                tube_shared_->debugger_stop_signal.store(false, std::memory_order_relaxed);
+                pause();
+                return;
+            }
         }
     }
 
@@ -380,7 +367,9 @@ public:
 
     void pause() {
         paused_.store(true);
-        if (on_pause_) on_pause_();
+        if (tube_shared_) {
+            tube_shared_->bus_stretch_cancel.store(true, std::memory_order_release);
+        }
         ++sequence_;
     }
 
@@ -389,18 +378,24 @@ public:
             std::lock_guard<std::mutex> lock(debug_mutex_);
             paused_.store(false);
         }
-        if (on_resume_) on_resume_();
+        if (tube_shared_) {
+            tube_shared_->bus_stretch_cancel.store(false, std::memory_order_release);
+        }
         debug_cv_.notify_all();
         ++sequence_;
     }
 
-    // Set callbacks invoked on pause/resume and before stepping.
-    // Used by the server to cancel/restore bus stretching spin-waits.
-    void set_pause_callback(std::function<void()> cb) { on_pause_ = std::move(cb); }
-    void set_resume_callback(std::function<void()> cb) { on_resume_ = std::move(cb); }
-
     // Call before stepping cycles to ensure bus stretch cancel is cleared.
-    void prepare_for_step() { if (on_resume_) on_resume_(); }
+    void prepare_for_step() {
+        if (tube_shared_) {
+            tube_shared_->bus_stretch_cancel.store(false, std::memory_order_release);
+        }
+    }
+
+    // Set optional TubeShared pointer for cross-processor debugger integration.
+    // Must be called after Tube installation but before the emulation loop starts.
+    void set_tube_shared(TubeShared* shared) { tube_shared_ = shared; }
+    TubeShared* tube_shared() const { return tube_shared_; }
 
     // Block until not paused - call from emulation loop
     // Returns immediately if shutdown is requested, allowing clean exit.
@@ -451,39 +446,52 @@ public:
     // Side-effect-free read for debugger inspection
     uint8_t peek(uint16_t addr) const { return state_.memory.peek(addr); }
 
-    // Watchpoint management
-    void add_watchpoint(uint32_t addr, uint32_t length, WatchType type, WatchCallback callback) {
-        watchpoints_.emplace_back(addr, addr + length, type, std::move(callback));
+    // Breakpoint address management (sorted vector, modified only while stopped)
+    void set_breakpoint_addresses(std::vector<uint16_t> addrs) {
+        std::sort(addrs.begin(), addrs.end());
+        breakpoint_addresses_ = std::move(addrs);
     }
 
-    void clear_watchpoints() { watchpoints_.clear(); }
+    void set_breakpoint_hit_callback(BreakpointHitCallback cb) {
+        on_breakpoint_hit_ = std::move(cb);
+    }
 
-    const std::vector<Watchpoint>& watchpoints() const { return watchpoints_; }
+    // Debugger watchpoint entry management (sorted by start, modified only while stopped)
+    void set_watchpoint_entries(std::vector<WatchpointEntry> entries) {
+        std::sort(entries.begin(), entries.end(),
+                  [](const WatchpointEntry& a, const WatchpointEntry& b) {
+                      return a.start < b.start;
+                  });
+        watchpoint_entries_ = std::move(entries);
+        cpu_binding_.set_watchpoint_entries(&watchpoint_entries_);
+    }
 
-    // Instruction callback
-    void set_instruction_callback(InstructionCallback cb) { on_instruction_ = std::move(cb); }
+    void set_watchpoint_hit_callback(WatchpointHitCallback cb) {
+        on_watchpoint_hit_ = std::move(cb);
+        cpu_binding_.set_watchpoint_hit_callback(&on_watchpoint_hit_);
+    }
 
-    void clear_callbacks() {
-        on_instruction_ = nullptr;
-        watchpoints_.clear();
-        pc_histogram_ = nullptr;
+    const std::vector<WatchpointEntry>& watchpoint_entries() const { return watchpoint_entries_; }
+
+    // Direct watchpoint entry management (for C++ tests and in-process use).
+    // Adds an entry and re-sorts the vector.
+    void add_watchpoint_entry(WatchpointEntry entry) {
+        watchpoint_entries_.push_back(std::move(entry));
+        std::sort(watchpoint_entries_.begin(), watchpoint_entries_.end(),
+                  [](const WatchpointEntry& a, const WatchpointEntry& b) {
+                      return a.start < b.start;
+                  });
+        cpu_binding_.set_watchpoint_entries(&watchpoint_entries_);
+    }
+
+    void clear_watchpoint_entries() {
+        watchpoint_entries_.clear();
+        cpu_binding_.set_watchpoint_entries(&watchpoint_entries_);
     }
 
     // PC histogram for instruction execution profiling
     void set_pc_histogram(ProgramCounterHistogram* histogram) { pc_histogram_ = histogram; }
     ProgramCounterHistogram* pc_histogram() const { return pc_histogram_; }
-
-    // Execute one complete instruction with optional callback
-    // Returns false if callback requested stop, true otherwise
-    bool step_instruction_debug() {
-        if (on_instruction_) {
-            if (!on_instruction_(state_.cpu.pc.w, state_.cycle_count)) {
-                return false;  // Callback requested stop
-            }
-        }
-        step_instruction();
-        return true;
-    }
 
     // Access to bindings for testing/debugging
     CpuBindingType& cpu_binding() { return cpu_binding_; }
@@ -495,8 +503,10 @@ private:
     VideoBindingType video_binding_;
     SystemClockType system_clock_;
 
-    std::vector<Watchpoint> watchpoints_;
-    InstructionCallback on_instruction_;
+    std::vector<uint16_t> breakpoint_addresses_;       // sorted, modified only while stopped
+    BreakpointHitCallback on_breakpoint_hit_;           // rare-path callback
+    std::vector<WatchpointEntry> watchpoint_entries_;   // sorted by start, modified only while stopped
+    WatchpointHitCallback on_watchpoint_hit_;           // rare-path callback
     ProgramCounterHistogram* pc_histogram_ = nullptr;
 
     // Debug pause/resume state (for debugger attach)
@@ -505,8 +515,7 @@ private:
     std::atomic<bool> paused_{false};
     std::atomic<bool> shutdown_requested_{false};  // For clean server shutdown
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
-    std::function<void()> on_pause_;   // Called by pause() for bus stretch cancel
-    std::function<void()> on_resume_;  // Called by resume() to clear cancel flag
+    TubeShared* tube_shared_ = nullptr;  // Optional, for cross-processor debugger integration
 
     // Break key state (true when Break is held, CPU halted)
     bool in_reset_ = false;
@@ -548,21 +557,6 @@ private:
     }
 
     void setup_callbacks() {
-        // Wire CpuBinding callbacks to Machine's debugging infrastructure
-
-        // Watchpoint callback - dispatches to watchpoints vector
-        cpu_binding_.set_watchpoint_callback(
-            [this](uint16_t addr, uint8_t value, bool is_write) {
-                if (!watchpoints_.empty()) {
-                    for (const auto& wp : watchpoints_) {
-                        if (wp.matches(addr, is_write)) {
-                            wp.callback(addr, value, is_write, state_.cycle_count);
-                        }
-                    }
-                }
-            }
-        );
-
         // Instruction callback - records PC histogram
         cpu_binding_.set_instruction_callback(
             [this](uint16_t pc) {

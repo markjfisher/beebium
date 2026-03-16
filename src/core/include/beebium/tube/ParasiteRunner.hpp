@@ -16,7 +16,9 @@
 #include "ParasiteMemoryMap.hpp"
 #include "TubeParasitePort.hpp"
 #include "TubeShared.hpp"
+#include "../Types.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -24,6 +26,7 @@
 #include <functional>
 #include <mutex>
 #include <span>
+#include <vector>
 
 namespace beebium {
 
@@ -48,7 +51,7 @@ namespace beebium {
 class ParasiteRunner {
 public:
     using Memory = ParasiteMemoryMap;
-    using InstructionCallback = std::function<bool(uint16_t pc, uint64_t cycle)>;
+    using BreakpointHitCallback = std::function<void(uint16_t pc)>;
     // Construct with a pointer to the shared memory region and a 2 KB ROM image.
     ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom);
     ~ParasiteRunner() = default;
@@ -118,9 +121,36 @@ public:
 
     void step();
 
-    // --- Instruction callback ---
+    // --- Breakpoint management (sorted vector, modified only while stopped) ---
 
-    void set_instruction_callback(InstructionCallback cb) { on_instruction_ = std::move(cb); }
+    void set_breakpoint_addresses(std::vector<uint16_t> addrs) {
+        std::sort(addrs.begin(), addrs.end());
+        breakpoint_addresses_ = std::move(addrs);
+    }
+
+    void set_breakpoint_hit_callback(BreakpointHitCallback cb) {
+        on_breakpoint_hit_ = std::move(cb);
+    }
+
+    // --- Watchpoint management (sorted by start, modified only while stopped) ---
+
+    using WatchpointHitCallback = std::function<void(const WatchpointEntry& wp, uint16_t addr, uint8_t value, bool is_write)>;
+
+    void set_watchpoint_entries(std::vector<WatchpointEntry> entries) {
+        std::sort(entries.begin(), entries.end(),
+                  [](const WatchpointEntry& a, const WatchpointEntry& b) {
+                      return a.start < b.start;
+                  });
+        watchpoint_entries_ = std::move(entries);
+    }
+
+    void set_watchpoint_hit_callback(WatchpointHitCallback cb) {
+        on_watchpoint_hit_ = std::move(cb);
+    }
+
+    const std::vector<WatchpointEntry>& watchpoint_entries() const { return watchpoint_entries_; }
+
+    TubeShared* tube_shared() const { return shared_; }
 
     // --- Component access ---
 
@@ -164,8 +194,13 @@ private:
     // Sequence counter
     std::atomic<uint64_t> sequence_{0};
 
-    // Instruction callback (checked at instruction boundaries in run())
-    InstructionCallback on_instruction_;
+    // Breakpoint addresses (sorted, checked inline at instruction boundaries)
+    std::vector<uint16_t> breakpoint_addresses_;
+    BreakpointHitCallback on_breakpoint_hit_;
+
+    // Watchpoint entries (sorted by start, checked inline on every bus access)
+    std::vector<WatchpointEntry> watchpoint_entries_;
+    WatchpointHitCallback on_watchpoint_hit_;
 };
 
 }  // namespace beebium

@@ -15,6 +15,9 @@
 
 #include "debugger.grpc.pb.h"
 #include "beebium/MemoryRegion.hpp"
+#include "beebium/Types.hpp"
+#include "beebium/tube/TubeShared.hpp"
+#include <moodycamel/readerwriterqueue.h>
 #include <grpcpp/grpcpp.h>
 #include <mutex>
 #include <vector>
@@ -72,6 +75,7 @@ void write_with_optional_pc(Machine& machine, uint16_t addr, uint8_t val, bool h
 struct BreakpointEntry {
     uint32_t id;
     uint32_t address;
+    bool stop_counterpart = false;
 };
 
 /// gRPC service implementation for DebuggerControl
@@ -174,6 +178,27 @@ public:
         const Empty* request,
         ClearBreakpointsResponse* response) override;
 
+    // Watchpoints
+    grpc::Status AddWatchpoint(
+        grpc::ServerContext* context,
+        const AddWatchpointRequest* request,
+        AddWatchpointResponse* response) override;
+
+    grpc::Status RemoveWatchpoint(
+        grpc::ServerContext* context,
+        const RemoveWatchpointRequest* request,
+        RemoveWatchpointResponse* response) override;
+
+    grpc::Status ListWatchpoints(
+        grpc::ServerContext* context,
+        const Empty* request,
+        ListWatchpointsResponse* response) override;
+
+    grpc::Status ClearWatchpoints(
+        grpc::ServerContext* context,
+        const Empty* request,
+        ClearWatchpointsResponse* response) override;
+
     // CPU state
     grpc::Status Get6502State(
         grpc::ServerContext* context,
@@ -193,21 +218,46 @@ public:
 
 private:
     void fill_execution_state(ExecutionState* state);
-    void update_breakpoint_callback();
-    void notify_execution_state_change(StopReason reason);
+    void update_breakpoint_addresses();
+    void update_watchpoint_entries();
+    void enqueue_event(StopReason reason);
+    void enqueue_event(StopReason reason, const WatchpointHitInfo& watchpoint_hit);
+    void signal_counterpart_stop();
 
     MachineType& machine_;
     std::mutex mutex_;
     std::vector<BreakpointEntry> breakpoints_;
     std::atomic<uint32_t> next_breakpoint_id_{1};
     std::string halt_reason_;
-    StopReason last_stop_reason_{STOP_REASON_UNKNOWN};
 
-    // Separate mutex/CV for execution state watchers to avoid deadlock
-    // with mutex_ which is held during the breakpoint callback.
-    mutable std::mutex execution_watchers_mutex_;
-    std::condition_variable execution_watchers_cv_;
-    std::atomic<bool> execution_state_changed_{false};
+    // Watchpoint state
+    struct WatchpointRecord {
+        uint32_t id;
+        uint32_t start_address;
+        uint32_t end_address;
+        beebium::WatchType type;
+        bool stop_counterpart = false;
+        std::optional<beebium::CompiledExpression> condition;
+    };
+    std::vector<WatchpointRecord> watchpoints_;
+    std::atomic<uint32_t> next_watchpoint_id_{1};
+
+    // Event queue for execution state watchers.
+    // Each state transition pushes an event; the WatchExecutionState loop
+    // drains the queue and sends each event individually. This prevents
+    // rapid transitions from being coalesced into a single notification.
+    struct ExecutionEvent {
+        StopReason reason = STOP_REASON_UNKNOWN;
+        bool is_running = false;
+        uint64_t cycle_count = 0;
+        uint64_t sequence = 0;
+        std::string halt_reason;
+        WatchpointHitInfo watchpoint_hit;
+        bool has_watchpoint_hit = false;
+    };
+    moodycamel::ReaderWriterQueue<ExecutionEvent> event_queue_{32};
+    mutable std::mutex event_queue_mutex_;
+    std::condition_variable event_queue_cv_;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -217,6 +267,70 @@ private:
 template<typename MachineType>
 DebuggerControlServiceImpl<MachineType>::DebuggerControlServiceImpl(MachineType& machine)
     : machine_(machine) {
+    machine_.set_breakpoint_hit_callback([this](uint16_t pc) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::ostringstream oss;
+        oss << "breakpoint at $" << std::hex << std::uppercase
+            << std::setw(4) << std::setfill('0') << pc;
+        halt_reason_ = oss.str();
+
+        // Check if this breakpoint should stop the counterpart processor
+        for (const auto& bp : breakpoints_) {
+            if (bp.address == pc && bp.stop_counterpart) {
+                signal_counterpart_stop();
+                break;
+            }
+        }
+
+        machine_.pause();
+        enqueue_event(STOP_REASON_BREAKPOINT);
+    });
+
+    machine_.set_watchpoint_hit_callback(
+        [this](const beebium::WatchpointEntry& wp, uint16_t addr, uint8_t value, bool is_write) {
+            // Increment hit counter (available as `hits` in condition expression)
+            auto& mutable_wp = const_cast<beebium::WatchpointEntry&>(wp);
+            ++mutable_wp.hit_count;
+
+            // Evaluate condition (if present; absent = unconditional = stop)
+            bool should_stop = true;
+            if (wp.condition) {
+                beebium::ExprCpuState cpu_state{
+                    machine_.a(), machine_.x(), machine_.y(),
+                    machine_.sp(), machine_.p(),
+                    machine_.cpu().opcode_pc.w, machine_.cycle_count(),
+                    wp.hit_count
+                };
+                auto peek_fn = [](void* ctx, uint16_t a) -> uint8_t {
+                    return static_cast<MachineType*>(ctx)->peek(a);
+                };
+                should_stop = beebium::evaluate(
+                    *wp.condition, cpu_state, peek_fn, &machine_) != 0;
+            }
+
+            if (!should_stop) return;
+
+            std::lock_guard<std::mutex> lock(mutex_);
+            std::ostringstream oss;
+            oss << (is_write ? "write" : "read") << " watchpoint at $"
+                << std::hex << std::uppercase
+                << std::setw(4) << std::setfill('0') << addr
+                << " = $" << std::setw(2) << static_cast<unsigned>(value);
+            halt_reason_ = oss.str();
+
+            if (wp.stop_counterpart) {
+                signal_counterpart_stop();
+            }
+
+            machine_.pause();
+
+            WatchpointHitInfo hit_info;
+            hit_info.set_watchpoint_id(wp.id);
+            hit_info.set_address(addr);
+            hit_info.set_value(value);
+            hit_info.set_is_write(is_write);
+            enqueue_event(STOP_REASON_WATCHPOINT, hit_info);
+        });
 }
 
 template<typename MachineType>
@@ -228,35 +342,24 @@ void DebuggerControlServiceImpl<MachineType>::fill_execution_state(ExecutionStat
 }
 
 template<typename MachineType>
-void DebuggerControlServiceImpl<MachineType>::notify_execution_state_change(StopReason reason) {
-    last_stop_reason_ = reason;
-    execution_state_changed_.store(true);
-    execution_watchers_cv_.notify_all();
+void DebuggerControlServiceImpl<MachineType>::enqueue_event(StopReason reason) {
+    ExecutionEvent evt;
+    evt.reason = reason;
+    evt.is_running = !machine_.is_paused();
+    evt.cycle_count = machine_.cycle_count();
+    evt.sequence = machine_.sequence();
+    evt.halt_reason = halt_reason_;
+    event_queue_.enqueue(std::move(evt));
+    event_queue_cv_.notify_all();
 }
 
 template<typename MachineType>
-void DebuggerControlServiceImpl<MachineType>::update_breakpoint_callback() {
-    if (breakpoints_.empty()) {
-        machine_.set_instruction_callback(nullptr);
-    } else {
-        machine_.set_instruction_callback(
-            [this](uint16_t pc, uint64_t /*cycle*/) -> bool {
-                std::lock_guard<std::mutex> lock(mutex_);
-                for (const auto& bp : breakpoints_) {
-                    if (bp.address == pc) {
-                        std::ostringstream oss;
-                        oss << "breakpoint at $" << std::hex << std::uppercase
-                            << std::setw(4) << std::setfill('0') << pc;
-                        halt_reason_ = oss.str();
-                        machine_.pause();
-                        notify_execution_state_change(STOP_REASON_BREAKPOINT);
-                        return false;  // Stop execution
-                    }
-                }
-                return true;  // Continue
-            }
-        );
-    }
+void DebuggerControlServiceImpl<MachineType>::update_breakpoint_addresses() {
+    std::vector<uint16_t> addrs;
+    addrs.reserve(breakpoints_.size());
+    for (const auto& bp : breakpoints_)
+        addrs.push_back(static_cast<uint16_t>(bp.address));
+    machine_.set_breakpoint_addresses(std::move(addrs));
 }
 
 template<typename MachineType>
@@ -286,7 +389,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Run(
 
     halt_reason_.clear();
     machine_.resume();
-    notify_execution_state_change(STOP_REASON_UNKNOWN);
+    enqueue_event(STOP_REASON_UNKNOWN);
     response->set_success(true);
     return grpc::Status::OK;
 }
@@ -301,7 +404,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Stop(
 
     machine_.pause();
     halt_reason_ = "stopped by debugger";
-    notify_execution_state_change(STOP_REASON_MANUAL);
+    enqueue_event(STOP_REASON_MANUAL);
     response->set_success(true);
     fill_execution_state(response->mutable_state());
     return grpc::Status::OK;
@@ -598,8 +701,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddBreakpoint(
     }
 
     uint32_t id = next_breakpoint_id_++;
-    breakpoints_.push_back({id, address});
-    update_breakpoint_callback();
+    breakpoints_.push_back({id, address, request->stop_counterpart()});
+    update_breakpoint_addresses();
 
     response->set_success(true);
     response->set_id(id);
@@ -620,7 +723,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::RemoveBreakpoint(
 
     if (it != breakpoints_.end()) {
         breakpoints_.erase(it);
-        update_breakpoint_callback();
+        update_breakpoint_addresses();
         response->set_success(true);
     } else {
         response->set_success(false);
@@ -656,7 +759,157 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ClearBreakpoints(
 
     uint32_t count = static_cast<uint32_t>(breakpoints_.size());
     breakpoints_.clear();
-    update_breakpoint_callback();
+    update_breakpoint_addresses();
+
+    response->set_count_removed(count);
+    return grpc::Status::OK;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Watchpoint RPCs - DebuggerControlServiceImpl
+//////////////////////////////////////////////////////////////////////////////
+
+template<typename MachineType>
+void DebuggerControlServiceImpl<MachineType>::update_watchpoint_entries() {
+    std::vector<beebium::WatchpointEntry> entries;
+    entries.reserve(watchpoints_.size());
+    for (const auto& wp : watchpoints_) {
+        entries.push_back({wp.id,
+                          static_cast<uint16_t>(wp.start_address),
+                          static_cast<uint16_t>(wp.end_address),
+                          wp.type,
+                          wp.stop_counterpart,
+                          wp.condition,
+                          0});  // reset hit_count
+    }
+    machine_.set_watchpoint_entries(std::move(entries));
+}
+
+template<typename MachineType>
+void DebuggerControlServiceImpl<MachineType>::enqueue_event(
+    StopReason reason, const WatchpointHitInfo& watchpoint_hit) {
+    ExecutionEvent evt;
+    evt.reason = reason;
+    evt.is_running = !machine_.is_paused();
+    evt.cycle_count = machine_.cycle_count();
+    evt.sequence = machine_.sequence();
+    evt.halt_reason = halt_reason_;
+    evt.watchpoint_hit = watchpoint_hit;
+    evt.has_watchpoint_hit = true;
+    event_queue_.enqueue(std::move(evt));
+    event_queue_cv_.notify_all();
+}
+
+template<typename MachineType>
+void DebuggerControlServiceImpl<MachineType>::signal_counterpart_stop() {
+    auto* shared = machine_.tube_shared();
+    if (shared) {
+        shared->debugger_stop_signal.store(true, std::memory_order_release);
+        shared->bus_stretch_cancel.store(true, std::memory_order_release);
+    }
+}
+
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::AddWatchpoint(
+    grpc::ServerContext* /*context*/,
+    const AddWatchpointRequest* request,
+    AddWatchpointResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t start = request->start_address();
+    uint32_t end = request->end_address();
+    if (start > 0xFFFF || end > 0x10000 || start >= end) {
+        response->set_success(false);
+        return grpc::Status::OK;
+    }
+
+    beebium::WatchType type;
+    switch (request->type()) {
+        case WATCHPOINT_READ:  type = beebium::WATCH_READ; break;
+        case WATCHPOINT_WRITE: type = beebium::WATCH_WRITE; break;
+        default:               type = beebium::WATCH_BOTH; break;
+    }
+
+    // Parse optional condition expression
+    std::optional<beebium::CompiledExpression> condition;
+    if (!request->condition().empty()) {
+        auto result = beebium::compile(request->condition());
+        if (std::holds_alternative<std::string>(result)) {
+            response->set_success(false);
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                std::get<std::string>(result));
+        }
+        condition = std::get<beebium::CompiledExpression>(std::move(result));
+    }
+
+    uint32_t id = next_watchpoint_id_++;
+    watchpoints_.push_back({id, start, end, type, request->stop_counterpart(),
+                           std::move(condition)});
+    update_watchpoint_entries();
+
+    response->set_success(true);
+    response->set_id(id);
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::RemoveWatchpoint(
+    grpc::ServerContext* /*context*/,
+    const RemoveWatchpointRequest* request,
+    RemoveWatchpointResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t id = request->id();
+    auto it = std::find_if(watchpoints_.begin(), watchpoints_.end(),
+        [id](const WatchpointRecord& wp) { return wp.id == id; });
+
+    if (it != watchpoints_.end()) {
+        watchpoints_.erase(it);
+        update_watchpoint_entries();
+        response->set_success(true);
+    } else {
+        response->set_success(false);
+    }
+
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
+    grpc::ServerContext* /*context*/,
+    const Empty* /*request*/,
+    ListWatchpointsResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (const auto& wp : watchpoints_) {
+        auto* pb_wp = response->add_watchpoints();
+        pb_wp->set_id(wp.id);
+        pb_wp->set_start_address(wp.start_address);
+        pb_wp->set_end_address(wp.end_address);
+        switch (wp.type) {
+            case beebium::WATCH_READ:  pb_wp->set_type(WATCHPOINT_READ); break;
+            case beebium::WATCH_WRITE: pb_wp->set_type(WATCHPOINT_WRITE); break;
+            default:                   pb_wp->set_type(WATCHPOINT_BOTH); break;
+        }
+    }
+
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::ClearWatchpoints(
+    grpc::ServerContext* /*context*/,
+    const Empty* /*request*/,
+    ClearWatchpointsResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t count = static_cast<uint32_t>(watchpoints_.size());
+    watchpoints_.clear();
+    update_watchpoint_entries();
 
     response->set_count_removed(count);
     return grpc::Status::OK;
@@ -675,7 +928,6 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
     // Send initial state immediately
     {
         ExecutionStateEvent event;
-        event.set_reason(last_stop_reason_);
         {
             std::lock_guard<std::mutex> lock(mutex_);
             fill_execution_state(event.mutable_state());
@@ -685,27 +937,35 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
         }
     }
 
-    // Wait for state changes in a loop
+    // Drain the event queue in a loop
     while (!context->IsCancelled()) {
-        std::unique_lock<std::mutex> lock(execution_watchers_mutex_);
-        execution_watchers_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, context] {
-            return execution_state_changed_.load() || context->IsCancelled();
-        });
+        // Wait for events (bounded to allow cancellation checks)
+        {
+            std::unique_lock<std::mutex> lock(event_queue_mutex_);
+            event_queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, context] {
+                return event_queue_.peek() != nullptr || context->IsCancelled();
+            });
+        }
 
         if (context->IsCancelled()) {
             break;
         }
 
-        if (execution_state_changed_.exchange(false)) {
-            ExecutionStateEvent event;
-            event.set_reason(last_stop_reason_);
-            {
-                std::lock_guard<std::mutex> machine_lock(mutex_);
-                fill_execution_state(event.mutable_state());
-                event.set_message(halt_reason_);
+        // Drain all queued events, sending each individually
+        ExecutionEvent evt;
+        while (event_queue_.try_dequeue(evt)) {
+            ExecutionStateEvent proto_event;
+            proto_event.set_reason(evt.reason);
+            proto_event.mutable_state()->set_is_running(evt.is_running);
+            proto_event.mutable_state()->set_cycle_count(evt.cycle_count);
+            proto_event.mutable_state()->set_sequence(evt.sequence);
+            proto_event.mutable_state()->set_halt_reason(evt.halt_reason);
+            proto_event.set_message(evt.halt_reason);
+            if (evt.has_watchpoint_hit) {
+                *proto_event.mutable_watchpoint_hit() = evt.watchpoint_hit;
             }
-            if (!writer->Write(event)) {
-                break;
+            if (!writer->Write(proto_event)) {
+                return grpc::Status::OK;
             }
         }
     }

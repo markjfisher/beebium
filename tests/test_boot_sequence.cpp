@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/Machines.hpp>
+#include <beebium/debugger/Expression.hpp>
 #include <array>
 #include <cstdio>
 #include <filesystem>
@@ -74,6 +75,9 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     machine.memory().load_mos(mos.data(), mos.size());
     machine.memory().load_basic(basic.data(), basic.size());
     machine.reset();
+
+    auto false_expr = std::get<beebium::CompiledExpression>(beebium::compile("false"));
+    uint32_t next_wp_id = 1;
 
     // =========================================================================
     // Verify ROM is correctly loaded and accessible through memory map
@@ -186,16 +190,22 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // The loop clears pages 4-127, preserving byte 0 of each page
     bool ram_size_written = false;
     uint8_t ram_size_value = 0;
-    machine.add_watchpoint(0x0284, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
             ram_size_written = true;
             ram_size_value = val;
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0x0284,
+        .end = 0x0285,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!ram_size_written) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // RAM size = $80 (128 pages = 32K)
     REQUIRE(ram_size_value == 0x80);
@@ -206,22 +216,37 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // DDRB = $0F, then 8 ORB writes to configure latch
 
     std::vector<uint8_t> orb_writes;
-    machine.add_watchpoint(0xFE40, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            orb_writes.push_back(val);
-        });
 
     // Run until first keyboard scan (indicates VIA setup complete)
     bool keyboard_scan_started = false;
-    machine.add_watchpoint(0xFE4F, 1, WATCH_READ,
-        [&](uint16_t, uint8_t, bool, uint64_t) {
-            keyboard_scan_started = true;
+    uint32_t orb_wp_id = next_wp_id++;
+    uint32_t kb_scan_wp_id = next_wp_id++;
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& wp, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
+            if (wp.id == orb_wp_id) {
+                orb_writes.push_back(val);
+            } else if (wp.id == kb_scan_wp_id) {
+                keyboard_scan_started = true;
+            }
         });
+    machine.add_watchpoint_entry({
+        .id = orb_wp_id,
+        .start = 0xFE40,
+        .end = 0xFE41,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
+    machine.add_watchpoint_entry({
+        .id = kb_scan_wp_id,
+        .start = 0xFE4F,
+        .end = 0xFE50,
+        .type = beebium::WATCH_READ,
+        .condition = false_expr,
+    });
 
     while (!keyboard_scan_started) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // DDRB should be $0F
     REQUIRE(machine.memory().system_via.state().port_b.ddr == 0x0F);
@@ -246,33 +271,53 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     std::vector<uint8_t> port_a_ddrs;
     std::vector<uint8_t> port_a_ors;
     std::vector<uint8_t> kb_columns;
-    machine.add_watchpoint(0xFE4F, 1, WATCH_READ,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            port_a_reads++;
-            port_a_values.push_back(val);
-            port_a_ddrs.push_back(machine.memory().system_via.state().port_a.ddr);
-            port_a_ors.push_back(machine.memory().system_via.state().port_a.or_);
-            kb_columns.push_back(machine.memory().system_via_peripheral.keyboard_column());
-        });
-
     // Track lastResetType writes at $028D
     std::vector<uint8_t> reset_type_writes;
-    machine.add_watchpoint(0x028D, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            reset_type_writes.push_back(val);
-        });
 
     // Run until startUpOptions written at $028F
     bool startup_options_written = false;
-    machine.add_watchpoint(0x028F, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t, bool, uint64_t) {
-            startup_options_written = true;
+    uint32_t pa_read_wp_id = next_wp_id++;
+    uint32_t reset_type_wp_id = next_wp_id++;
+    uint32_t startup_opts_wp_id = next_wp_id++;
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& wp, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
+            if (wp.id == pa_read_wp_id) {
+                port_a_reads++;
+                port_a_values.push_back(val);
+                port_a_ddrs.push_back(machine.memory().system_via.state().port_a.ddr);
+                port_a_ors.push_back(machine.memory().system_via.state().port_a.or_);
+                kb_columns.push_back(machine.memory().system_via_peripheral.keyboard_column());
+            } else if (wp.id == reset_type_wp_id) {
+                reset_type_writes.push_back(val);
+            } else if (wp.id == startup_opts_wp_id) {
+                startup_options_written = true;
+            }
         });
+    machine.add_watchpoint_entry({
+        .id = pa_read_wp_id,
+        .start = 0xFE4F,
+        .end = 0xFE50,
+        .type = beebium::WATCH_READ,
+        .condition = false_expr,
+    });
+    machine.add_watchpoint_entry({
+        .id = reset_type_wp_id,
+        .start = 0x028D,
+        .end = 0x028E,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
+    machine.add_watchpoint_entry({
+        .id = startup_opts_wp_id,
+        .start = 0x028F,
+        .end = 0x0290,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!startup_options_written) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // Exactly 9 keyboard scans
     REQUIRE(port_a_reads == 9);
@@ -334,18 +379,10 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // =========================================================================
     // Copy default vectors from ROM table to page 2
 
-    machine.add_watchpoint(0x0203, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            if (val != 0) {
-                // BRKV high byte written with non-zero = vectors being initialized
-            }
-        });
-
     // Run until BRKV is initialized (non-zero high byte)
     while (machine.read(0x0203) == 0) {
         step();
     }
-    machine.clear_watchpoints();
 
     // MOS 1.20 default vector values
     REQUIRE(read16(0x0202) == 0xDC00);  // BRKV
@@ -368,15 +405,21 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // =========================================================================
     // Run until firstKeyPressedInternal is set (internal keycode for SPACE = $62)
     bool first_key_set = false;
-    machine.add_watchpoint(0x00ED, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
             if (val == 0x62) first_key_set = true;
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0x00ED,
+        .end = 0x00EE,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!first_key_set) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     REQUIRE(machine.read(0x00ED) == 0x62);  // SPACE internal key number
 
@@ -387,19 +430,33 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     bool system_via_ier_disabled = false;
     bool user_via_ier_disabled = false;
 
-    machine.add_watchpoint(0xFE4E, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            if (val == 0x7F) system_via_ier_disabled = true;
+    uint32_t sys_ier_wp_id = next_wp_id++;
+    uint32_t usr_ier_wp_id = next_wp_id++;
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& wp, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
+            if (val == 0x7F) {
+                if (wp.id == sys_ier_wp_id) system_via_ier_disabled = true;
+                if (wp.id == usr_ier_wp_id) user_via_ier_disabled = true;
+            }
         });
-    machine.add_watchpoint(0xFE6E, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
-            if (val == 0x7F) user_via_ier_disabled = true;
-        });
+    machine.add_watchpoint_entry({
+        .id = sys_ier_wp_id,
+        .start = 0xFE4E,
+        .end = 0xFE4F,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
+    machine.add_watchpoint_entry({
+        .id = usr_ier_wp_id,
+        .start = 0xFE6E,
+        .end = 0xFE6F,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!system_via_ier_disabled || !user_via_ier_disabled) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // Both VIAs have interrupts disabled (IER = $00 after writing $7F with bit 7 clear)
     REQUIRE(machine.memory().system_via.state().ier.value == 0x00);
@@ -418,17 +475,23 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // IER = $F2, Timer 1 latch = $270E (9998 cycles = 100Hz)
 
     bool t1_configured = false;
-    machine.add_watchpoint(0xFE47, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
             if (val == 0x27) {
                 t1_configured = true;
             }
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0xFE47,
+        .end = 0xFE48,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!t1_configured) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // System VIA IER = $F2
     REQUIRE(machine.memory().system_via.state().ier.value == 0xF2);
@@ -444,15 +507,21 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // Soft keys reset via OSBYTE 18 (if required based on reset type)
 
     bool serial_ula_written = false;
-    machine.add_watchpoint(0xFE10, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t /*val*/, bool /*is_write*/) {
             serial_ula_written = true;
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0xFE10,
+        .end = 0xFE11,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!serial_ula_written) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // Serial ULA has been initialized
     REQUIRE(serial_ula_written == true);
@@ -468,17 +537,23 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // MOS scans ROMs 15->0, writing romTypeTable entries
     // When it finds a language ROM, it updates basicROMNumber ($024B)
     bool basic_found = false;
-    machine.add_watchpoint(0x024B, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t /*val*/, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t /*val*/, bool /*is_write*/) {
             // basicROMNumber is written during ROM scan
             // Value 0xFF means no BASIC, 0-15 means BASIC found in that slot
             basic_found = true;
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0x024B,
+        .end = 0x024C,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!basic_found) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // Check what BASIC slot was found
     uint8_t basic_slot = machine.read(0x024B);
@@ -506,15 +581,21 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // CRTC registers programmed for 40x25 teletext display
 
     bool crtc_mode_set = false;
-    machine.add_watchpoint(0xFE00, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t /*val*/, bool /*is_write*/) {
             crtc_mode_set = true;
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0xFE00,
+        .end = 0xFE01,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!crtc_mode_set) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // CRTC has been accessed (Mode 7 setup in progress)
     REQUIRE(crtc_mode_set == true);
@@ -532,15 +613,21 @@ TEST_CASE("MOS 1.20 complete boot sequence", "[boot]") {
     // Sets defaultOSHWM ($0243) and currentOSHWM ($0244)
 
     bool oshwm_set = false;
-    machine.add_watchpoint(0x0244, 1, WATCH_WRITE,
-        [&](uint16_t, uint8_t val, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t /*addr*/, uint8_t val, bool /*is_write*/) {
             if (val >= 0x0E) oshwm_set = true;  // Must be >= $0E00
         });
+    machine.add_watchpoint_entry({
+        .id = next_wp_id++,
+        .start = 0x0244,
+        .end = 0x0245,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     while (!oshwm_set) {
         step();
     }
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // OSHWM set (high byte stored at $0244)
     uint16_t oshwm = machine.read(0x0243) | (static_cast<uint16_t>(machine.read(0x0244)) << 8);

@@ -96,10 +96,10 @@ add_executable(test_acorn_1770_controller test_acorn_1770_controller.cpp)
 target_link_libraries(test_acorn_1770_controller PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_acorn_1770_controller)
 
-# Memory histogram tests
-add_executable(test_memory_histogram test_memory_histogram.cpp)
-target_link_libraries(test_memory_histogram PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_memory_histogram)
+# Expression engine tests
+add_executable(test_expression test_expression.cpp)
+target_link_libraries(test_expression PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_expression)
 
 # Machine tests
 add_executable(test_machine test_machine.cpp)

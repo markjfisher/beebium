@@ -15,6 +15,9 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <optional>
+
+#include "debugger/Expression.hpp"
 
 namespace beebium {
 
@@ -45,11 +48,37 @@ constexpr uint16_t kUserViaAddr = 0xFE60;    // User VIA base
 // Slot size constants
 constexpr size_t kSlotSize = 16384;  // 16KB sideways ROM/RAM slot
 
-// Watchpoint types (used by Machine and MemoryHistogram)
+// Watchpoint access types
 enum WatchType : uint8_t {
     WATCH_READ  = 0x01,
     WATCH_WRITE = 0x02,
     WATCH_BOTH  = 0x03
+};
+
+// Debugger watchpoint entry -- checked inline in CpuBinding on every bus access.
+// Sorted by start address. Modified only while the machine is stopped.
+struct WatchpointEntry {
+    uint32_t id;
+    uint16_t start;
+    uint16_t end;       // exclusive [start, end)
+    WatchType type;     // WATCH_READ, WATCH_WRITE, WATCH_BOTH
+    bool stop_counterpart = false;
+
+    // Condition expression (evaluated on address match).
+    // Empty = unconditional (always stops). Condition "false" = never stops (recording only).
+    // The expression can use the `hits` pseudo-variable for hit count logic,
+    // e.g. "hits == 5" (exact), "hits % 10 == 0" (multiple), "hits > 3" (greater).
+    std::optional<CompiledExpression> condition;
+
+    // Hit counter: increments on every address match, available as `hits` in the condition.
+    uint64_t hit_count = 0;
+
+    bool matches(uint16_t addr, bool is_write) const {
+        if (addr < start || addr >= end) return false;
+        if (is_write && (type & WATCH_WRITE)) return true;
+        if (!is_write && (type & WATCH_READ)) return true;
+        return false;
+    }
 };
 
 } // namespace beebium

@@ -23,7 +23,6 @@ namespace beebium {
 // Program counter histogram for instruction execution profiling.
 // Tracks how many times each address has been executed as an instruction.
 //
-// This is distinct from MemoryHistogram which tracks memory reads/writes.
 // ProgramCounterHistogram answers: "How often was code at address X executed?"
 //
 // Designed for runtime attachment to a Machine with minimal overhead:

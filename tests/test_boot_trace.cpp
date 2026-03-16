@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/Machines.hpp>
 #include <beebium/ProgramCounterHistogram.hpp>
+#include <beebium/debugger/Expression.hpp>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -251,7 +252,7 @@ TEST_CASE("MOS boot trace - detect infinite loop", "[boot][trace]") {
     REQUIRE(passed_reset);
 }
 
-TEST_CASE("Watchpoint trace of boot", "[boot][watchpoint]") {
+TEST_CASE("Bus trace of boot", "[boot][bustrace]") {
     if (!roms_available()) {
         SKIP("ROM files not available at " BEEBIUM_ROM_DIR);
     }
@@ -276,27 +277,52 @@ TEST_CASE("Watchpoint trace of boot", "[boot][watchpoint]") {
     std::vector<WriteRecord> via_writes;
     std::vector<WriteRecord> keyv_writes;
 
-    // Screen memory watchpoint (Mode 7: 0x7C00-0x7FFF, Graphics: 0x3000-0x7BFF)
-    machine.add_watchpoint(0x3000, 0x8000 - 0x3000, WATCH_WRITE,
-        [&](uint16_t addr, uint8_t value, bool, uint64_t cycle) {
-            if (value != 0x00 && screen_writes.size() < 100) {
-                screen_writes.push_back({addr, value, cycle});
+    // Watchpoints covering screen memory, System VIA, and KEYV vector
+    auto false_expr = std::get<beebium::CompiledExpression>(beebium::compile("false"));
+
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& wp, uint16_t addr, uint8_t value, bool /*is_write*/) {
+            uint64_t cycle = machine.cycle_count();
+
+            if (wp.id == 1) {
+                // Screen memory
+                if (value != 0x00 && screen_writes.size() < 100) {
+                    screen_writes.push_back({addr, value, cycle});
+                }
+            } else if (wp.id == 2) {
+                // System VIA
+                if (via_writes.size() < 100) {
+                    via_writes.push_back({addr, value, cycle});
+                }
+            } else if (wp.id == 3) {
+                // KEYV vector
+                keyv_writes.push_back({addr, value, cycle});
             }
         });
 
-    // System VIA writes watchpoint
-    machine.add_watchpoint(0xFE40, 0x20, WATCH_WRITE,
-        [&](uint16_t addr, uint8_t value, bool, uint64_t cycle) {
-            if (via_writes.size() < 100) {
-                via_writes.push_back({addr, value, cycle});
-            }
-        });
-
-    // KEYV vector watchpoint
-    machine.add_watchpoint(0x0228, 2, WATCH_WRITE,
-        [&](uint16_t addr, uint8_t value, bool, uint64_t cycle) {
-            keyv_writes.push_back({addr, value, cycle});
-        });
+    // Screen memory (Mode 7: 0x7C00-0x7FFF, Graphics: 0x3000-0x7BFF)
+    machine.add_watchpoint_entry({
+        .id = 1,
+        .start = 0x3000,
+        .end = 0x8000,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
+    // System VIA writes ($FE40-$FE5F)
+    machine.add_watchpoint_entry({
+        .id = 2,
+        .start = 0xFE40,
+        .end = 0xFE60,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
+    // KEYV vector ($0228-$0229)
+    machine.add_watchpoint_entry({
+        .id = 3,
+        .start = 0x0228,
+        .end = 0x022A,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     // Run for 2M instructions to see if banner gets written
     uint64_t max_instructions = 2'000'000;

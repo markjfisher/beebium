@@ -126,7 +126,7 @@ Each breakpoint entry contains:
 | `address` | `uint16_t` | PC address to match |
 | `stop_counterpart` | `bool` | Signal the other processor to stop (Section 1.9) |
 | `condition` | compiled expression | Optional, evaluated only on address match (Section 1.7) |
-| `hit_count` | hit count config | Optional, checked after condition (Section 1.8) |
+| `hit_count` | `uint64_t` | Counter, incremented on match, available as `hits` in condition |
 
 The hot-path linear scan only examines `address`. All other fields
 are consulted only when the address matches (the rare case).
@@ -296,9 +296,9 @@ event is not acceptable.
 
 ### 1.6 Memory Watchpoints
 
-The core already has a watchpoint mechanism (`Machine::add_watchpoint`)
-that fires a callback on bus reads, writes, or both to an address range.
-This is not yet exposed via gRPC.
+Watchpoints monitor bus accesses to address ranges. They are the
+single, general-purpose mechanism for both debugging (stop on access)
+and recording (collect accesses during execution).
 
 Requirements:
 - **Add / Remove / List / Clear**: Manage a set of address-range
@@ -306,14 +306,11 @@ Requirements:
   and an access type (read, write, or both).
 - A single-address watch is `[addr, addr+1)`. A range watch like
   `[$FE00, $FF00)` covers all hardware I/O registers.
-- When a watchpoint fires, the processor stops and a notification is
-  delivered via the event stream (Section 1.4), including the address,
-  value, access type (read/write), and cycle count.
 - The watchpoint check fires on every bus access (every cycle), so it
   must be extremely cheap. A linear scan of a vector of half-open
-  ranges is a handful of comparisons -- acceptable at any clock rate.
-  No function-call indirection, no mutex, no `std::function` invocation
-  per cycle.
+  ranges sorted by start address is a handful of comparisons --
+  acceptable at any clock rate. No function-call indirection, no mutex,
+  no `std::function` invocation per cycle on the hot path.
 - As with breakpoints, the watchpoint list is modified only while the
   machine is stopped, so no synchronisation is needed on the read path.
 
@@ -327,17 +324,45 @@ Each watchpoint entry contains:
 | `type` | read/write/both | Which bus accesses to match |
 | `stop_counterpart` | `bool` | Signal the other processor to stop (Section 1.9) |
 | `condition` | compiled expression | Optional, evaluated only on range match (Section 1.7) |
-| `hit_count` | hit count config | Optional, checked after condition (Section 1.8) |
+| `hit_count` | `uint64_t` | Counter, incremented on match, available as `hits` in condition |
 
 The hot-path linear scan examines `start`, `end`, and `type`. All
 other fields are consulted only when the range and type match.
 
-The existing implementation uses `std::function<void(...)>` callbacks
-dispatched from `CpuBinding` via a `std::vector<Watchpoint>`. This has
-per-access overhead from the virtual dispatch and vector iteration. The
-same approach as breakpoints should be used: a plain array checked
-inline in the tick loop, with the `std::function` callback invoked only
-when a watchpoint actually fires (the rare case).
+#### Execution model
+
+When a watchpoint's address range and access type match:
+
+1. The **hit callback** fires (always). This is a C++ in-process
+   callback set by whoever owns the Machine. The gRPC service sets it
+   to emit an event on the execution state stream. C++ test code sets
+   it to record the access in a vector. The callback receives the
+   watchpoint entry, address, value, and access direction.
+
+2. The **condition** is evaluated (if present). An absent or empty
+   condition defaults to `true`. A condition of `false` (or `0`) means
+   the watchpoint never stops -- it records only.
+
+3. If the condition is true, the **hit count** is checked (if present).
+
+4. If hit count is satisfied (or absent), the machine **stops** and a
+   notification is delivered via the event stream (Section 1.4),
+   including the address, value, access type, and cycle count.
+
+This unified model replaces two former mechanisms:
+
+- **Debugger watchpoints** (gRPC): condition defaults to `true`, so the
+  machine stops on match. The hit callback emits the stream event.
+
+- **Recording watchpoints** (C++ tests): condition is `false`, so the
+  machine never stops. The hit callback records the access. This
+  replaces the former `BusTraceCallback` / `MemoryHistogram` mechanisms
+  which fired a callback on every bus access regardless of address. The
+  watchpoint vector scan is cheaper: it only fires the callback for
+  matching addresses, and costs nothing when the vector is empty.
+
+There is no separate "tracing" or "bus trace" API. Recording during
+execution is a watchpoint with condition `false`.
 
 ### 1.7 Conditional Expressions
 
@@ -366,7 +391,9 @@ Available identifiers:
 - Registers: `A`, `X`, `Y`, `SP`, `PC`, `P`
 - Status flags: `C`, `Z`, `I`, `D`, `V`, `N` (individual bits of P)
 - Cycle counter: `cycles`
+- Hit counter: `hits` (number of times this breakpoint/watchpoint has matched)
 - Memory dereference: `mem[expr]` (peek semantics, no side effects)
+- Boolean: `true`, `false`
 
 Number literals: decimal, `0x` hex, `0b` binary.
 
@@ -385,21 +412,26 @@ the breakpoint/watchpoint entry. Evaluation is a tight loop over a
 small bytecode array -- nanoseconds per evaluation.
 
 If the condition string is empty or absent, the breakpoint/watchpoint
-is unconditional (fires on every address match).
+is unconditional (stops on every address match). A condition of `false`
+(or `0`) means the watchpoint never stops -- the hit callback still
+fires, but the machine continues. This is how recording watchpoints
+work: the callback accumulates data while execution proceeds
+uninterrupted.
 
 ### 1.8 Hit Counts
 
-Breakpoints and watchpoints can have an optional hit count. The
-breakpoint fires only on the Nth hit, or every Nth hit.
+Hit counts are handled by the `hits` pseudo-variable in the condition
+expression, not by separate machinery. The `hits` counter increments
+on every address match (before the condition is evaluated), giving the
+expression access to how many times this breakpoint/watchpoint has
+been reached.
 
-Modes:
-- **exact**: Fire on hit number N, then disable.
-- **multiple**: Fire every N hits.
-- **greater**: Fire on every hit after N.
-
-The hit counter increments after the condition (if any) evaluates to
-true. This allows combining conditions with hit counts: "stop the 5th
-time A == 0 at this address."
+Examples:
+- **Exact**: `hits == 5` -- fire on the 5th match only.
+- **Multiple**: `hits % 10 == 0` -- fire every 10th match.
+- **Greater**: `hits > 3` -- fire on every match after the 3rd.
+- **Combined**: `A == 0 && hits == 5` -- stop the 5th time A is zero
+  at this address.
 
 ## 5. Non-Requirements
 
@@ -437,21 +469,28 @@ breakpoint check into the fast tick loop.
 
 ```cpp
 // In ParasiteRunner::run() and Machine::run()
-for (uint64_t i = 0; i < cycles; ++i) {
-    cpu_.tick();
-    if (M6502_IsAboutToExecute(&cpu_)) {
-        uint16_t pc = cpu_.pc.w;
-        // Linear scan of a plain vector. Updated only while the
-        // machine is stopped, so no synchronisation needed.
+while (cycle_count < target && !paused) {
+    // Breakpoint check BEFORE step: at this point, register updates
+    // from the completed instruction have been applied by the tfn
+    // that set read=Opcode. Use opcode_pc (the address of the
+    // instruction about to be decoded), not pc (already advanced
+    // past the opcode by M6502_NextInstruction's post-increment).
+    if (!breakpoint_addresses_.empty() && M6502_IsAboutToExecute(&cpu)) {
+        uint16_t pc = cpu.opcode_pc.w;
         for (uint16_t addr : breakpoint_addresses_) {
-            if (addr == pc) {
-                pause();
-                return;
-            }
+            if (addr == pc) { on_breakpoint_hit_(pc); return; }
+            if (addr > pc) break;  // sorted: early exit
         }
     }
+    step();
 }
 ```
+
+**Important: `opcode_pc` not `pc`.**  The M6502 library's
+`M6502_NextInstruction` does `abus = pc; pc++` (post-increment), so
+when `IsAboutToExecute` is true, `pc.w` is one past the opcode.  The
+`opcode_pc` field holds the actual instruction address, and is the
+correct value for breakpoint matching.
 
 The breakpoint address vector is a plain `std::vector<uint16_t>`. No
 atomics, no mutex on the hot path. Updates (add/remove) happen via gRPC

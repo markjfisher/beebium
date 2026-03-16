@@ -46,18 +46,43 @@ void ParasiteRunner::run(uint64_t cycles) {
         uint64_t batch = std::min(remaining, mailbox_poll_interval);
         uint64_t batch_end = cpu_.cycle_count() + batch;
 
-        if (on_instruction_) {
-            // With instruction callback: step instruction-by-instruction
-            while (cpu_.cycle_count() < batch_end) {
-                if (!on_instruction_(cpu_.cpu().pc.w, cpu_.cycle_count())) {
-                    return;  // Callback requested stop
+        while (cpu_.cycle_count() < batch_end) {
+            // Check breakpoints before tick(), when register updates are complete.
+            // Use opcode_pc (the actual instruction address), not pc (already
+            // advanced past the opcode by M6502_NextInstruction).
+            if (!breakpoint_addresses_.empty() && M6502_IsAboutToExecute(&cpu_.cpu())) {
+                uint16_t pc = cpu_.cpu().opcode_pc.w;
+                for (uint16_t addr : breakpoint_addresses_) {
+                    if (addr == pc) {
+                        if (on_breakpoint_hit_) on_breakpoint_hit_(pc);
+                        return;
+                    }
+                    if (addr > pc) break;  // sorted: no point continuing
                 }
-                cpu_.step_instruction();
             }
-        } else {
-            // No callback: tick cycle-by-cycle (original fast path)
-            while (cpu_.cycle_count() < batch_end) {
-                cpu_.tick();
+
+            cpu_.tick();
+
+            // Check cross-processor debugger stop signal
+            if (shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
+                shared_->debugger_stop_signal.store(false, std::memory_order_relaxed);
+                pause();
+                return;
+            }
+
+            // Inline watchpoint check (every bus access, after tick)
+            if (!watchpoint_entries_.empty()) {
+                const uint16_t addr = cpu_.cpu().abus.w;
+                const bool is_write = !cpu_.cpu().read;
+                for (const auto& wp : watchpoint_entries_) {
+                    if (wp.start > addr) break;
+                    if (wp.matches(addr, is_write)) {
+                        if (on_watchpoint_hit_) {
+                            on_watchpoint_hit_(wp, addr, cpu_.cpu().dbus, is_write);
+                        }
+                        return;
+                    }
+                }
             }
         }
         remaining -= batch;

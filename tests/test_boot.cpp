@@ -12,6 +12,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/Machines.hpp>
+#include <beebium/debugger/Expression.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -75,16 +76,23 @@ AccessResult expect_access_at_cycle(ModelB& machine, const ExpectedAccess& expec
     uint64_t found_cycle = 0;
     uint8_t found_value = 0;
 
-    machine.clear_watchpoints();
-    machine.add_watchpoint(expected.addr, 1, expected.is_write ? WATCH_WRITE : WATCH_READ,
-        [&](uint16_t addr, uint8_t value, bool is_write, uint64_t cycle) {
-            (void)addr;
-            if (is_write == expected.is_write && !found) {
+    auto false_expr = std::get<beebium::CompiledExpression>(beebium::compile("false"));
+
+    machine.clear_watchpoint_entries();
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t addr, uint8_t value, bool is_write) {
+            if (addr == expected.addr && is_write == expected.is_write && !found) {
                 found = true;
-                found_cycle = cycle;
+                found_cycle = machine.cycle_count();
                 found_value = value;
             }
         });
+    machine.add_watchpoint_entry({
+        .id = 1,
+        .start = expected.addr,
+        .end = static_cast<uint16_t>(expected.addr + 1),
+        .type = expected.is_write ? beebium::WATCH_WRITE : beebium::WATCH_READ,
+        .condition = false_expr,
+    });
 
     // Step exactly to the expected cycle
     while (machine.cycle_count() < exact_cycle && !found) {
@@ -95,7 +103,7 @@ AccessResult expect_access_at_cycle(ModelB& machine, const ExpectedAccess& expec
         machine.step();
     }
 
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     if (!found) {
         std::ostringstream ss;
@@ -464,12 +472,19 @@ TEST_CASE("Boot initialization sequence complete", "[boot][deterministic][sequen
 
     machine.reset();
 
-    // Track all writes
+    // Track all writes to $0000-$3FFF
+    auto false_expr = std::get<beebium::CompiledExpression>(beebium::compile("false"));
     std::vector<std::pair<uint16_t, uint8_t>> writes;
-    machine.add_watchpoint(0x0000, 0x4000, WATCH_WRITE,
-        [&](uint16_t addr, uint8_t val, bool, uint64_t) {
+    machine.set_watchpoint_hit_callback([&](const beebium::WatchpointEntry& /*wp*/, uint16_t addr, uint8_t val, bool /*is_write*/) {
             writes.push_back({addr, val});
         });
+    machine.add_watchpoint_entry({
+        .id = 1,
+        .start = 0x0000,
+        .end = 0x4000,
+        .type = beebium::WATCH_WRITE,
+        .condition = false_expr,
+    });
 
     // Complete reset
     while (!M6502_IsAboutToExecute(&machine.cpu())) {
@@ -481,7 +496,7 @@ TEST_CASE("Boot initialization sequence complete", "[boot][deterministic][sequen
         machine.step_instruction();
     }
 
-    machine.clear_watchpoints();
+    machine.clear_watchpoint_entries();
 
     // Assert CPU state after 6 instructions
     REQUIRE(machine.cpu().a == 0x40);       // From LDA #$40

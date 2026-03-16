@@ -876,3 +876,532 @@ TEST_CASE("PeekMemory without simulated_pc still works", "[grpc][debugger][pc-co
     REQUIRE(response.data().size() == 1);
     CHECK(static_cast<uint8_t>(response.data()[0]) == 0xBB);
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// Inline Breakpoint Tests (Phase 1) -- with 6502 code
+//////////////////////////////////////////////////////////////////////////////
+
+// Helper to plant 6502 code at an address
+static void plant_code(beebium::ModelB& machine, uint16_t addr,
+                       const std::vector<uint8_t>& code) {
+    for (size_t i = 0; i < code.size(); ++i) {
+        machine.write(static_cast<uint16_t>(addr + i), code[i]);
+    }
+}
+
+// Helper to prepare the machine for 6502 code execution.
+// Must be called BEFORE plant_code() since reset() clears RAM.
+// After plant_code(), call ready_to_run() to fix up the CPU state.
+//
+// After step_instruction(), M6502_NextInstruction has already set up:
+//   abus = (old opcode address), pc = (old opcode address + 1)
+//   dbus = (opcode from old address), read = Opcode, tfn = Cycle0_All
+//
+// Cycle0_All reads the opcode from dbus, then dispatches to Cycle0_XXX
+// which reads the first operand byte from pc (and increments pc).
+// So we set pc to target+1 (operand address) and fix dbus in ready_to_run.
+static void prepare_for_code(beebium::ModelB& machine, uint16_t pc) {
+    machine.reset();
+    machine.step_instruction();
+    machine.pause();
+    machine.set_pc(pc + 1);
+    machine.cpu().opcode_pc.w = pc;
+}
+
+// Fix up dbus after plant_code() so Cycle0_All sees the correct opcode.
+static void ready_to_run(beebium::ModelB& machine) {
+    machine.cpu().dbus = machine.peek(machine.cpu().opcode_pc.w);
+}
+
+TEST_CASE("6502 step_instruction sets registers correctly", "[debugger][6502]") {
+    beebium::ModelB machine;
+#ifdef BEEBIUM_ROM_DIR
+    auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
+    std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
+#endif
+    machine.reset();
+    machine.step_instruction();  // complete reset
+
+    // Plant LDA #$42 ; NOP at $0400
+    machine.write(0x0400, 0xA9);
+    machine.write(0x0401, 0x42);
+    machine.write(0x0402, 0xEA);
+    machine.set_pc(0x0401);
+    machine.cpu().opcode_pc.w = 0x0400;
+    machine.cpu().dbus = 0xA9;
+
+    CHECK(M6502_IsAboutToExecute(&machine.cpu()));
+
+    // Execute LDA #$42 via step_instruction
+    machine.step_instruction();
+    // After LDA #$42, opcode_pc points to the NOP at $0402
+    CHECK(machine.cpu().opcode_pc.w == 0x0402);
+    CHECK(static_cast<int>(machine.a()) == 0x42);
+}
+
+TEST_CASE("Direct inline breakpoint without gRPC", "[debugger][breakpoint][6502]") {
+    beebium::ModelB machine;
+#ifdef BEEBIUM_ROM_DIR
+    auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
+    std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
+#endif
+    machine.reset();
+    machine.step_instruction();
+
+    // Plant LDA #$42 ; NOP at $0400
+    machine.write(0x0400, 0xA9);
+    machine.write(0x0401, 0x42);
+    machine.write(0x0402, 0xEA);
+    machine.write(0x0403, 0xEA);
+    machine.set_pc(0x0401);
+    machine.cpu().opcode_pc.w = 0x0400;
+    machine.cpu().dbus = 0xA9;
+
+    CHECK(M6502_IsAboutToExecute(&machine.cpu()));
+
+    // Set breakpoint at $0402
+    machine.set_breakpoint_addresses({0x0402});
+    bool hit = false;
+    uint16_t hit_pc = 0;
+    machine.set_breakpoint_hit_callback([&](uint16_t pc) {
+        hit = true;
+        hit_pc = pc;
+        machine.pause();
+    });
+
+    machine.run(100);
+
+    CHECK(hit);
+    CHECK(hit_pc == 0x0402);
+    CHECK(machine.is_paused());
+    CHECK(machine.cpu().opcode_pc.w == 0x0402);
+    CHECK(static_cast<int>(machine.a()) == 0x42);
+}
+
+TEST_CASE("Breakpoint stops at correct PC with 6502 code", "[grpc][debugger][breakpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    // Prepare: reset, run reset sequence, pause, set PC
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Plant code at $0400 (after reset, so RAM is clear):
+    //   LDA #$42     ; A9 42
+    //   STA $0500    ; 8D 00 05
+    //   LDA #$00     ; A9 00
+    //   NOP          ; EA
+    plant_code(fixture.machine(), 0x0400, {
+        0xA9, 0x42,       // LDA #$42
+        0x8D, 0x00, 0x05, // STA $0500
+        0xA9, 0x00,       // LDA #$00
+        0xEA,             // NOP
+    });
+    ready_to_run(fixture.machine());
+
+    // Set breakpoint at the STA instruction ($0402)
+    uint32_t bp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        bp_id = resp.id();
+    }
+
+    // Resume and run for enough cycles to execute the LDA and hit the STA
+    fixture.machine().resume();
+    fixture.machine().run(100);
+
+    // Machine should be paused at $0402 (breakpoint hit before executing STA)
+    CHECK(fixture.machine().is_paused());
+    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    // A should be $42 (LDA #$42 executed)
+    CHECK(fixture.machine().a() == 0x42);
+    // $0500 should NOT have been written yet (STA not executed)
+    CHECK(fixture.machine().peek(0x0500) == 0x00);
+
+    // Clean up
+    {
+        grpc::ClientContext ctx;
+        beebium::RemoveBreakpointRequest req;
+        req.set_id(bp_id);
+        beebium::RemoveBreakpointResponse resp;
+        fixture.debugger().RemoveBreakpoint(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Code at $0400: increment X and loop back
+    //   LDX #$00     ; A2 00
+    //   INX          ; E8      ($0402)
+    //   JMP $0402    ; 4C 02 04
+    plant_code(fixture.machine(), 0x0400, {
+        0xA2, 0x00,       // LDX #$00
+        0xE8,             // INX
+        0x4C, 0x02, 0x04, // JMP $0402
+    });
+    ready_to_run(fixture.machine());
+
+    // Breakpoint on the INX at $0402
+    uint32_t bp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0402);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        bp_id = resp.id();
+    }
+
+    // First hit: X should be 0 (LDX #0 executed, INX not yet)
+    fixture.machine().resume();
+    fixture.machine().run(100);
+    CHECK(fixture.machine().is_paused());
+    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    CHECK(fixture.machine().x() == 0x00);
+
+    // Step one instruction (executes INX), then resume to hit breakpoint again
+    fixture.machine().step_instruction();
+    CHECK(fixture.machine().x() == 0x01);
+
+    fixture.machine().resume();
+    fixture.machine().run(100);
+    CHECK(fixture.machine().is_paused());
+    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    CHECK(fixture.machine().x() == 0x01);
+
+    // Clean up
+    {
+        grpc::ClientContext ctx;
+        beebium::RemoveBreakpointRequest req;
+        req.set_id(bp_id);
+        beebium::RemoveBreakpointResponse resp;
+        fixture.debugger().RemoveBreakpoint(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Code at $0400:
+    //   NOP          ; EA      ($0400)
+    //   NOP          ; EA      ($0401)
+    //   NOP          ; EA      ($0402)
+    //   NOP          ; EA      ($0403)
+    plant_code(fixture.machine(), 0x0400, {0xEA, 0xEA, 0xEA, 0xEA});
+    ready_to_run(fixture.machine());
+
+    // Set breakpoints at $0401 and $0403
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0401);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_address(0x0403);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+    }
+
+    // Run: should stop at $0401 (first breakpoint)
+    fixture.machine().resume();
+    fixture.machine().run(100);
+    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0401);
+
+    // Step past the breakpoint, then resume to hit the second breakpoint
+    fixture.machine().step_instruction();
+
+    // Resume: should stop at $0403 (second breakpoint, skipping $0402 NOP)
+    fixture.machine().resume();
+    fixture.machine().run(100);
+    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0403);
+
+    // Clean up
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearBreakpointsResponse resp;
+        fixture.debugger().ClearBreakpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("No breakpoints: run completes normally", "[grpc][debugger][breakpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Simple code at $0400: three NOPs
+    plant_code(fixture.machine(), 0x0400, {0xEA, 0xEA, 0xEA});
+    ready_to_run(fixture.machine());
+
+    // Run with no breakpoints
+    fixture.machine().resume();
+    uint64_t before = fixture.machine().cycle_count();
+    fixture.machine().run(100);
+
+    // Should NOT be paused (no breakpoints to hit)
+    CHECK(!fixture.machine().is_paused());
+    CHECK(fixture.machine().cycle_count() >= before + 100);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Watchpoint Tests (Phase 2) -- with 6502 code
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("Write watchpoint fires on STA", "[grpc][debugger][watchpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // LDA #$42 ; STA $0500
+    plant_code(fixture.machine(), 0x0400, {
+        0xA9, 0x42,       // LDA #$42
+        0x8D, 0x00, 0x05, // STA $0500
+        0xEA,             // NOP (should not reach)
+    });
+    ready_to_run(fixture.machine());
+
+    // Add write watchpoint on $0500 (single address)
+    uint32_t wp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x0500);
+        req.set_end_address(0x0501);  // exclusive
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        wp_id = resp.id();
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(100);
+
+    // Machine should have stopped due to watchpoint
+    CHECK(fixture.machine().is_paused());
+    // $0500 should have been written (the STA executed, then watchpoint fired)
+    CHECK(fixture.machine().peek(0x0500) == 0x42);
+
+    // Clean up
+    {
+        grpc::ClientContext ctx;
+        beebium::RemoveWatchpointRequest req;
+        req.set_id(wp_id);
+        beebium::RemoveWatchpointResponse resp;
+        fixture.debugger().RemoveWatchpoint(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Read watchpoint fires on LDA from memory", "[grpc][debugger][watchpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // Put a value at $0500 and read it
+    fixture.machine().write(0x0500, 0xAB);
+
+    // LDA $0500
+    plant_code(fixture.machine(), 0x0400, {
+        0xAD, 0x00, 0x05, // LDA $0500
+        0xEA,             // NOP
+    });
+    ready_to_run(fixture.machine());
+
+    // Add read watchpoint on $0500
+    uint32_t wp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x0500);
+        req.set_end_address(0x0501);
+        req.set_type(beebium::WATCHPOINT_READ);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        wp_id = resp.id();
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(100);
+
+    CHECK(fixture.machine().is_paused());
+    // The watchpoint fires during the bus access cycle, before the
+    // instruction completes. The value was read (it's on the data bus)
+    // but A hasn't been updated yet (that happens in the next tfn).
+    // Verify the address $0500 still contains the expected value.
+    CHECK(fixture.machine().peek(0x0500) == 0xAB);
+
+    // Clean up
+    {
+        grpc::ClientContext ctx;
+        beebium::RemoveWatchpointRequest req;
+        req.set_id(wp_id);
+        beebium::RemoveWatchpointResponse resp;
+        fixture.debugger().RemoveWatchpoint(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Write-only watchpoint does not fire on read", "[grpc][debugger][watchpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    fixture.machine().write(0x0500, 0x77);
+
+    // LDA $0500 (read, not write) ; NOP ; NOP
+    plant_code(fixture.machine(), 0x0400, {
+        0xAD, 0x00, 0x05, // LDA $0500
+        0xEA, 0xEA,
+    });
+    ready_to_run(fixture.machine());
+
+    // Write-only watchpoint
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x0500);
+        req.set_end_address(0x0501);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(30);
+
+    // Should NOT have stopped (read doesn't fire write watchpoint)
+    CHECK(!fixture.machine().is_paused());
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearWatchpointsResponse resp;
+        fixture.debugger().ClearWatchpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Watchpoint on address range fires for any address in range", "[grpc][debugger][watchpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine(), 0x0400);
+
+    // STA $0503 (write to middle of range $0500-$0510)
+    plant_code(fixture.machine(), 0x0400, {
+        0xA9, 0x11,       // LDA #$11
+        0x8D, 0x03, 0x05, // STA $0503
+        0xEA,
+    });
+    ready_to_run(fixture.machine());
+
+    // Watchpoint on range [$0500, $0510)
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x0500);
+        req.set_end_address(0x0510);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+    }
+
+    fixture.machine().resume();
+    fixture.machine().run(100);
+
+    CHECK(fixture.machine().is_paused());
+    CHECK(fixture.machine().peek(0x0503) == 0x11);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearWatchpointsResponse resp;
+        fixture.debugger().ClearWatchpoints(&ctx, req, &resp);
+    }
+}
+
+TEST_CASE("Watchpoint lifecycle: add/remove/list/clear", "[grpc][debugger][watchpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add two watchpoints
+    uint32_t wp1_id, wp2_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x1000);
+        req.set_end_address(0x1010);
+        req.set_type(beebium::WATCHPOINT_READ);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        wp1_id = resp.id();
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x2000);
+        req.set_end_address(0x2001);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        wp2_id = resp.id();
+    }
+
+    // List
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        CHECK(resp.watchpoints_size() == 2);
+    }
+
+    // Remove first
+    {
+        grpc::ClientContext ctx;
+        beebium::RemoveWatchpointRequest req;
+        req.set_id(wp1_id);
+        beebium::RemoveWatchpointResponse resp;
+        fixture.debugger().RemoveWatchpoint(&ctx, req, &resp);
+        CHECK(resp.success());
+    }
+
+    // List again
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        CHECK(resp.watchpoints_size() == 1);
+        CHECK(resp.watchpoints(0).id() == wp2_id);
+    }
+
+    // Clear
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearWatchpointsResponse resp;
+        fixture.debugger().ClearWatchpoints(&ctx, req, &resp);
+        CHECK(resp.count_removed() == 1);
+    }
+
+    // List should be empty
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        CHECK(resp.watchpoints_size() == 0);
+    }
+}

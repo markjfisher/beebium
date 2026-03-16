@@ -158,6 +158,13 @@ struct alignas(64) TubeShared {
     // loop never checks the pause flag.
     alignas(64) std::atomic<bool> bus_stretch_cancel{false};
 
+    // --- Cross-processor debugger stop signal ---
+    // Set by one processor's debugger when a breakpoint/watchpoint with
+    // stop_counterpart fires. Checked in both tick loops so the other
+    // processor stops within one cycle. Separate from bus_stretch_cancel
+    // which is a bus-stretching concern, not a debugger concern.
+    alignas(64) std::atomic<bool> debugger_stop_signal{false};
+
     // --- Lifecycle mailbox ---
     alignas(64) std::atomic<uint8_t> host_command{0};
     std::atomic<uint8_t> parasite_ack{0};
@@ -222,6 +229,7 @@ struct alignas(64) TubeShared {
         counters.r4_p2h_reads.store(0, std::memory_order_relaxed);
 
         bus_stretch_cancel.store(false, std::memory_order_relaxed);
+        debugger_stop_signal.store(false, std::memory_order_relaxed);
         host_command.store(0, std::memory_order_relaxed);
         parasite_ack.store(0, std::memory_order_relaxed);
 

@@ -41,6 +41,26 @@ class Breakpoint:
 
 
 @dataclass(frozen=True)
+class WatchpointInfo:
+    """A watchpoint set in the emulator."""
+
+    id: int
+    start_address: int
+    end_address: int
+    type: str  # "read", "write", or "both"
+
+
+@dataclass(frozen=True)
+class WatchpointHitInfo:
+    """Details of a watchpoint hit."""
+
+    watchpoint_id: int
+    address: int
+    value: int
+    is_write: bool
+
+
+@dataclass(frozen=True)
 class StepResult:
     """Result of a step operation."""
 
@@ -312,6 +332,70 @@ class Debugger:
             The number of breakpoints removed.
         """
         response = self._stub.ClearBreakpoints(debugger_pb2.Empty())
+        return response.count_removed
+
+    # Watchpoints
+
+    def add_watchpoint(
+        self,
+        start_address: int,
+        end_address: int,
+        type: str = "both",
+    ) -> int:
+        """Add a watchpoint on an address range.
+
+        Args:
+            start_address: Start of range (inclusive).
+            end_address: End of range (exclusive).
+            type: "read", "write", or "both".
+
+        Returns:
+            The watchpoint ID.
+        """
+        type_map = {
+            "read": debugger_pb2.WATCHPOINT_READ,
+            "write": debugger_pb2.WATCHPOINT_WRITE,
+            "both": debugger_pb2.WATCHPOINT_BOTH,
+        }
+        request = debugger_pb2.AddWatchpointRequest(
+            start_address=start_address,
+            end_address=end_address,
+            type=type_map.get(type, debugger_pb2.WATCHPOINT_BOTH),
+        )
+        response = self._stub.AddWatchpoint(request)
+        if not response.success:
+            raise DebuggerError(
+                f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}"
+            )
+        return response.id
+
+    def remove_watchpoint(self, watchpoint_id: int) -> bool:
+        """Remove a watchpoint by ID."""
+        request = debugger_pb2.RemoveWatchpointRequest(id=watchpoint_id)
+        response = self._stub.RemoveWatchpoint(request)
+        return response.success
+
+    def list_watchpoints(self) -> list[WatchpointInfo]:
+        """List all active watchpoints."""
+        response = self._stub.ListWatchpoints(debugger_pb2.Empty())
+        type_map = {
+            debugger_pb2.WATCHPOINT_READ: "read",
+            debugger_pb2.WATCHPOINT_WRITE: "write",
+            debugger_pb2.WATCHPOINT_BOTH: "both",
+        }
+        return [
+            WatchpointInfo(
+                id=wp.id,
+                start_address=wp.start_address,
+                end_address=wp.end_address,
+                type=type_map.get(wp.type, "both"),
+            )
+            for wp in response.watchpoints
+        ]
+
+    def clear_watchpoints(self) -> int:
+        """Remove all watchpoints. Returns the count removed."""
+        response = self._stub.ClearWatchpoints(debugger_pb2.Empty())
         return response.count_removed
 
     # Event streaming
