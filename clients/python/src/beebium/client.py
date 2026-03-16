@@ -373,34 +373,38 @@ class Beebium:
         self.debugger.step_cycles(cycles)
 
     def run_until_or_timeout(
-        self, predicate, emulated_seconds: float, chunk_seconds: float = 1.0
+        self, predicate, emulated_seconds: float, poll_interval: float = 0.02
     ) -> bool:
         """Run until predicate() returns True or the emulated time budget expires.
 
-        Uses chunked synchronous step_cycles calls, checking the predicate
-        after each chunk. No real-time sleeps -- fully deterministic.
+        The predicate is called periodically (after at least 1 emulated
+        second). The emulator is left in whatever state it was in on entry.
 
         Args:
             predicate: Callable returning True when the condition is met.
             emulated_seconds: Maximum emulated BBC-time seconds to run.
-            chunk_seconds: Emulated seconds per chunk (default 1.0).
+            poll_interval: Real-time seconds between polls.
 
         Returns:
             True if the predicate was satisfied, False on timeout.
         """
+        import time as _time
         clock_hz = self.system.clock_speed_hz or 2_000_000
-        total_cycles = int(emulated_seconds * clock_hz)
-        chunk_cycles = int(chunk_seconds * clock_hz)
-        remaining = total_cycles
+        cycle_budget = int(emulated_seconds * clock_hz)
+        start_cycles = self.debugger.cycle_count
+        target_cycles = start_cycles + cycle_budget
 
-        while remaining > 0:
-            step = min(remaining, chunk_cycles)
-            self.debugger.ensure_stopped()
-            self.debugger.step_cycles(step)
-            remaining -= step
-            if predicate():
-                return True
-        return False
+        with self.debugger.running():
+            while True:
+                _time.sleep(poll_interval)
+                current = self.debugger.cycle_count
+                if current >= target_cycles:
+                    return predicate()
+                if current - start_cycles >= clock_hz:
+                    self.debugger.stop()
+                    if predicate():
+                        return True
+                    self.debugger.run()
 
     def close(self) -> None:
         """Close the connection and stop any managed server.

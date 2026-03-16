@@ -326,36 +326,63 @@ export class Beebium {
      * Run the emulator until predicate returns true or the emulated time
      * budget expires.
      *
-     * Uses chunked synchronous stepCycles calls, checking the predicate
-     * after each chunk. No real-time sleeps -- fully deterministic.
+     * The predicate is called periodically (after at least 1 emulated
+     * second to allow keyboard input and Tube protocol processing).
+     * The emulator is stopped during predicate evaluation and left
+     * stopped on return.
      *
      * @param predicate - Async function returning true when the condition is met.
      * @param emulatedSeconds - Maximum emulated time to run.
-     * @param chunkSeconds - Emulated seconds per chunk (default 1.0).
+     * @param pollIntervalMs - Real-time ms between polls (default 20).
      * @returns true if the predicate was satisfied, false on timeout.
      */
     async runUntilOrTimeout(
         predicate: () => Promise<boolean>,
         emulatedSeconds: number,
-        chunkSeconds = 1.0,
+        pollIntervalMs = 20,
     ): Promise<boolean> {
         const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
-        const totalCycles = Math.round(emulatedSeconds * clockHz);
-        const chunkCycles = Math.round(chunkSeconds * clockHz);
-        let remaining = totalCycles;
+        const cycleBudget = Math.round(emulatedSeconds * clockHz);
+        const startCycles = (await this.debugger.getState()).cycleCount;
+        const targetCycles = startCycles + cycleBudget;
+        const minCyclesBeforeCheck = clockHz; // 1 emulated second
 
-        while (remaining > 0) {
-            const step = Math.min(remaining, chunkCycles);
+        // Ensure the machine is running. The server startup has a race where
+        // it briefly appears "running" before handle_wait_mode pauses it at
+        // cycle 7. Retry run() until cycles are actually advancing.
+        for (let attempt = 0; attempt < 50; attempt++) {
+            try {
+                await this.debugger.run();
+            } catch {
+                // Already running or other transient error
+            }
+            await new Promise(r => setTimeout(r, 100));
+            const state = await this.debugger.getState();
+            if (state.isRunning && state.cycleCount > 10) break;
+        }
+        try {
+            while (true) {
+                await new Promise(r => setTimeout(r, pollIntervalMs));
+                const state = await this.debugger.getState();
+
+                if (state.cycleCount >= targetCycles) {
+                    await this.debugger.stop();
+                    return predicate();
+                }
+
+                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
+                    await this.debugger.stop();
+                    if (await predicate()) {
+                        return true;
+                    }
+                    await this.debugger.run();
+                }
+            }
+        } finally {
             if (await this.debugger.isRunning()) {
                 await this.debugger.stop();
             }
-            await this.debugger.stepCycles(step);
-            remaining -= step;
-            if (await predicate()) {
-                return true;
-            }
         }
-        return false;
     }
 
     /**

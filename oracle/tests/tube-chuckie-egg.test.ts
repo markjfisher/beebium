@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { JsbeebOracle } from '../src/index.js';
-import { Beebium } from 'beebium';
+import { Beebium, screenContains } from 'beebium';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const ROM_DIRPATH = join(REPO_ROOT, 'roms');
@@ -39,9 +39,21 @@ async function bootJsbeeb(): Promise<JsbeebOracle> {
     return oracle;
 }
 
+/** Read function for screenContains — reads from host memory. */
+function hostReadFn(host: Beebium) {
+    return async (addr: number, len: number) =>
+        host.memory.address.peek.read(addr, len);
+}
+
 /**
  * Boot Beebium with Tube, set a parasite breakpoint, then load CE2023.
  * Returns { host, parasite } with the parasite stopped at the breakpoint.
+ *
+ * Follows the same pattern as the Python test fixture bbc_tube:
+ * 1. Launch server (machine starts paused)
+ * 2. Use runUntilOrTimeout to wait for Tube banner (handles run/stop)
+ * 3. Insert disc, set breakpoint, type command
+ * 4. Run both, wait for breakpoint via event stream
  */
 async function bootBeebiumToParasiteAddress(
     address: number,
@@ -54,25 +66,33 @@ async function bootBeebiumToParasiteAddress(
         ],
         timeoutMs: 20000,
     });
-    // Boot for 5 emulated seconds (BASIC prompt + Tube banner)
-    await host.runForEmulatedSeconds(5);
+
+    // Wait for Tube banner (same pattern as Python bbc_tube fixture).
+    const bannerFound = await host.runUntilOrTimeout(
+        () => screenContains(hostReadFn(host), "Acorn TUBE"),
+        10,
+    );
+    if (!bannerFound) {
+        throw new Error("Tube banner not visible after boot");
+    }
+    // Host is stopped after runUntilOrTimeout returns
 
     // Connect to parasite and set the breakpoint BEFORE loading the game
     const parasite = await host.connectParasite();
     if (await parasite.debugger.isRunning()) await parasite.debugger.stop();
     const bpId = await parasite.debugger.addBreakpoint(address);
 
-    // Insert disc and type command
+    // Insert disc BEFORE typing command
     await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
-    await host.keyboard.type("*EXEC !BOOT\r");
 
-    // Run host — the parasite will hit the breakpoint and stop
-    // Use run() + poll instead of stepCycles since the host needs
-    // to keep running while the parasite processes the game load
+    // Resume parasite first (so it's running when we subscribe),
+    // then subscribe to stop events, then resume the host.
+    await parasite.debugger.run();
     const stopPromise = parasite.debugger.waitForStop();
     await host.debugger.run();
+    await host.keyboard.type("*EXEC !BOOT\r");
 
-    // Wait for the parasite to stop at the breakpoint via event stream.
+    // Wait for the parasite to hit the breakpoint via event stream.
     await stopPromise;
 
     // Clean up breakpoint
@@ -162,11 +182,11 @@ describe('Tube CE2023 Differential', () => {
                     // jsbeeb side: run to next R1 read
                     await oracle.runUntilParasiteAddress(AFTER_R1_READ, 5);
 
-                    // Beebium side: run host (which feeds data to parasite)
-                    // and wait for parasite to hit the breakpoint via event stream
+                    // Beebium side: resume parasite (so it's running when we
+                    // subscribe), then subscribe, then resume host.
+                    await parasite.debugger.run();
                     const parasiteStopPromise = parasite.debugger.waitForStop();
                     await host.debugger.run();
-                    await parasite.debugger.run();
                     await parasiteStopPromise;
                     if (await host.debugger.isRunning()) await host.debugger.stop();
 
