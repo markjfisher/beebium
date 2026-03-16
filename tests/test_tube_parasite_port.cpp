@@ -1002,11 +1002,13 @@ TEST_CASE("R3 H-to-P 1-byte mode: write-read", "[tube][r3][hw]") {
     CHECK(t.parasite_read_r3() == 0x42);
 }
 
-TEST_CASE("R3 H-to-P 1-byte mode: write-write-read-read", "[tube][r3][hw]") {
+TEST_CASE("R3 H-to-P 1-byte mode: write-read-write-read sequence", "[tube][r3][hw]") {
+    // In 1-byte mode, the host can only write 1 byte before the parasite
+    // must read (bus stretching blocks the second write until count < 1).
     TubePair t;
     t.host_write_r3(0x11);
-    t.host_write_r3(0x22);
     CHECK(t.parasite_read_r3() == 0x11);
+    t.host_write_r3(0x22);
     CHECK(t.parasite_read_r3() == 0x22);
 }
 

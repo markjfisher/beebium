@@ -245,7 +245,11 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
     case 5: {
         // R3 data: write to H-to-P circular buffer.
         // Bus stretching: spin until the register has space.
-        while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= 2)
+        // In 1-byte mode (V=0), space available when count < 1.
+        // In 2-byte mode (V=1), space available when count < 2.
+        auto flags = shared_->control_flags.load(std::memory_order_acquire);
+        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+        while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold)
             ;
         uint8_t tail = shared_->r3_h2p.tail.load(std::memory_order_relaxed);
         shared_->r3_h2p.data[tail].store(value, std::memory_order_relaxed);
