@@ -56,10 +56,16 @@ enum WatchType : uint8_t {
 };
 
 // Debugger breakpoint entry -- checked inline in the tick loop at instruction boundaries.
-// Sorted by address. Modified only while the machine is stopped.
+// Sorted by start address. Modified only while the machine is stopped.
+//
+// Like watchpoints, breakpoints match a half-open address range [start, end).
+// A single-address breakpoint is [addr, addr+1). A full-range breakpoint
+// [0x0000, 0x10000) fires at every instruction boundary, useful with a
+// condition like "cycles >= 10000000" for cycle-budget runs.
 struct BreakpointEntry {
     uint32_t id;
-    uint16_t address;
+    uint16_t start;
+    uint16_t end;       // exclusive [start, end)
     bool stop_counterpart = false;
 
     // Condition expression (evaluated on address match).
@@ -69,6 +75,10 @@ struct BreakpointEntry {
 
     // Hit counter: increments on every address match, available as `hits` in the condition.
     uint64_t hit_count = 0;
+
+    bool matches(uint16_t pc) const {
+        return pc >= start && pc < end;
+    }
 };
 
 // Debugger watchpoint entry -- checked inline in CpuBinding on every bus access.

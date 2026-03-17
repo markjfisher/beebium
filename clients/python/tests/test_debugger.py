@@ -48,38 +48,36 @@ def assemble(source: str) -> bytes:
         return bin_filepath.read_bytes()
 
 
-def run_and_wait_for_stop(bbc: Beebium, timeout: float = 10.0) -> ExecutionStateEvent:
-    """Run the machine and wait for it to stop (e.g. breakpoint hit).
+def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
+    """Subscribe to the event stream, run, then wait for a stop event.
 
-    Uses polling with a timeout rather than the event stream, to avoid
-    the race where the machine stops before the stream is established.
+    The stream is opened first to avoid the race where the machine stops
+    before the subscription is established.
     """
-    import time
+    stream = bbc.debugger.watch_execution_state()
+    # Consume the initial state event (machine is currently stopped)
+    next(stream)
+    # Now start execution
     bbc.debugger.run()
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        time.sleep(0.01)
-        state = bbc.debugger.get_state()
-        if not state.is_running:
-            return ExecutionStateEvent(
-                reason=0,
-                state=state,
-                message="",
-            )
-    raise DebuggerError(f"Machine did not stop within {timeout}s")
+    # Wait for the running -> stopped transition on the stream
+    for event in stream:
+        if not event.state.is_running:
+            return event
+    raise DebuggerError("Stream ended without stop event")
 
 
 def plant_and_run_from(bbc: Beebium, code: bytes, org: int = 0x0400) -> None:
     """Plant assembled code at ``org`` and prepare the CPU to execute it.
 
-    Resets the machine, writes the code, and sets PC to the code origin.
+    Stops the machine, writes the code, and sets PC to the code origin.
     The machine is left stopped, ready for breakpoint setup and ``run()``.
     """
-    bbc.debugger.reset()
-    # reset() leaves machine paused at cycle 7 (reset sequence complete)
+    bbc.debugger.stop()
     for i, byte in enumerate(code):
         bbc.memory.address.bus[org + i] = byte
     bbc.cpu.pc = org
+    # Verify the PC was set correctly
+    assert bbc.cpu.pc == org
 
 
 # ============================================================================

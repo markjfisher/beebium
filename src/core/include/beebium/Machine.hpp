@@ -315,13 +315,10 @@ public:
             if (!breakpoint_entries_.empty() && M6502_IsAboutToExecute(&state_.cpu)) {
                 uint16_t pc = state_.cpu.opcode_pc.w;
                 for (auto& bp : breakpoint_entries_) {
-                    if (bp.address == pc) {
+                    if (bp.start > pc) break;  // sorted by start: early exit
+                    if (bp.matches(pc)) {
                         if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
                         if (paused_.load()) return;
-                        // Continue checking: multiple breakpoints at the same
-                        // address may have different conditions.
-                    } else if (bp.address > pc) {
-                        break;
                     }
                 }
             }
@@ -427,7 +424,7 @@ public:
     uint8_t x() const { return state_.cpu.x; }
     uint8_t y() const { return state_.cpu.y; }
     uint8_t sp() const { return state_.cpu.s.b.l; }
-    uint16_t pc() const { return state_.cpu.pc.w; }
+    uint16_t pc() const { return state_.cpu.opcode_pc.w; }
     uint8_t p() const { return state_.cpu.p.value; }
 
     // Interrupt handler tracking
@@ -439,7 +436,12 @@ public:
     void set_x(uint8_t value) { state_.cpu.x = value; ++sequence_; }
     void set_y(uint8_t value) { state_.cpu.y = value; ++sequence_; }
     void set_sp(uint8_t value) { state_.cpu.s.b.l = value; ++sequence_; }
-    void set_pc(uint16_t value) { state_.cpu.pc.w = value; ++sequence_; }
+    void set_pc(uint16_t value) {
+        state_.cpu.opcode_pc.w = value;
+        state_.cpu.pc.w = value + 1;
+        state_.cpu.dbus = state_.memory.peek(value);
+        ++sequence_;
+    }
     void set_p(uint8_t value) { state_.cpu.p.value = value; ++sequence_; }
 
     // Direct memory access (convenience)
@@ -454,7 +456,7 @@ public:
     void set_breakpoint_entries(std::vector<BreakpointEntry> entries) {
         std::sort(entries.begin(), entries.end(),
                   [](const BreakpointEntry& a, const BreakpointEntry& b) {
-                      return a.address < b.address;
+                      return a.start < b.start;
                   });
         breakpoint_entries_ = std::move(entries);
     }

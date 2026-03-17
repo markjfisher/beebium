@@ -53,11 +53,10 @@ void ParasiteRunner::run(uint64_t cycles) {
             if (!breakpoint_entries_.empty() && M6502_IsAboutToExecute(&cpu_.cpu())) {
                 uint16_t pc = cpu_.cpu().opcode_pc.w;
                 for (auto& bp : breakpoint_entries_) {
-                    if (bp.address == pc) {
+                    if (bp.start > pc) break;
+                    if (bp.matches(pc)) {
                         if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
                         if (paused_.load(std::memory_order_acquire)) return;
-                    } else if (bp.address > pc) {
-                        break;
                     }
                 }
             }

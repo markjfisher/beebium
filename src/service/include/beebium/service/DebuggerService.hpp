@@ -74,7 +74,8 @@ void write_with_optional_pc(Machine& machine, uint16_t addr, uint8_t val, bool h
 /// Internal breakpoint record (service-layer, holds parsed condition)
 struct BreakpointRecord {
     uint32_t id;
-    uint32_t address;
+    uint32_t start_address;
+    uint32_t end_address;  // exclusive
     bool stop_counterpart = false;
     std::optional<beebium::CompiledExpression> condition;
 };
@@ -378,7 +379,8 @@ void DebuggerControlServiceImpl<MachineType>::update_breakpoint_entries() {
     entries.reserve(breakpoints_.size());
     for (const auto& bp : breakpoints_) {
         entries.push_back({bp.id,
-                          static_cast<uint16_t>(bp.address),
+                          static_cast<uint16_t>(bp.start_address),
+                          static_cast<uint16_t>(bp.end_address),
                           bp.stop_counterpart,
                           bp.condition,
                           0});  // reset hit_count
@@ -718,8 +720,11 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddBreakpoint(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    uint32_t address = request->address();
-    if (address > 0xFFFF) {
+    uint32_t start = request->start_address();
+    uint32_t end = request->end_address();
+    // end_address == 0 means single-address breakpoint [start, start+1)
+    if (end == 0) end = start + 1;
+    if (start > 0xFFFF || end > 0x10000 || start >= end) {
         response->set_success(false);
         return grpc::Status::OK;
     }
@@ -737,7 +742,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddBreakpoint(
     }
 
     uint32_t id = next_breakpoint_id_++;
-    breakpoints_.push_back({id, address, request->stop_counterpart(), std::move(condition)});
+    breakpoints_.push_back({id, start, end, request->stop_counterpart(), std::move(condition)});
     update_breakpoint_entries();
 
     response->set_success(true);
@@ -779,7 +784,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
     for (const auto& bp : breakpoints_) {
         auto* pb_bp = response->add_breakpoints();
         pb_bp->set_id(bp.id);
-        pb_bp->set_address(bp.address);
+        pb_bp->set_start_address(bp.start_address);
+        pb_bp->set_end_address(bp.end_address);
     }
 
     return grpc::Status::OK;
@@ -1063,14 +1069,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Set6502State(
         machine_.set_sp(static_cast<uint8_t>(request->sp()));
     }
     if (request->has_pc()) {
-        uint16_t new_pc = static_cast<uint16_t>(request->pc());
-        // M6502_NextInstruction's post-increment means pc.w must be one
-        // past the opcode. Set opcode_pc to the target address and pc to
-        // target+1. Also set dbus to the opcode byte so Cycle0_All decodes
-        // the correct instruction.
-        machine_.set_pc(new_pc + 1);
-        machine_.cpu().opcode_pc.w = new_pc;
-        machine_.cpu().dbus = machine_.peek(new_pc);
+        machine_.set_pc(static_cast<uint16_t>(request->pc()));
     }
     if (request->has_p()) {
         machine_.set_p(static_cast<uint8_t>(request->p()));

@@ -94,7 +94,7 @@ public:
     uint8_t x() const { return cpu_.cpu().x; }
     uint8_t y() const { return cpu_.cpu().y; }
     uint8_t sp() const { return cpu_.cpu().s.b.l; }
-    uint16_t pc() const { return cpu_.cpu().pc.w; }
+    uint16_t pc() const { return cpu_.cpu().opcode_pc.w; }
     uint8_t p() const { return cpu_.cpu().p.value; }
 
     // Interrupt handler tracking
@@ -105,7 +105,12 @@ public:
     void set_x(uint8_t value) { cpu_.cpu().x = value; ++sequence_; }
     void set_y(uint8_t value) { cpu_.cpu().y = value; ++sequence_; }
     void set_sp(uint8_t value) { cpu_.cpu().s.b.l = value; ++sequence_; }
-    void set_pc(uint16_t value) { cpu_.cpu().pc.w = value; ++sequence_; }
+    void set_pc(uint16_t value) {
+        cpu_.cpu().opcode_pc.w = value;
+        cpu_.cpu().pc.w = value + 1;
+        cpu_.cpu().dbus = memory_.peek(value);
+        ++sequence_;
+    }
     void set_p(uint8_t value) { cpu_.cpu().p.value = value; ++sequence_; }
 
     // --- Memory access ---
@@ -126,7 +131,7 @@ public:
     void set_breakpoint_entries(std::vector<BreakpointEntry> entries) {
         std::sort(entries.begin(), entries.end(),
                   [](const BreakpointEntry& a, const BreakpointEntry& b) {
-                      return a.address < b.address;
+                      return a.start < b.start;
                   });
         breakpoint_entries_ = std::move(entries);
     }

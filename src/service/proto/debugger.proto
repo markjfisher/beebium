@@ -161,9 +161,10 @@ message WriteMemoryResponse {
 }
 
 message AddBreakpointRequest {
-    uint32 address = 1;
-    bool stop_counterpart = 2;
-    string condition = 3;              // optional condition expression (use `hits` for hit counts)
+    uint32 start_address = 1;          // start of range (inclusive)
+    uint32 end_address = 2;            // end of range (exclusive); 0 means start+1 (single address)
+    bool stop_counterpart = 3;
+    string condition = 4;              // optional condition expression (use `hits` for hit counts)
 }
 
 message AddBreakpointResponse {
@@ -185,7 +186,8 @@ message ListBreakpointsResponse {
 
 message Breakpoint {
     uint32 id = 1;
-    uint32 address = 2;
+    uint32 start_address = 2;
+    uint32 end_address = 3;
 }
 
 message ClearBreakpointsResponse {

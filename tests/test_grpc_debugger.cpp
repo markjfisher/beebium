@@ -342,7 +342,7 @@ TEST_CASE("DebuggerControl AddBreakpoint creates breakpoint", "[grpc][debugger]"
 
     grpc::ClientContext context;
     beebium::AddBreakpointRequest request;
-    request.set_address(0xD9CD);
+    request.set_start_address(0xD9CD);
     beebium::AddBreakpointResponse response;
 
     auto status = fixture.debugger().AddBreakpoint(&context, request, &response);
@@ -359,14 +359,14 @@ TEST_CASE("DebuggerControl ListBreakpoints returns added breakpoints", "[grpc][d
     {
         grpc::ClientContext context;
         beebium::AddBreakpointRequest request;
-        request.set_address(0x1000);
+        request.set_start_address(0x1000);
         beebium::AddBreakpointResponse response;
         fixture.debugger().AddBreakpoint(&context, request, &response);
     }
     {
         grpc::ClientContext context;
         beebium::AddBreakpointRequest request;
-        request.set_address(0x2000);
+        request.set_start_address(0x2000);
         beebium::AddBreakpointResponse response;
         fixture.debugger().AddBreakpoint(&context, request, &response);
     }
@@ -381,8 +381,8 @@ TEST_CASE("DebuggerControl ListBreakpoints returns added breakpoints", "[grpc][d
     REQUIRE(response.breakpoints_size() == 2);
 
     // Check breakpoint data
-    CHECK(response.breakpoints(0).address() == 0x1000);
-    CHECK(response.breakpoints(1).address() == 0x2000);
+    CHECK(response.breakpoints(0).start_address() == 0x1000);
+    CHECK(response.breakpoints(1).start_address() == 0x2000);
 }
 
 TEST_CASE("DebuggerControl RemoveBreakpoint removes a breakpoint", "[grpc][debugger]") {
@@ -393,7 +393,7 @@ TEST_CASE("DebuggerControl RemoveBreakpoint removes a breakpoint", "[grpc][debug
     {
         grpc::ClientContext context;
         beebium::AddBreakpointRequest request;
-        request.set_address(0x3000);
+        request.set_start_address(0x3000);
         beebium::AddBreakpointResponse response;
         fixture.debugger().AddBreakpoint(&context, request, &response);
         bp_id = response.id();
@@ -429,7 +429,7 @@ TEST_CASE("DebuggerControl ClearBreakpoints removes all breakpoints", "[grpc][de
     for (int i = 0; i < 5; i++) {
         grpc::ClientContext context;
         beebium::AddBreakpointRequest request;
-        request.set_address(0x1000 + i * 0x100);
+        request.set_start_address(0x1000 + i * 0x100);
         beebium::AddBreakpointResponse response;
         fixture.debugger().AddBreakpoint(&context, request, &response);
     }
@@ -890,27 +890,13 @@ static void plant_code(beebium::ModelB& machine, uint16_t addr,
 }
 
 // Helper to prepare the machine for 6502 code execution.
-// Must be called BEFORE plant_code() since reset() clears RAM.
-// After plant_code(), call ready_to_run() to fix up the CPU state.
-//
-// After step_instruction(), M6502_NextInstruction has already set up:
-//   abus = (old opcode address), pc = (old opcode address + 1)
-//   dbus = (opcode from old address), read = Opcode, tfn = Cycle0_All
-//
-// Cycle0_All reads the opcode from dbus, then dispatches to Cycle0_XXX
-// which reads the first operand byte from pc (and increments pc).
-// So we set pc to target+1 (operand address) and fix dbus in ready_to_run.
-static void prepare_for_code(beebium::ModelB& machine, uint16_t pc) {
+// Call sequence: prepare_for_code() -> plant_code() -> set_pc()
+// reset() clears RAM, so code must be planted after prepare.
+// set_pc() peeks the opcode from memory, so it must be called after planting.
+static void prepare_for_code(beebium::ModelB& machine) {
     machine.reset();
     machine.step_instruction();
     machine.pause();
-    machine.set_pc(pc + 1);
-    machine.cpu().opcode_pc.w = pc;
-}
-
-// Fix up dbus after plant_code() so Cycle0_All sees the correct opcode.
-static void ready_to_run(beebium::ModelB& machine) {
-    machine.cpu().dbus = machine.peek(machine.cpu().opcode_pc.w);
 }
 
 TEST_CASE("6502 step_instruction sets registers correctly", "[debugger][6502]") {
@@ -926,16 +912,13 @@ TEST_CASE("6502 step_instruction sets registers correctly", "[debugger][6502]") 
     machine.write(0x0400, 0xA9);
     machine.write(0x0401, 0x42);
     machine.write(0x0402, 0xEA);
-    machine.set_pc(0x0401);
-    machine.cpu().opcode_pc.w = 0x0400;
-    machine.cpu().dbus = 0xA9;
+    machine.set_pc(0x0400);
 
     CHECK(M6502_IsAboutToExecute(&machine.cpu()));
 
     // Execute LDA #$42 via step_instruction
     machine.step_instruction();
-    // After LDA #$42, opcode_pc points to the NOP at $0402
-    CHECK(machine.cpu().opcode_pc.w == 0x0402);
+    CHECK(machine.pc() == 0x0402);
     CHECK(static_cast<int>(machine.a()) == 0x42);
 }
 
@@ -953,14 +936,12 @@ TEST_CASE("Direct inline breakpoint without gRPC", "[debugger][breakpoint][6502]
     machine.write(0x0401, 0x42);
     machine.write(0x0402, 0xEA);
     machine.write(0x0403, 0xEA);
-    machine.set_pc(0x0401);
-    machine.cpu().opcode_pc.w = 0x0400;
-    machine.cpu().dbus = 0xA9;
+    machine.set_pc(0x0400);
 
     CHECK(M6502_IsAboutToExecute(&machine.cpu()));
 
     // Set breakpoint at $0402
-    machine.set_breakpoint_entries({beebium::BreakpointEntry{1, 0x0402}});
+    machine.set_breakpoint_entries({beebium::BreakpointEntry{1, 0x0402, 0x0403}});
     bool hit = false;
     uint16_t hit_pc = 0;
     machine.set_breakpoint_hit_callback([&](const beebium::BreakpointEntry&, uint16_t pc) {
@@ -974,7 +955,7 @@ TEST_CASE("Direct inline breakpoint without gRPC", "[debugger][breakpoint][6502]
     CHECK(hit);
     CHECK(hit_pc == 0x0402);
     CHECK(machine.is_paused());
-    CHECK(machine.cpu().opcode_pc.w == 0x0402);
+    CHECK(machine.pc() == 0x0402);
     CHECK(static_cast<int>(machine.a()) == 0x42);
 }
 
@@ -982,7 +963,7 @@ TEST_CASE("Breakpoint stops at correct PC with 6502 code", "[grpc][debugger][bre
     DebuggerTestFixture fixture;
 
     // Prepare: reset, run reset sequence, pause, set PC
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Plant code at $0400 (after reset, so RAM is clear):
     //   LDA #$42     ; A9 42
@@ -995,14 +976,15 @@ TEST_CASE("Breakpoint stops at correct PC with 6502 code", "[grpc][debugger][bre
         0xA9, 0x00,       // LDA #$00
         0xEA,             // NOP
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Set breakpoint at the STA instruction ($0402)
     uint32_t bp_id;
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
         REQUIRE(resp.success());
@@ -1015,7 +997,7 @@ TEST_CASE("Breakpoint stops at correct PC with 6502 code", "[grpc][debugger][bre
 
     // Machine should be paused at $0402 (breakpoint hit before executing STA)
     CHECK(fixture.machine().is_paused());
-    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    CHECK(fixture.machine().pc() == 0x0402);
     // A should be $42 (LDA #$42 executed)
     CHECK(fixture.machine().a() == 0x42);
     // $0500 should NOT have been written yet (STA not executed)
@@ -1034,7 +1016,7 @@ TEST_CASE("Breakpoint stops at correct PC with 6502 code", "[grpc][debugger][bre
 TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Code at $0400: increment X and loop back
     //   LDX #$00     ; A2 00
@@ -1045,14 +1027,15 @@ TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
         0xE8,             // INX
         0x4C, 0x02, 0x04, // JMP $0402
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Breakpoint on the INX at $0402
     uint32_t bp_id;
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
         bp_id = resp.id();
@@ -1062,7 +1045,7 @@ TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
     fixture.machine().resume();
     fixture.machine().run(100);
     CHECK(fixture.machine().is_paused());
-    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    CHECK(fixture.machine().pc() == 0x0402);
     CHECK(fixture.machine().x() == 0x00);
 
     // Step one instruction (executes INX), then resume to hit breakpoint again
@@ -1072,7 +1055,7 @@ TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
     fixture.machine().resume();
     fixture.machine().run(100);
     CHECK(fixture.machine().is_paused());
-    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0402);
+    CHECK(fixture.machine().pc() == 0x0402);
     CHECK(fixture.machine().x() == 0x01);
 
     // Clean up
@@ -1088,7 +1071,7 @@ TEST_CASE("Breakpoint fires in a loop", "[grpc][debugger][breakpoint][6502]") {
 TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Code at $0400:
     //   NOP          ; EA      ($0400)
@@ -1096,20 +1079,21 @@ TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6
     //   NOP          ; EA      ($0402)
     //   NOP          ; EA      ($0403)
     plant_code(fixture.machine(), 0x0400, {0xEA, 0xEA, 0xEA, 0xEA});
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Set breakpoints at $0401 and $0403
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0401);
+        req.set_start_address(0x0401);
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
     }
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0403);
+        req.set_start_address(0x0403);
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
     }
@@ -1117,7 +1101,7 @@ TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6
     // Run: should stop at $0401 (first breakpoint)
     fixture.machine().resume();
     fixture.machine().run(100);
-    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0401);
+    CHECK(fixture.machine().pc() == 0x0401);
 
     // Step past the breakpoint, then resume to hit the second breakpoint
     fixture.machine().step_instruction();
@@ -1125,7 +1109,7 @@ TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6
     // Resume: should stop at $0403 (second breakpoint, skipping $0402 NOP)
     fixture.machine().resume();
     fixture.machine().run(100);
-    CHECK(fixture.machine().cpu().opcode_pc.w == 0x0403);
+    CHECK(fixture.machine().pc() == 0x0403);
 
     // Clean up
     {
@@ -1139,11 +1123,12 @@ TEST_CASE("Multiple breakpoints fire correctly", "[grpc][debugger][breakpoint][6
 TEST_CASE("No breakpoints: run completes normally", "[grpc][debugger][breakpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Simple code at $0400: three NOPs
     plant_code(fixture.machine(), 0x0400, {0xEA, 0xEA, 0xEA});
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Run with no breakpoints
     fixture.machine().resume();
@@ -1162,7 +1147,7 @@ TEST_CASE("No breakpoints: run completes normally", "[grpc][debugger][breakpoint
 TEST_CASE("Write watchpoint fires on STA", "[grpc][debugger][watchpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // LDA #$42 ; STA $0500
     plant_code(fixture.machine(), 0x0400, {
@@ -1170,7 +1155,8 @@ TEST_CASE("Write watchpoint fires on STA", "[grpc][debugger][watchpoint][6502]")
         0x8D, 0x00, 0x05, // STA $0500
         0xEA,             // NOP (should not reach)
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Add write watchpoint on $0500 (single address)
     uint32_t wp_id;
@@ -1207,7 +1193,7 @@ TEST_CASE("Write watchpoint fires on STA", "[grpc][debugger][watchpoint][6502]")
 TEST_CASE("Read watchpoint fires on LDA from memory", "[grpc][debugger][watchpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Put a value at $0500 and read it
     fixture.machine().write(0x0500, 0xAB);
@@ -1217,7 +1203,8 @@ TEST_CASE("Read watchpoint fires on LDA from memory", "[grpc][debugger][watchpoi
         0xAD, 0x00, 0x05, // LDA $0500
         0xEA,             // NOP
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Add read watchpoint on $0500
     uint32_t wp_id;
@@ -1256,7 +1243,7 @@ TEST_CASE("Read watchpoint fires on LDA from memory", "[grpc][debugger][watchpoi
 TEST_CASE("Write-only watchpoint does not fire on read", "[grpc][debugger][watchpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     fixture.machine().write(0x0500, 0x77);
 
@@ -1265,7 +1252,8 @@ TEST_CASE("Write-only watchpoint does not fire on read", "[grpc][debugger][watch
         0xAD, 0x00, 0x05, // LDA $0500
         0xEA, 0xEA,
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Write-only watchpoint
     {
@@ -1295,7 +1283,7 @@ TEST_CASE("Write-only watchpoint does not fire on read", "[grpc][debugger][watch
 TEST_CASE("Watchpoint on address range fires for any address in range", "[grpc][debugger][watchpoint][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // STA $0503 (write to middle of range $0500-$0510)
     plant_code(fixture.machine(), 0x0400, {
@@ -1303,7 +1291,8 @@ TEST_CASE("Watchpoint on address range fires for any address in range", "[grpc][
         0x8D, 0x03, 0x05, // STA $0503
         0xEA,
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Watchpoint on range [$0500, $0510)
     {
@@ -1337,7 +1326,7 @@ TEST_CASE("Watchpoint on address range fires for any address in range", "[grpc][
 TEST_CASE("Conditional breakpoint fires only when A == 0x42", "[grpc][debugger][breakpoint][conditional][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Loop: LDA values from a table, INX, BNE loop
     //   $0400: LDX #$00
@@ -1354,18 +1343,19 @@ TEST_CASE("Conditional breakpoint fires only when A == 0x42", "[grpc][debugger][
         0xD0, 0xF8,             // BNE $0402 (relative -8)
         0xEA,                   // NOP
     });
+    fixture.machine().set_pc(0x0400);
     // Table at $0420: values to load
     fixture.machine().write(0x0420, 0x10);  // iteration 0: A=$10
     fixture.machine().write(0x0421, 0x42);  // iteration 1: A=$42 <- should fire
     fixture.machine().write(0x0422, 0x99);  // iteration 2: A=$99
     fixture.machine().write(0x0423, 0xFF);  // iteration 3: A=$FF
-    ready_to_run(fixture.machine());
+
 
     // Conditional breakpoint at LDA instruction: stop only when A == 0x42
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         req.set_condition("A == 0x42");
         beebium::AddBreakpointResponse resp;
         auto status = fixture.debugger().AddBreakpoint(&ctx, req, &resp);
@@ -1394,7 +1384,7 @@ TEST_CASE("Conditional breakpoint fires only when A == 0x42", "[grpc][debugger][
 TEST_CASE("Breakpoint with hits == 3 fires on third hit", "[grpc][debugger][breakpoint][conditional][hits][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Tight loop: INX, JMP back
     //   $0400: LDX #$00
@@ -1405,13 +1395,14 @@ TEST_CASE("Breakpoint with hits == 3 fires on third hit", "[grpc][debugger][brea
         0xE8,                   // INX
         0x4C, 0x02, 0x04,       // JMP $0402
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Breakpoint at $0402 with condition "hits == 3"
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         req.set_condition("hits == 3");
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
@@ -1439,7 +1430,7 @@ TEST_CASE("Invalid condition string returns gRPC error", "[grpc][debugger][break
 
     grpc::ClientContext ctx;
     beebium::AddBreakpointRequest req;
-    req.set_address(0x1000);
+    req.set_start_address(0x1000);
     req.set_condition("invalid garbage !@#");
     beebium::AddBreakpointResponse resp;
 
@@ -1464,7 +1455,7 @@ TEST_CASE("Invalid watchpoint condition returns gRPC error", "[grpc][debugger][w
 TEST_CASE("Conditional watchpoint fires only when value matches", "[grpc][debugger][watchpoint][conditional][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Write three different values to $0500
     //   LDA #$10 ; STA $0500
@@ -1480,7 +1471,8 @@ TEST_CASE("Conditional watchpoint fires only when value matches", "[grpc][debugg
         0x8D, 0x00, 0x05,       // STA $0500
         0xEA,                   // NOP
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Write watchpoint on $0500 with condition: stop only when A == 0x42
     {
@@ -1514,7 +1506,7 @@ TEST_CASE("Conditional watchpoint fires only when value matches", "[grpc][debugg
 TEST_CASE("Multiple breakpoints at same address with different conditions", "[grpc][debugger][breakpoint][conditional][6502]") {
     DebuggerTestFixture fixture;
 
-    prepare_for_code(fixture.machine(), 0x0400);
+    prepare_for_code(fixture.machine());
 
     // Loop: increment A from 0, breakpoint at loop top
     //   $0400: LDA #$00
@@ -1525,14 +1517,15 @@ TEST_CASE("Multiple breakpoints at same address with different conditions", "[gr
         0x69, 0x01,             // ADC #$01
         0x4C, 0x02, 0x04,       // JMP $0402
     });
-    ready_to_run(fixture.machine());
+    fixture.machine().set_pc(0x0400);
+
 
     // Two breakpoints at $0402 with different conditions
     uint32_t bp1_id, bp2_id;
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         req.set_condition("A == 0x03");
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
@@ -1542,7 +1535,7 @@ TEST_CASE("Multiple breakpoints at same address with different conditions", "[gr
     {
         grpc::ClientContext ctx;
         beebium::AddBreakpointRequest req;
-        req.set_address(0x0402);
+        req.set_start_address(0x0402);
         req.set_condition("A == 0x05");
         beebium::AddBreakpointResponse resp;
         fixture.debugger().AddBreakpoint(&ctx, req, &resp);
