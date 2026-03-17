@@ -395,6 +395,59 @@ class TestEventStream:
 
         bbc.debugger.clear_breakpoints()
 
+    def test_two_concurrent_subscribers(self, bbc):
+        """Two concurrent event stream subscriptions each receive all events."""
+        code = assemble("""\
+            ORG &0400
+            .start
+                LDA #&42
+                NOP
+            .end
+            SAVE "test.bin", start, end
+        """)
+        plant_and_run_from(bbc, code)
+        bbc.debugger.add_breakpoint(0x0402)
+
+        # Open two streams
+        stream1 = bbc.debugger.watch_execution_state()
+        stream2 = bbc.debugger.watch_execution_state()
+
+        # Consume initial state from both
+        init1 = next(stream1)
+        init2 = next(stream2)
+        assert not init1.state.is_running
+        assert not init2.state.is_running
+
+        # Run
+        bbc.debugger.run()
+
+        # Both should receive running + stopped events
+        events1 = []
+        saw_running1 = False
+        for event in stream1:
+            events1.append(event)
+            if event.state.is_running:
+                saw_running1 = True
+            elif saw_running1:
+                break
+
+        events2 = []
+        saw_running2 = False
+        for event in stream2:
+            events2.append(event)
+            if event.state.is_running:
+                saw_running2 = True
+            elif saw_running2:
+                break
+
+        # Both received at least running + stopped
+        assert len(events1) >= 2
+        assert len(events2) >= 2
+        assert events1[-1].state.is_running == False
+        assert events2[-1].state.is_running == False
+
+        bbc.debugger.clear_breakpoints()
+
     def test_run_until_uses_stream(self, bbc):
         """run_until() uses the event stream, not polling."""
         code = assemble("""\

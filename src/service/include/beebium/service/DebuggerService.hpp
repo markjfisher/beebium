@@ -19,10 +19,13 @@
 #include "beebium/tube/TubeShared.hpp"
 #include <moodycamel/readerwriterqueue.h>
 #include <grpcpp/grpcpp.h>
-#include <mutex>
-#include <vector>
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <vector>
 #include <sstream>
 #include <iomanip>
 #include <concepts>
@@ -244,10 +247,19 @@ private:
     std::vector<WatchpointRecord> watchpoints_;
     std::atomic<uint32_t> next_watchpoint_id_{1};
 
-    // Event queue for execution state watchers.
-    // Each state transition pushes an event; the WatchExecutionState loop
-    // drains the queue and sends each event individually. This prevents
-    // rapid transitions from being coalesced into a single notification.
+    // Event distribution for execution state watchers.
+    //
+    // Architecture:
+    //   Emulation loop → SPSC queue → fan-out → per-subscriber queues
+    //
+    // The emulation loop (breakpoint/watchpoint callbacks) writes to a single
+    // SPSC queue (event_queue_). The gRPC streaming handlers each have their
+    // own per-subscriber queue. Whichever subscriber wakes up first drains
+    // the SPSC queue into all subscriber queues (including its own). The
+    // SPSC drain is protected by event_drain_mutex_ to maintain the
+    // single-consumer guarantee. The emulation loop never contends on this
+    // mutex -- it only writes to the SPSC queue (lock-free).
+
     struct ExecutionEvent {
         StopReason reason = STOP_REASON_UNKNOWN;
         bool is_running = false;
@@ -257,9 +269,61 @@ private:
         WatchpointHitInfo watchpoint_hit;
         bool has_watchpoint_hit = false;
     };
+
+    // Per-subscriber state
+    struct Subscriber {
+        std::queue<ExecutionEvent> queue;
+        std::mutex mutex;
+        std::condition_variable cv;
+    };
+
+    // SPSC queue: emulation loop → service layer (single producer, single consumer)
     moodycamel::ReaderWriterQueue<ExecutionEvent> event_queue_{32};
-    mutable std::mutex event_queue_mutex_;
-    std::condition_variable event_queue_cv_;
+
+    // Protects draining event_queue_ into subscriber queues (single-consumer guarantee)
+    std::mutex event_drain_mutex_;
+
+    // Active subscribers (protected by subscribers_mutex_)
+    std::mutex subscribers_mutex_;
+    std::vector<std::shared_ptr<Subscriber>> subscribers_;
+
+    // Notify all subscribers that new events may be available
+    void notify_subscribers() {
+        std::lock_guard<std::mutex> lock(subscribers_mutex_);
+        for (auto& sub : subscribers_) {
+            sub->cv.notify_all();
+        }
+    }
+
+    // Drain the SPSC queue and fan out to all subscriber queues.
+    // Called by whichever subscriber wakes up first.
+    void drain_and_fanout() {
+        std::lock_guard<std::mutex> drain_lock(event_drain_mutex_);
+        ExecutionEvent evt;
+        while (event_queue_.try_dequeue(evt)) {
+            std::lock_guard<std::mutex> sub_lock(subscribers_mutex_);
+            for (auto& sub : subscribers_) {
+                std::lock_guard<std::mutex> q_lock(sub->mutex);
+                sub->queue.push(evt);
+            }
+        }
+    }
+
+    // Register a new subscriber
+    std::shared_ptr<Subscriber> add_subscriber() {
+        auto sub = std::make_shared<Subscriber>();
+        std::lock_guard<std::mutex> lock(subscribers_mutex_);
+        subscribers_.push_back(sub);
+        return sub;
+    }
+
+    // Unregister a subscriber
+    void remove_subscriber(const std::shared_ptr<Subscriber>& sub) {
+        std::lock_guard<std::mutex> lock(subscribers_mutex_);
+        subscribers_.erase(
+            std::remove(subscribers_.begin(), subscribers_.end(), sub),
+            subscribers_.end());
+    }
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -370,7 +434,7 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(StopReason reason) {
     evt.sequence = machine_.sequence();
     evt.halt_reason = halt_reason_;
     event_queue_.enqueue(std::move(evt));
-    event_queue_cv_.notify_all();
+    notify_subscribers();
 }
 
 template<typename MachineType>
@@ -423,7 +487,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Run(
         evt.cycle_count = machine_.cycle_count();
         evt.sequence = machine_.sequence();
         event_queue_.enqueue(std::move(evt));
-        event_queue_cv_.notify_all();
+        notify_subscribers();
     }
     machine_.resume();
     response->set_success(true);
@@ -851,7 +915,7 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(
     evt.watchpoint_hit = watchpoint_hit;
     evt.has_watchpoint_hit = true;
     event_queue_.enqueue(std::move(evt));
-    event_queue_cv_.notify_all();
+    notify_subscribers();
 }
 
 template<typename MachineType>
@@ -979,11 +1043,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
     const WatchExecutionStateRequest* /*request*/,
     grpc::ServerWriter<ExecutionStateEvent>* writer) {
 
-    // Drain any stale events from before this subscription
-    {
-        ExecutionEvent stale;
-        while (event_queue_.try_dequeue(stale)) {}
-    }
+    // Register this subscriber
+    auto subscriber = add_subscriber();
 
     // Send initial state immediately
     {
@@ -993,27 +1054,39 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
             fill_execution_state(event.mutable_state());
         }
         if (!writer->Write(event)) {
+            remove_subscriber(subscriber);
             return grpc::Status::OK;
         }
     }
 
-    // Drain the event queue in a loop
+    // Process events from per-subscriber queue
     while (!context->IsCancelled()) {
-        // Wait for events (bounded to allow cancellation checks)
+        // Wait for events on this subscriber's queue
         {
-            std::unique_lock<std::mutex> lock(event_queue_mutex_);
-            event_queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this, context] {
-                return event_queue_.peek() != nullptr || context->IsCancelled();
-            });
+            std::unique_lock<std::mutex> lock(subscriber->mutex);
+            subscriber->cv.wait_for(lock, std::chrono::milliseconds(100),
+                [&subscriber, context] {
+                    return !subscriber->queue.empty() || context->IsCancelled();
+                });
         }
 
         if (context->IsCancelled()) {
             break;
         }
 
-        // Drain all queued events, sending each individually
-        ExecutionEvent evt;
-        while (event_queue_.try_dequeue(evt)) {
+        // Drain SPSC queue into all subscriber queues (first waker wins)
+        drain_and_fanout();
+
+        // Process this subscriber's queue
+        while (true) {
+            ExecutionEvent evt;
+            {
+                std::lock_guard<std::mutex> lock(subscriber->mutex);
+                if (subscriber->queue.empty()) break;
+                evt = std::move(subscriber->queue.front());
+                subscriber->queue.pop();
+            }
+
             ExecutionStateEvent proto_event;
             proto_event.set_reason(evt.reason);
             proto_event.mutable_state()->set_is_running(evt.is_running);
@@ -1025,10 +1098,13 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
                 *proto_event.mutable_watchpoint_hit() = evt.watchpoint_hit;
             }
             if (!writer->Write(proto_event)) {
+                remove_subscriber(subscriber);
                 return grpc::Status::OK;
             }
         }
     }
+
+    remove_subscriber(subscriber);
 
     return grpc::Status::OK;
 }
