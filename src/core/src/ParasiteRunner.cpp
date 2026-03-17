@@ -31,6 +31,12 @@ void ParasiteRunner::reset() {
 }
 
 void ParasiteRunner::run(uint64_t cycles) {
+    struct RunGuard {
+        std::atomic<bool>& flag;
+        RunGuard(std::atomic<bool>& f) : flag(f) { flag.store(true, std::memory_order_release); }
+        ~RunGuard() { flag.store(false, std::memory_order_release); }
+    } guard{in_run_};
+
     uint64_t remaining = cycles;
 
     while (remaining > 0) {

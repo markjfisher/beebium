@@ -26,6 +26,7 @@
 #include <functional>
 #include <mutex>
 #include <span>
+#include <thread>
 #include <vector>
 
 namespace beebium {
@@ -79,6 +80,13 @@ public:
     void resume();
     bool is_paused() const { return paused_.load(std::memory_order_acquire); }
     void prepare_for_step() {} // No bus stretching on parasite side
+
+    // Wait until run() has exited after a pause.
+    void wait_until_idle() {
+        while (in_run_.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    }
 
     // Request clean shutdown. Unblocks wait_if_paused() and freeze waits.
     void request_shutdown();
@@ -200,6 +208,7 @@ private:
     std::condition_variable pause_cv_;
     std::atomic<bool> paused_{false};
     std::atomic<bool> shutdown_requested_{false};
+    std::atomic<bool> in_run_{false};
 
     // Sequence counter
     std::atomic<uint64_t> sequence_{0};

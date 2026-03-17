@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -305,6 +306,7 @@ public:
 
     // Execute for the given number of cycles, or until paused (e.g., by breakpoint)
     void run(uint64_t cycles) {
+        in_run_.store(true, std::memory_order_release);
         const uint64_t target = state_.cycle_count + cycles;
         while (state_.cycle_count < target && !paused_.load()) {
             // Check breakpoints before step(), when all register updates from
@@ -333,6 +335,7 @@ public:
                 return;
             }
         }
+        in_run_.store(false, std::memory_order_release);
     }
 
     // Execute one complete instruction (variable cycles)
@@ -397,6 +400,14 @@ public:
     // Must be called after Tube installation but before the emulation loop starts.
     void set_tube_shared(TubeShared* shared) { tube_shared_ = shared; }
     TubeShared* tube_shared() const { return tube_shared_; }
+
+    // Wait until the emulation loop has exited run() after a pause.
+    // Call from an RPC thread after pause() to ensure exclusive access.
+    void wait_until_idle() {
+        while (in_run_.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    }
 
     // Block until not paused - call from emulation loop
     // Returns immediately if shutdown is requested, allowing clean exit.
@@ -525,6 +536,7 @@ private:
     std::condition_variable debug_cv_;
     std::atomic<bool> paused_{false};
     std::atomic<bool> shutdown_requested_{false};  // For clean server shutdown
+    std::atomic<bool> in_run_{false};              // True while run() is executing
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
     TubeShared* tube_shared_ = nullptr;  // Optional, for cross-processor debugger integration
 

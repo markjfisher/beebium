@@ -444,16 +444,17 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Reset(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // Pause the machine and wait for the emulation loop to stop.
+    // The emulation loop's run() checks paused_ every cycle and exits.
+    // After pause(), we must wait for run() to actually return before
+    // modifying machine state, otherwise we'd have a data race.
+    machine_.pause();
+    machine_.wait_until_idle();
+
     machine_.reset();
 
-    // Complete the reset sequence and advance to the first instruction
-    // boundary. step_instruction() runs until M6502_IsAboutToExecute,
-    // ensuring the CPU is at Cycle0_All with a valid opcode_pc. This is
-    // more robust than run(7) which may not land on an instruction boundary.
+    // Complete the reset sequence to the first instruction boundary.
     machine_.step_instruction();
-
-    // Leave machine paused at first instruction for debugger control
-    machine_.pause();
 
     halt_reason_.clear();
     response->set_success(true);
