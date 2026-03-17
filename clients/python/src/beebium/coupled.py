@@ -137,14 +137,35 @@ class CoupledSystem:
             self.stop()
             raise
 
-    def run_for(self, emulated_seconds: float, *, poll_interval: float = 0.02) -> None:
+    def run_for(self, emulated_seconds: float) -> None:
         """Run both processors for the given emulated time.
+
+        Uses a full-range breakpoint with a cycle condition on the host,
+        with stop_counterpart to stop the parasite too. No polling.
 
         Args:
             emulated_seconds: BBC-time seconds to run.
-            poll_interval: Real-time seconds between budget checks.
         """
-        self.run_until(lambda: False, emulated_seconds, poll_interval=poll_interval)
+        clock_hz = self._host.system.clock_speed_hz or 2_000_000
+        cycle_budget = int(emulated_seconds * clock_hz)
+        target_cycles = self._host.debugger.cycle_count + cycle_budget
+
+        bp_id = self._host.debugger.add_breakpoint(
+            0x0000,
+            end_address=0x10000,
+            condition=f"cycles >= {target_cycles}",
+            stop_counterpart=True,
+        )
+        try:
+            stream = self._host.debugger.watch_execution_state()
+            next(stream)  # consume initial state
+            self.run()
+            for event in stream:
+                if not event.state.is_running:
+                    break
+        finally:
+            self._host.debugger.remove_breakpoint(bp_id)
+            self.stop()
 
     def close(self) -> None:
         """Close the coupled system, stopping both processors.

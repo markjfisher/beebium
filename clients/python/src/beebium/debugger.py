@@ -287,15 +287,20 @@ class Debugger:
         self,
         address: int,
         *,
+        end_address: int = 0,
         condition: str = "",
         stop_counterpart: bool = False,
     ) -> int:
-        """Add a breakpoint at the given address.
+        """Add a breakpoint on an address range.
 
         Args:
-            address: The address to break on (0x0000-0xFFFF).
+            address: Start address (inclusive). For a single-address breakpoint.
+            end_address: End address (exclusive). 0 means address+1 (single address).
+                Use 0x10000 for a full-range breakpoint that fires at every
+                instruction boundary (useful with a cycle condition).
             condition: Optional expression evaluated on hit. Empty = unconditional.
                 Use ``hits`` for hit-count logic, e.g. ``"hits == 5"``.
+                Use ``"cycles >= N"`` with a full-range breakpoint for cycle budgets.
             stop_counterpart: Signal the other processor to stop.
 
         Returns:
@@ -306,6 +311,7 @@ class Debugger:
         """
         request = debugger_pb2.AddBreakpointRequest(
             start_address=address,
+            end_address=end_address,
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
@@ -482,9 +488,16 @@ class Debugger:
             stream = self._stub.WatchExecutionState(
                 debugger_pb2.WatchExecutionStateRequest()
             )
+            # Consume initial state
+            next(stream)
+            # Start execution
             self.run()
+            # Wait for running -> stopped transition (skip stale stopped events)
+            saw_running = False
             for event in stream:
-                if not event.state.is_running:
+                if event.state.is_running:
+                    saw_running = True
+                elif saw_running:
                     stream.cancel()
                     return _to_execution_state(event.state)
             raise DebuggerError("Stream ended without stop")

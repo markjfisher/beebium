@@ -65,7 +65,7 @@ enum WatchType : uint8_t {
 struct BreakpointEntry {
     uint32_t id;
     uint16_t start;
-    uint16_t end;       // exclusive [start, end)
+    uint32_t end;       // exclusive [start, end); 0x10000 for full address space
     bool stop_counterpart = false;
 
     // Condition expression (evaluated on address match).
@@ -86,7 +86,7 @@ struct BreakpointEntry {
 struct WatchpointEntry {
     uint32_t id;
     uint16_t start;
-    uint16_t end;       // exclusive [start, end)
+    uint32_t end;       // exclusive [start, end); 0x10000 for full address space
     WatchType type;     // WATCH_READ, WATCH_WRITE, WATCH_BOTH
     bool stop_counterpart = false;
 

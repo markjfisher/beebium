@@ -380,7 +380,7 @@ void DebuggerControlServiceImpl<MachineType>::update_breakpoint_entries() {
     for (const auto& bp : breakpoints_) {
         entries.push_back({bp.id,
                           static_cast<uint16_t>(bp.start_address),
-                          static_cast<uint16_t>(bp.end_address),
+                          bp.end_address,
                           bp.stop_counterpart,
                           bp.condition,
                           0});  // reset hit_count
@@ -414,8 +414,18 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Run(
     }
 
     halt_reason_.clear();
+    // Enqueue the "running" event BEFORE resuming, so it's in the queue
+    // before any breakpoint stop event that might fire immediately.
+    {
+        ExecutionEvent evt;
+        evt.reason = STOP_REASON_UNKNOWN;
+        evt.is_running = true;  // explicitly true -- machine is about to resume
+        evt.cycle_count = machine_.cycle_count();
+        evt.sequence = machine_.sequence();
+        event_queue_.enqueue(std::move(evt));
+        event_queue_cv_.notify_all();
+    }
     machine_.resume();
-    enqueue_event(STOP_REASON_UNKNOWN);
     response->set_success(true);
     return grpc::Status::OK;
 }
@@ -820,7 +830,7 @@ void DebuggerControlServiceImpl<MachineType>::update_watchpoint_entries() {
     for (const auto& wp : watchpoints_) {
         entries.push_back({wp.id,
                           static_cast<uint16_t>(wp.start_address),
-                          static_cast<uint16_t>(wp.end_address),
+                          wp.end_address,
                           wp.type,
                           wp.stop_counterpart,
                           wp.condition,
@@ -968,6 +978,12 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::WatchExecutionState(
     grpc::ServerContext* context,
     const WatchExecutionStateRequest* /*request*/,
     grpc::ServerWriter<ExecutionStateEvent>* writer) {
+
+    // Drain any stale events from before this subscription
+    {
+        ExecutionEvent stale;
+        while (event_queue_.try_dequeue(stale)) {}
+    }
 
     // Send initial state immediately
     {

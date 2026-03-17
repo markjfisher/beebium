@@ -899,6 +899,57 @@ static void prepare_for_code(beebium::ModelB& machine) {
     machine.pause();
 }
 
+TEST_CASE("Full-range breakpoint with cycle condition", "[debugger][breakpoint][6502]") {
+    beebium::ModelB machine;
+#ifdef BEEBIUM_ROM_DIR
+    auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
+    std::copy(mos.begin(), mos.end(), machine.state().memory.mos_rom.data());
+#endif
+    machine.reset();
+    machine.step_instruction();
+
+    uint64_t start = machine.cycle_count();
+    uint64_t target = start + 1000;
+
+    auto cond = beebium::compile("cycles >= " + std::to_string(target));
+    REQUIRE(std::holds_alternative<beebium::CompiledExpression>(cond));
+
+    machine.set_breakpoint_entries({beebium::BreakpointEntry{
+        1, 0x0000, 0x10000u,
+        false,
+        std::get<beebium::CompiledExpression>(std::move(cond)),
+        0
+    }});
+
+    bool hit = false;
+    machine.set_breakpoint_hit_callback(
+        [&](const beebium::BreakpointEntry& bp, uint16_t /*pc*/) {
+            auto& mutable_bp = const_cast<beebium::BreakpointEntry&>(bp);
+            ++mutable_bp.hit_count;
+            bool should_stop = true;
+            if (bp.condition) {
+                beebium::ExprCpuState cpu_state{
+                    machine.a(), machine.x(), machine.y(),
+                    machine.sp(), machine.p(),
+                    machine.cpu().opcode_pc.w, machine.cycle_count(),
+                    bp.hit_count
+                };
+                should_stop = beebium::evaluate(*bp.condition, cpu_state, nullptr, nullptr) != 0;
+            }
+            if (should_stop) {
+                hit = true;
+                machine.pause();
+            }
+        });
+
+    machine.resume();
+    machine.run(100000);
+
+    CHECK(hit);
+    CHECK(machine.cycle_count() >= target);
+    CHECK(machine.cycle_count() < target + 20);  // shouldn't overshoot much
+}
+
 TEST_CASE("6502 step_instruction sets registers correctly", "[debugger][6502]") {
     beebium::ModelB machine;
 #ifdef BEEBIUM_ROM_DIR

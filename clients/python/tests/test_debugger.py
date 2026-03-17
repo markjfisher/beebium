@@ -48,21 +48,26 @@ def assemble(source: str) -> bytes:
         return bin_filepath.read_bytes()
 
 
-def run_and_wait_for_stop(bbc: Beebium, timeout: float = 10.0) -> ExecutionStateEvent:
-    """Run the machine and poll for it to stop.
+def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
+    """Subscribe to the event stream, run, then wait for a stop event.
 
-    TODO: Replace with event-stream-based approach once the gRPC streaming
-    reliability issue is resolved.
+    Opens the stream first, calls run(), then waits for a running-to-stopped
+    transition. Skips any stale stopped events that precede the first running
+    event. No polling.
     """
-    import time
+    stream = bbc.debugger.watch_execution_state()
+    # Consume initial state
+    next(stream)
+    # Start execution
     bbc.debugger.run()
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        time.sleep(0.01)
-        state = bbc.debugger.get_state()
-        if not state.is_running:
-            return ExecutionStateEvent(reason=0, state=state, message="")
-    raise DebuggerError(f"Machine did not stop within {timeout}s")
+    # Wait for running -> stopped transition (skip stale stopped events)
+    saw_running = False
+    for event in stream:
+        if event.state.is_running:
+            saw_running = True
+        elif saw_running:
+            return event
+    raise DebuggerError("Stream ended without stop event")
 
 
 def plant_and_run_from(bbc: Beebium, code: bytes, org: int = 0x0400) -> None:
@@ -349,6 +354,119 @@ class TestConditionalWatchpoints:
             bbc.debugger.add_watchpoint(
                 0x1000, 0x1001, condition="bad syntax !!!"
             )
+
+
+# ============================================================================
+# Event stream
+# ============================================================================
+
+class TestEventStream:
+
+    def test_stream_delivers_breakpoint_event(self, bbc):
+        """Event stream delivers running and stopped events in order."""
+        code = assemble("""\
+            ORG &0400
+            .start
+                LDA #&42
+                NOP
+            .end
+            SAVE "test.bin", start, end
+        """)
+        plant_and_run_from(bbc, code)
+        bbc.debugger.add_breakpoint(0x0402)
+
+        stream = bbc.debugger.watch_execution_state()
+        initial = next(stream)
+        assert not initial.state.is_running
+
+        bbc.debugger.run()
+
+        events = []
+        for event in stream:
+            events.append(event)
+            if not event.state.is_running:
+                break
+
+        assert len(events) >= 2
+        # First event should be "running"
+        assert events[0].state.is_running
+        # Last event should be "stopped" with breakpoint reason
+        assert not events[-1].state.is_running
+
+        bbc.debugger.clear_breakpoints()
+
+    def test_run_until_uses_stream(self, bbc):
+        """run_until() uses the event stream, not polling."""
+        code = assemble("""\
+            ORG &0400
+            .start
+                LDA #&42
+                STA &0500
+                NOP
+            .end
+            SAVE "test.bin", start, end
+        """)
+        plant_and_run_from(bbc, code)
+        state = bbc.debugger.run_until(0x0402)
+        assert not state.is_running
+        assert bbc.cpu.a == 0x42
+
+
+# ============================================================================
+# Full-range breakpoints (cycle budgets, predicates)
+# ============================================================================
+
+class TestFullRangeBreakpoints:
+
+    def test_cycle_budget_breakpoint(self, bbc):
+        """Full-range breakpoint with cycle condition stops after N cycles."""
+        bbc.debugger.stop()
+        start_cycles = bbc.debugger.cycle_count
+
+        # Full-range breakpoint: stop after 1000 cycles
+        target = start_cycles + 1000
+        bp_id = bbc.debugger.add_breakpoint(
+            0x0000, end_address=0x10000,
+            condition=f"cycles >= {target}",
+        )
+
+        event = run_and_wait_for_stop(bbc)
+        assert not event.state.is_running
+        # Should have stopped at or very near the target cycle count
+        final_cycles = bbc.debugger.cycle_count
+        assert final_cycles >= target
+        # Should not have overshot by more than one instruction (~6 cycles max)
+        assert final_cycles < target + 10
+
+        bbc.debugger.remove_breakpoint(bp_id)
+
+    def test_memory_predicate_breakpoint(self, bbc):
+        """Full-range breakpoint with memory condition."""
+        code = assemble("""\
+            ORG &0400
+            .start
+                LDA #&00
+            .loop
+                CLC
+                ADC #&01
+                STA &0500
+                JMP loop
+            .end
+            SAVE "test.bin", start, end
+        """)
+        plant_and_run_from(bbc, code)
+
+        # Stop when $0500 reaches $0A
+        bp_id = bbc.debugger.add_breakpoint(
+            0x0000, end_address=0x10000,
+            condition="mem[0x0500] == 0x0A",
+        )
+
+        event = run_and_wait_for_stop(bbc)
+        assert not event.state.is_running
+        assert bbc.memory.address.peek[0x0500] == 0x0A
+
+        bbc.debugger.remove_breakpoint(bp_id)
 
 
 # ============================================================================

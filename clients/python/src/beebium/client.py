@@ -378,8 +378,9 @@ class Beebium:
     ) -> bool:
         """Run until predicate() returns True or the emulated time budget expires.
 
-        The predicate is called periodically (after at least 1 emulated
-        second). The emulator is left stopped on return.
+        The cycle budget is enforced server-side via a full-range breakpoint
+        with a ``cycles >= target`` condition. The predicate is a client-side
+        check evaluated periodically via peek (side-effect-free).
 
         Args:
             predicate: Callable returning True when the condition is met.
@@ -392,20 +393,28 @@ class Beebium:
         import time as _time
         clock_hz = self.system.clock_speed_hz or 2_000_000
         cycle_budget = int(emulated_seconds * clock_hz)
-        start_cycles = self.debugger.cycle_count
-        target_cycles = start_cycles + cycle_budget
+        target_cycles = self.debugger.cycle_count + cycle_budget
 
-        with self.debugger.running():
+        # Server-side cycle budget: full-range breakpoint stops the machine
+        # when the cycle count is reached, even if the predicate hasn't fired.
+        bp_id = self.debugger.add_breakpoint(
+            0x0000, end_address=0x10000,
+            condition=f"cycles >= {target_cycles}",
+        )
+
+        try:
+            self.debugger.run()
             while True:
                 _time.sleep(poll_interval)
-                current = self.debugger.cycle_count
-                if current >= target_cycles:
+                if self.debugger.is_stopped:
+                    # Cycle budget exceeded (breakpoint fired)
                     return predicate()
-                if current - start_cycles >= clock_hz:
+                if predicate():
                     self.debugger.stop()
-                    if predicate():
-                        return True
-                    self.debugger.run()
+                    return True
+        finally:
+            self.debugger.remove_breakpoint(bp_id)
+            self.debugger.ensure_stopped()
 
     def close(self) -> None:
         """Close the connection and stop any managed server.
