@@ -158,12 +158,10 @@ bool ParasiteRunner::poll_mailbox() {
 }
 
 bool ParasiteRunner::wait_if_paused() {
-    if (paused_.load(std::memory_order_acquire)) {
-        std::unique_lock<std::mutex> lock(pause_mutex_);
-        pause_cv_.wait_for(lock, std::chrono::milliseconds(100), [this] {
-            return !paused_.load(std::memory_order_acquire)
-                || shutdown_requested_.load(std::memory_order_acquire);
-        });
+    std::unique_lock<std::mutex> lock(pause_mutex_);
+    while (paused_.load(std::memory_order_acquire)
+           && !shutdown_requested_.load(std::memory_order_acquire)) {
+        pause_cv_.wait_for(lock, std::chrono::milliseconds(100));
     }
     return !shutdown_requested_.load(std::memory_order_acquire);
 }
