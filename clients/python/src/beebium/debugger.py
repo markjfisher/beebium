@@ -551,9 +551,10 @@ class Debugger:
     ) -> ExecutionStateEvent:
         """Wait for the machine to stop executing.
 
-        Subscribes to the execution state stream and waits for a transition
-        to the stopped state. If the machine is already stopped when this is
-        called, it waits until the machine runs and then stops again.
+        Subscribes to the execution state stream and waits for a stopped
+        event with a higher sequence number than the initial snapshot.
+        This handles the case where the server coalesces running+stopped
+        events when a breakpoint fires immediately.
 
         Args:
             timeout: Wall-clock deadline in seconds for the entire wait.
@@ -565,11 +566,14 @@ class Debugger:
             DebuggerError: If the timeout expires or the stream ends without
                 a stop event.
         """
-        saw_running = False
+        initial_sequence = None
         for event in self.watch_execution_state(timeout=timeout):
+            if initial_sequence is None:
+                initial_sequence = event.state.sequence
+                continue
             if event.state.is_running:
-                saw_running = True
-            elif saw_running:
+                continue
+            if event.state.sequence > initial_sequence:
                 return event
         raise DebuggerError("Execution state stream ended without a stop event")
 
@@ -606,16 +610,16 @@ class Debugger:
                 debugger_pb2.WatchExecutionStateRequest(),
                 timeout=timeout,
             )
-            # Consume initial state
-            next(stream)
+            # Consume initial state and record its sequence number
+            initial = next(stream)
+            initial_sequence = initial.state.sequence
             # Start execution
             self.run()
-            # Wait for running -> stopped transition (skip stale stopped events)
-            saw_running = False
+            # Wait for a stopped event with a higher sequence number
             for event in stream:
                 if event.state.is_running:
-                    saw_running = True
-                elif saw_running:
+                    continue
+                if event.state.sequence > initial_sequence:
                     stream.cancel()
                     return _to_execution_state(event.state)
             raise DebuggerError("Stream ended without stop")
