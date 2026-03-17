@@ -448,12 +448,12 @@ jobs:
         working-directory: clients/typescript
         run: npm run generate-protos
 
-      - name: Run all tests (unit + integration)
+      - name: Run integration tests
         working-directory: clients/typescript
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
           BEEBIUM_ROM_DIR: ${{ github.workspace }}/tests/assets/roms
-        run: npm test
+        run: npm run test:integration
 
   typescript-integration-macos-arm64:
     name: TypeScript Client Integration Tests (macOS arm64)
@@ -489,12 +489,12 @@ jobs:
         working-directory: clients/typescript
         run: npm run generate-protos
 
-      - name: Run all tests (unit + integration)
+      - name: Run integration tests
         working-directory: clients/typescript
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
           BEEBIUM_ROM_DIR: ${{ github.workspace }}/tests/assets/roms
-        run: npm test
+        run: npm run test:integration
 
   typescript-integration-macos-x86_64:
     name: TypeScript Client Integration Tests (macOS x86_64)
@@ -530,12 +530,12 @@ jobs:
         working-directory: clients/typescript
         run: npm run generate-protos
 
-      - name: Run all tests (unit + integration)
+      - name: Run integration tests
         working-directory: clients/typescript
         env:
           BEEBIUM_SERVER: ${{ github.workspace }}/build/src/server/beebium-model-b
           BEEBIUM_ROM_DIR: ${{ github.workspace }}/tests/assets/roms
-        run: npm test
+        run: npm run test:integration
 
   python-client:
 
