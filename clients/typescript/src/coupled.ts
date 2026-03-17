@@ -72,47 +72,58 @@ export class CoupledSystem {
      * @param pollIntervalMs - Real-time milliseconds between predicate checks.
      * @returns true if the predicate was satisfied, false on timeout.
      */
+    /**
+     * Run both processors until predicate returns true or the budget expires.
+     *
+     * Execution proceeds in chunks of emulated time. At the end of each
+     * chunk, both processors stop (via a server-side cycle-budget
+     * breakpoint on the host with stopCounterpart), the predicate is
+     * evaluated, and if false, both resume. No wall-clock polling.
+     */
     async runUntil(
         predicate: () => Promise<boolean>,
         emulatedSeconds: number,
-        pollIntervalMs = 20,
+        chunkSeconds = 0.1,
     ): Promise<boolean> {
         const clockHz = await this.host.system.getClockSpeedHz() || 2_000_000;
-        const cycleBudget = Math.round(emulatedSeconds * clockHz);
+        const totalBudget = Math.round(emulatedSeconds * clockHz);
+        const chunkCycles = Math.round(chunkSeconds * clockHz);
         const startCycles = (await this.host.debugger.getState()).cycleCount;
-        const targetCycles = startCycles + cycleBudget;
-        const minCyclesBeforeCheck = clockHz;
+        const deadlineCycles = startCycles + totalBudget;
 
         try {
-            await this.run();
+            while ((await this.host.debugger.getState()).cycleCount < deadlineCycles) {
+                const currentCycles = (await this.host.debugger.getState()).cycleCount;
+                const chunkTarget = Math.min(currentCycles + chunkCycles, deadlineCycles);
 
-            while (true) {
-                await new Promise(r => setTimeout(r, pollIntervalMs));
-                const state = await this.host.debugger.getState();
+                const bpId = await this.host.debugger.addBreakpoint(0x0000, {
+                    endAddress: 0x10000,
+                    condition: `cycles >= ${chunkTarget}`,
+                    stopCounterpart: true,
+                });
 
-                if (state.cycleCount >= targetCycles) {
-                    await this.stop();
-                    return predicate();
+                await this.host.debugger.waitForStop();
+
+                if (await this.parasite.debugger.isRunning()) {
+                    await this.parasite.debugger.stop();
                 }
+                await this.host.debugger.removeBreakpoint(bpId);
 
-                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
-                    if (await predicate()) {
-                        await this.stop();
-                        return true;
-                    }
+                if (await predicate()) {
+                    return true;
                 }
             }
-        } catch (e) {
+            return predicate();
+        } finally {
             await this.stop();
-            throw e;
         }
     }
 
     /**
-     * Run both processors for the given emulated time.
+     * Run both processors for the given emulated time. No polling.
      */
-    async runFor(emulatedSeconds: number, pollIntervalMs = 20): Promise<void> {
-        await this.runUntil(async () => false, emulatedSeconds, pollIntervalMs);
+    async runFor(emulatedSeconds: number): Promise<void> {
+        await this.runUntil(async () => false, emulatedSeconds);
     }
 
     /**

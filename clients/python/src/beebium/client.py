@@ -374,46 +374,51 @@ class Beebium:
 
     def run_until_or_timeout(
         self, predicate, emulated_seconds: float, *,
-        poll_interval: float = 0.02,
+        chunk_seconds: float = 0.1,
     ) -> bool:
         """Run until predicate() returns True or the emulated time budget expires.
 
-        The cycle budget is enforced server-side via a full-range breakpoint
-        with a ``cycles >= target`` condition. The predicate is a client-side
-        check evaluated periodically via peek (side-effect-free).
+        Execution proceeds in chunks of emulated time. At the end of each
+        chunk, the machine stops (via a server-side cycle-budget breakpoint),
+        the predicate is evaluated via peek, and if false, the next chunk
+        starts. No wall-clock polling -- all timing is in emulated time.
 
         Args:
             predicate: Callable returning True when the condition is met.
+                Evaluated via peek (side-effect-free) while the machine is
+                stopped between chunks.
             emulated_seconds: Maximum emulated BBC-time seconds to run.
-            poll_interval: Real-time seconds between predicate checks.
+            chunk_seconds: Emulated time per chunk between predicate checks.
+                Smaller values check the predicate more often but add
+                overhead from stopping and restarting.
 
         Returns:
             True if the predicate was satisfied, False on timeout.
         """
-        import time as _time
         clock_hz = self.system.clock_speed_hz or 2_000_000
-        cycle_budget = int(emulated_seconds * clock_hz)
-        target_cycles = self.debugger.cycle_count + cycle_budget
-
-        # Server-side cycle budget: full-range breakpoint stops the machine
-        # when the cycle count is reached, even if the predicate hasn't fired.
-        bp_id = self.debugger.add_breakpoint(
-            0x0000, end_address=0x10000,
-            condition=f"cycles >= {target_cycles}",
-        )
+        total_budget = int(emulated_seconds * clock_hz)
+        chunk_cycles = int(chunk_seconds * clock_hz)
+        start_cycles = self.debugger.cycle_count
+        deadline_cycles = start_cycles + total_budget
 
         try:
-            self.debugger.run()
-            while True:
-                _time.sleep(poll_interval)
-                if self.debugger.is_stopped:
-                    # Cycle budget exceeded (breakpoint fired)
-                    return predicate()
+            while self.debugger.cycle_count < deadline_cycles:
+                chunk_target = min(
+                    self.debugger.cycle_count + chunk_cycles,
+                    deadline_cycles,
+                )
+                with self.debugger.breakpoint(
+                    0x0000, end_address=0x10000,
+                    condition=f"cycles >= {chunk_target}",
+                ):
+                    self.debugger.run()
+                    self.debugger.wait_for_stop()
+
                 if predicate():
-                    self.debugger.stop()
                     return True
+
+            return predicate()
         finally:
-            self.debugger.remove_breakpoint(bp_id)
             self.debugger.ensure_stopped()
 
     def close(self) -> None:

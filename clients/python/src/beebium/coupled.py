@@ -95,47 +95,53 @@ class CoupledSystem:
         predicate: Callable[[], bool],
         emulated_seconds: float,
         *,
-        poll_interval: float = 0.02,
+        chunk_seconds: float = 0.1,
     ) -> bool:
         """Run both processors until predicate returns True or the budget expires.
 
-        Both processors advance at their natural rates. The predicate
-        is evaluated periodically via peek (side-effect-free) without
-        stopping either processor. When the predicate fires or the
-        budget is exceeded, both are stopped.
+        Execution proceeds in chunks of emulated time. At the end of each
+        chunk, both processors stop (via a server-side cycle-budget
+        breakpoint on the host with ``stop_counterpart=True``), the
+        predicate is evaluated via peek, and if false, both resume for
+        the next chunk. No wall-clock polling.
 
         Args:
             predicate: Callable returning True when the condition is met.
-            emulated_seconds: Maximum BBC-time seconds to run.
-            poll_interval: Real-time seconds between predicate checks.
+                Evaluated via peek (side-effect-free) while both processors
+                are stopped between chunks.
+            emulated_seconds: Maximum emulated BBC-time seconds to run.
+            chunk_seconds: Emulated time per chunk between predicate checks.
 
         Returns:
             True if the predicate was satisfied, False on timeout.
         """
         clock_hz = self._host.system.clock_speed_hz or 2_000_000
-        cycle_budget = int(emulated_seconds * clock_hz)
+        total_budget = int(emulated_seconds * clock_hz)
+        chunk_cycles = int(chunk_seconds * clock_hz)
         start_cycles = self._host.debugger.cycle_count
-        target_cycles = start_cycles + cycle_budget
-        min_cycles_before_check = clock_hz  # 1 emulated second
+        deadline_cycles = start_cycles + total_budget
 
         try:
-            self.run()
+            while self._host.debugger.cycle_count < deadline_cycles:
+                chunk_target = min(
+                    self._host.debugger.cycle_count + chunk_cycles,
+                    deadline_cycles,
+                )
+                with self._host.debugger.breakpoint(
+                    0x0000, end_address=0x10000,
+                    condition=f"cycles >= {chunk_target}",
+                    stop_counterpart=True,
+                ):
+                    self.run()
+                    self._host.debugger.wait_for_stop()
+                    self._parasite.debugger.ensure_stopped()
 
-            while True:
-                time.sleep(poll_interval)
-                current = self._host.debugger.cycle_count
+                if predicate():
+                    return True
 
-                if current >= target_cycles:
-                    self.stop()
-                    return predicate()
-
-                if current - start_cycles >= min_cycles_before_check:
-                    if predicate():
-                        self.stop()
-                        return True
-        except Exception:
+            return predicate()
+        finally:
             self.stop()
-            raise
 
     def run_for(self, emulated_seconds: float) -> None:
         """Run both processors for the given emulated time.

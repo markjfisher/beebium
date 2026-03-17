@@ -326,67 +326,48 @@ export class Beebium {
      * Run the emulator until predicate returns true or the emulated time
      * budget expires.
      *
-     * The predicate is called periodically (after at least 1 emulated
-     * second). The emulator is stopped during predicate evaluation and
-     * left stopped on return.
+     * Execution proceeds in chunks of emulated time. At the end of each
+     * chunk, the machine stops (via a server-side cycle-budget breakpoint),
+     * the predicate is evaluated, and if false, the next chunk starts.
+     * No wall-clock polling -- all timing is in emulated time.
      *
      * @param predicate - Async function returning true when the condition is met.
      * @param emulatedSeconds - Maximum emulated time to run.
-     * @param options - Optional settings.
-     * @param options.pollIntervalMs - Real-time ms between polls (default 20).
+     * @param options.chunkSeconds - Emulated time per chunk (default 0.1s).
      * @returns true if the predicate was satisfied, false on timeout.
      */
     async runUntilOrTimeout(
         predicate: () => Promise<boolean>,
         emulatedSeconds: number,
-        options: { pollIntervalMs?: number } = {},
+        options: { chunkSeconds?: number } = {},
     ): Promise<boolean> {
-        const { pollIntervalMs = 20 } = options;
-        return this.runUntilOrTimeoutPolling(predicate, emulatedSeconds, pollIntervalMs);
-    }
-
-    private async runUntilOrTimeoutPolling(
-        predicate: () => Promise<boolean>,
-        emulatedSeconds: number,
-        pollIntervalMs: number,
-    ): Promise<boolean> {
+        const { chunkSeconds = 0.1 } = options;
         const clockHz = await this.system.getClockSpeedHz() || 2_000_000;
-        const cycleBudget = Math.round(emulatedSeconds * clockHz);
+        const totalBudget = Math.round(emulatedSeconds * clockHz);
+        const chunkCycles = Math.round(chunkSeconds * clockHz);
         const startCycles = (await this.debugger.getState()).cycleCount;
-        const targetCycles = startCycles + cycleBudget;
-        const minCyclesBeforeCheck = clockHz; // 1 emulated second
+        const deadlineCycles = startCycles + totalBudget;
 
-        // Ensure the machine is running. The server startup has a race where
-        // it briefly appears "running" before handle_wait_mode pauses it at
-        // cycle 7. Retry run() until cycles are actually advancing.
-        for (let attempt = 0; attempt < 50; attempt++) {
-            try {
-                await this.debugger.run();
-            } catch {
-                // Already running or other transient error
-            }
-            await new Promise(r => setTimeout(r, 100));
-            const state = await this.debugger.getState();
-            if (state.isRunning && state.cycleCount > 10) break;
-        }
         try {
-            while (true) {
-                await new Promise(r => setTimeout(r, pollIntervalMs));
-                const state = await this.debugger.getState();
+            while ((await this.debugger.getState()).cycleCount < deadlineCycles) {
+                const currentCycles = (await this.debugger.getState()).cycleCount;
+                const chunkTarget = Math.min(currentCycles + chunkCycles, deadlineCycles);
 
-                if (state.cycleCount >= targetCycles) {
-                    await this.debugger.stop();
-                    return predicate();
-                }
+                const bpId = await this.debugger.addBreakpoint(0x0000, {
+                    endAddress: 0x10000,
+                    condition: `cycles >= ${chunkTarget}`,
+                });
 
-                if (state.cycleCount - startCycles >= minCyclesBeforeCheck) {
-                    await this.debugger.stop();
-                    if (await predicate()) {
-                        return true;
-                    }
-                    await this.debugger.run();
+                // Wait for chunk to complete via event stream
+                const stopEvent = await this.debugger.waitForStop();
+
+                await this.debugger.removeBreakpoint(bpId);
+
+                if (await predicate()) {
+                    return true;
                 }
             }
+            return predicate();
         } finally {
             if (await this.debugger.isRunning()) {
                 await this.debugger.stop();

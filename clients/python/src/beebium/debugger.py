@@ -320,6 +320,32 @@ class Debugger:
             raise DebuggerError(f"Failed to add breakpoint at ${address:04X}")
         return response.id
 
+    @contextmanager
+    def breakpoint(
+        self,
+        address: int,
+        *,
+        end_address: int = 0,
+        condition: str = "",
+        stop_counterpart: bool = False,
+    ):
+        """Context manager that adds a breakpoint and removes it on exit.
+
+        Usage::
+
+            with bbc.debugger.breakpoint(0xC000, condition="A == 0x42") as bp_id:
+                bbc.debugger.run()
+                event = bbc.debugger.wait_for_stop()
+        """
+        bp_id = self.add_breakpoint(
+            address, end_address=end_address,
+            condition=condition, stop_counterpart=stop_counterpart,
+        )
+        try:
+            yield bp_id
+        finally:
+            self.remove_breakpoint(bp_id)
+
     def remove_breakpoint(self, breakpoint_id: int) -> bool:
         """Remove a breakpoint by ID.
 
@@ -396,6 +422,33 @@ class Debugger:
                 f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}"
             )
         return response.id
+
+    @contextmanager
+    def watchpoint(
+        self,
+        start_address: int,
+        end_address: int,
+        type: str = "both",
+        *,
+        condition: str = "",
+        stop_counterpart: bool = False,
+    ):
+        """Context manager that adds a watchpoint and removes it on exit.
+
+        Usage::
+
+            with bbc.debugger.watchpoint(0xFE00, 0xFF00, "write") as wp_id:
+                bbc.debugger.run()
+                event = bbc.debugger.wait_for_stop()
+        """
+        wp_id = self.add_watchpoint(
+            start_address, end_address, type,
+            condition=condition, stop_counterpart=stop_counterpart,
+        )
+        try:
+            yield wp_id
+        finally:
+            self.remove_watchpoint(wp_id)
 
     def remove_watchpoint(self, watchpoint_id: int) -> bool:
         """Remove a watchpoint by ID."""

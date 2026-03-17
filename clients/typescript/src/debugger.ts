@@ -191,12 +191,27 @@ export class Debugger {
         return !state.isRunning;
     }
 
-    /** Add a breakpoint at the given address. Returns the breakpoint ID. */
-    async addBreakpoint(address: number): Promise<number> {
-        const response = await promisify<{ address: number }, { success: boolean; id: number }>(
+    /**
+     * Add a breakpoint on an address range. Returns the breakpoint ID.
+     *
+     * @param address - Start address (inclusive).
+     * @param options.endAddress - End address (exclusive). 0 = address+1 (single address).
+     *   Use 0x10000 for a full-range breakpoint that fires at every instruction boundary.
+     * @param options.condition - Expression evaluated on hit. Empty = unconditional.
+     * @param options.stopCounterpart - Signal the other processor to stop.
+     */
+    async addBreakpoint(
+        address: number,
+        options: { endAddress?: number; condition?: string; stopCounterpart?: boolean } = {},
+    ): Promise<number> {
+        const { endAddress = 0, condition = "", stopCounterpart = false } = options;
+        const response = await promisify<
+            { startAddress: number; endAddress: number; condition: string; stopCounterpart: boolean },
+            { success: boolean; id: number }
+        >(
             this.stub as unknown as Record<string, Function>,
             "addBreakpoint",
-            { address },
+            { startAddress: address, endAddress, condition, stopCounterpart },
         );
         if (!response.success) {
             throw new DebuggerError(`addBreakpoint failed at address 0x${address.toString(16)}`);
