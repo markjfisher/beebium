@@ -8,30 +8,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ServerProcess } from "../src/server-process.js";
 import { Connection } from "../src/connection.js";
 import { Debugger, StopReason } from "../src/debugger.js";
 import { CPU } from "../src/cpu.js";
 import { Memory } from "../src/memory.js";
 import { DebuggerError, InvalidConditionError } from "../src/exceptions.js";
-
-/**
- * Launch a fresh server, run the body, and tear down afterwards.
- */
-async function withServer(
-    body: (conn: Connection, server: ServerProcess) => Promise<void>,
-): Promise<void> {
-    const server = new ServerProcess({ model: "B" });
-    await server.start(10000);
-    const conn = new Connection(server.target);
-    await conn.waitForReady(5000);
-    try {
-        await body(conn, server);
-    } finally {
-        conn.close();
-        await server.stop();
-    }
-}
+import { withServer } from "./server-harness.js";
 
 /**
  * Reset the machine, plant code at `org`, set PC there.
@@ -53,18 +35,6 @@ async function plantAndRun(
     return { dbg, cpu, mem };
 }
 
-/**
- * Subscribe to execution-state stream, call run(), wait for a
- * running-to-stopped transition.
- */
-async function runAndWaitForStop(
-    dbg: Debugger,
-    timeoutMs = 15000,
-): Promise<{ isRunning: boolean; cycleCount: number; haltReason: string; sequence: number }> {
-    const event = await dbg.waitForStop(timeoutMs);
-    return event.state;
-}
-
 // =========================================================================
 // Breakpoints
 // =========================================================================
@@ -81,7 +51,7 @@ describe("Debugger: Breakpoints", () => {
             expect(bps[0]!.startAddress).toBe(0x1000);
             expect(bps[0]!.endAddress).toBeGreaterThanOrEqual(0x1000);
         });
-    }, 15000);
+    });
 
     it("should remove a breakpoint by ID", async () => {
         await withServer(async (conn) => {
@@ -90,7 +60,7 @@ describe("Debugger: Breakpoints", () => {
             expect(await dbg.removeBreakpoint(bpId)).toBe(true);
             expect((await dbg.listBreakpoints()).length).toBe(0);
         });
-    }, 15000);
+    });
 
     it("should include condition, stopCounterpart, and hitCount in listing", async () => {
         await withServer(async (conn) => {
@@ -103,7 +73,7 @@ describe("Debugger: Breakpoints", () => {
                 stopCounterpart: true,
             });
 
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
@@ -118,7 +88,7 @@ describe("Debugger: Breakpoints", () => {
 
             await dbg.clearBreakpoints();
         });
-    }, 15000);
+    });
 
     it("should clear all breakpoints", async () => {
         await withServer(async (conn) => {
@@ -130,7 +100,7 @@ describe("Debugger: Breakpoints", () => {
             expect(removed).toBe(3);
             expect((await dbg.listBreakpoints()).length).toBe(0);
         });
-    }, 15000);
+    });
 
     it("should stop at a breakpoint address", async () => {
         await withServer(async (conn) => {
@@ -139,14 +109,14 @@ describe("Debugger: Breakpoints", () => {
             const { dbg, cpu } = await plantAndRun(conn, code);
 
             const bpId = await dbg.addBreakpoint(0x0405);
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
             expect(await cpu.getA()).toBe(0x42);
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -169,14 +139,14 @@ describe("Debugger: Conditional Breakpoints", () => {
             const { dbg, cpu } = await plantAndRun(conn, code);
 
             const bpId = await dbg.addBreakpoint(0x0402, { condition: "A == 0x42" });
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
             expect(await cpu.getA()).toBe(0x42);
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 
     it("should fire on the Nth hit using hits == N", async () => {
         await withServer(async (conn) => {
@@ -185,7 +155,7 @@ describe("Debugger: Conditional Breakpoints", () => {
             const { dbg, cpu } = await plantAndRun(conn, code);
 
             const bpId = await dbg.addBreakpoint(0x0402, { condition: "hits == 3" });
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
@@ -193,7 +163,7 @@ describe("Debugger: Conditional Breakpoints", () => {
             expect(await cpu.getX()).toBe(2);
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 
     it("should fire every Nth hit using hits % N == 0", async () => {
         await withServer(async (conn) => {
@@ -202,7 +172,7 @@ describe("Debugger: Conditional Breakpoints", () => {
             const { dbg, cpu } = await plantAndRun(conn, code);
 
             const bpId = await dbg.addBreakpoint(0x0402, { condition: "hits % 5 == 0" });
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
@@ -210,7 +180,7 @@ describe("Debugger: Conditional Breakpoints", () => {
             expect(await cpu.getX()).toBe(4);
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 
     it("should throw InvalidConditionError on invalid condition", async () => {
         await withServer(async (conn) => {
@@ -219,7 +189,7 @@ describe("Debugger: Conditional Breakpoints", () => {
                 dbg.addBreakpoint(0x1000, { condition: "invalid !@#" }),
             ).rejects.toThrow(InvalidConditionError);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -237,7 +207,7 @@ describe("Debugger: Watchpoints", () => {
             expect(wps[0]!.endAddress).toBe(0x1010);
             expect(wps[0]!.type).toBe("write");
         });
-    }, 15000);
+    });
 
     it("should remove a watchpoint by ID", async () => {
         await withServer(async (conn) => {
@@ -246,7 +216,7 @@ describe("Debugger: Watchpoints", () => {
             expect(await dbg.removeWatchpoint(wpId)).toBe(true);
             expect((await dbg.listWatchpoints()).length).toBe(0);
         });
-    }, 15000);
+    });
 
     it("should clear all watchpoints", async () => {
         await withServer(async (conn) => {
@@ -256,7 +226,7 @@ describe("Debugger: Watchpoints", () => {
             const removed = await dbg.clearWatchpoints();
             expect(removed).toBe(2);
         });
-    }, 15000);
+    });
 
     it("should fire write watchpoint on STA", async () => {
         await withServer(async (conn) => {
@@ -265,14 +235,14 @@ describe("Debugger: Watchpoints", () => {
             const { dbg, mem } = await plantAndRun(conn, code);
 
             const wpId = await dbg.addWatchpoint(0x0500, 0x0501, "write");
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
             expect(await mem.address.peek.readByte(0x0500)).toBe(0x42);
             await dbg.removeWatchpoint(wpId);
         });
-    }, 15000);
+    });
 
     it("should not fire write watchpoint on LDA (read)", async () => {
         await withServer(async (conn) => {
@@ -291,7 +261,7 @@ describe("Debugger: Watchpoints", () => {
             // If the watchpoint didn't fire, execution ran past the code
             expect(await dbg.isStopped()).toBe(true);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -313,7 +283,7 @@ describe("Debugger: Conditional Watchpoints", () => {
             const wpId = await dbg.addWatchpoint(0x0500, 0x0501, "write", {
                 condition: "A == 0x42",
             });
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
@@ -321,7 +291,7 @@ describe("Debugger: Conditional Watchpoints", () => {
             expect(await mem.address.peek.readByte(0x0500)).toBe(0x42);
             await dbg.removeWatchpoint(wpId);
         });
-    }, 15000);
+    });
 
     it("should not stop when condition is false", async () => {
         await withServer(async (conn) => {
@@ -340,7 +310,7 @@ describe("Debugger: Conditional Watchpoints", () => {
             // The write still happened, but the watchpoint didn't stop execution
             expect(await mem.address.peek.readByte(0x0500)).toBe(0x42);
         });
-    }, 15000);
+    });
 
     it("should throw InvalidConditionError on invalid condition", async () => {
         await withServer(async (conn) => {
@@ -351,7 +321,7 @@ describe("Debugger: Conditional Watchpoints", () => {
                 }),
             ).rejects.toThrow(InvalidConditionError);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -393,7 +363,7 @@ describe("Debugger: Event Stream", () => {
 
             await dbg.clearBreakpoints();
         });
-    }, 15000);
+    });
 
     it("should deliver events to two concurrent subscribers", async () => {
         await withServer(async (conn) => {
@@ -434,7 +404,7 @@ describe("Debugger: Event Stream", () => {
 
             await dbg.clearBreakpoints();
         });
-    }, 15000);
+    });
 
     it("should support runUntil(address)", async () => {
         await withServer(async (conn) => {
@@ -446,7 +416,7 @@ describe("Debugger: Event Stream", () => {
             expect(event.state.isRunning).toBe(false);
             expect(await cpu.getA()).toBe(0x42);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -466,7 +436,7 @@ describe("Debugger: Full-Range Breakpoints", () => {
                 condition: `cycles >= ${target}`,
             });
 
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
@@ -477,7 +447,7 @@ describe("Debugger: Full-Range Breakpoints", () => {
 
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 
     it("should stop on a memory predicate", async () => {
         await withServer(async (conn) => {
@@ -496,14 +466,14 @@ describe("Debugger: Full-Range Breakpoints", () => {
                 condition: "mem[0x0500] == 0x0A",
             });
 
-            const stopPromise = dbg.waitForStop(15000);
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
             await stopPromise;
 
             expect(await mem.address.peek.readByte(0x0500)).toBe(0x0A);
             await dbg.removeBreakpoint(bpId);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -522,7 +492,7 @@ describe("Debugger: CPU State", () => {
             expect(typeof regs.pc).toBe("number");
             expect(typeof regs.p).toBe("number");
         });
-    }, 15000);
+    });
 
     it("should set and read back A and X", async () => {
         await withServer(async (conn) => {
@@ -536,5 +506,5 @@ describe("Debugger: CPU State", () => {
             expect(regs.a).toBe(0xAA);
             expect(regs.x).toBe(0xBB);
         });
-    }, 15000);
+    });
 });

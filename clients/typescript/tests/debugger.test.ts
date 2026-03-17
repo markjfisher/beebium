@@ -275,7 +275,7 @@ describe("Debugger", () => {
             const id = await dbg.addBreakpoint(0xC000);
             expect(id).toBe(7);
             expect(stub.addBreakpoint).toHaveBeenCalledWith(
-                { address: 0xC000 },
+                { startAddress: 0xC000, endAddress: 0, condition: "", stopCounterpart: false },
                 expect.any(Function),
             );
         });
@@ -319,18 +319,18 @@ describe("Debugger", () => {
             const stub = createMockStub({
                 listBreakpoints: () => ({
                     breakpoints: [
-                        { id: 1, address: 0x1000 },
-                        { id: 2, address: 0xC000 },
-                        { id: 3, address: 0xFFFC },
+                        { id: 1, startAddress: 0x1000, endAddress: 0x1001, condition: "", stopCounterpart: false, hitCount: 0 },
+                        { id: 2, startAddress: 0xC000, endAddress: 0xC001, condition: "", stopCounterpart: false, hitCount: 0 },
+                        { id: 3, startAddress: 0xFFFC, endAddress: 0xFFFD, condition: "", stopCounterpart: false, hitCount: 0 },
                     ],
                 }),
             });
             const dbg = new Debugger(stub as any);
             const bps = await dbg.listBreakpoints();
             expect(bps).toEqual([
-                { id: 1, address: 0x1000 },
-                { id: 2, address: 0xC000 },
-                { id: 3, address: 0xFFFC },
+                { id: 1, startAddress: 0x1000, endAddress: 0x1001, condition: "", stopCounterpart: false, hitCount: 0 },
+                { id: 2, startAddress: 0xC000, endAddress: 0xC001, condition: "", stopCounterpart: false, hitCount: 0 },
+                { id: 3, startAddress: 0xFFFC, endAddress: 0xFFFD, condition: "", stopCounterpart: false, hitCount: 0 },
             ]);
         });
 

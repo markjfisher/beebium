@@ -7,7 +7,6 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { ServerProcess } from "../src/server-process.js";
 import { Connection } from "../src/connection.js";
 import { Debugger } from "../src/debugger.js";
 import { CPU } from "../src/cpu.js";
@@ -23,25 +22,7 @@ import { Disc } from "../src/disc.js";
 import { Econet } from "../src/econet.js";
 import { Tube } from "../src/tube.js";
 import { TubeUlaInspection } from "../src/tube-ula.js";
-
-/**
- * Launch a fresh server, run the body, and tear down afterwards.
- * Every call produces a completely independent emulator instance.
- */
-async function withServer(
-    body: (conn: Connection, server: ServerProcess) => Promise<void>,
-): Promise<void> {
-    const server = new ServerProcess({ model: "B" });
-    await server.start(10000);
-    const conn = new Connection(server.target);
-    await conn.waitForReady(5000);
-    try {
-        await body(conn, server);
-    } finally {
-        conn.close();
-        await server.stop();
-    }
-}
+import { withServer } from "./server-harness.js";
 
 // =========================================================================
 // System Service
@@ -56,7 +37,7 @@ describe("Integration: System Service", () => {
             expect(identity.modelType).toMatch(/[Mm]odel.?[Bb]/);
             expect(identity.modelName).toBeTruthy();
         });
-    }, 15000);
+    });
 
     it("should return launch provenance", async () => {
         await withServer(async (conn, server) => {
@@ -67,7 +48,7 @@ describe("Integration: System Service", () => {
             expect(provenance.version).toBe("0.1.0");
             expect(provenance.timestamp).toBeGreaterThan(0);
         });
-    }, 15000);
+    });
 
     it("should report clock speed as a number", async () => {
         await withServer(async (conn) => {
@@ -77,7 +58,7 @@ describe("Integration: System Service", () => {
             // May be 2000000 (2 MHz) or 0 if not yet populated by server
             expect(hz).toBeGreaterThanOrEqual(0);
         });
-    }, 15000);
+    });
 
     it("should stream READY as first status event", async () => {
         await withServer(async (conn) => {
@@ -88,7 +69,7 @@ describe("Integration: System Service", () => {
                 break;
             }
         });
-    }, 15000);
+    });
 
     it("should wait for ready without timeout", async () => {
         await withServer(async (conn) => {
@@ -96,7 +77,7 @@ describe("Integration: System Service", () => {
             const ready = await system.waitForReady(5000);
             expect(ready).toBe(true);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -112,7 +93,7 @@ describe("Integration: Debugger", () => {
             expect(typeof state.cycleCount).toBe("number");
             expect(typeof state.sequence).toBe("number");
         });
-    }, 15000);
+    });
 
     it("should stop when already stopped", async () => {
         await withServer(async (conn) => {
@@ -120,7 +101,7 @@ describe("Integration: Debugger", () => {
             const state = await dbg.stop();
             expect(state.isRunning).toBe(false);
         });
-    }, 15000);
+    });
 
     it("should step 1 instruction", async () => {
         await withServer(async (conn) => {
@@ -130,7 +111,7 @@ describe("Integration: Debugger", () => {
             expect(result.instructionsExecuted).toBe(1);
             expect(result.cyclesExecuted).toBeGreaterThan(0);
         });
-    }, 15000);
+    });
 
     it("should step 100 instructions", async () => {
         await withServer(async (conn) => {
@@ -140,7 +121,7 @@ describe("Integration: Debugger", () => {
             expect(result.instructionsExecuted).toBe(100);
             expect(result.cyclesExecuted).toBeGreaterThan(100);
         });
-    }, 15000);
+    });
 
     it("should step by cycles", async () => {
         await withServer(async (conn) => {
@@ -149,7 +130,7 @@ describe("Integration: Debugger", () => {
             expect(result.success).toBe(true);
             expect(result.cyclesExecuted).toBeGreaterThanOrEqual(1);
         });
-    }, 15000);
+    });
 
     it("should run and then stop", async () => {
         await withServer(async (conn) => {
@@ -159,7 +140,7 @@ describe("Integration: Debugger", () => {
             const state = await dbg.stop();
             expect(state.isRunning).toBe(false);
         });
-    }, 15000);
+    });
 
     it("should reset the machine", async () => {
         await withServer(async (conn) => {
@@ -169,7 +150,7 @@ describe("Integration: Debugger", () => {
             const state = await dbg.getState();
             expect(state.isRunning).toBe(false);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -194,7 +175,7 @@ describe("Integration: CPU Registers", () => {
             expect(regs.p).toBeGreaterThanOrEqual(0);
             expect(regs.p).toBeLessThanOrEqual(255);
         });
-    }, 15000);
+    });
 
     it("should set and read back PC", async () => {
         await withServer(async (conn) => {
@@ -202,7 +183,7 @@ describe("Integration: CPU Registers", () => {
             await cpu.setPc(0x1234);
             expect(await cpu.getPc()).toBe(0x1234);
         });
-    }, 15000);
+    });
 
     it("should set and read back A", async () => {
         await withServer(async (conn) => {
@@ -210,7 +191,7 @@ describe("Integration: CPU Registers", () => {
             await cpu.setA(0x42);
             expect(await cpu.getA()).toBe(0x42);
         });
-    }, 15000);
+    });
 
     it("should set multiple registers at once", async () => {
         await withServer(async (conn) => {
@@ -221,7 +202,7 @@ describe("Integration: CPU Registers", () => {
             expect(regs.x).toBe(0x22);
             expect(regs.y).toBe(0x33);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -236,7 +217,7 @@ describe("Integration: Memory", () => {
             expect(data.length).toBe(16);
             expect(Array.from(data).some((b) => b !== 0)).toBe(true);
         });
-    }, 15000);
+    });
 
     it("should write a byte and read it back", async () => {
         await withServer(async (conn) => {
@@ -244,7 +225,7 @@ describe("Integration: Memory", () => {
             await mem.address.bus.writeByte(0x0400, 0x42);
             expect(await mem.address.peek.readByte(0x0400)).toBe(0x42);
         });
-    }, 15000);
+    });
 
     it("should write and read back multiple bytes", async () => {
         await withServer(async (conn) => {
@@ -254,7 +235,7 @@ describe("Integration: Memory", () => {
             const readBack = await mem.address.peek.read(0x0400, 4);
             expect(Array.from(readBack)).toEqual([0x01, 0x02, 0x03, 0x04]);
         });
-    }, 15000);
+    });
 
     it("should fill a range and verify", async () => {
         await withServer(async (conn) => {
@@ -265,7 +246,7 @@ describe("Integration: Memory", () => {
                 expect(data[i]).toBe(0xAA);
             }
         });
-    }, 15000);
+    });
 
     it("should list memory regions including main_ram", async () => {
         await withServer(async (conn) => {
@@ -277,7 +258,7 @@ describe("Integration: Memory", () => {
             expect(mainRam!.readable).toBe(true);
             expect(mainRam!.writable).toBe(true);
         });
-    }, 15000);
+    });
 
     it("should return machine type", async () => {
         await withServer(async (conn) => {
@@ -285,7 +266,7 @@ describe("Integration: Memory", () => {
             const mt = await mem.getMachineType();
             expect(mt).toMatch(/[Mm]odel.?[Bb]/);
         });
-    }, 15000);
+    });
 
     it("should read via named region", async () => {
         await withServer(async (conn) => {
@@ -294,7 +275,7 @@ describe("Integration: Memory", () => {
             const byte = await mem.region("main_ram").peek.readByte(0x0500);
             expect(byte).toBe(0x77);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -308,7 +289,7 @@ describe("Integration: Keyboard", () => {
             const state = await kb.getState();
             expect(state.pressedRows.length).toBe(10);
         });
-    }, 15000);
+    });
 
     it("should press and release a matrix key", async () => {
         await withServer(async (conn) => {
@@ -316,7 +297,7 @@ describe("Integration: Keyboard", () => {
             expect(await kb.matrixDown(4, 1)).toBe(true);
             expect(await kb.matrixUp(4, 1)).toBe(true);
         });
-    }, 15000);
+    });
 
     it("should enqueue text via type()", async () => {
         await withServer(async (conn) => {
@@ -324,7 +305,7 @@ describe("Integration: Keyboard", () => {
             const pending = await kb.type("HELLO");
             expect(pending).toBeGreaterThanOrEqual(5);
         });
-    }, 15000);
+    });
 
     it("should report and clear typing status", async () => {
         await withServer(async (conn) => {
@@ -336,7 +317,7 @@ describe("Integration: Keyboard", () => {
             const after = await kb.typingStatus();
             expect(after.pendingCharacters).toBe(0);
         });
-    }, 15000);
+    });
 
     it("should set and read back keyboard links", async () => {
         await withServer(async (conn) => {
@@ -346,7 +327,7 @@ describe("Integration: Keyboard", () => {
             expect(await kb.getLinks()).toBe(0xF8);
             await kb.setLinks(original);
         });
-    }, 15000);
+    });
 
     it("should get startup screen mode in range 0-7", async () => {
         await withServer(async (conn) => {
@@ -355,7 +336,7 @@ describe("Integration: Keyboard", () => {
             expect(mode).toBeGreaterThanOrEqual(0);
             expect(mode).toBeLessThanOrEqual(7);
         });
-    }, 15000);
+    });
 
     it("should handle break key down and up", async () => {
         await withServer(async (conn) => {
@@ -364,7 +345,7 @@ describe("Integration: Keyboard", () => {
             expect(await kb.isBreakHeld()).toBe(true);
             expect(await kb.breakUp()).toBe(true);
         });
-    }, 15000);
+    });
 
     it("should return key mapping for a character", async () => {
         await withServer(async (conn) => {
@@ -373,7 +354,7 @@ describe("Integration: Keyboard", () => {
             expect(mapping).toBeDefined();
             expect(mapping!.needsShift).toBe(true);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -398,7 +379,7 @@ describe("Integration: System VIA", () => {
             expect(state.t1l).toBeLessThanOrEqual(0xFFFF);
             expect(typeof state.ca1).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: User VIA", () => {
@@ -410,7 +391,7 @@ describe("Integration: User VIA", () => {
             expect(typeof state.t1Pending).toBe("boolean");
             expect(typeof state.t2Pending).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: CRTC", () => {
@@ -423,7 +404,7 @@ describe("Integration: CRTC", () => {
             expect(typeof state.inVsync).toBe("boolean");
             expect(typeof state.displayEnabled).toBe("boolean");
         });
-    }, 15000);
+    });
 
     it("should have non-zero R0 after MOS boot", async () => {
         await withServer(async (conn) => {
@@ -433,7 +414,7 @@ describe("Integration: CRTC", () => {
             const state = await crtc.getState();
             expect(state.registers[0]).toBeGreaterThan(0);
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Video ULA", () => {
@@ -444,7 +425,7 @@ describe("Integration: Video ULA", () => {
             expect(typeof state.control).toBe("number");
             expect(state.palette.length).toBe(16);
         });
-    }, 15000);
+    });
 
     it("should have teletext bit set after MOS boot (Mode 7)", async () => {
         await withServer(async (conn) => {
@@ -454,7 +435,7 @@ describe("Integration: Video ULA", () => {
             const state = await ula.getState();
             expect(state.control & CTRL_TELETEXT).toBe(CTRL_TELETEXT);
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Addressable Latch", () => {
@@ -467,7 +448,7 @@ describe("Integration: Addressable Latch", () => {
             expect(typeof state.capsLockLed).toBe("boolean");
             expect(typeof state.shiftLockLed).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Sound", () => {
@@ -480,7 +461,7 @@ describe("Integration: Sound", () => {
             expect(state.channels[0]!.channelId).toBe(0);
             expect(state.channels[3]!.channelName).toMatch(/[Nn]oise/);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -496,7 +477,7 @@ describe("Integration: Disc Controller", () => {
             expect(typeof status.isSocketed).toBe("boolean");
             expect(Array.isArray(status.drives)).toBe(true);
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Econet", () => {
@@ -507,7 +488,7 @@ describe("Integration: Econet", () => {
             expect(typeof status.hasEconetSocket).toBe("boolean");
             expect(typeof status.enabled).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Tube", () => {
@@ -519,7 +500,7 @@ describe("Integration: Tube", () => {
             expect(typeof status.enabled).toBe("boolean");
             expect(typeof status.parasiteConnected).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 describe("Integration: Tube ULA", () => {
@@ -529,7 +510,7 @@ describe("Integration: Tube ULA", () => {
             const state = await tubeUla.getState();
             expect(typeof state.enabled).toBe("boolean");
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -551,7 +532,7 @@ describe("Integration: Breakpoints", () => {
             const after = await dbg.listBreakpoints();
             expect(after.some((bp) => bp.id === bpId)).toBe(false);
         });
-    }, 15000);
+    });
 
     it("should clear all breakpoints", async () => {
         await withServer(async (conn) => {
@@ -562,7 +543,7 @@ describe("Integration: Breakpoints", () => {
             expect(cleared).toBeGreaterThanOrEqual(2);
             expect((await dbg.listBreakpoints()).length).toBe(0);
         });
-    }, 15000);
+    });
 
     it("should run until a breakpoint address", async () => {
         await withServer(async (conn) => {
@@ -582,7 +563,7 @@ describe("Integration: Breakpoints", () => {
             expect(event.state.isRunning).toBe(false);
             expect(await cpu.getPc()).toBe(0x0403);
         });
-    }, 15000);
+    });
 });
 
 // =========================================================================
@@ -598,7 +579,7 @@ describe("Integration: Workflows", () => {
             await dbg.step(1000);
             expect(await cpu.getPc()).toBeGreaterThanOrEqual(0x8000);
         });
-    }, 15000);
+    });
 
     it("should execute a small program in RAM", async () => {
         await withServer(async (conn) => {
@@ -618,5 +599,5 @@ describe("Integration: Workflows", () => {
             // the 6502's PC representation -- it points to the next fetch byte)
             expect(await cpu.getPc()).toBeGreaterThanOrEqual(0x0405);
         });
-    }, 15000);
+    });
 });
