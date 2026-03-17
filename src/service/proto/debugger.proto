@@ -188,6 +188,9 @@ message Breakpoint {
     uint32 id = 1;
     uint32 start_address = 2;
     uint32 end_address = 3;
+    string condition = 4;
+    bool stop_counterpart = 5;
+    uint64 hit_count = 6;
 }
 
 message ClearBreakpointsResponse {
@@ -226,6 +229,9 @@ message WatchpointInfo {
     uint32 start_address = 2;
     uint32 end_address = 3;
     WatchpointType type = 4;
+    string condition = 5;
+    bool stop_counterpart = 6;
+    uint64 hit_count = 7;
 }
 
 message ClearWatchpointsResponse {

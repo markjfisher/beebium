@@ -857,11 +857,25 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // Get live hit counts from the machine's breakpoint entries
+    const auto& live_entries = machine_.breakpoint_entries();
+
     for (const auto& bp : breakpoints_) {
         auto* pb_bp = response->add_breakpoints();
         pb_bp->set_id(bp.id);
         pb_bp->set_start_address(bp.start_address);
         pb_bp->set_end_address(bp.end_address);
+        if (bp.condition) {
+            pb_bp->set_condition(bp.condition->source);
+        }
+        pb_bp->set_stop_counterpart(bp.stop_counterpart);
+        // Find live hit count for this breakpoint
+        for (const auto& entry : live_entries) {
+            if (entry.id == bp.id) {
+                pb_bp->set_hit_count(entry.hit_count);
+                break;
+            }
+        }
     }
 
     return grpc::Status::OK;
@@ -1002,6 +1016,8 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    const auto& live_entries = machine_.watchpoint_entries();
+
     for (const auto& wp : watchpoints_) {
         auto* pb_wp = response->add_watchpoints();
         pb_wp->set_id(wp.id);
@@ -1011,6 +1027,16 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
             case beebium::WATCH_READ:  pb_wp->set_type(WATCHPOINT_READ); break;
             case beebium::WATCH_WRITE: pb_wp->set_type(WATCHPOINT_WRITE); break;
             default:                   pb_wp->set_type(WATCHPOINT_BOTH); break;
+        }
+        if (wp.condition) {
+            pb_wp->set_condition(wp.condition->source);
+        }
+        pb_wp->set_stop_counterpart(wp.stop_counterpart);
+        for (const auto& entry : live_entries) {
+            if (entry.id == wp.id) {
+                pb_wp->set_hit_count(entry.hit_count);
+                break;
+            }
         }
     }
 

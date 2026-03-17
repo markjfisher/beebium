@@ -38,6 +38,10 @@ class Breakpoint:
 
     id: int
     address: int
+    end_address: int = 0
+    condition: str = ""
+    stop_counterpart: bool = False
+    hit_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,9 @@ class WatchpointInfo:
     start_address: int
     end_address: int
     type: str  # "read", "write", or "both"
+    condition: str = ""
+    stop_counterpart: bool = False
+    hit_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -367,7 +374,14 @@ class Debugger:
         """
         response = self._stub.ListBreakpoints(debugger_pb2.Empty())
         return [
-            Breakpoint(id=bp.id, address=bp.start_address) for bp in response.breakpoints
+            Breakpoint(
+                id=bp.id,
+                address=bp.start_address,
+                end_address=bp.end_address,
+                condition=bp.condition,
+                stop_counterpart=bp.stop_counterpart,
+                hit_count=bp.hit_count,
+            ) for bp in response.breakpoints
         ]
 
     def clear_breakpoints(self) -> int:
@@ -470,6 +484,9 @@ class Debugger:
                 start_address=wp.start_address,
                 end_address=wp.end_address,
                 type=type_map.get(wp.type, "both"),
+                condition=wp.condition,
+                stop_counterpart=wp.stop_counterpart,
+                hit_count=wp.hit_count,
             )
             for wp in response.watchpoints
         ]

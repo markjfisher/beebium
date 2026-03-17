@@ -131,6 +131,37 @@ class TestBreakpoints:
         assert bbc.debugger.remove_breakpoint(bp_id)
         assert len(bbc.debugger.list_breakpoints()) == 0
 
+    def test_list_includes_condition_and_hit_count(self, bbc):
+        """List returns condition, stop_counterpart, and live hit count."""
+        code = assemble("""\
+            ORG &0400
+            .start
+                LDX #0
+            .loop
+                INX
+                JMP loop
+            .end
+            SAVE "test.bin", start, end
+        """)
+        plant_and_run_from(bbc, code)
+        bp_id = bbc.debugger.add_breakpoint(
+            0x0402, condition="hits == 3", stop_counterpart=True,
+        )
+
+        # Run until the breakpoint fires (3rd hit)
+        event = run_and_wait_for_stop(bbc)
+
+        bps = bbc.debugger.list_breakpoints()
+        assert len(bps) == 1
+        bp = bps[0]
+        assert bp.id == bp_id
+        assert bp.address == 0x0402
+        assert bp.condition == "hits == 3"
+        assert bp.stop_counterpart is True
+        assert bp.hit_count == 3
+
+        bbc.debugger.clear_breakpoints()
+
     def test_clear(self, bbc):
         for addr in [0x1000, 0x2000, 0x3000]:
             bbc.debugger.add_breakpoint(addr)
