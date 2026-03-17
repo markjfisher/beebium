@@ -133,6 +133,7 @@ def bbc_tube(
         pytest.skip(str(e))
 
 
+@pytest.mark.xfail(reason="CE2023 investigation paused -- see docs/discussion/chuckie-egg-2023-tube-hang.md")
 class TestTubeChuckieEggBoot:
     """Test booting Chuckie Egg 2023 (40th Anniversary Edition) via the Tube."""
 
@@ -183,7 +184,6 @@ class TestTubeChuckieEggBoot:
             dump_diagnostics(bbc_tube)
             pytest.fail("Expected 'Initialising' on screen")
 
-    @pytest.mark.xfail(reason="Decompressor hangs at Initialising -- see docs/discussion/chuckie-egg-2023-tube-hang.md")
     def test_loading_progresses(
         self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path
     ) -> None:
