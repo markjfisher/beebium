@@ -19,9 +19,7 @@ Each test gets a fresh BBC Micro instance via the ``bbc`` fixture.
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
-from pathlib import Path
+import time
 
 import pytest
 
@@ -29,23 +27,6 @@ from beebium.client import Beebium
 from beebium.debugger import ExecutionStateEvent
 from beebium.exceptions import DebuggerError, InvalidConditionError
 from beebium._proto import debugger_pb2, debugger_pb2_grpc
-
-
-def assemble(source: str) -> bytes:
-    """Assemble 6502 source using beebasm and return the binary."""
-    with tempfile.TemporaryDirectory() as tmp:
-        src_filepath = Path(tmp) / "test.6502"
-        bin_filepath = Path(tmp) / "test.bin"
-        src_filepath.write_text(source)
-        result = subprocess.run(
-            ["beebasm", "-i", str(src_filepath)],
-            cwd=tmp,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"beebasm failed: {result.stderr}")
-        return bin_filepath.read_bytes()
 
 
 def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
@@ -71,7 +52,7 @@ def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:
 
 
 def plant_and_run_from(bbc: Beebium, code: bytes, org: int = 0x0400) -> None:
-    """Plant assembled code at ``org`` and prepare the CPU to execute it.
+    """Plant machine code at ``org`` and prepare the CPU to execute it.
 
     Resets the machine (which leaves it paused at an instruction boundary),
     writes the code, and sets PC to the code origin. The machine is left
@@ -133,16 +114,8 @@ class TestBreakpoints:
 
     def test_list_includes_condition_and_hit_count(self, bbc):
         """List returns condition, stop_counterpart, and live hit count."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDX #0
-            .loop
-                INX
-                JMP loop
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDX #0; .loop: INX; JMP loop
+        code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(
             0x0402, condition="hits == 3", stop_counterpart=True,
@@ -171,17 +144,10 @@ class TestBreakpoints:
 
     def test_breakpoint_stops_at_address(self, bbc):
         """Plant 6502 code and verify breakpoint stops at the right PC."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                STA &0500
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; STA $0500; NOP
+        code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
         plant_and_run_from(bbc, code)
-        bp_id = bbc.debugger.add_breakpoint(0x0402)
+        bp_id = bbc.debugger.add_breakpoint(0x0405)
         event = run_and_wait_for_stop(bbc)
         assert not event.state.is_running
         regs = bbc.cpu.registers
@@ -197,21 +163,16 @@ class TestConditionalBreakpoints:
 
     def test_condition_on_register(self, bbc):
         """Breakpoint fires only when A == 0x42."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDX #0
-            .loop
-                LDA table, X
-                INX
-                CPX #4
-                BNE loop
-                NOP
-            .table
-                EQUB &10, &42, &99, &FF
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDX #0; .loop: LDA $040B,X; INX; CPX #4; BNE loop; NOP; .table: $10,$42,$99,$FF
+        code = bytes([
+            0xA2, 0x00,             # LDX #0
+            0xBD, 0x0B, 0x04,       # LDA $040B,X
+            0xE8,                   # INX
+            0xE0, 0x04,             # CPX #4
+            0xD0, 0xF8,             # BNE loop (-8 -> $0402)
+            0xEA,                   # NOP
+            0x10, 0x42, 0x99, 0xFF, # table data
+        ])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="A == 0x42")
         event = run_and_wait_for_stop(bbc)
@@ -220,16 +181,8 @@ class TestConditionalBreakpoints:
 
     def test_condition_with_hits(self, bbc):
         """Breakpoint fires on the 3rd hit using ``hits == 3``."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDX #0
-            .loop
-                INX
-                JMP loop
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDX #0; .loop: INX; JMP loop
+        code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits == 3")
         event = run_and_wait_for_stop(bbc)
@@ -239,16 +192,8 @@ class TestConditionalBreakpoints:
 
     def test_condition_hits_modulo(self, bbc):
         """Breakpoint fires every 5th hit using ``hits % 5 == 0``."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDX #0
-            .loop
-                INX
-                JMP loop
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDX #0; .loop: INX; JMP loop
+        code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
         plant_and_run_from(bbc, code)
         bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits % 5 == 0")
         event = run_and_wait_for_stop(bbc)
@@ -289,15 +234,8 @@ class TestWatchpoints:
 
     def test_write_watchpoint_fires(self, bbc):
         """Write watchpoint stops when code writes to monitored address."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                STA &0500
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; STA $0500; NOP
+        code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
         plant_and_run_from(bbc, code)
         wp_id = bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write")
         event = run_and_wait_for_stop(bbc)
@@ -306,21 +244,13 @@ class TestWatchpoints:
 
     def test_write_watchpoint_does_not_fire_on_read(self, bbc):
         """Write-only watchpoint ignores reads."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA &0500
-                NOP
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA $0500; NOP; NOP
+        code = bytes([0xAD, 0x00, 0x05, 0xEA, 0xEA])
         plant_and_run_from(bbc, code)
         bbc.memory.address.bus[0x0500] = 0xAB
         bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write")
         bbc.debugger.run()
         # Run a short time then stop manually -- the watchpoint should NOT fire
-        import time
         time.sleep(0.05)
         bbc.debugger.stop()
         # If it didn't fire, the machine ran past our code
@@ -335,19 +265,13 @@ class TestConditionalWatchpoints:
 
     def test_condition_on_register(self, bbc):
         """Watchpoint with condition A == 0x42 skips non-matching writes."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&10
-                STA &0500
-                LDA #&42
-                STA &0500
-                LDA #&99
-                STA &0500
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$10; STA $0500; LDA #$42; STA $0500; LDA #$99; STA $0500; NOP
+        code = bytes([
+            0xA9, 0x10, 0x8D, 0x00, 0x05,  # LDA #$10; STA $0500
+            0xA9, 0x42, 0x8D, 0x00, 0x05,  # LDA #$42; STA $0500
+            0xA9, 0x99, 0x8D, 0x00, 0x05,  # LDA #$99; STA $0500
+            0xEA,                            # NOP
+        ])
         plant_and_run_from(bbc, code)
         wp_id = bbc.debugger.add_watchpoint(
             0x0500, 0x0501, type="write", condition="A == 0x42"
@@ -359,22 +283,13 @@ class TestConditionalWatchpoints:
 
     def test_condition_false_never_stops(self, bbc):
         """Watchpoint with condition ``false`` records but never stops."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                STA &0500
-                NOP
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; STA $0500; NOP; NOP
+        code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA, 0xEA])
         plant_and_run_from(bbc, code)
         bbc.debugger.add_watchpoint(
             0x0500, 0x0501, type="write", condition="false"
         )
         bbc.debugger.run()
-        import time
         time.sleep(0.05)
         bbc.debugger.stop()
         # The watchpoint with condition false should not have stopped execution
@@ -396,14 +311,8 @@ class TestEventStream:
 
     def test_stream_delivers_breakpoint_event(self, bbc):
         """Event stream delivers running and stopped events in order."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; NOP
+        code = bytes([0xA9, 0x42, 0xEA])
         plant_and_run_from(bbc, code)
         bbc.debugger.add_breakpoint(0x0402)
 
@@ -429,14 +338,8 @@ class TestEventStream:
 
     def test_two_concurrent_subscribers(self, bbc):
         """Two concurrent event stream subscriptions each receive all events."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; NOP
+        code = bytes([0xA9, 0x42, 0xEA])
         plant_and_run_from(bbc, code)
         bbc.debugger.add_breakpoint(0x0402)
 
@@ -482,17 +385,10 @@ class TestEventStream:
 
     def test_run_until_uses_stream(self, bbc):
         """run_until() uses the event stream, not polling."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&42
-                STA &0500
-                NOP
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$42; STA $0500; NOP
+        code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
         plant_and_run_from(bbc, code)
-        state = bbc.debugger.run_until(0x0402)
+        state = bbc.debugger.run_until(0x0405)
         assert not state.is_running
         assert bbc.cpu.a == 0x42
 
@@ -527,18 +423,14 @@ class TestFullRangeBreakpoints:
 
     def test_memory_predicate_breakpoint(self, bbc):
         """Full-range breakpoint with memory condition."""
-        code = assemble("""\
-            ORG &0400
-            .start
-                LDA #&00
-            .loop
-                CLC
-                ADC #&01
-                STA &0500
-                JMP loop
-            .end
-            SAVE "test.bin", start, end
-        """)
+        # LDA #$00; .loop: CLC; ADC #$01; STA $0500; JMP loop
+        code = bytes([
+            0xA9, 0x00,             # LDA #$00
+            0x18,                   # CLC
+            0x69, 0x01,             # ADC #$01
+            0x8D, 0x00, 0x05,       # STA $0500
+            0x4C, 0x02, 0x04,       # JMP $0402
+        ])
         plant_and_run_from(bbc, code)
 
         # Stop when $0500 reaches $0A
