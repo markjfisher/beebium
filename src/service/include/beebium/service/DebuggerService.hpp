@@ -446,10 +446,11 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::Reset(
 
     machine_.reset();
 
-    // Complete the 7-cycle reset sequence so PC contains the actual
-    // reset vector value. The 6502 reads the reset vector from $FFFC/$FFFD
-    // during cycles 4-6.
-    machine_.run(7);
+    // Complete the reset sequence and advance to the first instruction
+    // boundary. step_instruction() runs until M6502_IsAboutToExecute,
+    // ensuring the CPU is at Cycle0_All with a valid opcode_pc. This is
+    // more robust than run(7) which may not land on an instruction boundary.
+    machine_.step_instruction();
 
     // Leave machine paused at first instruction for debugger control
     machine_.pause();
