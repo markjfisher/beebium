@@ -42,6 +42,14 @@ export class DebuggerError extends BeebiumError {
     }
 }
 
+/** A breakpoint or watchpoint condition expression is invalid. */
+export class InvalidConditionError extends DebuggerError {
+    constructor(message: string) {
+        super(message);
+        this.name = "InvalidConditionError";
+    }
+}
+
 /** An invalid or failed memory access. */
 export class MemoryAccessError extends BeebiumError {
     constructor(message: string) {

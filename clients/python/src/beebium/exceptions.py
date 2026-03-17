@@ -43,6 +43,12 @@ class DebuggerError(BeebiumError):
     pass
 
 
+class InvalidConditionError(DebuggerError):
+    """A breakpoint or watchpoint condition expression is invalid."""
+
+    pass
+
+
 class MemoryAccessError(BeebiumError):
     """A memory read or write operation failed."""
 

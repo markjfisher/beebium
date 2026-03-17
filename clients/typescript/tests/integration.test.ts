@@ -545,7 +545,7 @@ describe("Integration: Breakpoints", () => {
 
             const bps = await dbg.listBreakpoints();
             expect(bps.some((bp) => bp.id === bpId)).toBe(true);
-            expect(bps.find((bp) => bp.id === bpId)!.address).toBe(0xD9CD);
+            expect(bps.find((bp) => bp.id === bpId)!.startAddress).toBe(0xD9CD);
 
             expect(await dbg.removeBreakpoint(bpId)).toBe(true);
             const after = await dbg.listBreakpoints();
@@ -578,8 +578,8 @@ describe("Integration: Breakpoints", () => {
             await cpu.setPc(0x0400);
             // Step past SEI so interrupts are disabled before free-run
             await dbg.step(1);
-            const state = await dbg.runUntil(0x0403, 1);
-            expect(state.isRunning).toBe(false);
+            const event = await dbg.runUntil(0x0403);
+            expect(event.state.isRunning).toBe(false);
             expect(await cpu.getPc()).toBe(0x0403);
         });
     }, 15000);

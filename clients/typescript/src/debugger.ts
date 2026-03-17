@@ -14,7 +14,7 @@ import type {
 import { StopReason } from "./generated/debugger.js";
 import { promisify } from "./call-utils.js";
 import { toAsyncIterable } from "./stream-utils.js";
-import { DebuggerError } from "./exceptions.js";
+import { DebuggerError, InvalidConditionError } from "./exceptions.js";
 
 export interface ExecutionState {
     isRunning: boolean;
@@ -216,14 +216,23 @@ export class Debugger {
         options: { endAddress?: number; condition?: string; stopCounterpart?: boolean } = {},
     ): Promise<number> {
         const { endAddress = 0, condition = "", stopCounterpart = false } = options;
-        const response = await promisify<
-            { startAddress: number; endAddress: number; condition: string; stopCounterpart: boolean },
-            { success: boolean; id: number }
-        >(
-            this.stub as unknown as Record<string, Function>,
-            "addBreakpoint",
-            { startAddress: address, endAddress, condition, stopCounterpart },
-        );
+        let response;
+        try {
+            response = await promisify<
+                { startAddress: number; endAddress: number; condition: string; stopCounterpart: boolean },
+                { success: boolean; id: number }
+            >(
+                this.stub as unknown as Record<string, Function>,
+                "addBreakpoint",
+                { startAddress: address, endAddress, condition, stopCounterpart },
+            );
+        } catch (e: unknown) {
+            if (e instanceof Error && e.message.includes("INVALID_ARGUMENT")) {
+                const detail = e.message.replace(/^.*INVALID_ARGUMENT:\s*/, "");
+                throw new InvalidConditionError(detail || "Invalid condition expression");
+            }
+            throw e;
+        }
         if (!response.success) {
             throw new DebuggerError(`addBreakpoint failed at address 0x${address.toString(16)}`);
         }
@@ -277,14 +286,23 @@ export class Debugger {
     ): Promise<number> {
         const { condition = "", stopCounterpart = false } = options;
         const typeMap: Record<WatchpointType, number> = { read: 0, write: 1, both: 2 };
-        const response = await promisify<
-            { startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean },
-            { success: boolean; id: number }
-        >(
-            this.stub as unknown as Record<string, Function>,
-            "addWatchpoint",
-            { startAddress, endAddress, type: typeMap[type], condition, stopCounterpart },
-        );
+        let response;
+        try {
+            response = await promisify<
+                { startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean },
+                { success: boolean; id: number }
+            >(
+                this.stub as unknown as Record<string, Function>,
+                "addWatchpoint",
+                { startAddress, endAddress, type: typeMap[type], condition, stopCounterpart },
+            );
+        } catch (e: unknown) {
+            if (e instanceof Error && e.message.includes("INVALID_ARGUMENT")) {
+                const detail = e.message.replace(/^.*INVALID_ARGUMENT:\s*/, "");
+                throw new InvalidConditionError(detail || "Invalid condition expression");
+            }
+            throw e;
+        }
         if (!response.success) {
             throw new DebuggerError(
                 `addWatchpoint failed at 0x${startAddress.toString(16)}-0x${endAddress.toString(16)}`,
@@ -366,10 +384,25 @@ export class Debugger {
 
             (async () => {
                 try {
-                    let sawRunning = false;
+                    let initialSequence: number | null = null;
                     for await (const event of this.watchExecutionState()) {
-                        if (event.state.isRunning) sawRunning = true;
-                        else if (sawRunning) {
+                        if (initialSequence === null) {
+                            initialSequence = event.state.sequence;
+                            if (event.state.isRunning) {
+                                // Already running; wait for a stopped event.
+                                continue;
+                            }
+                            // Initial state is stopped; wait for any
+                            // subsequent stopped event (sequence will advance
+                            // even if the running event is coalesced).
+                            continue;
+                        }
+                        if (event.state.isRunning) {
+                            continue;
+                        }
+                        // Stopped event with a later sequence than the initial
+                        // snapshot means the machine ran and stopped.
+                        if (event.state.sequence > initialSequence) {
                             clearTimeout(timer);
                             resolve(event);
                             return;

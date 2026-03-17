@@ -34,6 +34,7 @@ export {
     ServerStartupError,
     ServerNotFoundError,
     DebuggerError,
+    InvalidConditionError,
     MemoryAccessError,
     TimeoutError,
     DiscError,

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import grpc
 
 from beebium._proto import debugger_pb2, debugger_pb2_grpc
-from beebium.exceptions import DebuggerError
+from beebium.exceptions import DebuggerError, InvalidConditionError
 
 DEFAULT_TIMEOUT = 30.0  # seconds
 
@@ -326,7 +326,12 @@ class Debugger:
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
-        response = self._stub.AddBreakpoint(request)
+        try:
+            response = self._stub.AddBreakpoint(request)
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                raise InvalidConditionError(e.details()) from e
+            raise
         if not response.success:
             raise DebuggerError(f"Failed to add breakpoint at ${address:04X}")
         return response.id
@@ -434,7 +439,12 @@ class Debugger:
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
-        response = self._stub.AddWatchpoint(request)
+        try:
+            response = self._stub.AddWatchpoint(request)
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                raise InvalidConditionError(e.details()) from e
+            raise
         if not response.success:
             raise DebuggerError(
                 f"Failed to add watchpoint at ${start_address:04X}-${end_address:04X}"

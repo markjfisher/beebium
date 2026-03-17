@@ -27,7 +27,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.debugger import ExecutionStateEvent
-from beebium.exceptions import DebuggerError
+from beebium.exceptions import DebuggerError, InvalidConditionError
 from beebium._proto import debugger_pb2, debugger_pb2_grpc
 
 
@@ -257,8 +257,8 @@ class TestConditionalBreakpoints:
         bbc.debugger.remove_breakpoint(bp_id)
 
     def test_invalid_condition_raises(self, bbc):
-        """Invalid condition string raises an error."""
-        with pytest.raises(Exception):
+        """Invalid condition string raises InvalidConditionError."""
+        with pytest.raises(InvalidConditionError):
             bbc.debugger.add_breakpoint(0x1000, condition="invalid !@#")
 
 
@@ -381,7 +381,8 @@ class TestConditionalWatchpoints:
         assert bbc.memory.address.peek[0x0500] == 0x42  # write happened
 
     def test_invalid_condition_raises(self, bbc):
-        with pytest.raises(Exception):
+        """Invalid condition string raises InvalidConditionError."""
+        with pytest.raises(InvalidConditionError):
             bbc.debugger.add_watchpoint(
                 0x1000, 0x1001, condition="bad syntax !!!"
             )

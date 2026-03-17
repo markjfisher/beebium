@@ -40,6 +40,7 @@ from beebium.exceptions import (
     DebuggerError,
     DiscError,
     EconetError,
+    InvalidConditionError,
     MemoryAccessError,
     ServerNotFoundError,
     ServerStartupError,
