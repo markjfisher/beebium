@@ -305,7 +305,7 @@ class Debugger:
             DebuggerError: If the breakpoint cannot be added.
         """
         request = debugger_pb2.AddBreakpointRequest(
-            address=address,
+            start_address=address,
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
@@ -335,7 +335,7 @@ class Debugger:
         """
         response = self._stub.ListBreakpoints(debugger_pb2.Empty())
         return [
-            Breakpoint(id=bp.id, address=bp.address) for bp in response.breakpoints
+            Breakpoint(id=bp.id, address=bp.start_address) for bp in response.breakpoints
         ]
 
     def clear_breakpoints(self) -> int:
