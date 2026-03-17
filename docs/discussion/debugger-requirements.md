@@ -391,8 +391,11 @@ the event stream and the stop mechanism).
 Events delivered via the streaming API must reflect the actual order of
 state transitions. A stop event must not be delivered before the
 corresponding run event. Coalescing multiple transitions into a single
-event is not acceptable. The implementation uses a bounded SPSC event
-queue (moodycamel::ReaderWriterQueue) to guarantee ordering.
+event is not acceptable.
+
+Multiple clients may subscribe to the event stream concurrently. Each
+subscription must receive all events independently -- one subscriber
+draining events must not starve another.
 
 ## 5. Non-Requirements
 
@@ -434,16 +437,42 @@ the actual instruction address. All breakpoint matching, PC reporting
 and `dbus = peek(value)` to ensure the CPU fetches from the correct
 address.
 
-### 6.3 Bus-Stretch Cancellation
+### 6.3 Bus-Stretch Cancellation and Emulation Loop Synchronisation
 
 `Machine::pause()` directly sets `TubeShared::bus_stretch_cancel`,
 breaking the other process out of any spin-wait. `Machine::resume()`
 clears it. No callback indirection.
 
-### 6.4 Event Queue
+RPCs that modify machine state (Reset, Set6502State) must ensure the
+emulation loop is not concurrently accessing the machine. `pause()`
+sets the flag but `run()` may still be mid-cycle. `wait_until_idle()`
+spins until the emulation loop has exited `run()` (tracked by an
+`in_run_` atomic flag). The sequence is: `pause()` →
+`wait_until_idle()` → modify state → leave paused (or `resume()`).
 
-The execution state stream uses a bounded SPSC queue
-(`moodycamel::ReaderWriterQueue`) instead of an `atomic<bool>` flag.
-Each state transition pushes a complete event snapshot. The streaming
-RPC handler drains the queue and sends each event individually,
-preserving ordering and preventing coalescing.
+### 6.4 Event Distribution
+
+The event system has two layers:
+
+1. **SPSC queue**: The emulation loop (breakpoint/watchpoint callbacks)
+   writes events to a single lock-free SPSC queue
+   (`moodycamel::ReaderWriterQueue`). The emulation loop never contends
+   on subscriber mutexes.
+
+2. **Per-subscriber fan-out**: Each `WatchExecutionState` stream has its
+   own queue. Whichever subscriber wakes up first drains the SPSC queue
+   into all subscriber queues (including its own), protected by a
+   drain mutex that maintains the single-consumer guarantee on the SPSC
+   queue. This ensures multiple concurrent subscribers each receive all
+   events independently.
+
+The `Run` RPC enqueues a "running" event with `is_running=true` before
+calling `resume()`, ensuring the running event precedes any breakpoint
+stop event in the queue regardless of timing.
+
+### 6.5 Address Range Sizes
+
+The `end` field in `BreakpointEntry` and `WatchpointEntry` is
+`uint32_t`, not `uint16_t`, because the exclusive end of the full
+address space is `0x10000` which does not fit in 16 bits. The `start`
+field remains `uint16_t` since valid start addresses are 0x0000-0xFFFF.
