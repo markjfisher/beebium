@@ -53,7 +53,7 @@ uint8_t test_peek(void* /*context*/, uint16_t addr) {
 }
 
 // Helper: compile + evaluate with default peek
-uint32_t eval(std::string_view src, const ExprCpuState& cpu) {
+uint64_t eval(std::string_view src, const ExprCpuState& cpu) {
     auto expr = must_compile(src);
     return evaluate(expr, cpu, test_peek, nullptr);
 }
@@ -635,7 +635,7 @@ TEST_CASE("Expression evaluation performance", "[expression][performance]") {
         auto expr = must_compile(tc.expr);
 
         auto start = std::chrono::high_resolution_clock::now();
-        volatile uint32_t result = 0;
+        volatile uint64_t result = 0;
         for (int i = 0; i < iterations; ++i) {
             result = evaluate(expr, cpu, test_peek, nullptr);
         }

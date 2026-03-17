@@ -341,10 +341,12 @@ public:
     // Execute one complete instruction (variable cycles)
     // Returns the number of cycles taken
     uint64_t step_instruction() {
+        in_run_.store(true, std::memory_order_release);
         const uint64_t start = state_.cycle_count;
         do {
             step();
         } while (!M6502_IsAboutToExecute(&state_.cpu));
+        in_run_.store(false, std::memory_order_release);
         return state_.cycle_count - start;
     }
 

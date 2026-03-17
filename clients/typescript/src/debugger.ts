@@ -25,7 +25,11 @@ export interface ExecutionState {
 
 export interface Breakpoint {
     id: number;
-    address: number;
+    startAddress: number;
+    endAddress: number;
+    condition: string;
+    stopCounterpart: boolean;
+    hitCount: number;
 }
 
 export interface ExecutionStateEvent {
@@ -41,6 +45,9 @@ export interface WatchpointInfo {
     startAddress: number;
     endAddress: number;
     type: WatchpointType;
+    condition: string;
+    stopCounterpart: boolean;
+    hitCount: number;
 }
 
 export interface StepResult {
@@ -77,7 +84,11 @@ function toStepResult(proto: ProtoStepResponse): StepResult {
 function toBreakpoint(proto: ProtoBreakpoint): Breakpoint {
     return {
         id: proto.id,
-        address: proto.address,
+        startAddress: proto.startAddress,
+        endAddress: proto.endAddress,
+        condition: proto.condition,
+        stopCounterpart: proto.stopCounterpart,
+        hitCount: proto.hitCount,
     };
 }
 
@@ -249,20 +260,30 @@ export class Debugger {
         return response.countRemoved;
     }
 
-    /** Add a watchpoint on an address range. Returns the watchpoint ID. */
+    /**
+     * Add a watchpoint on an address range. Returns the watchpoint ID.
+     *
+     * @param startAddress - Start address (inclusive).
+     * @param endAddress - End address (exclusive).
+     * @param type - Access type to watch.
+     * @param options.condition - Expression evaluated on hit. Empty = unconditional.
+     * @param options.stopCounterpart - Signal the other processor to stop.
+     */
     async addWatchpoint(
         startAddress: number,
         endAddress: number,
         type: WatchpointType = "both",
+        options: { condition?: string; stopCounterpart?: boolean } = {},
     ): Promise<number> {
+        const { condition = "", stopCounterpart = false } = options;
         const typeMap: Record<WatchpointType, number> = { read: 0, write: 1, both: 2 };
         const response = await promisify<
-            { startAddress: number; endAddress: number; type: number },
+            { startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean },
             { success: boolean; id: number }
         >(
             this.stub as unknown as Record<string, Function>,
             "addWatchpoint",
-            { startAddress, endAddress, type: typeMap[type] },
+            { startAddress, endAddress, type: typeMap[type], condition, stopCounterpart },
         );
         if (!response.success) {
             throw new DebuggerError(
@@ -287,7 +308,7 @@ export class Debugger {
         const typeMap: Record<number, WatchpointType> = { 0: "read", 1: "write", 2: "both" };
         const response = await promisify<
             {},
-            { watchpoints: Array<{ id: number; startAddress: number; endAddress: number; type: number }> }
+            { watchpoints: Array<{ id: number; startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean; hitCount: number }> }
         >(
             this.stub as unknown as Record<string, Function>,
             "listWatchpoints",
@@ -298,6 +319,9 @@ export class Debugger {
             startAddress: wp.startAddress,
             endAddress: wp.endAddress,
             type: typeMap[wp.type] ?? "both",
+            condition: wp.condition ?? "",
+            stopCounterpart: wp.stopCounterpart ?? false,
+            hitCount: wp.hitCount ?? 0,
         }));
     }
 
@@ -331,17 +355,34 @@ export class Debugger {
      * Subscribes to the execution state stream and waits for a transition
      * to the stopped state. If the machine is already stopped when this is
      * called, it waits until the machine runs and then stops again.
+     *
+     * @param timeoutMs - Maximum time to wait in milliseconds. Default 30000.
      */
-    async waitForStop(): Promise<ExecutionStateEvent> {
-        let sawRunning = false;
-        for await (const event of this.watchExecutionState()) {
-            if (event.state.isRunning) {
-                sawRunning = true;
-            } else if (sawRunning) {
-                return event;
-            }
-        }
-        throw new DebuggerError("Execution state stream ended without a stop event");
+    async waitForStop(timeoutMs = 30000): Promise<ExecutionStateEvent> {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new DebuggerError(`Timed out waiting for stop after ${timeoutMs}ms`));
+            }, timeoutMs);
+
+            (async () => {
+                try {
+                    let sawRunning = false;
+                    for await (const event of this.watchExecutionState()) {
+                        if (event.state.isRunning) sawRunning = true;
+                        else if (sawRunning) {
+                            clearTimeout(timer);
+                            resolve(event);
+                            return;
+                        }
+                    }
+                    clearTimeout(timer);
+                    reject(new DebuggerError("Stream ended without stop"));
+                } catch (e) {
+                    clearTimeout(timer);
+                    reject(e);
+                }
+            })();
+        });
     }
 
     /**
@@ -349,11 +390,14 @@ export class Debugger {
      *
      * Sets a temporary breakpoint, subscribes to execution state events,
      * starts execution, and waits for the machine to stop.
+     *
+     * @param address - Address to break at.
+     * @param timeoutMs - Maximum time to wait in milliseconds. Default 30000.
      */
-    async runUntil(address: number): Promise<ExecutionStateEvent> {
+    async runUntil(address: number, timeoutMs = 30000): Promise<ExecutionStateEvent> {
         const bpId = await this.addBreakpoint(address);
         try {
-            const stopPromise = this.waitForStop();
+            const stopPromise = this.waitForStop(timeoutMs);
             await this.run();
             return await stopPromise;
         } finally {

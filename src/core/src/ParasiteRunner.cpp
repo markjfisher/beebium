@@ -96,7 +96,10 @@ void ParasiteRunner::run(uint64_t cycles) {
 }
 
 uint64_t ParasiteRunner::step_instruction() {
-    return cpu_.step_instruction();
+    in_run_.store(true, std::memory_order_release);
+    auto result = cpu_.step_instruction();
+    in_run_.store(false, std::memory_order_release);
+    return result;
 }
 
 void ParasiteRunner::step() {

@@ -168,6 +168,17 @@ public:
 
     const std::vector<WatchpointEntry>& watchpoint_entries() const { return watchpoint_entries_; }
 
+    // Direct watchpoint entry management (for C++ tests)
+    void add_watchpoint_entry(WatchpointEntry entry) {
+        watchpoint_entries_.push_back(std::move(entry));
+        std::sort(watchpoint_entries_.begin(), watchpoint_entries_.end(),
+                  [](const WatchpointEntry& a, const WatchpointEntry& b) {
+                      return a.start < b.start;
+                  });
+    }
+
+    void clear_watchpoint_entries() { watchpoint_entries_.clear(); }
+
     TubeShared* tube_shared() const { return shared_; }
 
     // --- Component access ---

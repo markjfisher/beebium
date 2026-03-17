@@ -59,7 +59,7 @@ enum class ExprOp : uint8_t {
 // Compiled expression bytecode.
 struct CompiledExpression {
     std::vector<ExprOp> ops;
-    std::vector<uint32_t> constants;  // indexed by position in ops stream
+    std::vector<uint64_t> constants;  // indexed by position in ops stream
 
     // Source text (for display/debugging)
     std::string source;
@@ -80,7 +80,7 @@ using PeekFunction = uint8_t(*)(void* context, uint16_t addr);
 
 // Evaluate a compiled expression against CPU state.
 // Returns the top-of-stack value (truthy if non-zero).
-uint32_t evaluate(const CompiledExpression& expr,
+uint64_t evaluate(const CompiledExpression& expr,
                   const ExprCpuState& cpu,
                   PeekFunction peek, void* peek_context);
 

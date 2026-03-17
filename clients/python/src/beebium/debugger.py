@@ -18,8 +18,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+import grpc
+
 from beebium._proto import debugger_pb2, debugger_pb2_grpc
 from beebium.exceptions import DebuggerError
+
+DEFAULT_TIMEOUT = 30.0  # seconds
 
 
 @dataclass(frozen=True)
@@ -498,35 +502,61 @@ class Debugger:
 
     # Event streaming
 
-    def watch_execution_state(self) -> Iterator[ExecutionStateEvent]:
+    def watch_execution_state(
+        self, *, timeout: float = DEFAULT_TIMEOUT
+    ) -> Iterator[ExecutionStateEvent]:
         """Stream execution state change events from the server.
 
         The server sends the current state immediately, then pushes events
         whenever the execution state changes (breakpoint hit, manual stop,
         run resumed, etc.).
 
+        Args:
+            timeout: Wall-clock deadline in seconds. When expired, the gRPC
+                stream raises ``DEADLINE_EXCEEDED`` which is converted to
+                :class:`DebuggerError`.
+
         Yields:
             ExecutionStateEvent for each state change.
+
+        Raises:
+            DebuggerError: If the timeout expires before the stream ends
+                naturally.
         """
         request = debugger_pb2.WatchExecutionStateRequest()
-        for response in self._stub.WatchExecutionState(request):
-            yield _to_execution_state_event(response)
+        try:
+            for response in self._stub.WatchExecutionState(
+                request, timeout=timeout
+            ):
+                yield _to_execution_state_event(response)
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise DebuggerError(
+                    f"Timed out waiting for execution state event after {timeout}s"
+                ) from None
+            raise
 
-    def wait_for_stop(self) -> ExecutionStateEvent:
+    def wait_for_stop(
+        self, *, timeout: float = DEFAULT_TIMEOUT
+    ) -> ExecutionStateEvent:
         """Wait for the machine to stop executing.
 
         Subscribes to the execution state stream and waits for a transition
         to the stopped state. If the machine is already stopped when this is
         called, it waits until the machine runs and then stops again.
 
+        Args:
+            timeout: Wall-clock deadline in seconds for the entire wait.
+
         Returns:
             The event that caused the machine to stop.
 
         Raises:
-            DebuggerError: If the stream ends without a stop event.
+            DebuggerError: If the timeout expires or the stream ends without
+                a stop event.
         """
         saw_running = False
-        for event in self.watch_execution_state():
+        for event in self.watch_execution_state(timeout=timeout):
             if event.state.is_running:
                 saw_running = True
             elif saw_running:
@@ -536,7 +566,11 @@ class Debugger:
     # Run-until helpers
 
     def run_until(
-        self, address: int, timeout_cycles: int | None = None
+        self,
+        address: int,
+        timeout_cycles: int | None = None,
+        *,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> ExecutionState:
         """Run until the PC reaches the given address.
 
@@ -546,17 +580,21 @@ class Debugger:
         Args:
             address: The address to run until.
             timeout_cycles: Maximum cycles to run (not currently implemented).
+            timeout: Wall-clock deadline in seconds. If the breakpoint is not
+                hit within this time, a :class:`DebuggerError` is raised.
 
         Returns:
             The execution state after hitting the address.
 
         Raises:
-            DebuggerError: If the breakpoint cannot be set.
+            DebuggerError: If the breakpoint cannot be set, or if the timeout
+                expires before the breakpoint is hit.
         """
         bp_id = self.add_breakpoint(address)
         try:
             stream = self._stub.WatchExecutionState(
-                debugger_pb2.WatchExecutionStateRequest()
+                debugger_pb2.WatchExecutionStateRequest(),
+                timeout=timeout,
             )
             # Consume initial state
             next(stream)
@@ -571,5 +609,11 @@ class Debugger:
                     stream.cancel()
                     return _to_execution_state(event.state)
             raise DebuggerError("Stream ended without stop")
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise DebuggerError(
+                    f"Timed out waiting for stop after {timeout}s"
+                ) from None
+            raise
         finally:
             self.remove_breakpoint(bp_id)

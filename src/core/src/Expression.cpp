@@ -24,16 +24,16 @@ namespace beebium {
 // VM evaluator
 // ============================================================================
 
-uint32_t evaluate(const CompiledExpression& expr,
+uint64_t evaluate(const CompiledExpression& expr,
                   const ExprCpuState& cpu,
                   PeekFunction peek, void* peek_context) {
     // Small fixed-size stack (expressions are shallow)
-    std::array<uint32_t, 32> stack{};
+    std::array<uint64_t, 32> stack{};
     int sp = 0;
     int const_idx = 0;
 
-    auto push = [&](uint32_t v) { if (sp < 32) stack[static_cast<size_t>(sp++)] = v; };
-    auto pop = [&]() -> uint32_t {
+    auto push = [&](uint64_t v) { if (sp < 32) stack[static_cast<size_t>(sp++)] = v; };
+    auto pop = [&]() -> uint64_t {
         if (sp <= 0) return 0;
         return stack[static_cast<size_t>(--sp)];
     };
@@ -55,8 +55,8 @@ uint32_t evaluate(const CompiledExpression& expr,
         case ExprOp::PushD:      push((cpu.p >> 3) & 1); break;
         case ExprOp::PushV:      push((cpu.p >> 6) & 1); break;
         case ExprOp::PushN:      push((cpu.p >> 7) & 1); break;
-        case ExprOp::PushCycles: push(static_cast<uint32_t>(cpu.cycles)); break;
-        case ExprOp::PushHits:   push(static_cast<uint32_t>(cpu.hits)); break;
+        case ExprOp::PushCycles: push(cpu.cycles); break;
+        case ExprOp::PushHits:   push(cpu.hits); break;
         case ExprOp::MemPeek: {
             uint16_t addr = static_cast<uint16_t>(pop());
             push(peek ? peek(peek_context, addr) : 0);
@@ -70,14 +70,14 @@ uint32_t evaluate(const CompiledExpression& expr,
         case ExprOp::BitAnd: { auto b = pop(); auto a = pop(); push(a & b); break; }
         case ExprOp::BitOr:  { auto b = pop(); auto a = pop(); push(a | b); break; }
         case ExprOp::BitXor: { auto b = pop(); auto a = pop(); push(a ^ b); break; }
-        case ExprOp::Eq:     { auto b = pop(); auto a = pop(); push(a == b ? 1u : 0u); break; }
-        case ExprOp::Ne:     { auto b = pop(); auto a = pop(); push(a != b ? 1u : 0u); break; }
-        case ExprOp::Lt:     { auto b = pop(); auto a = pop(); push(a < b ? 1u : 0u); break; }
-        case ExprOp::Gt:     { auto b = pop(); auto a = pop(); push(a > b ? 1u : 0u); break; }
-        case ExprOp::Le:     { auto b = pop(); auto a = pop(); push(a <= b ? 1u : 0u); break; }
-        case ExprOp::Ge:     { auto b = pop(); auto a = pop(); push(a >= b ? 1u : 0u); break; }
-        case ExprOp::LogAnd: { auto b = pop(); auto a = pop(); push((a && b) ? 1u : 0u); break; }
-        case ExprOp::LogOr:  { auto b = pop(); auto a = pop(); push((a || b) ? 1u : 0u); break; }
+        case ExprOp::Eq:     { auto b = pop(); auto a = pop(); push(a == b ? 1ULL : 0ULL); break; }
+        case ExprOp::Ne:     { auto b = pop(); auto a = pop(); push(a != b ? 1ULL : 0ULL); break; }
+        case ExprOp::Lt:     { auto b = pop(); auto a = pop(); push(a < b ? 1ULL : 0ULL); break; }
+        case ExprOp::Gt:     { auto b = pop(); auto a = pop(); push(a > b ? 1ULL : 0ULL); break; }
+        case ExprOp::Le:     { auto b = pop(); auto a = pop(); push(a <= b ? 1ULL : 0ULL); break; }
+        case ExprOp::Ge:     { auto b = pop(); auto a = pop(); push(a >= b ? 1ULL : 0ULL); break; }
+        case ExprOp::LogAnd: { auto b = pop(); auto a = pop(); push((a && b) ? 1ULL : 0ULL); break; }
+        case ExprOp::LogOr:  { auto b = pop(); auto a = pop(); push((a || b) ? 1ULL : 0ULL); break; }
         case ExprOp::LogNot: { auto a = pop(); push(a ? 0u : 1u); break; }
         }
     }
@@ -281,7 +281,7 @@ struct Parser {
 
     void parse_number() {
         size_t start = pos;
-        uint32_t value = 0;
+        uint64_t value = 0;
 
         if (pos + 1 < src.size() && src[pos] == '0' && (src[pos + 1] == 'x' || src[pos + 1] == 'X')) {
             // Hex: 0xFF

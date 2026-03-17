@@ -476,3 +476,63 @@ The `end` field in `BreakpointEntry` and `WatchpointEntry` is
 `uint32_t`, not `uint16_t`, because the exclusive end of the full
 address space is `0x10000` which does not fit in 16 bits. The `start`
 field remains `uint16_t` since valid start addresses are 0x0000-0xFFFF.
+
+### 6.6 Parasite Reset Coordination
+
+The host's Reset RPC pauses the host and calls `wait_until_idle()` to
+ensure the host's emulation loop has exited `run()` before modifying
+state. When a Tube parasite is attached, the parasite has its own
+emulation loop. The host's Reset RPC does not currently coordinate
+with the parasite -- the parasite continues running while the host
+resets. The parasite's own Reset RPC handles its own emulation loop
+independently.
+
+For a coupled reset (both host and parasite), the client should:
+1. Stop the parasite (via its debugger service)
+2. Reset the host (via its debugger service)
+3. The host reset triggers a Tube reset via TubeShared, which the
+   parasite detects via its lifecycle mailbox and resets itself.
+
+### 6.7 Expression Engine
+
+The expression VM uses a 64-bit stack (`uint64_t`) for all values,
+including the `cycles` and `hits` counters. This avoids overflow for
+long-running debugging sessions (the 6502 at 2 MHz generates ~4
+billion cycles in 35 minutes; 64-bit counters last 292,000 years).
+
+## 7. Future Work
+
+### 7.1 Server-Side Disassembly
+
+A disassembly RPC would be more efficient than client-side
+disassembly and could handle banked memory correctly (reading from
+the correct bank based on the current ROM selection). The choice of
+assembler syntax (acme, beebasm, etc.) needs to be decided.
+
+### 7.2 Stack Trace / Call Stack
+
+Walking the 6502 stack to reconstruct the call chain (JSR return
+addresses) would help understand execution context. This is heuristic
+-- the 6502 has no frame pointer, and the stack may contain data as
+well as return addresses -- but still useful for common cases where
+JSR/RTS pairs are well-formed.
+
+### 7.3 Memory Access Trace Stream
+
+A "memory trace" stream would enable real-time monitoring of memory
+accesses from a remote client. Currently, recording watchpoints
+(condition `false`) only fire the C++ in-process callback -- there is
+no way for a remote client to receive per-access data without
+stopping. A dedicated streaming RPC for watchpoint hit data would
+address this, but it would generate high traffic for active address
+ranges.
+
+### 7.4 Register State in Stop Events (Decision: Deferred)
+
+Including the full CPU register state in each stop event would
+eliminate the extra `Get6502State` round-trip after every stop. However,
+this was evaluated and deferred: the additional data per event is small,
+but stop events can be frequent (e.g. full-range breakpoints with
+conditions that evaluate to false still generate callbacks internally,
+even though they don't produce external events). The current design
+keeps events lightweight and lets clients fetch registers on demand.

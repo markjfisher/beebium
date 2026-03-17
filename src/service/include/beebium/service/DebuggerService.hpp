@@ -857,7 +857,9 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Get live hit counts from the machine's breakpoint entries
+    // Hit counts are only safe to read when the machine is paused
+    // (they're mutated by the emulation loop during run()).
+    const bool can_read_hits = machine_.is_paused();
     const auto& live_entries = machine_.breakpoint_entries();
 
     for (const auto& bp : breakpoints_) {
@@ -869,11 +871,12 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
             pb_bp->set_condition(bp.condition->source);
         }
         pb_bp->set_stop_counterpart(bp.stop_counterpart);
-        // Find live hit count for this breakpoint
-        for (const auto& entry : live_entries) {
-            if (entry.id == bp.id) {
-                pb_bp->set_hit_count(entry.hit_count);
-                break;
+        if (can_read_hits) {
+            for (const auto& entry : live_entries) {
+                if (entry.id == bp.id) {
+                    pb_bp->set_hit_count(entry.hit_count);
+                    break;
+                }
             }
         }
     }
@@ -1016,6 +1019,7 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    const bool can_read_hits = machine_.is_paused();
     const auto& live_entries = machine_.watchpoint_entries();
 
     for (const auto& wp : watchpoints_) {
@@ -1032,10 +1036,12 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
             pb_wp->set_condition(wp.condition->source);
         }
         pb_wp->set_stop_counterpart(wp.stop_counterpart);
-        for (const auto& entry : live_entries) {
-            if (entry.id == wp.id) {
-                pb_wp->set_hit_count(entry.hit_count);
-                break;
+        if (can_read_hits) {
+            for (const auto& entry : live_entries) {
+                if (entry.id == wp.id) {
+                    pb_wp->set_hit_count(entry.hit_count);
+                    break;
+                }
             }
         }
     }
