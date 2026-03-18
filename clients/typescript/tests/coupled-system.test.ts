@@ -204,7 +204,7 @@ describe("CoupledSystem", () => {
         }
     }, 30000);
 
-    it.skip("parasite runUntil should stop at an address", async () => {
+    it("parasite runUntil should stop at an address", async () => {
         const host = await launchTubeServer();
         try {
             await host.runUntilOrTimeout(
@@ -244,6 +244,62 @@ describe("CoupledSystem", () => {
             await host.close();
         }
     }, 30000);
+
+    it("parasite debugger.stop() should work when parasite is running", async () => {
+        const host = await launchTubeServer();
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(readFn(host), "Acorn TUBE"),
+                10,
+            );
+            const parasite = await host.connectParasite();
+
+            // Parasite should be running freely after boot
+            expect(await parasite.debugger.isRunning()).toBe(true);
+
+            // Stop should work
+            await parasite.debugger.stop();
+            expect(await parasite.debugger.isRunning()).toBe(false);
+
+            // Run should work
+            await parasite.debugger.run();
+            expect(await parasite.debugger.isRunning()).toBe(true);
+
+            // Stop again should work
+            await parasite.debugger.stop();
+            expect(await parasite.debugger.isRunning()).toBe(false);
+
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 15000);
+
+    it("runUntil should throw on timeout when breakpoint is never hit", async () => {
+        const host = await launchTubeServer();
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(readFn(host), "Acorn TUBE"),
+                10,
+            );
+
+            const parasite = await host.connectParasite();
+
+            // Set a breakpoint at an address the parasite will never reach
+            // (address $0001 is zero page, never executed in the idle loop).
+            // runUntil should timeout and throw.
+            await expect(
+                parasite.debugger.runUntil(0x0001, 2000), // 2s timeout
+            ).rejects.toThrow(/Timed out/);
+
+            // Parasite should be stopped after timeout
+            expect(await parasite.debugger.isRunning()).toBe(false);
+
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 15000);
 
     it("parasite cycle-budget breakpoint should fire", async () => {
         const host = await launchTubeServer();

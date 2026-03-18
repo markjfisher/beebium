@@ -441,17 +441,25 @@ export class Debugger {
             const runSequence = initial.value!.state.sequence;
             await this.run();
 
+            // Timeout: stop the machine to generate a STOP event that
+            // wakes up the stream. We can't use iter.return() because
+            // it can't interrupt an async generator blocked in await.
+            let timedOut = false;
             const timer = setTimeout(() => {
-                iter.return(undefined);
+                timedOut = true;
+                this.stop().catch(() => {});
             }, timeoutMs);
 
             for await (const event of iter) {
                 if (!event.state.isRunning && event.state.sequence > runSequence) {
                     clearTimeout(timer);
+                    if (timedOut) {
+                        throw new DebuggerError(`Timed out waiting for stop after ${timeoutMs}ms`);
+                    }
                     return event;
                 }
             }
-            throw new DebuggerError(`Timed out waiting for stop after ${timeoutMs}ms`);
+            throw new DebuggerError(`Stream ended without stop`);
         } finally {
             await this.removeBreakpoint(bpId);
         }

@@ -109,6 +109,7 @@ void ParasiteRunner::step() {
 
 void ParasiteRunner::pause() {
     paused_.store(true, std::memory_order_release);
+    ++sequence_;
 }
 
 void ParasiteRunner::resume() {
@@ -118,6 +119,7 @@ void ParasiteRunner::resume() {
     shared_->debugger_stop_signal.store(false, std::memory_order_release);
     shared_->bus_stretch_cancel.store(false, std::memory_order_release);
     pause_cv_.notify_all();
+    ++sequence_;
 }
 
 void ParasiteRunner::request_shutdown() {
