@@ -739,6 +739,46 @@ host-parasite scheduling.
 
 This is the fundamental cause of the non-deterministic divergence.
 
+### Back-reference Tube reads: disproven
+
+jsbeeb readmem intercept during the full decompression shows:
+- `$FEF8` (R1 status): 3133 reads (polling loop)
+- `$FEF9` (R1 data): 702 reads (all legitimate)
+- `$FEFE` (R4 status): 1 read (incidental)
+
+**Zero back-reference reads from Tube registers.** The decompressor
+never reads from `$FEFA`, `$FEFB`, `$FEFC`, `$FEFD`, or `$FEFF`.
+The LZ encoding avoids back-references into the Tube register area.
+The 200+ reads from `$FEFA` seen earlier on Beebium were from the
+Tube Client ROM's boot-time R2 polling, not from the decompressor.
+
+### R1 data confirmed correct (full 702 bytes)
+
+All 702 R1 reads have `was_ready=1` (no stale reads). The byte
+values match jsbeeb exactly. The R1 data path is fully correct.
+
+### Free-running without debugger: still fails
+
+Running both host and parasite freely for 15 seconds (no CoupledSystem
+chunks, no breakpoints, no `bus_stretch_cancel` triggers) produces
+the same "Initialising" hang. This eliminates the `bus_stretch_cancel`
+mechanism as the cause -- the bug is a pure concurrent execution issue.
+
+### Remaining hypotheses
+
+The R1 data is correct. No back-references hit Tube registers. No
+spurious interrupts. The `$31` bit buffer and `$2F` output pointer
+traces match for 200+ entries. Yet the decompressor diverges at a
+non-deterministic point.
+
+The divergence must be in the **back-reference data from RAM** that
+differs due to RAM being written by the host via the R3 NMI transfer
+or other Tube Client ROM operations that happen concurrently with the
+decompressor. On real hardware, the timing is deterministic because
+the host and parasite share a system clock with the Tube ULA mediating
+all access. In Beebium's shared-memory model, the processors run on
+separate OS threads with no clock synchronisation.
+
 ### Fix options
 
 1. **Lock-step execution**: run host and parasite in alternating batches
