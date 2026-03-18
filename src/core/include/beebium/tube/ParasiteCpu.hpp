@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "InstructionTrace.hpp"
 #include "ParasiteMemoryMap.hpp"
 #include "TubeParasitePort.hpp"
 
@@ -66,6 +67,12 @@ public:
     M6502& cpu() { return cpu_; }
     const M6502& cpu() const { return cpu_; }
 
+    // Instruction trace buffer.  Disabled by default; enable via
+    // trace().set_enabled(true).  Records PC, registers, and opcode
+    // at every instruction boundary with zero overhead when disabled.
+    InstructionTrace& trace() { return trace_; }
+    const InstructionTrace& trace() const { return trace_; }
+
 private:
     static constexpr M6502_DeviceIRQFlags kPirqMask = 1;
     static constexpr M6502_DeviceNMIFlags kPnmiMask = 1;
@@ -86,6 +93,9 @@ private:
     // Entry: detected when M6502ReadType_Interrupt and it's an NMI (not IRQ).
     // Exit:  detected when an RTI instruction (opcode $40) is about to execute.
     bool in_nmi_handler_ = false;
+
+    // Instruction trace (not allocated until capacity is set; default 4M entries).
+    InstructionTrace trace_;
 };
 
 }  // namespace beebium

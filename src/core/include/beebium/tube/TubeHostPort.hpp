@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "RegisterTrace.hpp"
 #include "TubeHostBackend.hpp"
 #include "TubeShared.hpp"
 #include "TubeUla.hpp"  // for FLAG_* constants
@@ -61,6 +62,11 @@ public:
         return shared_->control_flags.load(std::memory_order_acquire);
     }
 
+    // Register access trace.  Disabled by default; call
+    // register_trace().resize(N) then register_trace().set_enabled(true).
+    RegisterTrace& register_trace() { return register_trace_; }
+    const RegisterTrace& register_trace() const { return register_trace_; }
+
 private:
     // Read a byte from the R1 P-to-H FIFO (24-byte ring buffer).
     // Returns 0 if the FIFO is empty.
@@ -79,6 +85,8 @@ private:
     bool has_pending_write_ = false;
     uint8_t pending_offset_ = 0;
     uint8_t pending_value_ = 0;
+
+    RegisterTrace register_trace_;
 };
 
 }  // namespace beebium

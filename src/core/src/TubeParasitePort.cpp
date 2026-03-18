@@ -34,6 +34,7 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
             result |= TubeUla::DATA_AVAILABLE;
         if (shared_->r1_p2h.count.load(std::memory_order_acquire) < 24)
             result |= TubeUla::SPACE_AVAILABLE;
+        register_trace_.record(0, 0, result, false);
         break;
     }
 
@@ -53,7 +54,8 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
         result = shared_->r1_h2p.value.load(std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
-            shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
+            uint64_t seq = shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
+            register_trace_.record(seq, 1, result, false);
         }
         break;
     }

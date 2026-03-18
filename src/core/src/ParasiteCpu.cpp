@@ -56,6 +56,15 @@ void ParasiteCpu::tick() {
         memory_.write(addr, cpu_.dbus);
     }
 
+    // Record instruction trace at opcode fetch (dbus has the opcode,
+    // opcode_pc has the address).  The branch-on-disabled check is the
+    // only cost when tracing is off.
+    if (M6502_IsAboutToExecute(&cpu_)) {
+        trace_.record(cycle_count_, cpu_.opcode_pc.w,
+                      cpu_.a, cpu_.x, cpu_.y, cpu_.s.b.l,
+                      M6502_GetP(&cpu_).value, cpu_.dbus);
+    }
+
     // Route Tube interrupt lines to CPU.
     // PIRQ is level-sensitive (directly drives IRQ).
     M6502_SetDeviceIRQ(&cpu_, kPirqMask, tube_port_.pirq() ? 1 : 0);

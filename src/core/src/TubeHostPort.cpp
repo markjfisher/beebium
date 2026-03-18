@@ -234,7 +234,8 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         }
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
-        shared_->counters.r1_h2p_writes.fetch_add(1, std::memory_order_relaxed);
+        uint64_t seq = shared_->counters.r1_h2p_writes.fetch_add(1, std::memory_order_relaxed);
+        register_trace_.record(seq, 1, value, true);
         break;
     }
 
