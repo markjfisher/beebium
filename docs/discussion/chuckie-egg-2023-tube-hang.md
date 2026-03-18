@@ -450,13 +450,70 @@ correct but is not the root cause of CE2023 -- the timing difference in
 R1 status (`BIT $FEF8` returning bit 7 set on Beebium vs clear on
 jsbeeb) causes the first bit-serial byte to be consumed differently.
 
+### Decompressor output comparison
+
+Capturing A register and output pointer ($2F/$30) at the output write
+instruction `STA ($2F)` at `$0A00`:
+
+| Byte # | jsbeeb A | jsbeeb addr | Beebium A | Beebium addr |
+|--------|----------|-------------|-----------|--------------|
+| 0 | `$2C` | `$FC00` | `$2C` | `$FC00` |
+| 1 | `$F8` | `$FC01` | `$2C` | `$FC00` |
+| 2 | `$FE` | `$FC02` | `$2C` | `$FC00` |
+| 3 | `$10` | `$FC03` | `$2C` | `$FC00` |
+| ... | (advances) | (advances) | `$2C` | `$FC00` |
+
+The first output byte matches (`$2C` at `$FC00`). After that, Beebium
+writes `$2C` to `$FC00` repeatedly -- the output pointer never advances.
+The decompressor main loop is stuck in a cycle that produces the same
+output byte at the same address.
+
+The output routine at `$0A00-$0A0C` increments `$2F` (the pointer low
+byte) after each `STA ($2F)`. If the pointer isn't advancing, either
+the increment isn't being reached, or something resets `$2F` before
+each call.
+
 ### Next investigation step
 
-Compare CPU state at `$09E3` (the convergence point after both the
-Tube path and memory path in the bit-serial reader). At this address,
-`$31` has been updated with the new byte. Compare `$31` and A register
-values between jsbeeb and Beebium after the first R1 byte to determine
-if the data byte itself differs or if the bit-serial state diverges.
+Set a breakpoint at `$0A03` (`INC $2F`) on Beebium's parasite and
+verify it is reached after each `STA ($2F)`. If it IS reached, something
+else resets the pointer. If NOT, the code path from `$0A00` to `$0A03`
+is being diverted -- likely by the I/O write protection at `$09F0-$09FC`
+which skips both the write AND the pointer increment when the output
+address is in `$FEE0-$FEFF`.
+
+The I/O protection check:
+```
+$09EF  PHA
+$09F0  LDA $30        ; high byte of output pointer
+$09F2  CMP #$FE       ; is it $FE?
+$09F4  BNE $09FF      ; no, normal write
+$09F6  LDA $2F        ; low byte
+$09F8  CMP #$E0       ; >= $E0?
+$09FA  BCC $09FF      ; no, normal write
+$09FC  PLA            ; SKIP write and pointer increment
+$09FD  BRA $0A02      ; branch to $0A02 (past STA but BEFORE INC)
+$09FF  PLA
+$0A00  STA ($2F)      ; write output byte
+$0A02  PHA            ; <-- $09FD branches here
+$0A03  INC $2F        ; increment pointer
+```
+
+Wait -- `$09FD: BRA $0A02` branches to `$0A02`, which is `PHA`. Then
+`$0A03: INC $2F` increments the pointer. So even the I/O-skip path
+still increments the pointer! The I/O protection only skips the `STA`,
+not the `INC`. This means the pointer should always advance.
+
+Unless the BRA target is wrong. `$09FD: BRA $0A02` -- the offset byte
+is `$03` (BRA is `$80 $03`). From `$09FF` (PC after fetching the 2-byte
+instruction at `$09FD`), adding `$03` gives `$0A02`. So it branches to
+`$0A02`. If `$0A02` is `PHA` ($48), then `$0A03` is `INC $2F` ($E6 $2F).
+The pointer increments on both paths. So the pointer MUST be advancing.
+
+If the pointer advances but the output shows the same address, the main
+decompressor loop must be resetting $2F/$30 between output calls. This
+would happen in the back-reference copy loop at `$09E9-$090C` which
+uses `$33/$34` as the source pointer and `$2F` as the Y offset.
 
 ### Fix required
 
