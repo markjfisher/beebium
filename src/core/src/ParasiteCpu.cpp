@@ -77,12 +77,6 @@ void ParasiteCpu::tick() {
         M6502_SetDeviceNMI(&cpu_, kPnmiMask, tube_port_.pnmi_level() ? 1 : 0);
     }
 
-    // Complete deferred Tube register side effects at the END of this
-    // tick. This models the real Tube ULA clearing the ready flag at
-    // the end of the bus cycle, so the next tick's status reads see
-    // the correct ready=0 state.
-    tube_port_.complete_cycle();
-
     ++cycle_count_;
 }
 

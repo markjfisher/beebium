@@ -38,23 +38,22 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
     }
 
     case 1: {
-        // R1 data: read from H-to-P latch (deferred ready clear).
+        // R1 data: read from H-to-P latch.
         //
-        // The value is captured immediately but the ready flag is NOT cleared
-        // until complete_cycle() runs at the END of this CPU tick. This
-        // models the real Tube ULA which holds the latch stable for the
-        // entire bus cycle. Re-reads within the same tick return the cached
-        // value, preventing TOCTOU races in multi-cycle instructions.
-        if (pending_clear_mask_ & 0x01) {
-            result = cached_r1_;
-        } else {
-            auto was_ready = shared_->r1_h2p.ready.load(std::memory_order_acquire);
-            cached_r1_ = shared_->r1_h2p.value.load(std::memory_order_relaxed);
-            result = cached_r1_;
-            if (was_ready != 0) {
-                pending_clear_mask_ |= 0x01;
-                shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
-            }
+        // Three-step protocol to avoid both ARM reordering AND TOCTOU:
+        //   1. Load ready (acquire) -- synchronises with host's release
+        //   2. Load value (relaxed) -- safe: host can't write until ready=0
+        //   3. Clear ready (release) -- signals host that latch is free
+        //
+        // We MUST load value BEFORE clearing ready, because clearing ready
+        // allows the host to immediately write a new value (its spin-wait
+        // exits). If we clear ready first (exchange(0)) then load value,
+        // the host may overwrite the value between steps.
+        auto was_ready = shared_->r1_h2p.ready.load(std::memory_order_acquire);
+        result = shared_->r1_h2p.value.load(std::memory_order_relaxed);
+        shared_->r1_h2p.ready.store(0, std::memory_order_release);
+        if (was_ready != 0) {
+            shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
     }
@@ -73,17 +72,14 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
     }
 
     case 3: {
-        // R2 data: read from H-to-P latch (deferred ready clear).
-        if (pending_clear_mask_ & 0x02) {
-            result = cached_r2_;
-        } else {
-            auto was_ready = shared_->r2_h2p.ready.load(std::memory_order_acquire);
-            cached_r2_ = shared_->r2_h2p.value.load(std::memory_order_relaxed);
-            result = cached_r2_;
-            if (was_ready != 0) {
-                pending_clear_mask_ |= 0x02;
-                shared_->counters.r2_h2p_reads.fetch_add(1, std::memory_order_relaxed);
-            }
+        // R2 data: read from H-to-P latch.
+        // Three-step protocol: load ready, load value, clear ready.
+        // See R1 comment for full rationale.
+        auto was_ready = shared_->r2_h2p.ready.load(std::memory_order_acquire);
+        result = shared_->r2_h2p.value.load(std::memory_order_relaxed);
+        shared_->r2_h2p.ready.store(0, std::memory_order_release);
+        if (was_ready != 0) {
+            shared_->counters.r2_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
     }
@@ -108,21 +104,11 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
     }
 
     case 5: {
-        // R3 data: read from H-to-P register (deferred dequeue).
-        if (pending_clear_mask_ & 0x04) {
-            result = cached_r3_;
-        } else {
-            uint8_t count = shared_->r3_h2p.count.load(std::memory_order_acquire);
-            if (count > 0) {
-                uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
-                cached_r3_ = shared_->r3_h2p.data[head].load(std::memory_order_acquire);
-                pending_clear_mask_ |= 0x04;
-                shared_->counters.r3_h2p_reads.fetch_add(1, std::memory_order_relaxed);
-            } else {
-                cached_r3_ = shared_->host_data_latch.load(std::memory_order_relaxed);
-            }
-            result = cached_r3_;
-        }
+        // R3 data: read from H-to-P register (shift down).
+        uint8_t pre_count = shared_->r3_h2p.count.load(std::memory_order_acquire);
+        result = dequeue_r3_h2p();
+        if (pre_count > 0)
+            shared_->counters.r3_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         break;
     }
 
@@ -140,17 +126,13 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
     }
 
     case 7: {
-        // R4 data: read from H-to-P latch (deferred ready clear).
-        if (pending_clear_mask_ & 0x08) {
-            result = cached_r4_;
-        } else {
-            auto was_ready = shared_->r4_h2p.ready.load(std::memory_order_acquire);
-            cached_r4_ = shared_->r4_h2p.value.load(std::memory_order_relaxed);
-            result = cached_r4_;
-            if (was_ready != 0) {
-                pending_clear_mask_ |= 0x08;
-                shared_->counters.r4_h2p_reads.fetch_add(1, std::memory_order_relaxed);
-            }
+        // R4 data: read from H-to-P latch.
+        // Three-step protocol: load ready, load value, clear ready.
+        auto was_ready = shared_->r4_h2p.ready.load(std::memory_order_acquire);
+        result = shared_->r4_h2p.value.load(std::memory_order_relaxed);
+        shared_->r4_h2p.ready.store(0, std::memory_order_release);
+        if (was_ready != 0) {
+            shared_->counters.r4_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
     }
@@ -352,33 +334,6 @@ void TubeParasitePort::update_pnmi()
 }
 
 // ---------------------------------------------------------------------------
-// Deferred bus cycle completion
-// ---------------------------------------------------------------------------
-
-void TubeParasitePort::complete_cycle()
-{
-    if (pending_clear_mask_ == 0) return;
-
-    if (pending_clear_mask_ & 0x01)
-        shared_->r1_h2p.ready.store(0, std::memory_order_release);
-
-    if (pending_clear_mask_ & 0x02)
-        shared_->r2_h2p.ready.store(0, std::memory_order_release);
-
-    if (pending_clear_mask_ & 0x04) {
-        uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
-        shared_->r3_h2p.head.store(head ^ 1, std::memory_order_relaxed);
-        shared_->r3_h2p.count.fetch_sub(1, std::memory_order_release);
-    }
-
-    if (pending_clear_mask_ & 0x08)
-        shared_->r4_h2p.ready.store(0, std::memory_order_release);
-
-    pending_clear_mask_ = 0;
-    update_pnmi();
-}
-
-// ---------------------------------------------------------------------------
 // Reset
 // ---------------------------------------------------------------------------
 
@@ -419,11 +374,9 @@ void TubeParasitePort::reset()
     shared_->r4_h2p.value.store(0, std::memory_order_relaxed);
     shared_->r4_h2p.ready.store(0, std::memory_order_relaxed);
 
-    // Clear interrupt and deferred state.
+    // Clear interrupt state.
     prev_pnmi_ = false;
     pnmi_edge_ = false;
-    pending_clear_mask_ = 0;
-    cached_r1_ = cached_r2_ = cached_r3_ = cached_r4_ = 0;
 
     // Release fence so all relaxed stores are visible.
     std::atomic_thread_fence(std::memory_order_release);

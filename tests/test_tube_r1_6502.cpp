@@ -214,3 +214,121 @@ TEST_CASE("6502 R1 polled read: 200 bytes, repeated 50 times", "[tube][6502][r1]
         }
     }
 }
+
+TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tube][6502][r1][diagnostic]") {
+    // After each tick, check if the CPU just completed a read from $FEF9.
+    // If so, verify that cpu.dbus matches the expected byte.
+
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite_port(&shared);
+
+    auto rom = make_stub_rom(CODE_ADDR);
+    ParasiteMemoryMap memory(parasite_port, rom);
+    ParasiteCpu cpu(memory, parasite_port);
+
+    constexpr uint8_t NUM_BYTES = 200;
+    plant_r1_reader(memory, NUM_BYTES);
+    memory.read(0xFEF8);
+    memory.ram(0xFFFC) = CODE_ADDR & 0xFF;
+    memory.ram(0xFFFD) = (CODE_ADDR >> 8) & 0xFF;
+    cpu.reset();
+
+    // Track what the host has written
+    std::atomic<uint8_t> last_host_value{0};
+    std::atomic<int> host_write_count{0};
+
+    std::thread host_thread([&] {
+        for (int i = 0; i < NUM_BYTES; ++i) {
+            uint8_t val = static_cast<uint8_t>(i & 0xFF);
+            host.host_write(1, val);
+            last_host_value.store(val, std::memory_order_release);
+            host_write_count.store(i + 1, std::memory_order_release);
+        }
+    });
+
+    int r1_reads = 0;
+    int first_mismatch = -1;
+    uint8_t mismatch_dbus = 0, mismatch_expected = 0;
+
+    for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        cpu.tick();
+
+        // After tick: if the address bus was $FEF9 and it was a read,
+        // the dbus now contains the R1 data byte.
+        if (cpu.cpu().abus.w == 0xFEF9 && cpu.cpu().read) {
+            uint8_t got = cpu.cpu().dbus;
+            uint8_t expected = static_cast<uint8_t>(r1_reads & 0xFF);
+            if (got != expected && first_mismatch < 0) {
+                first_mismatch = r1_reads;
+                mismatch_dbus = got;
+                mismatch_expected = expected;
+            }
+            r1_reads++;
+        }
+    }
+
+    host_thread.join();
+
+    if (first_mismatch >= 0) {
+        FAIL("R1 read #" << first_mismatch
+             << ": dbus=$" << std::hex << static_cast<int>(mismatch_dbus)
+             << " expected=$" << std::hex << static_cast<int>(mismatch_expected)
+             << " (total R1 reads: " << std::dec << r1_reads << ")");
+    }
+
+    REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
+    CHECK(r1_reads == NUM_BYTES);
+}
+
+TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube][6502][r1][diagnostic]") {
+    // Checks whether the parasite's R1 read counter ever exceeds the
+    // host's write counter. If it does, the parasite consumed a byte
+    // that the host hadn't finished writing yet.
+
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite_port(&shared);
+
+    auto rom = make_stub_rom(CODE_ADDR);
+    ParasiteMemoryMap memory(parasite_port, rom);
+    ParasiteCpu cpu(memory, parasite_port);
+
+    constexpr uint8_t NUM_BYTES = 200;
+    plant_r1_reader(memory, NUM_BYTES);
+    memory.read(0xFEF8);
+    memory.ram(0xFFFC) = CODE_ADDR & 0xFF;
+    memory.ram(0xFFFD) = (CODE_ADDR >> 8) & 0xFF;
+    cpu.reset();
+
+    std::atomic<int> host_writes{0};
+
+    std::thread host_thread([&] {
+        for (int i = 0; i < NUM_BYTES; ++i) {
+            host.host_write(1, static_cast<uint8_t>(i & 0xFF));
+            host_writes.store(i + 1, std::memory_order_release);
+        }
+    });
+
+    for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        cpu.tick();
+
+        auto reads = shared.counters.r1_h2p_reads.load(std::memory_order_relaxed);
+        auto writes = host_writes.load(std::memory_order_acquire);
+        if (reads > static_cast<uint64_t>(writes)) {
+            host_thread.join();
+            FAIL("Tick " << i << ": R1 reads (" << reads
+                 << ") > host writes (" << writes << ")");
+        }
+    }
+
+    host_thread.join();
+    REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
+
+    for (int i = 0; i < NUM_BYTES; ++i) {
+        INFO("byte " << i);
+        CHECK(memory.ram(RESULT_ADDR + i) == static_cast<uint8_t>(i & 0xFF));
+    }
+}
