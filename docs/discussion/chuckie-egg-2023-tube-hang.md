@@ -771,13 +771,17 @@ spurious interrupts. The `$31` bit buffer and `$2F` output pointer
 traces match for 200+ entries. Yet the decompressor diverges at a
 non-deterministic point.
 
-The divergence must be in the **back-reference data from RAM** that
-differs due to RAM being written by the host via the R3 NMI transfer
-or other Tube Client ROM operations that happen concurrently with the
-decompressor. On real hardware, the timing is deterministic because
-the host and parasite share a system clock with the Tube ULA mediating
-all access. In Beebium's shared-memory model, the processors run on
-separate OS threads with no clock synchronisation.
+### R1 latch protocol proven correct under thread stress
+
+Cross-thread stress tests (702 bytes x 100 iterations = 70,200
+transfers) using `TubeHostPort::host_write` and
+`TubeParasitePort::parasite_read` with two threads running flat out
+all pass. The R1 shared-memory latch protocol is correct.
+
+The CE2023 divergence is NOT caused by the R1 latch mechanism itself.
+Something in the full emulation context (6502 CPU execution, `pirq()`
+polling on every tick, concurrent R3/R4/R2 access) causes a difference
+that doesn't occur in the isolated protocol test.
 
 ### Fix options
 
