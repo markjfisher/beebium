@@ -78,6 +78,12 @@ public:
     // PC=address, A=written value.  Set to 0xFFFF to disable.
     void set_watch_write_addr(uint16_t addr) { watch_write_addr_ = addr; }
 
+    // Memory read watchpoint.  When a read hits this address and
+    // tracing is enabled, a pseudo-entry is recorded with opcode=$FE,
+    // PC=instruction PC (the instruction that caused the read),
+    // A=value read.  Set to 0xFFFF to disable.
+    void set_watch_read_addr(uint16_t addr) { watch_read_addr_ = addr; }
+
 private:
     static constexpr M6502_DeviceIRQFlags kPirqMask = 1;
     static constexpr M6502_DeviceNMIFlags kPnmiMask = 1;
@@ -99,8 +105,9 @@ private:
     // Exit:  detected when an RTI instruction (opcode $40) is about to execute.
     bool in_nmi_handler_ = false;
 
-    // Memory write watchpoint (0xFFFF = disabled).
+    // Memory watchpoints (0xFFFF = disabled).
     uint16_t watch_write_addr_ = 0xFFFF;
+    uint16_t watch_read_addr_ = 0xFFFF;
 
     // Instruction trace (not allocated until capacity is set; default 4M entries).
     InstructionTrace trace_;

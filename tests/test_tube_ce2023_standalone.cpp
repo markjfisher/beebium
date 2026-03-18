@@ -121,6 +121,7 @@ TEST_CASE("CE2023 standalone: decompressor from snapshot", "[tube][ce2023][stand
     cpu.trace().resize(16 * 1024 * 1024);
     cpu.trace().set_enabled(true);
     cpu.set_watch_write_addr(0x0CE6);
+    cpu.set_watch_read_addr(0xFEF9);  // Watch ALL reads from R1 data
 
     // Feed R1 data: write all 702 bytes as the parasite consumes them
     int r1_idx = 0;
@@ -175,6 +176,37 @@ TEST_CASE("CE2023 standalone: decompressor from snapshot", "[tube][ce2023][stand
 
     // Watchpoint hits
     auto& itrace = cpu.trace();
+
+    // R1 reads ($FEF9) -- find any that are NOT from PC=$09D6
+    printf("\nReads from $FEF9 (R1 data) -- non-$09D6 callers:\n");
+    int r1_read_total = 0;
+    int r1_read_spurious = 0;
+    for (size_t i = 0; i < itrace.available(); ++i) {
+        auto& e = itrace[i];
+        if (e.opcode == 0xFE) {  // read watchpoint hit
+            ++r1_read_total;
+            if (e.pc != 0x09D6) {
+                ++r1_read_spurious;
+                printf("  SPURIOUS R1 READ from PC=$%04X val=$%02X ad=$%04X X=$%02X Y=$%02X\n",
+                       e.pc, e.a,
+                       static_cast<uint16_t>(e.cycle & 0xFFFF),
+                       e.x, e.y);
+                // Show context
+                if (i > 3) {
+                    for (size_t j = i - 3; j < i; ++j) {
+                        auto& c = itrace[j];
+                        if (c.opcode != 0xFE && c.opcode != 0xFF)
+                            printf("    cyc=%-10llu PC=$%04X A=$%02X X=$%02X Y=$%02X op=$%02X\n",
+                                   static_cast<unsigned long long>(c.cycle),
+                                   c.pc, c.a, c.x, c.y, c.opcode);
+                    }
+                }
+            }
+        }
+    }
+    printf("  Total R1 reads: %d (legitimate from $09D6: %d, spurious: %d)\n",
+           r1_read_total, r1_read_total - r1_read_spurious, r1_read_spurious);
+
     printf("\nWrites to $0CE6:\n");
     for (size_t i = 0; i < itrace.available(); ++i) {
         auto& e = itrace[i];
