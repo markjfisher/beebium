@@ -434,6 +434,30 @@ corrupting the data stream.
 Three C++ tests added to `test_tube_parasite_port.cpp` expose this bug
 on R1, R3, and R4.
 
+### R1 data comparison methodology note
+
+The R1 data comparison test using breakpoints at `$09D9` was flawed:
+only the first R1 byte was captured correctly. After that, the
+decompressor's output wraps through 64K and overwrites its own code at
+`$09D6`, changing the `LDA $FEF9` instruction to something else.
+Subsequent breakpoint hits at `$09D9` are executing corrupted code, not
+real R1 reads.
+
+This confirms that Beebium's decompressor produces **different output
+from byte 0**, which eventually corrupts the decompressor code and causes
+the hang. The `bus_stretch_cancel` fix (pending write deferral) was
+correct but is not the root cause of CE2023 -- the timing difference in
+R1 status (`BIT $FEF8` returning bit 7 set on Beebium vs clear on
+jsbeeb) causes the first bit-serial byte to be consumed differently.
+
+### Next investigation step
+
+Compare CPU state at `$09E3` (the convergence point after both the
+Tube path and memory path in the bit-serial reader). At this address,
+`$31` has been updated with the new byte. Compare `$31` and A register
+values between jsbeeb and Beebium after the first R1 byte to determine
+if the data byte itself differs or if the bit-serial state diverges.
+
 ### Fix required
 
 `host_write` must not silently drop data when `bus_stretch_cancel` is
