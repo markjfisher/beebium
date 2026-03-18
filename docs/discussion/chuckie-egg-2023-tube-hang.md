@@ -601,12 +601,57 @@ Possible causes:
    the write. In Beebium's model, the host runs freely between
    parasite cycles.
 
+### R1 data confirmed correct during free-running
+
+Instrumented `TubeParasitePort::parasite_read` case 1 to log the first
+10 R1 data bytes. The values match jsbeeb exactly: `C5 11 03 90 2C 47
+B4 77 7A 76`. The R1 latch mechanism delivers the correct data.
+
+### No spurious interrupts
+
+- 566 NMIs logged (exactly matching the R3 NMI transfer). All fire at
+  `$F975`/`$F978` (Tube Client ROM). None in the decompressor range.
+- 68 IRQs logged, all at `$F975`/`$F978`. None in the decompressor.
+- PNMI is correctly disabled when M flag is cleared.
+
+### Bit-serial reader ($31) traces match!
+
+Capturing every write to `$31` (the bit-serial buffer) on both emulators
+during free-running: the first 700+ entries match exactly (case-
+insensitive). The bit-serial reader processes the same bits in the same
+order on both emulators.
+
+### Output pointer ($2F) traces match!
+
+Capturing every write to `$2F` (output pointer low byte) on both
+emulators: the first 200 entries match exactly. The decompressor
+advances the output pointer identically on both emulators (at least
+for the first 200 bytes).
+
+jsbeeb produces exactly 1024 `$2F` changes (256 increments per page x 4
+pages, tracking non-zero changes) and stops at `$0816` (decompressor
+exit). The Beebium trace was limited to 200 entries.
+
+### The paradox
+
+The R1 data is correct. The bit-serial reader produces identical `$31`
+values. The output pointer advances identically. Yet the decompressor
+hangs on Beebium after consuming all 702 R1 bytes, while jsbeeb
+completes successfully.
+
+The traces captured coarse-grained state (value changes, not every
+instruction). The divergence must be in a finer-grained aspect of the
+decompressor's execution -- possibly the value of A when `STA ($2F)`
+writes output, or the back-reference source pointer `$33/$34`.
+
 ### Next investigation step
 
-Use the Python debugger to capture the exact sequence of R1 status
-reads and R1 data reads during the first few bytes of decompression,
-comparing with jsbeeb. Track the value of $31 (bit buffer) after each
-R1 byte is consumed to find exactly where the bit-serial state diverges.
+Expand the output trace to cover the full 65536-byte decompression (or
+at least until the first difference). Instead of tracing `$2F` changes,
+trace the actual output byte (A register) at `$0A00` (`STA ($2F)`) by
+instrumenting the write at the output destination address. Compare the
+output memory dumps at `$FC00-$FFFF` between emulators periodically
+during decompression to find exactly when the output diverges.
 
 ### Fix required
 
