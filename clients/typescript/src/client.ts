@@ -127,7 +127,18 @@ export class Beebium {
         await server.start(serverOptions.timeout ?? timeoutMs);
         const connection = new Connection(server.target);
         await connection.waitForReady(timeoutMs);
-        return new Beebium(connection, server, server.provenanceUuid);
+        const bbc = new Beebium(connection, server, server.provenanceUuid);
+
+        // Wait for WaitMode startup to complete (the server runs 7 cycles
+        // then pauses). Without this, the first debugger operation may race
+        // with the WaitMode setup.
+        const deadline = Date.now() + timeoutMs;
+        while ((await bbc.debugger.getState()).cycleCount < 7) {
+            if (Date.now() > deadline) break;
+            await new Promise(r => setTimeout(r, 10));
+        }
+
+        return bbc;
     }
 
     /** The gRPC target string. */
@@ -358,8 +369,19 @@ export class Beebium {
                     condition: `cycles >= ${chunkTarget}`,
                 });
 
-                // Wait for chunk to complete via event stream
-                const stopEvent = await this.debugger.waitForStop();
+                // Ensure stopped, subscribe to the stream, record the
+                // sequence, THEN run. Any stopped event with a sequence
+                // higher than the one recorded after run() is our breakpoint.
+                if (await this.debugger.isRunning()) {
+                    await this.debugger.stop();
+                }
+                const iter = this.debugger.watchExecutionState();
+                const initial = await iter.next(); // consume initial state
+                const runSequence = initial.value!.state.sequence;
+                await this.debugger.run();
+                for await (const event of iter) {
+                    if (!event.state.isRunning && event.state.sequence > runSequence) break;
+                }
 
                 await this.debugger.removeBreakpoint(bpId);
 

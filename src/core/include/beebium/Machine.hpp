@@ -306,7 +306,12 @@ public:
 
     // Execute for the given number of cycles, or until paused (e.g., by breakpoint)
     void run(uint64_t cycles) {
-        in_run_.store(true, std::memory_order_release);
+        struct RunGuard {
+            std::atomic<bool>& flag;
+            RunGuard(std::atomic<bool>& f) : flag(f) { flag.store(true, std::memory_order_release); }
+            ~RunGuard() { flag.store(false, std::memory_order_release); }
+        } guard{in_run_};
+
         const uint64_t target = state_.cycle_count + cycles;
         while (state_.cycle_count < target && !paused_.load()) {
             // Check breakpoints before step(), when all register updates from
@@ -335,7 +340,6 @@ public:
                 return;
             }
         }
-        in_run_.store(false, std::memory_order_release);
     }
 
     // Execute one complete instruction (variable cycles)
@@ -386,6 +390,9 @@ public:
         }
         if (tube_shared_) {
             tube_shared_->bus_stretch_cancel.store(false, std::memory_order_release);
+            // Clear any stale cross-processor stop signal so we don't
+            // immediately re-stop on the first cycle of the new run.
+            tube_shared_->debugger_stop_signal.store(false, std::memory_order_release);
         }
         debug_cv_.notify_all();
         ++sequence_;

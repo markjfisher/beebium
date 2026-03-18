@@ -430,9 +430,28 @@ export class Debugger {
     async runUntil(address: number, timeoutMs = 30000): Promise<ExecutionStateEvent> {
         const bpId = await this.addBreakpoint(address);
         try {
-            const stopPromise = this.waitForStop(timeoutMs);
+            // Ensure stopped, subscribe to the event stream, consume the
+            // initial state, THEN start running. This avoids a race where
+            // a tight-loop breakpoint fires before the stream is established.
+            // Ensure stopped, subscribe, record sequence, then run.
+            // Any stopped event with sequence > runSequence is our breakpoint.
+            if (await this.isRunning()) await this.stop();
+            const iter = this.watchExecutionState();
+            const initial = await iter.next();
+            const runSequence = initial.value!.state.sequence;
             await this.run();
-            return await stopPromise;
+
+            const timer = setTimeout(() => {
+                iter.return(undefined);
+            }, timeoutMs);
+
+            for await (const event of iter) {
+                if (!event.state.isRunning && event.state.sequence > runSequence) {
+                    clearTimeout(timer);
+                    return event;
+                }
+            }
+            throw new DebuggerError(`Timed out waiting for stop after ${timeoutMs}ms`);
         } finally {
             await this.removeBreakpoint(bpId);
         }

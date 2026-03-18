@@ -43,10 +43,10 @@ export class CoupledSystem {
         return this.parasite;
     }
 
-    /** Run both processors. */
+    /** Run both processors. Ensures both are running afterwards. */
     async run(): Promise<void> {
-        try { await this.host.debugger.run(); } catch { /* already running */ }
-        try { await this.parasite.debugger.run(); } catch { /* already running */ }
+        if (!await this.host.debugger.isRunning()) await this.host.debugger.run();
+        if (!await this.parasite.debugger.isRunning()) await this.parasite.debugger.run();
     }
 
     /**
@@ -102,7 +102,17 @@ export class CoupledSystem {
                     stopCounterpart: true,
                 });
 
-                await this.host.debugger.waitForStop();
+                // Ensure both stopped, subscribe to the stream, record
+                // the sequence, THEN run. Any stopped event with a sequence
+                // higher than recorded after run() is our breakpoint.
+                await this.stop();
+                const iter = this.host.debugger.watchExecutionState();
+                const initial = await iter.next();
+                const runSequence = initial.value!.state.sequence;
+                await this.run();
+                for await (const event of iter) {
+                    if (!event.state.isRunning && event.state.sequence > runSequence) break;
+                }
 
                 if (await this.parasite.debugger.isRunning()) {
                     await this.parasite.debugger.stop();
