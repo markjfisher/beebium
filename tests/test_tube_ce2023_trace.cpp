@@ -258,6 +258,40 @@ struct TestFixture {
             printf("\n  First %zu output bytes MATCH jsbeeb\n", sizeof(JSBEEB_OUTPUT));
         }
 
+        // Decompressor code at key addresses
+        printf("\nDecompressor code:\n");
+        printf("  $0990: ");
+        for (int i = 0; i < 16; ++i) printf("%02X ", parasite->memory_map().peek(0x0990 + i));
+        printf("\n  $09A0: ");
+        for (int i = 0; i < 16; ++i) printf("%02X ", parasite->memory_map().peek(0x09A0 + i));
+        printf("\n  $09C8: ");
+        for (int i = 0; i < 32; ++i) printf("%02X ", parasite->memory_map().peek(0x09C8 + i));
+        printf("\n  $09EF: ");
+        for (int i = 0; i < 24; ++i) printf("%02X ", parasite->memory_map().peek(0x09EF + i));
+        printf("\n");
+
+        // The LDA abs,X at $0997 reads from base+X.  Show the base address.
+        uint16_t table_base = parasite->memory_map().peek(0x0998)
+                            | (parasite->memory_map().peek(0x0999) << 8);
+        printf("\n  Table LDA base ($0998/$0999): $%04X\n", table_base);
+        printf("  Table contents at base+$20..base+$30:\n    ");
+        for (int i = 0x20; i < 0x30; ++i)
+            printf("%02X ", parasite->memory_map().peek(table_base + i));
+        printf("\n    ");
+        for (int i = 0x30; i < 0x40; ++i)
+            printf("%02X ", parasite->memory_map().peek(table_base + i));
+        printf("\n");
+
+        // Show what the table lookup SHOULD return for the first few X values
+        // from the output trace
+        printf("  Table lookups for first 9 output X values:\n");
+        uint8_t test_x[] = {0x9B, 0x7E, 0x21, 0x34, 0x81, 0x5C, 0x7F, 0x21, 0x28};
+        for (int i = 0; i < 9; ++i) {
+            uint16_t addr = table_base + test_x[i];
+            printf("    X=$%02X -> $%04X = $%02X\n",
+                   test_x[i], addr, parasite->memory_map().peek(addr));
+        }
+
         // Decompressor zero page state
         printf("\nDecompressor ZP state:\n");
         printf("  $2F/$30 (output ptr): $%02X%02X\n",
@@ -269,9 +303,57 @@ struct TestFixture {
         printf("  $33/$34 (backref ptr): $%02X%02X\n",
                parasite->memory_map().peek(0x34), parasite->memory_map().peek(0x33));
 
+        // Search instruction trace for output writes (STA ($2F) at $0A00)
+        // and R1 data reads (LDA $FEF9 at $09D6).  This shows the
+        // decompressor's execution from the emulator's perspective.
+        printf("\nDecompressor events from instruction trace:\n");
+        size_t avail = itrace.available();
+        int output_count = 0;
+        int r1_read_count = 0;
+        for (size_t i = 0; i < avail; ++i) {
+            auto& e = itrace[i];
+            if (e.pc == DECOMP_OUTPUT && e.opcode == 0x92) {
+                // STA ($2F) -- opcode $92 on 65C02 (STA (zp))
+                // A = value being written, output addr is in ZP $2F/$30
+                // We can't read ZP from the trace, but we have A.
+                if (output_count < 20) {
+                    printf("  OUTPUT[%d] cyc=%llu A=$%02X\n",
+                           output_count, static_cast<unsigned long long>(e.cycle), e.a);
+                }
+                ++output_count;
+            }
+            if (e.pc == DECOMP_R1_READ && e.opcode == 0xAD) {
+                // LDA $FEF9 -- reading R1 data
+                ++r1_read_count;
+            }
+        }
+        printf("  Total output writes in trace: %d\n", output_count);
+        printf("  Total R1 reads (LDA $FEF9) in trace: %d\n", r1_read_count);
+
+        // Search backwards for the decompressor code around the output
+        // write.  Find the last few STA ($2F) and dump context around each.
+        printf("\nContext around first 12 output writes:\n");
+        output_count = 0;
+        for (size_t i = 0; i < avail && output_count < 12; ++i) {
+            auto& e = itrace[i];
+            if (e.pc == DECOMP_OUTPUT && e.opcode == 0x92) {
+                printf("  --- OUTPUT[%d] ---\n", output_count);
+                // Dump 10 instructions before and 5 after
+                size_t ctx_start = (i >= 10) ? i - 10 : 0;
+                size_t ctx_end = (i + 5 < avail) ? i + 5 : avail;
+                for (size_t j = ctx_start; j < ctx_end; ++j) {
+                    auto& c = itrace[j];
+                    printf("  %s cyc=%-10llu PC=$%04X A=$%02X X=$%02X Y=$%02X SP=$%02X P=$%02X op=$%02X\n",
+                           (j == i) ? ">>" : "  ",
+                           static_cast<unsigned long long>(c.cycle),
+                           c.pc, c.a, c.x, c.y, c.sp, c.p, c.opcode);
+                }
+                ++output_count;
+            }
+        }
+
         // Last 30 instructions before hang
         printf("\nLast 30 parasite instructions:\n");
-        size_t avail = itrace.available();
         size_t istart = avail > 30 ? avail - 30 : 0;
         for (size_t i = istart; i < avail; ++i) {
             auto& e = itrace[i];
