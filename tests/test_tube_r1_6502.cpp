@@ -86,7 +86,7 @@ static void plant_r1_reader(ParasiteMemoryMap& mem, uint8_t num_bytes) {
         0x9D, 0x00, 0x05,                    // STA $0500,X   (store result)
         0xE8,                                // INX
         0xE0, num_bytes,                     // CPX #num_bytes
-        0xD0, 0xF1,                          // BNE $0402     (loop)
+        0xD0, 0xF0,                          // BNE $0402     (loop)
         0x80, 0xFE,                              // BRA *         (infinite loop = halt)
     });
 }
