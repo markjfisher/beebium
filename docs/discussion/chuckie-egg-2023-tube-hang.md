@@ -515,6 +515,40 @@ decompressor loop must be resetting $2F/$30 between output calls. This
 would happen in the back-reference copy loop at `$09E9-$090C` which
 uses `$33/$34` as the source pointer and `$2F` as the Y offset.
 
+### Instruction stepping produces correct output
+
+When the parasite is stepped instruction-by-instruction (with the host
+running freely), the decompressor produces output bytes that match
+jsbeeb EXACTLY for all 20 bytes tested. The stepping ensures the host
+is always far ahead, with all R1 data already in the latch.
+
+### Free-running transfer counter analysis
+
+When running freely (both at full speed), the hang occurs with:
+
+- R1 H->P: **0 writes, 0 reads** -- the host never sent ANY R1 data
+- R3 H->P: 16384 writes/reads -- NMI transfer completed
+- R4 H->P: 457 writes/reads -- setup bytes transferred
+- R4 P->H: 0 writes -- **the parasite never sent the first R4 ack**
+
+This means the parasite never reached `$0810` (`JSR $0A2D`, write
+`$FC` to R4 P->H). The decompressor code was loaded via R3 NMI
+transfer (16384 bytes), but the parasite never started executing it.
+The host is stuck waiting for the R4 ack at `$6A4D`.
+
+The root cause is NOT in the decompressor or R1 transfer -- it's
+earlier, in the transition from the R3 NMI transfer to the custom
+protocol. The parasite receives the decompressor code but never
+begins executing it, even though the Tube Client ROM's R2 command
+dispatch should jump to `$0800` after receiving the `$80` command byte.
+
+### Next investigation step
+
+Compare the parasite's state after the R3 NMI transfer completes.
+The Tube Client ROM should detect the R2 command byte (`$80`) and
+dispatch to the loaded code at `$0800`. If the R2 command is lost
+or the dispatch fails, the parasite stays in the idle loop.
+
 ### Fix required
 
 `host_write` must not silently drop data when `bus_stretch_cancel` is
