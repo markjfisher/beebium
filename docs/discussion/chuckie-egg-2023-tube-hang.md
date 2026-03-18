@@ -841,40 +841,131 @@ With the correct offset, ALL tests pass consistently (50 iterations of
 **The R1 latch protocol is correct.** There is no TOCTOU race.
 The CE2023 hang has a different root cause that remains to be found.
 
-### Current status (March 2026)
+### Root cause found (March 2026, session 3)
 
-The R1 latch protocol is proven correct at every level of testing:
-- Single-thread unit tests
-- Multi-thread stress tests (70,200 transfers)
-- Cross-process stress tests via POSIX shared memory (35,100 transfers)
-- Real 65C02 CPU stress tests (10,000 transfers, 3 consecutive runs)
+**A single LZ back-reference read sweeps through the Tube I/O area and
+consumes one R1 byte from the latch, shifting the remaining bit stream
+by one byte.**
 
-`seq_cst` memory ordering on all R1 atomics doesn't change the outcome,
-confirming memory ordering is not the issue.
+#### The mechanism
 
-The CE2023 hang persists. The investigation has eliminated:
-- R1 data corruption (702/702 bytes match jsbeeb)
-- Memory ordering bugs (ARM acquire/release proven correct, seq_cst tested)
-- Back-reference reads hitting Tube registers (jsbeeb confirms zero)
-- Spurious NMIs or IRQs during decompression (566 NMIs, all in ROM)
-- bus_stretch_cancel data loss (fixed, doesn't affect CE2023)
-- Tube latch TOCTOU race (6502 test was a test bug, protocol is correct)
-- Pre-decompression memory state (identical between emulators)
+The LZ decompressor copies previously-written output via `LDA ($33),Y`
+at `$09EB`. The output wraps through the full 64K address space starting
+at `$FC00`. When the back-reference source pointer plus Y offset wraps
+through the Tube register area `$FEF8-$FEFF`, the read goes to
+`ParasiteMemoryMap::read()` which routes it to
+`TubeParasitePort::parasite_read()`. This has a side effect: reading
+from R1 data (offset 1) unconditionally clears the `ready` flag,
+consuming whatever byte is in the R1 latch.
 
-The remaining mystery: identical input data + identical initial state +
-identical bit-serial processing for 700+ entries, yet the decompressor
-diverges non-deterministically at a varying point during free-running
-concurrent execution. Instruction stepping produces correct output.
+The specific occurrence:
+- Instruction: `LDA ($33),Y` at `$09EB`
+- Pointer `($33)` = `$FEFE`, Y = `$FB`
+- Effective address: `$FEFE + $FB = $FFF9` (correct, after page fix-up)
+- Page-cross intermediate address: `$FEF9` (high byte not yet corrected)
+- The intermediate read from `$FEF9` goes through `parasite_read(1)`,
+  clearing the R1 ready flag
 
-### Next investigation step
+On Beebium, the R1 latch contains byte `$FB` (the host has written ahead
+eagerly). The intermediate read consumes this byte. The bit reader's next
+legitimate `LDA $FEF9` at `$09D6` gets the FOLLOWING byte (`$D8`) instead.
+This shifts the R1 data stream by one byte from read 697 onwards. The
+decompressor processes 701 bytes instead of 702, runs out of data, and
+hangs at the R1 poll loop (`$09D1`) waiting for byte 703.
 
-The divergence must be caused by something that differs between stepped
-and free-running execution BESIDES the R1 data values. Candidates:
-- Tube STATUS register values returned during polling (timing-dependent
-  but should be harmless since they only affect poll loop duration)
-- The `update_pnmi()` call frequency (varies with poll count, but
-  idempotent when M=0)
-- Some aspect of the concurrent execution not yet instrumented
+On jsbeeb, the same `LDA ($33),Y` with Y=`$FB` executes at the same point
+in the decompression. But jsbeeb returns the RAM value (`$FE`) rather than
+the Tube register value. The R1 latch is not consumed, and the
+decompression completes normally with 702 bytes.
+
+#### Evidence
+
+Instruction trace comparison (500,000 jsbeeb instructions vs 10M Beebium):
+
+- Both traces execute `LDA ($33),Y` at `$09EB` exactly 381 times
+- Both hit Y=`$FB` exactly twice, at corresponding points
+- First Y=`$FB` occurrence: both read A=`$FF` (identical)
+- Second Y=`$FB` occurrence: jsbeeb reads A=`$FE`, Beebium reads A=`$FB`
+  - jsbeeb returns the RAM value at `$FEF9` (or `$FFF9`)
+  - Beebium returns the R1 latch data (`$FB`)
+- Bit streams are identical for the first 5577 of 5615 bits (99.3%)
+- R1 byte values match for reads 0-696, then shift by exactly -1
+- Cumulative bit extractions (`LSR $31`) match at every R1 byte boundary
+- jsbeeb exits the decompressor at `$0844` (RTS); Beebium never reaches it
+
+The standalone test (no host, no concurrency, snapshot + R1 data file)
+reproduces the exact same divergence in under 1 second, confirming this
+is not a timing or concurrency issue.
+
+#### The page-cross intermediate read
+
+The 65C02's `LDA (zp),Y` addressing mode with page crossing reads from
+an intermediate address before correcting the high byte:
+
+1. Read pointer low byte from ZP
+2. Read pointer high byte from ZP+1
+3. Add Y to pointer low byte. If carry (page cross), read from
+   uncorrected address (wrong high byte)
+4. Read from correct address (high byte fixed)
+
+With pointer=`$FEFE` and Y=`$FB`: low byte `$FE + $FB = $F9` with carry.
+Step 3 reads from `$FEF9` (uncorrected). Step 4 reads from `$FFF9`
+(correct). On real hardware, step 3's read goes to the Tube ULA at
+`$FEF9`. Whether this has side effects depends on the hardware timing
+and whether the Tube ULA latches the access.
+
+#### Open question: real hardware behaviour
+
+On real hardware, the page-cross intermediate read from `$FEF9` does
+hit the Tube ULA (CAS is suppressed for the `$FExx` range, the ULA
+responds). Whether this clears the R1 ready flag depends on the ULA's
+internal timing. The game works on real hardware, which implies either:
+
+1. The R1 latch is empty at this point on real hardware (the host
+   hasn't written the next byte yet because of natural 2 MHz timing)
+2. The Tube ULA doesn't fully latch the intermediate read (it may
+   require a full clock cycle commitment, and the page-cross read is
+   only half a cycle)
+3. The 65C02 suppresses the intermediate read in some way not
+   documented in standard references
+
+jsbeeb appears to handle this by returning RAM instead of the Tube
+register for this read, which avoids the side effect entirely. Whether
+this matches real hardware or is an incidental jsbeeb simplification
+is not yet known.
+
+#### Implications for the fix
+
+The fix must ensure that the R1 latch byte is not consumed by a
+page-cross intermediate read. Options:
+
+1. **Fix the memory map**: distinguish intermediate reads from data
+   reads (requires the 6502 library to signal which type of read is
+   occurring -- the `read` field already has `M6502ReadType_Data` vs
+   `M6502ReadType_Uninteresting`)
+2. **Use ReadType filtering**: only call `parasite_read()` (with side
+   effects) when `cpu_.read == M6502ReadType_Data`, and call
+   `parasite_peek()` (no side effects) for other read types
+3. **Match jsbeeb's behaviour**: return RAM for Tube register reads
+   that occur during non-data cycles
+
+Option 2 is the most principled: the 6502 library already classifies
+reads as `Data` vs `Uninteresting`. Side-effecting I/O should only
+respond to `Data` reads.
+
+#### Corrected eliminated hypotheses
+
+Previous investigation incorrectly eliminated:
+- "Back-reference reads hitting Tube registers (jsbeeb confirms zero)"
+  -- jsbeeb DOES hit Tube registers via back-references (2 occurrences
+  with Y=$FB), but returns RAM values instead of Tube register values,
+  masking the side effect.
+
+Previous conclusion "non-deterministic divergence" was incorrect for
+the current codebase. After the NMI nesting fix, the divergence is
+fully deterministic: same byte lost, same output, same hang point on
+every run. The earlier non-determinism was likely from the unfixed NMI
+nesting bug corrupting the R3 transfer.
 
 ## External References
 
@@ -910,9 +1001,15 @@ and free-running execution BESIDES the R1 data values. Candidates:
 | `clients/python/tests/tube_test_helpers.py` | Shared Tube test utilities |
 | `tests/test_tube_parasite_port.cpp` | C++ Tube register tests (60 cases) |
 | `tests/test_tube_host_port.cpp` | C++ Tube register tests (32 cases) |
+| `tests/test_tube_ce2023_standalone.cpp` | Standalone decompressor test (root cause confirmation) |
+| `tests/test_tube_ce2023_trace.cpp` | Full-boot trace test with auto-boot |
+| `oracle/tests/ce2023-trace-dump.test.ts` | jsbeeb instruction trace dump |
 | `src/core/include/beebium/tube/TubeShared.hpp` | Shared memory layout + counters |
+| `src/core/include/beebium/tube/InstructionTrace.hpp` | Instruction trace ring buffer |
+| `src/core/include/beebium/tube/RegisterTrace.hpp` | Tube register access trace |
 | `src/core/src/TubeHostPort.cpp` | Host-side Tube register I/O |
 | `src/core/src/TubeParasitePort.cpp` | Parasite-side Tube register I/O |
+| `src/core/src/ParasiteCpu.cpp` | Parasite CPU with trace + watchpoints |
 | `src/service/proto/debugger.proto` | WatchExecutionState RPC definition |
 | `src/service/include/beebium/service/DebuggerService.hpp` | Streaming implementation |
 | `oracle/tests/tube-chuckie-egg.test.ts` | TypeScript differential test |
