@@ -827,6 +827,20 @@ behaviour:
   after `parasite_read()` returns, but the 6502 may have seen a
   different value on the data bus during the instruction)
 
+### 6502 R1 test bug: WRONG BRANCH OFFSET (not a Tube race)
+
+The test_tube_r1_6502 stress test that appeared to prove a Tube TOCTOU
+race had a **bug in the test code**: the BNE offset was `$F1` (-15)
+instead of `$F0` (-16), causing the 6502 to branch into the MIDDLE of
+the `BIT $FEF8` instruction. This executed garbled opcodes that
+produced non-deterministic off-by-one errors mimicking a latch race.
+
+With the correct offset, ALL tests pass consistently (50 iterations of
+200 bytes = 10,000 transfers, 3 consecutive runs, zero failures).
+
+**The R1 latch protocol is correct.** There is no TOCTOU race.
+The CE2023 hang has a different root cause that remains to be found.
+
 ### Fix approach: deferred ready clear at END of tick
 
 The ready flag must be cleared at the END of the tick where the data
