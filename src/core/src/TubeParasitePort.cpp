@@ -40,13 +40,18 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
     case 1: {
         // R1 data: read from H-to-P latch.
         //
-        // The ready flag is the synchronisation point between host and parasite.
-        // We must load ready (with acquire) BEFORE loading the value, so that
-        // the host's value.store (relaxed, before ready.store release) is
-        // visible. Loading value before the acquire on ready would allow the
-        // ARM memory model to return a stale value.
-        auto was_ready = shared_->r1_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        // Three-step protocol to avoid both ARM reordering AND TOCTOU:
+        //   1. Load ready (acquire) -- synchronises with host's release
+        //   2. Load value (relaxed) -- safe: host can't write until ready=0
+        //   3. Clear ready (release) -- signals host that latch is free
+        //
+        // We MUST load value BEFORE clearing ready, because clearing ready
+        // allows the host to immediately write a new value (its spin-wait
+        // exits). If we clear ready first (exchange(0)) then load value,
+        // the host may overwrite the value between steps.
+        auto was_ready = shared_->r1_h2p.ready.load(std::memory_order_acquire);
         result = shared_->r1_h2p.value.load(std::memory_order_relaxed);
+        shared_->r1_h2p.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
             shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
@@ -68,9 +73,11 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 3: {
         // R2 data: read from H-to-P latch.
-        // Load ready (acquire) BEFORE value -- see R1 comment for rationale.
-        auto was_ready = shared_->r2_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        // Three-step protocol: load ready, load value, clear ready.
+        // See R1 comment for full rationale.
+        auto was_ready = shared_->r2_h2p.ready.load(std::memory_order_acquire);
         result = shared_->r2_h2p.value.load(std::memory_order_relaxed);
+        shared_->r2_h2p.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
             shared_->counters.r2_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
@@ -120,9 +127,10 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 7: {
         // R4 data: read from H-to-P latch.
-        // Load ready (acquire) BEFORE value -- see R1 comment for rationale.
-        auto was_ready = shared_->r4_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        // Three-step protocol: load ready, load value, clear ready.
+        auto was_ready = shared_->r4_h2p.ready.load(std::memory_order_acquire);
         result = shared_->r4_h2p.value.load(std::memory_order_relaxed);
+        shared_->r4_h2p.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
             shared_->counters.r4_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }

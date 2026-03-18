@@ -61,9 +61,10 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 
     case 3: {
         // R2 data: read from P-to-H latch.
-        // Acquire on ready BEFORE loading value -- see TubeParasitePort R1 comment.
-        auto was_ready = shared_->r2_p2h.ready.exchange(0, std::memory_order_acq_rel);
+        // Three-step protocol: load ready, load value, clear ready.
+        auto was_ready = shared_->r2_p2h.ready.load(std::memory_order_acquire);
         result = shared_->r2_p2h.value.load(std::memory_order_relaxed);
+        shared_->r2_p2h.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
             shared_->counters.r2_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         }
@@ -108,9 +109,10 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 
     case 7: {
         // R4 data: read from P-to-H latch.
-        // Acquire on ready BEFORE loading value -- see TubeParasitePort R1 comment.
-        auto was_ready = shared_->r4_p2h.ready.exchange(0, std::memory_order_acq_rel);
+        // Three-step protocol: load ready, load value, clear ready.
+        auto was_ready = shared_->r4_p2h.ready.load(std::memory_order_acquire);
         result = shared_->r4_p2h.value.load(std::memory_order_relaxed);
+        shared_->r4_p2h.ready.store(0, std::memory_order_release);
         if (was_ready != 0) {
             shared_->counters.r4_p2h_reads.fetch_add(1, std::memory_order_relaxed);
         }
