@@ -12,16 +12,13 @@
 
 // CE2023 divergence trace test.
 //
-// Boots Chuckie Egg 2023 with a Model B + 65C02 Tube, running host and
-// parasite on separate threads (matching the production architecture).
-// When the parasite hangs at the R1 poll loop ($09D1), the instruction
-// and register traces are analysed to find the divergence point.
+// Boots Chuckie Egg 2023 with a Model B + 65C02 Tube using interleaved
+// execution.  When the parasite hangs at the R1 poll loop ($09D1), the
+// instruction and register traces are analysed to find the divergence.
 //
-// The trace captures:
-//   - Every parasite instruction (PC, A, X, Y, SP, P, opcode)
-//   - Every host R1 data write (sequence number, value)
-//   - Every parasite R1 status read (returned value)
-//   - Every parasite R1 data read (sequence number, value)
+// The hang reproduces under interleaved 2:3 execution (same architecture
+// as B2, MAME, and other failing emulators).  Working emulators (B-Em,
+// jsbeeb) use tighter 1:1 coupling.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -34,6 +31,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -57,16 +55,21 @@ static constexpr const char* DFS_ROM_FILENAME = "acorn-dfs_2_26.rom";
 static constexpr const char* DISC_FILENAME = "chuckieEgg2023.ssd";
 static constexpr size_t TUBE_ROM_SIZE = 2048;
 
-// Decompressor poll-loop address (parasite hangs here)
-static constexpr uint16_t DECOMP_R1_POLL = 0x09D1;
-static constexpr uint16_t DECOMP_R1_BPL  = 0x09D4;
-// First R4 ack at $0810 (decompressor entry)
-static constexpr uint16_t DECOMP_ENTRY   = 0x0810;
+// Decompressor addresses
+static constexpr uint16_t DECOMP_R1_BPL  = 0x09D4;  // BPL $09D1 (hang point)
+static constexpr uint16_t DECOMP_R1_READ = 0x09D6;  // LDA $FEF9 (R1 data read)
+static constexpr uint16_t DECOMP_OUTPUT  = 0x0A00;  // STA ($2F)  (output write)
+
+// First 20 expected output bytes from jsbeeb (the decompressor writes from $FC00)
+static constexpr uint8_t JSBEEB_OUTPUT[] = {
+    0x2C, 0xF8, 0xFE, 0x10, 0xFB, 0xAD, 0xF9, 0xFE,
+    0x38, 0x6A, 0x85, 0x31, 0x68, 0x60, 0xA4, 0x2F,
+    0xB1, 0x33, 0xA0, 0x00,
+};
 
 bool files_available() {
     auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
     auto assets_dirpath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR);
-
     return std::filesystem::exists(rom_dirpath / "acorn-mos_1_20.rom")
         && std::filesystem::exists(rom_dirpath / "bbc-basic_2.rom")
         && std::filesystem::exists(rom_dirpath / DFS_ROM_FILENAME)
@@ -84,207 +87,237 @@ std::array<uint8_t, TUBE_ROM_SIZE> load_tube_rom() {
     return rom;
 }
 
+struct TestFixture {
+    TubeShared shared;
+    ModelB machine;
+    std::unique_ptr<ParasiteRunner> parasite;
+    HeapFrameAllocator allocator;
+    FrameBuffer fb;
+    FrameRenderer renderer;
+    TubeHostPort* host_port = nullptr;
+
+    TestFixture()
+        : fb(&allocator, 640, 512)
+        , renderer(&fb)
+    {
+        shared.init();
+
+        auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
+        auto assets_dirpath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR);
+
+        auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
+        auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
+        auto dfs = load_rom(rom_dirpath / DFS_ROM_FILENAME);
+        machine.memory().load_mos(mos.data(), mos.size());
+        machine.memory().load_basic(basic.data(), basic.size());
+        machine.memory().load_sideways_rom(14, dfs.data(), dfs.size());
+        machine.memory().install_acorn_1770();
+
+        auto disc_filepath = assets_dirpath / "discs" / DISC_FILENAME;
+        auto disc = FileDiscImage::load(disc_filepath);
+        machine.memory().disc_drive_0.insert(std::move(disc));
+
+        machine.state().memory.tube_socket.enable(&shared);
+        machine.memory().enable_video_output();
+        machine.memory().set_auto_boot(true);
+        machine.reset();
+
+        shared.host_command.store(
+            static_cast<uint8_t>(TubeLifecycleCommand::None),
+            std::memory_order_release);
+
+        auto tube_rom = load_tube_rom();
+        parasite = std::make_unique<ParasiteRunner>(&shared, tube_rom);
+        parasite->reset();
+
+        host_port = machine.state().memory.tube_socket.tube_host_port();
+    }
+
+    // Run interleaved with given batch sizes.
+    // Returns true if hang detected, false if budget exhausted.
+    bool run_until_hang(int host_batch, int parasite_batch, int max_rounds) {
+        int poll_count = 0;
+
+        for (int round = 0; round < max_rounds; ++round) {
+            for (int i = 0; i < host_batch; ++i) {
+                machine.step();
+                if (machine.memory().video_output.has_value())
+                    renderer.process(machine.memory().video_output.value());
+            }
+            for (int i = 0; i < parasite_batch; ++i)
+                parasite->step_instruction();
+
+            // Check for hang periodically
+            if ((round & 0x3FF) == 0) {
+                if (parasite->pc() == DECOMP_R1_BPL) {
+                    if (++poll_count > 1000) return true;
+                } else {
+                    poll_count = 0;
+                }
+            }
+        }
+        return false;
+    }
+
+    void enable_traces() {
+        parasite->parasite_cpu().trace().resize(4 * 1024 * 1024);
+        parasite->parasite_cpu().trace().set_enabled(true);
+
+        parasite->tube_port().register_trace().resize(1 * 1024 * 1024);
+        parasite->tube_port().register_trace().set_enabled(true);
+
+        host_port->register_trace().resize(1 * 1024 * 1024);
+        host_port->register_trace().set_enabled(true);
+    }
+
+    void print_analysis() {
+        auto& itrace = parasite->parasite_cpu().trace();
+        auto& ptrace = parasite->tube_port().register_trace();
+        auto& htrace = host_port->register_trace();
+
+        printf("\n=== CE2023 TRACE ANALYSIS ===\n");
+        printf("Parasite PC: $%04X  Cycles: %llu\n",
+               parasite->pc(), static_cast<unsigned long long>(parasite->cycle_count()));
+        printf("Instruction trace: %llu total, %zu available\n",
+               static_cast<unsigned long long>(itrace.total_count()), itrace.available());
+        printf("Parasite register trace: %llu total, %zu available\n",
+               static_cast<unsigned long long>(ptrace.total_count()), ptrace.available());
+        printf("Host register trace: %llu total, %zu available\n",
+               static_cast<unsigned long long>(htrace.total_count()), htrace.available());
+
+        // Transfer counters
+        printf("\nTransfer counters:\n");
+        printf("  R1 H2P: w=%llu r=%llu\n",
+               static_cast<unsigned long long>(shared.counters.r1_h2p_writes.load()),
+               static_cast<unsigned long long>(shared.counters.r1_h2p_reads.load()));
+        printf("  R3 H2P: w=%llu r=%llu\n",
+               static_cast<unsigned long long>(shared.counters.r3_h2p_writes.load()),
+               static_cast<unsigned long long>(shared.counters.r3_h2p_reads.load()));
+        printf("  R4 P2H: w=%llu r=%llu\n",
+               static_cast<unsigned long long>(shared.counters.r4_p2h_writes.load()),
+               static_cast<unsigned long long>(shared.counters.r4_p2h_reads.load()));
+
+        // R1 data read values from parasite trace
+        printf("\nR1 data reads (parasite, all %zu available):\n", ptrace.available());
+        int r1_count = 0;
+        for (size_t i = 0; i < ptrace.available(); ++i) {
+            auto& e = ptrace[i];
+            if (e.offset == 1 && e.direction == 0) {
+                if (r1_count < 20 || r1_count >= 690)
+                    printf("  [%d] seq=%llu val=$%02X\n",
+                           r1_count, static_cast<unsigned long long>(e.cycle), e.value);
+                else if (r1_count == 20)
+                    printf("  ...\n");
+                ++r1_count;
+            }
+        }
+        printf("  Total R1 data reads in trace: %d\n", r1_count);
+
+        // R1 data write values from host trace
+        printf("\nR1 data writes (host, all %zu available):\n", htrace.available());
+        int hw_count = 0;
+        for (size_t i = 0; i < htrace.available(); ++i) {
+            auto& e = htrace[i];
+            if (e.offset == 1 && e.direction == 1) {
+                if (hw_count < 20 || hw_count >= 690)
+                    printf("  [%d] seq=%llu val=$%02X\n",
+                           hw_count, static_cast<unsigned long long>(e.cycle), e.value);
+                else if (hw_count == 20)
+                    printf("  ...\n");
+                ++hw_count;
+            }
+        }
+        printf("  Total R1 data writes in trace: %d\n", hw_count);
+
+        // Decompressor output: check parasite RAM at $FC00+
+        printf("\nDecompressor output ($FC00+, first 32 bytes):\n");
+        printf("  Beebium: ");
+        for (int i = 0; i < 32; ++i)
+            printf("%02X ", parasite->memory_map().peek(0xFC00 + i));
+        printf("\n");
+        printf("  jsbeeb:  ");
+        for (int i = 0; i < 20; ++i)
+            printf("%02X ", JSBEEB_OUTPUT[i]);
+        printf("...\n");
+
+        // Find first output divergence
+        int first_diff = -1;
+        for (int i = 0; i < static_cast<int>(sizeof(JSBEEB_OUTPUT)); ++i) {
+            if (parasite->memory_map().peek(0xFC00 + i) != JSBEEB_OUTPUT[i]) {
+                first_diff = i;
+                break;
+            }
+        }
+        if (first_diff >= 0) {
+            printf("\n  FIRST OUTPUT DIVERGENCE at $%04X (byte %d): "
+                   "beebium=$%02X jsbeeb=$%02X\n",
+                   0xFC00 + first_diff, first_diff,
+                   parasite->memory_map().peek(0xFC00 + first_diff),
+                   JSBEEB_OUTPUT[first_diff]);
+        } else {
+            printf("\n  First %zu output bytes MATCH jsbeeb\n", sizeof(JSBEEB_OUTPUT));
+        }
+
+        // Decompressor zero page state
+        printf("\nDecompressor ZP state:\n");
+        printf("  $2F/$30 (output ptr): $%02X%02X\n",
+               parasite->memory_map().peek(0x30), parasite->memory_map().peek(0x2F));
+        printf("  $31 (bit buffer): $%02X\n", parasite->memory_map().peek(0x31));
+        printf("  $2C (source flag): $%02X\n", parasite->memory_map().peek(0x2C));
+        printf("  $2D/$2E (mem ptr): $%02X%02X\n",
+               parasite->memory_map().peek(0x2E), parasite->memory_map().peek(0x2D));
+        printf("  $33/$34 (backref ptr): $%02X%02X\n",
+               parasite->memory_map().peek(0x34), parasite->memory_map().peek(0x33));
+
+        // Last 30 instructions before hang
+        printf("\nLast 30 parasite instructions:\n");
+        size_t avail = itrace.available();
+        size_t istart = avail > 30 ? avail - 30 : 0;
+        for (size_t i = istart; i < avail; ++i) {
+            auto& e = itrace[i];
+            printf("  cyc=%-10llu PC=$%04X A=$%02X X=$%02X Y=$%02X SP=$%02X P=$%02X op=$%02X\n",
+                   static_cast<unsigned long long>(e.cycle),
+                   e.pc, e.a, e.x, e.y, e.sp, e.p, e.opcode);
+        }
+
+        printf("=== END TRACE ANALYSIS ===\n\n");
+    }
+};
+
 }  // namespace
 
-TEST_CASE("CE2023 divergence trace", "[tube][ce2023][trace]") {
+TEST_CASE("CE2023 divergence trace: 2:3 interleaved", "[tube][ce2023][trace]") {
     if (!files_available()) SKIP("Required ROMs or disc image not available");
 
-    auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
-    auto assets_dirpath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR);
+    TestFixture fix;
+    fix.enable_traces();
 
-    // --- Shared memory ---
-    TubeShared shared;
-    shared.init();
+    bool hung = fix.run_until_hang(2, 3, 30'000'000);
 
-    // --- Host setup: Model B with MOS + BASIC + DFS 2.26 (1770) + Tube ---
-    ModelB machine;
-    auto mos = load_rom(rom_dirpath / "acorn-mos_1_20.rom");
-    auto basic = load_rom(rom_dirpath / "bbc-basic_2.rom");
-    auto dfs = load_rom(rom_dirpath / DFS_ROM_FILENAME);
-    machine.memory().load_mos(mos.data(), mos.size());
-    machine.memory().load_basic(basic.data(), basic.size());
-    machine.memory().load_sideways_rom(14, dfs.data(), dfs.size());
-    machine.memory().install_acorn_1770();
+    fix.print_analysis();
 
-    // Insert CE2023 disc
-    auto disc_filepath = assets_dirpath / "discs" / DISC_FILENAME;
-    auto disc = FileDiscImage::load(disc_filepath);
-    REQUIRE(disc != nullptr);
-    machine.memory().disc_drive_0.insert(std::move(disc));
-
-    // Enable Tube and video
-    machine.state().memory.tube_socket.enable(&shared);
-    machine.memory().enable_video_output();
-    machine.memory().set_auto_boot(true);
-    machine.reset();
-
-    // Clear lifecycle command
-    shared.host_command.store(
-        static_cast<uint8_t>(TubeLifecycleCommand::None),
-        std::memory_order_release);
-
-    // --- Parasite setup ---
-    auto tube_rom = load_tube_rom();
-    ParasiteRunner parasite(&shared, tube_rom);
-    parasite.reset();
-
-    // --- Video (needed for screen text detection) ---
-    HeapFrameAllocator allocator;
-    FrameBuffer fb(&allocator, 640, 512);
-    FrameRenderer renderer(&fb);
-
-    // --- Enable traces before boot ---
-    constexpr size_t INSTRUCTION_TRACE_CAPACITY = 4 * 1024 * 1024;  // 4M entries = 64MB
-    constexpr size_t REGISTER_TRACE_CAPACITY = 1 * 1024 * 1024;     // 1M entries = 16MB
-
-    parasite.parasite_cpu().trace().resize(INSTRUCTION_TRACE_CAPACITY);
-    parasite.parasite_cpu().trace().set_enabled(true);
-
-    parasite.tube_port().register_trace().resize(REGISTER_TRACE_CAPACITY);
-    parasite.tube_port().register_trace().set_enabled(true);
-
-    auto* host_port = machine.state().memory.tube_socket.tube_host_port();
-    REQUIRE(host_port != nullptr);
-    host_port->register_trace().resize(REGISTER_TRACE_CAPACITY);
-    host_port->register_trace().set_enabled(true);
-
-    // --- Boot with auto-boot (interleaved host 2 : parasite 3) ---
-    // The decompressor runs, reads 702 R1 bytes, and either completes
-    // (game loads) or hangs at $09D4 (BPL $09D1, R1 poll loop).
-    // The 2:3 instruction ratio approximates the 2 MHz / 3 MHz clock
-    // speeds.  This is NOT instruction-by-instruction stepping -- each
-    // side runs a batch before yielding, so timing is non-deterministic
-    // within each batch.
-    INFO("Booting with auto-boot and traces enabled...");
-
-    bool reached_decompressor = false;
-    bool hung_at_poll = false;
-    int poll_count = 0;
-    constexpr int MAX_ROUNDS = 30'000'000;  // ~30 seconds emulated
-
-    for (int round = 0; round < MAX_ROUNDS; ++round) {
-        for (int i = 0; i < 2; ++i) {
-            machine.step();
-            if (machine.memory().video_output.has_value())
-                renderer.process(machine.memory().video_output.value());
-        }
-        for (int i = 0; i < 3; ++i)
-            parasite.step_instruction();
-
-        // Check parasite state periodically (every 1000 rounds)
-        if ((round & 0x3FF) == 0) {
-            uint16_t pc = parasite.pc();
-
-            if (pc == DECOMP_ENTRY && !reached_decompressor) {
-                reached_decompressor = true;
-            }
-
-            // Detect hang: stuck at BPL $09D1
-            if (pc == DECOMP_R1_BPL) {
-                ++poll_count;
-                if (poll_count > 1000) {
-                    hung_at_poll = true;
-                    break;
-                }
-            } else {
-                poll_count = 0;
-            }
-        }
-    }
-
-    // --- Analyse traces ---
-    INFO("Screen at end:\n" << dump_screen(machine));
-    INFO("Parasite PC: $" << std::hex << parasite.pc());
-    INFO("Parasite cycles: " << std::dec << parasite.cycle_count());
-    INFO("Reached decompressor: " << reached_decompressor);
-    INFO("Hung at R1 poll: " << hung_at_poll);
-
-    auto& itrace = parasite.parasite_cpu().trace();
-    auto& ptrace = parasite.tube_port().register_trace();
-    auto& htrace = host_port->register_trace();
-
-    INFO("Instruction trace: " << itrace.total_count() << " entries ("
-         << itrace.available() << " available)");
-    INFO("Parasite register trace: " << ptrace.total_count() << " entries ("
-         << ptrace.available() << " available)");
-    INFO("Host register trace: " << htrace.total_count() << " entries ("
-         << htrace.available() << " available)");
-
-    // Count R1 data reads from parasite trace
-    size_t r1_data_reads = 0;
-    for (size_t i = 0; i < ptrace.available(); ++i) {
-        auto& e = ptrace[i];
-        if (e.offset == 1 && e.direction == 0)
-            ++r1_data_reads;
-    }
-    INFO("R1 data reads in trace: " << r1_data_reads);
-
-    // Count R1 data writes from host trace
-    size_t r1_data_writes = 0;
-    for (size_t i = 0; i < htrace.available(); ++i) {
-        auto& e = htrace[i];
-        if (e.offset == 1 && e.direction == 1)
-            ++r1_data_writes;
-    }
-    INFO("R1 data writes in trace: " << r1_data_writes);
-
-    // Dump last 50 parasite instructions
-    INFO("Last 50 parasite instructions:");
-    size_t avail = itrace.available();
-    size_t start = avail > 50 ? avail - 50 : 0;
-    for (size_t i = start; i < avail; ++i) {
-        auto& e = itrace[i];
-        char buf[128];
-        snprintf(buf, sizeof(buf),
-                 "  cyc=%llu PC=$%04X A=$%02X X=$%02X Y=$%02X SP=$%02X P=$%02X op=$%02X",
-                 static_cast<unsigned long long>(e.cycle),
-                 e.pc, e.a, e.x, e.y, e.sp, e.p, e.opcode);
-        INFO(buf);
-    }
-
-    // Dump R1 data reads and writes for correlation
-    INFO("R1 data writes (host) -- last 20:");
-    size_t hw_avail = htrace.available();
-    size_t hw_start = hw_avail > 20 ? hw_avail - 20 : 0;
-    for (size_t i = hw_start; i < hw_avail; ++i) {
-        auto& e = htrace[i];
-        if (e.offset == 1 && e.direction == 1) {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "  seq=%llu val=$%02X",
-                     static_cast<unsigned long long>(e.cycle), e.value);
-            INFO(buf);
-        }
-    }
-
-    INFO("R1 data reads (parasite) -- last 20:");
-    size_t pr_avail = ptrace.available();
-    size_t pr_start = pr_avail > 20 ? pr_avail - 20 : 0;
-    for (size_t i = pr_start; i < pr_avail; ++i) {
-        auto& e = ptrace[i];
-        if (e.offset == 1 && e.direction == 0) {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "  seq=%llu val=$%02X",
-                     static_cast<unsigned long long>(e.cycle), e.value);
-            INFO(buf);
-        }
-    }
-
-    // Transfer counter summary
-    INFO("R1 H2P writes: " << shared.counters.r1_h2p_writes.load());
-    INFO("R1 H2P reads: " << shared.counters.r1_h2p_reads.load());
-    INFO("R3 H2P writes: " << shared.counters.r3_h2p_writes.load());
-    INFO("R3 H2P reads: " << shared.counters.r3_h2p_reads.load());
-    INFO("R4 P2H writes: " << shared.counters.r4_p2h_writes.load());
-    INFO("R4 P2H reads: " << shared.counters.r4_p2h_reads.load());
-
-    // The test succeeds if it completes (either hang detected or budget
-    // exhausted).  The INFO output contains the trace data for analysis.
-    // If the game loads successfully, hung_at_poll will be false.
-    if (hung_at_poll) {
-        WARN("CE2023 hung at R1 poll ($09D4) -- decompressor diverged");
-    } else if (!reached_decompressor) {
-        WARN("CE2023 did not reach decompressor entry -- boot failed");
+    if (hung) {
+        WARN("CE2023 HUNG at R1 poll ($09D4) with 2:3 interleaving");
     } else {
-        WARN("CE2023 did not hang within cycle budget -- may have loaded!");
+        WARN("CE2023 did not hang within budget (may have loaded!)");
+    }
+}
+
+TEST_CASE("CE2023 divergence trace: 1:1 interleaved", "[tube][ce2023][trace]") {
+    if (!files_available()) SKIP("Required ROMs or disc image not available");
+
+    TestFixture fix;
+    fix.enable_traces();
+
+    // 1:1 interleaving: tightest coupling, similar to jsbeeb/B-Em.
+    // If this works, the bug is timing-dependent on batch size.
+    bool hung = fix.run_until_hang(1, 1, 60'000'000);
+
+    fix.print_analysis();
+
+    if (hung) {
+        WARN("CE2023 HUNG at R1 poll ($09D4) with 1:1 interleaving");
+    } else {
+        WARN("CE2023 did not hang within budget with 1:1 interleaving (may have loaded!)");
     }
 }

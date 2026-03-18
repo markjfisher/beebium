@@ -34,7 +34,9 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
             result |= TubeUla::DATA_AVAILABLE;
         if (shared_->r1_p2h.count.load(std::memory_order_acquire) < 24)
             result |= TubeUla::SPACE_AVAILABLE;
-        register_trace_.record(0, 0, result, false);
+        // R1 status reads are not traced -- they generate millions of
+        // entries from polling loops and fill the ring buffer with noise.
+        // Only R1 data reads (offset 1) are traced.
         break;
     }
 
