@@ -841,76 +841,40 @@ With the correct offset, ALL tests pass consistently (50 iterations of
 **The R1 latch protocol is correct.** There is no TOCTOU race.
 The CE2023 hang has a different root cause that remains to be found.
 
-### Fix approach: deferred ready clear at END of tick
+### Current status (March 2026)
 
-The ready flag must be cleared at the END of the tick where the data
-was read, not at the START of the next tick. The correct sequence within
-`ParasiteCpu::tick()`:
+The R1 latch protocol is proven correct at every level of testing:
+- Single-thread unit tests
+- Multi-thread stress tests (70,200 transfers)
+- Cross-process stress tests via POSIX shared memory (35,100 transfers)
+- Real 65C02 CPU stress tests (10,000 transfers, 3 consecutive runs)
 
-```
-1. (*cpu_.tfn)(&cpu_)              // advance 6502 state machine
-2. cpu_.dbus = memory_.read(addr)  // parasite_read() caches value,
-                                   //   sets pending, ready STAYS SET
-3. pirq()                          // sees ready=1 (consistent)
-4. pnmi_level()                    // sees consistent state
-5. complete_cycle()                // NOW clear ready (end of tick)
-```
+`seq_cst` memory ordering on all R1 atomics doesn't change the outcome,
+confirming memory ordering is not the issue.
 
-On the next tick:
-```
-1. (*cpu_.tfn)(&cpu_)              // next instruction cycle
-2. memory_.read(addr)              // if BIT $FEF8: status reads
-                                   //   ready=0 (cleared at step 5)
-```
+The CE2023 hang persists. The investigation has eliminated:
+- R1 data corruption (702/702 bytes match jsbeeb)
+- Memory ordering bugs (ARM acquire/release proven correct, seq_cst tested)
+- Back-reference reads hitting Tube registers (jsbeeb confirms zero)
+- Spurious NMIs or IRQs during decompression (566 NMIs, all in ROM)
+- bus_stretch_cancel data loss (fixed, doesn't affect CE2023)
+- Tube latch TOCTOU race (6502 test was a test bug, protocol is correct)
+- Pre-decompression memory state (identical between emulators)
 
-**Why NOT at the start of the next tick**: if `complete_cycle()` runs
-at the start, the status read at step 2 would see ready=1 (not yet
-cleared), causing the 6502 to think data is still available and
-triggering a spurious `LDA $FEF9` that reads stale data.
+The remaining mystery: identical input data + identical initial state +
+identical bit-serial processing for 700+ entries, yet the decompressor
+diverges non-deterministically at a varying point during free-running
+concurrent execution. Instruction stepping produces correct output.
 
-**Why at the end of the same tick**: the data has been captured in
-step 2, interrupt routing in steps 3-4 sees consistent state, and
-clearing at step 5 means the next tick's status read correctly sees
-ready=0. The host can overwrite after step 5, but that's fine because
-the next instruction hasn't started yet.
+### Next investigation step
 
-### Fix options
-
-1. **Lock-step execution**: run host and parasite in alternating batches
-   synchronised to Tube register accesses. This would make register
-   reads deterministic but sacrifice the performance benefits of
-   concurrent execution.
-
-2. **Shadow register reads during decompression**: when the M flag is
-   cleared (indicating the custom protocol is active), return the RAM
-   value for reads from `$FEF8-$FEFF` instead of the live register
-   value. This matches what the decompressor expects (it wrote to RAM,
-   it expects to read back what it wrote).
-
-3. **CAS suppression emulation**: on real hardware, CAS is suppressed
-   when the Tube address is selected, meaning neither ROM nor RAM is
-   read -- only the Tube ULA. The decompressor's back-reference reads
-   from `$FEF8-$FEFF` always return Tube register values on real
-   hardware. The fix should ensure these values are consistent with
-   the single-threaded execution model.
-
-4. **Per-register snapshots at instruction boundaries**: snapshot the
-   Tube register state at each parasite instruction boundary, so that
-   back-reference reads return the value from the last snapshot rather
-   than the current live value. This preserves concurrency while
-   ensuring deterministic reads.
-
-### Fix required
-
-`host_write` must not silently drop data when `bus_stretch_cancel` is
-set. Options:
-
-1. **Return a success/failure indicator** so `Machine::run()` can retry
-   the write instruction after resume.
-2. **Buffer the pending write** in TubeHostPort and complete it when
-   bus_stretch_cancel clears.
-3. **Don't use bus_stretch_cancel for data writes** -- only use it for
-   status polling spin-waits.
+The divergence must be caused by something that differs between stepped
+and free-running execution BESIDES the R1 data values. Candidates:
+- Tube STATUS register values returned during polling (timing-dependent
+  but should be harmless since they only affect poll loop duration)
+- The `update_pnmi()` call frequency (varies with poll count, but
+  idempotent when M=0)
+- Some aspect of the concurrent execution not yet instrumented
 
 ## External References
 
