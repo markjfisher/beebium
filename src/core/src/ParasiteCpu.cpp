@@ -36,6 +36,15 @@ void ParasiteCpu::reset() {
 }
 
 void ParasiteCpu::tick() {
+    // Detect NMI entry BEFORE tfn runs.  The 65C02's Cycle0_InterruptCMOS
+    // clears nmi_flags and changes read to M6502ReadType_Instruction at T0,
+    // destroying the evidence before we could check it post-tfn.  At this
+    // point M6502_NextInstruction has set read=Interrupt and nmi_flags!=0,
+    // but tfn hasn't executed yet.
+    const bool entering_nmi = !in_nmi_handler_
+                           && cpu_.read == M6502ReadType_Interrupt
+                           && cpu_.nmi_flags != 0;
+
     // Execute one CPU cycle (determines address and r/w direction)
     (*cpu_.tfn)(&cpu_);
 
@@ -51,15 +60,10 @@ void ParasiteCpu::tick() {
     // PIRQ is level-sensitive (directly drives IRQ).
     M6502_SetDeviceIRQ(&cpu_, kPirqMask, tube_port_.pirq() ? 1 : 0);
 
-    // Detect NMI handler entry: CPU is in the interrupt sequence and
-    // nmi_flags is still set (cleared later at T4).  We check nmi_flags
-    // directly rather than using M6502_IsProbablyIRQ because that macro
-    // only tests irq_flags != 0, which is true whenever PIRQ is asserted
-    // -- even when the CPU is actually taking the higher-priority NMI.
-    if (cpu_.read == M6502ReadType_Interrupt && cpu_.nmi_flags != 0) {
+    // Commit NMI entry: clear device_nmi_flags so that reasserting PNMI
+    // after RTI produces a clean 0-to-1 edge in M6502_SetDeviceNMI.
+    if (entering_nmi) {
         in_nmi_handler_ = true;
-        // Clear device_nmi_flags so that reasserting PNMI after RTI
-        // produces a clean 0-to-1 edge in M6502_SetDeviceNMI.
         M6502_SetDeviceNMI(&cpu_, kPnmiMask, 0);
     }
 

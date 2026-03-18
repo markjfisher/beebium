@@ -83,7 +83,7 @@ static void plant_r3_receiver(ParasiteMemoryMap& mem, uint8_t num_bytes) {
         0x58,                                // CLI
         0xA5, COUNTER_ZP,                    // LDA $10
         0xC9, num_bytes,                     // CMP #num_bytes
-        0xD0, 0xFB,                          // BNE $0401   (offset -5)
+        0xD0, 0xFA,                          // BNE $0401   (offset -6)
         0x80, 0xFE,                          // BRA *        (halt)
     });
 
@@ -236,7 +236,7 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes synchronous", "[tube][6502][r3]") {
     }
 }
 
-TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3][!mayfail]") {
+TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3]") {
     TubeShared shared;
     shared.init();
     TubeHostPort host(&shared);
@@ -275,6 +275,52 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3][!mayfail
         INFO("byte " << i);
         CHECK(memory.ram(RESULT_ADDR + i) == static_cast<uint8_t>(i & 0xFF));
     }
+}
+
+TEST_CASE("6502 R3 NMI transfer: in_nmi_handler is set during handler", "[tube][6502][r3][diagnostic]") {
+    // Verify that in_nmi_handler_ transitions to true when the NMI fires
+    // and back to false after RTI.  This is the core invariant that the
+    // pre-tfn detection fix ensures.
+
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite_port(&shared);
+
+    auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
+    ParasiteMemoryMap memory(parasite_port, rom);
+    ParasiteCpu cpu(memory, parasite_port);
+
+    plant_r3_receiver(memory, 1);
+    memory.read(0xFEF8);
+    memory.ram(0xFFFC) = MAIN_ADDR & 0xFF;
+    memory.ram(0xFFFD) = (MAIN_ADDR >> 8) & 0xFF;
+    memory.ram(0xFFFA) = NMI_ADDR & 0xFF;
+    memory.ram(0xFFFB) = (NMI_ADDR >> 8) & 0xFF;
+    memory.ram(COUNTER_ZP) = 0;
+    cpu.reset();
+
+    // Write one byte with M flag to trigger PNMI
+    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    host.host_write(5, 0x42);
+    REQUIRE(parasite_port.pnmi_level() == true);
+
+    bool saw_nmi_handler_true = false;
+    bool saw_nmi_handler_false_after_true = false;
+
+    for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+        cpu.tick();
+        if (cpu.in_nmi_handler()) {
+            saw_nmi_handler_true = true;
+        } else if (saw_nmi_handler_true) {
+            saw_nmi_handler_false_after_true = true;
+        }
+    }
+
+    REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
+    CHECK(memory.ram(RESULT_ADDR) == 0x42);
+    CHECK(saw_nmi_handler_true);
+    CHECK(saw_nmi_handler_false_after_true);
 }
 
 TEST_CASE("6502 R3 NMI transfer: 200 bytes, repeated 50 times", "[tube][6502][r3]") {
