@@ -661,13 +661,61 @@ The decompressor produces **276 correct output bytes** (addresses
 R1 data is consumed correctly before the bit-serial interpretation
 diverges.
 
+### Output divergence is NON-DETERMINISTIC
+
+Further testing revealed that the divergence point varies between runs.
+In one run, `$FD14` contained the correct value (`$17`), while in
+another it contained `$58`. All 5 repeated runs failed to reach
+"Loading", but the specific divergence point changed each time.
+
+The decompressor output is deterministic when stepped (single
+instruction at a time, host running ahead), but non-deterministic
+when free-running. This confirms the root cause is a **concurrency
+race** in the Tube register access between host and parasite.
+
+### Root cause analysis
+
+The decompressor reads R1 data via a tight poll-read sequence:
+```
+$09D1  BIT $FEF8    ; poll R1 status (parasite_read offset 0)
+$09D4  BPL $09D1    ; loop until data available
+$09D6  LDA $FEF9    ; read R1 data (parasite_read offset 1)
+```
+
+Each `BIT $FEF8` and `LDA $FEF9` calls `parasite_read()` which also
+calls `update_pnmi()`. `update_pnmi()` reads R3 state from shared
+memory. The number of R1 status polls before data is available varies
+with concurrent timing. Each extra poll calls `update_pnmi()` which
+reads R3 shared state.
+
+Since `update_pnmi()` modifies `pnmi_edge_` and `prev_pnmi_` based on
+R3 shared state, and R3 state can change between polls (the host may
+write/read R3 concurrently for the NMI transfer), the PNMI edge
+detection state might differ between runs. If PNMI fires at different
+points, the NMI handler corrupts the decompressor's state.
+
+However, the NMI count (566) matches the expected R3 transfer size,
+and all NMIs fire in the Tube Client ROM, not the decompressor. So PNMI
+is not the direct cause.
+
+The remaining hypothesis: **the R1 data read returns incorrect data
+due to a read-after-write race in shared memory**. Even with the ARM
+memory ordering fix (acquire before value), there might be a window
+where the host's value store is not yet visible to the parasite's value
+load. The `ready.exchange(0, acq_rel)` should synchronise, but the
+exchange ALSO clears ready, allowing the host to write the next byte.
+If the host writes and the parasite re-reads the latch (e.g., via a
+second `parasite_read(1)` call) before the host's value store is
+visible, the parasite sees the new byte instead of the expected one.
+
 ### Next investigation step
 
-Instrument both emulators to trace the output byte (A register) at
-`STA ($2F)` around output byte #270-280 to find the exact instruction
-where the decompressor takes a different code path. This will reveal
-whether the divergence is in a back-reference (reading from RAM that
-differs due to concurrent access timing) or in the LZ control flow.
+Add per-byte checksumming to the R1 data path: log every
+`parasite_read(1)` call with its `was_ready` flag and value. Compare
+the full 702-byte sequence between multiple Beebium runs and jsbeeb
+to find which byte is received incorrectly and whether `was_ready` is
+ever 0 during a data read (indicating an empty-latch read that returns
+stale data).
 
 ### Fix required
 
