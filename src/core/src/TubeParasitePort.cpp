@@ -39,13 +39,15 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 1: {
         // R1 data: read from H-to-P latch.
-        // Always clear ready and signal space available to the host,
-        // regardless of whether data was pending. This matches real
-        // hardware behaviour (see B-Em commit e04aab0) and avoids a
-        // TOCTOU race where the host writes between our value read
-        // and the ready check.
-        result = shared_->r1_h2p.value.load(std::memory_order_acquire);
-        if (shared_->r1_h2p.ready.exchange(0, std::memory_order_acq_rel) != 0) {
+        //
+        // The ready flag is the synchronisation point between host and parasite.
+        // We must load ready (with acquire) BEFORE loading the value, so that
+        // the host's value.store (relaxed, before ready.store release) is
+        // visible. Loading value before the acquire on ready would allow the
+        // ARM memory model to return a stale value.
+        auto was_ready = shared_->r1_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        result = shared_->r1_h2p.value.load(std::memory_order_relaxed);
+        if (was_ready != 0) {
             shared_->counters.r1_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
@@ -66,8 +68,10 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 3: {
         // R2 data: read from H-to-P latch.
-        result = shared_->r2_h2p.value.load(std::memory_order_acquire);
-        if (shared_->r2_h2p.ready.exchange(0, std::memory_order_acq_rel) != 0) {
+        // Load ready (acquire) BEFORE value -- see R1 comment for rationale.
+        auto was_ready = shared_->r2_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        result = shared_->r2_h2p.value.load(std::memory_order_relaxed);
+        if (was_ready != 0) {
             shared_->counters.r2_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
@@ -116,8 +120,10 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 7: {
         // R4 data: read from H-to-P latch.
-        result = shared_->r4_h2p.value.load(std::memory_order_acquire);
-        if (shared_->r4_h2p.ready.exchange(0, std::memory_order_acq_rel) != 0) {
+        // Load ready (acquire) BEFORE value -- see R1 comment for rationale.
+        auto was_ready = shared_->r4_h2p.ready.exchange(0, std::memory_order_acq_rel);
+        result = shared_->r4_h2p.value.load(std::memory_order_relaxed);
+        if (was_ready != 0) {
             shared_->counters.r4_h2p_reads.fetch_add(1, std::memory_order_relaxed);
         }
         break;
