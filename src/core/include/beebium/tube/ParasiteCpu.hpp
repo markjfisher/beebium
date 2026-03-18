@@ -73,6 +73,11 @@ public:
     InstructionTrace& trace() { return trace_; }
     const InstructionTrace& trace() const { return trace_; }
 
+    // Memory write watchpoint.  When a write hits this address and
+    // tracing is enabled, a pseudo-entry is recorded with opcode=$FF,
+    // PC=address, A=written value.  Set to 0xFFFF to disable.
+    void set_watch_write_addr(uint16_t addr) { watch_write_addr_ = addr; }
+
 private:
     static constexpr M6502_DeviceIRQFlags kPirqMask = 1;
     static constexpr M6502_DeviceNMIFlags kPnmiMask = 1;
@@ -93,6 +98,9 @@ private:
     // Entry: detected when M6502ReadType_Interrupt and it's an NMI (not IRQ).
     // Exit:  detected when an RTI instruction (opcode $40) is about to execute.
     bool in_nmi_handler_ = false;
+
+    // Memory write watchpoint (0xFFFF = disabled).
+    uint16_t watch_write_addr_ = 0xFFFF;
 
     // Instruction trace (not allocated until capacity is set; default 4M entries).
     InstructionTrace trace_;

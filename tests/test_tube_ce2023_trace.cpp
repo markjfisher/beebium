@@ -163,6 +163,9 @@ struct TestFixture {
         parasite->parasite_cpu().trace().resize(4 * 1024 * 1024);
         parasite->parasite_cpu().trace().set_enabled(true);
 
+        // Watch writes to $0CE6 (the divergent table entry)
+        parasite->parasite_cpu().set_watch_write_addr(0x0CE6);
+
         parasite->tube_port().register_trace().resize(1 * 1024 * 1024);
         parasite->tube_port().register_trace().set_enabled(true);
 
@@ -349,6 +352,83 @@ struct TestFixture {
                            c.pc, c.a, c.x, c.y, c.sp, c.p, c.opcode);
                 }
                 ++output_count;
+            }
+        }
+
+        // Search for watchpoint hits (writes to $0CE6, opcode=$FF in trace)
+        printf("\nWrites to $0CE6 (watchpoint hits):\n");
+        for (size_t i = 0; i < avail; ++i) {
+            auto& e = itrace[i];
+            if (e.opcode == 0xFF && e.pc == 0x0CE6) {
+                // A = written value, find the preceding instruction
+                printf("  WRITE $0CE6 = $%02X at cyc=%llu",
+                       e.a, static_cast<unsigned long long>(e.cycle));
+                // Show the instruction that caused the write (previous entry)
+                if (i > 0) {
+                    auto& prev = itrace[i - 1];
+                    printf("  (from PC=$%04X op=$%02X A=$%02X X=$%02X Y=$%02X)",
+                           prev.pc, prev.opcode, prev.a, prev.x, prev.y);
+                }
+                printf("\n");
+                // Show 5 instructions before the write for context
+                size_t ctx = (i >= 6) ? i - 6 : 0;
+                for (size_t j = ctx; j < i; ++j) {
+                    auto& c = itrace[j];
+                    printf("    cyc=%-10llu PC=$%04X A=$%02X X=$%02X Y=$%02X op=$%02X\n",
+                           static_cast<unsigned long long>(c.cycle),
+                           c.pc, c.a, c.x, c.y, c.opcode);
+                }
+            }
+        }
+
+        // Dump decompressor code from $0800 to understand the init phase
+        printf("\nDecompressor code $0800-$0860:\n");
+        for (int row = 0; row < 6; ++row) {
+            printf("  $%04X: ", 0x0800 + row * 16);
+            for (int col = 0; col < 16; ++col)
+                printf("%02X ", parasite->memory_map().peek(0x0800 + row * 16 + col));
+            printf("\n");
+        }
+
+        // Dump the table area around $0CE6
+        printf("\nTable area $0CD0-$0D00:\n");
+        for (int row = 0; row < 3; ++row) {
+            printf("  $%04X: ", 0x0CD0 + row * 16);
+            for (int col = 0; col < 16; ++col)
+                printf("%02X ", parasite->memory_map().peek(0x0CD0 + row * 16 + col));
+            printf("\n");
+        }
+
+        // The key question: what SHOULD be at $0CE6?
+        // The table is 256 bytes at $0CBE-$0DBE.
+        // Offset $28 into the table ($0CE6) should be $38.
+        // Let me check if the first 256 bytes written by the decompressor
+        // (to $FC00+) could explain this.  The decompressor writes from
+        // $FC00 and wraps through 64K.  Address $0CE6 is at output offset
+        // $0CE6 - $FC00 = $10E6 (mod $10000) = $10E6 = 4326 bytes into
+        // the output.  So $0CE6 gets overwritten after 4326 output bytes.
+        // But we only produce 992 output bytes before hanging, so $0CE6
+        // was NOT overwritten by the decompressor output.
+        //
+        // Therefore $0CE6 must have been written during the INIT phase
+        // ($0800-$0812) or during the R3 NMI transfer.
+
+        // Search instruction trace for STA instructions that write to the
+        // table area ($0C00-$0E00).  Look for STA abs,X ($9D) where the
+        // base + X lands in this range.
+        printf("\nSearching for STA abs,X ($9D) instructions in $0980-$09A0 range:\n");
+        int sta_count = 0;
+        for (size_t i = 0; i < avail && sta_count < 30; ++i) {
+            auto& e = itrace[i];
+            // Look for any STA variant that might write to $0C00-$0E00
+            // The $0997 instruction is BD (LDA abs,X), and nearby there
+            // might be STA instructions that build the table
+            if (e.pc >= 0x0800 && e.pc <= 0x0A36 &&
+                (e.opcode == 0x9D || e.opcode == 0x99 || e.opcode == 0x91 || e.opcode == 0x92)) {
+                printf("  [%zu] cyc=%llu PC=$%04X A=$%02X X=$%02X Y=$%02X op=$%02X\n",
+                       i, static_cast<unsigned long long>(e.cycle),
+                       e.pc, e.a, e.x, e.y, e.opcode);
+                ++sta_count;
             }
         }
 

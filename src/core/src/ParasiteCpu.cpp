@@ -54,6 +54,13 @@ void ParasiteCpu::tick() {
         cpu_.dbus = memory_.read(addr);
     } else {
         memory_.write(addr, cpu_.dbus);
+        // Memory write watchpoint: record writes to watched addresses
+        // in the instruction trace as pseudo-entries with opcode=$FF.
+        if (addr == watch_write_addr_ && trace_.enabled()) {
+            trace_.record(cycle_count_, addr,
+                          cpu_.dbus, cpu_.x, cpu_.y, cpu_.s.b.l,
+                          M6502_GetP(&cpu_).value, 0xFF);
+        }
     }
 
     // Record instruction trace at opcode fetch (dbus has the opcode,
