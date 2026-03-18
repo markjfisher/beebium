@@ -497,6 +497,21 @@ add_executable(test_tube_r4_6502 test_tube_r4_6502.cpp)
 target_link_libraries(test_tube_r4_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_r4_6502)
 
+# Tube R1 P-to-H transfer with real 65C02 CPU
+add_executable(test_tube_r1_p2h_6502 test_tube_r1_p2h_6502.cpp)
+target_link_libraries(test_tube_r1_p2h_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_r1_p2h_6502)
+
+# Tube R3 P-to-H transfer with real 65C02 CPU
+add_executable(test_tube_r3_p2h_6502 test_tube_r3_p2h_6502.cpp)
+target_link_libraries(test_tube_r3_p2h_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_r3_p2h_6502)
+
+# Tube PIRQ-driven transfer with real 65C02 CPU
+add_executable(test_tube_pirq_6502 test_tube_pirq_6502.cpp)
+target_link_libraries(test_tube_pirq_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
+catch_discover_tests(test_tube_pirq_6502)
+
 # Tube R3 register race condition regression tests
 add_executable(test_tube_r3_race test_tube_r3_race.cpp)
 target_link_libraries(test_tube_r3_race PRIVATE beebium_core Catch2::Catch2WithMain)
