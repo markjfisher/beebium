@@ -117,8 +117,8 @@ TEST_CASE("CE2023 standalone: decompressor from snapshot", "[tube][ce2023][stand
     M6502_SetP(&cpu.cpu(), 0x60);
     cpu.cpu().dbus = memory.peek(0x0819);
 
-    // Enable traces
-    cpu.trace().resize(4 * 1024 * 1024);
+    // Enable traces -- 16M entries (256MB) to capture the full run
+    cpu.trace().resize(16 * 1024 * 1024);
     cpu.trace().set_enabled(true);
     cpu.set_watch_write_addr(0x0CE6);
 
@@ -221,5 +221,31 @@ TEST_CASE("CE2023 standalone: decompressor from snapshot", "[tube][ce2023][stand
 
     printf("Total instructions: %llu\n",
            static_cast<unsigned long long>(itrace.total_count()));
+
+    // Dump trace to binary file (same format as jsbeeb: 8 bytes/entry)
+    // Format: PC:u16le, A:u8, X:u8, Y:u8, SP:u8, P:u8, opcode:u8
+    auto trace_filepath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR)
+                        / "ce2023_beebium_trace.bin";
+    {
+        std::ofstream tf(trace_filepath, std::ios::binary);
+        size_t trace_avail = itrace.available();
+        for (size_t i = 0; i < trace_avail; ++i) {
+            auto& e = itrace[i];
+            if (e.opcode == 0xFF) continue;  // skip watchpoint pseudo-entries
+            uint8_t entry[8];
+            entry[0] = e.pc & 0xFF;
+            entry[1] = (e.pc >> 8) & 0xFF;
+            entry[2] = e.a;
+            entry[3] = e.x;
+            entry[4] = e.y;
+            entry[5] = e.sp;
+            entry[6] = e.p & 0xCF;  // mask bits 4-5 (unused/break)
+            entry[7] = e.opcode;
+            tf.write(reinterpret_cast<char*>(entry), 8);
+        }
+        printf("Trace written to: %s (%zu entries)\n",
+               trace_filepath.string().c_str(), trace_avail);
+    }
+
     printf("=== END STANDALONE ===\n\n");
 }
