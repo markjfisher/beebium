@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/TubeHostPort.hpp>
+#include <beebium/tube/TubeParasitePort.hpp>
 #include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
@@ -274,6 +275,103 @@ TEST_CASE("TubeShared cross-thread: R1 FIFO stress test", "[tube][shared][thread
 
     // FIFO should be empty
     CHECK(shared.r1_p2h.count.load(std::memory_order_acquire) == 0);
+}
+
+// ===========================================================================
+// Cross-thread R1 H-to-P latch: sustained transfer (CE2023 pattern)
+// ===========================================================================
+
+TEST_CASE("TubeShared cross-thread: R1 H-to-P sustained transfer via ports", "[tube][shared][threads]") {
+    // Simulates the CE2023 R1 polled transfer: host writes 702 bytes
+    // through TubeHostPort (bus-stretch spin on full latch), parasite
+    // reads through TubeParasitePort (poll status, then read data).
+    // Both run as fast as possible. Every byte must arrive correctly.
+
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    constexpr int NUM_BYTES = 702;
+    std::vector<uint8_t> received;
+    received.reserve(NUM_BYTES);
+
+    std::thread parasite_thread([&] {
+        for (int i = 0; i < NUM_BYTES; ++i) {
+            // Poll R1 status until data available (bit 7)
+            while ((parasite.parasite_read(0) & TubeUla::DATA_AVAILABLE) == 0) {
+                // spin -- mimics BIT $FEF8; BPL loop
+            }
+            // Read R1 data
+            uint8_t byte = parasite.parasite_read(1);
+            received.push_back(byte);
+        }
+    });
+
+    // Host writes bytes through bus-stretched R1
+    for (int i = 0; i < NUM_BYTES; ++i) {
+        host.host_write(1, static_cast<uint8_t>(i & 0xFF));
+    }
+
+    parasite_thread.join();
+
+    // Verify all bytes arrived in order
+    REQUIRE(received.size() == NUM_BYTES);
+    int first_error = -1;
+    for (int i = 0; i < NUM_BYTES; ++i) {
+        if (received[i] != static_cast<uint8_t>(i & 0xFF)) {
+            if (first_error < 0) first_error = i;
+            INFO("byte " << i << ": expected $" << std::hex << (i & 0xFF)
+                 << " got $" << std::hex << static_cast<int>(received[i]));
+            CHECK(received[i] == static_cast<uint8_t>(i & 0xFF));
+        }
+    }
+    if (first_error >= 0) {
+        FAIL("First corrupted byte at index " << first_error);
+    }
+}
+
+TEST_CASE("TubeShared cross-thread: R1 H-to-P repeated transfer stress", "[tube][shared][threads]") {
+    // Run the R1 H-to-P transfer 100 times to catch non-deterministic races.
+
+    TubeShared shared;
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    constexpr int NUM_BYTES = 702;
+    constexpr int ITERATIONS = 100;
+
+    for (int iter = 0; iter < ITERATIONS; ++iter) {
+        shared.init();
+        std::vector<uint8_t> received;
+        received.reserve(NUM_BYTES);
+
+        // Offset the byte values each iteration to detect stale data
+        uint8_t base = static_cast<uint8_t>(iter * 7);
+
+        std::thread parasite_thread([&] {
+            for (int i = 0; i < NUM_BYTES; ++i) {
+                while ((parasite.parasite_read(0) & TubeUla::DATA_AVAILABLE) == 0) {}
+                received.push_back(parasite.parasite_read(1));
+            }
+        });
+
+        for (int i = 0; i < NUM_BYTES; ++i) {
+            host.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
+        }
+
+        parasite_thread.join();
+
+        REQUIRE(received.size() == NUM_BYTES);
+        for (int i = 0; i < NUM_BYTES; ++i) {
+            uint8_t expected = static_cast<uint8_t>((base + i) & 0xFF);
+            if (received[i] != expected) {
+                FAIL("Iteration " << iter << ", byte " << i
+                     << ": expected $" << std::hex << static_cast<int>(expected)
+                     << " got $" << std::hex << static_cast<int>(received[i]));
+            }
+        }
+    }
 }
 
 // ===========================================================================
