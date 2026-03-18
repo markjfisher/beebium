@@ -522,6 +522,14 @@ target_compile_definitions(test_tube_ce2023_trace PRIVATE
 )
 catch_discover_tests(test_tube_ce2023_trace)
 
+# CE2023 standalone decompressor test (from snapshot, no boot needed)
+add_executable(test_tube_ce2023_standalone test_tube_ce2023_standalone.cpp)
+target_link_libraries(test_tube_ce2023_standalone PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
+target_compile_definitions(test_tube_ce2023_standalone PRIVATE
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_tube_ce2023_standalone)
+
 # Tube control flag tests with real 65C02 CPU
 add_executable(test_tube_control_6502 test_tube_control_6502.cpp)
 target_link_libraries(test_tube_control_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)

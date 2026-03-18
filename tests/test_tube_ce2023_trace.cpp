@@ -232,6 +232,18 @@ struct TestFixture {
         }
         printf("  Total R1 data writes in trace: %d\n", hw_count);
 
+        // Save R1 data to file for standalone test
+        if (hw_count == 702) {
+            auto r1_filepath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR) / "ce2023_r1_data.bin";
+            std::ofstream r1_file(r1_filepath, std::ios::binary);
+            for (size_t i = 0; i < htrace.available(); ++i) {
+                auto& e = htrace[i];
+                if (e.offset == 1 && e.direction == 1)
+                    r1_file.write(reinterpret_cast<const char*>(&e.value), 1);
+            }
+            printf("  R1 data saved to: %s\n", r1_filepath.string().c_str());
+        }
+
         // Decompressor output: check parasite RAM at $FC00+
         printf("\nDecompressor output ($FC00+, first 32 bytes):\n");
         printf("  Beebium: ");
@@ -447,6 +459,224 @@ struct TestFixture {
 };
 
 }  // namespace
+
+TEST_CASE("CE2023 memory snapshot at decompressor entry", "[tube][ce2023][trace]") {
+    if (!files_available()) SKIP("Required ROMs or disc image not available");
+
+    TestFixture fix;
+
+    // Run interleaved until parasite reaches $0810 (JSR $0A2D = write R4 ack)
+    // or $0819 (start of main decompressor loop, after the R4 ack).
+    bool reached = false;
+    for (int round = 0; round < 30'000'000; ++round) {
+        for (int i = 0; i < 2; ++i) {
+            fix.machine.step();
+            if (fix.machine.memory().video_output.has_value())
+                fix.renderer.process(fix.machine.memory().video_output.value());
+        }
+        fix.parasite->step_instruction();
+
+        uint16_t pc = fix.parasite->pc();
+        if (pc == 0x0819) {
+            reached = true;
+            break;
+        }
+    }
+
+    if (!reached) {
+        WARN("Did not reach $0819 (decompressor main loop entry)");
+        printf("Parasite PC: $%04X\n", fix.parasite->pc());
+        return;
+    }
+
+    printf("\n=== MEMORY SNAPSHOT AT $0819 (decompressor entry) ===\n");
+    printf("Parasite PC: $%04X  A=$%02X X=$%02X Y=$%02X SP=$%02X P=$%02X\n",
+           fix.parasite->pc(), fix.parasite->a(), fix.parasite->x(),
+           fix.parasite->y(), fix.parasite->sp(), fix.parasite->p());
+
+    // Dump decompressor code $0800-$0A36 (566 bytes)
+    printf("\nDecompressor code ($0800-$0A35, 566 bytes):\n");
+    for (int addr = 0x0800; addr < 0x0A36; addr += 16) {
+        printf("  $%04X:", addr);
+        for (int i = 0; i < 16 && (addr + i) < 0x0A36; ++i)
+            printf(" %02X", fix.parasite->memory_map().peek(addr + i));
+        printf("\n");
+    }
+
+    // Dump I/O helper relocation area at $FC00-$FC1A
+    printf("\nRelocated I/O helpers ($FC00-$FC1A):\n  $FC00:");
+    for (int i = 0; i < 27; ++i)
+        printf(" %02X", fix.parasite->memory_map().peek(0xFC00 + i));
+    printf("\n");
+
+    // Dump zero page
+    printf("\nZero page:\n");
+    for (int row = 0; row < 16; ++row) {
+        printf("  $%02X:", row * 16);
+        for (int col = 0; col < 16; ++col)
+            printf(" %02X", fix.parasite->memory_map().peek(row * 16 + col));
+        printf("\n");
+    }
+
+    // Dump stack page
+    printf("\nStack page ($01E0-$01FF):\n  $01E0:");
+    for (int i = 0; i < 32; ++i)
+        printf(" %02X", fix.parasite->memory_map().peek(0x01E0 + i));
+    printf("\n");
+
+    // Check that the decompressor table areas are zeroed
+    // ($0B00-$0E00 should be zero before tree construction)
+    int nonzero_count = 0;
+    uint16_t first_nonzero = 0;
+    for (int addr = 0x0A36; addr < 0x0E00; ++addr) {
+        if (fix.parasite->memory_map().peek(addr) != 0) {
+            if (nonzero_count == 0) first_nonzero = addr;
+            ++nonzero_count;
+        }
+    }
+    printf("\nTable area $0A36-$0DFF: %d non-zero bytes", nonzero_count);
+    if (nonzero_count > 0)
+        printf(" (first at $%04X = $%02X)", first_nonzero,
+               fix.parasite->memory_map().peek(first_nonzero));
+    printf("\n");
+
+    // Dump vectors
+    printf("\nVectors: NMI=$%02X%02X IRQ=$%02X%02X RESET=$%02X%02X\n",
+           fix.parasite->memory_map().peek(0xFFFB), fix.parasite->memory_map().peek(0xFFFA),
+           fix.parasite->memory_map().peek(0xFFFF), fix.parasite->memory_map().peek(0xFFFE),
+           fix.parasite->memory_map().peek(0xFFFD), fix.parasite->memory_map().peek(0xFFFC));
+
+    // Verify key known values
+    printf("\nR3 transfer counters: w=%llu r=%llu\n",
+           static_cast<unsigned long long>(fix.shared.counters.r3_h2p_writes.load()),
+           static_cast<unsigned long long>(fix.shared.counters.r3_h2p_reads.load()));
+
+    // Write full 64K dump to file for offline comparison
+    auto dump_filepath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR) / "ce2023_parasite_0819.bin";
+    {
+        std::ofstream dump(dump_filepath, std::ios::binary);
+        for (int addr = 0; addr < 65536; ++addr) {
+            uint8_t byte = fix.parasite->memory_map().peek(addr);
+            dump.write(reinterpret_cast<char*>(&byte), 1);
+        }
+    }
+    printf("\nFull 64K dump written to: %s\n", dump_filepath.string().c_str());
+    printf("=== END MEMORY SNAPSHOT ===\n\n");
+}
+
+TEST_CASE("CE2023 tree build: parasite-only after boot", "[tube][ce2023][trace]") {
+    // Run host + parasite interleaved to $0819 (decompressor entry),
+    // then run ONLY the parasite (no host ticking) until the first
+    // R1 data read or hang.  If the tree builds correctly without the
+    // host running, the bug is in host-parasite interaction during
+    // tree construction.  If it still fails, it's a pure 65C02 bug.
+    if (!files_available()) SKIP("Required ROMs or disc image not available");
+
+    TestFixture fix;
+
+    // Boot to decompressor entry
+    bool reached = false;
+    for (int round = 0; round < 30'000'000; ++round) {
+        for (int i = 0; i < 2; ++i) {
+            fix.machine.step();
+            if (fix.machine.memory().video_output.has_value())
+                fix.renderer.process(fix.machine.memory().video_output.value());
+        }
+        fix.parasite->step_instruction();
+        if (fix.parasite->pc() == 0x0819) { reached = true; break; }
+    }
+    REQUIRE(reached);
+
+    // Now run ONLY the parasite.  The host is frozen.
+    // The R1 data was already written by the host during the interleaved
+    // boot, so it should be available in the latch.
+    // But wait -- the tree construction reads bits from R1 before the
+    // main decompression phase.  The host needs to have written the R1
+    // bytes.  Let's check if R1 has data.
+    printf("\n=== PARASITE-ONLY TREE BUILD ===\n");
+    printf("R1 H2P ready: %d\n", fix.shared.r1_h2p.ready.load());
+    printf("R1 H2P writes so far: %llu\n",
+           static_cast<unsigned long long>(fix.shared.counters.r1_h2p_writes.load()));
+
+    // Enable traces
+    fix.parasite->parasite_cpu().trace().resize(4 * 1024 * 1024);
+    fix.parasite->parasite_cpu().trace().set_enabled(true);
+    fix.parasite->parasite_cpu().set_watch_write_addr(0x0CE6);
+
+    // Run parasite only, but we need the host to supply R1 data!
+    // Run host in large bursts between parasite instructions to ensure
+    // R1 data is available.  This is "host far ahead" mode.
+    for (int i = 0; i < 2'000'000; ++i) {
+        // Run host for 100 cycles to keep R1 supplied
+        for (int h = 0; h < 100; ++h) {
+            fix.machine.step();
+            if (fix.machine.memory().video_output.has_value())
+                fix.renderer.process(fix.machine.memory().video_output.value());
+        }
+        fix.parasite->step_instruction();
+
+        if (fix.parasite->pc() == DECOMP_R1_BPL) {
+            // Check if stuck
+            int poll = 0;
+            while (fix.parasite->pc() == DECOMP_R1_BPL && poll < 10000) {
+                // Give host time to write
+                for (int h = 0; h < 1000; ++h) {
+                    fix.machine.step();
+                    if (fix.machine.memory().video_output.has_value())
+                        fix.renderer.process(fix.machine.memory().video_output.value());
+                }
+                fix.parasite->step_instruction();
+                ++poll;
+            }
+            if (fix.parasite->pc() == DECOMP_R1_BPL) {
+                printf("Hung at R1 poll after tree build\n");
+                break;
+            }
+        }
+    }
+
+    // Check the table
+    uint16_t table_base = fix.parasite->memory_map().peek(0x0998)
+                        | (fix.parasite->memory_map().peek(0x0999) << 8);
+    uint8_t val_at_0CE6 = fix.parasite->memory_map().peek(0x0CE6);
+    printf("Parasite PC: $%04X\n", fix.parasite->pc());
+    printf("Table base: $%04X\n", table_base);
+    printf("Value at $0CE6: $%02X (expected $38)\n", val_at_0CE6);
+
+    // Check watchpoint hits
+    auto& itrace = fix.parasite->parasite_cpu().trace();
+    printf("Instruction trace: %llu entries\n",
+           static_cast<unsigned long long>(itrace.total_count()));
+    printf("Writes to $0CE6:\n");
+    for (size_t i = 0; i < itrace.available(); ++i) {
+        auto& e = itrace[i];
+        if (e.opcode == 0xFF && e.pc == 0x0CE6) {
+            printf("  WRITE $0CE6 = $%02X at cyc=%llu\n",
+                   e.a, static_cast<unsigned long long>(e.cycle));
+        }
+    }
+
+    // Decompressor output first 20 bytes
+    printf("Output ($FC00+): ");
+    for (int i = 0; i < 20; ++i)
+        printf("%02X ", fix.parasite->memory_map().peek(0xFC00 + i));
+    printf("\n");
+    printf("Expected:         ");
+    for (int i = 0; i < 20; ++i)
+        printf("%02X ", JSBEEB_OUTPUT[i]);
+    printf("\n");
+
+    printf("R1 H2P: w=%llu r=%llu\n",
+           static_cast<unsigned long long>(fix.shared.counters.r1_h2p_writes.load()),
+           static_cast<unsigned long long>(fix.shared.counters.r1_h2p_reads.load()));
+
+    if (val_at_0CE6 == 0x38) {
+        printf("TABLE IS CORRECT with host-far-ahead!\n");
+    } else {
+        printf("TABLE IS WRONG even with host-far-ahead: $%02X != $38\n", val_at_0CE6);
+    }
+    printf("=== END PARASITE-ONLY TREE BUILD ===\n\n");
+}
 
 TEST_CASE("CE2023 divergence trace: 2:3 interleaved", "[tube][ce2023][trace]") {
     if (!files_available()) SKIP("Required ROMs or disc image not available");
