@@ -644,14 +644,30 @@ instruction). The divergence must be in a finer-grained aspect of the
 decompressor's execution -- possibly the value of A when `STA ($2F)`
 writes output, or the back-reference source pointer `$33/$34`.
 
+### Post-decompression memory comparison (with fixes)
+
+With the `bus_stretch_cancel` pending write fix and the ARM memory
+ordering fix applied, the post-decompression comparison shows:
+
+- **494 bytes** differ out of 65280 (previously 1225 -- the fixes
+  improved things significantly)
+- Divergent pages: `$0000`, `$0100`, `$FD00`, `$FF00`
+- First OUTPUT data divergence: `$FD14` (output byte #276)
+  - jsbeeb: `$17`
+  - Beebium: `$58`
+
+The decompressor produces **276 correct output bytes** (addresses
+`$FC00-$FD13`), then diverges at byte 277. This means roughly half the
+R1 data is consumed correctly before the bit-serial interpretation
+diverges.
+
 ### Next investigation step
 
-Expand the output trace to cover the full 65536-byte decompression (or
-at least until the first difference). Instead of tracing `$2F` changes,
-trace the actual output byte (A register) at `$0A00` (`STA ($2F)`) by
-instrumenting the write at the output destination address. Compare the
-output memory dumps at `$FC00-$FFFF` between emulators periodically
-during decompression to find exactly when the output diverges.
+Instrument both emulators to trace the output byte (A register) at
+`STA ($2F)` around output byte #270-280 to find the exact instruction
+where the decompressor takes a different code path. This will reveal
+whether the divergence is in a back-reference (reading from RAM that
+differs due to concurrent access timing) or in the LZ control flow.
 
 ### Fix required
 
