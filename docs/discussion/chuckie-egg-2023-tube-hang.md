@@ -542,12 +542,71 @@ protocol. The parasite receives the decompressor code but never
 begins executing it, even though the Tube Client ROM's R2 command
 dispatch should jump to `$0800` after receiving the `$80` command byte.
 
+### Corrected deadlock state (March 2026, session 2)
+
+With longer emulation time (30s) and full diagnostic capture:
+
+| Side | PC | Action |
+|------|-----|--------|
+| Host | `$6BCE` | `BPL $6BCB`: polling R4 status, waiting for second P->H ack |
+| Parasite | `$09D1` | `BIT $FEF8`: polling R1 status, waiting for byte #703 |
+
+Transfer counters: R1 H->P w=702 r=702, R4 P->H w=1 r=1. All 702
+bytes were transferred and consumed. The decompressor code at `$0800`
+is correctly loaded (matches expected bytes). The decompressor DID run
+but consumed all 702 bytes without completing the decompression --
+the output diverged from jsbeeb's, causing the LZ algorithm to consume
+more bits than intended.
+
+**The earlier finding of R1=0 and R4 P->H=0 was due to capturing state
+too early** (before the game's *EXEC !BOOT command had been fully
+processed by the host). With 30s of emulation, the full transfer
+completes and the deadlock is at the same point as the original
+investigation.
+
+**Instruction stepping anomaly**: when the parasite is stepped one
+instruction at a time (with host running freely ahead), the
+decompressor output matches jsbeeb exactly. This proves the
+decompressor code itself is correct AND the R1 data is correct. The
+divergence only occurs during free-running concurrent execution, where
+the relative timing of host writes and parasite reads affects something
+in the decompressor's behaviour.
+
+### The remaining mystery
+
+The decompressor reads 702 bytes via R1, the same bytes as jsbeeb.
+It uses a bit-serial reader that extracts bits one at a time via LSR/ROR.
+Stepping produces correct output. Free-running produces different
+output. The only difference is timing.
+
+Possible causes:
+1. **Tube register read side-effects during polling**: `BIT $FEF8`
+   (R1 status poll) calls `parasite_read(0)` which updates PNMI.
+   In the concurrent model, the R1 status value differs between polls
+   (sometimes data ready, sometimes not), causing different numbers of
+   poll iterations. If any side-effect of reading R1 status depends on
+   the DATA register state (not just the status), the extra/fewer polls
+   could affect the decompressor.
+
+2. **PNMI firing during decompression**: even though M is cleared,
+   `update_pnmi()` is called on every register access. If there's a
+   window where M is still set (between host sending the R2 command
+   and clearing M), a PNMI could fire and corrupt decompressor state.
+
+3. **R1 read timing vs host write timing**: the `BIT $FEF8` instruction
+   reads R1 status. If the host writes an R1 byte between the status
+   read and the data read (`LDA $FEF9`), the parasite gets the "wrong"
+   byte (one that was written AFTER the status was checked). On real
+   hardware this can't happen because the host is bus-stretched during
+   the write. In Beebium's model, the host runs freely between
+   parasite cycles.
+
 ### Next investigation step
 
-Compare the parasite's state after the R3 NMI transfer completes.
-The Tube Client ROM should detect the R2 command byte (`$80`) and
-dispatch to the loaded code at `$0800`. If the R2 command is lost
-or the dispatch fails, the parasite stays in the idle loop.
+Use the Python debugger to capture the exact sequence of R1 status
+reads and R1 data reads during the first few bytes of decompression,
+comparing with jsbeeb. Track the value of $31 (bit buffer) after each
+R1 byte is consumed to find exactly where the bit-serial state diverges.
 
 ### Fix required
 
