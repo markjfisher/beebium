@@ -343,24 +343,19 @@ address space. In output order, `$FC00` is byte 0 of the output. The
 divergence at `$FC00` (`$2C` vs `$20`) means the **very first output
 byte** differs.
 
-### Leading hypothesis: parasite RAM initialisation
+### Disproven hypothesis: parasite RAM initialisation
 
 The LZ decompressor uses back-references to previously written output.
-If the parasite RAM at `$FC00+` has different initial values before
+If the parasite RAM at `$FC00+` had different initial values before
 decompression starts, back-references into uninitialised memory would
 produce different output even with identical R1 input data.
 
-Both B-Em and Beebium zero the parasite's 64K RAM on startup (confirmed
-in the earlier investigation). But jsbeeb may initialise it differently,
-or the Tube Client ROM's boot sequence may write values to specific
-addresses that the decompressor later back-references.
-
-### Next step
-
-Compare parasite memory at `$FC00-$FFFF` on both emulators BEFORE the
-decompressor starts writing (i.e. at `$0810`, the first R4 ack). If
-the pre-decompression memory differs, the RAM initialisation hypothesis
-is confirmed and the fix is to match jsbeeb's initialisation pattern.
+**Disproven** (March 2026): full 64K parasite memory comparison at
+`$0810` (first R4 ack, before any decompressor output) shows only 1
+byte different out of 65280 -- a pushed P register on the stack at
+`$01F8` with a V flag difference. The `$FC00-$FFFF` output area is
+byte-for-byte identical. See "Instruction-Level Divergence Finding"
+below.
 
 ## Instruction-Level Divergence Finding (March 2026)
 
@@ -400,13 +395,56 @@ instruction-by-instruction comparison impractical -- a higher-level
 synchronisation point is needed (e.g., comparing A register at `$09D9`
 after each R1 data byte is read).
 
-### Next step
+### R1 data byte comparison: data corruption confirmed
 
-Compare the actual R1 data bytes received by the decompressor on both
-emulators. Set breakpoints at `$09D9` (right after `LDA $FEF9`) on both
-parasites and compare the A register value for each of the 702 bytes.
-If the data bytes match, the divergence must be in the LZ control flow
-interpretation, not the input data.
+Capturing A register at `$09D9` (after `LDA $FEF9`) for all 702 R1 bytes:
+
+| | Byte 0 | Byte 1 | Byte 2 | Byte 3 | Byte 4 | ... |
+|---|---|---|---|---|---|---|
+| jsbeeb | `$C5` | `$11` | `$03` | `$90` | `$2C` | (702 distinct) |
+| Beebium | `$C5` | `$C5` | `$C5` | `$C5` | `$C5` | (same byte repeated) |
+
+Beebium reads the **same first byte** (`$C5`) 702+ times. The R1 FIFO
+data is not being dequeued -- each `LDA $FEF9` returns the same value.
+
+### Root cause: bus_stretch_cancel silently drops host writes
+
+The host writes R1 bytes via `TubeHostPort::host_write(1, value)`. This
+spin-waits until the latch is empty (`ready == 0`). When `bus_stretch_cancel`
+is set (by debugger pause/resume), the spin loop exits via `return`
+**without writing the byte**, silently dropping it.
+
+```cpp
+while (shared_->r1_h2p.ready.load(...) != 0) {
+    if (shared_->bus_stretch_cancel.load(...)) return;  // BYTE DROPPED
+}
+shared_->r1_h2p.value.store(value, ...);  // never reached
+```
+
+The same bug affects R3 and R4 host writes: all three use the identical
+`bus_stretch_cancel → return` pattern with no indication to the caller
+that the write failed.
+
+In the CE2023 scenario, the debugger's CoupledSystem uses
+`stop_counterpart` breakpoints that set `bus_stretch_cancel`. Even
+without the debugger, the server's pacing system or pause/resume
+cycles can trigger `bus_stretch_cancel` during a Tube transfer,
+corrupting the data stream.
+
+Three C++ tests added to `test_tube_parasite_port.cpp` expose this bug
+on R1, R3, and R4.
+
+### Fix required
+
+`host_write` must not silently drop data when `bus_stretch_cancel` is
+set. Options:
+
+1. **Return a success/failure indicator** so `Machine::run()` can retry
+   the write instruction after resume.
+2. **Buffer the pending write** in TubeHostPort and complete it when
+   bus_stretch_cancel clears.
+3. **Don't use bus_stretch_cancel for data writes** -- only use it for
+   status polling spin-waits.
 
 ## External References
 

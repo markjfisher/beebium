@@ -501,4 +501,116 @@ describe('Tube CE2023 Differential', () => {
             await host.close();
         }
     }, 600000);  // 10 minute timeout for stepping
+
+    it('compare R1 data bytes received by decompressor', async () => {
+        // Compare the actual data bytes read from R1 by the decompressor on
+        // both emulators. The bit-serial reader at $09C8 reads each R1 byte
+        // via LDA $FEF9 at $09D6. We capture A register right after that
+        // instruction (at $09D9, the BRA $09E3) on both sides.
+        //
+        // jsbeeb: use _debugInstruction hook to capture A at $09D9
+        // Beebium: use breakpoint at $09D9 with hit counting
+
+        const R1_READ_DONE = 0x09D9;  // BRA $09E3, right after LDA $FEF9
+        const EXPECTED_BYTES = 702;
+
+        // jsbeeb: boot to $0810, then collect A register at each $09D9 hit
+        const oracle = await bootJsbeeb();
+        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 10);
+        expect(oracle.getParasiteCpuState().pc).toBe(FIRST_R4_ACK);
+
+        const parasiteCpu = (oracle as any).parasiteProcessor;
+        const jsR1Bytes: number[] = [];
+        parasiteCpu._debugInstruction = (pc: number) => {
+            if (pc === R1_READ_DONE) {
+                jsR1Bytes.push(parasiteCpu.a);
+            }
+            // Stop when we have enough bytes or hit $0816 (decompressor exit)
+            return jsR1Bytes.length >= EXPECTED_BYTES + 10 || pc === 0x0816;
+        };
+        (oracle as any).processor.execute(100_000_000);
+        parasiteCpu._debugInstruction = null;
+
+        console.log(`jsbeeb: ${jsR1Bytes.length} R1 bytes captured`);
+        console.log(`  first 16: ${jsR1Bytes.slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+        // Beebium: boot to $0810, then capture A at each $09D9 hit
+        const host = await Beebium.launch({
+            args: [
+                '--tube', '65C02-3MHz',
+                '--fdc', 'acorn-1770',
+                '--sideways', `14:rom:${DFS_ROM_FILEPATH}`,
+            ],
+            timeoutMs: 20000,
+        });
+
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Acorn TUBE"),
+                10,
+            );
+            const parasite = await host.connectParasite();
+            await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
+            await host.keyboard.type("*EXEC !BOOT\r");
+            await host.debugger.run();
+            await parasite.debugger.runUntil(FIRST_R4_ACK, 60000);
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            // Set breakpoint at $09D9 (after LDA $FEF9)
+            const bpId = await parasite.debugger.addBreakpoint(R1_READ_DONE);
+
+            // Collect A register at each hit
+            const beeR1Bytes: number[] = [];
+            await host.debugger.run();
+
+            for (let i = 0; i < EXPECTED_BYTES + 10; i++) {
+                await parasite.debugger.runUntil(R1_READ_DONE, 30000);
+                const regs = await parasite.cpu.getRegisters();
+                beeR1Bytes.push(regs.a);
+                if (regs.pc !== R1_READ_DONE) {
+                    console.log(`Beebium: unexpected PC=$${regs.pc.toString(16).toUpperCase()} at byte ${i}`);
+                    break;
+                }
+            }
+
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            console.log(`Beebium: ${beeR1Bytes.length} R1 bytes captured`);
+            console.log(`  first 16: ${beeR1Bytes.slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+            // Compare
+            const limit = Math.min(jsR1Bytes.length, beeR1Bytes.length, EXPECTED_BYTES);
+            let firstDiff = -1;
+            for (let i = 0; i < limit; i++) {
+                if (jsR1Bytes[i] !== beeR1Bytes[i]) {
+                    firstDiff = i;
+                    break;
+                }
+            }
+
+            if (firstDiff < 0) {
+                console.log(`\nAll ${limit} R1 data bytes match!`);
+                console.log('The R1 input stream is identical -- divergence must be in');
+                console.log('the LZ control flow or the bit-serial reader state.');
+            } else {
+                console.log(`\nFirst R1 byte difference at byte #${firstDiff}:`);
+                console.log(`  jsbeeb=$${jsR1Bytes[firstDiff].toString(16).toUpperCase().padStart(2, '0')}`);
+                console.log(`  Beebium=$${beeR1Bytes[firstDiff].toString(16).toUpperCase().padStart(2, '0')}`);
+
+                // Show context
+                const start = Math.max(0, firstDiff - 4);
+                const end = Math.min(limit, firstDiff + 5);
+                console.log(`  context: bytes ${start}-${end - 1}:`);
+                for (let i = start; i < end; i++) {
+                    const match = jsR1Bytes[i] === beeR1Bytes[i] ? '  ' : '<<';
+                    console.log(`    #${i}: js=$${jsR1Bytes[i].toString(16).padStart(2, '0')} bee=$${beeR1Bytes[i].toString(16).padStart(2, '0')} ${match}`);
+                }
+            }
+
+            await parasite.debugger.removeBreakpoint(bpId);
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 600000);
 });

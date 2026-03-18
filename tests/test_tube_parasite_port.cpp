@@ -87,6 +87,124 @@ TEST_CASE("TubeParasitePort R1 data read consumes H-to-P latch", "[tube][parasit
     CHECK((status & TubeUla::DATA_AVAILABLE) == 0);
 }
 
+TEST_CASE("TubeParasitePort R1 sequential reads return successive host-written bytes", "[tube][parasite]") {
+    // CE2023 decompressor reads 702 consecutive bytes via R1.
+    // Each host write should be consumed exactly once by a parasite read.
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    const uint8_t test_bytes[] = { 0xC5, 0x11, 0x03, 0x90, 0x2C, 0x47, 0xB4, 0x77 };
+    for (size_t i = 0; i < sizeof(test_bytes); ++i) {
+        // Host writes next byte
+        host.host_write(1, test_bytes[i]);
+
+        // Parasite polls status until data available
+        uint8_t status = parasite.parasite_read(0);
+        REQUIRE((status & TubeUla::DATA_AVAILABLE) != 0);
+
+        // Parasite reads data -- should get the byte just written
+        uint8_t data = parasite.parasite_read(1);
+        INFO("byte index " << i);
+        CHECK(data == test_bytes[i]);
+
+        // Ready should be cleared after read
+        CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) == 0);
+    }
+}
+
+TEST_CASE("TubeParasitePort R1 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
+    // When the R1 H-to-P latch is full and bus_stretch_cancel is set,
+    // host_write returns without writing. The caller (Machine::run)
+    // has no way to know the write was dropped, so the byte is silently
+    // lost. This causes the CE2023 decompressor to read stale data.
+    //
+    // Correct behaviour: host_write must either complete the write
+    // (by waiting for the latch to drain) or signal the caller that
+    // the write was not performed, so it can be retried.
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    // Fill the latch with byte 1
+    host.host_write(1, 0xC5);
+    REQUIRE(shared.r1_h2p.ready.load() != 0);
+
+    // Simulate debugger pause: set bus_stretch_cancel while latch is full
+    shared.bus_stretch_cancel.store(true, std::memory_order_release);
+
+    // Host attempts to write byte 2. With the current bug, this write
+    // is silently dropped (the spin loop exits via return).
+    host.host_write(1, 0x11);
+
+    shared.bus_stretch_cancel.store(false, std::memory_order_release);
+
+    // Parasite consumes byte 1
+    CHECK(parasite.parasite_read(1) == 0xC5);
+
+    // The latch should now contain byte 2 (0x11). If the write was
+    // dropped, ready will be 0 and the parasite sees no data.
+    CHECK(shared.r1_h2p.ready.load() != 0);  // FAILS: ready is 0 (byte was dropped)
+}
+
+TEST_CASE("TubeParasitePort R3 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    // Fill R3 in 1-byte mode
+    host.host_write(5, 0xAA);
+    REQUIRE(shared.r3_h2p.count.load() == 1);
+
+    shared.bus_stretch_cancel.store(true, std::memory_order_release);
+    host.host_write(5, 0xBB);
+    shared.bus_stretch_cancel.store(false, std::memory_order_release);
+
+    CHECK(parasite.parasite_read(5) == 0xAA);
+
+    // Byte 2 should be in the FIFO
+    CHECK(shared.r3_h2p.count.load() != 0);  // FAILS: count is 0
+}
+
+TEST_CASE("TubeParasitePort R4 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    host.host_write(7, 0x55);
+    REQUIRE(shared.r4_h2p.ready.load() != 0);
+
+    shared.bus_stretch_cancel.store(true, std::memory_order_release);
+    host.host_write(7, 0x66);
+    shared.bus_stretch_cancel.store(false, std::memory_order_release);
+
+    CHECK(parasite.parasite_read(7) == 0x55);
+
+    // Byte 2 should be in the latch
+    CHECK(shared.r4_h2p.ready.load() != 0);  // FAILS: ready is 0
+}
+
+TEST_CASE("TubeParasitePort R1 second read after consume returns latch value not old data", "[tube][parasite]") {
+    // After the parasite consumes an R1 byte, a second read (without new
+    // host write) should return the data bus latch, not stale FIFO data.
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
+    host.host_write(1, 0x42);
+    uint8_t first = parasite.parasite_read(1);
+    CHECK(first == 0x42);
+
+    host.host_write(1, 0xFF);
+    uint8_t second = parasite.parasite_read(1);
+    CHECK(second == 0xFF);  // must be new byte, not 0x42 again
+}
+
 // ===========================================================================
 // R1: P-to-H FIFO write (parasite writes, host reads)
 // ===========================================================================
