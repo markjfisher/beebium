@@ -827,6 +827,39 @@ behaviour:
   after `parasite_read()` returns, but the 6502 may have seen a
   different value on the data bus during the instruction)
 
+### Fix approach: deferred ready clear at END of tick
+
+The ready flag must be cleared at the END of the tick where the data
+was read, not at the START of the next tick. The correct sequence within
+`ParasiteCpu::tick()`:
+
+```
+1. (*cpu_.tfn)(&cpu_)              // advance 6502 state machine
+2. cpu_.dbus = memory_.read(addr)  // parasite_read() caches value,
+                                   //   sets pending, ready STAYS SET
+3. pirq()                          // sees ready=1 (consistent)
+4. pnmi_level()                    // sees consistent state
+5. complete_cycle()                // NOW clear ready (end of tick)
+```
+
+On the next tick:
+```
+1. (*cpu_.tfn)(&cpu_)              // next instruction cycle
+2. memory_.read(addr)              // if BIT $FEF8: status reads
+                                   //   ready=0 (cleared at step 5)
+```
+
+**Why NOT at the start of the next tick**: if `complete_cycle()` runs
+at the start, the status read at step 2 would see ready=1 (not yet
+cleared), causing the 6502 to think data is still available and
+triggering a spurious `LDA $FEF9` that reads stale data.
+
+**Why at the end of the same tick**: the data has been captured in
+step 2, interrupt routing in steps 3-4 sees consistent state, and
+clearing at step 5 means the next tick's status read correctly sees
+ready=0. The host can overwrite after step 5, but that's fine because
+the next instruction hasn't started yet.
+
 ### Fix options
 
 1. **Lock-step execution**: run host and parasite in alternating batches
