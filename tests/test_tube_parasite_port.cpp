@@ -114,62 +114,117 @@ TEST_CASE("TubeParasitePort R1 sequential reads return successive host-written b
     }
 }
 
-TEST_CASE("TubeParasitePort R1 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
-    // When the R1 H-to-P latch is full and bus_stretch_cancel is set,
-    // host_write returns without writing. The caller (Machine::run)
-    // has no way to know the write was dropped, so the byte is silently
-    // lost. This causes the CE2023 decompressor to read stale data.
-    //
-    // Correct behaviour: host_write must either complete the write
-    // (by waiting for the latch to drain) or signal the caller that
-    // the write was not performed, so it can be retried.
+TEST_CASE("TubeParasitePort R1 deferred write completes after bus_stretch_cancel clears", "[tube][parasite]") {
+    // Simulates the debugger pause/resume cycle for R1:
+    // 1. Host writes byte 1 (latch fills)
+    // 2. bus_stretch_cancel set (debugger pause)
+    // 3. Host attempts byte 2 (deferred, not dropped)
+    // 4. bus_stretch_cancel cleared (debugger resume)
+    // 5. Parasite reads byte 1 (latch clears)
+    // 6. complete_pending_write() retries byte 2 (succeeds)
+    // 7. Parasite reads byte 2
     TubeShared shared;
     shared.init();
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // Fill the latch with byte 1
     host.host_write(1, 0xC5);
     REQUIRE(shared.r1_h2p.ready.load() != 0);
 
-    // Simulate debugger pause: set bus_stretch_cancel while latch is full
     shared.bus_stretch_cancel.store(true, std::memory_order_release);
-
-    // Host attempts to write byte 2. With the current bug, this write
-    // is silently dropped (the spin loop exits via return).
-    host.host_write(1, 0x11);
-
+    host.host_write(1, 0x11);  // deferred
     shared.bus_stretch_cancel.store(false, std::memory_order_release);
 
     // Parasite consumes byte 1
     CHECK(parasite.parasite_read(1) == 0xC5);
 
-    // The latch should now contain byte 2 (0x11). If the write was
-    // dropped, ready will be 0 and the parasite sees no data.
-    CHECK(shared.r1_h2p.ready.load() != 0);  // FAILS: ready is 0 (byte was dropped)
+    // Retry the deferred write (Machine::run() does this on resume)
+    host.complete_pending_write();
+
+    // Byte 2 should now be in the latch
+    CHECK(shared.r1_h2p.ready.load() != 0);
+    CHECK(parasite.parasite_read(1) == 0x11);
 }
 
-TEST_CASE("TubeParasitePort R3 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
+TEST_CASE("TubeParasitePort R1 bulk transfer survives bus_stretch_cancel mid-stream", "[tube][parasite]") {
+    // Simulates the CE2023 scenario: host sends many bytes via R1 with
+    // a bus_stretch_cancel interruption mid-stream. All bytes must arrive.
+    //
+    // The scenario: host writes byte N, latch is full. Host writes byte
+    // N+1 but bus_stretch_cancel is set (debugger pause). Write N+1 is
+    // deferred. After resume, parasite reads byte N, then
+    // complete_pending_write retries byte N+1.
     TubeShared shared;
     shared.init();
     TubeHostPort host(&shared);
     TubeParasitePort parasite(&shared);
 
-    // Fill R3 in 1-byte mode
+    constexpr int NUM_BYTES = 702;
+    constexpr int CANCEL_AT = 350;
+
+    int reads_done = 0;
+
+    for (int i = 0; i < NUM_BYTES; ++i) {
+        uint8_t value = static_cast<uint8_t>(i & 0xFF);
+
+        if (i == CANCEL_AT) {
+            // At this point byte CANCEL_AT-1 is in the latch (we wrote it
+            // in the previous iteration but haven't consumed it yet because
+            // we deferred the read -- see below).
+
+            // Set bus_stretch_cancel: host write spins on full latch, defers.
+            shared.bus_stretch_cancel.store(true, std::memory_order_release);
+            host.host_write(1, value);  // deferred (latch full)
+            shared.bus_stretch_cancel.store(false, std::memory_order_release);
+
+            // Parasite reads the previous byte (clears latch)
+            uint8_t prev = parasite.parasite_read(1);
+            INFO("byte " << (i - 1) << " (read after cancel)");
+            CHECK(prev == static_cast<uint8_t>((i - 1) & 0xFF));
+            ++reads_done;
+
+            // Retry the deferred write
+            host.complete_pending_write();
+
+            // Read the deferred byte
+            uint8_t data = parasite.parasite_read(1);
+            INFO("byte " << i << " (deferred)");
+            CHECK(data == value);
+            ++reads_done;
+        } else if (i == CANCEL_AT - 1) {
+            // Write but DON'T read -- leave the latch full for the cancel test
+            host.host_write(1, value);
+        } else {
+            host.host_write(1, value);
+            uint8_t data = parasite.parasite_read(1);
+            INFO("byte " << i);
+            CHECK(data == value);
+            ++reads_done;
+        }
+    }
+
+    CHECK(reads_done == NUM_BYTES);
+}
+
+TEST_CASE("TubeParasitePort R3 deferred write completes after bus_stretch_cancel clears", "[tube][parasite]") {
+    TubeShared shared;
+    shared.init();
+    TubeHostPort host(&shared);
+    TubeParasitePort parasite(&shared);
+
     host.host_write(5, 0xAA);
     REQUIRE(shared.r3_h2p.count.load() == 1);
 
     shared.bus_stretch_cancel.store(true, std::memory_order_release);
-    host.host_write(5, 0xBB);
+    host.host_write(5, 0xBB);  // deferred
     shared.bus_stretch_cancel.store(false, std::memory_order_release);
 
     CHECK(parasite.parasite_read(5) == 0xAA);
-
-    // Byte 2 should be in the FIFO
-    CHECK(shared.r3_h2p.count.load() != 0);  // FAILS: count is 0
+    host.complete_pending_write();
+    CHECK(parasite.parasite_read(5) == 0xBB);
 }
 
-TEST_CASE("TubeParasitePort R4 host_write must indicate when bus_stretch_cancel aborts the write", "[tube][parasite]") {
+TEST_CASE("TubeParasitePort R4 deferred write completes after bus_stretch_cancel clears", "[tube][parasite]") {
     TubeShared shared;
     shared.init();
     TubeHostPort host(&shared);
@@ -179,13 +234,13 @@ TEST_CASE("TubeParasitePort R4 host_write must indicate when bus_stretch_cancel 
     REQUIRE(shared.r4_h2p.ready.load() != 0);
 
     shared.bus_stretch_cancel.store(true, std::memory_order_release);
-    host.host_write(7, 0x66);
+    host.host_write(7, 0x66);  // deferred
     shared.bus_stretch_cancel.store(false, std::memory_order_release);
 
     CHECK(parasite.parasite_read(7) == 0x55);
-
-    // Byte 2 should be in the latch
-    CHECK(shared.r4_h2p.ready.load() != 0);  // FAILS: ready is 0
+    host.complete_pending_write();
+    CHECK(shared.r4_h2p.ready.load() != 0);
+    CHECK(parasite.parasite_read(7) == 0x66);
 }
 
 TEST_CASE("TubeParasitePort R1 second read after consume returns latch value not old data", "[tube][parasite]") {

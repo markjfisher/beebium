@@ -49,6 +49,7 @@ public:
     uint8_t host_peek(uint8_t offset) const override;
     void host_write(uint8_t offset, uint8_t value) override;
     bool hirq() const override;
+    void complete_pending_write() override;
     void reset() override;
 
     // --- Accessors for testing ---
@@ -73,6 +74,11 @@ private:
     void soft_reset();
 
     TubeShared* shared_;
+
+    // Pending write deferred by bus_stretch_cancel.
+    bool has_pending_write_ = false;
+    uint8_t pending_offset_ = 0;
+    uint8_t pending_value_ = 0;
 };
 
 }  // namespace beebium

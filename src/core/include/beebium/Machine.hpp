@@ -312,6 +312,11 @@ public:
             ~RunGuard() { flag.store(false, std::memory_order_release); }
         } guard{in_run_};
 
+        // Complete any Tube write that was deferred by bus_stretch_cancel
+        // during a previous run (e.g., debugger pause interrupted a bus-stretched
+        // write). This must happen before the step loop so the write is not lost.
+        state_.memory.tube_socket.complete_pending_write();
+
         const uint64_t target = state_.cycle_count + cycles;
         while (state_.cycle_count < target && !paused_.load()) {
             // Check breakpoints before step(), when all register updates from

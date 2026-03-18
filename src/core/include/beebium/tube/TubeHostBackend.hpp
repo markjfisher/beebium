@@ -56,6 +56,18 @@ public:
     // returns false here.
     virtual bool stretched() const { return false; }
 
+    // Complete any write that was deferred by bus_stretch_cancel.
+    //
+    // When a host_write spin-waits on a full latch/FIFO and bus_stretch_cancel
+    // breaks the spin, the write is stored as pending. This method retries
+    // the pending write. If the latch/FIFO has been drained (parasite read
+    // during the pause), the write succeeds. If not, the spin loop runs again
+    // and may be cancelled again.
+    //
+    // Called by Machine::run() after resume, before the step loop.
+    // Default: no-op (only TubeHostPort uses deferred writes).
+    virtual void complete_pending_write() {}
+
     // Full hardware reset (HRST).
     virtual void reset() = 0;
 };

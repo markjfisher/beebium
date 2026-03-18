@@ -219,7 +219,12 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         // R1 data: write to H-to-P latch.
         // Bus stretching: spin until the parasite has consumed any previous byte.
         while (shared_->r1_h2p.ready.load(std::memory_order_acquire) != 0) {
-            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) {
+                has_pending_write_ = true;
+                pending_offset_ = offset;
+                pending_value_ = value;
+                return;
+            }
         }
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
@@ -251,7 +256,12 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         auto flags = shared_->control_flags.load(std::memory_order_acquire);
         uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
         while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold) {
-            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) {
+                has_pending_write_ = true;
+                pending_offset_ = offset;
+                pending_value_ = value;
+                return;
+            }
         }
         uint8_t tail = shared_->r3_h2p.tail.load(std::memory_order_relaxed);
         shared_->r3_h2p.data[tail].store(value, std::memory_order_relaxed);
@@ -269,7 +279,12 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         // R4 data: write to H-to-P latch.
         // Bus stretching: spin until the parasite has consumed any previous byte.
         while (shared_->r4_h2p.ready.load(std::memory_order_acquire) != 0) {
-            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) return;
+            if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) {
+                has_pending_write_ = true;
+                pending_offset_ = offset;
+                pending_value_ = value;
+                return;
+            }
         }
         shared_->r4_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r4_h2p.ready.store(1, std::memory_order_release);
@@ -277,6 +292,21 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         break;
     }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pending write retry
+// ---------------------------------------------------------------------------
+
+void TubeHostPort::complete_pending_write()
+{
+    if (!has_pending_write_) return;
+    has_pending_write_ = false;
+    // Retry the deferred write. If the latch/FIFO has been drained by
+    // the parasite during the pause, the write completes immediately.
+    // If not, it may spin-wait again (and may be cancelled again, in
+    // which case a new pending write is recorded).
+    host_write(pending_offset_, pending_value_);
 }
 
 // ---------------------------------------------------------------------------

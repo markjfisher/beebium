@@ -122,6 +122,12 @@ public:
 
     // --- Bus stretching ---
 
+    // Complete any write that was deferred by bus_stretch_cancel.
+    // Called by Machine::run() after resume. See TubeHostBackend for details.
+    void complete_pending_write() {
+        backend_->complete_pending_write();
+    }
+
     // Returns true if the last host access could not complete because
     // the target register was full (write) or empty (read). Only
     // meaningful in in-process mode (TubeUla); the shared memory
