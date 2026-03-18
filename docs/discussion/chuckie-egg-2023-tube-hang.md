@@ -708,14 +708,62 @@ If the host writes and the parasite re-reads the latch (e.g., via a
 second `parasite_read(1)` call) before the host's value store is
 visible, the parasite sees the new byte instead of the expected one.
 
-### Next investigation step
+### R1 data is byte-for-byte identical (702/702 match)
 
-Add per-byte checksumming to the R1 data path: log every
-`parasite_read(1)` call with its `was_ready` flag and value. Compare
-the full 702-byte sequence between multiple Beebium runs and jsbeeb
-to find which byte is received incorrectly and whether `was_ready` is
-ever 0 during a data read (indicating an empty-latch read that returns
-stale data).
+All 702 R1 data bytes match jsbeeb exactly. All reads have `was_ready=1`
+(no stale reads). The R1 data path is correct.
+
+### ROOT CAUSE FOUND: back-reference reads hit live Tube registers
+
+The LZ decompressor copies previously-written output via back-references
+using `LDA ($33),Y` at `$09EB`. When the back-reference pointer sweeps
+through `$FEF8-$FEFF`, `ParasiteMemoryMap::read()` routes these reads
+to Tube register `parasite_read()` instead of returning the RAM value.
+
+Instrumented reads from Tube registers (offset >= 2, excluding the R1
+status/data polls) show **200+ reads from `$FEFA` (R2 status)** during
+decompression. These are back-reference reads hitting the Tube I/O area.
+
+On real hardware, reads from `$FEF8-$FEFF` DO go to the Tube ULA (CAS
+is suppressed, the CPU reads from the ULA). jsbeeb behaves the same way
+(`readmem` routes these addresses to `parasiteRead`). So both Beebium
+and jsbeeb read Tube registers for back-references.
+
+The difference: in jsbeeb's single-threaded model, the Tube register
+values are **deterministic** at each parasite instruction (the host
+doesn't advance between parasite instructions). In Beebium's concurrent
+model, the host runs freely between parasite cycles, changing the Tube
+register values. When the decompressor reads `$FEFA` (R2 status) as a
+back-reference, it gets a timing-dependent value that varies with
+host-parasite scheduling.
+
+This is the fundamental cause of the non-deterministic divergence.
+
+### Fix options
+
+1. **Lock-step execution**: run host and parasite in alternating batches
+   synchronised to Tube register accesses. This would make register
+   reads deterministic but sacrifice the performance benefits of
+   concurrent execution.
+
+2. **Shadow register reads during decompression**: when the M flag is
+   cleared (indicating the custom protocol is active), return the RAM
+   value for reads from `$FEF8-$FEFF` instead of the live register
+   value. This matches what the decompressor expects (it wrote to RAM,
+   it expects to read back what it wrote).
+
+3. **CAS suppression emulation**: on real hardware, CAS is suppressed
+   when the Tube address is selected, meaning neither ROM nor RAM is
+   read -- only the Tube ULA. The decompressor's back-reference reads
+   from `$FEF8-$FEFF` always return Tube register values on real
+   hardware. The fix should ensure these values are consistent with
+   the single-threaded execution model.
+
+4. **Per-register snapshots at instruction boundaries**: snapshot the
+   Tube register state at each parasite instruction boundary, so that
+   back-reference reads return the value from the last snapshot rather
+   than the current live value. This preserves concurrency while
+   ensuring deterministic reads.
 
 ### Fix required
 
