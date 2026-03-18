@@ -186,6 +186,9 @@ public:
     M6502& cpu() { return cpu_.cpu(); }
     const M6502& cpu() const { return cpu_.cpu(); }
 
+    ParasiteCpu& parasite_cpu() { return cpu_; }
+    const ParasiteCpu& parasite_cpu() const { return cpu_; }
+
     ParasiteMemoryMap& memory_map() { return memory_; }
     const ParasiteMemoryMap& memory_map() const { return memory_; }
 

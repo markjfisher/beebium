@@ -512,6 +512,16 @@ add_executable(test_tube_pirq_6502 test_tube_pirq_6502.cpp)
 target_link_libraries(test_tube_pirq_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_pirq_6502)
 
+# CE2023 divergence trace test
+add_executable(test_tube_ce2023_trace test_tube_ce2023_trace.cpp)
+target_link_libraries(test_tube_ce2023_trace PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
+target_compile_definitions(test_tube_ce2023_trace PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_tube_ce2023_trace)
+
 # Tube control flag tests with real 65C02 CPU
 add_executable(test_tube_control_6502 test_tube_control_6502.cpp)
 target_link_libraries(test_tube_control_6502 PRIVATE beebium_core 6502_lib Catch2::Catch2WithMain)
