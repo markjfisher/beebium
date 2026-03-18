@@ -374,4 +374,131 @@ describe('Tube CE2023 Differential', () => {
             await host.close();
         }
     }, 120000);
+
+    it('find first parasite instruction divergence', async () => {
+        // Collect PC traces from both parasites starting at $0813
+        // (the JSR $0819 decompression entry) and find where they diverge.
+
+        const P_MASK = 0xCF; // mask out bits 4-5 (unused/break)
+        const MAX_INSTRUCTIONS = 5000;
+
+        // jsbeeb: boot to $0813 and collect PC trace
+        const oracle = await bootJsbeeb();
+        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 10);
+        // Step past $0810 (JSR $0A2D) to $0813 (JSR $0819)
+        const parasiteCpu = (oracle as any).parasiteProcessor;
+
+        // Collect jsbeeb trace by running with debug hook
+        const jsTrace: Array<{ pc: number; a: number; x: number; y: number; sp: number; p: number }> = [];
+        parasiteCpu._debugInstruction = (pc: number) => {
+            jsTrace.push({
+                pc,
+                a: parasiteCpu.a,
+                x: parasiteCpu.x,
+                y: parasiteCpu.y,
+                sp: parasiteCpu.s,
+                p: parasiteCpu.p.asByte() & P_MASK,
+            });
+            return jsTrace.length >= MAX_INSTRUCTIONS; // stop after N instructions
+        };
+        (oracle as any).processor.execute(50_000_000); // run enough host cycles
+        parasiteCpu._debugInstruction = null;
+
+        console.log(`jsbeeb trace: ${jsTrace.length} instructions collected`);
+        if (jsTrace.length > 0) {
+            console.log(`  first: PC=$${jsTrace[0].pc.toString(16).toUpperCase()}`);
+            console.log(`  last:  PC=$${jsTrace[jsTrace.length - 1].pc.toString(16).toUpperCase()}`);
+        }
+
+        // Beebium: boot to $0810 and step parasite
+        const host = await Beebium.launch({
+            args: [
+                '--tube', '65C02-3MHz',
+                '--fdc', 'acorn-1770',
+                '--sideways', `14:rom:${DFS_ROM_FILEPATH}`,
+            ],
+            timeoutMs: 20000,
+        });
+
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Acorn TUBE"),
+                10,
+            );
+            const parasite = await host.connectParasite();
+
+            // Insert disc, type command, run until $0810
+            await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
+            await host.keyboard.type("*EXEC !BOOT\r");
+            await host.debugger.run();
+            await parasite.debugger.runUntil(FIRST_R4_ACK, 60000);
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            // Both parasites are now at $0810. Step through and compare.
+            // Start the host running (needed for Tube I/O during decompression)
+            await host.debugger.run();
+
+            const limit = Math.min(jsTrace.length, MAX_INSTRUCTIONS);
+            let divergeAt = -1;
+
+            for (let i = 0; i < limit; i++) {
+                // Read state BEFORE stepping (pre-instruction, matches jsbeeb hook)
+                const regs = await parasite.cpu.getRegisters();
+                const beeState = {
+                    pc: regs.pc,
+                    a: regs.a,
+                    x: regs.x,
+                    y: regs.y,
+                    sp: regs.sp,
+                    p: regs.p & P_MASK,
+                };
+                await parasite.debugger.step(1);
+
+                const jsState = jsTrace[i];
+                if (beeState.pc !== jsState.pc ||
+                    beeState.a !== jsState.a ||
+                    beeState.x !== jsState.x ||
+                    beeState.y !== jsState.y ||
+                    beeState.sp !== jsState.sp ||
+                    beeState.p !== jsState.p) {
+
+                    divergeAt = i;
+                    console.log(`\nDivergence at instruction #${i}:`);
+                    console.log(`  jsbeeb:  PC=$${jsState.pc.toString(16).toUpperCase().padStart(4, '0')} A=$${jsState.a.toString(16).toUpperCase().padStart(2, '0')} X=$${jsState.x.toString(16).toUpperCase().padStart(2, '0')} Y=$${jsState.y.toString(16).toUpperCase().padStart(2, '0')} SP=$${jsState.sp.toString(16).toUpperCase().padStart(2, '0')} P=$${jsState.p.toString(16).toUpperCase().padStart(2, '0')}`);
+                    console.log(`  Beebium: PC=$${beeState.pc.toString(16).toUpperCase().padStart(4, '0')} A=$${beeState.a.toString(16).toUpperCase().padStart(2, '0')} X=$${beeState.x.toString(16).toUpperCase().padStart(2, '0')} Y=$${beeState.y.toString(16).toUpperCase().padStart(2, '0')} SP=$${beeState.sp.toString(16).toUpperCase().padStart(2, '0')} P=$${beeState.p.toString(16).toUpperCase().padStart(2, '0')}`);
+
+                    // Show context: previous 5 instructions
+                    if (i >= 5) {
+                        console.log(`\nPreceding instructions (jsbeeb):`);
+                        for (let j = i - 5; j < i; j++) {
+                            const s = jsTrace[j];
+                            console.log(`  #${j}: PC=$${s.pc.toString(16).toUpperCase().padStart(4, '0')} A=$${s.a.toString(16).toUpperCase().padStart(2, '0')} X=$${s.x.toString(16).toUpperCase().padStart(2, '0')} Y=$${s.y.toString(16).toUpperCase().padStart(2, '0')} P=$${s.p.toString(16).toUpperCase().padStart(2, '0')}`);
+                        }
+                    }
+
+                    // Disassemble around the divergence point
+                    const disAddr = Math.max(0, jsState.pc - 8);
+                    const jsCode = oracle.readParasiteMemory(disAddr, 32);
+                    console.log(`\njsbeeb code around $${jsState.pc.toString(16).toUpperCase()}:`);
+                    console.log(`  ${Array.from(jsCode).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+                    break;
+                }
+
+                // Progress every 10000 instructions
+                if (i > 0 && i % 10000 === 0) {
+                    console.log(`  ... ${i} instructions match (PC=$${beeState.pc.toString(16).toUpperCase()})`);
+                }
+            }
+
+            if (divergeAt < 0) {
+                console.log(`\nAll ${limit} instructions match!`);
+            }
+
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 600000);  // 10 minute timeout for stepping
 });

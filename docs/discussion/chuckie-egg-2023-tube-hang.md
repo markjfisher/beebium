@@ -362,6 +362,52 @@ decompressor starts writing (i.e. at `$0810`, the first R4 ack). If
 the pre-decompression memory differs, the RAM initialisation hypothesis
 is confirmed and the fix is to match jsbeeb's initialisation pattern.
 
+## Instruction-Level Divergence Finding (March 2026)
+
+Using the TypeScript differential testing framework (jsbeeb oracle vs Beebium),
+both parasites were synchronised at $0810 (first R4 ack) and stepped
+instruction-by-instruction.
+
+### Pre-decompression memory: identical
+
+Full 64K parasite memory comparison at $0810 shows **1 byte different**
+out of 65280 (excluding I/O page):
+
+- `$01F8` (stack): jsbeeb=`$63`, Beebium=`$61` (V flag in pushed P register)
+- `$FC00-$FFFF` (decompressor output area): **byte-for-byte identical**
+
+The RAM initialisation hypothesis is disproven. Pre-decompression state
+matches.
+
+### First divergence: R1 status poll (instruction #19)
+
+Both parasites are at `$09D4` (`BPL $09D1`, the R1 status poll loop).
+The `BIT $FEF8` instruction that preceded it returns different status:
+
+| | P register | N flag | V flag | R1 status |
+|---|---|---|---|---|
+| jsbeeb | `$42` | 0 (no data) | 1 | bit 7 clear |
+| Beebium | `$C0` | 1 (data ready) | 1 | bit 7 set |
+
+In Beebium's concurrent model, the host has already written the first
+R1 byte before the parasite polls. In jsbeeb's single-threaded model,
+the host hasn't run at this point, so R1 is empty.
+
+This timing difference causes the parasites to execute different numbers
+of poll-loop iterations, but the DATA byte read via `LDA $FEF9` should
+be identical. The divergence in instruction count makes simple
+instruction-by-instruction comparison impractical -- a higher-level
+synchronisation point is needed (e.g., comparing A register at `$09D9`
+after each R1 data byte is read).
+
+### Next step
+
+Compare the actual R1 data bytes received by the decompressor on both
+emulators. Set breakpoints at `$09D9` (right after `LDA $FEF9`) on both
+parasites and compare the A register value for each of the 702 bytes.
+If the data bytes match, the divergence must be in the LZ control flow
+interpretation, not the input data.
+
 ## External References
 
 - B-Em issue #216 (R3 2-byte transfer bug):
