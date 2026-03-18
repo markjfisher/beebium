@@ -613,4 +613,114 @@ describe('Tube CE2023 Differential', () => {
             await host.close();
         }
     }, 600000);
+
+    it('compare decompressor output bytes', async () => {
+        // Compare the actual output bytes written by the decompressor on
+        // both emulators. Each output byte is written via STA ($2F) at
+        // $0A00. Capture A register (the byte) and output pointer ($2F/$30)
+        // at each write.
+
+        const OUTPUT_WRITE = 0x0A00;  // STA ($2F) -- output byte write
+        const MAX_OUTPUTS = 200;
+
+        // jsbeeb: boot to $0810, then capture output writes
+        const oracle = await bootJsbeeb();
+        await oracle.runUntilParasiteAddress(FIRST_R4_ACK, 10);
+        expect(oracle.getParasiteCpuState().pc).toBe(FIRST_R4_ACK);
+
+        const parasiteCpu = (oracle as any).parasiteProcessor;
+        const parasiteMem = parasiteCpu.memory;
+        const jsOutputs: Array<{ a: number; addr: number }> = [];
+        parasiteCpu._debugInstruction = (pc: number) => {
+            if (pc === OUTPUT_WRITE) {
+                jsOutputs.push({
+                    a: parasiteCpu.a,
+                    addr: parasiteMem[0x2F] | (parasiteMem[0x30] << 8),
+                });
+            }
+            return jsOutputs.length >= MAX_OUTPUTS || pc === 0x0816;
+        };
+        (oracle as any).processor.execute(100_000_000);
+        parasiteCpu._debugInstruction = null;
+
+        console.log(`jsbeeb: ${jsOutputs.length} output writes captured`);
+        for (let i = 0; i < Math.min(16, jsOutputs.length); i++) {
+            const o = jsOutputs[i];
+            console.log(`  #${i}: A=$${o.a.toString(16).padStart(2, '0')} → $${o.addr.toString(16).toUpperCase().padStart(4, '0')}`);
+        }
+
+        // Beebium: boot to $0810, then capture output writes
+        const host = await Beebium.launch({
+            args: [
+                '--tube', '65C02-3MHz',
+                '--fdc', 'acorn-1770',
+                '--sideways', `14:rom:${DFS_ROM_FILEPATH}`,
+            ],
+            timeoutMs: 20000,
+        });
+
+        try {
+            await host.runUntilOrTimeout(
+                () => screenContains(hostReadFn(host), "Acorn TUBE"),
+                10,
+            );
+            const parasite = await host.connectParasite();
+            await host.disc.drive(0).insert(DISC_FILEPATH_ABS);
+            await host.keyboard.type("*EXEC !BOOT\r");
+            await host.debugger.run();
+            await parasite.debugger.runUntil(FIRST_R4_ACK, 60000);
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            // Set breakpoint at output write
+            const bpId = await parasite.debugger.addBreakpoint(OUTPUT_WRITE);
+            await host.debugger.run();
+
+            const beeOutputs: Array<{ a: number; addr: number }> = [];
+            for (let i = 0; i < MAX_OUTPUTS; i++) {
+                await parasite.debugger.runUntil(OUTPUT_WRITE, 30000);
+                const regs = await parasite.cpu.getRegisters();
+                const lo = await parasite.memory.address.peek.readByte(0x2F);
+                const hi = await parasite.memory.address.peek.readByte(0x30);
+                beeOutputs.push({ a: regs.a, addr: lo | (hi << 8) });
+            }
+
+            if (await host.debugger.isRunning()) await host.debugger.stop();
+
+            console.log(`\nBeebium: ${beeOutputs.length} output writes captured`);
+            for (let i = 0; i < Math.min(16, beeOutputs.length); i++) {
+                const o = beeOutputs[i];
+                console.log(`  #${i}: A=$${o.a.toString(16).padStart(2, '0')} → $${o.addr.toString(16).toUpperCase().padStart(4, '0')}`);
+            }
+
+            // Compare
+            const limit = Math.min(jsOutputs.length, beeOutputs.length);
+            let firstDiff = -1;
+            for (let i = 0; i < limit; i++) {
+                if (jsOutputs[i].a !== beeOutputs[i].a ||
+                    jsOutputs[i].addr !== beeOutputs[i].addr) {
+                    firstDiff = i;
+                    break;
+                }
+            }
+
+            if (firstDiff < 0) {
+                console.log(`\nAll ${limit} output bytes match!`);
+            } else {
+                console.log(`\nFirst output divergence at byte #${firstDiff}:`);
+                const start = Math.max(0, firstDiff - 3);
+                const end = Math.min(limit, firstDiff + 5);
+                for (let i = start; i < end; i++) {
+                    const js = jsOutputs[i];
+                    const bee = beeOutputs[i];
+                    const match = (js.a === bee.a && js.addr === bee.addr) ? '  ' : '<<';
+                    console.log(`  #${i}: js=A:$${js.a.toString(16).padStart(2, '0')}→$${js.addr.toString(16).toUpperCase().padStart(4, '0')}  bee=A:$${bee.a.toString(16).padStart(2, '0')}→$${bee.addr.toString(16).toUpperCase().padStart(4, '0')} ${match}`);
+                }
+            }
+
+            await parasite.debugger.removeBreakpoint(bpId);
+            await parasite.close();
+        } finally {
+            await host.close();
+        }
+    }, 600000);
 });
