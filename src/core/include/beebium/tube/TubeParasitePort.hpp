@@ -65,6 +65,17 @@ public:
     // edge detection internally.
     bool pnmi_level() const;
 
+    // --- Deferred bus cycle completion ---
+
+    // Clear deferred register side effects from the current cycle.
+    //
+    // On real hardware, the Tube ULA holds latch values stable for the
+    // entire bus cycle and clears the ready flag at the END of the cycle.
+    // This method models that: it is called at the END of each CPU tick
+    // (after pirq/pnmi routing), so that status reads on the NEXT tick
+    // see the correct ready=0 state.
+    void complete_cycle();
+
     // --- Reset ---
 
     // Clear all register data. Called when the parasite receives a reset
@@ -98,6 +109,15 @@ private:
     // PNMI edge detection state (parasite-local, not shared).
     bool prev_pnmi_ = false;
     bool pnmi_edge_ = false;
+
+    // Deferred ready-clear state. Data register reads cache the value
+    // and defer the ready-flag clear / FIFO dequeue to complete_cycle().
+    // Bits in pending_clear_mask_: 0=R1, 1=R2, 2=R3, 3=R4.
+    uint8_t pending_clear_mask_ = 0;
+    uint8_t cached_r1_ = 0;
+    uint8_t cached_r2_ = 0;
+    uint8_t cached_r3_ = 0;
+    uint8_t cached_r4_ = 0;
 
 };
 
