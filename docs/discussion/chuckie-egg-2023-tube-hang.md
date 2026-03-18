@@ -779,9 +779,53 @@ transfers) using `TubeHostPort::host_write` and
 all pass. The R1 shared-memory latch protocol is correct.
 
 The CE2023 divergence is NOT caused by the R1 latch mechanism itself.
-Something in the full emulation context (6502 CPU execution, `pirq()`
-polling on every tick, concurrent R3/R4/R2 access) causes a difference
-that doesn't occur in the isolated protocol test.
+
+### BUG REPRODUCED: 6502 R1 polled read produces corrupted data
+
+A narrow C++ test (`test_tube_r1_6502.cpp`) plants the same 6502
+poll-read loop used by the CE2023 decompressor:
+
+```
+$0400: LDX #$00
+$0402: BIT $FEF8        ; poll R1 status
+$0405: BPL $0402        ; loop until data available
+$0407: LDA $FEF9        ; read R1 data
+$040A: STA $0500,X      ; store in results buffer
+$040D: INX
+$040E: CPX #NUM_BYTES
+$0410: BNE $0402
+$0412: BRA *            ; halt
+```
+
+A host thread writes bytes through `TubeHostPort` concurrently. The
+6502 runs via `ParasiteCpu::tick()` on the main thread. Single-byte
+and 200-byte tests pass, but the 50-iteration stress test **fails**:
+
+```
+Iteration 5, byte 59: expected $72 got $71
+```
+
+The off-by-one (`$72` → `$71`, previous byte instead of current)
+proves the bug is a TOCTOU race within the 6502's multi-cycle `LDA
+$FEF9` instruction. The same R1 protocol that works correctly when
+calling `parasite_read()` directly fails when the 6502 mediates the
+access through `ParasiteCpu::tick()`.
+
+The `LDA $FEF9` (absolute addressing) takes 4 CPU cycles. The actual
+memory read of address `$FEF9` (triggering `parasite_read(1)` which
+clears the ready flag and reads the value) happens on one specific
+cycle. On the other cycles, `pirq()` and `pnmi_level()` read from
+shared memory. There is a window where the host writes a new byte
+and the parasite reads the old one, or vice versa.
+
+This is the root cause of the CE2023 hang and explains all observed
+behaviour:
+- Stepping works (host far ahead, R1 always has stable data)
+- Free-running fails (host writes concurrently with 6502 execution)
+- The divergence is non-deterministic (depends on thread scheduling)
+- R1 data appears correct when logged (logging captures the value
+  after `parasite_read()` returns, but the 6502 may have seen a
+  different value on the data bus during the instruction)
 
 ### Fix options
 
