@@ -22,8 +22,9 @@ The boot sequence is:
     4. Initialising changes to "Loading" with a Mode 7 progress bar
     5. Game starts
 
-Known issue: Both B2 and Beebium hang at the "Initialising" stage.
-B-Em progresses to "Loading". These tests help diagnose the hang.
+The game previously hung at the "Initialising" stage due to a page-cross
+fixup read consuming an R1 latch byte. This was fixed in March 2026.
+See docs/discussion/chuckie-egg-2023-tube-hang.md for the full investigation.
 
 Requirements:
     - Beebium server executable (auto-detected or via BEEBIUM_SERVER)

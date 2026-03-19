@@ -1312,9 +1312,7 @@ the main thread.
 | `clients/python/tests/tube_test_helpers.py` | Shared Tube test utilities |
 | `tests/test_tube_parasite_port.cpp` | C++ Tube register tests (60 cases) |
 | `tests/test_tube_host_port.cpp` | C++ Tube register tests (32 cases) |
-| `tests/test_tube_ce2023_standalone.cpp` | Standalone decompressor test (root cause confirmation) |
-| `tests/test_tube_ce2023_trace.cpp` | Full-boot trace test with auto-boot |
-| `oracle/tests/ce2023-trace-dump.test.ts` | jsbeeb instruction trace dump |
+| `tests/test_tube_ce2023_trace.cpp` | Full-boot interleaved trace test (regression test for the fix) |
 | `src/core/include/beebium/tube/TubeShared.hpp` | Shared memory layout + counters |
 | `src/core/include/beebium/tube/InstructionTrace.hpp` | Instruction trace ring buffer |
 | `src/core/include/beebium/tube/RegisterTrace.hpp` | Tube register access trace |
