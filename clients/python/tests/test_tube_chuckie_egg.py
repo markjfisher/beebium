@@ -134,9 +134,13 @@ def bbc_tube(
         pytest.skip(str(e))
 
 
-@pytest.mark.xfail(reason="CE2023 investigation paused -- see docs/discussion/chuckie-egg-2023-tube-hang.md")
 class TestTubeChuckieEggBoot:
-    """Test booting Chuckie Egg 2023 (40th Anniversary Edition) via the Tube."""
+    """Test booting Chuckie Egg 2023 (40th Anniversary Edition) via the Tube.
+
+    These tests run the full multi-process emulator (host + parasite as separate
+    OS processes communicating via shared memory and gRPC), matching production
+    architecture. See docs/discussion/chuckie-egg-2023-tube-hang.md.
+    """
 
     def test_tube_enabled(self, bbc_tube: Beebium) -> None:
         """Verify Tube hardware is enabled and parasite is connected."""
@@ -188,7 +192,7 @@ class TestTubeChuckieEggBoot:
     def test_loading_progresses(
         self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path
     ) -> None:
-        """Initialising changes to Loading (known hang point)."""
+        """Initialising changes to Loading (previously the hang point)."""
         found = _boot_to_text(bbc_tube, chuckie_egg_disc_filepath,
                               "Chuckie Egg 2023", emulated_seconds=15.0)
         assert found, "Failed to reach initial loading screen"
@@ -201,7 +205,7 @@ class TestTubeChuckieEggBoot:
         )
         assert found, "Failed to reach Initialising screen"
 
-        # This is the known hang point. Wait for "Loading" to appear.
+        # Wait for "Loading" to appear.
         found = run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, "Loading"),
@@ -216,3 +220,26 @@ class TestTubeChuckieEggBoot:
             pytest.fail(
                 "Emulator hung at 'Initialising' -- expected 'Loading' to appear"
             )
+
+    def test_game_starts(
+        self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path
+    ) -> None:
+        """Game loads fully and reaches the title screen."""
+        found = _boot_to_text(bbc_tube, chuckie_egg_disc_filepath,
+                              "Chuckie Egg 2023", emulated_seconds=15.0)
+        assert found, "Failed to reach initial loading screen"
+
+        # Wait for "A game of skill" which appears on the title screen
+        # after decompression, loading bar, and game initialisation complete.
+        found = run_until_or_timeout(
+            bbc_tube,
+            lambda: screen_contains(bbc_tube.memory, "A game of skill"),
+            emulated_seconds=120.0,
+        )
+        if not found:
+            rows = read_mode7_screen(bbc_tube.memory)
+            print("\nScreen while waiting for title screen:")
+            for i, row in enumerate(rows):
+                print(f"Row {i:2d}: [{row}]")
+            dump_diagnostics(bbc_tube)
+            pytest.fail("Expected 'A game of skill' on title screen")
