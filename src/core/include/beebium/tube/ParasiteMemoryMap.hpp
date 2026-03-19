@@ -97,6 +97,23 @@ public:
     uint8_t& ram(uint16_t address) { return ram_[address]; }
     const uint8_t& ram(uint16_t address) const { return ram_[address]; }
 
+    // Read for bus cycles where the CPU discards the value (page-cross fixup
+    // cycles, interrupt dummy reads).  Behaves like read() for address decode
+    // (disables boot ROM on Tube area access) but uses parasite_peek() for
+    // Tube registers to avoid consuming latch data.
+    uint8_t read_uninteresting(uint16_t address) {
+        if (is_tube_address(address)) {
+            rom_enabled_ = false;
+            return tube_port_.parasite_peek(static_cast<uint8_t>(address & 7));
+        }
+
+        if (rom_enabled_ && address >= 0xF800) {
+            return rom_[address & 0x7FF];
+        }
+
+        return ram_[address];
+    }
+
     // Side-effect-free read for debugger inspection.
     // Uses parasite_peek() for Tube registers to avoid clearing ready flags
     // or dequeuing FIFOs. Does not disable boot ROM.

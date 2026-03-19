@@ -48,10 +48,16 @@ void ParasiteCpu::tick() {
     // Execute one CPU cycle (determines address and r/w direction)
     (*cpu_.tfn)(&cpu_);
 
-    // Perform bus access through the memory map
+    // Perform bus access through the memory map.
+    // Uninteresting reads (page-cross fixup cycles, interrupt dummy reads)
+    // use read_uninteresting() to avoid Tube register side effects.  The
+    // real 65C02 puts an address on the bus during these cycles but the
+    // Tube ULA does not complete a side-effecting register access.
     const uint16_t addr = cpu_.abus.w;
     if (cpu_.read) {
-        cpu_.dbus = memory_.read(addr);
+        cpu_.dbus = (cpu_.read == M6502ReadType_Uninteresting)
+            ? memory_.read_uninteresting(addr)
+            : memory_.read(addr);
         // Memory read watchpoint: record reads from watched addresses
         // in the instruction trace as pseudo-entries with opcode=$FE.
         // Also records ad.w (the base address register) in the cycle field
