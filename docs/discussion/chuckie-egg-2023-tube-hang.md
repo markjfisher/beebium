@@ -2,7 +2,7 @@
 
 ## Status
 
-**Root cause identified; fix blocked on understanding real hardware.**
+**FIXED (March 2026).** The game now loads on both Beebium and B2.
 Page-cross dummy reads from the 65C02 hit Tube register `$FEF9` (R1
 data) and consume a byte from the latch, shifting the R1 data stream.
 The decompressor then runs out of data after 702 bytes and hangs waiting
@@ -1088,6 +1088,94 @@ this value".  It classifies the *purpose* of the bus cycle (instruction
 stream, data access, internal operation), not whether the result matters.
 A different approach is needed.
 
+## Resolution (March 2026)
+
+The fix has two parts: a correction to the 6502 code generator and a
+new read path in `ParasiteCpu::tick()`.
+
+### Part 1: Fix the 6502 code generator
+
+The 6502 code generator (`6502_gen.cpp`, from B2) defines page-cross
+fixup cycles using the `ReadDataNoCarry` type. This generated:
+
+```c
+s->read = M6502ReadType_Data + s->acarry;
+```
+
+When `acarry=1` (page cross), this produces `M6502ReadType_Instruction`
+(2) instead of the correct `M6502ReadType_Uninteresting` (4). The
+`+acarry` trick was a micro-optimisation that mapped to the wrong enum
+value because `Data(1) + 1 = Instruction(2)`, not `Uninteresting(4)`.
+
+The fix replaces the addition with an explicit ternary:
+
+```c
+s->read = s->acarry ? M6502ReadType_Uninteresting : M6502ReadType_Data;
+```
+
+This affects three generated NMOS functions: `Cycle2_R_ABX`,
+`Cycle2_R_ABY`, and `Cycle3_R_INY`. The hand-written CMOS variants
+in `6502.c` already used `Uninteresting` correctly.
+
+The generator was integrated into Beebium's build system from B2's
+`src/6502/6502_gen.cpp` (vendored under `src/6502/third_party/b2/`).
+The generated `6502_internal.inl` is now produced at build time, not
+checked in.
+
+### Part 2: Route Uninteresting reads through a side-effect-free path
+
+`ParasiteCpu::tick()` now checks `M6502ReadType_Uninteresting` and
+routes those reads through `ParasiteMemoryMap::read_uninteresting()`
+instead of `read()`:
+
+```cpp
+cpu_.dbus = (cpu_.read == M6502ReadType_Uninteresting)
+    ? memory_.read_uninteresting(addr)
+    : memory_.read(addr);
+```
+
+`read_uninteresting()` behaves like `read()` for address decode
+(disabling boot ROM on Tube area access, since CAS suppression
+triggers regardless of bus cycle type) but uses `parasite_peek()`
+for Tube registers, returning the register value without consuming
+latch data or clearing ready flags.
+
+### Verification
+
+The 1:1 interleaved trace test (`test_tube_ce2023_trace.cpp`) no longer
+hangs. The parasite reaches the decompressed game code at `$FDD3`,
+past the decompressor exit. All Tube register tests pass.
+
+The same fix was applied to B2 and submitted as PR #569
+(https://github.com/tom-seddon/b2/pull/569). CE2023 loads on B2 with
+the fix.
+
+### Cross-emulator analysis
+
+A detailed comparison of how PiTubeDirect, jsbeeb, B-Em, and Beebium
+handle page-cross fixup cycles is in `cross-emulator-tube-analysis.md`.
+
+Key finding: jsbeeb's 65C02 implementation does not perform a memory
+read during the fixup cycle at all (`tick(1)` instead of
+`readOp("addrNonCarry")`). The earlier claim in this document that
+"jsbeeb works by accident of its execution model" is incorrect --
+jsbeeb's 65C02 simply does not generate the problematic bus read.
+B-Em and PiTubeDirect also avoid the problem by computing the final
+address directly without intermediate bus activity.
+
+### Why real hardware works (updated understanding)
+
+The open question remains: what happens on real hardware during the
+page-cross fixup cycle? A real 65C02 drives the bus every cycle. No
+65C02 variant has pins to distinguish valid from fixup cycles. The
+address on the bus during the fixup cycle is not definitively documented
+-- it could be the uncorrected target, the PC, or something else.
+
+Even if `$FEF9` IS on the bus during the fixup cycle, the Ferranti
+Tube ULA's internal clock-domain-crossing logic may not complete a
+side-effecting register access during that cycle. This would need
+gate-level analysis or targeted hardware testing to verify.
+
 ## Test Infrastructure
 
 ### `test_tube_ce2023_trace.cpp` -- single-threaded interleaved reproduction
@@ -1237,3 +1325,6 @@ the main thread.
 | `src/service/include/beebium/service/DebuggerService.hpp` | Streaming implementation |
 | `oracle/tests/tube-chuckie-egg.test.ts` | TypeScript differential test |
 | `docs/discussion/chuckie-egg-2023-tube-hang.md` | This document |
+| `docs/discussion/cross-emulator-tube-analysis.md` | PiTubeDirect/jsbeeb/B-Em/Beebium comparison |
+| `docs/6502-code-generator.md` | Generator build integration and M6502ReadType docs |
+| `src/6502/third_party/b2/src/6502/6502_gen.cpp` | 6502 code generator (from B2, with fix) |

@@ -916,6 +916,42 @@ The transition from boot mode to normal mode occurs on the first read or write t
 address in `&FEF8-&FEFF`. The `rom_enabled` flag is cleared and cannot be set again
 except by reset.
 
+### Read paths
+
+`ParasiteMemoryMap` provides three read methods:
+
+- **`read(address)`**: Full side-effecting read. Tube register reads consume latch data,
+  clear ready flags, and update interrupt state. Disables boot ROM on Tube area access.
+  Used for all bus cycles where the CPU will use the value (`M6502ReadType_Data`,
+  `M6502ReadType_Opcode`, `M6502ReadType_Instruction`, `M6502ReadType_Address`).
+
+- **`read_uninteresting(address)`**: Side-effect-free Tube read with boot ROM disable.
+  Returns the Tube register value via `parasite_peek()` without consuming latch data.
+  Still disables boot ROM on Tube area access (CAS suppression triggers regardless of
+  bus cycle type). Used for page-cross fixup cycles and interrupt dummy reads
+  (`M6502ReadType_Uninteresting`).
+
+- **`peek(address)`**: Fully side-effect-free read for debugger inspection. Does not
+  disable boot ROM. Uses `parasite_peek()` for Tube registers.
+
+`ParasiteCpu::tick()` selects the read path based on `M6502ReadType`:
+
+```cpp
+cpu_.dbus = (cpu_.read == M6502ReadType_Uninteresting)
+    ? memory_.read_uninteresting(addr)
+    : memory_.read(addr);
+```
+
+This distinction is critical for the Tube: the 6502's indexed addressing modes perform a
+read from an intermediate (uncorrected) address during page-cross fixup cycles. When this
+address falls in the Tube register range, the read must not consume latch data. The 6502
+code generator classifies these fixup reads as `M6502ReadType_Uninteresting`, and
+`ParasiteCpu::tick()` routes them through the side-effect-free path.
+
+See `docs/discussion/chuckie-egg-2023-tube-hang.md` for the full investigation that
+motivated this design, and `docs/discussion/cross-emulator-tube-analysis.md` for a
+comparison of how other emulators handle this.
+
 ## Tube ULA Model
 
 ### Data structures
@@ -1492,8 +1528,9 @@ wires its local address decode to the same `TubeShared` region.
   `DeviceInspectionStub`. Swift stubs regenerated (no code changes needed).
 - Added debugger interface to `ParasiteRunner`: `sequence()`, `step()`, CPU register
   accessors/setters, `read()`/`write()`/`peek()`, `memory()`, `set_instruction_callback()`.
-- Added `ParasiteMemoryMap` region model: `MACHINE_TYPE`, `peek()`, `get_memory_regions()`,
-  `peek_region()`, `read_region()`, `write_region()`.
+- Added `ParasiteMemoryMap` region model: `MACHINE_TYPE`, `peek()`, `read_uninteresting()`,
+  `get_memory_regions()`, `peek_region()`, `read_region()`, `write_region()`.
+  `read_uninteresting()` provides side-effect-free Tube reads for page-cross fixup cycles.
 - `ParasiteServer` class: lightweight gRPC server hosting `DebuggerControl` and `SystemService`
   only (no video/audio/keyboard/disc/indicator/sideways/econet/tube services).
 - Parasite executable (`main_tube_65C02_3MHz.cpp`) starts `ParasiteServer` with `--port` and
