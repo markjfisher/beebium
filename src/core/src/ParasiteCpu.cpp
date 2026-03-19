@@ -63,13 +63,6 @@ void ParasiteCpu::tick() {
         // Also records ad.w (the base address register) in the cycle field
         // for diagnosing addressing mode bugs.
         if (addr == watch_read_addr_ && trace_.enabled()) {
-            // Print the tfn pointer name for debugging
-            if (cpu_.opcode_pc.w != 0x09D6 && cpu_.opcode_pc.w != 0x09D1) {
-                fprintf(stderr, "WATCH READ $%04X: opcode_pc=$%04X abus=$%04X ad=$%04X "
-                        "read=%d x=$%02X y=$%02X dbus=$%02X\n",
-                        addr, cpu_.opcode_pc.w, cpu_.abus.w, cpu_.ad.w,
-                        cpu_.read, cpu_.x, cpu_.y, cpu_.dbus);
-            }
             trace_.record(cpu_.ad.w, cpu_.opcode_pc.w,
                           cpu_.dbus, cpu_.x, cpu_.y, cpu_.s.b.l,
                           M6502_GetP(&cpu_).value, 0xFE);

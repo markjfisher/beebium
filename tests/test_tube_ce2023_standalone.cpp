@@ -46,12 +46,6 @@ namespace {
 static constexpr const char* SNAPSHOT_FILENAME = "ce2023_parasite_0819.bin";
 static constexpr const char* R1_DATA_FILENAME = "ce2023_r1_data.bin";
 
-// First 20 expected output bytes from jsbeeb
-static constexpr uint8_t JSBEEB_OUTPUT[] = {
-    0x2C, 0xF8, 0xFE, 0x10, 0xFB, 0xAD, 0xF9, 0xFE,
-    0x38, 0x6A, 0x85, 0x31, 0x68, 0x60, 0xA4, 0x2F,
-    0xB1, 0x33, 0xA0, 0x00,
-};
 
 bool assets_available() {
     auto dir = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR);
@@ -223,33 +217,9 @@ TEST_CASE("CE2023 standalone: decompressor from snapshot", "[tube][ce2023][stand
     }
 
     // Output bytes
-    printf("\nOutput ($FC00+, first 20):\n  Beebium:  ");
+    printf("\nOutput ($FC00+, first 20):\n  ");
     for (int i = 0; i < 20; ++i) printf("%02X ", memory.peek(0xFC00 + i));
-    printf("\n  Expected: ");
-    for (size_t i = 0; i < sizeof(JSBEEB_OUTPUT); ++i) printf("%02X ", JSBEEB_OUTPUT[i]);
     printf("\n");
-
-    // Find first divergence
-    int first_diff = -1;
-    for (int i = 0; i < static_cast<int>(sizeof(JSBEEB_OUTPUT)); ++i) {
-        if (memory.peek(0xFC00 + i) != JSBEEB_OUTPUT[i]) {
-            first_diff = i;
-            break;
-        }
-    }
-    if (first_diff >= 0) {
-        printf("  DIVERGENCE at byte %d ($FC%02X): got $%02X expected $%02X\n",
-               first_diff, first_diff,
-               memory.peek(0xFC00 + first_diff), JSBEEB_OUTPUT[first_diff]);
-    } else {
-        printf("  First %zu output bytes MATCH!\n", sizeof(JSBEEB_OUTPUT));
-    }
-
-    if (val_at_0CE6 == 0x38) {
-        printf("\nRESULT: Table CORRECT\n");
-    } else {
-        printf("\nRESULT: Table WRONG ($%02X != $38) -- 65C02 emulation bug\n", val_at_0CE6);
-    }
 
     printf("Total instructions: %llu\n",
            static_cast<unsigned long long>(itrace.total_count()));
