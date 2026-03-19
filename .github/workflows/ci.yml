@@ -165,7 +165,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc
+          sudo apt-get install -y cmake libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc uuid-dev
 
       - name: Configure CMake
         run: |
