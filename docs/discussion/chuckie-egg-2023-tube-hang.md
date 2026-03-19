@@ -2,13 +2,28 @@
 
 ## Status
 
-**Blocked on differential testing.** The game hangs at the "Initialising"
-stage on Beebium, B2, and MAME. It works on B-Em, jsbeeb, and real hardware.
-Nine hypotheses tested and disproven. Six Tube implementation improvements
-committed. The root cause requires instruction-level comparison with jsbeeb.
+**Root cause identified; fix blocked on understanding real hardware.**
+Page-cross dummy reads from the 65C02 hit Tube register `$FEF9` (R1
+data) and consume a byte from the latch, shifting the R1 data stream.
+The decompressor then runs out of data after 702 bytes and hangs waiting
+for byte 703.  This reproduces in single-threaded interleaved mode at
+any ratio (2:3, 1:1), not just in multi-process mode.
 
-A first-class TypeScript client for Beebium is being developed to enable
-differential testing via the jsbeeb oracle framework.
+jsbeeb avoids the problem by accident: its single-threaded JS event
+loop means the host code cannot execute between parasite cycles, so the
+R1 latch is always empty during the dummy read.
+
+The open question is why the game works on real hardware, where the host
+and parasite run in independent clock domains (separate oscillators,
+asynchronous, with drift).  The R1 latch should be full at the time of
+the dummy read given the host's write timing.  The answer likely involves
+the Ferranti Tube ULA's internal timing or clock-domain-crossing
+behaviour, but this is unverified.
+
+An M6502ReadType filtering fix was attempted but the 6502 library does
+not consistently classify page-cross dummy reads across addressing
+modes -- `LDA (zp),Y` uses `M6502ReadType_Instruction`, not
+`Uninteresting`, for the fixup cycle.
 
 ## The Game
 
@@ -886,8 +901,12 @@ Instruction trace comparison (500,000 jsbeeb instructions vs 10M Beebium):
 - Both hit Y=`$FB` exactly twice, at corresponding points
 - First Y=`$FB` occurrence: both read A=`$FF` (identical)
 - Second Y=`$FB` occurrence: jsbeeb reads A=`$FE`, Beebium reads A=`$FB`
-  - jsbeeb returns the RAM value at `$FEF9` (or `$FFF9`)
-  - Beebium returns the R1 latch data (`$FB`)
+  - jsbeeb returns the Tube ULA's stale latch value (`$FE`), not RAM --
+    the R1 latch is empty because the single-threaded host hasn't written
+    the next byte yet, so the read returns whatever was left in the
+    internal `hostToParasiteData[R1][0]` slot from the previous transfer
+  - Beebium returns the R1 latch data (`$FB`) because the cross-process
+    host has eagerly written the next byte ahead of the parasite
 - Bit streams are identical for the first 5577 of 5615 bits (99.3%)
 - R1 byte values match for reads 0-696, then shift by exactly -1
 - Cumulative bit extractions (`LSR $31`) match at every R1 byte boundary
@@ -914,58 +933,262 @@ Step 3 reads from `$FEF9` (uncorrected). Step 4 reads from `$FFF9`
 `$FEF9`. Whether this has side effects depends on the hardware timing
 and whether the Tube ULA latches the access.
 
-#### Open question: real hardware behaviour
+#### Open question: why does real hardware work?
+
+The host and parasite processors have independent oscillators and run
+in separate clock domains, connected only through the Tube ULA's
+asynchronous handshaking.  There is no shared crystal, no fixed phase
+relationship, and drift between the clocks means they are essentially
+never in phase.  Real hardware is truly parallel, just like Beebium's
+multi-process model.
 
 On real hardware, the page-cross intermediate read from `$FEF9` does
 hit the Tube ULA (CAS is suppressed for the `$FExx` range, the ULA
-responds). Whether this clears the R1 ready flag depends on the ULA's
-internal timing. The game works on real hardware, which implies either:
+responds).  The dummy read is a complete bus cycle: the uncorrected
+address is stable on the bus for a full phi2 period, R/W is high, and
+the Tube ULA's address decode is satisfied.
 
-1. The R1 latch is empty at this point on real hardware (the host
-   hasn't written the next byte yet because of natural 2 MHz timing)
-2. The Tube ULA doesn't fully latch the intermediate read (it may
-   require a full clock cycle commitment, and the page-cross read is
-   only half a cycle)
-3. The 65C02 suppresses the intermediate read in some way not
-   documented in standard references
+**The R1 latch should be full at this point.**  After the parasite
+consumes byte N via the legitimate `LDA $FEF9`, the "latch empty"
+signal propagates through the Tube ULA's clock-domain-crossing
+synchroniser to the host side (2-3 host cycles).  The host's
+bus-stretched `STA $FEE1` then completes, depositing byte N+1 in the
+latch.  Total: ~3-4 host cycles (~1.5-2 us, ~4.5-6 parasite cycles)
+from the legitimate R1 read to the next byte appearing in the latch.
+The page-cross dummy read happens dozens of parasite cycles later --
+the latch should contain byte N+1 by then.
 
-jsbeeb appears to handle this by returning RAM instead of the Tube
-register for this read, which avoids the side effect entirely. Whether
-this matches real hardware or is an incidental jsbeeb simplification
-is not yet known.
+Yet the game works on real hardware.  This is unexplained.
+
+**Hypotheses (all unverified):**
+
+1. **Tube ULA internal timing**: the Ferranti ULA's internal state
+   machine may not complete a full side-effecting register access
+   during every bus cycle.  The ULA crosses clock domains internally;
+   perhaps its handshake requires conditions that happen to not be met
+   during the dummy read cycle due to the asynchronous timing
+   relationship with the host.  This would need gate-level analysis of
+   the Ferranti ULA or targeted testing on real hardware.
+
+2. **Host slower than estimated**: the host accesses Tube registers
+   via the BBC Micro's 1 MHz bus (SHEILA space).  Combined with Tube
+   bus stretching, video contention, and the host code's instruction
+   sequence, the host may take longer than the ~3-4 cycles estimated
+   above to deposit the next byte.  If the total exceeds the number of
+   parasite cycles between the legitimate R1 read and the page-cross,
+   the latch would be empty.  This seems unlikely given the estimates
+   but has not been verified with cycle-exact host timing.
+
+3. **Intermittent failure**: the game may occasionally glitch on real
+   hardware in ways that aren't noticed during normal play.  The
+   decompressor runs once during loading; a rare failure would manifest
+   as a corrupted load, which might be attributed to disc or hardware
+   issues rather than a Tube timing bug.
+
+4. **65C02 bus behaviour**: the Rockwell 65C02 (unlike the WDC 65C02,
+   which has VDA/VPA pins) does not signal whether a bus cycle is
+   "valid".  However, there may be subtle electrical differences in the
+   bus timing during a page-cross fixup cycle that the Tube ULA's
+   address decode or chip select logic does not fully respond to.
+
+**jsbeeb's behaviour**: jsbeeb routes the page-cross read through the
+same `parasiteRead` code as any other read.  It unconditionally returns
+the latch value and clears flags.  However, in jsbeeb's single-threaded
+model, the host JavaScript code cannot execute between parasite CPU
+cycles within the same event loop tick.  The R1 latch is empty at the
+critical moment because the host's write loop simply has not run yet.
+jsbeeb works by accident of its execution model, not by correctly
+handling the dummy read.  If jsbeeb were refactored to use Web Workers
+(host and parasite on separate threads), it would likely exhibit the
+same bug.
 
 #### Implications for the fix
 
 The fix must ensure that the R1 latch byte is not consumed by a
-page-cross intermediate read. Options:
+page-cross intermediate read.  The M6502ReadType filtering approach
+was attempted and failed (see "Dead end" below).  Remaining options:
 
-1. **Fix the memory map**: distinguish intermediate reads from data
-   reads (requires the 6502 library to signal which type of read is
-   occurring -- the `read` field already has `M6502ReadType_Data` vs
-   `M6502ReadType_Uninteresting`)
-2. **Use ReadType filtering**: only call `parasite_read()` (with side
-   effects) when `cpu_.read == M6502ReadType_Data`, and call
-   `parasite_peek()` (no side effects) for other read types
-3. **Match jsbeeb's behaviour**: return RAM for Tube register reads
-   that occur during non-data cycles
+1. **Modify the 6502 library**: add a new read type or flag that
+   specifically marks page-cross fixup reads across ALL addressing
+   modes, not just those that currently use `Uninteresting`.  This
+   is invasive but principled.
 
-Option 2 is the most principled: the 6502 library already classifies
-reads as `Data` vs `Uninteresting`. Side-effecting I/O should only
-respond to `Data` reads.
+2. **Track address stability**: in `ParasiteCpu::tick()`, compare the
+   current `abus` with the previous cycle's `abus`.  If the high byte
+   changed between consecutive reads (indicating a page-cross
+   correction), treat the previous read as a dummy.  This is fragile
+   and one cycle too late (the side effect already happened).
+
+3. **Suppress side effects for non-Data reads**: treat any read type
+   other than `M6502ReadType_Data` as side-effect-free for Tube
+   registers.  This is the simplest change but may be too broad --
+   instruction fetches and address reads from the Tube area (unusual
+   but possible) would lose their side effects.
+
+4. **Emulate the Tube ULA's clock-domain crossing**: model the
+   asynchronous handshake between host and parasite clock domains,
+   including the synchronisation delay.  This would naturally prevent
+   the host's byte from appearing in the parasite-side latch within
+   the few cycles between the legitimate read and the dummy read.
+   This is architecturally correct but complex.
+
+None of these are fully satisfactory.  The root cause -- what physical
+characteristic of the Ferranti Tube ULA prevents the dummy read from
+consuming data -- remains unknown.  Understanding this would determine
+the correct fix.
 
 #### Corrected eliminated hypotheses
 
 Previous investigation incorrectly eliminated:
 - "Back-reference reads hitting Tube registers (jsbeeb confirms zero)"
   -- jsbeeb DOES hit Tube registers via back-references (2 occurrences
-  with Y=$FB), but returns RAM values instead of Tube register values,
-  masking the side effect.
+  with Y=$FB), but the R1 latch is empty at that point because jsbeeb's
+  single-threaded model means the host JS code has not had a chance to
+  execute its R1 write loop yet.  The read returns the Tube ULA's stale
+  internal `hostToParasiteData[R1][0]` value with no meaningful side
+  effect (the DATA_AVAILABLE flag is already clear, so clearing it
+  again is a no-op).  In Beebium's model (both cross-process AND
+  single-threaded interleaved), the host has written the next byte
+  before the page-cross occurs, so the read consumes live data.
 
 Previous conclusion "non-deterministic divergence" was incorrect for
 the current codebase. After the NMI nesting fix, the divergence is
 fully deterministic: same byte lost, same output, same hang point on
 every run. The earlier non-determinism was likely from the unfixed NMI
 nesting bug corrupting the R3 transfer.
+
+### Dead end: M6502ReadType filtering (March 2026)
+
+The 6502 library classifies each bus cycle with a `M6502ReadType` value.
+`M6502ReadType_Uninteresting` (4) is used for some page-cross dummy reads
+(e.g., `LDA abs,X` and `LDA abs,Y` on the 65C02).  The idea was to route
+`Uninteresting` reads through `memory_.peek()` (side-effect-free) instead
+of `memory_.read()`, suppressing Tube register side effects on dummy cycles.
+
+**This does not work.** The `LDA (zp),Y` instruction that causes the
+problem (`$09EB`) uses `M6502ReadType_Instruction` (2) for its page-cross
+intermediate read, not `Uninteresting`.  The 6502 library does not
+consistently mark page-cross dummy reads as `Uninteresting` across all
+addressing modes -- `(zp),Y` uses `Instruction` for the intermediate cycle.
+
+The standalone test confirmed this: the watchpoint at `$FEF9` logged
+`read=2` (Instruction) for the spurious `LDA ($33),Y` read, and the
+many other spurious reads (from `LDX abs,Y` at `$0938`/`$0945`) also
+appeared with non-`Uninteresting` read types.
+
+Filtering on `M6502ReadType_Uninteresting` alone would miss the critical
+case.  Filtering on `read <= M6502ReadType_Data` (i.e., only allowing
+`Data` reads to have side effects) would be too aggressive -- it would
+suppress side effects for instruction fetches, address reads, and opcode
+fetches from the Tube register area, which should behave normally.
+
+The read type classification in the 6502 library was not designed to
+distinguish "the CPU will use this value" from "the CPU will discard
+this value".  It classifies the *purpose* of the bus cycle (instruction
+stream, data access, internal operation), not whether the result matters.
+A different approach is needed.
+
+## Test Infrastructure
+
+### `test_tube_ce2023_trace.cpp` -- single-threaded interleaved reproduction
+
+This test boots the full game (Model B host + 65C02 parasite) in a
+**single-threaded** interleaved loop -- no separate processes, no threads,
+no shared-memory races.  The host and parasite take turns stepping on the
+same thread via `run_until_hang(host_batch, parasite_batch, max_rounds)`.
+
+Four test cases with different interleaving ratios:
+
+| Test | Host batch | Parasite batch | Purpose |
+|------|-----------|----------------|---------|
+| `CE2023 memory snapshot at decompressor entry` | 2 | 1 | Boot to `$0819`, dump 64K parasite RAM + CPU state for standalone test |
+| `CE2023 tree build: parasite-only after boot` | 100 | 1 | Host-far-ahead mode: host runs 100 cycles per parasite instruction. If the decompressor succeeds here, the bug is timing-dependent. |
+| `CE2023 divergence trace: 2:3 interleaved` | 2 | 3 | 2 MHz host : 3 MHz parasite ratio, matching real hardware clocks. This is the primary reproduction case. |
+| `CE2023 divergence trace: 1:1 interleaved` | 1 | 1 | Tightest coupling, similar to jsbeeb/B-Em architecture. If this works but 2:3 doesn't, the bug depends on batch size. |
+
+All four cases use `TestFixture` which sets up the full machine with ROMs,
+disc image, Tube shared memory, and `ParasiteRunner`.  Instruction and
+register traces are enabled for post-mortem analysis via `print_analysis()`.
+
+The test also generates the assets consumed by the standalone test:
+- `ce2023_parasite_0819.bin` -- 64K parasite RAM snapshot at decompressor entry
+- `ce2023_r1_data.bin` -- 702 R1 bytes captured from the host register trace
+
+This is the key diagnostic tool because it eliminates concurrency as a
+variable.  The hang reproduces here, confirming the root cause is in the
+interleaved execution model itself, not in threading or process isolation.
+
+#### Test results (March 2026)
+
+| Test | Result | First output divergence |
+|------|--------|------------------------|
+| 2:3 interleaved | **HANGS** at `$09D4` | Byte 8 (`$FC08`): `$60` vs jsbeeb `$38` |
+| 1:1 interleaved | **HANGS** at `$09D4` | Byte 8 (`$FC08`): `$60` vs jsbeeb `$38` |
+| Host-far-ahead (100:1) | Not tested (impractically slow) | -- |
+| Standalone (eager R1 feed) | **HANGS** at `$09D1` | Byte 8 (`$FC08`): `$60` vs jsbeeb `$38` |
+
+All tested modes produce the **same divergence**: byte 8 of the
+decompressor output at `$FC08` is `$60` instead of `$38`.  R1 transfer
+counters are balanced (702 writes, 702 reads) in all cases.  The parasite
+hangs at the R1 poll loop waiting for byte 703 which never arrives.
+
+The identical divergence point across 2:3, 1:1, and standalone modes
+proves this is **not a timing or interleaving ratio issue**.  The host
+writes R1 bytes fast enough at any ratio that the latch has data when
+the page-cross dummy read sweeps through `$FEF9`.  Even 1:1 interleaving
+(the tightest possible coupling, similar to jsbeeb's architecture) fails.
+
+The difference with jsbeeb is not the interleaving ratio but how the
+Tube ULA handles reads: jsbeeb's `parasiteRead` unconditionally returns
+the latch value and clears flags, but in jsbeeb the latch happens to be
+empty at the critical moment because the host and parasite share a single
+JS execution context where the host code hasn't had a chance to execute
+its R1 write loop yet.  In Beebium, even at 1:1 interleaving, the host
+gets one full `machine.step()` per parasite `step_instruction()`, which
+is enough for the host's tight R1 write loop to deposit the next byte.
+
+### `test_tube_ce2023_standalone.cpp` -- isolated decompressor with eager R1 feeding
+
+Loads the parasite memory snapshot at `$0819` and runs JUST the
+decompressor with pre-loaded R1 data.  No host CPU, no boot, no disc.
+Completes in under 1 second.
+
+The `feed_r1` lambda eagerly writes the next R1 byte whenever the latch
+is empty (`ready == 0`), which is faster than any real host.  This
+**guarantees** the R1 latch has data when the page-cross dummy read
+sweeps through `$FEF9`, reproducing the byte-loss bug deterministically.
+
+Includes watchpoints on `$FEF9` reads and `$0CE6` writes, plus a full
+instruction trace dump for comparison with the jsbeeb oracle trace.
+The trace detects spurious R1 reads (reads from `$FEF9` not caused by
+the legitimate `LDA $FEF9` at `$09D6`).
+
+### `oracle/tests/ce2023-trace-dump.test.ts` -- jsbeeb reference trace
+
+Runs the same decompressor in jsbeeb and dumps a binary instruction trace
+(`ce2023_jsbeeb_trace.bin`) in the same 8-byte format as the standalone
+test's output.  This enables byte-for-byte trace comparison to find the
+exact divergence point.
+
+### Systematic Tube register tests (`test_tube_r*_6502.cpp`)
+
+Eight test files exercise individual Tube registers with real 6502 code:
+
+| File | Register | Direction | Mode |
+|------|----------|-----------|------|
+| `test_tube_r1_6502.cpp` | R1 | H->P | Polled read (single, 200-byte, 50x stress, diagnostics) |
+| `test_tube_r1_p2h_6502.cpp` | R1 | P->H | Parasite writes |
+| `test_tube_r2_6502.cpp` | R2 | Both | Polled read/write |
+| `test_tube_r3_nmi_6502.cpp` | R3 | H->P | NMI-driven (1-byte, 2-byte sync, 200-byte sync/threaded, 50x stress, handler tracking diagnostic) |
+| `test_tube_r3_p2h_6502.cpp` | R3 | P->H | Parasite writes |
+| `test_tube_r4_6502.cpp` | R4 | Both | Polled read/write |
+| `test_tube_pirq_6502.cpp` | R1/R4 | H->P | IRQ-driven reads |
+| `test_tube_control_6502.cpp` | Control | -- | Flag set/clear, soft reset |
+
+These use the same `ParasiteCpu` + `TubeShared` + `TubeHostPort` stack
+as the CE2023 tests, with small 6502 programs planted in RAM.  Threaded
+tests run the host writer on a `std::thread` while the parasite ticks on
+the main thread.
 
 ## External References
 
