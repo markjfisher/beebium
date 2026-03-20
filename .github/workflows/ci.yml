@@ -432,8 +432,8 @@ jobs:
           name: beebium-server-linux
           path: build/src/server
 
-      - name: Make server executable
-        run: chmod +x build/src/server/beebium-model-b
+      - name: Make servers executable
+        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -470,8 +470,8 @@ jobs:
           name: beebium-server-macos-arm64
           path: build/src/server
 
-      - name: Make server executable
-        run: chmod +x build/src/server/beebium-model-b
+      - name: Make servers executable
+        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -511,8 +511,8 @@ jobs:
           name: beebium-server-macos-x86_64
           path: build/src/server
 
-      - name: Make server executable
-        run: chmod +x build/src/server/beebium-model-b
+      - name: Make servers executable
+        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

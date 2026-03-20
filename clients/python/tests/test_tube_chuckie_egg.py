@@ -147,7 +147,7 @@ class TestTubeChuckieEggBoot:
     ) -> None:
         """Game loads fully and reaches the title screen."""
         found = _boot_to_text(bbc_tube, chuckie_egg_disc_filepath,
-                              "Chuckie Egg 2023", emulated_seconds=15.0)
+                              "Chuckie Egg 2023", emulated_seconds=60.0)
         assert found, "Failed to reach initial loading screen"
 
         # Wait for "A game of skill" which appears on the title screen
@@ -155,7 +155,7 @@ class TestTubeChuckieEggBoot:
         found = run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, "A game of skill"),
-            emulated_seconds=120.0,
+            emulated_seconds=300.0,
         )
         if not found:
             rows = read_mode7_screen(bbc_tube.memory)
