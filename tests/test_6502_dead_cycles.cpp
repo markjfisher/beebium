@@ -360,9 +360,8 @@ TEST_CASE("Row 1: zpg,X dead cycle", "[6502][dead-cycles]") {
         cpu.run_instruction();
 
         REQUIRE(cpu.num_cycles() == 4);
-        // Dead cycles reference: 65C02 should read PBA ($0401)
-        // Actual: reads PFA ($0080) -- shared NMOS code, see B2 issue #570
-        CHECK(cpu.cycles()[2].abus == 0x0080);  // PFA (NMOS behaviour)
+        // Dead cycles reference: 65C02 reads PBA (previous bus address)
+        CHECK(cpu.cycles()[2].abus == 0x0401);  // PBA
         CHECK(cpu.cycles()[2].read == UNINTERESTING);
         CHECK(cpu.cpu().a == 0x42);
     }
@@ -546,9 +545,9 @@ TEST_CASE("Row 5: (zpg),Y read with page crossing", "[6502][dead-cycles]") {
         cpu.run_instruction();
 
         REQUIRE(cpu.num_cycles() == 6);
-        // Dead cycles reference: 65C02 should read PBA ($0011)
-        // Actual: reads PFA ($FE10) -- shared NMOS code, see B2 issue #570
-        CHECK(cpu.cycles()[4].abus == 0xFE10);  // PFA (NMOS behaviour)
+        // Dead cycles reference: 65C02 reads PBA (previous bus address)
+        CHECK(cpu.cycles()[4].abus == 0x0011);  // PBA
+        CHECK(cpu.cycles()[4].read == UNINTERESTING);
         CHECK(cpu.cpu().a == 0x42);
     }
 
@@ -611,9 +610,9 @@ TEST_CASE("Rows 6-7: (zpg),Y write dead cycle", "[6502][dead-cycles]") {
         cpu.run_instruction();
 
         REQUIRE(cpu.num_cycles() == 6);
-        // Dead cycles reference: 65C02 should read PBA ($0011)
-        // Actual: reads PFA ($FE10) -- shared NMOS code, see B2 issue #570
-        CHECK(cpu.cycles()[4].abus == 0xFE10);  // PFA (NMOS behaviour)
+        // Dead cycles reference: 65C02 reads PBA (previous bus address)
+        CHECK(cpu.cycles()[4].abus == 0x0011);  // PBA
+        CHECK(cpu.cycles()[4].read == UNINTERESTING);
     }
 }
 
@@ -651,9 +650,9 @@ TEST_CASE("Row 8: (zpg,X) dead cycle", "[6502][dead-cycles]") {
         cpu.run_instruction();
 
         REQUIRE(cpu.num_cycles() == 6);
-        // Dead cycles reference: 65C02 should read PBA ($0401)
-        // Actual: reads PFA ($0080) -- shared NMOS code, see B2 issue #570
-        CHECK(cpu.cycles()[2].abus == 0x0080);  // PFA (NMOS behaviour)
+        // Dead cycles reference: 65C02 reads PBA (previous bus address)
+        CHECK(cpu.cycles()[2].abus == 0x0401);  // PBA
+        CHECK(cpu.cycles()[2].read == UNINTERESTING);
         CHECK(cpu.cpu().a == 0x42);
     }
 }
