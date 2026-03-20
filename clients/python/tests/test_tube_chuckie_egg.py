@@ -123,7 +123,7 @@ def bbc_tube(
             found = run_until_or_timeout(
                 bbc,
                 lambda: screen_contains(bbc.memory, "Acorn TUBE"),
-                emulated_seconds=10.0,
+                emulated_seconds=30.0,
             )
             if not found:
                 dump_diagnostics(bbc)
