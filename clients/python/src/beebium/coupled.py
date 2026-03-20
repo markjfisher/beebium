@@ -95,7 +95,7 @@ class CoupledSystem:
         predicate: Callable[[], bool],
         emulated_seconds: float,
         *,
-        chunk_seconds: float = 0.1,
+        chunk_seconds: float = 1.0,
     ) -> bool:
         """Run both processors until predicate returns True or the budget expires.
 

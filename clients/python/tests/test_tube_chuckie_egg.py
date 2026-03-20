@@ -152,10 +152,13 @@ class TestTubeChuckieEggBoot:
 
         # Wait for "A game of skill" which appears on the title screen
         # after decompression, loading bar, and game initialisation complete.
+        # The title screen stays put, so check infrequently to reduce
+        # gRPC overhead on slow CI runners.
         found = run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, "A game of skill"),
             emulated_seconds=300.0,
+            chunk_seconds=5.0,
         )
         if not found:
             rows = read_mode7_screen(bbc_tube.memory)

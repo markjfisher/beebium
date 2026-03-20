@@ -49,7 +49,7 @@ def find_dfs_1770_rom(roms_dirpath: Path) -> Path | None:
 
 
 def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
-                         chunk_cycles: int = 20000):
+                         chunk_seconds: float = 1.0):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
     Creates a CoupledSystem from the host, running both host and parasite
@@ -60,14 +60,15 @@ def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
         bbc: The Beebium instance.
         predicate: Callable returning True when the desired condition is met.
         emulated_seconds: Maximum BBC-time seconds to run.
-        chunk_cycles: Ignored (kept for backward compatibility).
+        chunk_seconds: Emulated time between predicate checks (default 1.0).
 
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
     system = CoupledSystem.from_host(bbc)
     try:
-        return system.run_until(predicate, emulated_seconds)
+        return system.run_until(predicate, emulated_seconds,
+                                chunk_seconds=chunk_seconds)
     finally:
         system.close()
 
