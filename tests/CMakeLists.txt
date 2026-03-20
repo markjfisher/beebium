@@ -11,6 +11,11 @@ target_compile_definitions(test_6502 PRIVATE
 )
 catch_discover_tests(test_6502)
 
+# 6502/65C02 dead cycle bus behaviour tests (no Beebium core dependency)
+add_executable(test_6502_dead_cycles test_6502_dead_cycles.cpp)
+target_link_libraries(test_6502_dead_cycles PRIVATE 6502_lib Catch2::Catch2WithMain)
+catch_discover_tests(test_6502_dead_cycles)
+
 # Memory tests
 add_executable(test_memory test_memory.cpp)
 target_link_libraries(test_memory PRIVATE beebium_core Catch2::Catch2WithMain)
