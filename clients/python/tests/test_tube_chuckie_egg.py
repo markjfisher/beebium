@@ -146,14 +146,14 @@ class TestTubeChuckieEggBoot:
         self, bbc_tube: Beebium, chuckie_egg_disc_filepath: Path
     ) -> None:
         """Game loads fully and reaches the title screen."""
-        found = _boot_to_text(bbc_tube, chuckie_egg_disc_filepath,
-                              "Chuckie Egg 2023", emulated_seconds=60.0)
-        assert found, "Failed to reach initial loading screen"
+        bbc_tube.disc.drive(0).insert(chuckie_egg_disc_filepath)
+        bbc_tube.keyboard.type("*EXEC !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
 
         # Wait for "A game of skill" which appears on the title screen
-        # after decompression, loading bar, and game initialisation complete.
-        # The title screen stays put, so check infrequently to reduce
-        # gRPC overhead on slow CI runners.
+        # after disc loading, decompression, loading bar, and game
+        # initialisation complete. The game stops here and waits for a
+        # keypress, so this is the only reliably samplable screen text.
+        # Check infrequently to reduce gRPC overhead on slow CI runners.
         found = run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, "A game of skill"),
