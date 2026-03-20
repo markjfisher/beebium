@@ -166,4 +166,4 @@ class TestTubeChuckieEggBoot:
             for i, row in enumerate(rows):
                 print(f"Row {i:2d}: [{row}]")
             dump_diagnostics(bbc_tube)
-            pytest.fail("Expected 'A game of skill' on title screen")
+        assert found, "Expected 'A game of skill' on title screen"
