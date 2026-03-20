@@ -477,10 +477,12 @@ add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
 target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_shared_threads)
 
-# Tube cross-process tests (fork-based, POSIX shared memory)
-add_executable(test_tube_cross_process test_tube_cross_process.cpp)
-target_link_libraries(test_tube_cross_process PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_cross_process)
+# Tube cross-process tests (fork-based, POSIX shared memory -- not available on Windows)
+if(NOT WIN32)
+    add_executable(test_tube_cross_process test_tube_cross_process.cpp)
+    target_link_libraries(test_tube_cross_process PRIVATE beebium_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_tube_cross_process)
+endif()
 
 # Tube R1 transfer with real 65C02 CPU
 add_executable(test_tube_r1_6502 test_tube_r1_6502.cpp)

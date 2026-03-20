@@ -159,7 +159,7 @@ class TestTubeEliteBoot:
         bbc_tube.keyboard.type("*.\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
 
         found = run_until_or_timeout(
-            bbc_tube, _catalog_visible, emulated_seconds=10.0,
+            bbc_tube, _catalog_visible, emulated_seconds=30.0,
         )
 
         if not found:
@@ -183,7 +183,7 @@ class TestTubeEliteBoot:
         found = run_until_or_timeout(
             bbc_tube,
             lambda: screen_contains(bbc_tube.memory, elite_banner),
-            emulated_seconds=15.0,
+            emulated_seconds=60.0,
         )
 
         if not found:

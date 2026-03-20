@@ -13,7 +13,7 @@ import { CoupledSystem } from "../src/coupled.js";
 import { screenContains, type ReadFn } from "../src/screen.js";
 import { ServerProcess } from "../src/server-process.js";
 
-const ROM_DIRPATH = "/Users/rjs/Code/beebium/roms";
+const ROM_DIRPATH = process.env.BEEBIUM_ROM_DIR || "/Users/rjs/Code/beebium/roms";
 const DFS_ROM_FILEPATH = `${ROM_DIRPATH}/acorn-dfs_2_26.rom`;
 
 /** Track launched hosts for cleanup on timeout. */
