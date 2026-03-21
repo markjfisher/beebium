@@ -128,6 +128,11 @@ class DebuggerControlStub(object):
                 request_serializer=debugger__pb2.RemoveBreakpointRequest.SerializeToString,
                 response_deserializer=debugger__pb2.RemoveBreakpointResponse.FromString,
                 _registered_method=True)
+        self.EnableBreakpoint = channel.unary_unary(
+                '/beebium.DebuggerControl/EnableBreakpoint',
+                request_serializer=debugger__pb2.EnableBreakpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.EnableBreakpointResponse.FromString,
+                _registered_method=True)
         self.ListBreakpoints = channel.unary_unary(
                 '/beebium.DebuggerControl/ListBreakpoints',
                 request_serializer=debugger__pb2.Empty.SerializeToString,
@@ -147,6 +152,11 @@ class DebuggerControlStub(object):
                 '/beebium.DebuggerControl/RemoveWatchpoint',
                 request_serializer=debugger__pb2.RemoveWatchpointRequest.SerializeToString,
                 response_deserializer=debugger__pb2.RemoveWatchpointResponse.FromString,
+                _registered_method=True)
+        self.EnableWatchpoint = channel.unary_unary(
+                '/beebium.DebuggerControl/EnableWatchpoint',
+                request_serializer=debugger__pb2.EnableWatchpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.EnableWatchpointResponse.FromString,
                 _registered_method=True)
         self.ListWatchpoints = channel.unary_unary(
                 '/beebium.DebuggerControl/ListWatchpoints',
@@ -276,6 +286,12 @@ class DebuggerControlServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def EnableBreakpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListBreakpoints(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -296,6 +312,12 @@ class DebuggerControlServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def RemoveWatchpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EnableWatchpoint(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -409,6 +431,11 @@ def add_DebuggerControlServicer_to_server(servicer, server):
                     request_deserializer=debugger__pb2.RemoveBreakpointRequest.FromString,
                     response_serializer=debugger__pb2.RemoveBreakpointResponse.SerializeToString,
             ),
+            'EnableBreakpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnableBreakpoint,
+                    request_deserializer=debugger__pb2.EnableBreakpointRequest.FromString,
+                    response_serializer=debugger__pb2.EnableBreakpointResponse.SerializeToString,
+            ),
             'ListBreakpoints': grpc.unary_unary_rpc_method_handler(
                     servicer.ListBreakpoints,
                     request_deserializer=debugger__pb2.Empty.FromString,
@@ -428,6 +455,11 @@ def add_DebuggerControlServicer_to_server(servicer, server):
                     servicer.RemoveWatchpoint,
                     request_deserializer=debugger__pb2.RemoveWatchpointRequest.FromString,
                     response_serializer=debugger__pb2.RemoveWatchpointResponse.SerializeToString,
+            ),
+            'EnableWatchpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnableWatchpoint,
+                    request_deserializer=debugger__pb2.EnableWatchpointRequest.FromString,
+                    response_serializer=debugger__pb2.EnableWatchpointResponse.SerializeToString,
             ),
             'ListWatchpoints': grpc.unary_unary_rpc_method_handler(
                     servicer.ListWatchpoints,
@@ -895,6 +927,33 @@ class DebuggerControl(object):
             _registered_method=True)
 
     @staticmethod
+    def EnableBreakpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/EnableBreakpoint',
+            debugger__pb2.EnableBreakpointRequest.SerializeToString,
+            debugger__pb2.EnableBreakpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def ListBreakpoints(request,
             target,
             options=(),
@@ -992,6 +1051,33 @@ class DebuggerControl(object):
             '/beebium.DebuggerControl/RemoveWatchpoint',
             debugger__pb2.RemoveWatchpointRequest.SerializeToString,
             debugger__pb2.RemoveWatchpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnableWatchpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.DebuggerControl/EnableWatchpoint',
+            debugger__pb2.EnableWatchpointRequest.SerializeToString,
+            debugger__pb2.EnableWatchpointResponse.FromString,
             options,
             channel_credentials,
             insecure,
