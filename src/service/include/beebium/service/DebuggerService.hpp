@@ -81,6 +81,8 @@ struct BreakpointRecord {
     uint32_t end_address;  // exclusive
     bool stop_counterpart = false;
     std::optional<beebium::CompiledExpression> condition;
+    bool enabled = true;
+    uint64_t hit_count = 0;
 };
 
 /// gRPC service implementation for DebuggerControl
@@ -173,6 +175,11 @@ public:
         const RemoveBreakpointRequest* request,
         RemoveBreakpointResponse* response) override;
 
+    grpc::Status EnableBreakpoint(
+        grpc::ServerContext* context,
+        const EnableBreakpointRequest* request,
+        EnableBreakpointResponse* response) override;
+
     grpc::Status ListBreakpoints(
         grpc::ServerContext* context,
         const Empty* request,
@@ -193,6 +200,11 @@ public:
         grpc::ServerContext* context,
         const RemoveWatchpointRequest* request,
         RemoveWatchpointResponse* response) override;
+
+    grpc::Status EnableWatchpoint(
+        grpc::ServerContext* context,
+        const EnableWatchpointRequest* request,
+        EnableWatchpointResponse* response) override;
 
     grpc::Status ListWatchpoints(
         grpc::ServerContext* context,
@@ -243,6 +255,8 @@ private:
         beebium::WatchType type;
         bool stop_counterpart = false;
         std::optional<beebium::CompiledExpression> condition;
+        bool enabled = true;
+        uint64_t hit_count = 0;
     };
     std::vector<WatchpointRecord> watchpoints_;
     std::atomic<uint32_t> next_watchpoint_id_{1};
@@ -439,15 +453,27 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(StopReason reason) {
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::update_breakpoint_entries() {
+    // Snapshot live hit counts back into service-layer records
+    for (const auto& entry : machine_.breakpoint_entries()) {
+        for (auto& bp : breakpoints_) {
+            if (bp.id == entry.id) {
+                bp.hit_count = entry.hit_count;
+                break;
+            }
+        }
+    }
+
+    // Rebuild machine entries from enabled records only
     std::vector<beebium::BreakpointEntry> entries;
     entries.reserve(breakpoints_.size());
     for (const auto& bp : breakpoints_) {
+        if (!bp.enabled) continue;
         entries.push_back({bp.id,
                           static_cast<uint16_t>(bp.start_address),
                           bp.end_address,
                           bp.stop_counterpart,
                           bp.condition,
-                          0});  // reset hit_count
+                          bp.hit_count});
     }
     machine_.set_breakpoint_entries(std::move(entries));
 }
@@ -817,8 +843,11 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddBreakpoint(
         condition = std::get<beebium::CompiledExpression>(std::move(result));
     }
 
+    bool enabled = request->has_enabled() ? request->enabled() : true;
+
     uint32_t id = next_breakpoint_id_++;
-    breakpoints_.push_back({id, start, end, request->stop_counterpart(), std::move(condition)});
+    breakpoints_.push_back({id, start, end, request->stop_counterpart(),
+                           std::move(condition), enabled, 0});
     update_breakpoint_entries();
 
     response->set_success(true);
@@ -850,6 +879,29 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::RemoveBreakpoint(
 }
 
 template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::EnableBreakpoint(
+    grpc::ServerContext* /*context*/,
+    const EnableBreakpointRequest* request,
+    EnableBreakpointResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t id = request->id();
+    auto it = std::find_if(breakpoints_.begin(), breakpoints_.end(),
+        [id](const BreakpointRecord& bp) { return bp.id == id; });
+    if (it == breakpoints_.end()) {
+        response->set_success(false);
+        return grpc::Status::OK;
+    }
+    if (it->enabled != request->enabled()) {
+        it->enabled = request->enabled();
+        update_breakpoint_entries();
+    }
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
 grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
     grpc::ServerContext* /*context*/,
     const Empty* /*request*/,
@@ -871,13 +923,16 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListBreakpoints(
             pb_bp->set_condition(bp.condition->source);
         }
         pb_bp->set_stop_counterpart(bp.stop_counterpart);
-        if (can_read_hits) {
+        pb_bp->set_enabled(bp.enabled);
+        if (can_read_hits && bp.enabled) {
             for (const auto& entry : live_entries) {
                 if (entry.id == bp.id) {
                     pb_bp->set_hit_count(entry.hit_count);
                     break;
                 }
             }
+        } else {
+            pb_bp->set_hit_count(bp.hit_count);
         }
     }
 
@@ -906,16 +961,28 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ClearBreakpoints(
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::update_watchpoint_entries() {
+    // Snapshot live hit counts back into service-layer records
+    for (const auto& entry : machine_.watchpoint_entries()) {
+        for (auto& wp : watchpoints_) {
+            if (wp.id == entry.id) {
+                wp.hit_count = entry.hit_count;
+                break;
+            }
+        }
+    }
+
+    // Rebuild machine entries from enabled records only
     std::vector<beebium::WatchpointEntry> entries;
     entries.reserve(watchpoints_.size());
     for (const auto& wp : watchpoints_) {
+        if (!wp.enabled) continue;
         entries.push_back({wp.id,
                           static_cast<uint16_t>(wp.start_address),
                           wp.end_address,
                           wp.type,
                           wp.stop_counterpart,
                           wp.condition,
-                          0});  // reset hit_count
+                          wp.hit_count});
     }
     machine_.set_watchpoint_entries(std::move(entries));
 }
@@ -978,9 +1045,11 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::AddWatchpoint(
         condition = std::get<beebium::CompiledExpression>(std::move(result));
     }
 
+    bool enabled = request->has_enabled() ? request->enabled() : true;
+
     uint32_t id = next_watchpoint_id_++;
     watchpoints_.push_back({id, start, end, type, request->stop_counterpart(),
-                           std::move(condition)});
+                           std::move(condition), enabled, 0});
     update_watchpoint_entries();
 
     response->set_success(true);
@@ -1012,6 +1081,29 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::RemoveWatchpoint(
 }
 
 template<typename MachineType>
+grpc::Status DebuggerControlServiceImpl<MachineType>::EnableWatchpoint(
+    grpc::ServerContext* /*context*/,
+    const EnableWatchpointRequest* request,
+    EnableWatchpointResponse* response) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    uint32_t id = request->id();
+    auto it = std::find_if(watchpoints_.begin(), watchpoints_.end(),
+        [id](const WatchpointRecord& wp) { return wp.id == id; });
+    if (it == watchpoints_.end()) {
+        response->set_success(false);
+        return grpc::Status::OK;
+    }
+    if (it->enabled != request->enabled()) {
+        it->enabled = request->enabled();
+        update_watchpoint_entries();
+    }
+    response->set_success(true);
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
 grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
     grpc::ServerContext* /*context*/,
     const Empty* /*request*/,
@@ -1036,13 +1128,16 @@ grpc::Status DebuggerControlServiceImpl<MachineType>::ListWatchpoints(
             pb_wp->set_condition(wp.condition->source);
         }
         pb_wp->set_stop_counterpart(wp.stop_counterpart);
-        if (can_read_hits) {
+        pb_wp->set_enabled(wp.enabled);
+        if (can_read_hits && wp.enabled) {
             for (const auto& entry : live_entries) {
                 if (entry.id == wp.id) {
                     pb_wp->set_hit_count(entry.hit_count);
                     break;
                 }
             }
+        } else {
+            pb_wp->set_hit_count(wp.hit_count);
         }
     }
 

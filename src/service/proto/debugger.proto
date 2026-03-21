@@ -31,12 +31,14 @@ service DebuggerControl {
     // Breakpoints (shared list)
     rpc AddBreakpoint(AddBreakpointRequest) returns (AddBreakpointResponse);
     rpc RemoveBreakpoint(RemoveBreakpointRequest) returns (RemoveBreakpointResponse);
+    rpc EnableBreakpoint(EnableBreakpointRequest) returns (EnableBreakpointResponse);
     rpc ListBreakpoints(Empty) returns (ListBreakpointsResponse);
     rpc ClearBreakpoints(Empty) returns (ClearBreakpointsResponse);
 
     // Watchpoints (address range + access type)
     rpc AddWatchpoint(AddWatchpointRequest) returns (AddWatchpointResponse);
     rpc RemoveWatchpoint(RemoveWatchpointRequest) returns (RemoveWatchpointResponse);
+    rpc EnableWatchpoint(EnableWatchpointRequest) returns (EnableWatchpointResponse);
     rpc ListWatchpoints(Empty) returns (ListWatchpointsResponse);
     rpc ClearWatchpoints(Empty) returns (ClearWatchpointsResponse);
 
@@ -165,6 +167,7 @@ message AddBreakpointRequest {
     uint32 end_address = 2;            // end of range (exclusive); 0 means start+1 (single address)
     bool stop_counterpart = 3;
     string condition = 4;              // optional condition expression (use `hits` for hit counts)
+    optional bool enabled = 5;         // absent means enabled (default true)
 }
 
 message AddBreakpointResponse {
@@ -191,6 +194,16 @@ message Breakpoint {
     string condition = 4;
     bool stop_counterpart = 5;
     uint64 hit_count = 6;
+    bool enabled = 7;
+}
+
+message EnableBreakpointRequest {
+    uint32 id = 1;
+    bool enabled = 2;
+}
+
+message EnableBreakpointResponse {
+    bool success = 1;
 }
 
 message ClearBreakpointsResponse {
@@ -205,6 +218,7 @@ message AddWatchpointRequest {
     WatchpointType type = 3;
     bool stop_counterpart = 4;
     string condition = 5;              // optional condition expression (use `hits` for hit counts)
+    optional bool enabled = 6;         // absent means enabled (default true)
 }
 
 message AddWatchpointResponse {
@@ -232,6 +246,16 @@ message WatchpointInfo {
     string condition = 5;
     bool stop_counterpart = 6;
     uint64 hit_count = 7;
+    bool enabled = 8;
+}
+
+message EnableWatchpointRequest {
+    uint32 id = 1;
+    bool enabled = 2;
+}
+
+message EnableWatchpointResponse {
+    bool success = 1;
 }
 
 message ClearWatchpointsResponse {

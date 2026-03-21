@@ -1709,3 +1709,319 @@ TEST_CASE("Watchpoint lifecycle: add/remove/list/clear", "[grpc][debugger][watch
         CHECK(resp.watchpoints_size() == 0);
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// Enable/Disable Breakpoints
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("EnableBreakpoint toggles enabled state", "[grpc][debugger][breakpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add a breakpoint
+    uint32_t bp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x1000);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        bp_id = resp.id();
+    }
+
+    // Verify it starts enabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListBreakpointsResponse resp;
+        fixture.debugger().ListBreakpoints(&ctx, req, &resp);
+        REQUIRE(resp.breakpoints_size() == 1);
+        CHECK(resp.breakpoints(0).enabled() == true);
+    }
+
+    // Disable it
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableBreakpointRequest req;
+        req.set_id(bp_id);
+        req.set_enabled(false);
+        beebium::EnableBreakpointResponse resp;
+        fixture.debugger().EnableBreakpoint(&ctx, req, &resp);
+        CHECK(resp.success());
+    }
+
+    // Verify it's disabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListBreakpointsResponse resp;
+        fixture.debugger().ListBreakpoints(&ctx, req, &resp);
+        REQUIRE(resp.breakpoints_size() == 1);
+        CHECK(resp.breakpoints(0).enabled() == false);
+    }
+
+    // Re-enable it
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableBreakpointRequest req;
+        req.set_id(bp_id);
+        req.set_enabled(true);
+        beebium::EnableBreakpointResponse resp;
+        fixture.debugger().EnableBreakpoint(&ctx, req, &resp);
+        CHECK(resp.success());
+    }
+
+    // Verify it's enabled again
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListBreakpointsResponse resp;
+        fixture.debugger().ListBreakpoints(&ctx, req, &resp);
+        REQUIRE(resp.breakpoints_size() == 1);
+        CHECK(resp.breakpoints(0).enabled() == true);
+    }
+}
+
+TEST_CASE("EnableBreakpoint with non-existent ID returns failure", "[grpc][debugger][breakpoint]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext ctx;
+    beebium::EnableBreakpointRequest req;
+    req.set_id(9999);
+    req.set_enabled(false);
+    beebium::EnableBreakpointResponse resp;
+    fixture.debugger().EnableBreakpoint(&ctx, req, &resp);
+    CHECK_FALSE(resp.success());
+}
+
+TEST_CASE("AddBreakpoint with enabled=false creates disabled breakpoint", "[grpc][debugger][breakpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add a disabled breakpoint
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x1000);
+        req.set_enabled(false);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Verify it's disabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListBreakpointsResponse resp;
+        fixture.debugger().ListBreakpoints(&ctx, req, &resp);
+        REQUIRE(resp.breakpoints_size() == 1);
+        CHECK(resp.breakpoints(0).enabled() == false);
+    }
+}
+
+TEST_CASE("Disabled breakpoint does not fire", "[grpc][debugger][breakpoint][6502]") {
+    DebuggerTestFixture fixture;
+
+    prepare_for_code(fixture.machine());
+
+    // NOP; NOP; NOP; NOP
+    plant_code(fixture.machine(), 0x0400, {0xEA, 0xEA, 0xEA, 0xEA});
+    fixture.machine().set_pc(0x0400);
+
+    // Add breakpoint at NOP #2 (0x0401), then disable it via gRPC
+    uint32_t bp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x0401);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        bp_id = resp.id();
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableBreakpointRequest req;
+        req.set_id(bp_id);
+        req.set_enabled(false);
+        beebium::EnableBreakpointResponse resp;
+        fixture.debugger().EnableBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Add an enabled breakpoint at NOP #3 (0x0402)
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x0402);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Run directly -- should skip 0x0401 and stop at 0x0402
+    fixture.machine().resume();
+    fixture.machine().run(100);
+
+    CHECK(fixture.machine().is_paused());
+    CHECK(fixture.machine().pc() == 0x0402);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Enable/Disable Watchpoints
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("EnableWatchpoint toggles enabled state", "[grpc][debugger][watchpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add a watchpoint
+    uint32_t wp_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x1000);
+        req.set_end_address(0x1001);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+        wp_id = resp.id();
+    }
+
+    // Verify it starts enabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        REQUIRE(resp.watchpoints_size() == 1);
+        CHECK(resp.watchpoints(0).enabled() == true);
+    }
+
+    // Disable it
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableWatchpointRequest req;
+        req.set_id(wp_id);
+        req.set_enabled(false);
+        beebium::EnableWatchpointResponse resp;
+        fixture.debugger().EnableWatchpoint(&ctx, req, &resp);
+        CHECK(resp.success());
+    }
+
+    // Verify it's disabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        REQUIRE(resp.watchpoints_size() == 1);
+        CHECK(resp.watchpoints(0).enabled() == false);
+    }
+
+    // Re-enable it
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableWatchpointRequest req;
+        req.set_id(wp_id);
+        req.set_enabled(true);
+        beebium::EnableWatchpointResponse resp;
+        fixture.debugger().EnableWatchpoint(&ctx, req, &resp);
+        CHECK(resp.success());
+    }
+
+    // Verify it's enabled again
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        REQUIRE(resp.watchpoints_size() == 1);
+        CHECK(resp.watchpoints(0).enabled() == true);
+    }
+}
+
+TEST_CASE("EnableWatchpoint with non-existent ID returns failure", "[grpc][debugger][watchpoint]") {
+    DebuggerTestFixture fixture;
+
+    grpc::ClientContext ctx;
+    beebium::EnableWatchpointRequest req;
+    req.set_id(9999);
+    req.set_enabled(false);
+    beebium::EnableWatchpointResponse resp;
+    fixture.debugger().EnableWatchpoint(&ctx, req, &resp);
+    CHECK_FALSE(resp.success());
+}
+
+TEST_CASE("AddWatchpoint with enabled=false creates disabled watchpoint", "[grpc][debugger][watchpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add a disabled watchpoint
+    {
+        grpc::ClientContext ctx;
+        beebium::AddWatchpointRequest req;
+        req.set_start_address(0x1000);
+        req.set_end_address(0x1001);
+        req.set_type(beebium::WATCHPOINT_WRITE);
+        req.set_enabled(false);
+        beebium::AddWatchpointResponse resp;
+        fixture.debugger().AddWatchpoint(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    // Verify it's disabled
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListWatchpointsResponse resp;
+        fixture.debugger().ListWatchpoints(&ctx, req, &resp);
+        REQUIRE(resp.watchpoints_size() == 1);
+        CHECK(resp.watchpoints(0).enabled() == false);
+    }
+}
+
+TEST_CASE("Clear removes disabled breakpoints", "[grpc][debugger][breakpoint]") {
+    DebuggerTestFixture fixture;
+
+    // Add two breakpoints, disable one
+    uint32_t bp1_id;
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x1000);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+        bp1_id = resp.id();
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::AddBreakpointRequest req;
+        req.set_start_address(0x2000);
+        beebium::AddBreakpointResponse resp;
+        fixture.debugger().AddBreakpoint(&ctx, req, &resp);
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableBreakpointRequest req;
+        req.set_id(bp1_id);
+        req.set_enabled(false);
+        beebium::EnableBreakpointResponse resp;
+        fixture.debugger().EnableBreakpoint(&ctx, req, &resp);
+    }
+
+    // Clear should remove both
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ClearBreakpointsResponse resp;
+        fixture.debugger().ClearBreakpoints(&ctx, req, &resp);
+        CHECK(resp.count_removed() == 2);
+    }
+    {
+        grpc::ClientContext ctx;
+        beebium::Empty req;
+        beebium::ListBreakpointsResponse resp;
+        fixture.debugger().ListBreakpoints(&ctx, req, &resp);
+        CHECK(resp.breakpoints_size() == 0);
+    }
+}

@@ -447,6 +447,146 @@ class TestFullRangeBreakpoints:
 
 
 # ============================================================================
+# Enable/disable breakpoints
+# ============================================================================
+
+class TestEnableDisableBreakpoints:
+
+    def test_enable_disable_roundtrip(self, bbc):
+        """enable/disable is reflected in list_breakpoints."""
+        bp_id = bbc.debugger.add_breakpoint(0x1000)
+        assert bbc.debugger.list_breakpoints()[0].enabled is True
+
+        bbc.debugger.disable_breakpoint(bp_id)
+        assert bbc.debugger.list_breakpoints()[0].enabled is False
+
+        bbc.debugger.enable_breakpoint(bp_id)
+        assert bbc.debugger.list_breakpoints()[0].enabled is True
+
+        bbc.debugger.clear_breakpoints()
+
+    def test_add_disabled_breakpoint(self, bbc):
+        """Breakpoint created with enabled=False starts disabled."""
+        bp_id = bbc.debugger.add_breakpoint(0x1000, enabled=False)
+        bps = bbc.debugger.list_breakpoints()
+        assert len(bps) == 1
+        assert bps[0].enabled is False
+        bbc.debugger.clear_breakpoints()
+
+    def test_disabled_breakpoint_does_not_fire(self, bbc):
+        """Disabled breakpoint is skipped; enabled one fires."""
+        # LDA #$42; STA $0500; NOP
+        code = bytes([0xA9, 0x42, 0x8D, 0x00, 0x05, 0xEA])
+        plant_and_run_from(bbc, code)
+
+        # Add breakpoint at STA, disable it
+        bp1_id = bbc.debugger.add_breakpoint(0x0402)
+        bbc.debugger.disable_breakpoint(bp1_id)
+
+        # Add enabled breakpoint at NOP
+        bp2_id = bbc.debugger.add_breakpoint(0x0405)
+
+        event = run_and_wait_for_stop(bbc)
+        # Should have stopped at the NOP, not the STA
+        assert bbc.cpu.registers.pc == 0x0405
+
+        bbc.debugger.clear_breakpoints()
+
+    def test_suppressed_breakpoint_reenables_on_exit(self, bbc):
+        """suppressed_breakpoint context manager re-enables on exit."""
+        bp_id = bbc.debugger.add_breakpoint(0x1000)
+        with bbc.debugger.suppressed_breakpoint(bp_id):
+            assert bbc.debugger.list_breakpoints()[0].enabled is False
+        assert bbc.debugger.list_breakpoints()[0].enabled is True
+        bbc.debugger.clear_breakpoints()
+
+    def test_suppressed_breakpoint_reenables_on_exception(self, bbc):
+        """suppressed_breakpoint re-enables even if body raises."""
+        bp_id = bbc.debugger.add_breakpoint(0x1000)
+        with pytest.raises(RuntimeError):
+            with bbc.debugger.suppressed_breakpoint(bp_id):
+                raise RuntimeError("test")
+        assert bbc.debugger.list_breakpoints()[0].enabled is True
+        bbc.debugger.clear_breakpoints()
+
+    def test_hit_count_preserved_across_disable_enable(self, bbc):
+        """Hit count survives a disable/enable cycle."""
+        # LDX #0; .loop: INX; JMP loop
+        code = bytes([0xA2, 0x00, 0xE8, 0x4C, 0x02, 0x04])
+        plant_and_run_from(bbc, code)
+        bp_id = bbc.debugger.add_breakpoint(0x0402, condition="hits == 3")
+
+        event = run_and_wait_for_stop(bbc)
+
+        bps = bbc.debugger.list_breakpoints()
+        assert bps[0].hit_count == 3
+
+        # Disable and re-enable
+        bbc.debugger.disable_breakpoint(bp_id)
+        bbc.debugger.enable_breakpoint(bp_id)
+
+        bps = bbc.debugger.list_breakpoints()
+        assert bps[0].hit_count == 3
+
+        bbc.debugger.clear_breakpoints()
+
+    def test_enable_nonexistent_raises(self, bbc):
+        """Enabling a non-existent breakpoint raises DebuggerError."""
+        with pytest.raises(DebuggerError):
+            bbc.debugger.enable_breakpoint(9999)
+
+
+# ============================================================================
+# Enable/disable watchpoints
+# ============================================================================
+
+class TestEnableDisableWatchpoints:
+
+    def test_enable_disable_roundtrip(self, bbc):
+        """enable/disable is reflected in list_watchpoints."""
+        wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001, type="write")
+        assert bbc.debugger.list_watchpoints()[0].enabled is True
+
+        bbc.debugger.disable_watchpoint(wp_id)
+        assert bbc.debugger.list_watchpoints()[0].enabled is False
+
+        bbc.debugger.enable_watchpoint(wp_id)
+        assert bbc.debugger.list_watchpoints()[0].enabled is True
+
+        bbc.debugger.clear_watchpoints()
+
+    def test_add_disabled_watchpoint(self, bbc):
+        """Watchpoint created with enabled=False starts disabled."""
+        wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001, enabled=False)
+        wps = bbc.debugger.list_watchpoints()
+        assert len(wps) == 1
+        assert wps[0].enabled is False
+        bbc.debugger.clear_watchpoints()
+
+    def test_suppressed_watchpoint_reenables_on_exit(self, bbc):
+        """suppressed_watchpoint context manager re-enables on exit."""
+        wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001)
+        with bbc.debugger.suppressed_watchpoint(wp_id):
+            assert bbc.debugger.list_watchpoints()[0].enabled is False
+        assert bbc.debugger.list_watchpoints()[0].enabled is True
+        bbc.debugger.clear_watchpoints()
+
+    def test_suppressed_watchpoint_reenables_on_exception(self, bbc):
+        """suppressed_watchpoint re-enables even if body raises."""
+        wp_id = bbc.debugger.add_watchpoint(0x1000, 0x1001)
+        with pytest.raises(RuntimeError):
+            with bbc.debugger.suppressed_watchpoint(wp_id):
+                raise RuntimeError("test")
+        assert bbc.debugger.list_watchpoints()[0].enabled is True
+        bbc.debugger.clear_watchpoints()
+
+    def test_enable_nonexistent_raises(self, bbc):
+        """Enabling a non-existent watchpoint raises DebuggerError."""
+        with pytest.raises(DebuggerError):
+            bbc.debugger.enable_watchpoint(9999)
+
+
+# ============================================================================
 # CPU state
 # ============================================================================
 

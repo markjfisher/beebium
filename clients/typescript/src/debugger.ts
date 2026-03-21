@@ -30,6 +30,7 @@ export interface Breakpoint {
     condition: string;
     stopCounterpart: boolean;
     hitCount: number;
+    enabled: boolean;
 }
 
 export interface ExecutionStateEvent {
@@ -48,6 +49,7 @@ export interface WatchpointInfo {
     condition: string;
     stopCounterpart: boolean;
     hitCount: number;
+    enabled: boolean;
 }
 
 export interface StepResult {
@@ -89,6 +91,7 @@ function toBreakpoint(proto: ProtoBreakpoint): Breakpoint {
         condition: proto.condition,
         stopCounterpart: proto.stopCounterpart,
         hitCount: proto.hitCount,
+        enabled: proto.enabled,
     };
 }
 
@@ -213,18 +216,22 @@ export class Debugger {
      */
     async addBreakpoint(
         address: number,
-        options: { endAddress?: number; condition?: string; stopCounterpart?: boolean } = {},
+        options: { endAddress?: number; condition?: string; stopCounterpart?: boolean; enabled?: boolean } = {},
     ): Promise<number> {
-        const { endAddress = 0, condition = "", stopCounterpart = false } = options;
+        const { endAddress = 0, condition = "", stopCounterpart = false, enabled } = options;
+        const request: Record<string, unknown> = { startAddress: address, endAddress, condition, stopCounterpart };
+        if (enabled !== undefined) {
+            request.enabled = enabled;
+        }
         let response;
         try {
             response = await promisify<
-                { startAddress: number; endAddress: number; condition: string; stopCounterpart: boolean },
+                Record<string, unknown>,
                 { success: boolean; id: number }
             >(
                 this.stub as unknown as Record<string, Function>,
                 "addBreakpoint",
-                { startAddress: address, endAddress, condition, stopCounterpart },
+                request,
             );
         } catch (e: unknown) {
             if (e instanceof Error && e.message.includes("INVALID_ARGUMENT")) {
@@ -237,6 +244,30 @@ export class Debugger {
             throw new DebuggerError(`addBreakpoint failed at address 0x${address.toString(16)}`);
         }
         return response.id;
+    }
+
+    /** Enable a breakpoint by ID. Throws DebuggerError if not found. */
+    async enableBreakpoint(id: number): Promise<void> {
+        const response = await promisify<{ id: number; enabled: boolean }, { success: boolean }>(
+            this.stub as unknown as Record<string, Function>,
+            "enableBreakpoint",
+            { id, enabled: true },
+        );
+        if (!response.success) {
+            throw new DebuggerError(`Breakpoint ${id} not found`);
+        }
+    }
+
+    /** Disable a breakpoint by ID. Hit count and configuration are preserved. */
+    async disableBreakpoint(id: number): Promise<void> {
+        const response = await promisify<{ id: number; enabled: boolean }, { success: boolean }>(
+            this.stub as unknown as Record<string, Function>,
+            "enableBreakpoint",
+            { id, enabled: false },
+        );
+        if (!response.success) {
+            throw new DebuggerError(`Breakpoint ${id} not found`);
+        }
     }
 
     /** Remove a breakpoint by ID. Returns true if the breakpoint was found and removed. */
@@ -282,19 +313,23 @@ export class Debugger {
         startAddress: number,
         endAddress: number,
         type: WatchpointType = "both",
-        options: { condition?: string; stopCounterpart?: boolean } = {},
+        options: { condition?: string; stopCounterpart?: boolean; enabled?: boolean } = {},
     ): Promise<number> {
-        const { condition = "", stopCounterpart = false } = options;
+        const { condition = "", stopCounterpart = false, enabled } = options;
         const typeMap: Record<WatchpointType, number> = { read: 0, write: 1, both: 2 };
+        const request: Record<string, unknown> = { startAddress, endAddress, type: typeMap[type], condition, stopCounterpart };
+        if (enabled !== undefined) {
+            request.enabled = enabled;
+        }
         let response;
         try {
             response = await promisify<
-                { startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean },
+                Record<string, unknown>,
                 { success: boolean; id: number }
             >(
                 this.stub as unknown as Record<string, Function>,
                 "addWatchpoint",
-                { startAddress, endAddress, type: typeMap[type], condition, stopCounterpart },
+                request,
             );
         } catch (e: unknown) {
             if (e instanceof Error && e.message.includes("INVALID_ARGUMENT")) {
@@ -309,6 +344,30 @@ export class Debugger {
             );
         }
         return response.id;
+    }
+
+    /** Enable a watchpoint by ID. Throws DebuggerError if not found. */
+    async enableWatchpoint(id: number): Promise<void> {
+        const response = await promisify<{ id: number; enabled: boolean }, { success: boolean }>(
+            this.stub as unknown as Record<string, Function>,
+            "enableWatchpoint",
+            { id, enabled: true },
+        );
+        if (!response.success) {
+            throw new DebuggerError(`Watchpoint ${id} not found`);
+        }
+    }
+
+    /** Disable a watchpoint by ID. Hit count and configuration are preserved. */
+    async disableWatchpoint(id: number): Promise<void> {
+        const response = await promisify<{ id: number; enabled: boolean }, { success: boolean }>(
+            this.stub as unknown as Record<string, Function>,
+            "enableWatchpoint",
+            { id, enabled: false },
+        );
+        if (!response.success) {
+            throw new DebuggerError(`Watchpoint ${id} not found`);
+        }
     }
 
     /** Remove a watchpoint by ID. Returns true if found and removed. */
@@ -326,7 +385,7 @@ export class Debugger {
         const typeMap: Record<number, WatchpointType> = { 0: "read", 1: "write", 2: "both" };
         const response = await promisify<
             {},
-            { watchpoints: Array<{ id: number; startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean; hitCount: number }> }
+            { watchpoints: Array<{ id: number; startAddress: number; endAddress: number; type: number; condition: string; stopCounterpart: boolean; hitCount: number; enabled: boolean }> }
         >(
             this.stub as unknown as Record<string, Function>,
             "listWatchpoints",
@@ -340,6 +399,7 @@ export class Debugger {
             condition: wp.condition ?? "",
             stopCounterpart: wp.stopCounterpart ?? false,
             hitCount: wp.hitCount ?? 0,
+            enabled: wp.enabled ?? true,
         }));
     }
 

@@ -46,6 +46,7 @@ class Breakpoint:
     condition: str = ""
     stop_counterpart: bool = False
     hit_count: int = 0
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ class WatchpointInfo:
     condition: str = ""
     stop_counterpart: bool = False
     hit_count: int = 0
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -301,6 +303,7 @@ class Debugger:
         end_address: int = 0,
         condition: str = "",
         stop_counterpart: bool = False,
+        enabled: bool = True,
     ) -> int:
         """Add a breakpoint on an address range.
 
@@ -320,12 +323,15 @@ class Debugger:
         Raises:
             DebuggerError: If the breakpoint cannot be added.
         """
-        request = debugger_pb2.AddBreakpointRequest(
+        kwargs = dict(
             start_address=address,
             end_address=end_address,
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
+        if not enabled:
+            kwargs["enabled"] = False
+        request = debugger_pb2.AddBreakpointRequest(**kwargs)
         try:
             response = self._stub.AddBreakpoint(request)
         except grpc.RpcError as e:
@@ -344,6 +350,7 @@ class Debugger:
         end_address: int = 0,
         condition: str = "",
         stop_counterpart: bool = False,
+        enabled: bool = True,
     ):
         """Context manager that adds a breakpoint and removes it on exit.
 
@@ -356,6 +363,7 @@ class Debugger:
         bp_id = self.add_breakpoint(
             address, end_address=end_address,
             condition=condition, stop_counterpart=stop_counterpart,
+            enabled=enabled,
         )
         try:
             yield bp_id
@@ -390,8 +398,36 @@ class Debugger:
                 condition=bp.condition,
                 stop_counterpart=bp.stop_counterpart,
                 hit_count=bp.hit_count,
+                enabled=bp.enabled,
             ) for bp in response.breakpoints
         ]
+
+    def enable_breakpoint(self, breakpoint_id: int) -> None:
+        """Enable a breakpoint."""
+        request = debugger_pb2.EnableBreakpointRequest(
+            id=breakpoint_id, enabled=True,
+        )
+        response = self._stub.EnableBreakpoint(request)
+        if not response.success:
+            raise DebuggerError(f"Breakpoint {breakpoint_id} not found")
+
+    def disable_breakpoint(self, breakpoint_id: int) -> None:
+        """Disable a breakpoint. Hit count and configuration are preserved."""
+        request = debugger_pb2.EnableBreakpointRequest(
+            id=breakpoint_id, enabled=False,
+        )
+        response = self._stub.EnableBreakpoint(request)
+        if not response.success:
+            raise DebuggerError(f"Breakpoint {breakpoint_id} not found")
+
+    @contextmanager
+    def suppressed_breakpoint(self, breakpoint_id: int):
+        """Temporarily disable a breakpoint, re-enabling on exit."""
+        self.disable_breakpoint(breakpoint_id)
+        try:
+            yield breakpoint_id
+        finally:
+            self.enable_breakpoint(breakpoint_id)
 
     def clear_breakpoints(self) -> int:
         """Remove all breakpoints.
@@ -412,6 +448,7 @@ class Debugger:
         *,
         condition: str = "",
         stop_counterpart: bool = False,
+        enabled: bool = True,
     ) -> int:
         """Add a watchpoint on an address range.
 
@@ -432,13 +469,16 @@ class Debugger:
             "write": debugger_pb2.WATCHPOINT_WRITE,
             "both": debugger_pb2.WATCHPOINT_BOTH,
         }
-        request = debugger_pb2.AddWatchpointRequest(
+        kwargs = dict(
             start_address=start_address,
             end_address=end_address,
             type=type_map.get(type, debugger_pb2.WATCHPOINT_BOTH),
             condition=condition,
             stop_counterpart=stop_counterpart,
         )
+        if not enabled:
+            kwargs["enabled"] = False
+        request = debugger_pb2.AddWatchpointRequest(**kwargs)
         try:
             response = self._stub.AddWatchpoint(request)
         except grpc.RpcError as e:
@@ -460,6 +500,7 @@ class Debugger:
         *,
         condition: str = "",
         stop_counterpart: bool = False,
+        enabled: bool = True,
     ):
         """Context manager that adds a watchpoint and removes it on exit.
 
@@ -472,6 +513,7 @@ class Debugger:
         wp_id = self.add_watchpoint(
             start_address, end_address, type,
             condition=condition, stop_counterpart=stop_counterpart,
+            enabled=enabled,
         )
         try:
             yield wp_id
@@ -501,9 +543,37 @@ class Debugger:
                 condition=wp.condition,
                 stop_counterpart=wp.stop_counterpart,
                 hit_count=wp.hit_count,
+                enabled=wp.enabled,
             )
             for wp in response.watchpoints
         ]
+
+    def enable_watchpoint(self, watchpoint_id: int) -> None:
+        """Enable a watchpoint."""
+        request = debugger_pb2.EnableWatchpointRequest(
+            id=watchpoint_id, enabled=True,
+        )
+        response = self._stub.EnableWatchpoint(request)
+        if not response.success:
+            raise DebuggerError(f"Watchpoint {watchpoint_id} not found")
+
+    def disable_watchpoint(self, watchpoint_id: int) -> None:
+        """Disable a watchpoint. Hit count and configuration are preserved."""
+        request = debugger_pb2.EnableWatchpointRequest(
+            id=watchpoint_id, enabled=False,
+        )
+        response = self._stub.EnableWatchpoint(request)
+        if not response.success:
+            raise DebuggerError(f"Watchpoint {watchpoint_id} not found")
+
+    @contextmanager
+    def suppressed_watchpoint(self, watchpoint_id: int):
+        """Temporarily disable a watchpoint, re-enabling on exit."""
+        self.disable_watchpoint(watchpoint_id)
+        try:
+            yield watchpoint_id
+        finally:
+            self.enable_watchpoint(watchpoint_id)
 
     def clear_watchpoints(self) -> int:
         """Remove all watchpoints. Returns the count removed."""
