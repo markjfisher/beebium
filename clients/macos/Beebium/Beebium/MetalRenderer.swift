@@ -1,4 +1,4 @@
-// Copyright © 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright © 2025-2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -15,6 +15,17 @@ import Metal
 import MetalKit
 import simd
 
+/// Per-region display geometry for split-screen modes - must match Metal RegionUniforms exactly
+struct RegionUniforms {
+    var startLine: UInt32 = 0
+    var endLine: UInt32 = 0
+    var pixelWidth: UInt32 = 0
+    var padding: UInt32 = 0
+}
+
+/// Maximum number of display regions - must match Metal MAX_REGIONS
+private let maxRegions = 8
+
 /// Uniforms passed to the shader for aspect ratio correction and border rendering
 /// Note: Struct layout must match Metal exactly. float4 requires 16-byte alignment.
 struct Uniforms {
@@ -29,6 +40,21 @@ struct Uniforms {
     var rightBorderColor: SIMD4<Float>   // offset 64: RGBA color for right border
     var topBorderColor: SIMD4<Float>     // offset 80: RGBA color for top border
     var bottomBorderColor: SIMD4<Float>  // offset 96: RGBA color for bottom border
+    var regionCount: UInt32 = 0      // Number of active display regions
+    var _pad0: UInt32 = 0            // Padding for alignment
+    var _pad1: UInt32 = 0
+    var _pad2: UInt32 = 0
+    var regions: (RegionUniforms, RegionUniforms, RegionUniforms, RegionUniforms,
+                  RegionUniforms, RegionUniforms, RegionUniforms, RegionUniforms) =
+        (RegionUniforms(), RegionUniforms(), RegionUniforms(), RegionUniforms(),
+         RegionUniforms(), RegionUniforms(), RegionUniforms(), RegionUniforms())
+}
+
+/// Display region descriptor passed from VideoClient
+struct DisplayRegion {
+    let startLine: Int
+    let endLine: Int
+    let pixelWidth: Int
 }
 
 /// Renders emulator video frames using Metal
@@ -55,6 +81,9 @@ final class MetalRenderer: NSObject {
 
     // Interlace state (affects aspect ratio calculation via line-doubling)
     private var isInterlaced: Bool = true  // Default to interlaced (MODE 7 boot)
+
+    // Display regions for split-screen modes
+    private var displayRegions: [DisplayRegion] = []
 
     /// Pixel Aspect Ratio scale - BBC pixels are 0.96 as wide as they are tall
     private let parScale: Float = 0.96
@@ -99,22 +128,12 @@ final class MetalRenderer: NSObject {
     }
 
     /// Update the frame texture with new pixel data
-    /// - Parameters:
-    ///   - data: BGRA32 pixel data
-    ///   - width: Frame width in logical pixels
-    ///   - height: Frame height in logical pixels
-    ///   - displayWidth: Target display width (for scaling)
-    ///   - displayHeight: Target display height (for scaling)
-    ///   - leftBorder: Left border width in pixels
-    ///   - rightBorder: Right border width in pixels
-    ///   - topBorder: Top border height in pixels
-    ///   - bottomBorder: Bottom border height in pixels
-    ///   - interlaced: True if frame is interlaced (MODE 7), false for progressive (bitmap modes)
     func updateFrame(data: Data, width: Int, height: Int,
                      displayWidth: Int, displayHeight: Int,
                      leftBorder: Int, rightBorder: Int,
                      topBorder: Int, bottomBorder: Int,
-                     interlaced: Bool) {
+                     interlaced: Bool,
+                     regions: [DisplayRegion]) {
         // Store display dimensions for scaling
         self.displayWidth = displayWidth > 0 ? displayWidth : width
         self.displayHeight = displayHeight > 0 ? displayHeight : height
@@ -127,6 +146,9 @@ final class MetalRenderer: NSObject {
 
         // Store interlace state (affects aspect ratio via line-doubling)
         self.isInterlaced = interlaced
+
+        // Store display regions
+        self.displayRegions = regions
 
         // Create or recreate texture if dimensions changed
         if frameTexture == nil || textureWidth != width || textureHeight != height {
@@ -190,6 +212,24 @@ extension MetalRenderer: MTKViewDelegate {
             let totalWidth = Float(leftBorder + displayWidth + rightBorder)
             let totalHeight = Float(topBorder + displayHeight + bottomBorder)
 
+            // Build region uniforms from display regions
+            var regionUniforms = (
+                RegionUniforms(), RegionUniforms(), RegionUniforms(), RegionUniforms(),
+                RegionUniforms(), RegionUniforms(), RegionUniforms(), RegionUniforms()
+            )
+            let regionCount = min(displayRegions.count, maxRegions)
+            withUnsafeMutablePointer(to: &regionUniforms) { ptr in
+                let base = UnsafeMutableRawPointer(ptr).bindMemory(
+                    to: RegionUniforms.self, capacity: maxRegions)
+                for i in 0..<regionCount {
+                    base[i] = RegionUniforms(
+                        startLine: UInt32(displayRegions[i].startLine),
+                        endLine: UInt32(displayRegions[i].endLine),
+                        pixelWidth: UInt32(displayRegions[i].pixelWidth)
+                    )
+                }
+            }
+
             // Create uniforms for aspect ratio correction and border rendering
             // textureSize is logical (for texture sampling), displaySize is for layout
             var uniforms = Uniforms(
@@ -203,7 +243,9 @@ extension MetalRenderer: MTKViewDelegate {
                 leftBorderColor: leftBorderColor,
                 rightBorderColor: rightBorderColor,
                 topBorderColor: topBorderColor,
-                bottomBorderColor: bottomBorderColor
+                bottomBorderColor: bottomBorderColor,
+                regionCount: UInt32(regionCount),
+                regions: regionUniforms
             )
 
             renderEncoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)

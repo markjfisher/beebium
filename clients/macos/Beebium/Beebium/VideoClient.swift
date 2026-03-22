@@ -175,6 +175,15 @@ final class VideoClient: ObservableObject, Disconnectable {
         // PROGRESSIVE = non-interlaced (bitmap modes), EVEN_FIRST/ODD_FIRST = interlaced (MODE 7)
         let isInterlaced = frame.fieldOrder != .progressive
 
+        // Extract display regions for split-screen modes
+        let regions: [DisplayRegion] = frame.regions.map { region in
+            DisplayRegion(
+                startLine: Int(region.startLine),
+                endLine: Int(region.endLine),
+                pixelWidth: Int(region.pixelWidth)
+            )
+        }
+
         // Update renderer directly to bypass SwiftUI update batching
         renderer?.updateFrame(
             data: frame.pixels,
@@ -186,7 +195,8 @@ final class VideoClient: ObservableObject, Disconnectable {
             rightBorder: Int(frame.rightBorder),
             topBorder: Int(frame.topBorder),
             bottomBorder: Int(frame.bottomBorder),
-            interlaced: isInterlaced
+            interlaced: isInterlaced,
+            regions: regions
         )
     }
 }

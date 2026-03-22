@@ -1,6 +1,17 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// Per-region display geometry for split-screen modes
+struct RegionUniforms {
+    uint startLine;     // First scanline (inclusive, 0-based)
+    uint endLine;       // Last scanline (exclusive)
+    uint pixelWidth;    // Logical pixel width for this region
+    uint padding;       // 16-byte alignment
+};
+
+// Maximum number of display regions supported
+constant uint MAX_REGIONS = 8;
+
 // Uniforms passed from CPU - must match Swift Uniforms struct exactly
 // Note: float4 requires 16-byte alignment, so we add explicit padding
 struct Uniforms {
@@ -15,6 +26,11 @@ struct Uniforms {
     float4 rightBorderColor;  // offset 64: RGBA color for right border
     float4 topBorderColor;    // offset 80: RGBA color for top border
     float4 bottomBorderColor; // offset 96: RGBA color for bottom border
+    uint regionCount;         // Number of active display regions
+    uint _pad0;               // Padding for alignment
+    uint _pad1;
+    uint _pad2;
+    RegionUniforms regions[MAX_REGIONS];
 };
 
 // Vertex data for a full-screen quad
@@ -84,6 +100,7 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
 
 // Fragment shader: sample the emulator framebuffer texture with border rendering
 // Handles scaling from logical texture size to display size (e.g., 320->640 for MODE 1)
+// Supports split-screen modes via per-region horizontal scaling
 fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                 constant Uniforms& uniforms [[buffer(0)]],
                                 texture2d<float> texture [[texture(0)]]) {
@@ -117,11 +134,34 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]],
     }
 
     // Inside content area - sample texture with scaling
-    // Convert display coordinate to texture UV (handles mode-dependent scaling)
-    // displaySize -> textureSize mapping (e.g., 640 display pixels -> 320 texture pixels)
     float2 contentCoord = pixelCoord - uniforms.borderOffset;
-    float2 texUV = contentCoord / uniforms.displaySize;  // Normalize to [0,1]
-    // texUV now maps directly to texture [0,1] regardless of display/texture size ratio
+    float texV = contentCoord.y / uniforms.displaySize.y;  // Normalize Y to [0,1]
+
+    // Determine texture U coordinate, accounting for split-screen regions
+    float texU;
+    if (uniforms.regionCount > 1) {
+        // Split-screen: find region for this scanline and scale accordingly
+        int scanline = int(texV * uniforms.textureSize.y);
+        scanline = clamp(scanline, 0, int(uniforms.textureSize.y) - 1);
+
+        // Find the region containing this scanline
+        uint regionPixelWidth = uint(uniforms.textureSize.x);  // Fallback
+        for (uint i = 0; i < uniforms.regionCount && i < MAX_REGIONS; ++i) {
+            if (uint(scanline) >= uniforms.regions[i].startLine &&
+                uint(scanline) < uniforms.regions[i].endLine) {
+                regionPixelWidth = uniforms.regions[i].pixelWidth;
+                break;
+            }
+        }
+
+        // Scale X: map display X [0, displaySize.x] to texture X [0, regionPixelWidth]
+        texU = (contentCoord.x / uniforms.displaySize.x) * float(regionPixelWidth) / uniforms.textureSize.x;
+    } else {
+        // Uniform mode: simple linear mapping
+        texU = contentCoord.x / uniforms.displaySize.x;
+    }
+
+    float2 texUV = float2(texU, texV);
 
     // Use nearest for magnification (sharp pixels when enlarged)
     // Use linear for minification (blend when shrunk) to prevent thin features

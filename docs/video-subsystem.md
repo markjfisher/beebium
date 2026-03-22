@@ -127,6 +127,8 @@ Consumes queue, tracks raster position, writes BGRA32 pixels to framebuffer. Swa
 
 - **Dynamic dimensions**: Tracks maximum X/Y written to determine actual frame dimensions. Sets logical width/height in `FrameMetadata` at swap time.
 
+- **Split-screen region tracking**: Tracks per-scanline pixel width to detect mid-frame mode changes. In `finish_frame()`, compresses the per-scanline data into contiguous `FrameDisplayRegion` entries (runs of scanlines sharing the same logical pixel width). Zero-width gap scanlines inherit the previous region's width to avoid spurious boundaries. Most frames produce a single region; split-screen games like Elite produce two or more.
+
 ### FrameBuffer
 
 Double-buffered with mutex-protected swap. Core writes to front buffer; clients read immutable back buffer. Version counter for change detection.
@@ -260,6 +262,7 @@ The SAA5050 requires specific timing signals derived from CRTC output:
 - Full border calculation (left, right, top, bottom)
 - Interlace field compositing for Mode 7
 - Logical pixel output with client-side scaling metadata
+- Split-screen region tracking for mid-frame mode changes (e.g., Elite, Revs)
 
 ## Logical Pixel Output and Client Scaling
 
@@ -317,38 +320,57 @@ Note: Text modes (MODE 3, 6) and slow clock modes (MODE 4, 5) have different pix
 
 ### FrameMetadata Display Dimensions
 
-The `FrameMetadata` struct includes target display dimensions:
+The `FrameMetadata` struct includes target display dimensions and per-region geometry:
 
 ```cpp
+struct FrameDisplayRegion {
+    uint32_t start_line = 0;    // First scanline (inclusive, 0-based)
+    uint32_t end_line = 0;      // Last scanline (exclusive)
+    uint32_t pixel_width = 0;   // Logical pixel width for scanlines in this region
+};
+
 struct FrameMetadata {
     // ... existing fields ...
 
     // Target display resolution for client scaling
-    // BBC displays all modes at the same physical CRT size
     uint32_t display_width = 640;   // Target width (always 640)
     uint32_t display_height = ...;  // Set by FrameRenderer to frame_height
     bool interlaced = false;        // True for MODE 7 and custom interlace
+
+    // Display regions for split-screen modes
+    // Always populated with at least one region
+    std::vector<FrameDisplayRegion> regions;
 };
 ```
 
-The `FrameRenderer` sets these in `finish_frame()`:
+The `FrameRenderer` sets these in `finish_frame()`. It compresses per-scanline pixel widths into contiguous regions:
 
 ```cpp
 void finish_frame() {
-    meta.display_width = 640;  // All modes display at same width
+    meta.display_width = 640;
     meta.display_height = static_cast<uint32_t>(frame_height);
+
+    // Compress per-scanline pixel widths into regions
+    // e.g., Elite: [{0, 192, 320}, {192, 248, 160}]
+    meta.regions = compress_scanline_widths(frame_height);
     // ... swap buffers ...
 }
 ```
 
 ### gRPC Frame Message
 
-The `video.proto` Frame message includes display dimensions:
+The `video.proto` Frame message includes display dimensions and per-region geometry:
 
 ```protobuf
+message DisplayRegion {
+    uint32 start_line = 1;      // First scanline (inclusive, 0-based)
+    uint32 end_line = 2;        // Last scanline (exclusive)
+    uint32 pixel_width = 3;     // Logical pixel width for this region
+}
+
 message Frame {
     uint64 frame_number = 1;
-    uint32 width = 3;           // Logical width (varies by mode)
+    uint32 width = 3;           // Logical width (max across all regions)
     uint32 height = 4;          // Logical height (scanlines)
     bytes pixels = 5;           // BGRA32 at logical resolution
 
@@ -361,6 +383,9 @@ message Frame {
     // Target display dimensions for scaling
     uint32 display_width = 11;  // Target width (typically 640)
     uint32 display_height = 12; // Target height (typically 256)
+
+    // Per-region display geometry for split-screen modes
+    repeated DisplayRegion regions = 13;
 }
 ```
 
@@ -377,6 +402,7 @@ MODE 1: 320×256  ──► Frame {              Scale 320→640 (2×)
                      display_width: 640
                      display_height: 256
                      field_order: PROGRESSIVE
+                     regions: [{0, 256, 320}]
                     }
 ```
 
@@ -388,11 +414,50 @@ TODO: Why not have display_height always be the final height after line-doubling
 clients would know that line-doubling is necessary just by comparing height vs display_height. It
 would be much clearer to API consumers what the final output size should be.
 
-#### Metal Shader Example (macOS Client)
+### Split-Screen Mode Scaling
 
-The macOS client uses a Metal shader with aspect ratio correction and line-doubling:
+Games like Elite and Revs reprogram the CRTC mid-frame to switch video mode partway down the screen. This produces different logical pixel widths for different horizontal bands of the display. The `regions` field in the Frame message describes these bands.
+
+**Example: Elite (MODE 4 upper / MODE 5 lower)**
+
+```
+Core Output              gRPC Transport              Client Rendering
+───────────              ──────────────              ────────────────
+Upper: 320×192 (MODE 4)  Frame {                     Upper: 320→640 (2×)
+Lower: 160×56  (MODE 5)    width: 320                Lower: 160→640 (4×)
+                            height: 248
+                            display_width: 640
+                            regions: [
+                              {0, 192, 320},   // Upper: 320 px/line
+                              {192, 248, 160}  // Lower: 160 px/line
+                            ]
+                          }
+```
+
+The frame texture is `width` pixels wide (the maximum across all regions). Narrower regions occupy only the left portion of the texture — the remaining pixels are black. The client shader uses the per-region `pixel_width` to scale each band independently:
 
 ```metal
+// For each fragment, find its region and compute texture U accordingly
+uint regionPixelWidth = uniforms.regions[regionIndex].pixelWidth;
+texU = (displayX / displayWidth) * float(regionPixelWidth) / textureWidth;
+```
+
+This stretches the 160-pixel dashboard to fill the same 640 display pixels as the 320-pixel space view, matching the BBC Micro's physical CRT behaviour.
+
+For uniform-mode frames (most games), there is a single region spanning all scanlines and the scaling is equivalent to the simple `textureSize → displaySize` mapping.
+
+#### Metal Shader Example (macOS Client)
+
+The macOS client uses a Metal shader with aspect ratio correction, line-doubling, and per-region scaling:
+
+```metal
+struct RegionUniforms {
+    uint startLine;
+    uint endLine;
+    uint pixelWidth;
+    uint padding;
+};
+
 struct Uniforms {
     float2 drawableSize;      // Window size
     float2 textureSize;       // Logical texture dimensions (e.g., 320×256)
@@ -402,25 +467,12 @@ struct Uniforms {
     float parScale;           // Pixel Aspect Ratio (0.96 for BBC)
     uint interlaced;          // 1 = interlaced, 0 = progressive
     // ... border colors
+    uint regionCount;         // Number of display regions
+    RegionUniforms regions[8];
 };
-
-vertex VertexOut vertexShader(...) {
-    // Apply PAR to width
-    float contentWidth = uniforms.totalSize.x * uniforms.parScale;
-
-    // Line-doubling for non-interlaced modes
-    float contentHeight = uniforms.totalSize.y;
-    if (uniforms.interlaced == 0) {
-        contentHeight *= 2.0;  // 256 → 512 effective height
-    }
-
-    // Calculate aspect ratio for letterbox/pillarbox fitting
-    float contentAspect = contentWidth / contentHeight;
-    // ... scale quad to fit drawable
-}
 ```
 
-The vertex shader applies PAR correction and line-doubling to calculate the correct aspect ratio. The fragment shader samples the texture using normalized UV coordinates, which automatically scales from logical to display resolution.
+The vertex shader applies PAR correction and line-doubling to calculate the correct aspect ratio. The fragment shader uses per-region scaling for the horizontal axis: it maps the fragment's Y coordinate to a texture scanline, looks up the matching region, and uses that region's `pixelWidth` to compute the texture U coordinate. For uniform-mode frames (single region), this is equivalent to simple linear scaling.
 
 ### Testing with Logical Pixels
 
@@ -530,12 +582,13 @@ Games can reprogram the CRTC for custom display modes:
 
 - **Revs**: 208 scanlines for letterbox effect (416 effective, aspect 1.48)
 - **Boffin**: 720 pixels wide (aspect 1.35 with 512 effective height)
-- **Elite**: Composite mode mixing 640 and 320 pixel regions
+- **Elite**: Split-screen mode with MODE 4 upper (320 px) and MODE 5 lower (160 px), using VIA timer to switch video mode at the dashboard boundary
 
 The line-doubling approach correctly handles these custom modes:
 - Fewer scanlines → taller aspect ratio (letterbox)
 - More pixels → wider aspect ratio
 - No forced 4:3—the actual CRTC timing determines geometry
+- Split-screen modes → per-region horizontal scaling in the client shader
 
 ### Frame Metadata
 
@@ -543,11 +596,12 @@ The server sends frame metadata that clients use for correct display:
 
 ```protobuf
 message Frame {
-    uint32 width = 3;           // Logical pixel width
+    uint32 width = 3;           // Logical pixel width (max across all regions)
     uint32 height = 4;          // Scanline count
     uint32 display_width = 11;  // Target width (640 for horizontal scaling)
     uint32 display_height = 12; // Target height (same as height)
     FieldOrder field_order = 6; // PROGRESSIVE or EVEN_FIRST/ODD_FIRST
+    repeated DisplayRegion regions = 13;  // Per-region pixel widths
 }
 ```
 
@@ -556,6 +610,7 @@ message Frame {
 2. If `field_order != PROGRESSIVE`: Use height as-is (already interlaced)
 3. Apply PAR (0.96) to width
 4. Calculate aspect ratio for letterbox/pillarbox fitting
+5. Use `regions` for per-band horizontal scaling (split-screen modes)
 
 ### Interlace State Tracking
 

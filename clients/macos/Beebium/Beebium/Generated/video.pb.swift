@@ -125,6 +125,32 @@ struct Beebium_Frame: Sendable {
   /// Target display height (typically 256)
   var displayHeight: UInt32 = 0
 
+  /// Per-region display geometry for split-screen modes.
+  /// Always populated with at least one region.
+  var regions: [Beebium_DisplayRegion] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// A horizontal region of scanlines sharing the same logical pixel width.
+/// Used for split-screen modes where the CRTC is reprogrammed mid-frame
+/// (e.g., Elite uses MODE 4 upper / MODE 5 lower).
+struct Beebium_DisplayRegion: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// First scanline (inclusive, 0-based)
+  var startLine: UInt32 = 0
+
+  /// Last scanline (exclusive)
+  var endLine: UInt32 = 0
+
+  /// Logical pixel width for scanlines in this region
+  var pixelWidth: UInt32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -188,7 +214,7 @@ extension Beebium_SubscribeFramesRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Frame"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frame_number\0\u{3}cycle_count\0\u{1}width\0\u{1}height\0\u{1}pixels\0\u{3}field_order\0\u{3}left_border\0\u{3}right_border\0\u{3}top_border\0\u{3}bottom_border\0\u{3}display_width\0\u{3}display_height\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frame_number\0\u{3}cycle_count\0\u{1}width\0\u{1}height\0\u{1}pixels\0\u{3}field_order\0\u{3}left_border\0\u{3}right_border\0\u{3}top_border\0\u{3}bottom_border\0\u{3}display_width\0\u{3}display_height\0\u{1}regions\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -208,6 +234,7 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
       case 10: try { try decoder.decodeSingularUInt32Field(value: &self.bottomBorder) }()
       case 11: try { try decoder.decodeSingularUInt32Field(value: &self.displayWidth) }()
       case 12: try { try decoder.decodeSingularUInt32Field(value: &self.displayHeight) }()
+      case 13: try { try decoder.decodeRepeatedMessageField(value: &self.regions) }()
       default: break
       }
     }
@@ -250,6 +277,9 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
     if self.displayHeight != 0 {
       try visitor.visitSingularUInt32Field(value: self.displayHeight, fieldNumber: 12)
     }
+    if !self.regions.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.regions, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -266,6 +296,47 @@ extension Beebium_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
     if lhs.bottomBorder != rhs.bottomBorder {return false}
     if lhs.displayWidth != rhs.displayWidth {return false}
     if lhs.displayHeight != rhs.displayHeight {return false}
+    if lhs.regions != rhs.regions {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_DisplayRegion: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".DisplayRegion"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}start_line\0\u{3}end_line\0\u{3}pixel_width\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.startLine) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.endLine) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.pixelWidth) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.startLine != 0 {
+      try visitor.visitSingularUInt32Field(value: self.startLine, fieldNumber: 1)
+    }
+    if self.endLine != 0 {
+      try visitor.visitSingularUInt32Field(value: self.endLine, fieldNumber: 2)
+    }
+    if self.pixelWidth != 0 {
+      try visitor.visitSingularUInt32Field(value: self.pixelWidth, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_DisplayRegion, rhs: Beebium_DisplayRegion) -> Bool {
+    if lhs.startLine != rhs.startLine {return false}
+    if lhs.endLine != rhs.endLine {return false}
+    if lhs.pixelWidth != rhs.pixelWidth {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

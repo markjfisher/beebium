@@ -83,6 +83,14 @@ grpc::Status VideoServiceImpl::SubscribeFrames(
             frame.set_display_width(meta.display_width);
             frame.set_display_height(meta.display_height);
 
+            // Set per-region geometry for split-screen modes
+            for (const auto& region : meta.regions) {
+                auto* proto_region = frame.add_regions();
+                proto_region->set_start_line(region.start_line);
+                proto_region->set_end_line(region.end_line);
+                proto_region->set_pixel_width(region.pixel_width);
+            }
+
             if (!writer->Write(frame)) {
                 // Client disconnected
                 break;

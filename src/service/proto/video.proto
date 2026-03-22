@@ -48,6 +48,19 @@ message Frame {
     //   MODE 2: 160x256 logical = 640x256 display (4:1 horizontal)
     uint32 display_width = 11;  // Target display width (typically 640)
     uint32 display_height = 12; // Target display height (typically 256)
+
+    // Per-region display geometry for split-screen modes.
+    // Always populated with at least one region.
+    repeated DisplayRegion regions = 13;
+}
+
+// A horizontal region of scanlines sharing the same logical pixel width.
+// Used for split-screen modes where the CRTC is reprogrammed mid-frame
+// (e.g., Elite uses MODE 4 upper / MODE 5 lower).
+message DisplayRegion {
+    uint32 start_line = 1;      // First scanline (inclusive, 0-based)
+    uint32 end_line = 2;        // Last scanline (exclusive)
+    uint32 pixel_width = 3;     // Logical pixel width for scanlines in this region
 }
 
 message GetConfigRequest {}

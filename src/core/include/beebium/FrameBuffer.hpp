@@ -17,8 +17,18 @@
 #include <mutex>
 #include <atomic>
 #include <cassert>
+#include <vector>
 
 namespace beebium {
+
+// A horizontal region of scanlines sharing the same logical pixel width.
+// Used for split-screen modes where the CRTC is reprogrammed mid-frame
+// (e.g., Elite uses MODE 4 upper / MODE 5 lower).
+struct FrameDisplayRegion {
+    uint32_t start_line = 0;    // First scanline (inclusive, 0-based)
+    uint32_t end_line = 0;      // Last scanline (exclusive)
+    uint32_t pixel_width = 0;   // Logical pixel width for scanlines in this region
+};
 
 // Per-frame metadata describing frame dimensions and scaling.
 // The physical buffer may be larger (fixed allocation), but only
@@ -46,6 +56,11 @@ struct FrameMetadata {
     uint32_t right_border = 0;     // Pixels from active area to right edge
     uint32_t top_border = 0;       // Scanlines from top to active area
     uint32_t bottom_border = 0;    // Scanlines from active area to bottom
+
+    // Display regions for split-screen modes.
+    // Always populated with at least one region.
+    // Each region describes a band of scanlines with its own logical pixel width.
+    std::vector<FrameDisplayRegion> regions;
 };
 
 // Double-buffered frame buffer for video output.

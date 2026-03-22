@@ -305,6 +305,11 @@ target_compile_definitions(test_video PRIVATE
 )
 catch_discover_tests(test_video)
 
+# FrameRenderer display region tests
+add_executable(test_frame_renderer_regions test_frame_renderer_regions.cpp)
+target_link_libraries(test_frame_renderer_regions PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_frame_renderer_regions)
+
 # SAA5050 teletext chip tests
 add_executable(test_saa5050 test_saa5050.cpp)
 target_link_libraries(test_saa5050 PRIVATE beebium_core Catch2::Catch2WithMain)

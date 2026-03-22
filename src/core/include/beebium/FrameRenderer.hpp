@@ -16,6 +16,7 @@
 #include "PixelBatch.hpp"
 #include "OutputQueue.hpp"
 #include "FrameBuffer.hpp"
+#include <array>
 #include <cstdint>
 
 namespace beebium {
@@ -239,6 +240,13 @@ public:
         }
 
         x_ += pixel_count;  // Advance by actual pixel count
+
+        // Track per-scanline pixel width for split-screen region detection
+        if (write_y >= 0 && write_y < static_cast<int>(video_constants::FRAME_HEIGHT)) {
+            scanline_pixel_widths_[write_y] = std::max(
+                scanline_pixel_widths_[write_y],
+                static_cast<uint16_t>(x_));
+        }
     }
 
     // Get current raster position (for debugging)
@@ -266,6 +274,7 @@ public:
         frame_scanline_count_ = 0;
         max_frame_scanlines_ = 0;
         blanking_count_ = 0;
+        scanline_pixel_widths_.fill(0);
     }
 
     // Get tracked frame dimensions (for debugging/testing)
@@ -314,6 +323,39 @@ private:
         if (max_frame_scanlines_ > top_border_ + displayed_scanlines) {
             meta.bottom_border = static_cast<uint32_t>(max_frame_scanlines_ - top_border_ - displayed_scanlines);
         }
+
+        // Compress per-scanline pixel widths into contiguous regions
+        meta.regions.clear();
+        if (frame_height > 0) {
+            // Find first non-zero width (skip any leading gap scanlines)
+            uint16_t current_width = 0;
+            uint32_t region_start = 0;
+            for (uint32_t y = 0; y < frame_height; ++y) {
+                uint16_t w = scanline_pixel_widths_[y];
+                // Zero-width scanlines inherit the previous region's width
+                if (w == 0) continue;
+
+                if (current_width == 0) {
+                    // First non-zero width line
+                    current_width = w;
+                    region_start = y;
+                } else if (w != current_width) {
+                    // Width changed - close previous region, start new one
+                    meta.regions.push_back({region_start, y, current_width});
+                    current_width = w;
+                    region_start = y;
+                }
+            }
+            // Close final region
+            if (current_width > 0) {
+                meta.regions.push_back({region_start, static_cast<uint32_t>(frame_height), current_width});
+            }
+        }
+
+        // Reset scanline widths for next frame
+        std::fill(scanline_pixel_widths_.begin(),
+                  scanline_pixel_widths_.begin() + std::min(frame_height, static_cast<size_t>(video_constants::FRAME_HEIGHT)),
+                  uint16_t{0});
 
         frame_buffer_->set_metadata(meta);
 
@@ -373,6 +415,9 @@ private:
 
     // Blanking tracking for left border calculation
     size_t blanking_count_ = 0;        // Blanking batches since HSYNC
+
+    // Per-scanline pixel width tracking for split-screen region detection
+    std::array<uint16_t, video_constants::FRAME_HEIGHT> scanline_pixel_widths_{};
 };
 
 } // namespace beebium
