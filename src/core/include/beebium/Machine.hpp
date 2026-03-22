@@ -211,7 +211,13 @@ public:
         // This matches jsbeeb where setVBlankInt() is called from video.polltime()
         // and immediately triggers VIA CA1 edge detection on the same cycle.
         if (is_rising) {
-            // Rising edge: VIA only (skip VIAs that were pre-ticked by CpuBinding)
+            // Rising edge: VIA + video (in 2MHz character clock modes)
+            // In 2MHz mode the CRTC must tick every 2MHz cycle, not just
+            // on falling edges. Without this, bitmap modes produce 25 Hz
+            // VSYNC instead of 50 Hz.
+            if (video_binding_.clock_rate() == ClockRate::Rate_2MHz) {
+                video_binding_.tick_falling();
+            }
             if (!cpu_binding_.system_via_pre_ticked()) {
                 state_.memory.system_via.tick_rising();
             }
@@ -220,10 +226,7 @@ public:
             }
         } else {
             // Falling edge: Video first (updates vsync), then VIA (detects edge)
-            const auto video_rate = video_binding_.clock_rate();
-            if (video_rate == ClockRate::Rate_2MHz || (state_.cycle_count & 1) == 0) {
-                video_binding_.tick_falling();
-            }
+            video_binding_.tick_falling();
             // Skip only the VIA that was pre-ticked by CpuBinding
             if (!cpu_binding_.system_via_pre_ticked()) {
                 state_.memory.system_via.tick_falling();
@@ -591,6 +594,10 @@ private:
         const bool is_rising = (cycle & 1) != 0;
 
         if (is_rising) {
+            // Video ticks on rising edges too in 2MHz character clock modes
+            if (video_binding_.clock_rate() == ClockRate::Rate_2MHz) {
+                video_binding_.tick_falling();
+            }
             // Tick VIAs that were NOT pre-ticked
             if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickSystemVia)) {
                 state_.memory.system_via.tick_rising();
@@ -599,12 +606,8 @@ private:
                 state_.memory.user_via.tick_rising();
             }
         } else {
-            // Video ticks on falling edges only (ClockEdge::Falling)
-            // Rate depends on current mode (1MHz for teletext, 2MHz for bitmap)
-            const auto video_rate = video_binding_.clock_rate();
-            if (video_rate == ClockRate::Rate_2MHz || (cycle & 1) == 0) {
-                video_binding_.tick_falling();
-            }
+            // Video always ticks on falling edges
+            video_binding_.tick_falling();
             // Tick VIAs that were NOT pre-ticked
             if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickSystemVia)) {
                 state_.memory.system_via.tick_falling();
