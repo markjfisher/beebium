@@ -50,6 +50,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -1359,6 +1360,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
 
     // Main emulation loop
     constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
+    auto last_stats_time = std::chrono::steady_clock::now();
+    uint64_t last_cycle_count = machine.cycle_count();
     while (g_running) {
         // Check for pending SIGINT/SIGTERM and dispatch shutdown callback.
         // The signal handler only sets an atomic flag (async-signal-safe);
@@ -1380,6 +1383,32 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         // Wait for next tick (pacing clock handles timing)
         if (use_pacing) {
             pacing_clock.wait_for_tick();
+        }
+
+        // Periodic pacing stats (every 5 seconds)
+        if (use_pacing) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
+            if (elapsed.count() >= 5) {
+                auto stats = pacing_clock.timing_stats();
+                uint64_t current_cycles = machine.cycle_count();
+                uint64_t cycles_delta = current_cycles - last_cycle_count;
+                double elapsed_secs = std::chrono::duration<double>(now - last_stats_time).count();
+                double actual_hz = static_cast<double>(cycles_delta) / elapsed_secs;
+                double target_hz = static_cast<double>(Memory::default_pacing_config().base_clock_hz);
+                std::cerr << "Pacing: "
+                          << std::fixed << std::setprecision(3)
+                          << (actual_hz / 1e6) << " MHz"
+                          << " (target " << (target_hz / 1e6) << " MHz, "
+                          << std::setprecision(1)
+                          << (100.0 * actual_hz / target_hz) << "%)"
+                          << " | skipped " << stats.ticks_skipped
+                          << " | margin " << std::setprecision(0)
+                          << stats.safety_margin_us << " us"
+                          << "\n";
+                last_stats_time = now;
+                last_cycle_count = current_cycles;
+            }
         }
     }
 

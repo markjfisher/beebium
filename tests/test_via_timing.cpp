@@ -1163,6 +1163,95 @@ TEST_CASE("T1 latch write timing relative to expiry", "[via][hardware-validated]
 }
 
 //////////////////////////////////////////////////////////////////////////////
+// Planetoid PB7 timing: verify PB7 toggles at the expected cycle
+//
+// Planetoid loads User VIA Timer 1 with $1480 (5248) in one-shot mode with
+// PB7 output (ACR=$80), then polls BIT $FE60 waiting for N flag (PB7 HIGH).
+// This test measures how many cycles elapse between starting the timer and
+// PB7 going HIGH to verify it matches the expected ~5250 cycles.
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("Planetoid timer: PB7 goes HIGH after expected cycles", "[via][planetoid][pb7]") {
+    ModelB machine;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program at 0x0400 (mirrors Planetoid's StartTimer + TimerState):
+    //   SEI
+    //   LDA #$80 : STA $FE6B          ; ACR = $80 (one-shot + PB7 output)
+    //   LDA #$80 : STA $FE64          ; T1CL = $80
+    //   LDA #$14 : STA $FE65          ; T1CH = $14 (start timer, value $1480)
+    //   ; Poll loop:
+    //   BIT $FE60                      ; Test PB7 via N flag
+    //   BPL poll                       ; Loop while PB7 LOW
+    //   ; Timer expired, store cycle count
+    //   CLI : BRK
+    uint16_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$80
+    machine.write(pc++, 0x80);
+    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$80
+    machine.write(pc++, 0x80);
+    machine.write(pc++, 0x8D);        // STA $FE64 (User VIA T1CL)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$14
+    machine.write(pc++, 0x14);
+    machine.write(pc++, 0x8D);        // STA $FE65 (User VIA T1CH - starts timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    uint16_t poll_addr = pc;
+    machine.write(pc++, 0x2C);        // BIT $FE60 (User VIA ORB)
+    machine.write(pc++, 0x60);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x10);        // BPL poll_addr (branch if N=0, PB7 LOW)
+    machine.write(pc++, static_cast<uint8_t>(poll_addr - pc));  // relative offset
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x00);        // BRK (stop)
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();  // Execute reset sequence
+
+    // Run until BRK or timeout
+    uint64_t start_cycle = 0;
+    bool timer_started = false;
+    int iterations = 0;
+    while (iterations < 50000) {
+        machine.step_instruction();
+        iterations++;
+
+        // Record cycle count when T1CH is written (STA $FE65 completes)
+        // Detect by checking when PC advances past the STA $FE65 instruction
+        if (!timer_started && machine.pc() >= poll_addr) {
+            start_cycle = machine.cycle_count();
+            timer_started = true;
+        }
+
+        // BRK sets the B flag and vectors to the IRQ handler
+        // Detect exit when PC leaves our program area
+        if (timer_started && (machine.pc() < 0x0400 || machine.pc() > 0x0500)) {
+            break;
+        }
+    }
+
+    uint64_t end_cycle = machine.cycle_count();
+    uint64_t elapsed = end_cycle - start_cycle;
+
+    INFO("Cycles from timer start to PB7 HIGH: " << elapsed);
+    INFO("Expected: ~5250 cycles (timer value $1480 = 5248, + 1.5 cycle offset)");
+    INFO("Poll loop iterations: each BIT abs (6 cycles stretched) + BPL (3 cycles) = ~9 cycles");
+
+    // Timer value $1480 = 5248. Timer fires after N+1.5 cycles = ~5250.
+    // Poll loop overhead means we detect it slightly after, but it should
+    // be within a reasonable range of 5250.
+    // If the timer is running at the wrong rate, this will be far off.
+    REQUIRE(elapsed > 5200);
+    REQUIRE(elapsed < 5400);
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // Cross-VIA timing: non-accessed VIA continues ticking during bus stretching
 //
 // When the CPU accesses one VIA (triggering 1MHz bus stretching), the other
