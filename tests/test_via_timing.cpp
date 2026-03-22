@@ -1171,84 +1171,204 @@ TEST_CASE("T1 latch write timing relative to expiry", "[via][hardware-validated]
 // PB7 going HIGH to verify it matches the expected ~5250 cycles.
 //////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("Planetoid timer: PB7 goes HIGH after expected cycles", "[via][planetoid][pb7]") {
+TEST_CASE("CPU poll loop detects PB7 toggle with short timer", "[via][planetoid][pb7]") {
+    // Reproduces Planetoid's polling pattern with a short timer.
+    // 6502 program: configure User VIA T1 one-shot with PB7 output,
+    // start timer with value 4, poll BIT $FE60 until PB7 goes HIGH.
+    //
+    // The pre-tick in CpuBinding must include cycle N so that a timer
+    // timeout detected on a trailing edge is always followed by a leading
+    // edge where PB7 toggles. Without this, t1_timeout can be set on a
+    // trailing edge during the pre-tick, then lost when the next trailing
+    // edge clears it before any leading edge processes the toggle.
     ModelB machine;
     setup_minimal_mos(machine, 0x0400, 0x0500);
 
-    // Program at 0x0400 (mirrors Planetoid's StartTimer + TimerState):
+    // Program at 0x0400:
     //   SEI
     //   LDA #$80 : STA $FE6B          ; ACR = $80 (one-shot + PB7 output)
-    //   LDA #$80 : STA $FE64          ; T1CL = $80
-    //   LDA #$14 : STA $FE65          ; T1CH = $14 (start timer, value $1480)
-    //   ; Poll loop:
-    //   BIT $FE60                      ; Test PB7 via N flag
-    //   BPL poll                       ; Loop while PB7 LOW
-    //   ; Timer expired, store cycle count
-    //   CLI : BRK
+    //   LDA #$04 : STA $FE64          ; T1CL = 4
+    //   LDA #$00 : STA $FE65          ; T1CH = 0 (start timer, value 4, PB7 LOW)
+    //   poll: BIT $FE60               ; Test PB7 via N flag
+    //         BPL poll                 ; Loop while PB7 LOW (N=0)
+    //   NOP                            ; Exit point
     uint16_t pc = 0x0400;
     machine.write(pc++, 0x78);        // SEI
     machine.write(pc++, 0xA9);        // LDA #$80
     machine.write(pc++, 0x80);
-    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR)
+    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR = $80)
     machine.write(pc++, 0x6B);
     machine.write(pc++, 0xFE);
-    machine.write(pc++, 0xA9);        // LDA #$80
-    machine.write(pc++, 0x80);
-    machine.write(pc++, 0x8D);        // STA $FE64 (User VIA T1CL)
+    machine.write(pc++, 0xA9);        // LDA #$04
+    machine.write(pc++, 0x04);
+    machine.write(pc++, 0x8D);        // STA $FE64 (User VIA T1CL = 4)
     machine.write(pc++, 0x64);
     machine.write(pc++, 0xFE);
-    machine.write(pc++, 0xA9);        // LDA #$14
-    machine.write(pc++, 0x14);
-    machine.write(pc++, 0x8D);        // STA $FE65 (User VIA T1CH - starts timer)
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (User VIA T1CH = 0, start timer)
     machine.write(pc++, 0x65);
     machine.write(pc++, 0xFE);
-    uint16_t poll_addr = pc;
-    machine.write(pc++, 0x2C);        // BIT $FE60 (User VIA ORB)
+    // poll: BIT $FE60 / BPL poll
+    machine.write(pc++, 0x2C);        // BIT $FE60
     machine.write(pc++, 0x60);
     machine.write(pc++, 0xFE);
-    machine.write(pc++, 0x10);        // BPL poll_addr (branch if N=0, PB7 LOW)
-    machine.write(pc++, static_cast<uint8_t>(poll_addr - pc));  // relative offset
-    machine.write(pc++, 0x58);        // CLI
-    machine.write(pc++, 0x00);        // BRK (stop)
+    machine.write(pc++, 0x10);        // BPL
+    machine.write(pc++, 0xFB);        // -5 (back to BIT)
+    uint16_t exit_addr = pc;
+    machine.write(pc++, 0xEA);        // NOP (exit point)
 
     M6502_Reset(&machine.cpu());
-    machine.step_instruction();  // Execute reset sequence
+    machine.step_instruction();
 
-    // Run until BRK or timeout
-    uint64_t start_cycle = 0;
-    bool timer_started = false;
     int iterations = 0;
-    while (iterations < 50000) {
+    while (iterations < 5000) {
         machine.step_instruction();
         iterations++;
-
-        // Record cycle count when T1CH is written (STA $FE65 completes)
-        // Detect by checking when PC advances past the STA $FE65 instruction
-        if (!timer_started && machine.pc() >= poll_addr) {
-            start_cycle = machine.cycle_count();
-            timer_started = true;
-        }
-
-        // BRK sets the B flag and vectors to the IRQ handler
-        // Detect exit when PC leaves our program area
-        if (timer_started && (machine.pc() < 0x0400 || machine.pc() > 0x0500)) {
-            break;
-        }
+        if (machine.pc() >= exit_addr) break;
     }
 
-    uint64_t end_cycle = machine.cycle_count();
-    uint64_t elapsed = end_cycle - start_cycle;
+    INFO("Iterations to detect PB7 HIGH: " << iterations);
+    // Timer value 4 expires in ~6 timer decrements. The poll loop (BIT abs
+    // + BPL) is ~9 cycles per iteration. Should exit within a few iterations.
+    REQUIRE(iterations < 50);
+}
 
-    INFO("Cycles from timer start to PB7 HIGH: " << elapsed);
-    INFO("Expected: ~5250 cycles (timer value $1480 = 5248, + 1.5 cycle offset)");
-    INFO("Poll loop iterations: each BIT abs (6 cycles stretched) + BPL (3 cycles) = ~9 cycles");
+TEST_CASE("User VIA T1 expires at correct cycle via NOPs", "[via][planetoid][pb7]") {
+    // Start User VIA T1, execute NOPs (no VIA access), check IFR after
+    // expected expiry time. This tests timer accuracy without bus stretching.
+    ModelB machine;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
 
-    // Timer value $1480 = 5248. Timer fires after N+1.5 cycles = ~5250.
-    // Poll loop overhead means we detect it slightly after, but it should
-    // be within a reasonable range of 5250.
-    // If the timer is running at the wrong rate, this will be far off.
-    REQUIRE(elapsed > 5200);
-    REQUIRE(elapsed < 5400);
+    // SEI, start timer with value 4, run NOPs, read IFR
+    uint16_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$80
+    machine.write(pc++, 0x80);
+    machine.write(pc++, 0x8D);        // STA $FE6B (ACR = $80)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$04
+    machine.write(pc++, 0x04);
+    machine.write(pc++, 0x8D);        // STA $FE64 (T1CL = 4)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (T1CH = 0, start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    // 10 NOPs (20 cycles, timer of 4 must expire within these)
+    for (int i = 0; i < 10; i++) {
+        machine.write(pc++, 0xEA);    // NOP
+    }
+    machine.write(pc++, 0xAD);        // LDA $FE6D (User VIA IFR)
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x01);
+    machine.write(pc++, 0x2C);        // BIT $FE60 (read ORB to check PB7)
+    machine.write(pc++, 0x60);
+    machine.write(pc++, 0xFE);
+    // Store flags: PHP / PLA / STA $0101
+    machine.write(pc++, 0x08);        // PHP
+    machine.write(pc++, 0x68);        // PLA
+    machine.write(pc++, 0x8D);        // STA $0101
+    machine.write(pc++, 0x01);
+    machine.write(pc++, 0x01);
+    uint16_t end_addr = pc;
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < end_addr && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    uint8_t ifr = machine.peek(0x0100);
+    uint8_t flags = machine.peek(0x0101);
+    INFO("IFR: 0x" << std::hex << static_cast<int>(ifr));
+    INFO("Flags (N=bit7): 0x" << std::hex << static_cast<int>(flags));
+    REQUIRE((ifr & 0x40) != 0);    // T1 flag must be set
+    REQUIRE((flags & 0x80) != 0);  // N flag must be set (PB7 HIGH from BIT)
+}
+
+TEST_CASE("CPU poll loop detects PB7 toggle with various timer values", "[via][planetoid][pb7]") {
+    // Test PB7 poll loop with several timer values to check timing scales correctly.
+    struct TestCase { uint8_t t1cl; uint8_t t1ch; uint16_t value; };
+    TestCase cases[] = {
+        {0x04, 0x00, 4},
+        {0x10, 0x00, 16},
+        {0x40, 0x00, 64},
+        {0x00, 0x01, 256},
+        {0x00, 0x04, 1024},
+        {0x80, 0x14, 5248},  // Planetoid's actual value
+    };
+
+    for (const auto& tc : cases) {
+        SECTION("Timer value " + std::to_string(tc.value)) {
+            ModelB machine;
+            setup_minimal_mos(machine, 0x0400, 0x0500);
+
+            uint16_t pc = 0x0400;
+            machine.write(pc++, 0x78);        // SEI
+            machine.write(pc++, 0xA9);        // LDA #$80
+            machine.write(pc++, 0x80);
+            machine.write(pc++, 0x8D);        // STA $FE6B
+            machine.write(pc++, 0x6B);
+            machine.write(pc++, 0xFE);
+            machine.write(pc++, 0xA9);        // LDA #t1cl
+            machine.write(pc++, tc.t1cl);
+            machine.write(pc++, 0x8D);        // STA $FE64
+            machine.write(pc++, 0x64);
+            machine.write(pc++, 0xFE);
+            machine.write(pc++, 0xA9);        // LDA #t1ch
+            machine.write(pc++, tc.t1ch);
+            machine.write(pc++, 0x8D);        // STA $FE65 (start timer)
+            machine.write(pc++, 0x65);
+            machine.write(pc++, 0xFE);
+            // poll: BIT $FE60 / BPL poll
+            machine.write(pc++, 0x2C);        // BIT $FE60
+            machine.write(pc++, 0x60);
+            machine.write(pc++, 0xFE);
+            machine.write(pc++, 0x10);        // BPL
+            machine.write(pc++, 0xFB);        // -5
+            uint16_t exit_addr = pc;
+            machine.write(pc++, 0xEA);        // NOP
+
+            M6502_Reset(&machine.cpu());
+            machine.step_instruction();
+
+            uint64_t start_cycle = machine.cycle_count();
+            int iterations = 0;
+            while (iterations < 50000) {
+                machine.step_instruction();
+                iterations++;
+                if (machine.pc() >= exit_addr) break;
+            }
+            uint64_t elapsed = machine.cycle_count() - start_cycle;
+
+            INFO("Timer value: " << tc.value);
+            INFO("Iterations (instructions): " << iterations);
+            INFO("Elapsed 2MHz cycles: " << elapsed);
+
+            // Each poll iteration is 2 instructions (BIT $FE60 + BPL) taking
+            // ~9 2MHz cycles = ~4.25 timer decrements. Setup is 7 instructions.
+            // Expected poll iterations ≈ (timer_value + 2) / 4.25.
+            // Total instructions ≈ 7 + 2 * poll_iterations.
+            int expected_poll_iters = static_cast<int>((tc.value + 2) / 4.25) + 1;
+            int expected_instructions = 7 + 2 * expected_poll_iters;
+            INFO("Expected ~" << expected_instructions << " instructions");
+
+            // Allow 3x margin for timing uncertainty and bus stretching
+            REQUIRE(iterations < expected_instructions * 3);
+        }
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////////

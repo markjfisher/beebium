@@ -169,10 +169,17 @@ private:
             // Other 1MHz devices (CRTC, ACIA) don't need VIA pre-ticking.
             // Track which VIA was pre-ticked so Machine::step() can continue
             // ticking the non-accessed VIA during the stretch period.
+            //
+            // The pre-tick must include cycle N (the current cycle) as well as
+            // the stretch cycles. Without cycle N, a timer timeout detected on
+            // a trailing edge in the pre-tick may never be processed by its
+            // corresponding leading edge, because Machine::step() skips the
+            // pre-ticked VIA's normal tick. This causes PB7 to never toggle,
+            // breaking games like Planetoid and Snapper that poll PB7.
             if (is_system_via || is_user_via) {
                 via_pre_tick_mask_ = is_system_via ? kPreTickSystemVia : kPreTickUserVia;
-                for (uint8_t i = 0; i < stretch_count_; ++i) {
-                    bool is_rising = ((current_cycle_ + 1 + i) & 1) != 0;
+                for (uint8_t i = 0; i <= stretch_count_; ++i) {
+                    bool is_rising = ((current_cycle_ + i) & 1) != 0;
                     if (is_system_via) {
                         if (is_rising) memory.system_via.tick_rising();
                         else memory.system_via.tick_falling();
