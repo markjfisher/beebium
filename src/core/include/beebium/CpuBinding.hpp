@@ -84,6 +84,13 @@ public:
     const CpuInstructionCallback& instruction_callback() const { return instruction_callback_; }
 
 
+    // Pre-tick tracking: which VIA(s) were pre-ticked during bus stretching.
+    // Only the VIA being accessed is pre-ticked; the other VIA must continue
+    // ticking normally during the access cycle and stretch cycles.
+    static constexpr uint8_t kPreTickNone      = 0;
+    static constexpr uint8_t kPreTickSystemVia = 1;
+    static constexpr uint8_t kPreTickUserVia   = 2;
+
     // 1MHz bus stretch detection
     // After each cycle, check if the memory access was to a 1MHz peripheral.
     // If so, the Machine should insert additional cycles for bus synchronization.
@@ -92,11 +99,13 @@ public:
     // Get number of stretch cycles used (for Machine to account for extra VIA ticks)
     uint8_t stretch_cycle_count() const { return stretch_count_; }
 
-    // Returns true if VIAs were pre-ticked this cycle (don't tick again in system_clock)
-    bool vias_pre_ticked() const { return vias_pre_ticked_; }
+    // Returns bitmask of which VIAs were pre-ticked (don't tick those again)
+    uint8_t via_pre_tick_mask() const { return via_pre_tick_mask_; }
+    bool system_via_pre_ticked() const { return via_pre_tick_mask_ & kPreTickSystemVia; }
+    bool user_via_pre_ticked() const { return via_pre_tick_mask_ & kPreTickUserVia; }
 
     // Reset the stretch flag after Machine has handled it
-    void clear_stretch() { needs_stretch_ = false; stretch_count_ = 0; vias_pre_ticked_ = false; }
+    void clear_stretch() { needs_stretch_ = false; stretch_count_ = 0; via_pre_tick_mask_ = kPreTickNone; }
 
     // Set current cycle count (called by Machine before each tick)
     void set_current_cycle(uint64_t cycle) { current_cycle_ = cycle; }
@@ -115,14 +124,14 @@ private:
     const std::vector<WatchpointEntry>* watchpoint_entries_ = nullptr;
     const CpuWatchpointHitCallback* on_watchpoint_hit_ = nullptr;
     bool needs_stretch_ = false;
-    bool vias_pre_ticked_ = false;
+    uint8_t via_pre_tick_mask_ = kPreTickNone;
     uint8_t stretch_count_ = 0;
     uint64_t current_cycle_ = 0;
 
     void execute_cycle() {
         // Reset stretch flag at start of each cycle
         needs_stretch_ = false;
-        vias_pre_ticked_ = false;
+        via_pre_tick_mask_ = kPreTickNone;
         stretch_count_ = 0;
 
         // Instruction callback at start of new instruction
@@ -151,7 +160,6 @@ private:
         if (is_1mhz_access(addr)) {
             stretch_count_ = stretch_cycles(current_cycle_);
             needs_stretch_ = true;
-            vias_pre_ticked_ = true;
 
             // Determine which VIA (if any) is being accessed
             const bool is_system_via = (addr >= 0xFE40 && addr <= 0xFE5F);
@@ -159,7 +167,10 @@ private:
 
             // Pre-tick only the VIA being accessed for synchronization.
             // Other 1MHz devices (CRTC, ACIA) don't need VIA pre-ticking.
+            // Track which VIA was pre-ticked so Machine::step() can continue
+            // ticking the non-accessed VIA during the stretch period.
             if (is_system_via || is_user_via) {
+                via_pre_tick_mask_ = is_system_via ? kPreTickSystemVia : kPreTickUserVia;
                 for (uint8_t i = 0; i < stretch_count_; ++i) {
                     bool is_rising = ((current_cycle_ + 1 + i) & 1) != 0;
                     if (is_system_via) {

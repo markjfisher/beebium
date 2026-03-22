@@ -187,7 +187,7 @@ public:
         // During stretch, CPU is halted. VIAs have already been pre-ticked
         // by CpuBinding before the memory access, so we only tick video here.
         if (stretch_cycles_remaining_ > 0) {
-            tick_video_only();
+            tick_stretch_cycle();
             --stretch_cycles_remaining_;
             ++state_.cycle_count;
             ++sequence_;
@@ -211,9 +211,11 @@ public:
         // This matches jsbeeb where setVBlankInt() is called from video.polltime()
         // and immediately triggers VIA CA1 edge detection on the same cycle.
         if (is_rising) {
-            // Rising edge: VIA only
-            if (!cpu_binding_.vias_pre_ticked()) {
+            // Rising edge: VIA only (skip VIAs that were pre-ticked by CpuBinding)
+            if (!cpu_binding_.system_via_pre_ticked()) {
                 state_.memory.system_via.tick_rising();
+            }
+            if (!cpu_binding_.user_via_pre_ticked()) {
                 state_.memory.user_via.tick_rising();
             }
         } else {
@@ -222,8 +224,11 @@ public:
             if (video_rate == ClockRate::Rate_2MHz || (state_.cycle_count & 1) == 0) {
                 video_binding_.tick_falling();
             }
-            if (!cpu_binding_.vias_pre_ticked()) {
+            // Skip only the VIA that was pre-ticked by CpuBinding
+            if (!cpu_binding_.system_via_pre_ticked()) {
                 state_.memory.system_via.tick_falling();
+            }
+            if (!cpu_binding_.user_via_pre_ticked()) {
                 state_.memory.user_via.tick_falling();
             }
         }
@@ -249,9 +254,11 @@ public:
 
         // Check if the CPU's memory access triggered bus stretching
         if (cpu_binding_.needs_stretch()) {
-            // VIAs were already pre-ticked by CpuBinding for synchronization.
-            // We just need to account for the extra cycles where CPU is halted.
+            // The accessed VIA (if any) was pre-ticked by CpuBinding for
+            // synchronization. During stretch cycles, we must continue ticking
+            // the non-accessed VIA(s) so their timers don't lose cycles.
             stretch_cycles_remaining_ = cpu_binding_.stretch_cycle_count();
+            stretch_via_pre_tick_mask_ = cpu_binding_.via_pre_tick_mask();
             cpu_binding_.clear_stretch();
         }
 
@@ -560,8 +567,11 @@ private:
 
     // 1MHz bus stretch handling
     // When CPU accesses a 1MHz peripheral, we insert extra cycles
-    // where peripherals tick but the CPU doesn't
+    // where peripherals tick but the CPU doesn't.
+    // stretch_via_pre_tick_mask_ records which VIA(s) were pre-ticked
+    // by CpuBinding so we can continue ticking the others during stretch.
     uint8_t stretch_cycles_remaining_ = 0;
+    uint8_t stretch_via_pre_tick_mask_ = 0;
 
     SystemClockType make_system_clock() {
         return make_clock(
@@ -572,20 +582,35 @@ private:
         );
     }
 
-    // Tick video only during stretch cycles.
-    // VIAs have already been pre-ticked by CpuBinding for 1MHz synchronization.
-    // CPU is halted waiting for bus alignment.
-    void tick_video_only() {
+    // Tick peripherals during stretch cycles.
+    // The accessed VIA (if any) was pre-ticked by CpuBinding for 1MHz
+    // synchronization. Non-accessed VIAs must continue ticking so their
+    // timers don't lose cycles. CPU is halted waiting for bus alignment.
+    void tick_stretch_cycle() {
         const uint64_t cycle = state_.cycle_count;
         const bool is_rising = (cycle & 1) != 0;
 
-        // Video ticks on falling edges only (ClockEdge::Falling)
-        // Rate depends on current mode (1MHz for teletext, 2MHz for bitmap)
-        if (!is_rising) {
+        if (is_rising) {
+            // Tick VIAs that were NOT pre-ticked
+            if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickSystemVia)) {
+                state_.memory.system_via.tick_rising();
+            }
+            if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickUserVia)) {
+                state_.memory.user_via.tick_rising();
+            }
+        } else {
+            // Video ticks on falling edges only (ClockEdge::Falling)
+            // Rate depends on current mode (1MHz for teletext, 2MHz for bitmap)
             const auto video_rate = video_binding_.clock_rate();
-            // 2MHz: tick every falling edge; 1MHz: tick on even falling edges only
             if (video_rate == ClockRate::Rate_2MHz || (cycle & 1) == 0) {
                 video_binding_.tick_falling();
+            }
+            // Tick VIAs that were NOT pre-ticked
+            if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickSystemVia)) {
+                state_.memory.system_via.tick_falling();
+            }
+            if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickUserVia)) {
+                state_.memory.user_via.tick_falling();
             }
         }
     }

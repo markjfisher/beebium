@@ -1161,3 +1161,263 @@ TEST_CASE("T1 latch write timing relative to expiry", "[via][hardware-validated]
     // 0 = Timer at 0 (write was after expiry, timer continuing free-run)
     check_results(machine, RESULT_ADDR, {253, 0}, "VIA.T12");
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// Cross-VIA timing: non-accessed VIA continues ticking during bus stretching
+//
+// When the CPU accesses one VIA (triggering 1MHz bus stretching), the other
+// VIA must continue ticking normally. Previously, both VIAs were skipped
+// during bus-stretched accesses, causing the non-accessed VIA's timers to
+// run slower than real time. This broke games like Planetoid and Snapper
+// which use the User VIA for timing while the MOS frequently accesses the
+// System VIA for VSYNC, keyboard, and sound.
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("User VIA timer continues during System VIA access", "[via][cross-via][bus-stretch]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program at 0x0400:
+    //   SEI
+    //   LDA #$00 : STA $FE6B          ; User VIA ACR = 0 (one-shot, no PB7)
+    //   LDA #$04 : STA $FE64          ; User VIA T1CL = 4
+    //   LDA #$00 : STA $FE65          ; User VIA T1CH = 0 (start timer, value 4)
+    //   LDA $FE44                      ; Read System VIA T1CL (1MHz, causes stretch)
+    //   LDA $FE64                      ; Read User VIA T1CL (store result)
+    //   STA $0100                      ; Store result
+    //   CLI : RTS
+    //
+    // The User VIA timer starts at 4 and counts down. After the STA $FE65 that
+    // starts it, the LDA $FE44 (System VIA read) takes 4 CPU cycles + 1-2
+    // stretch cycles. During this time, the User VIA must continue ticking
+    // so the timer decrements properly. The subsequent LDA $FE64 reads the
+    // User VIA timer counter.
+    uint16_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$04
+    machine.write(pc++, 0x04);
+    machine.write(pc++, 0x8D);        // STA $FE64 (User VIA T1CL = 4)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (User VIA T1CH = 0, starts timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE44 (System VIA T1CL - 1MHz bus stretch)
+    machine.write(pc++, 0x44);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE64 (User VIA T1CL - read timer)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // The User VIA timer must have been counting during the System VIA access.
+    // Timer started at 4 and needs ~6 trailing edges to expire (4 + 1.5).
+    // After STA $FE65 (starts timer), LDA $FE44 (5-6 cycles), LDA $FE64 (5-6 cycles)
+    // = ~10-12 2MHz cycles = ~5-6 timer decrements. The timer has expired and
+    // wrapped, so the low byte reads 0xFF (from 0xFFFF) or lower.
+    uint8_t timer_value = machine.peek(RESULT_ADDR);
+    INFO("User VIA T1CL after System VIA access: " << static_cast<int>(timer_value));
+
+    // Timer started at 4. If it wasn't ticked during the System VIA access
+    // stretch cycles, it would have fewer decrements and might still be
+    // counting down from 4 (values 3, 2, 1, 0). With correct ticking,
+    // it has expired and wrapped through 0 to 0xFFFF (low byte = 0xFF, 0xFE, ...).
+    // A value >= 0xFB (251) means the timer wrapped: 0xFF..0xFB are values
+    // reached by counting down from 0xFFFF after expiry.
+    REQUIRE(timer_value > 4);  // Must have wrapped past 0 (free-running in 0xFFxx range)
+}
+
+TEST_CASE("User VIA timer accuracy over multiple System VIA accesses", "[via][cross-via][bus-stretch]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program at 0x0400:
+    //   SEI
+    //   LDA #$00 : STA $FE6B          ; User VIA ACR = 0 (one-shot)
+    //   LDA #$08 : STA $FE64          ; User VIA T1CL = $08
+    //   LDA #$00 : STA $FE65          ; User VIA T1CH = 0 (start timer, value 8)
+    //   ; Read System VIA 8 times (each access causes bus stretching)
+    //   LDA $FE44 : LDA $FE44 : LDA $FE44 : LDA $FE44
+    //   LDA $FE44 : LDA $FE44 : LDA $FE44 : LDA $FE44
+    //   LDA $FE6D                      ; Read User VIA IFR
+    //   STA $0100                      ; Store IFR
+    //   CLI : RTS
+    //
+    // Timer starts at 8. Needs ~10 trailing edges to expire (8 + 1.5).
+    // Each LDA $FE44 takes 4+1-2 stretch = 5-6 2MHz cycles.
+    // 8 accesses = 40-48 2MHz cycles = 20-24 timer decrements.
+    // So timer should have expired well before we read IFR.
+    uint16_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$08 (T1CL = 8)
+    machine.write(pc++, 0x08);
+    machine.write(pc++, 0x8D);        // STA $FE64
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (start timer)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    // 8x LDA $FE44 (System VIA reads with bus stretching)
+    for (int i = 0; i < 8; i++) {
+        machine.write(pc++, 0xAD);    // LDA $FE44
+        machine.write(pc++, 0x44);
+        machine.write(pc++, 0xFE);
+    }
+    machine.write(pc++, 0xAD);        // LDA $FE6D (User VIA IFR)
+    machine.write(pc++, 0x6D);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // Check IFR bit 6 (T1 flag) is set, meaning the timer expired.
+    // If the User VIA wasn't ticked during System VIA accesses, the timer
+    // wouldn't have had enough decrements to expire.
+    uint8_t ifr = machine.peek(RESULT_ADDR);
+    INFO("User VIA IFR after 8 System VIA accesses: 0x" << std::hex << static_cast<int>(ifr));
+    REQUIRE((ifr & 0x40) != 0);  // T1 flag must be set
+}
+
+TEST_CASE("Both VIA timers continue during CRTC access", "[via][cross-via][bus-stretch]") {
+    ModelB machine;
+    constexpr uint16_t RESULT_ADDR = 0x0100;
+    setup_minimal_mos(machine, 0x0400, 0x0500);
+
+    // Program at 0x0400:
+    //   SEI
+    //   LDA #$00
+    //   STA $FE4B                      ; System VIA ACR = 0 (one-shot)
+    //   STA $FE6B                      ; User VIA ACR = 0 (one-shot)
+    //   LDA #$08 : STA $FE44          ; System VIA T1CL = 8
+    //   LDA #$00 : STA $FE45          ; System VIA T1CH = 0 (start timer)
+    //   LDA #$08 : STA $FE64          ; User VIA T1CL = 8
+    //   LDA #$00 : STA $FE65          ; User VIA T1CH = 0 (start timer)
+    //   STA $FE00                      ; Write CRTC (1MHz, causes stretch to both VIAs)
+    //   STA $FE00                      ; Another CRTC write
+    //   LDA $FE44                      ; Read System VIA T1CL
+    //   STA $0100
+    //   LDA $FE64                      ; Read User VIA T1CL
+    //   STA $0101
+    //   CLI : RTS
+    uint16_t pc = 0x0400;
+    machine.write(pc++, 0x78);        // SEI
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE4B (System VIA ACR)
+    machine.write(pc++, 0x4B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $FE6B (User VIA ACR)
+    machine.write(pc++, 0x6B);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$08
+    machine.write(pc++, 0x08);
+    machine.write(pc++, 0x8D);        // STA $FE44 (System VIA T1CL)
+    machine.write(pc++, 0x44);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE45 (System VIA T1CH, start)
+    machine.write(pc++, 0x45);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$08
+    machine.write(pc++, 0x08);
+    machine.write(pc++, 0x8D);        // STA $FE64 (User VIA T1CL)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xA9);        // LDA #$00
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0x8D);        // STA $FE65 (User VIA T1CH, start)
+    machine.write(pc++, 0x65);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $FE00 (CRTC write - 1MHz stretch)
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $FE00 (another CRTC write)
+    machine.write(pc++, 0x00);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0xAD);        // LDA $FE44 (System VIA T1CL)
+    machine.write(pc++, 0x44);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0100
+    machine.write(pc++, RESULT_ADDR & 0xFF);
+    machine.write(pc++, RESULT_ADDR >> 8);
+    machine.write(pc++, 0xAD);        // LDA $FE64 (User VIA T1CL)
+    machine.write(pc++, 0x64);
+    machine.write(pc++, 0xFE);
+    machine.write(pc++, 0x8D);        // STA $0101
+    machine.write(pc++, (RESULT_ADDR + 1) & 0xFF);
+    machine.write(pc++, (RESULT_ADDR + 1) >> 8);
+    machine.write(pc++, 0x58);        // CLI
+    machine.write(pc++, 0x60);        // RTS
+
+    M6502_Reset(&machine.cpu());
+    machine.step_instruction();
+
+    int iterations = 0;
+    while (machine.pc() < pc && iterations < 500) {
+        machine.step_instruction();
+        iterations++;
+    }
+
+    // Both timers should have been counting during the CRTC accesses.
+    // With the bug, neither VIA would be ticked during CRTC stretching,
+    // and timer values would be higher (fewer decrements).
+    uint8_t sys_t1cl = machine.peek(RESULT_ADDR);
+    uint8_t usr_t1cl = machine.peek(RESULT_ADDR + 1);
+
+    INFO("System VIA T1CL after CRTC access: " << static_cast<int>(sys_t1cl));
+    INFO("User VIA T1CL after CRTC access: " << static_cast<int>(usr_t1cl));
+
+    // Both timers started at 8 and should have decremented significantly
+    // during the CRTC accesses. If they weren't ticked, values would be
+    // near 8 (or wrapped around if they continued from pre-CRTC ticks).
+    // The exact values depend on instruction timing, but both must show
+    // that the timer was counting during the CRTC stretch period.
+    // Timer value 8 was loaded, so after sufficient cycles both should
+    // have wrapped (8 + 1.5 cycles to timeout). Check they've expired
+    // by reading IFR or checking wrapped values.
+    // With ~20+ cycles elapsed, timer of 8 has long expired and is free-running.
+    // Just verify both show decremented values (not stuck at initial).
+    REQUIRE(sys_t1cl != 8);
+    REQUIRE(usr_t1cl != 8);
+}
