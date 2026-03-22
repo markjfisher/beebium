@@ -66,15 +66,18 @@ Each device declares its clock requirements via static members:
 ```cpp
 class Via6522 {
 public:
-    // 1MHz peripheral clock, falling edge only
-    static constexpr ClockEdge clock_edges = ClockEdge::Falling;
-    static constexpr ClockRate clock_rate = ClockRate::Rate_1MHz;
+    // Both edges of the 2MHz clock (leading and trailing of 1MHz PHI2)
+    static constexpr ClockEdge clock_edges = ClockEdge::Both;
+    static constexpr ClockRate clock_rate = ClockRate::Rate_2MHz;
 
-    void tick_falling();  // Called on each falling edge
+    void tick_rising();   // PHI2 leading edge (update_phi2_leading_edge)
+    void tick_falling();  // PHI2 trailing edge (update_phi2_trailing_edge)
 };
 ```
 
-The `Machine::step()` method dispatches clock ticks to devices based on these declarations.
+The CRTC has a **dynamic** clock rate: 1 MHz in Mode 7 (teletext) and 2 MHz in bitmap modes 0-6. The Video ULA control register determines the rate. `Machine::step()` ticks the video binding on both rising and falling edges when the character clock is 2 MHz, and on falling edges only when it is 1 MHz.
+
+`Machine::step()` dispatches clock ticks to devices based on these declarations.
 
 ## 1MHz Bus Stretching
 
@@ -112,8 +115,8 @@ CPU cycle N: Instruction reaches memory access phase
 
 During extra cycles:
   - CPU is halted (no new cycles execute)
-  - 1MHz peripherals continue to tick
-  - Video continues to tick
+  - Both VIAs continue to tick (except the VIA being accessed, which was pre-ticked)
+  - Video continues to tick (at 1MHz or 2MHz depending on the current display mode)
 ```
 
 ### Implementation
@@ -121,9 +124,9 @@ During extra cycles:
 Bus stretching is implemented in `CpuBinding`:
 
 1. After the CPU executes a cycle, the accessed address is checked
-2. If it's a 1MHz address, VIAs are pre-ticked for the stretch amount
-3. The memory access then completes
-4. Machine accounts for the stretch cycles (halting CPU, ticking video only)
+2. If it's a 1MHz VIA address, that specific VIA is pre-ticked for the stretch amount (including the current cycle)
+3. The memory access then completes (seeing the VIA state at the 1MHz clock edge)
+4. Machine accounts for the stretch cycles (halting CPU, ticking video and non-pre-ticked VIAs)
 
 This "Option B" approach (pre-tick before access) ensures the CPU reads see the correct peripheral state after synchronization, matching real hardware behavior.
 

@@ -133,11 +133,19 @@ Double-buffered with mutex-protected swap. Core writes to front buffer; clients 
 
 ## Integration
 
-Video output is optional. Call `ModelBHardware::enable_video_output()` to activate. The `tick_peripherals()` method clocks video hardware when enabled, pushing batches to the queue.
+Video output is optional. Call `ModelBHardware::enable_video_output()` to activate.
 
-### ModelBHardware::tick_video()
+### Clock Rate
 
-The video pipeline is driven by `tick_video()`, called from `tick_peripherals()` at either 1MHz or 2MHz depending on the VideoULA's clock rate setting:
+The CRTC character clock rate depends on the current display mode:
+- **Mode 7 (teletext)**: 1 MHz character clock. The CRTC ticks on falling edges only (every other 2 MHz cycle).
+- **Modes 0-6 (bitmap)**: 2 MHz character clock. The CRTC ticks on both rising and falling edges (every 2 MHz cycle).
+
+The Video ULA's control register determines the rate (`fast_clock` bit). `Machine::step()` reads this via `VideoBinding::clock_rate()` and ticks the video binding accordingly. Getting this wrong halves the VSYNC frequency in bitmap modes (25 Hz instead of 50 Hz).
+
+### Video Pipeline
+
+The video pipeline is driven by `VideoBinding::tick_falling()`, called from `Machine::step()` at the appropriate rate:
 
 ```cpp
 void tick_video() {
