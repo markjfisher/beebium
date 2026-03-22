@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "00000000-0000-0000-0000-000000000006",
+  "name": "Planetoid",
+  "characterMapping": true,
+  "synchronizeCapsLock": false,
+  "keyMappings": [
+    {
+      "macOS": { "keyCode": 0 },
+      "bbc": { "keyName": "A", "action": "Up" }
+    },
+    {
+      "macOS": { "keyCode": 6 },
+      "bbc": { "keyName": "Z", "action": "Down" }
+    },
+    {
+      "macOS": { "keyCode": 49 },
+      "bbc": { "keyName": "Space", "action": "Reverse" }
+    },
+    {
+      "macOS": { "keyCode": 56 },
+      "bbc": { "keyName": "Shift", "action": "Thrust" }
+    },
+    {
+      "macOS": { "keyCode": 60 },
+      "bbc": { "keyName": "Shift" }
+    },
+    {
+      "macOS": { "keyCode": 36 },
+      "bbc": { "keyName": "Return", "action": "Fire" }
+    },
+    {
+      "macOS": { "keyCode": 48 },
+      "bbc": { "keyName": "Tab", "action": "Smart Bomb" }
+    },
+    {
+      "macOS": { "keyCode": 4 },
+      "bbc": { "keyName": "H", "action": "Hyperspace" }
+    },
+    {
+      "macOS": { "keyCode": 111, "option": true },
+      "bbc": { "keyName": "Break", "disabled": false }
+    }
+  ]
+}
