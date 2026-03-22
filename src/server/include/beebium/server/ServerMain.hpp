@@ -1362,6 +1362,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
     auto last_stats_time = std::chrono::steady_clock::now();
     uint64_t last_cycle_count = machine.cycle_count();
+    // Reset VSYNC edge counter for frequency measurement
+    machine.memory().system_via_peripheral.consume_vsync_rising_edges();
     while (g_running) {
         // Check for pending SIGINT/SIGTERM and dispatch shutdown callback.
         // The signal handler only sets an atomic flag (async-signal-safe);
@@ -1396,12 +1398,15 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                 double elapsed_secs = std::chrono::duration<double>(now - last_stats_time).count();
                 double actual_hz = static_cast<double>(cycles_delta) / elapsed_secs;
                 double target_hz = static_cast<double>(Memory::default_pacing_config().base_clock_hz);
+                uint32_t vsync_edges = machine.memory().system_via_peripheral.consume_vsync_rising_edges();
+                double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
                 std::cerr << "Pacing: "
                           << std::fixed << std::setprecision(3)
                           << (actual_hz / 1e6) << " MHz"
                           << " (target " << (target_hz / 1e6) << " MHz, "
                           << std::setprecision(1)
                           << (100.0 * actual_hz / target_hz) << "%)"
+                          << " | vsync " << std::setprecision(1) << vsync_hz << " Hz"
                           << " | skipped " << stats.ticks_skipped
                           << " | margin " << std::setprecision(0)
                           << stats.safety_margin_us << " us"

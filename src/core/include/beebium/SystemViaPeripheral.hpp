@@ -230,6 +230,7 @@ public:
 
     // Set VSYNC state (called by video hardware)
     void set_vsync(bool active) {
+        if (active && !vsync_) ++vsync_rising_edges_;
         vsync_ = active;
     }
 
@@ -319,6 +320,15 @@ private:
     uint8_t port_a_full_output_ = 0; // Full 8-bit Port A output (for sound chip strobe)
     uint8_t auto_scan_column_ = 0;   // Hardware auto-scan column counter (0-15)
     bool vsync_ = false;
+    uint32_t vsync_rising_edges_ = 0;
+public:
+    /// Read and reset VSYNC edge counter (for diagnostics).
+    uint32_t consume_vsync_rising_edges() {
+        uint32_t count = vsync_rising_edges_;
+        vsync_rising_edges_ = 0;
+        return count;
+    }
+private:
 
     // Indicator integration (optional)
     Indicators* indicators_ = nullptr;
