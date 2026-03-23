@@ -184,8 +184,19 @@ public:
         // Reset Y when first displayed scanline is reached (display enable rising edge)
         // This positions content correctly regardless of CRTC VSYNC timing variations.
         // Capture the pre-reset y_ as the top border (scanlines before display).
+        //
+        // Use the minimum of current and previous top_border to prevent shimmer from
+        // interlace field-length alternation. When the CRTC dummy raster adds one
+        // extra blanking scanline on even fields, the distance from VSYNC to display
+        // alternates by 1. Taking the minimum stabilizes the value.
         if (display && !was_displaying_) {
-            top_border_ = y_;  // Scanlines from VSYNC to first display line
+            size_t candidate = y_;
+            if (prev_top_border_ > 0 && candidate > prev_top_border_) {
+                top_border_ = prev_top_border_;  // Use shorter (stable) value
+            } else {
+                top_border_ = candidate;
+            }
+            prev_top_border_ = candidate;
             y_ = 0;  // First visible scanline in this field
             was_displaying_ = true;
         }
@@ -268,11 +279,13 @@ public:
         max_x_written_ = 0;
         max_y_written_ = 0;
         top_border_ = 0;
+        prev_top_border_ = 0;
         left_border_ = 0;
         line_pixel_count_ = 0;
         max_line_pixels_ = 0;
         frame_scanline_count_ = 0;
         max_frame_scanlines_ = 0;
+        prev_max_frame_scanlines_ = 0;
         blanking_count_ = 0;
         scanline_pixel_widths_.fill(0);
     }
@@ -319,9 +332,14 @@ private:
 
         // bottom_border = total_scanlines - top_border - displayed_height
         // In interlace mode, max_frame_scanlines_ is per-field, frame_height is composited
+        //
+        // Use the maximum of current and previous frame's scanline count to prevent
+        // shimmer from interlace field-length alternation (dummy raster adds 1 scanline
+        // on alternating fields). The rolling max stabilizes after 2 frames.
+        size_t stable_frame_scanlines = std::max(max_frame_scanlines_, prev_max_frame_scanlines_);
         size_t displayed_scanlines = in_interlace_mode_ ? frame_height / 2 : frame_height;
-        if (max_frame_scanlines_ > top_border_ + displayed_scanlines) {
-            meta.bottom_border = static_cast<uint32_t>(max_frame_scanlines_ - top_border_ - displayed_scanlines);
+        if (stable_frame_scanlines > top_border_ + displayed_scanlines) {
+            meta.bottom_border = static_cast<uint32_t>(stable_frame_scanlines - top_border_ - displayed_scanlines);
         }
 
         // Compress per-scanline pixel widths into contiguous regions
@@ -370,6 +388,7 @@ private:
         max_x_written_ = 0;
         max_y_written_ = 0;
         max_line_pixels_ = 0;
+        prev_max_frame_scanlines_ = max_frame_scanlines_;
         max_frame_scanlines_ = 0;
     }
 
@@ -404,14 +423,16 @@ private:
     size_t max_y_written_ = 0;
 
     // Track border dimensions (blanking before active area)
-    size_t top_border_ = 0;     // Scanlines from VSYNC to first display
-    size_t left_border_ = 0;    // Pixels from HSYNC to first display
+    size_t top_border_ = 0;          // Scanlines from VSYNC to first display
+    size_t prev_top_border_ = 0;     // Previous field's top border (for stabilization)
+    size_t left_border_ = 0;         // Pixels from HSYNC to first display
 
     // Track total line/frame dimensions (including blanking)
     size_t line_pixel_count_ = 0;      // All batches this line (reset at HSYNC)
     size_t max_line_pixels_ = 0;       // Maximum line width seen this frame
     size_t frame_scanline_count_ = 0;  // All scanlines this frame (reset at VSYNC)
-    size_t max_frame_scanlines_ = 0;   // Maximum frame height seen
+    size_t max_frame_scanlines_ = 0;        // Maximum frame height seen this frame
+    size_t prev_max_frame_scanlines_ = 0;   // Previous frame's max (for rolling max)
 
     // Blanking tracking for left border calculation
     size_t blanking_count_ = 0;        // Blanking batches since HSYNC

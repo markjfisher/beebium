@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -33,6 +33,15 @@ class VideoConfig:
     framerate_hz: int
 
 
+@dataclass(frozen=True)
+class DisplayRegion:
+    """A display region within a frame (for split-screen modes)."""
+
+    start_line: int
+    end_line: int
+    pixel_width: int
+
+
 @dataclass
 class Frame:
     """A video frame."""
@@ -42,6 +51,22 @@ class Frame:
     width: int
     height: int
     pixels: bytes  # BGRA32 format
+
+    # Border/overscan dimensions
+    left_border: int = 0
+    right_border: int = 0
+    top_border: int = 0
+    bottom_border: int = 0
+
+    # Display scaling
+    display_width: int = 0
+    display_height: int = 0
+
+    # Field order: 0=PROGRESSIVE, 1=EVEN_FIRST, 2=ODD_FIRST
+    field_order: int = 0
+
+    # Per-region geometry for split-screen modes
+    regions: tuple[DisplayRegion, ...] = ()
 
     def to_pil_image(self):
         """Convert to PIL Image (requires Pillow).
@@ -176,12 +201,30 @@ class Video:
 
         count = 0
         for proto_frame in response:
+            regions = ()
+            if hasattr(proto_frame, 'regions'):
+                regions = tuple(
+                    DisplayRegion(
+                        start_line=r.start_line,
+                        end_line=r.end_line,
+                        pixel_width=r.pixel_width,
+                    )
+                    for r in proto_frame.regions
+                )
             frame = Frame(
                 frame_number=proto_frame.frame_number,
                 cycle_count=proto_frame.cycle_count,
                 width=proto_frame.width,
                 height=proto_frame.height,
                 pixels=proto_frame.pixels,
+                left_border=proto_frame.left_border,
+                right_border=proto_frame.right_border,
+                top_border=proto_frame.top_border,
+                bottom_border=proto_frame.bottom_border,
+                display_width=proto_frame.display_width,
+                display_height=proto_frame.display_height,
+                field_order=proto_frame.field_order,
+                regions=regions,
             )
             if callback:
                 callback(frame)
