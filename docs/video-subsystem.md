@@ -27,6 +27,14 @@ Generates timing signals and memory addresses. Produces `Output` struct with:
 - Raster counter (scanline within character row)
 - Interlace and field state
 
+**Interlace dummy raster:**
+
+When interlace sync is enabled (R8 bit 0 = 1), the CRTC inserts an extra "dummy raster" scanline on alternating fields. This produces 312/313 scanline field alternation (averaging 312.5 = exactly 50Hz PAL). Without the dummy raster, both fields would be 312 scanlines (50.08Hz), causing timer-based split-screen effects like Revs' palette switching to drift visibly.
+
+The dummy raster is a non-displayed scanline (`v_display=false`) inserted between the end of vertical adjust (or end of vertical total when R5=0) and the frame restart. It is triggered by the `in_dummy_raster_` state when `is_interlace_sync() && do_even_frame_logic_` is true. This matches B2's `in_dummy_raster` mechanism (`crtc.cpp:364-366`).
+
+The half-scanline VSYNC offset (from `is_vsync_point()`) and the dummy raster combine so that VSYNC-to-VSYNC periods are constant at 20,000 character clocks (312.5 scanlines), even though individual fields alternate between 312 and 313 scanlines.
+
 **Edge cases tested (from beebjit):**
 - VSYNC width 0 = 16 scanlines (per Hitachi 6845 datasheet)
 - R6=0 quirk: first scanline still displays before v_display clears
@@ -35,6 +43,8 @@ Generates timing signals and memory addresses. Produces `Output` struct with:
 - Small R0 values and frame boundary recovery
 - Mid-scanline R6/R7 register changes
 - 1MHz/2MHz clock speed switching
+- Interlace dummy raster produces constant VSYNC period with R8=1 and R8=3
+- Non-interlace (R8=0) produces constant frame length with no dummy raster
 
 ### VideoUla
 
@@ -122,6 +132,10 @@ Consumes queue, tracks raster position, writes BGRA32 pixels to framebuffer. Swa
   - `right_border`: Total line width minus left border minus displayed width
   - `top_border`: Scanlines from VSYNC to first display enable
   - `bottom_border`: Total frame height minus top border minus displayed height
+
+- **Border stabilization for interlace field alternation**: The interlace dummy raster adds one extra blanking scanline on alternating fields, which would cause `top_border` and `bottom_border` to oscillate by 1 each frame, shifting the display vertically in the client. Two stabilization mechanisms prevent this:
+  - `top_border` uses the minimum of the current and previous field's value (`prev_top_border_`), absorbing the extra blanking scanline from the dummy raster.
+  - `bottom_border` uses a rolling maximum of `max_frame_scanlines_` across two consecutive frames (`prev_max_frame_scanlines_`), so the longer field sets the stable value. Both stabilizations settle within 2 frames and track mode changes correctly.
 
 - **Interlace support**: Detects interlace mode via `VIDEO_FLAG_INTERLACE`, composites both fields into a single framebuffer (even field → even lines, odd field → odd lines), swaps buffers every other VSYNC.
 
@@ -246,6 +260,7 @@ The SAA5050 requires specific timing signals derived from CRTC output:
 
 **Implemented:**
 - CRTC 6845 timing and address generation (including interlace mode)
+- Interlace dummy raster for correct 312/313 field alternation (R8 bit 0)
 - VideoULA mode detection and palette
 - SAA5050 teletext character generator (complete):
   - All 96 printable characters with pre-computed antialiased font
@@ -258,6 +273,7 @@ The SAA5050 requires specific timing signals derived from CRTC output:
   - Gamma-corrected 6→8 pixel blending (B2-quality rendering)
 - FrameBuffer double-buffering with metadata
 - FrameRenderer with display-enable positioning and border tracking
+- Border stabilization for interlace field alternation (top and bottom)
 - Dynamic frame dimensions (adapts to mode changes)
 - Full border calculation (left, right, top, bottom)
 - Interlace field compositing for Mode 7
@@ -510,21 +526,34 @@ All screen modes display at the same physical CRT size, but vary in:
 
 ### Interlace vs Non-Interlace
 
-| Mode Type | CRTC R8 | Scanlines | Fields | Frame Swap |
-|-----------|---------|-----------|--------|------------|
-| MODE 0-6 (bitmap) | 0x00 | 256 | 1 (progressive) | Every VSYNC |
-| MODE 7 (teletext) | 0x03 | ~500 | 2 (interlaced) | Every 2nd VSYNC |
+| Mode Type | CRTC R8 | Scanlines/Field | Field Alternation | Frame Swap |
+|-----------|---------|-----------------|-------------------|------------|
+| MODE 0-6 (bitmap) | 0x00 | 312 | None (progressive) | Every VSYNC |
+| Custom (e.g., Revs) | 0x01 | 312/313 | Interlace sync timing only | Every VSYNC |
+| MODE 7 (teletext) | 0x03 | 312/313 | Interlace sync + video | Every 2nd VSYNC |
 
-**Interlaced mode (MODE 7):**
-- Two fields per frame: even lines in field 1, odd lines in field 2
-- 25 character rows × 10 scanlines = 250 lines per field
-- 250 × 2 = 500 total scanlines composited into framebuffer
-- VSYNC occurs twice per frame; buffer swap on every other VSYNC
-
-**Non-interlaced modes (MODE 0-6):**
+**Non-interlaced modes (MODE 0-6, R8=0x00):**
 - Single field per frame with sequential scanlines
-- 32 character rows × 8 scanlines = 256 lines
+- 32 character rows × 8 scanlines = 256 displayed, 312 total per frame
 - VSYNC occurs once per frame; buffer swap on every VSYNC
+- No dummy raster; constant frame length
+
+**Interlace sync only (R8=0x01):**
+- Used by custom screen modes like Revs for precise frame timing
+- Display is progressive (no raster doubling or field interleaving)
+- Dummy raster adds one extra scanline on alternating fields: 312/313
+- VSYNC has half-scanline offset on even fields (from `is_vsync_point()`)
+- The offset and dummy raster combine to produce constant 20,000 character clock VSYNC-to-VSYNC periods (312.5 scanlines average = exactly 50Hz)
+- Timer-based split-screen effects rely on this exact frame period
+- Buffer swap on every VSYNC (same as non-interlace)
+
+**Interlace sync and video (MODE 7, R8=0x03):**
+- Two fields per frame: even lines in field 1, odd lines in field 2
+- 25 character rows × 10 scanlines = 250 displayed lines per field
+- Dummy raster produces 312/313 scanline field alternation (same as R8=1)
+- Raster counter increments by 2 and comparison is halved (raster doubling)
+- VSYNC occurs twice per frame; buffer swap on every other VSYNC
+- 250 × 2 = 500 total scanlines composited into framebuffer
 
 ### Line-Doubling
 
@@ -614,19 +643,29 @@ message Frame {
 
 ### Interlace State Tracking
 
-The `FrameRenderer` tracks interlace state from the CRTC:
+The CRTC supports three interlace modes via R8:
+
+| R8 Value | Mode | CRTC Behaviour | Renderer Behaviour |
+|----------|------|----------------|--------------------|
+| 0x00 | Non-interlace | Constant 312 scanline frames | Progressive, swap every VSYNC |
+| 0x01 | Interlace sync | Dummy raster, half-scanline VSYNC offset | Progressive, swap every VSYNC |
+| 0x03 | Interlace sync + video | Dummy raster, VSYNC offset, raster doubling | Field compositing, swap every 2 VSYNCs |
+
+The `VIDEO_FLAG_INTERLACE` flag in PixelBatch reflects `interlace_sync_and_video()` (R8 bits 0+1 = 3), which is only true for Mode 7. The renderer uses this to decide between progressive rendering and field compositing:
 
 ```cpp
-// VIDEO_FLAG_INTERLACE comes from CRTC R8 register
 in_interlace_mode_ = interlace;  // Updated each frame, not sticky
 ```
 
+With R8=1 (interlace sync only, as used by Revs), the display is progressive but the CRTC produces alternating 312/313 scanline fields via the dummy raster. The renderer treats this as progressive (frame swap every VSYNC) but uses border stabilization to prevent the alternating field lengths from causing display shimmer.
+
 This correctly handles:
 - MODE 7 boot → MODE 0 switch (interlace turns off)
+- MODE 7 → Revs custom mode (R8=1, interlace sync without video)
 - `*TV` command changing interlace settings
 - Direct CRTC programming via VDU 23
 
-The interlace flag is passed through to clients via `field_order` in the Frame message
+The interlace flag is passed through to clients via `field_order` in the Frame message.
 
 # Ideas
 
