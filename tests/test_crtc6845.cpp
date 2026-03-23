@@ -26,6 +26,8 @@
 
 #include <beebium/devices/Crtc6845.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <set>
+#include <vector>
 
 using namespace beebium;
 
@@ -1581,4 +1583,140 @@ TEST_CASE("Crtc6845 jsbeeb: light pen edge detection", "[crtc6845][jsbeeb][phase
     // Should have new address
     REQUIRE(third_capture == (addr_before_retrigger & 0x3FFF));
     REQUIRE(third_capture != first_capture);
+}
+
+
+// ============================================================================
+// Interlace dummy raster tests
+// ============================================================================
+
+// Helper: count character clocks per frame by detecting VSYNC falling edges.
+// Returns the number of ticks between two consecutive VSYNC falling edges.
+static int measure_frame_period(Crtc6845& crtc) {
+    // Ensure we're outside VSYNC
+    for (int i = 0; i < 100000; ++i) {
+        auto out = crtc.tick();
+        if (out.vsync == 0) break;
+    }
+    // Wait for VSYNC to go active
+    for (int i = 0; i < 100000; ++i) {
+        auto out = crtc.tick();
+        if (out.vsync == 1) break;
+    }
+    // Wait for VSYNC falling edge
+    for (int i = 0; i < 100000; ++i) {
+        auto out = crtc.tick();
+        if (out.vsync == 0) break;
+    }
+
+    // Now count ticks until the next VSYNC falling edge
+    int count = 0;
+    // Wait for VSYNC to go active
+    for (int i = 0; i < 100000; ++i) {
+        crtc.tick();
+        ++count;
+        if (crtc.in_vsync()) break;
+    }
+    // Wait for VSYNC to go inactive
+    for (int i = 0; i < 100000; ++i) {
+        crtc.tick();
+        ++count;
+        if (!crtc.in_vsync()) break;
+    }
+    return count;
+}
+
+// Helper: set up Revs-style registers (Mode 5 based with R8=1)
+static void setup_revs_timing(Crtc6845& crtc) {
+    crtc.write(0, 0);  crtc.write(1, 63);   // R0: 64 chars per line
+    crtc.write(0, 1);  crtc.write(1, 40);   // R1: 40 displayed
+    crtc.write(0, 2);  crtc.write(1, 49);   // R2: HSYNC pos
+    crtc.write(0, 3);  crtc.write(1, 0x24); // R3: HSYNC=4, VSYNC=2
+    crtc.write(0, 4);  crtc.write(1, 38);   // R4: 39 rows
+    crtc.write(0, 5);  crtc.write(1, 0);    // R5: no vertical adjust
+    crtc.write(0, 6);  crtc.write(1, 26);   // R6: 26 displayed
+    crtc.write(0, 7);  crtc.write(1, 32);   // R7: VSYNC at row 32
+    crtc.write(0, 8);  crtc.write(1, 1);    // R8: interlace sync only
+    crtc.write(0, 9);  crtc.write(1, 7);    // R9: 8 scanlines per row
+}
+
+// Helper: set up standard Mode 5 registers (no interlace)
+static void setup_mode5_timing(Crtc6845& crtc) {
+    crtc.write(0, 0);  crtc.write(1, 63);   // R0: 64 chars per line
+    crtc.write(0, 1);  crtc.write(1, 40);   // R1: 40 displayed
+    crtc.write(0, 2);  crtc.write(1, 49);   // R2: HSYNC pos
+    crtc.write(0, 3);  crtc.write(1, 0x24); // R3: HSYNC=4, VSYNC=2
+    crtc.write(0, 4);  crtc.write(1, 38);   // R4: 39 rows
+    crtc.write(0, 5);  crtc.write(1, 0);    // R5: no vertical adjust
+    crtc.write(0, 6);  crtc.write(1, 32);   // R6: 32 displayed
+    crtc.write(0, 7);  crtc.write(1, 34);   // R7: VSYNC at row 34
+    crtc.write(0, 8);  crtc.write(1, 0);    // R8: no interlace
+    crtc.write(0, 9);  crtc.write(1, 7);    // R9: 8 scanlines per row
+}
+
+// With interlace enabled, the dummy raster (extra scanline on even fields)
+// and the half-scanline VSYNC offset combine to produce a constant
+// VSYNC-to-VSYNC period of 312.5 scanlines (20,000 character clocks).
+// Without the dummy raster, the periods alternate between 19,936 and 20,000.
+TEST_CASE("Crtc6845 interlace: constant VSYNC period with R8=1 (Revs timing)",
+          "[crtc6845][interlace]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_revs_timing(crtc);
+
+    std::vector<int> periods;
+    for (int i = 0; i < 10; ++i) {
+        periods.push_back(measure_frame_period(crtc));
+    }
+
+    // All VSYNC-to-VSYNC periods should be identical at 312.5 x 64 = 20,000
+    std::set<int> unique(periods.begin(), periods.end());
+    INFO("Periods found: " << unique.size());
+    for (int p : periods) { INFO("  " << p << " char clocks"); }
+
+    // All VSYNC-to-VSYNC periods should be constant (critical for timer sync)
+    REQUIRE(unique.size() == 1);
+    // 312.5 scanlines x 64 chars = 20,000 (measurement may be off by 1 due to
+    // tick boundary fencepost in measure_frame_period)
+    REQUIRE(std::abs(periods[0] - 20000) <= 1);
+}
+
+TEST_CASE("Crtc6845 interlace: constant VSYNC period with R8=3 (Mode 7 timing)",
+          "[crtc6845][interlace]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode7_interlace_timing(crtc);
+
+    std::vector<int> periods;
+    for (int i = 0; i < 10; ++i) {
+        periods.push_back(measure_frame_period(crtc));
+    }
+
+    // Mode 7: 31 rows x 10 scanlines + 2 vadj = 312
+    // With interlace dummy raster: 312/313 alternating, VSYNC offset balances
+    // All VSYNC-to-VSYNC periods should be constant
+    std::set<int> unique(periods.begin(), periods.end());
+    INFO("Periods found: " << unique.size());
+    for (int p : periods) { INFO("  " << p << " char clocks"); }
+
+    REQUIRE(unique.size() == 1);
+    REQUIRE(std::abs(periods[0] - 20000) <= 65);
+}
+
+TEST_CASE("Crtc6845 non-interlace: constant VSYNC period with R8=0",
+          "[crtc6845][interlace]") {
+    Crtc6845 crtc;
+    crtc.reset();
+    setup_mode5_timing(crtc);
+
+    std::vector<int> periods;
+    for (int i = 0; i < 10; ++i) {
+        periods.push_back(measure_frame_period(crtc));
+    }
+
+    // Non-interlace: all frames are 312 scanlines, no VSYNC offset
+    // All periods should be constant at 312 x 64 = 19,968
+    std::set<int> unique(periods.begin(), periods.end());
+    REQUIRE(unique.size() == 1);
+    REQUIRE(std::abs(periods[0] - 312 * 64) <= 1);
 }

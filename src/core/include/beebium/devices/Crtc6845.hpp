@@ -311,6 +311,7 @@ public:
         v_display_ = true;
         in_vadj_ = false;
         had_vsync_this_row_ = false;
+        in_dummy_raster_ = false;
         field_count_ = 0;
         odd_field_ = true;
         frame_count_ = 0;
@@ -451,11 +452,28 @@ private:
             }
 
             // NORMAL STATE: Standard frame end detection
+
+            // Interlace dummy raster: an extra scanline inserted on even-frame-logic
+            // fields when interlace sync is active (R8 bit 0). This produces
+            // alternating 312/313 scanline frames (312.5 average = exactly 50Hz).
+            // Without this, both fields are 312 scanlines, causing timer-based
+            // split-screen effects (e.g., Revs palette switching) to drift.
+            // Matches B2's in_dummy_raster mechanism (crtc.cpp:364-366).
+            if (in_dummy_raster_) {
+                in_dummy_raster_ = false;
+                end_of_frame();
+            }
+
             // Check for vertical adjust period
-            if (row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
+            // Note: the vadj entry and vadj counting blocks must be separate if
+            // statements (not else-if) so that on the scanline where vadj is entered,
+            // the counter is also incremented in the same end_of_scanline call.
+            if (!in_dummy_raster_ && row_ == registers_[R4_VTOTAL] + 1 && !in_vadj_) {
                 if (registers_[R5_VTOTAL_ADJ] > 0) {
                     in_vadj_ = true;
                     vadj_counter_ = 0;
+                } else if (is_interlace_sync() && do_even_frame_logic_) {
+                    in_dummy_raster_ = true;
                 } else {
                     end_of_frame();
                 }
@@ -467,7 +485,11 @@ private:
                 // end_of_scanline call that enters v_adjust, so we need one extra count
                 if (vadj_counter_ > registers_[R5_VTOTAL_ADJ]) {
                     in_vadj_ = false;
-                    end_of_frame();
+                    if (is_interlace_sync() && do_even_frame_logic_) {
+                        in_dummy_raster_ = true;
+                    } else {
+                        end_of_frame();
+                    }
                 }
             }
         }
@@ -554,6 +576,7 @@ private:
     bool v_display_ = true;
     bool in_vadj_ = false;
     bool had_vsync_this_row_ = false;
+    bool in_dummy_raster_ = false;  // Interlace extra scanline on even fields
 
     // Field counter for cursor blink timing (always increments at 50Hz field rate)
     uint8_t field_count_ = 0;
