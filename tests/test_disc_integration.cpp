@@ -1590,6 +1590,95 @@ TEST_CASE("Consecutive Read Sector commands both succeed", "[disc][integration][
     }
 }
 
+TEST_CASE("Consecutive NMI-driven sector reads both succeed", "[disc][integration][nmi][consecutive]") {
+    // Two Read Sector commands in sequence via NMI handler.
+    // This tests if the NMI edge detection works across command boundaries.
+    ModelBPlus machine;
+    machine.memory().disc_controller.set_spin_up_delay_enabled(false);
+
+    std::vector<uint8_t> ssd_data(80 * 10 * 256, 0);
+    for (int i = 0; i < 256; ++i) {
+        ssd_data[i] = static_cast<uint8_t>(i);
+        ssd_data[256 + i] = static_cast<uint8_t>(255 - i);
+    }
+    SsdFormatHandler ssd_handler;
+    auto result = ssd_handler.load(ssd_data, "/tmp/consec_nmi.ssd");
+    REQUIRE(result.success());
+    machine.memory().disc_drive_0.insert(std::move(result.disc));
+
+    // NMI handler: INC counter / LDA $FE87 / RTI (simple, proven to work)
+    uint16_t handler = 0x0D00;
+    uint16_t counter = 0x0070;
+    machine.memory().mos_rom.data()[0x3FFA] = handler & 0xFF;
+    machine.memory().mos_rom.data()[0x3FFB] = (handler >> 8) & 0xFF;
+    machine.memory().mos_rom.data()[0x3FFC] = 0x00;
+    machine.memory().mos_rom.data()[0x3FFD] = 0xC0;
+    machine.memory().mos_rom.data()[0x0000] = 0x4C;
+    machine.memory().mos_rom.data()[0x0001] = 0x00;
+    machine.memory().mos_rom.data()[0x0002] = 0xC0;
+
+    machine.reset();
+
+    machine.write(handler + 0, 0xEE);  // INC counter
+    machine.write(handler + 1, counter & 0xFF);
+    machine.write(handler + 2, (counter >> 8) & 0xFF);
+    machine.write(handler + 3, 0xAD);  // LDA $FE87
+    machine.write(handler + 4, 0x87);
+    machine.write(handler + 5, 0xFE);
+    machine.write(handler + 6, 0x40);  // RTI
+    machine.write(counter, 0);
+
+    machine.write(DISC_CONTROL, CTRL_DRIVE0 | CTRL_DENSITY | CTRL_RESET);
+
+    // Restore
+    machine.write(WD1770_COMMAND, CMD_RESTORE);
+    wait_not_busy(machine);
+
+    // --- First Read Sector ---
+    machine.write(counter, 0);
+    machine.write(WD1770_SECTOR, 0);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+
+    int drq1 = 0;
+    bool prev_drq = false;
+    for (int i = 0; i < 500'000; ++i) {
+        machine.step();
+        bool d = machine.memory().disc_controller.drq();
+        if (d && !prev_drq) ++drq1;
+        prev_drq = d;
+        // Stop when command completes
+        if (!machine.memory().disc_controller.busy() && drq1 > 0) break;
+    }
+    // Let INTRQ fire and be handled
+    for (int i = 0; i < 1000; ++i) machine.step();
+
+    WARN("After read 0: DRQ transitions=" << drq1
+         << " busy=" << machine.memory().disc_controller.busy()
+         << " intrq=" << machine.memory().disc_controller.intrq()
+         << " drq=" << machine.memory().disc_controller.drq());
+
+    CHECK(drq1 == 256);
+
+    // --- Second Read Sector ---
+    machine.write(WD1770_SECTOR, 1);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+
+    int drq2 = 0;
+    prev_drq = false;
+    for (int i = 0; i < 500'000; ++i) {
+        machine.step();
+        bool d = machine.memory().disc_controller.drq();
+        if (d && !prev_drq) ++drq2;
+        prev_drq = d;
+        if (!machine.memory().disc_controller.busy() && drq2 > 0) break;
+    }
+
+    WARN("After read 1: DRQ transitions=" << drq2
+         << " busy=" << machine.memory().disc_controller.busy());
+
+    CHECK(drq2 == 256);
+}
+
 TEST_CASE("Pulse Read Sector matches raw SSD file bytes", "[disc][integration][pulse][verify]") {
 #ifndef BEEBIUM_DISCS_DIR
     SKIP("BEEBIUM_DISCS_DIR not defined");

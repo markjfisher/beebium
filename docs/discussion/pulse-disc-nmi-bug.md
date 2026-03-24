@@ -95,7 +95,31 @@ DFS issues two Read Sector commands for the catalogue (sectors 0 and 1 on track 
 
 3. **WD1770 status after command completion**: After the first Read Sector completes, read and log the status register value. Compare against what the old WD1770 would have returned. DFS checks specific status bits to determine success/failure.
 
-### If Consecutive Reads Fail
+### Results of Consecutive Read Tests
+
+Both consecutive read tests PASS:
+- **Direct polling**: Read Sector 0 then Read Sector 1 via register polling. Both return 256 correct bytes.
+- **NMI-driven**: Read Sector 0 then Read Sector 1 with custom NMI handler. 256 + 256 DRQ transitions. NMI edge detection works across command boundaries.
+
+This proves the PulseWD1770 handles consecutive commands correctly in both polling and NMI modes. The bug is NOT in the FDC's state management between commands. The issue is specific to DFS's actual code path through the MOS NMI dispatcher.
+
+### Remaining Hypothesis
+
+The DFS/MOS NMI handling code does something our custom handler doesn't. The most likely candidates:
+- DFS reads additional WD1770 registers (track, sector) during or between commands
+- DFS's NMI workspace at $0D00-$0DFF overlaps with the MOS NMI handler code in a way that's timing-dependent
+- DFS checks specific status register bits that the PulseWD1770 reports differently from the old sector-level WD1770
+- The MOS NMI dispatcher has a re-entrancy or nested-NMI path that fails
+
+### Next Steps
+
+1. **Status register comparison**: After each command, compare the exact status byte returned by PulseWD1770 against what the old WD1770 would have returned. DFS checks specific bits to determine success/failure.
+
+2. **DFS workspace dump**: After the *CAT stalls, dump $0D00-$0DFF to see DFS's internal error state.
+
+3. **PC trace during *CAT**: Log the first ~100 unique PCs executed by DFS after the *CAT command is processed. Compare against a trace from the old WD1770 to find the divergence point.
+
+### If Consecutive Reads Fail (N/A -- they pass)
 
 4. **Track register state**: Check the track register value after the first Read Sector. The PulseWD1770 doesn't modify the track register during Read Sector (it uses it for matching). If it's wrong, the second sector search will compare against the wrong track number.
 
