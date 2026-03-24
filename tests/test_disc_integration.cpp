@@ -1531,6 +1531,80 @@ void dump_cat_screen(MachineType& machine, int max_rows = 25) {
 
 } // anonymous namespace
 
+TEST_CASE("Pulse Read Sector matches raw SSD file bytes", "[disc][integration][pulse][verify]") {
+#ifndef BEEBIUM_DISCS_DIR
+    SKIP("BEEBIUM_DISCS_DIR not defined");
+#else
+    const auto disc_dirpath = std::filesystem::path(BEEBIUM_DISCS_DIR);
+    auto disc_filepath = disc_dirpath / "01-basic-validation.ssd";
+    if (!std::filesystem::exists(disc_filepath)) {
+        SKIP("Test disc not available: " + disc_filepath.string());
+    }
+
+    // Load raw SSD file bytes for comparison
+    std::ifstream raw_file(disc_filepath, std::ios::binary);
+    std::vector<uint8_t> raw_ssd((std::istreambuf_iterator<char>(raw_file)),
+                                  std::istreambuf_iterator<char>());
+    REQUIRE(raw_ssd.size() >= 512);  // Need at least sectors 0 and 1
+
+    // Load into emulator
+    ModelBPlus machine;
+    machine.memory().disc_controller.set_spin_up_delay_enabled(false);
+
+    auto result = load_disc_from_url_or_filepath(disc_filepath.string());
+    REQUIRE(result.success());
+    machine.memory().disc_drive_0.insert(std::move(result.disc));
+
+    // Configure: drive 0, FM, reset inactive
+    machine.write(DISC_CONTROL, CTRL_DRIVE0 | CTRL_DENSITY | CTRL_RESET);
+
+    // Restore
+    machine.write(WD1770_COMMAND, CMD_RESTORE);
+    wait_not_busy(machine);
+
+    // Read sector 0 via polling
+    machine.write(WD1770_SECTOR, 0);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+    auto sector0 = read_sector(machine);
+    REQUIRE(sector0.size() == 256);
+
+    // Read sector 1
+    machine.write(WD1770_SECTOR, 1);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+    auto sector1 = read_sector(machine);
+    REQUIRE(sector1.size() == 256);
+
+    // Compare to raw SSD bytes
+    bool sector0_match = true;
+    bool sector1_match = true;
+    for (int i = 0; i < 256; ++i) {
+        if (sector0[i] != raw_ssd[i]) {
+            if (sector0_match) {
+                WARN("Sector 0 mismatch at byte " << i
+                     << ": pulse=" << (int)sector0[i]
+                     << " raw=" << (int)raw_ssd[i]);
+            }
+            sector0_match = false;
+        }
+    }
+    for (int i = 0; i < 256; ++i) {
+        if (sector1[i] != raw_ssd[256 + i]) {
+            if (sector1_match) {
+                WARN("Sector 1 mismatch at byte " << i
+                     << ": pulse=" << (int)sector1[i]
+                     << " raw=" << (int)raw_ssd[256 + i]);
+            }
+            sector1_match = false;
+        }
+    }
+
+    CHECK(sector0_match);
+    CHECK(sector1_match);
+    WARN("Sector 0: " << (sector0_match ? "MATCH" : "MISMATCH"));
+    WARN("Sector 1: " << (sector1_match ? "MATCH" : "MISMATCH"));
+#endif
+}
+
 TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]") {
 #ifndef BEEBIUM_ROM_DIR
     SKIP("BEEBIUM_ROM_DIR not defined");
