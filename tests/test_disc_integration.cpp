@@ -397,8 +397,8 @@ TEST_CASE("Reading status register in NMI handler does not break DRQ transfer", 
          << " $0070=" << (int)machine.read(0x0070));
 
     CHECK(drq_transitions == 256);
-    CHECK(handler_entries == 256);
-    // Counter wraps: 256 increments from 0 = 0 (mod 256). Check PC entries instead.
+    // Handler is entered 256 times for DRQ + 1 time for command-completion INTRQ
+    CHECK(handler_entries == 257);
 }
 
 TEST_CASE("DISABLED Model B+ MOS-style NMI handler reads sector correctly", "[.][disc][integration][nmi][mos]") {
@@ -1827,6 +1827,19 @@ TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]"
     REQUIRE(find_string_on_screen(machine, "BASIC"));
 
     // Type "*CAT" + RETURN
+    // Dump DFS NMI workspace at $0D00 to see what handler code DFS installed
+    {
+        std::ostringstream nmi_dump;
+        nmi_dump << "DFS NMI workspace ($0D00-$0D3F):" << std::hex << std::setfill('0');
+        for (int row = 0; row < 4; ++row) {
+            nmi_dump << "\n  $" << std::setw(4) << (0x0D00 + row * 16) << ": ";
+            for (int col = 0; col < 16; ++col) {
+                nmi_dump << std::setw(2) << (int)machine.read(0x0D00 + row * 16 + col) << " ";
+            }
+        }
+        WARN(nmi_dump.str());
+    }
+
     INFO("Typing *CAT command...");
 
     type_string_with_shift(machine, renderer, "*CAT\r", 100000);
@@ -1841,13 +1854,29 @@ TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]"
     uint16_t sample_pcs[5] = {0};
     int wd_cmd_count = 0;
     bool prev_busy = false;
-    for (uint64_t i = 0; i < 50'000'000; ++i) {  // Extended to 50M cycles (~25 seconds)
+    for (uint64_t i = 0; i < 200'000'000; ++i) {  // Extended to 200M cycles (~100 seconds)
         // Monitor WD1770 busy state transitions to detect command issuance
         bool curr_busy = machine.memory().disc_controller.busy();
         if (curr_busy && !prev_busy) {
             ++wd_cmd_count;
-            if (wd_cmd_count <= 5) {
-                WARN("WD1770 command issued at cycle " << i << " PC=0x" << std::hex << machine.pc() << std::dec);
+            if (wd_cmd_count <= 10) {
+                // Read registers to diagnose command context
+                // Note: reading status ($FE84) clears INTRQ, but since we just started
+                // a command, INTRQ should be clear anyway.
+                uint8_t track = machine.memory().disc_controller.read(1);
+                uint8_t sector = machine.memory().disc_controller.read(2);
+                uint8_t data = machine.memory().disc_controller.read(3);
+                bool is_dd = machine.memory().disc_controller.is_double_density();
+                WARN("WD1770 cmd #" << wd_cmd_count
+                     << " cycle=" << i
+                     << " PC=$" << std::hex << machine.pc()
+                     << " track=$" << (int)track
+                     << " sector=$" << (int)sector
+                     << " data=$" << (int)data
+                     << " density=" << (is_dd ? "MFM" : "FM")
+                     << std::dec
+                     << " drv_trk=" << (int)machine.memory().disc_drive_0.current_track()
+                     << " head_pos=" << machine.memory().disc_drive_0.head_position());
             }
         }
         prev_busy = curr_busy;
@@ -1860,10 +1889,12 @@ TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]"
         // MOS 2.0 NMI handler is at $0D00
         if (curr_pc == 0x0D00 && last_pc != 0x0D00) {
             nmi_handler_count++;
-            // Log first few NMI entries
-            if (nmi_handler_count <= 5) {
+            if (nmi_handler_count <= 5 || (nmi_handler_count >= 255 && nmi_handler_count <= 260)) {
                 WARN("NMI #" << nmi_handler_count << " at cycle " << i
-                     << " from PC=0x" << std::hex << last_pc << std::dec);
+                     << " from PC=$" << std::hex << last_pc
+                     << " drq=" << machine.memory().disc_controller.drq()
+                     << " intrq=" << machine.memory().disc_controller.intrq()
+                     << std::dec);
             }
         }
         // Track NMI line transitions

@@ -674,9 +674,29 @@ private:
 
             case Phase::ReadingSectorData: {
                 if (drq_) {
-                    // Host hasn't read previous byte yet -- wait
+                    // Host hasn't read previous byte yet -- wait.
+                    // If we've delivered all bytes and DRQ was just cleared,
+                    // complete the command (INTRQ fires separately from last DRQ).
                     byte_delay_ = byte_period();
                     return;
+                }
+
+                // Check if the previous byte was the last one. Complete the
+                // command NOW (after DRQ was cleared by the host reading the
+                // last byte). This ensures INTRQ fires as a separate NMI edge
+                // from the last DRQ, matching real WD1770 behaviour where
+                // command completion is signalled after the host acknowledges
+                // the final byte.
+                if (byte_counter_ >= data_size_) {
+                    if (current_command_ & FLAG_MULTI_SECTOR) {
+                        ++sector_;
+                        index_count_ = 0;
+                        phase_ = Phase::SearchingForIdRead;
+                    } else {
+                        complete_command();
+                    }
+                    byte_delay_ = byte_period();
+                    break;
                 }
 
                 uint8_t byte = read_byte_from_disc();
@@ -685,18 +705,6 @@ private:
                 drq_ = true;
                 ++byte_counter_;
 
-                if (byte_counter_ >= data_size_) {
-                    // Read the 2 CRC bytes
-                    // (We read them on subsequent ticks but they don't get DRQ'd)
-                    // For now, complete the command. CRC check can be added later.
-                    if (current_command_ & FLAG_MULTI_SECTOR) {
-                        ++sector_;
-                        index_count_ = 0;
-                        phase_ = Phase::SearchingForIdRead;
-                    } else {
-                        complete_command();
-                    }
-                }
                 byte_delay_ = byte_period();
                 break;
             }
