@@ -41,6 +41,26 @@ add_executable(test_model_b_romram_hardware test_model_b_romram_hardware.cpp)
 target_link_libraries(test_model_b_romram_hardware PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_model_b_romram_hardware)
 
+# IBM disc format tests (FM/MFM encoding, CRC)
+add_executable(test_ibm_disc_format test_ibm_disc_format.cpp)
+target_link_libraries(test_ibm_disc_format PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_ibm_disc_format)
+
+# Disc track (pulse storage) tests
+add_executable(test_disc_track test_disc_track.cpp)
+target_link_libraries(test_disc_track PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_track)
+
+# Track builder tests
+add_executable(test_track_builder test_track_builder.cpp)
+target_link_libraries(test_track_builder PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_track_builder)
+
+# Track decoder tests
+add_executable(test_track_decoder test_track_decoder.cpp)
+target_link_libraries(test_track_decoder PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_track_decoder)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
