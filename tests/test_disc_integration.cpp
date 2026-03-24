@@ -1531,6 +1531,65 @@ void dump_cat_screen(MachineType& machine, int max_rows = 25) {
 
 } // anonymous namespace
 
+TEST_CASE("Consecutive Read Sector commands both succeed", "[disc][integration][pulse][consecutive]") {
+    // Diagnostic test: issue Read Sector 0 then Read Sector 1 via direct
+    // register polling (no NMI, no DFS). If the second read fails, the bug
+    // is in PulseWD1770's state between commands.
+    ModelBPlus machine;
+    machine.memory().disc_controller.set_spin_up_delay_enabled(false);
+
+    // Create disc with distinct data in sectors 0 and 1
+    std::vector<uint8_t> ssd_data(80 * 10 * 256, 0);
+    for (int i = 0; i < 256; ++i) {
+        ssd_data[i] = static_cast<uint8_t>(i);            // Sector 0: 0,1,2,...,255
+        ssd_data[256 + i] = static_cast<uint8_t>(255 - i); // Sector 1: 255,254,...,0
+    }
+    SsdFormatHandler handler;
+    auto result = handler.load(ssd_data, "/tmp/consec.ssd");
+    REQUIRE(result.success());
+    machine.memory().disc_drive_0.insert(std::move(result.disc));
+
+    // Configure: drive 0, FM, reset inactive
+    machine.write(DISC_CONTROL, CTRL_DRIVE0 | CTRL_DENSITY | CTRL_RESET);
+
+    // Restore to track 0
+    machine.write(WD1770_COMMAND, CMD_RESTORE);
+    wait_not_busy(machine);
+
+    // Read sector 0
+    machine.write(WD1770_SECTOR, 0);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+    auto sector0 = read_sector(machine);
+
+    // Log status between commands
+    uint8_t status_after_0 = machine.read(WD1770_STATUS);
+    uint8_t track_after_0 = machine.read(WD1770_TRACK);
+    bool busy_after_0 = machine.memory().disc_controller.busy();
+    WARN("After sector 0: size=" << sector0.size()
+         << " status=$" << std::hex << (int)status_after_0
+         << " track=" << (int)track_after_0 << std::dec
+         << " busy=" << busy_after_0);
+
+    REQUIRE(sector0.size() == 256);
+
+    // Read sector 1 (immediately after sector 0)
+    machine.write(WD1770_SECTOR, 1);
+    machine.write(WD1770_COMMAND, CMD_READ_SECTOR);
+    auto sector1 = read_sector(machine);
+
+    uint8_t status_after_1 = machine.read(WD1770_STATUS);
+    WARN("After sector 1: size=" << sector1.size()
+         << " status=$" << std::hex << (int)status_after_1 << std::dec);
+
+    REQUIRE(sector1.size() == 256);
+
+    // Verify data
+    for (int i = 0; i < 256; ++i) {
+        CHECK(sector0[i] == static_cast<uint8_t>(i));
+        CHECK(sector1[i] == static_cast<uint8_t>(255 - i));
+    }
+}
+
 TEST_CASE("Pulse Read Sector matches raw SSD file bytes", "[disc][integration][pulse][verify]") {
 #ifndef BEEBIUM_DISCS_DIR
     SKIP("BEEBIUM_DISCS_DIR not defined");
