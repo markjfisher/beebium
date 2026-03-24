@@ -9,6 +9,7 @@ add_library(beebium_core STATIC
     src/disc/DiscGeometry.cpp
     src/disc/FileDiscImage.cpp
     src/disc/formats/SsdFormatHandler.cpp
+    src/disc/formats/AdfsFormatHandler.cpp
     src/econet/AunBackend.cpp
     src/TubeUla.cpp
     src/TubeHostPort.cpp
