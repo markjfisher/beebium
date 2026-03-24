@@ -81,6 +81,11 @@ add_executable(test_pulse_disc_drive test_pulse_disc_drive.cpp)
 target_link_libraries(test_pulse_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_pulse_disc_drive)
 
+# Pulse WD1770 tests
+add_executable(test_pulse_wd1770 test_pulse_wd1770.cpp)
+target_link_libraries(test_pulse_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_pulse_wd1770)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
