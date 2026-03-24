@@ -61,6 +61,11 @@ add_executable(test_track_decoder test_track_decoder.cpp)
 target_link_libraries(test_track_decoder PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_track_decoder)
 
+# SSD/DSD format handler tests
+add_executable(test_ssd_format_handler test_ssd_format_handler.cpp)
+target_link_libraries(test_ssd_format_handler PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_ssd_format_handler)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
