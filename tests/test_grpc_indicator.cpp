@@ -20,7 +20,7 @@
 
 #include "beebium/Machines.hpp"
 #include "beebium/service/Server.hpp"
-#include "beebium/disc/FileDiscImage.hpp"
+#include "beebium/disc/DiscLoader.hpp"
 #include "beebium/FrameAllocator.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
@@ -821,8 +821,9 @@ TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][i
     }
 
     // Load and insert disc image
-    auto disc = FileDiscImage::load(disc_filepath);
-    machine.state().memory.disc_drive_0.insert(std::move(disc));
+    auto disc_result = load_disc_from_url_or_filepath(disc_filepath.string());
+    REQUIRE(disc_result.success());
+    machine.state().memory.disc_drive_0.insert(std::move(disc_result.disc));
 
     // Disable spin-up delay for faster testing
     machine.state().memory.disc_controller.set_spin_up_delay_enabled(false);
@@ -893,7 +894,7 @@ TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][i
 
     // Now press RETURN and monitor during the disc access
     // Enable WD1770 debug output BEFORE pressing RETURN to capture all commands
-    WD1770::debug_enabled = true;
+    // Debug tracing
     WARN("Pressing RETURN...");
     machine.state().memory.system_via_peripheral.key_down(4, 9);  // RETURN key
     for (int i = 0; i < 50000; ++i) step_and_check();  // Hold for 25ms
@@ -907,7 +908,7 @@ TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][i
         step_and_check();
     }
 
-    WD1770::debug_enabled = false;
+    // Debug tracing off
 
     // Check screen for *CAT output
     bool has_drive = find_string_on_screen(machine, "Drive");  // DFS shows "Drive 0"

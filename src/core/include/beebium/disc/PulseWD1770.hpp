@@ -70,6 +70,9 @@ public:
     static constexpr uint8_t FLAG_UPDATE_TRACK  = 0x10;
     static constexpr uint8_t FLAG_MULTI_SECTOR  = 0x10;
 
+    // Density mode
+    enum class Density { SingleFM, DoubleMFM };
+
     PulseWD1770() = default;
     ~PulseWD1770() = default;
 
@@ -216,11 +219,18 @@ public:
 
     void set_side(uint8_t side) { selected_side_ = side & 1; }
     void set_drive(uint8_t drive) { selected_drive_ = drive & 1; }
-    void set_density(bool double_density) { double_density_ = double_density; }
+    void set_density(Density density) { density_ = density; }
+
+    // Convenience: set_density from bool (true = MFM, false = FM).
+    // Prefer set_density(Density) for clarity.
+    void set_density(bool double_density) {
+        density_ = double_density ? Density::DoubleMFM : Density::SingleFM;
+    }
 
     uint8_t selected_side() const { return selected_side_; }
     uint8_t selected_drive() const { return selected_drive_; }
-    bool is_double_density() const { return double_density_; }
+    Density density() const { return density_; }
+    bool is_double_density() const { return density_ == Density::DoubleMFM; }
 
     // =========================================================================
     // Configuration
@@ -244,7 +254,7 @@ public:
         intrq_ = false;
         selected_side_ = 0;
         selected_drive_ = 0;
-        double_density_ = false;
+        density_ = Density::SingleFM;
         step_direction_ = 1;
         step_delay_ = 0;
         byte_delay_ = 0;
@@ -306,7 +316,7 @@ private:
     static constexpr int SPIN_UP_DELAY_TICKS = 1'200'000;
     static constexpr int MAX_INDEX_REVOLUTIONS = 5;  // RNF after 5 revolutions
 
-    int byte_period() const { return double_density_ ? US_PER_MFM_BYTE : US_PER_FM_BYTE; }
+    int byte_period() const { return is_double_density() ? US_PER_MFM_BYTE : US_PER_FM_BYTE; }
 
     // =========================================================================
     // Pulse-Level Byte Access
@@ -356,7 +366,7 @@ private:
     // Read one byte from disc (FM or MFM depending on density setting).
     // Returns the data byte. Sets index_occurred_ if index pulse seen.
     uint8_t read_byte_from_disc() {
-        if (double_density_) {
+        if (is_double_density()) {
             auto [data, raw, index] = read_next_mfm_byte();
             if (index) on_index_pulse();
             last_mfm_raw_ = raw;
@@ -550,7 +560,7 @@ private:
         switch (phase_) {
             case Phase::SearchingForIdRead: {
                 uint8_t byte = read_byte_from_disc();
-                if (!double_density_) {
+                if (!is_double_density()) {
                     // FM: look for ID mark (clock=0xC7, data=0xFE)
                     if (is_fm_address_mark() && byte == ibm_disc_format::k_id_mark_data_pattern) {
                         id_crc_ = ibm_disc_format::crc_init(false);
@@ -619,7 +629,7 @@ private:
                 bool found_data_mark = false;
                 bool is_deleted = false;
 
-                if (!double_density_) {
+                if (!is_double_density()) {
                     if (is_fm_address_mark()) {
                         if (byte == ibm_disc_format::k_data_mark_data_pattern) {
                             found_data_mark = true;
@@ -648,7 +658,7 @@ private:
                     if (is_deleted) {
                         status_ |= STATUS_RECORD_TYPE;
                     }
-                    data_crc_ = ibm_disc_format::crc_init(double_density_);
+                    data_crc_ = ibm_disc_format::crc_init(is_double_density());
                     data_crc_ = ibm_disc_format::crc_add_byte(data_crc_,
                         is_deleted ? ibm_disc_format::k_deleted_data_mark_data_pattern
                                    : ibm_disc_format::k_data_mark_data_pattern);
@@ -728,7 +738,7 @@ private:
         switch (phase_) {
             case Phase::SearchingForIdWrite: {
                 uint8_t byte = read_byte_from_disc();
-                if (!double_density_) {
+                if (!is_double_density()) {
                     if (is_fm_address_mark() && byte == ibm_disc_format::k_id_mark_data_pattern) {
                         id_crc_ = ibm_disc_format::crc_init(false);
                         id_crc_ = ibm_disc_format::crc_add_byte(id_crc_, byte);
@@ -787,7 +797,7 @@ private:
 
             case Phase::WritingGap2: {
                 // Write gap bytes between ID field and data field
-                if (!double_density_) {
+                if (!is_double_density()) {
                     if (gap_counter_ < ibm_disc_format::k_std_gap2_FFs) {
                         write_fm_byte_to_disc(0xFF);
                     } else if (gap_counter_ < ibm_disc_format::k_std_gap2_FFs + ibm_disc_format::k_std_sync_00s) {
@@ -812,12 +822,12 @@ private:
 
             case Phase::WritingDataMark: {
                 // Write the data address mark
-                data_crc_ = ibm_disc_format::crc_init(double_density_);
+                data_crc_ = ibm_disc_format::crc_init(is_double_density());
                 uint8_t mark = (current_command_ & 0x01)
                     ? ibm_disc_format::k_deleted_data_mark_data_pattern
                     : ibm_disc_format::k_data_mark_data_pattern;
 
-                if (!double_density_) {
+                if (!is_double_density()) {
                     write_fm_byte_to_disc(mark, ibm_disc_format::k_mark_clock_pattern);
                 } else {
                     // 3xA1 sync then mark
@@ -843,7 +853,7 @@ private:
                 uint8_t byte = data_;
                 data_crc_ = ibm_disc_format::crc_add_byte(data_crc_, byte);
 
-                if (!double_density_) {
+                if (!is_double_density()) {
                     write_fm_byte_to_disc(byte);
                 } else {
                     write_mfm_byte_to_disc(byte);
@@ -866,7 +876,7 @@ private:
                     ? static_cast<uint8_t>(data_crc_ >> 8)
                     : static_cast<uint8_t>(data_crc_ & 0xFF);
 
-                if (!double_density_) {
+                if (!is_double_density()) {
                     write_fm_byte_to_disc(crc_byte);
                 } else {
                     write_mfm_byte_to_disc(crc_byte);
@@ -917,7 +927,7 @@ private:
         switch (phase_) {
             case Phase::SearchingForIdReadAddr: {
                 uint8_t byte = read_byte_from_disc();
-                if (!double_density_) {
+                if (!is_double_density()) {
                     if (is_fm_address_mark() && byte == ibm_disc_format::k_id_mark_data_pattern) {
                         id_byte_count_ = 0;
                         phase_ = Phase::ReadingIdFieldReadAddr;
@@ -1068,7 +1078,7 @@ private:
 
         // In Write Track, the WD1770 interprets certain byte values specially
         // to generate sync patterns and address marks. This is the format command.
-        if (!double_density_) {
+        if (!is_double_density()) {
             // FM Write Track special bytes:
             // 0xF5 -> missing clock address mark (clock=0xC7, data=0xFE or per context)
             // 0xF6 -> missing clock (not standard, but some formatters use it)
@@ -1188,7 +1198,7 @@ private:
     // External control
     uint8_t selected_side_ = 0;
     uint8_t selected_drive_ = 0;
-    bool double_density_ = false;
+    Density density_ = Density::SingleFM;
 
     // Type I state
     int step_direction_ = 1;

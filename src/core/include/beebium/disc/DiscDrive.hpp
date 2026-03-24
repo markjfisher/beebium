@@ -13,6 +13,7 @@
 #pragma once
 
 #include "DiscImage.hpp"
+#include "PulseDiscDrive.hpp"  // For DriveState and EjectOptions
 #include "beebium/indicators/IndicatorFilter.hpp"
 #include "beebium/indicators/Indicators.hpp"
 #include <chrono>
@@ -23,21 +24,7 @@
 
 namespace beebium {
 
-// Unified drive state - single source of truth to avoid race conditions
-enum class DriveState {
-    Empty,      // No disc in drive
-    Loaded,     // Disc present, idle
-    Ejecting    // Eject pending - waiting for motor quiescence (auto-forces after timeout)
-};
-
-// Options for safe disc ejection
-struct EjectOptions {
-    // Minimum time motor must be off before ejecting (default: 500ms)
-    std::chrono::milliseconds quiescence_duration{500};
-
-    // Force eject after this timeout regardless of motor state (default: 10s)
-    std::chrono::milliseconds force_after{10000};
-};
+// DriveState and EjectOptions are now defined in PulseDiscDrive.hpp
 
 // Physical floppy disc drive emulation.
 //

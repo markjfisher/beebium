@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -15,7 +15,7 @@
 
 #include "disc.grpc.pb.h"
 #include "beebium/disc/DiscConcepts.hpp"
-#include "beebium/disc/DiscDrive.hpp"
+#include "beebium/disc/PulseDiscDrive.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 
@@ -80,11 +80,11 @@ public:
 
             // Apply write protection override if requested
             if (request->write_protect_override()) {
-                result.image->set_write_protected(true);
+                result.disc->set_write_protected(true);
             }
 
             // Get the target drive
-            DiscDrive& drive = (drive_num == 0)
+            PulseDiscDrive& drive = (drive_num == 0)
                 ? machine_.state().memory.disc_drive_0
                 : machine_.state().memory.disc_drive_1;
 
@@ -93,11 +93,11 @@ public:
                 drive.eject_immediate();
             }
 
-            // Fill metadata before inserting (since insert moves the image)
-            fill_disc_metadata(response->mutable_disc(), result.image.get());
+            // Fill metadata before inserting (since insert moves the disc)
+            fill_disc_metadata(response->mutable_disc(), result.disc.get());
 
             // Insert the new disc
-            drive.insert(std::move(result.image), request->url());
+            drive.insert(std::move(result.disc), request->url());
 
             response->set_success(true);
             return grpc::Status::OK;
@@ -124,7 +124,7 @@ public:
                 return grpc::Status::OK;
             }
 
-            DiscDrive& drive = (drive_num == 0)
+            PulseDiscDrive& drive = (drive_num == 0)
                 ? machine_.state().memory.disc_drive_0
                 : machine_.state().memory.disc_drive_1;
 
@@ -373,19 +373,16 @@ public:
     }
 
 private:
-    void fill_disc_metadata(DiscMetadata* metadata, const DiscImage* image) {
-        if (!image) return;
+    void fill_disc_metadata(DiscMetadata* metadata, const Disc* disc) {
+        if (!disc) return;
 
-        metadata->set_name(image->name());
-        metadata->set_sides(image->sides());
-        metadata->set_tracks_per_side(image->tracks_per_side());
-        metadata->set_sectors_per_track(image->sectors_per_track());
-        metadata->set_sector_size(image->sector_size());
-        metadata->set_write_protected(image->is_write_protected());
+        metadata->set_name(disc->name());
+        metadata->set_sides(disc->is_double_sided() ? 2 : 1);
+        metadata->set_write_protected(disc->is_write_protected());
     }
 
     void fill_drive_status(beebium::DriveStatus* status, uint32_t drive_num,
-                           const DiscDrive& drive) {
+                           const PulseDiscDrive& drive) {
         status->set_drive(drive_num);
 
         switch (drive.state()) {
@@ -413,7 +410,7 @@ private:
 
     void check_and_send_events(grpc::ServerWriter<DiscEvent>* writer,
                                uint32_t drive_num,
-                               DiscDrive& drive,
+                               PulseDiscDrive& drive,
                                DriveState& prev_state,
                                bool& prev_motor) {
         DriveState curr_state = drive.state();

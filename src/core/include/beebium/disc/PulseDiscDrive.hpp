@@ -23,14 +23,40 @@
 
 namespace beebium {
 
+// Unified drive state - single source of truth to avoid race conditions
+enum class DriveState {
+    Empty,      // No disc in drive
+    Loaded,     // Disc present, idle
+    Ejecting    // Eject pending - waiting for motor quiescence (auto-forces after timeout)
+};
+
+// Options for safe disc ejection
+struct EjectOptions {
+    // Minimum time motor must be off before ejecting (default: 500ms)
+    std::chrono::milliseconds quiescence_duration{500};
+
+    // Force eject after this timeout regardless of motor state (default: 10s)
+    std::chrono::milliseconds force_after{10000};
+};
+
 // Physical floppy disc drive emulation with pulse-level access.
 //
-// This is the pulse-level replacement for DiscDrive. Instead of sector-level
-// read_sector/write_sector, it provides pulse-level read_pulses/write_pulses
-// with head position tracking and index pulse detection.
+// Manages:
+// - Disc insertion/ejection (including safe eject with quiescence)
+// - Head track position (0-79)
+// - Motor on/off state with quiescence tracking
+// - Pulse-level read/write at current head position
+// - Side selection for double-sided discs
 //
 // Disc controllers (WD1770, 8271, etc.) read individual pulse words from the
 // drive as it rotates, just like real hardware reads flux transitions.
+//
+// State transitions:
+//   Empty -> Loaded      (via insert())
+//   Loaded -> Ejecting   (via request_eject())
+//   Ejecting -> Empty    (via tick_eject() when quiescent or timeout)
+//   Ejecting -> Loaded   (via cancel_eject())
+//   Any -> Empty         (via eject_immediate())
 class PulseDiscDrive {
 public:
     static constexpr uint8_t MAX_TRACK = 79;
@@ -62,40 +88,99 @@ public:
     // State
     // =========================================================================
 
-    // Using a local enum to avoid depending on old DiscDrive.hpp
-    enum class State { Empty, Loaded, Ejecting };
-
-    State state() const { return state_; }
-    bool has_disc() const { return state_ != State::Empty; }
+    DriveState state() const { return state_; }
+    bool has_disc() const { return state_ != DriveState::Empty; }
 
     // =========================================================================
-    // Disc Insertion / Ejection
+    // Disc Insertion
     // =========================================================================
 
+    // Insert a disc into the drive.
+    // Only valid when state is Empty.
+    // Transitions: Empty -> Loaded
     void insert(std::unique_ptr<Disc> disc) {
         disc_ = std::move(disc);
         if (disc_) {
-            state_ = State::Loaded;
+            state_ = DriveState::Loaded;
             source_url_.clear();
             head_position_ = 0;
             pulse_sub_position_ = 0;
         }
     }
 
+    // Insert a disc and record its source URL
     void insert(std::unique_ptr<Disc> disc, const std::string& url) {
         insert(std::move(disc));
         source_url_ = url;
     }
 
-    std::unique_ptr<Disc> eject_immediate() {
-        if (state_ == State::Empty) return nullptr;
-        if (disc_) disc_->flush_dirty_tracks();
-        state_ = State::Empty;
-        source_url_.clear();
-        head_position_ = 0;
-        pulse_sub_position_ = 0;
-        return std::move(disc_);
+    // =========================================================================
+    // Disc Ejection
+    // =========================================================================
+
+    // Request safe ejection - waits for motor quiescence.
+    // Returns immediately; actual ejection happens in tick_eject().
+    // Returns false if drive is already empty or ejecting.
+    // Transitions: Loaded -> Ejecting
+    bool request_eject(const EjectOptions& opts = {}) {
+        if (state_ != DriveState::Loaded) {
+            return false;
+        }
+        state_ = DriveState::Ejecting;
+        pending_eject_ = opts;
+        eject_requested_at_ = clock::now();
+        return true;
     }
+
+    // Check quiescence and perform ejection if ready.
+    // Call this periodically (e.g., every 100ms) from the server loop.
+    // Returns the ejected disc if ejection occurred, nullptr otherwise.
+    std::unique_ptr<Disc> tick_eject() {
+        if (state_ != DriveState::Ejecting) {
+            return nullptr;
+        }
+
+        auto now = clock::now();
+        auto elapsed = now - eject_requested_at_;
+
+        // Check for force timeout
+        if (elapsed >= pending_eject_.force_after) {
+            was_forced_eject_ = true;
+            return complete_eject();
+        }
+
+        // Check for quiescence (motor off long enough)
+        if (is_quiescent(pending_eject_.quiescence_duration)) {
+            was_forced_eject_ = false;
+            return complete_eject();
+        }
+
+        return nullptr;
+    }
+
+    // Cancel a pending eject request.
+    // Transitions: Ejecting -> Loaded
+    void cancel_eject() {
+        if (state_ == DriveState::Ejecting) {
+            state_ = DriveState::Loaded;
+        }
+    }
+
+    // Immediate eject - bypasses quiescence, ejects now.
+    // Transitions: Loaded/Ejecting -> Empty
+    std::unique_ptr<Disc> eject_immediate() {
+        if (state_ == DriveState::Empty) {
+            return nullptr;
+        }
+        was_forced_eject_ = true;
+        return complete_eject();
+    }
+
+    // Legacy API - delegates to eject_immediate()
+    std::unique_ptr<Disc> eject() { return eject_immediate(); }
+
+    // Was the last ejection forced (timeout or immediate)?
+    bool was_forced_eject() const { return was_forced_eject_; }
 
     // =========================================================================
     // Disc Access
@@ -151,11 +236,13 @@ public:
 
     bool motor_on() const { return motor_on_; }
 
+    // Check if motor has been off for at least the specified duration
     bool is_quiescent(std::chrono::milliseconds min_off) const {
         if (motor_on_) return false;
         return (clock::now() - motor_off_since_) >= min_off;
     }
 
+    // Activity LED indicator ID (valid only if constructed with Indicators)
     uint16_t activity_led_id() const { return activity_led_id_; }
 
     // =========================================================================
@@ -233,6 +320,17 @@ public:
     }
 
 private:
+    std::unique_ptr<Disc> complete_eject() {
+        if (disc_) {
+            disc_->flush_dirty_tracks();
+        }
+        state_ = DriveState::Empty;
+        source_url_.clear();
+        head_position_ = 0;
+        pulse_sub_position_ = 0;
+        return std::move(disc_);
+    }
+
     bool check_index_wrap() {
         uint32_t len = track_length();
         if (head_position_ >= len) {
@@ -247,10 +345,7 @@ private:
     }
 
     // Generate quasi-random pulses for unformatted/empty disc regions.
-    // This simulates the noise that a real drive's head amplifier produces
-    // from blank disc surface, which some copy protection relies on.
     uint32_t quasi_random_pulses() const {
-        // Simple xorshift based on position
         uint32_t x = head_position_ ^ (current_track_ * 7919) ^ (selected_side_ * 65537);
         x ^= x << 13;
         x ^= x >> 17;
@@ -259,7 +354,7 @@ private:
     }
 
     // Core state
-    State state_ = State::Empty;
+    DriveState state_ = DriveState::Empty;
     std::unique_ptr<Disc> disc_;
     std::string source_url_;
 
@@ -273,7 +368,12 @@ private:
     uint32_t head_position_ = 0;
     uint32_t pulse_sub_position_ = 0;  // 0 or 16
 
-    // Indicator integration
+    // Safe eject state
+    EjectOptions pending_eject_;
+    clock::time_point eject_requested_at_;
+    bool was_forced_eject_ = false;
+
+    // Indicator integration (optional)
     Indicators* indicators_ = nullptr;
     uint16_t activity_led_id_ = 0;
 };

@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -12,54 +12,46 @@
 
 #pragma once
 
-#include "DiscImage.hpp"
+#include "DiscFormatHandler.hpp"
+#include "DiscFormatRegistry.hpp"
 #include "DiscUrl.hpp"
-#include "FileDiscImage.hpp"
+#include "formats/SsdFormatHandler.hpp"
+#include "formats/AdfsFormatHandler.hpp"
+#include "formats/HfeFormatHandler.hpp"
 
 #include <memory>
 #include <string>
 
 namespace beebium {
 
-// Result of attempting to load a disc image from a URL.
-// Check success() before accessing the image.
-struct DiscLoadResult {
-    std::unique_ptr<DiscImage> image;  // nullptr on error
-    std::string error;                  // Empty on success
-
-    bool success() const { return image != nullptr; }
-    explicit operator bool() const { return success(); }
-};
+// Get a shared format registry with all built-in format handlers registered.
+inline DiscFormatRegistry& default_format_registry() {
+    static DiscFormatRegistry registry = [] {
+        DiscFormatRegistry r;
+        r.register_handler(std::make_unique<SsdFormatHandler>());
+        r.register_handler(std::make_unique<AdfsFormatHandler>());
+        r.register_handler(std::make_unique<HfeFormatHandler>());
+        return r;
+    }();
+    return registry;
+}
 
 // Load a disc image from a URL.
 //
-// Currently supports file: URLs for local filesystem access.
-// Returns a DiscLoadResult containing either the loaded image or an error message.
+// Uses the default format registry to auto-detect the format and load
+// the disc image into a Disc object with pulse-level track data.
 //
-// Usage:
-//   auto result = load_disc_from_url("file:///path/to/disc.ssd");
-//   if (result) {
-//       drive.insert(std::move(result.image));
-//   } else {
-//       std::cerr << "Error: " << result.error << "\n";
-//   }
+// Currently supports file: URLs for local filesystem access.
 inline DiscLoadResult load_disc_from_url(const std::string& url) {
-    // Parse the URL
     auto parsed = DiscUrl::parse(url);
     if (!parsed) {
         return {nullptr, "Invalid or unsupported URL: " + url};
     }
 
-    // Dispatch based on scheme
     switch (parsed->scheme()) {
         case DiscUrlScheme::File: {
             auto filepath = parsed->to_filepath();
-            try {
-                auto image = FileDiscImage::load(filepath);
-                return {std::move(image), ""};
-            } catch (const std::exception& e) {
-                return {nullptr, e.what()};
-            }
+            return default_format_registry().load_from_filepath(filepath);
         }
 
         case DiscUrlScheme::Unknown:
@@ -69,20 +61,15 @@ inline DiscLoadResult load_disc_from_url(const std::string& url) {
 }
 
 // Load a disc image from a URL or bare filepath.
-// If the input doesn't look like a URL (no :// found), treats it as a local filepath
-// and converts to a file: URL internally.
-//
-// This provides backward compatibility with code that uses bare filepaths.
+// If the input doesn't look like a URL (no :// found), treats it as a local filepath.
 inline DiscLoadResult load_disc_from_url_or_filepath(const std::string& url_or_filepath) {
-    // If it looks like a URL (contains ://), parse as URL
     if (url_or_filepath.find("://") != std::string::npos) {
         return load_disc_from_url(url_or_filepath);
     }
 
-    // Otherwise, treat as bare filepath and convert to file: URL
+    // Bare filepath: load directly via registry
     std::filesystem::path filepath(url_or_filepath);
-    auto disc_url = DiscUrl::from_filepath(filepath);
-    return load_disc_from_url(disc_url.url());
+    return default_format_registry().load_from_filepath(filepath);
 }
 
 } // namespace beebium

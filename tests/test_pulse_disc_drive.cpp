@@ -36,7 +36,7 @@ static std::unique_ptr<Disc> make_test_disc() {
 
 TEST_CASE("PulseDiscDrive default construction is empty", "[disc][pulsedrive]") {
     PulseDiscDrive drive;
-    CHECK(drive.state() == PulseDiscDrive::State::Empty);
+    CHECK(drive.state() == DriveState::Empty);
     CHECK_FALSE(drive.has_disc());
     CHECK(drive.current_track() == 0);
     CHECK_FALSE(drive.motor_on());
@@ -50,7 +50,7 @@ TEST_CASE("PulseDiscDrive insert transitions to Loaded", "[disc][pulsedrive]") {
     PulseDiscDrive drive;
     drive.insert(make_test_disc());
 
-    CHECK(drive.state() == PulseDiscDrive::State::Loaded);
+    CHECK(drive.state() == DriveState::Loaded);
     CHECK(drive.has_disc());
     CHECK(drive.disc() != nullptr);
 }
@@ -61,7 +61,7 @@ TEST_CASE("PulseDiscDrive eject_immediate returns disc", "[disc][pulsedrive]") {
 
     auto disc = drive.eject_immediate();
     CHECK(disc != nullptr);
-    CHECK(drive.state() == PulseDiscDrive::State::Empty);
+    CHECK(drive.state() == DriveState::Empty);
     CHECK_FALSE(drive.has_disc());
 }
 

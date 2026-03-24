@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -18,7 +18,7 @@
 namespace beebium {
 
 // Forward declaration
-class DiscDrive;
+class PulseDiscDrive;
 
 // Abstract interface for disc controllers (WD1770, 8271, etc.)
 //
@@ -84,7 +84,7 @@ public:
     // Attach a drive to the controller
     // @param drive_num Drive number (0 or 1)
     // @param drive Pointer to drive (owned by hardware, not controller)
-    virtual void attach_drive(int drive_num, DiscDrive* drive) = 0;
+    virtual void attach_drive(int drive_num, PulseDiscDrive* drive) = 0;
 
     // Detach all drives from the controller
     // Called before removing controller from socket
@@ -93,7 +93,7 @@ public:
     // Query attached drive
     // @param drive_num Drive number (0 or 1)
     // @return Pointer to attached drive, or nullptr if not attached
-    virtual DiscDrive* attached_drive(int drive_num) const = 0;
+    virtual PulseDiscDrive* attached_drive(int drive_num) const = 0;
 
     // =========================================================================
     // Identification

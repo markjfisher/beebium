@@ -1255,10 +1255,10 @@ void load_disc_images(MachineType& machine, const ServerConfig<MachineType>& con
             if (!result) {
                 throw std::runtime_error("Failed to load disc: " + result.error);
             }
-            if (result.image->is_write_protected()) {
+            if (result.disc->is_write_protected()) {
                 std::cout << "  (write-protected)\n";
             }
-            machine.state().memory.disc_drive_0.insert(std::move(result.image), source_url);
+            machine.state().memory.disc_drive_0.insert(std::move(result.disc), source_url);
         }
 
         if (!config.floppy_filepaths[1].empty()) {
@@ -1269,10 +1269,10 @@ void load_disc_images(MachineType& machine, const ServerConfig<MachineType>& con
             if (!result) {
                 throw std::runtime_error("Failed to load disc: " + result.error);
             }
-            if (result.image->is_write_protected()) {
+            if (result.disc->is_write_protected()) {
                 std::cout << "  (write-protected)\n";
             }
-            machine.state().memory.disc_drive_1.insert(std::move(result.image), source_url);
+            machine.state().memory.disc_drive_1.insert(std::move(result.disc), source_url);
         }
     }
 }

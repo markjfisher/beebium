@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -19,7 +19,7 @@
 namespace beebium {
 
 // Forward declaration
-class DiscDrive;
+class PulseDiscDrive;
 
 // Disc controller socket for BBC Model B
 //
@@ -158,7 +158,7 @@ public:
     // No-op if no controller is installed
     // @param drive_num Drive number (0 or 1)
     // @param drive Pointer to drive (owned by hardware)
-    void attach_drive(int drive_num, DiscDrive* drive) {
+    void attach_drive(int drive_num, PulseDiscDrive* drive) {
         if (controller_) {
             controller_->attach_drive(drive_num, drive);
         }
@@ -168,7 +168,7 @@ public:
     // Returns nullptr if no controller installed or drive not attached
     // @param drive_num Drive number (0 or 1)
     // @return Pointer to attached drive, or nullptr
-    DiscDrive* attached_drive(int drive_num) const {
+    PulseDiscDrive* attached_drive(int drive_num) const {
         if (!controller_) {
             return nullptr;
         }

@@ -24,7 +24,7 @@
 #include <beebium/Machines.hpp>
 #include <beebium/FrameBuffer.hpp>
 #include <beebium/FrameRenderer.hpp>
-#include <beebium/disc/FileDiscImage.hpp>
+#include <beebium/disc/DiscLoader.hpp>
 #include <beebium/tube/ParasiteRunner.hpp>
 #include <beebium/tube/TubeShared.hpp>
 
@@ -104,8 +104,9 @@ struct TestFixture {
         machine.memory().install_acorn_1770();
 
         auto disc_filepath = assets_dirpath / "discs" / DISC_FILENAME;
-        auto disc = FileDiscImage::load(disc_filepath);
-        machine.memory().disc_drive_0.insert(std::move(disc));
+        auto disc_result = load_disc_from_url_or_filepath(disc_filepath.string());
+        REQUIRE(disc_result.success());
+        machine.memory().disc_drive_0.insert(std::move(disc_result.disc));
 
         machine.state().memory.tube_socket.enable(&shared);
         machine.memory().enable_video_output();

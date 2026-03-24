@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -13,8 +13,8 @@
 #pragma once
 
 #include "DiscControllerInterface.hpp"
-#include "DiscDrive.hpp"
-#include "WD1770.hpp"
+#include "PulseDiscDrive.hpp"
+#include "PulseWD1770.hpp"
 
 #include <array>
 #include <cstdint>
@@ -35,12 +35,12 @@ namespace beebium {
 //     Bit 1: Drive 1 select (active high)
 //     Bit 2: Side select (0=side 0, 1=side 1)
 //     Bit 3: Density (0=double/MFM, 1=single/FM)
-//     Bit 4: Motor on (ignored - WD1770 handles motor internally)
+//     Bit 4: Motor on (ignored - PulseWD1770 handles motor internally)
 //     Bit 5: Reset (active low, falling edge triggers reset)
 //     Bit 6: NMI enable (tracked but not gated - see note below)
 //     Bit 7: Unused
 //
-//   Offset 0x04-0x07: WD1770 registers
+//   Offset 0x04-0x07: PulseWD1770 registers
 //     0x04: Status (read) / Command (write)
 //     0x05: Track register
 //     0x06: Sector register
@@ -58,7 +58,7 @@ public:
     Acorn1770DiscController() = default;
     ~Acorn1770DiscController() override = default;
 
-    // Non-copyable, non-movable (contains WD1770 which is non-copyable)
+    // Non-copyable, non-movable (contains PulseWD1770 which is non-copyable)
     Acorn1770DiscController(const Acorn1770DiscController&) = delete;
     Acorn1770DiscController& operator=(const Acorn1770DiscController&) = delete;
     Acorn1770DiscController(Acorn1770DiscController&&) = delete;
@@ -79,7 +79,7 @@ public:
         }
 
         if (offset < 0x08) {
-            // WD1770 registers (mirrored in 0x04-0x07)
+            // PulseWD1770 registers (mirrored in 0x04-0x07)
             return wd1770_.read(offset - 0x04);
         }
 
@@ -97,7 +97,7 @@ public:
         }
 
         if (offset < 0x08) {
-            // WD1770 registers (mirrored in 0x04-0x07)
+            // PulseWD1770 registers (mirrored in 0x04-0x07)
             wd1770_.write(offset - 0x04, value);
             return;
         }
@@ -137,7 +137,7 @@ public:
     // Drive management
     // =========================================================================
 
-    void attach_drive(int drive_num, DiscDrive* drive) override {
+    void attach_drive(int drive_num, PulseDiscDrive* drive) override {
         if (drive_num >= 0 && drive_num < 2) {
             drives_[static_cast<size_t>(drive_num)] = drive;
             wd1770_.attach_drive(drive_num, drive);
@@ -151,7 +151,7 @@ public:
         wd1770_.attach_drive(1, nullptr);
     }
 
-    DiscDrive* attached_drive(int drive_num) const override {
+    PulseDiscDrive* attached_drive(int drive_num) const override {
         if (drive_num < 0 || drive_num > 1) {
             return nullptr;
         }
@@ -188,9 +188,9 @@ public:
     // Check if NMI is enabled (bit 6 of control register)
     bool nmi_enabled() const { return nmi_enabled_; }
 
-    // Direct access to WD1770 for testing
-    WD1770& wd1770() { return wd1770_; }
-    const WD1770& wd1770() const { return wd1770_; }
+    // Direct access to PulseWD1770 for testing
+    PulseWD1770& wd1770() { return wd1770_; }
+    const PulseWD1770& wd1770() const { return wd1770_; }
 
 private:
     void write_control(uint8_t value) {
@@ -206,14 +206,17 @@ private:
         }
         // If neither bit set, drive selection is indeterminate
 
-        // Bit 2: Side select
-        wd1770_.set_side((value & 0x04) ? 1 : 0);
+        // Bit 2: Side select (propagated to both FDC and drives)
+        uint8_t side = (value & 0x04) ? 1 : 0;
+        wd1770_.set_side(side);
+        if (drives_[0]) drives_[0]->set_side(side);
+        if (drives_[1]) drives_[1]->set_side(side);
 
         // Bit 3: Density (0=double/MFM, 1=single/FM)
         wd1770_.set_density((value & 0x08) == 0);
 
         // Bit 4: Motor on (for 8271-style explicit control)
-        // Note: WD1770 handles motor internally via spin_up()/spin_down()
+        // Note: PulseWD1770 handles motor internally via spin_up()/spin_down()
         // during command execution, so this bit is effectively ignored.
 
         // Bit 5: Reset (active low)
@@ -229,8 +232,8 @@ private:
         nmi_enabled_ = (value & 0x40) != 0;
     }
 
-    WD1770 wd1770_;
-    std::array<DiscDrive*, 2> drives_ = {nullptr, nullptr};
+    PulseWD1770 wd1770_;
+    std::array<PulseDiscDrive*, 2> drives_ = {nullptr, nullptr};
     uint8_t control_ = 0;
     bool nmi_enabled_ = false;
 };

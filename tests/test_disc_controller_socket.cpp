@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -14,7 +14,7 @@
 
 #include "beebium/disc/DiscControllerSocket.hpp"
 #include "beebium/disc/Acorn1770DiscController.hpp"
-#include "beebium/disc/DiscDrive.hpp"
+#include "beebium/disc/PulseDiscDrive.hpp"
 
 using namespace beebium;
 
@@ -100,8 +100,8 @@ TEST_CASE("DiscControllerSocket controller installation", "[disc][socket]") {
 
 TEST_CASE("DiscControllerSocket drive attachment", "[disc][socket]") {
     DiscControllerSocket socket;
-    DiscDrive drive0;
-    DiscDrive drive1;
+    PulseDiscDrive drive0;
+    PulseDiscDrive drive1;
 
     SECTION("attach drives to empty socket does nothing") {
         socket.attach_drive(0, &drive0);
