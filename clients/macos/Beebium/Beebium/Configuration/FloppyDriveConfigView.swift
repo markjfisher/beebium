@@ -15,12 +15,16 @@ import UniformTypeIdentifiers
 
 /// Supported disc image file types for the file picker.
 /// Matches the types in StorageModeView for consistency.
+/// TODO: Query server for supported extensions via gRPC API (Phase 9a)
 private let discImageTypes: [UTType] = [
     UTType(filenameExtension: "ssd") ?? .data,
     UTType(filenameExtension: "dsd") ?? .data,
     UTType(filenameExtension: "adf") ?? .data,
     UTType(filenameExtension: "adl") ?? .data,
-    UTType(filenameExtension: "img") ?? .data
+    UTType(filenameExtension: "adm") ?? .data,
+    UTType(filenameExtension: "ads") ?? .data,
+    UTType(filenameExtension: "hfe") ?? .data,
+    UTType(filenameExtension: "img") ?? .data,
 ]
 
 /// Configuration view for a single floppy drive slot.
@@ -160,7 +164,7 @@ struct FloppyDriveConfigView: View {
                     if let data = item as? Data,
                        let url = URL(dataRepresentation: data, relativeTo: nil) {
                         let ext = url.pathExtension.lowercased()
-                        if ["ssd", "dsd", "adf", "adl", "img"].contains(ext) {
+                        if ["ssd", "dsd", "adf", "adl", "adm", "ads", "hfe", "img"].contains(ext) {
                             Task { @MainActor in
                                 self.imageFilepath = url.path
                             }

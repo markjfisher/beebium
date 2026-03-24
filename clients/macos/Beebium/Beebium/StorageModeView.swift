@@ -14,10 +14,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Supported disc image file types
+/// TODO: Query server for supported extensions via gRPC API (Phase 9a)
 private let discImageTypes: [UTType] = [
-    UTType(filenameExtension: "ssd") ?? .data,  // Single-sided disc
-    UTType(filenameExtension: "dsd") ?? .data,  // Double-sided disc
-    UTType(filenameExtension: "img") ?? .data   // Raw disc image
+    UTType(filenameExtension: "ssd") ?? .data,  // DFS single-sided disc
+    UTType(filenameExtension: "dsd") ?? .data,  // DFS double-sided disc
+    UTType(filenameExtension: "adf") ?? .data,  // ADFS disc (auto-detect geometry)
+    UTType(filenameExtension: "adl") ?? .data,  // ADFS large
+    UTType(filenameExtension: "adm") ?? .data,  // ADFS medium
+    UTType(filenameExtension: "ads") ?? .data,  // ADFS small
+    UTType(filenameExtension: "hfe") ?? .data,  // HFE flux-level disc image
+    UTType(filenameExtension: "img") ?? .data,  // Raw disc image
 ]
 
 /// Storage mode view showing floppy drives with insert/eject functionality
@@ -304,7 +310,7 @@ private struct DriveRowView: View {
                        let url = URL(dataRepresentation: data, relativeTo: nil) {
                         // Check if file extension is supported
                         let ext = url.pathExtension.lowercased()
-                        if ["ssd", "dsd", "img"].contains(ext) {
+                        if ["ssd", "dsd", "adf", "adl", "adm", "ads", "hfe", "img"].contains(ext) {
                             Task { @MainActor in
                                 self.insertDisc(url: url)
                             }
