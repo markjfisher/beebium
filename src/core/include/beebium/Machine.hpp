@@ -616,6 +616,21 @@ private:
                 state_.memory.user_via.tick_falling();
             }
         }
+
+        // The disc controller runs on the 1MHz bus and must be ticked during
+        // bus stretch cycles. Without this, the pulse-level WD1770 misses
+        // ticks whenever the CPU accesses the I/O region, causing the disc
+        // head to stall and byte timing to drift.
+        if ((cycle & 1) == 0) {
+            uint8_t nmi_mask = state_.memory.poll_nmi();
+            M6502_SetDeviceNMI(&state_.cpu, kDiscNmiDeviceMask, nmi_mask ? 1 : 0);
+        }
+
+        // Econet NMI during stretch cycles
+        if constexpr (HasEconetSocket<MemoryPolicy>) {
+            uint8_t econet_nmi = state_.memory.econet_socket.nmi_pending() ? 1 : 0;
+            M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
+        }
     }
 
     void setup_callbacks() {
