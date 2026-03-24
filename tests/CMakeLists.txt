@@ -71,6 +71,11 @@ add_executable(test_adfs_format_handler test_adfs_format_handler.cpp)
 target_link_libraries(test_adfs_format_handler PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_adfs_format_handler)
 
+# HFE format handler tests
+add_executable(test_hfe_format_handler test_hfe_format_handler.cpp)
+target_link_libraries(test_hfe_format_handler PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_hfe_format_handler)
+
 # Disc geometry tests
 add_executable(test_disc_geometry test_disc_geometry.cpp)
 target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)

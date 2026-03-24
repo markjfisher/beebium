@@ -10,6 +10,7 @@ add_library(beebium_core STATIC
     src/disc/FileDiscImage.cpp
     src/disc/formats/SsdFormatHandler.cpp
     src/disc/formats/AdfsFormatHandler.cpp
+    src/disc/formats/HfeFormatHandler.cpp
     src/econet/AunBackend.cpp
     src/TubeUla.cpp
     src/TubeHostPort.cpp
