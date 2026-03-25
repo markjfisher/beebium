@@ -86,6 +86,8 @@ public:
         return result == WAIT_OBJECT_0;
     }
 
+    HANDLE native_handle() const { return handle_; }
+
 private:
     HANDLE handle_;
 #else

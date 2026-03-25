@@ -43,6 +43,7 @@ namespace detail {
     inline ShutdownCallback g_shutdown_callback;
     inline CRITICAL_SECTION g_callback_lock;
     inline bool g_callback_lock_initialized = false;
+    inline HANDLE g_child_process = INVALID_HANDLE_VALUE;
 
     inline BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
         switch (ctrl_type) {
@@ -51,6 +52,11 @@ namespace detail {
             case CTRL_CLOSE_EVENT:
             case CTRL_SHUTDOWN_EVENT:
                 EnterCriticalSection(&g_callback_lock);
+                // Terminate child subprocess before invoking the shutdown callback,
+                // so it receives the signal even if this process is killed shortly after.
+                if (g_child_process != INVALID_HANDLE_VALUE) {
+                    TerminateProcess(g_child_process, 1);
+                }
                 if (g_shutdown_callback) {
                     g_shutdown_callback();
                 }
@@ -80,6 +86,21 @@ inline void remove_shutdown_handler() {
     LeaveCriticalSection(&detail::g_callback_lock);
 }
 
+/// Register a child process handle for automatic termination when this
+/// process receives a shutdown signal. The handle is NOT owned by this
+/// module; the caller must keep it alive until unregister_child_process().
+inline void register_child_process(HANDLE handle) {
+    EnterCriticalSection(&detail::g_callback_lock);
+    detail::g_child_process = handle;
+    LeaveCriticalSection(&detail::g_callback_lock);
+}
+
+inline void unregister_child_process() {
+    EnterCriticalSection(&detail::g_callback_lock);
+    detail::g_child_process = INVALID_HANDLE_VALUE;
+    LeaveCriticalSection(&detail::g_callback_lock);
+}
+
 /// No-op on Windows. The console control handler dispatches the callback
 /// directly from its own thread (protected by a critical section).
 inline void dispatch_pending_signal() {}
@@ -100,13 +121,20 @@ inline bool is_stdout_tty() {
 
 namespace detail {
     inline std::atomic<bool> g_signal_received{false};
+    inline std::atomic<pid_t> g_child_pid{-1};
     inline ShutdownCallback g_shutdown_callback;
 
     inline void signal_handler(int /*signal*/) {
-        // Only set an atomic flag — nothing else is async-signal-safe.
-        // The main loop must poll g_signal_received and call the callback
-        // from a normal (non-signal) context.
+        // Set the atomic flag for the main loop to pick up.
         g_signal_received.store(true, std::memory_order_relaxed);
+        // Also forward the signal to the child subprocess (if any) so it
+        // begins shutting down immediately, even if this process is killed
+        // before reaching the normal cleanup path.
+        // Both kill() and atomic load are async-signal-safe.
+        pid_t child = g_child_pid.load(std::memory_order_relaxed);
+        if (child > 0) {
+            kill(child, SIGTERM);
+        }
     }
 
     /// Call from the main loop to check for pending signals and dispatch
@@ -131,6 +159,17 @@ inline void remove_shutdown_handler() {
     std::signal(SIGINT, SIG_DFL);
     std::signal(SIGTERM, SIG_DFL);
     detail::g_shutdown_callback = nullptr;
+}
+
+/// Register a child process PID for automatic SIGTERM when this process
+/// receives a shutdown signal. This ensures the child is signalled even
+/// if the parent is killed before reaching normal cleanup code.
+inline void register_child_process(pid_t pid) {
+    detail::g_child_pid.store(pid, std::memory_order_relaxed);
+}
+
+inline void unregister_child_process() {
+    detail::g_child_pid.store(-1, std::memory_order_relaxed);
 }
 
 /// Check for pending shutdown signal and dispatch the callback if received.

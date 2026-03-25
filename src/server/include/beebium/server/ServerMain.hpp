@@ -1636,6 +1636,17 @@ public:
                 return *exit_code;
             }
 
+            // Register the parasite for signal-time cleanup so it receives
+            // SIGTERM even if this process is killed before reaching the
+            // normal shutdown path below.
+            if (tube_parasite && tube_parasite->valid()) {
+#ifdef _WIN32
+                platform::register_child_process(tube_parasite->native_handle());
+#else
+                platform::register_child_process(tube_parasite->pid());
+#endif
+            }
+
             // Handle wait mode
             handle_wait_mode(machine, config.wait_mode);
 
@@ -1659,6 +1670,8 @@ public:
                     tube_parasite->terminate();
                     tube_parasite->wait(1000);
                 }
+
+                platform::unregister_child_process();
             }
 
             server.stop();
