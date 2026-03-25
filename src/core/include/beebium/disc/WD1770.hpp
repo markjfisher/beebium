@@ -13,7 +13,7 @@
 #pragma once
 
 #include "IbmDiscFormat.hpp"
-#include "PulseDiscDrive.hpp"
+#include "DiscDrive.hpp"
 
 #include <array>
 #include <cstdint>
@@ -37,7 +37,7 @@ namespace beebium {
 //   Offset 1: Track register (read/write)
 //   Offset 2: Sector register (read/write)
 //   Offset 3: Data register (read/write)
-class PulseWD1770 {
+class WD1770 {
 public:
     // Status register bits
     static constexpr uint8_t STATUS_BUSY        = 0x01;
@@ -73,13 +73,13 @@ public:
     // Density mode
     enum class Density { SingleFM, DoubleMFM };
 
-    PulseWD1770() = default;
-    ~PulseWD1770() = default;
+    WD1770() = default;
+    ~WD1770() = default;
 
-    PulseWD1770(const PulseWD1770&) = delete;
-    PulseWD1770& operator=(const PulseWD1770&) = delete;
-    PulseWD1770(PulseWD1770&&) = default;
-    PulseWD1770& operator=(PulseWD1770&&) = default;
+    WD1770(const WD1770&) = delete;
+    WD1770& operator=(const WD1770&) = delete;
+    WD1770(WD1770&&) = default;
+    WD1770& operator=(WD1770&&) = default;
 
     // =========================================================================
     // Register Interface
@@ -207,7 +207,7 @@ public:
     // Drive Attachment
     // =========================================================================
 
-    void attach_drive(int drive_num, PulseDiscDrive* drive) {
+    void attach_drive(int drive_num, DiscDrive* drive) {
         if (drive_num >= 0 && drive_num < 2) {
             drives_[static_cast<size_t>(drive_num)] = drive;
         }
@@ -265,7 +265,7 @@ public:
         spin_up_delay_ = 0;
     }
 
-    const char* name() const { return "PulseWD1770"; }
+    const char* name() const { return "WD1770"; }
 
 private:
     // =========================================================================
@@ -331,7 +331,7 @@ private:
     };
 
     FmByte read_next_fm_byte() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) return {0, 0, false};
 
         uint32_t pulses = drive->read_pulses();
@@ -348,7 +348,7 @@ private:
     };
 
     MfmByte read_next_mfm_byte() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) return {0, 0, false};
 
         uint32_t pulses = drive->read_pulses();
@@ -381,7 +381,7 @@ private:
 
     // Write one FM byte to the disc at current position and advance.
     void write_fm_byte_to_disc(uint8_t data, uint8_t clocks = 0xFF) {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) return;
         uint32_t pulses = ibm_disc_format::fm_to_2us_pulses(clocks, data);
         drive->write_pulses(pulses);
@@ -391,7 +391,7 @@ private:
 
     // Write one MFM byte to the disc at current position and advance.
     void write_mfm_byte_to_disc(uint8_t data) {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) return;
         uint16_t mfm_pulses = ibm_disc_format::mfm_to_2us_pulses(write_last_mfm_bit_, data);
 
@@ -486,7 +486,7 @@ private:
     // =========================================================================
 
     void tick_restore() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) { complete_command(); return; }
         if (drive->at_track_0()) {
             track_ = 0;
@@ -499,7 +499,7 @@ private:
     }
 
     void tick_seek() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) { complete_command(); return; }
         if (track_ == data_) {
             complete_command();
@@ -518,7 +518,7 @@ private:
     }
 
     void tick_step() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive) { complete_command(); return; }
         if (step_direction_ > 0) {
             drive->step_in();
@@ -538,7 +538,7 @@ private:
     // =========================================================================
 
     void start_read_sector() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive || !drive->has_disc()) {
             status_ |= STATUS_RNF;
             complete_command();
@@ -718,7 +718,7 @@ private:
     // =========================================================================
 
     void start_write_sector() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive || !drive->has_disc()) {
             status_ |= STATUS_RNF;
             complete_command();
@@ -913,7 +913,7 @@ private:
     // =========================================================================
 
     void start_read_address() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive || !drive->has_disc()) {
             status_ |= STATUS_RNF;
             complete_command();
@@ -995,7 +995,7 @@ private:
     // =========================================================================
 
     void start_read_track() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive || !drive->has_disc()) {
             status_ |= STATUS_RNF;
             complete_command();
@@ -1044,7 +1044,7 @@ private:
     // =========================================================================
 
     void start_write_track() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (!drive || !drive->has_disc()) {
             status_ |= STATUS_RNF;
             complete_command();
@@ -1152,7 +1152,7 @@ private:
     }
 
     void update_track0_status() {
-        PulseDiscDrive* drive = get_current_drive();
+        DiscDrive* drive = get_current_drive();
         if (drive && drive->at_track_0()) {
             status_ |= STATUS_TRACK0;
         } else {
@@ -1160,7 +1160,7 @@ private:
         }
     }
 
-    PulseDiscDrive* get_current_drive() {
+    DiscDrive* get_current_drive() {
         return drives_[selected_drive_];
     }
 
@@ -1201,7 +1201,7 @@ private:
     bool intrq_ = false;
 
     // Drive connections
-    std::array<PulseDiscDrive*, 2> drives_{nullptr, nullptr};
+    std::array<DiscDrive*, 2> drives_{nullptr, nullptr};
 
     // External control
     uint8_t selected_side_ = 0;

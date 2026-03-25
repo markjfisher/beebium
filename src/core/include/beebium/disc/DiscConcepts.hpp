@@ -13,7 +13,7 @@
 #ifndef BEEBIUM_DISC_CONCEPTS_HPP
 #define BEEBIUM_DISC_CONCEPTS_HPP
 
-#include "PulseDiscDrive.hpp"
+#include "DiscDrive.hpp"
 #include "DiscControllerSocket.hpp"
 #include "DiscControllerInterface.hpp"
 
@@ -26,8 +26,8 @@ namespace beebium {
 // Both Model B and Model B+ have disc drives
 template<typename T>
 concept HasDiscDrives = requires(T& hw) {
-    { hw.disc_drive_0 } -> std::same_as<PulseDiscDrive&>;
-    { hw.disc_drive_1 } -> std::same_as<PulseDiscDrive&>;
+    { hw.disc_drive_0 } -> std::same_as<DiscDrive&>;
+    { hw.disc_drive_1 } -> std::same_as<DiscDrive&>;
 };
 
 // Concept to detect if hardware has a pluggable disc controller socket (Model B)

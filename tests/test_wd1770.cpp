@@ -10,8 +10,8 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include <beebium/disc/PulseWD1770.hpp>
-#include <beebium/disc/PulseDiscDrive.hpp>
+#include <beebium/disc/WD1770.hpp>
+#include <beebium/disc/DiscDrive.hpp>
 #include <beebium/disc/formats/SsdFormatHandler.hpp>
 #include <beebium/disc/TrackDecoder.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -37,8 +37,8 @@ static std::unique_ptr<Disc> make_test_disc() {
 
 // Helper: set up a WD1770 + drive with a test disc, spin-up delay disabled.
 struct TestRig {
-    PulseWD1770 fdc;
-    PulseDiscDrive drive;
+    WD1770 fdc;
+    DiscDrive drive;
 
     TestRig() {
         fdc.set_spin_up_delay_enabled(false);
@@ -103,8 +103,8 @@ struct TestRig {
 // Basic State
 // =============================================================================
 
-TEST_CASE("PulseWD1770 initial state", "[disc][wd1770p]") {
-    PulseWD1770 fdc;
+TEST_CASE("WD1770 initial state", "[disc][wd1770p]") {
+    WD1770 fdc;
     CHECK_FALSE(fdc.busy());
     CHECK_FALSE(fdc.drq());
     CHECK_FALSE(fdc.intrq());
@@ -116,7 +116,7 @@ TEST_CASE("PulseWD1770 initial state", "[disc][wd1770p]") {
 // Type I: Restore
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Restore seeks to track 0", "[disc][wd1770p][restore]") {
+TEST_CASE("WD1770 Restore seeks to track 0", "[disc][wd1770p][restore]") {
     TestRig rig;
     rig.drive.seek(40);
 
@@ -132,7 +132,7 @@ TEST_CASE("PulseWD1770 Restore seeks to track 0", "[disc][wd1770p][restore]") {
 // Type I: Seek
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Seek moves to target track", "[disc][wd1770p][seek]") {
+TEST_CASE("WD1770 Seek moves to target track", "[disc][wd1770p][seek]") {
     TestRig rig;
 
     // Seek to track 20
@@ -149,7 +149,7 @@ TEST_CASE("PulseWD1770 Seek moves to target track", "[disc][wd1770p][seek]") {
 // Type II: Read Sector
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Read Sector reads correct data", "[disc][wd1770p][read]") {
+TEST_CASE("WD1770 Read Sector reads correct data", "[disc][wd1770p][read]") {
     TestRig rig;
 
     // Seek to track 0 first (already there)
@@ -176,7 +176,7 @@ TEST_CASE("PulseWD1770 Read Sector reads correct data", "[disc][wd1770p][read]")
     CHECK_FALSE(rig.fdc.busy());
 }
 
-TEST_CASE("PulseWD1770 Read Sector on different sectors", "[disc][wd1770p][read]") {
+TEST_CASE("WD1770 Read Sector on different sectors", "[disc][wd1770p][read]") {
     TestRig rig;
 
     for (uint8_t sector = 0; sector < 10; ++sector) {
@@ -197,7 +197,7 @@ TEST_CASE("PulseWD1770 Read Sector on different sectors", "[disc][wd1770p][read]
     }
 }
 
-TEST_CASE("PulseWD1770 Read Sector after seek", "[disc][wd1770p][read]") {
+TEST_CASE("WD1770 Read Sector after seek", "[disc][wd1770p][read]") {
     TestRig rig;
 
     // Seek to track 5
@@ -222,7 +222,7 @@ TEST_CASE("PulseWD1770 Read Sector after seek", "[disc][wd1770p][read]") {
     }
 }
 
-TEST_CASE("PulseWD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770p][read]") {
+TEST_CASE("WD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770p][read]") {
     TestRig rig;
 
     // Try to read sector 15 (DFS only has sectors 0-9)
@@ -240,7 +240,7 @@ TEST_CASE("PulseWD1770 Read Sector sets RNF for invalid sector", "[disc][wd1770p
 // Type II: Write Sector
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Write Sector then Read back", "[disc][wd1770p][write]") {
+TEST_CASE("WD1770 Write Sector then Read back", "[disc][wd1770p][write]") {
     TestRig rig;
 
     // Write sector 0 with test pattern
@@ -274,7 +274,7 @@ TEST_CASE("PulseWD1770 Write Sector then Read back", "[disc][wd1770p][write]") {
 // Type III: Read Address
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Read Address returns ID field", "[disc][wd1770p][readaddr]") {
+TEST_CASE("WD1770 Read Address returns ID field", "[disc][wd1770p][readaddr]") {
     TestRig rig;
 
     rig.write_command(0xC0);  // Read Address
@@ -298,7 +298,7 @@ TEST_CASE("PulseWD1770 Read Address returns ID field", "[disc][wd1770p][readaddr
 // Force Interrupt
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Force Interrupt terminates command", "[disc][wd1770p][forceint]") {
+TEST_CASE("WD1770 Force Interrupt terminates command", "[disc][wd1770p][forceint]") {
     TestRig rig;
 
     // Start a read sector
@@ -315,7 +315,7 @@ TEST_CASE("PulseWD1770 Force Interrupt terminates command", "[disc][wd1770p][for
     CHECK_FALSE(rig.fdc.intrq());
 }
 
-TEST_CASE("PulseWD1770 Force Interrupt with I3 generates INTRQ", "[disc][wd1770p][forceint]") {
+TEST_CASE("WD1770 Force Interrupt with I3 generates INTRQ", "[disc][wd1770p][forceint]") {
     TestRig rig;
 
     rig.write_command(0xD8);  // Force interrupt, I3 = immediate
@@ -326,7 +326,7 @@ TEST_CASE("PulseWD1770 Force Interrupt with I3 generates INTRQ", "[disc][wd1770p
 // Motor Control
 // =============================================================================
 
-TEST_CASE("PulseWD1770 motor spins up on command", "[disc][wd1770p][motor]") {
+TEST_CASE("WD1770 motor spins up on command", "[disc][wd1770p][motor]") {
     TestRig rig;
 
     CHECK_FALSE(rig.drive.motor_on());
@@ -340,7 +340,7 @@ TEST_CASE("PulseWD1770 motor spins up on command", "[disc][wd1770p][motor]") {
 // Write Protection
 // =============================================================================
 
-TEST_CASE("PulseWD1770 Write Sector rejects write-protected disc", "[disc][wd1770p][wp]") {
+TEST_CASE("WD1770 Write Sector rejects write-protected disc", "[disc][wd1770p][wp]") {
     TestRig rig;
     rig.drive.disc()->set_write_protected(true);
 
@@ -356,7 +356,7 @@ TEST_CASE("PulseWD1770 Write Sector rejects write-protected disc", "[disc][wd177
 // NMI Signalling
 // =============================================================================
 
-TEST_CASE("PulseWD1770 nmi_pending combines DRQ and INTRQ", "[disc][wd1770p][nmi]") {
+TEST_CASE("WD1770 nmi_pending combines DRQ and INTRQ", "[disc][wd1770p][nmi]") {
     TestRig rig;
 
     CHECK_FALSE(rig.fdc.nmi_pending());

@@ -57,16 +57,16 @@ struct EjectOptions {
 //   Ejecting -> Empty    (via tick_eject() when quiescent or timeout)
 //   Ejecting -> Loaded   (via cancel_eject())
 //   Any -> Empty         (via eject_immediate())
-class PulseDiscDrive {
+class DiscDrive {
 public:
     static constexpr uint8_t MAX_TRACK = 79;
 
     using clock = std::chrono::steady_clock;
 
-    PulseDiscDrive() = default;
+    DiscDrive() = default;
 
     // Constructor with indicator integration
-    PulseDiscDrive(Indicators& indicators, const std::string& indicator_name,
+    DiscDrive(Indicators& indicators, const std::string& indicator_name,
                     const std::string& label, const std::string& color = "568nm")
         : indicators_(&indicators) {
         std::unordered_map<std::string, std::string> metadata;
@@ -77,12 +77,12 @@ public:
             indicator_name, std::make_unique<PassthroughFilter>(), std::move(metadata));
     }
 
-    ~PulseDiscDrive() = default;
+    ~DiscDrive() = default;
 
-    PulseDiscDrive(const PulseDiscDrive&) = delete;
-    PulseDiscDrive& operator=(const PulseDiscDrive&) = delete;
-    PulseDiscDrive(PulseDiscDrive&&) = default;
-    PulseDiscDrive& operator=(PulseDiscDrive&&) = default;
+    DiscDrive(const DiscDrive&) = delete;
+    DiscDrive& operator=(const DiscDrive&) = delete;
+    DiscDrive(DiscDrive&&) = default;
+    DiscDrive& operator=(DiscDrive&&) = default;
 
     // =========================================================================
     // State

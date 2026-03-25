@@ -13,7 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "beebium/disc/Acorn1770DiscController.hpp"
-#include "beebium/disc/PulseDiscDrive.hpp"
+#include "beebium/disc/DiscDrive.hpp"
 
 using namespace beebium;
 
@@ -154,8 +154,8 @@ TEST_CASE("Acorn1770DiscController reset (bit 5)", "[disc][acorn1770]") {
 
 TEST_CASE("Acorn1770DiscController drive attachment", "[disc][acorn1770]") {
     Acorn1770DiscController controller;
-    PulseDiscDrive drive0;
-    PulseDiscDrive drive1;
+    DiscDrive drive0;
+    DiscDrive drive1;
 
     SECTION("attach and query drives") {
         CHECK(controller.attached_drive(0) == nullptr);

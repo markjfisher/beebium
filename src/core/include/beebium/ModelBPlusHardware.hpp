@@ -32,8 +32,8 @@
 #include "devices/Rom.hpp"
 #include "devices/Sn76489.hpp"
 #include "devices/VideoUla.hpp"
-#include "disc/PulseDiscDrive.hpp"
-#include "disc/PulseWD1770.hpp"
+#include "disc/DiscDrive.hpp"
+#include "disc/WD1770.hpp"
 #include "econet/EconetSocket.hpp"
 #include "tube/TubeSocket.hpp"
 #include "indicators/IndicatorFilter.hpp"
@@ -199,9 +199,9 @@ public:
     SystemViaPeripheral system_via_peripheral{addressable_latch, indicators};
 
     // Disc controller (WD1770 built-in on Model B+)
-    PulseWD1770 disc_controller;
-    PulseDiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
-    PulseDiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
+    WD1770 disc_controller;
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
 
     // Econet subsystem -- optional networking hardware
     EconetSocket econet_socket;
@@ -273,9 +273,9 @@ private:
 
     // Disc control register wrapper (0xFE80) - controls 1770 interface
     struct DiscControlRegister {
-        PulseWD1770& controller;
-        PulseDiscDrive& drive0;
-        PulseDiscDrive& drive1;
+        WD1770& controller;
+        DiscDrive& drive0;
+        DiscDrive& drive1;
         uint8_t& control;
         bool& nmi_enabled;
 
@@ -352,7 +352,7 @@ public:
             make_region<0xFE30, 0xFE33, Mirror<0x03>>(std::declval<BPlusRomselRegister&>()),
             make_region<0xFE34, 0xFE37, Mirror<0x03>>(std::declval<AccconRegister&>()),
             make_region<0xFE80, 0xFE83, Mirror<0x03>>(std::declval<DiscControlRegister&>()),
-            make_region<0xFE84, 0xFE87, Mirror<0x03>>(std::declval<PulseWD1770&>()),
+            make_region<0xFE84, 0xFE87, Mirror<0x03>>(std::declval<WD1770&>()),
             make_region<0xFEA0, 0xFEBF, Mirror<0x03>>(std::declval<EconetAdlcRegion&>()),        // Econet ADLC
             make_region<0xFEE0, 0xFEFF, Mirror<0x07>>(std::declval<TubeSocket&>()),              // Tube ULA
             make_region<0x0000, 0x7FFF>(std::declval<Ram<32768>&>()),

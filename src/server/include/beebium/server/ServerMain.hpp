@@ -16,7 +16,7 @@
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/disc/DiscLoader.hpp"
-#include "beebium/disc/PulseDiscDrive.hpp"
+#include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
@@ -1245,7 +1245,7 @@ std::optional<int> launch_tube_parasite(
 
 // Load a single disc image into a floppy drive.
 // Returns an exit code on error, or std::nullopt on success.
-inline std::optional<int> load_single_disc(PulseDiscDrive& drive, int drive_num,
+inline std::optional<int> load_single_disc(DiscDrive& drive, int drive_num,
                                             const std::string& filepath_or_url) {
     // Resolve filepath to canonical path, checking existence
     std::filesystem::path filepath(filepath_or_url);

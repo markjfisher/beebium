@@ -14,8 +14,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/NmiAggregator.hpp>
-#include <beebium/disc/PulseDiscDrive.hpp>
-#include <beebium/disc/PulseWD1770.hpp>
+#include <beebium/disc/DiscDrive.hpp>
+#include <beebium/disc/WD1770.hpp>
 #include <beebium/disc/formats/SsdFormatHandler.hpp>
 
 using namespace beebium;
@@ -33,7 +33,7 @@ struct TestNmiDevice {
 
 TEST_CASE("NmiSource concept", "[nmi]") {
     STATIC_REQUIRE(NmiSource<TestNmiDevice>);
-    STATIC_REQUIRE(NmiSource<PulseWD1770>);
+    STATIC_REQUIRE(NmiSource<WD1770>);
 }
 
 TEST_CASE("Single NMI source", "[nmi]") {
@@ -102,9 +102,9 @@ TEST_CASE("NullNmiAggregator", "[nmi]") {
     CHECK(aggregator.size() == 0);
 }
 
-TEST_CASE("PulseWD1770 nmi_pending reflects INTRQ", "[nmi][wd1770]") {
-    PulseWD1770 controller;
-    PulseDiscDrive drive;
+TEST_CASE("WD1770 nmi_pending reflects INTRQ", "[nmi][wd1770]") {
+    WD1770 controller;
+    DiscDrive drive;
     SsdFormatHandler handler;
     std::vector<uint8_t> data(80 * 10 * 256, 0);
     auto result = handler.load(data, "/tmp/blank.ssd");
@@ -125,8 +125,8 @@ TEST_CASE("PulseWD1770 nmi_pending reflects INTRQ", "[nmi][wd1770]") {
     CHECK_FALSE(controller.nmi_pending());
 }
 
-TEST_CASE("NMI aggregator with PulseWD1770", "[nmi][wd1770]") {
-    PulseWD1770 controller;
+TEST_CASE("NMI aggregator with WD1770", "[nmi][wd1770]") {
+    WD1770 controller;
     auto aggregator = make_nmi_aggregator(make_nmi_binding<0>(controller));
 
     // Initially no NMI

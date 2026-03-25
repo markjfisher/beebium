@@ -14,7 +14,7 @@
 
 #include "beebium/disc/DiscControllerSocket.hpp"
 #include "beebium/disc/Acorn1770DiscController.hpp"
-#include "beebium/disc/PulseDiscDrive.hpp"
+#include "beebium/disc/DiscDrive.hpp"
 
 using namespace beebium;
 
@@ -100,8 +100,8 @@ TEST_CASE("DiscControllerSocket controller installation", "[disc][socket]") {
 
 TEST_CASE("DiscControllerSocket drive attachment", "[disc][socket]") {
     DiscControllerSocket socket;
-    PulseDiscDrive drive0;
-    PulseDiscDrive drive1;
+    DiscDrive drive0;
+    DiscDrive drive1;
 
     SECTION("attach drives to empty socket does nothing") {
         socket.attach_drive(0, &drive0);

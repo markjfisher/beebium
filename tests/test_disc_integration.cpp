@@ -52,7 +52,7 @@ static std::unique_ptr<Disc> create_ssd_with_sector(uint8_t track, uint8_t secto
     return std::move(result.disc);
 }
 
-// PulseWD1770 register addresses on Model B+
+// WD1770 register addresses on Model B+
 constexpr uint16_t DISC_CONTROL = 0xFE80;
 constexpr uint16_t WD1770_STATUS = 0xFE84;
 constexpr uint16_t WD1770_COMMAND = 0xFE84;
@@ -1534,7 +1534,7 @@ void dump_cat_screen(MachineType& machine, int max_rows = 25) {
 TEST_CASE("Consecutive Read Sector commands both succeed", "[disc][integration][pulse][consecutive]") {
     // Diagnostic test: issue Read Sector 0 then Read Sector 1 via direct
     // register polling (no NMI, no DFS). If the second read fails, the bug
-    // is in PulseWD1770's state between commands.
+    // is in WD1770's state between commands.
     ModelBPlus machine;
     machine.memory().disc_controller.set_spin_up_delay_enabled(false);
 

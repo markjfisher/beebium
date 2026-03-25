@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include <beebium/disc/PulseDiscDrive.hpp>
+#include <beebium/disc/DiscDrive.hpp>
 #include <beebium/disc/formats/SsdFormatHandler.hpp>
 #include <beebium/disc/TrackBuilder.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -34,8 +34,8 @@ static std::unique_ptr<Disc> make_test_disc() {
 // Construction and State
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive default construction is empty", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive default construction is empty", "[disc][pulsedrive]") {
+    DiscDrive drive;
     CHECK(drive.state() == DriveState::Empty);
     CHECK_FALSE(drive.has_disc());
     CHECK(drive.current_track() == 0);
@@ -46,8 +46,8 @@ TEST_CASE("PulseDiscDrive default construction is empty", "[disc][pulsedrive]") 
 // Disc Insertion / Ejection
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive insert transitions to Loaded", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive insert transitions to Loaded", "[disc][pulsedrive]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
 
     CHECK(drive.state() == DriveState::Loaded);
@@ -55,8 +55,8 @@ TEST_CASE("PulseDiscDrive insert transitions to Loaded", "[disc][pulsedrive]") {
     CHECK(drive.disc() != nullptr);
 }
 
-TEST_CASE("PulseDiscDrive eject_immediate returns disc", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive eject_immediate returns disc", "[disc][pulsedrive]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
 
     auto disc = drive.eject_immediate();
@@ -69,8 +69,8 @@ TEST_CASE("PulseDiscDrive eject_immediate returns disc", "[disc][pulsedrive]") {
 // Head Positioning
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive step_in and step_out", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive step_in and step_out", "[disc][pulsedrive]") {
+    DiscDrive drive;
     CHECK(drive.current_track() == 0);
     CHECK(drive.at_track_0());
 
@@ -83,20 +83,20 @@ TEST_CASE("PulseDiscDrive step_in and step_out", "[disc][pulsedrive]") {
     CHECK(drive.at_track_0());
 }
 
-TEST_CASE("PulseDiscDrive step_out at track 0 stays at 0", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive step_out at track 0 stays at 0", "[disc][pulsedrive]") {
+    DiscDrive drive;
     drive.step_out();
     CHECK(drive.current_track() == 0);
 }
 
-TEST_CASE("PulseDiscDrive step_in clamped at MAX_TRACK", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive step_in clamped at MAX_TRACK", "[disc][pulsedrive]") {
+    DiscDrive drive;
     for (int i = 0; i < 100; ++i) drive.step_in();
-    CHECK(drive.current_track() == PulseDiscDrive::MAX_TRACK);
+    CHECK(drive.current_track() == DiscDrive::MAX_TRACK);
 }
 
-TEST_CASE("PulseDiscDrive seek", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive seek", "[disc][pulsedrive]") {
+    DiscDrive drive;
     drive.seek(40);
     CHECK(drive.current_track() == 40);
 
@@ -108,8 +108,8 @@ TEST_CASE("PulseDiscDrive seek", "[disc][pulsedrive]") {
 // Motor Control
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive motor control", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive motor control", "[disc][pulsedrive]") {
+    DiscDrive drive;
     CHECK_FALSE(drive.motor_on());
 
     drive.spin_up();
@@ -123,8 +123,8 @@ TEST_CASE("PulseDiscDrive motor control", "[disc][pulsedrive]") {
 // Pulse-Level Access
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive read_pulses returns data from disc", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive read_pulses returns data from disc", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
     drive.set_side(0);
 
@@ -134,8 +134,8 @@ TEST_CASE("PulseDiscDrive read_pulses returns data from disc", "[disc][pulsedriv
     CHECK(pulses != 0);
 }
 
-TEST_CASE("PulseDiscDrive read_pulses returns quasi-random with no disc", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive read_pulses returns quasi-random with no disc", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.set_side(0);
 
     // With no disc, should still return something (quasi-random pulses)
@@ -144,8 +144,8 @@ TEST_CASE("PulseDiscDrive read_pulses returns quasi-random with no disc", "[disc
     (void)p1;
 }
 
-TEST_CASE("PulseDiscDrive advance_head increments position", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive advance_head increments position", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
     drive.set_side(0);
 
@@ -156,8 +156,8 @@ TEST_CASE("PulseDiscDrive advance_head increments position", "[disc][pulsedrive]
     CHECK_FALSE(index);  // Not at index yet
 }
 
-TEST_CASE("PulseDiscDrive advance_head wraps at track end", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive advance_head wraps at track end", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
     drive.set_side(0);
 
@@ -176,8 +176,8 @@ TEST_CASE("PulseDiscDrive advance_head wraps at track end", "[disc][pulsedrive][
     CHECK(drive.head_position() == 0);
 }
 
-TEST_CASE("PulseDiscDrive advance_head_half increments by half-word", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive advance_head_half increments by half-word", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
     drive.set_side(0);
 
@@ -199,8 +199,8 @@ TEST_CASE("PulseDiscDrive advance_head_half increments by half-word", "[disc][pu
 // Write Pulses
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive write_pulses modifies track", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive write_pulses modifies track", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     drive.insert(make_test_disc());
     drive.set_side(0);
 
@@ -208,8 +208,8 @@ TEST_CASE("PulseDiscDrive write_pulses modifies track", "[disc][pulsedrive][puls
     CHECK(drive.read_pulses() == 0xDEADBEEF);
 }
 
-TEST_CASE("PulseDiscDrive write marks disc dirty", "[disc][pulsedrive][pulses]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive write marks disc dirty", "[disc][pulsedrive][pulses]") {
+    DiscDrive drive;
     auto disc = make_test_disc();
     auto* disc_ptr = disc.get();
     drive.insert(std::move(disc));
@@ -224,8 +224,8 @@ TEST_CASE("PulseDiscDrive write marks disc dirty", "[disc][pulsedrive][pulses]")
 // Side Selection
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive side selection affects which surface is read", "[disc][pulsedrive][side]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive side selection affects which surface is read", "[disc][pulsedrive][side]") {
+    DiscDrive drive;
 
     SsdFormatHandler handler;
     // Make a DSD (double-sided) image with distinct data on each side
@@ -275,8 +275,8 @@ TEST_CASE("PulseDiscDrive side selection affects which surface is read", "[disc]
 // Write Protection
 // =============================================================================
 
-TEST_CASE("PulseDiscDrive is_write_protected delegates to disc", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive is_write_protected delegates to disc", "[disc][pulsedrive]") {
+    DiscDrive drive;
     auto disc = make_test_disc();
     disc->set_write_protected(true);
     drive.insert(std::move(disc));
@@ -284,7 +284,7 @@ TEST_CASE("PulseDiscDrive is_write_protected delegates to disc", "[disc][pulsedr
     CHECK(drive.is_write_protected());
 }
 
-TEST_CASE("PulseDiscDrive is_write_protected false with no disc", "[disc][pulsedrive]") {
-    PulseDiscDrive drive;
+TEST_CASE("DiscDrive is_write_protected false with no disc", "[disc][pulsedrive]") {
+    DiscDrive drive;
     CHECK_FALSE(drive.is_write_protected());
 }

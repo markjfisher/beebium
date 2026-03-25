@@ -15,7 +15,7 @@
 
 #include "disc.grpc.pb.h"
 #include "beebium/disc/DiscConcepts.hpp"
-#include "beebium/disc/PulseDiscDrive.hpp"
+#include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 
@@ -84,7 +84,7 @@ public:
             }
 
             // Get the target drive
-            PulseDiscDrive& drive = (drive_num == 0)
+            DiscDrive& drive = (drive_num == 0)
                 ? machine_.state().memory.disc_drive_0
                 : machine_.state().memory.disc_drive_1;
 
@@ -124,7 +124,7 @@ public:
                 return grpc::Status::OK;
             }
 
-            PulseDiscDrive& drive = (drive_num == 0)
+            DiscDrive& drive = (drive_num == 0)
                 ? machine_.state().memory.disc_drive_0
                 : machine_.state().memory.disc_drive_1;
 
@@ -382,7 +382,7 @@ private:
     }
 
     void fill_drive_status(beebium::DriveStatus* status, uint32_t drive_num,
-                           const PulseDiscDrive& drive) {
+                           const DiscDrive& drive) {
         status->set_drive(drive_num);
 
         switch (drive.state()) {
@@ -410,7 +410,7 @@ private:
 
     void check_and_send_events(grpc::ServerWriter<DiscEvent>* writer,
                                uint32_t drive_num,
-                               PulseDiscDrive& drive,
+                               DiscDrive& drive,
                                DriveState& prev_state,
                                bool& prev_motor) {
         DriveState curr_state = drive.state();

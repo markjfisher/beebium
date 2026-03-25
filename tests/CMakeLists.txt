@@ -85,14 +85,14 @@ target_compile_definitions(test_disc_loading PRIVATE
 catch_discover_tests(test_disc_loading)
 
 # Pulse disc drive tests
-add_executable(test_pulse_disc_drive test_pulse_disc_drive.cpp)
-target_link_libraries(test_pulse_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_pulse_disc_drive)
+add_executable(test_disc_drive test_disc_drive.cpp)
+target_link_libraries(test_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_disc_drive)
 
 # Pulse WD1770 tests
-add_executable(test_pulse_wd1770 test_pulse_wd1770.cpp)
-target_link_libraries(test_pulse_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_pulse_wd1770)
+add_executable(test_wd1770 test_wd1770.cpp)
+target_link_libraries(test_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_wd1770)
 
 # MC6854 ADLC tests
 add_executable(test_mc6854 test_mc6854.cpp)
