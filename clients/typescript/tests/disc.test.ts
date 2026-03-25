@@ -43,9 +43,7 @@ function makeDiscStub(overrides?: Record<string, (req: any) => any>) {
                     disc: {
                         name: "test.ssd",
                         sides: 1,
-                        tracksPerSide: 40,
-                        sectorsPerTrack: 10,
-                        sectorSize: 256,
+                        format: "SSD",
                         writeProtected: false,
                     },
                 },
@@ -162,9 +160,7 @@ describe("Disc", () => {
             expect(d0.disc).toBeDefined();
             expect(d0.disc!.name).toBe("test.ssd");
             expect(d0.disc!.sides).toBe(1);
-            expect(d0.disc!.tracksPerSide).toBe(40);
-            expect(d0.disc!.sectorsPerTrack).toBe(10);
-            expect(d0.disc!.sectorSize).toBe(256);
+            expect(d0.disc!.format).toBe("SSD");
             expect(d0.disc!.writeProtected).toBe(false);
         });
 

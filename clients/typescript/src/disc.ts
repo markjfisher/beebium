@@ -47,10 +47,8 @@ export enum DiscEventType {
 export interface DiscMetadata {
     name: string;
     sides: number;
-    tracksPerSide: number;
-    sectorsPerTrack: number;
-    sectorSize: number;
     writeProtected: boolean;
+    format: string;
 }
 
 export interface DriveStatus {
@@ -124,10 +122,8 @@ function toDiscMetadata(proto: ProtoDiscMetadata | undefined): DiscMetadata | un
     return {
         name: proto.name,
         sides: proto.sides,
-        tracksPerSide: proto.tracksPerSide,
-        sectorsPerTrack: proto.sectorsPerTrack,
-        sectorSize: proto.sectorSize,
         writeProtected: proto.writeProtected,
+        format: proto.format,
     };
 }
 
