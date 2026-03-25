@@ -76,6 +76,14 @@ add_executable(test_hfe_format_handler test_hfe_format_handler.cpp)
 target_link_libraries(test_hfe_format_handler PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_hfe_format_handler)
 
+# Disc loading tests (real images and malformed images)
+add_executable(test_disc_loading test_disc_loading.cpp)
+target_link_libraries(test_disc_loading PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_disc_loading PRIVATE
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_disc_loading)
+
 # Pulse disc drive tests
 add_executable(test_pulse_disc_drive test_pulse_disc_drive.cpp)
 target_link_libraries(test_pulse_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
