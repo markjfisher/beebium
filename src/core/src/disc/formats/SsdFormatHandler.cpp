@@ -131,6 +131,10 @@ std::string_view SsdFormatHandler::format_name() const {
     return "SSD/DSD (DFS)";
 }
 
+std::string_view SsdFormatHandler::format_description() const {
+    return "Acorn Disc Filing System sector image";
+}
+
 std::vector<std::string_view> SsdFormatHandler::file_extensions() const {
     return {".ssd", ".dsd"};
 }

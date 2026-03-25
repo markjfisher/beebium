@@ -1748,6 +1748,92 @@ public:
     }
 };
 
+// ListFloppyFormats subcommand - list supported floppy disc image formats
+template<typename MachineType>
+class ListFloppyFormatsSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "list-floppy-formats"; }
+    std::string_view description() const override { return "List supported floppy disc image formats"; }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " list-floppy-formats\n"
+                  << "\n"
+                  << "Lists all floppy disc image formats that can be loaded.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            std::cerr << "Unknown argument: " << arg << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        OutputFormat format = resolve_output_format(global.output_format);
+        const auto& registry = default_format_registry();
+
+        switch (format) {
+            case OutputFormat::Pretty:
+                std::cout << "Supported floppy disc image formats:\n";
+                for (const auto& handler : registry.handlers()) {
+                    std::cout << "  " << handler->format_name() << "\n"
+                              << "      " << handler->format_description() << "\n"
+                              << "      Extensions:";
+                    for (auto ext : handler->file_extensions()) {
+                        std::cout << " " << ext;
+                    }
+                    std::cout << "\n";
+                    std::cout << "      Write support: " << (handler->supports_write() ? "yes" : "no") << "\n";
+                }
+                break;
+
+            case OutputFormat::Tsv:
+                std::cout << "name\tdescription\textensions\twrite_support\n";
+                for (const auto& handler : registry.handlers()) {
+                    std::cout << handler->format_name() << "\t"
+                              << handler->format_description() << "\t";
+                    bool first = true;
+                    for (auto ext : handler->file_extensions()) {
+                        if (!first) std::cout << ",";
+                        std::cout << ext;
+                        first = false;
+                    }
+                    std::cout << "\t" << (handler->supports_write() ? "yes" : "no") << "\n";
+                }
+                break;
+
+            case OutputFormat::Jsonl:
+                for (const auto& handler : registry.handlers()) {
+                    std::cout << "{\"name\":\"" << handler->format_name()
+                              << "\",\"description\":\"" << handler->format_description()
+                              << "\",\"extensions\":[";
+                    bool first = true;
+                    for (auto ext : handler->file_extensions()) {
+                        if (!first) std::cout << ",";
+                        std::cout << "\"" << ext << "\"";
+                        first = false;
+                    }
+                    std::cout << "],\"write_support\":" << (handler->supports_write() ? "true" : "false")
+                              << "}\n";
+                }
+                break;
+
+            case OutputFormat::Auto:
+                break;
+        }
+        return ExitCode::OK;
+    }
+};
+
 // DescribeMachine subcommand - output machine info
 template<typename MachineType>
 class DescribeMachineSubcommand : public Subcommand<MachineType> {
@@ -2896,6 +2982,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         std::vector<std::unique_ptr<Subcommand<MachineType>>> v;
         v.push_back(std::make_unique<StartSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ListFloppyFormatsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListPresetsSubcommand<MachineType>>());

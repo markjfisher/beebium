@@ -286,6 +286,10 @@ std::string_view HfeFormatHandler::format_name() const {
     return "HFE (HxC Floppy Emulator)";
 }
 
+std::string_view HfeFormatHandler::format_description() const {
+    return "HxC Floppy Emulator flux-level disc image";
+}
+
 std::vector<std::string_view> HfeFormatHandler::file_extensions() const {
     return {".hfe"};
 }

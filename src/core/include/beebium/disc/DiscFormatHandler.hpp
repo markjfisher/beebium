@@ -51,6 +51,9 @@ public:
     // Human-readable format name (e.g. "SSD/DSD (DFS)")
     virtual std::string_view format_name() const = 0;
 
+    // Short description expanding acronyms (e.g. "Acorn Disc Filing System")
+    virtual std::string_view format_description() const = 0;
+
     // File extensions this handler may recognise (e.g. {".ssd", ".dsd"})
     virtual std::vector<std::string_view> file_extensions() const = 0;
 

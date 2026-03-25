@@ -150,6 +150,10 @@ std::string_view AdfsFormatHandler::format_name() const {
     return "ADFS (ADF/ADL/ADM/ADS)";
 }
 
+std::string_view AdfsFormatHandler::format_description() const {
+    return "Advanced Disc Filing System sector image";
+}
+
 std::vector<std::string_view> AdfsFormatHandler::file_extensions() const {
     return {".adf", ".adl", ".adm", ".ads"};
 }

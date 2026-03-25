@@ -28,6 +28,7 @@ namespace beebium {
 class AdfsFormatHandler : public DiscFormatHandler {
 public:
     std::string_view format_name() const override;
+    std::string_view format_description() const override;
     std::vector<std::string_view> file_extensions() const override;
     FormatDetectionResult detect(std::span<const uint8_t> file_data,
                                   std::string_view extension) const override;
