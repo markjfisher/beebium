@@ -321,12 +321,22 @@ private:
         meta.display_width = 640;
         meta.display_height = static_cast<uint32_t>(frame_height);
 
-        // Calculate borders from tracked values
+        // Calculate borders from tracked values.
+        //
+        // Guard against inflated tracking variables caused by dropped OutputQueue
+        // batches.  When the queue is full the producer silently drops batches,
+        // including those carrying HSYNC flags.  Without HSYNC resets,
+        // line_pixel_count_ accumulates across many lines, inflating
+        // max_line_pixels_ to millions.  The maximum plausible single-line width
+        // for any BBC Micro mode is (R0+1) * 2_batches * 8_pixels = 4096.
+        static constexpr size_t MAX_PLAUSIBLE_LINE_PIXELS = 4096;
+
         meta.left_border = static_cast<uint32_t>(left_border_);
         meta.top_border = static_cast<uint32_t>(top_border_);
 
         // right_border = total_line_width - left_border - displayed_width
-        if (max_line_pixels_ > left_border_ + frame_width) {
+        if (max_line_pixels_ <= MAX_PLAUSIBLE_LINE_PIXELS &&
+            max_line_pixels_ > left_border_ + frame_width) {
             meta.right_border = static_cast<uint32_t>(max_line_pixels_ - left_border_ - frame_width);
         }
 

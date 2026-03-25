@@ -29,14 +29,26 @@ from beebium.screen import screen_contains
 from beebium.video import Frame
 
 
-NUM_FRAMES = 10  # Capture enough to see alternation
+NUM_FRAMES = 10  # Frames to compare for stability
+SETTLE_FRAMES = 5  # Frames to discard while CRTC timing stabilises
 
 
-def _capture_frames_while_running(bbc: Beebium, num_frames: int) -> list[Frame]:
-    """Capture frames while the emulator is running."""
+def _capture_frames_while_running(
+    bbc: Beebium, num_frames: int, settle_frames: int = SETTLE_FRAMES
+) -> list[Frame]:
+    """Capture frames while the emulator is running, discarding early ones.
+
+    The first few frames after streaming starts may have incomplete border
+    geometry because the CRTC has not yet completed a full stable display
+    cycle.  Discard ``settle_frames`` before returning ``num_frames`` for
+    comparison.
+    """
     frames = []
     with bbc.debugger.running():
-        for frame in bbc.video.stream_frames(max_frames=num_frames):
+        for frame in bbc.video.stream_frames(max_frames=settle_frames + num_frames):
+            if settle_frames > 0:
+                settle_frames -= 1
+                continue
             frames.append(frame)
     return frames
 
@@ -84,7 +96,9 @@ def _assert_geometry_stable(frames: list[Frame]) -> None:
         assert frame.bottom_border == ref.bottom_border, (
             f"Frame {i} bottom_border {frame.bottom_border} != frame 0 {ref.bottom_border}"
         )
-        # right_border is not checked -- currently produces garbage values (pre-existing issue)
+        assert frame.right_border == ref.right_border, (
+            f"Frame {i} right_border {frame.right_border} != frame 0 {ref.right_border}"
+        )
         assert len(frame.regions) == len(ref.regions), (
             f"Frame {i} has {len(frame.regions)} regions != frame 0 has {len(ref.regions)}"
         )
