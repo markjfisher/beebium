@@ -2019,9 +2019,18 @@ public:
 
         // Floppy drives (if hardware has them) - "drive" first in each entry
         if constexpr (HasDiscDrives<Memory>) {
+            // Build image_types from the format registry so new formats appear automatically
+            ojson image_types = ojson::array();
+            for (const auto& handler : default_format_registry().handlers()) {
+                for (auto ext : handler->file_extensions()) {
+                    // Strip the leading dot for the schema
+                    std::string_view ext_no_dot = ext.substr(1);
+                    image_types.push_back(std::string(ext_no_dot));
+                }
+            }
             storage["floppy_drives"] = ojson::array({
-                ojson{{"drive", 0}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", {"ssd", "dsd", "adf", "adl"}}},
-                ojson{{"drive", 1}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", {"ssd", "dsd", "adf", "adl"}}}
+                ojson{{"drive", 0}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", image_types}},
+                ojson{{"drive", 1}, {"tracks", {40, 80}}, {"sides", 2}, {"image_types", image_types}}
             });
         }
 
