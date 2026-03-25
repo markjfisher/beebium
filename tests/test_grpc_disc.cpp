@@ -185,8 +185,7 @@ TEST_CASE("DiscService InsertDisc loads disc from filepath", "[grpc][disc]") {
     CHECK(response.success());
     CHECK(response.error().empty());
     CHECK(response.has_disc());
-    CHECK(response.disc().sectors_per_track() == 10);
-    CHECK(response.disc().sector_size() == 256);
+    CHECK_FALSE(response.disc().name().empty());
 }
 
 TEST_CASE("DiscService InsertDisc loads disc from file:// URL", "[grpc][disc]") {
@@ -399,7 +398,7 @@ TEST_CASE("DiscService GetDriveStatus shows inserted disc info", "[grpc][disc]")
     CHECK(drive0.state() == beebium::DISC_DRIVE_STATE_LOADED);
     CHECK(drive0.disc_url() == disc_path.string());
     CHECK(drive0.has_disc());
-    CHECK(drive0.disc().sectors_per_track() == 10);
+    CHECK_FALSE(drive0.disc().name().empty());
 
     // Drive 1 should still be empty
     CHECK(response.drives(1).state() == beebium::DISC_DRIVE_STATE_EMPTY);

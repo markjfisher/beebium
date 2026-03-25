@@ -379,6 +379,7 @@ private:
         metadata->set_name(disc->name());
         metadata->set_sides(disc->is_double_sided() ? 2 : 1);
         metadata->set_write_protected(disc->is_write_protected());
+        metadata->set_format(disc->format_name());
     }
 
     void fill_drive_status(beebium::DriveStatus* status, uint32_t drive_num,

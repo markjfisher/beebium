@@ -99,11 +99,9 @@ message DriveStatus {
 
 message DiscMetadata {
     string name = 1;                   // Disc name (filename)
-    uint32 sides = 2;                  // 1 for SSD, 2 for DSD
-    uint32 tracks_per_side = 3;        // 40 or 80
-    uint32 sectors_per_track = 4;      // 10 for DFS
-    uint32 sector_size = 5;            // 256 for DFS
+    uint32 sides = 2;                  // 1 for single-sided, 2 for double-sided
     bool write_protected = 6;          // Write protection status
+    string format = 7;                 // Format name (e.g. "SSD", "ADL", "HFE v3")
 }
 
 // --- Event Streaming ---
