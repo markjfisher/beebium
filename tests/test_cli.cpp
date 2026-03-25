@@ -318,6 +318,79 @@ TEST_CASE("dispatch_subcommand: list-fdcs returns OK", "[cli][dispatch_subcomman
     REQUIRE(result == ExitCode::OK);
 }
 
+TEST_CASE("dispatch_subcommand: list-floppy-formats returns OK", "[cli][dispatch_subcommand][list-floppy-formats]") {
+    ArgvHelper args{"beebium", "list-floppy-formats"};
+    GlobalConfig global;
+    global.subcommand_name = "list-floppy-formats";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: list-floppy-formats --help returns OK", "[cli][dispatch_subcommand][list-floppy-formats]") {
+    ArgvHelper args{"beebium", "list-floppy-formats", "--help"};
+    GlobalConfig global;
+    global.subcommand_name = "list-floppy-formats";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::OK);
+}
+
+TEST_CASE("dispatch_subcommand: list-floppy-formats with unknown arg returns USAGE", "[cli][dispatch_subcommand][list-floppy-formats]") {
+    ArgvHelper args{"beebium", "list-floppy-formats", "--bogus"};
+    GlobalConfig global;
+    global.subcommand_name = "list-floppy-formats";
+    global.subcommand_argv_start = 2;
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    REQUIRE(result == ExitCode::USAGE);
+}
+
+TEST_CASE("dispatch_subcommand: list-floppy-formats output contains all registered formats", "[cli][dispatch_subcommand][list-floppy-formats]") {
+    ArgvHelper args{"beebium", "--format", "tsv", "list-floppy-formats"};
+    GlobalConfig global;
+    global.subcommand_name = "list-floppy-formats";
+    global.subcommand_argv_start = 4;
+    global.output_format = OutputFormat::Tsv;
+
+    // Capture stdout
+    std::ostringstream capture;
+    auto* old_buf = std::cout.rdbuf(capture.rdbuf());
+
+    auto result = dispatch_subcommand<MachineType>(args.argc(), args.data(), global);
+
+    std::cout.rdbuf(old_buf);
+
+    REQUIRE(result == ExitCode::OK);
+
+    std::string output = capture.str();
+    // Header row
+    CHECK(output.find("name\t") != std::string::npos);
+    // All three registered format handlers should appear
+    CHECK(output.find("SSD/DSD") != std::string::npos);
+    CHECK(output.find("ADFS") != std::string::npos);
+    CHECK(output.find("HFE") != std::string::npos);
+    // Extensions should be present
+    CHECK(output.find(".ssd") != std::string::npos);
+    CHECK(output.find(".adl") != std::string::npos);
+    CHECK(output.find(".hfe") != std::string::npos);
+}
+
+TEST_CASE("parse_global_arguments: list-floppy-formats subcommand", "[cli][parse_global_arguments]") {
+    ArgvHelper args{"beebium", "list-floppy-formats"};
+    GlobalConfig global;
+
+    auto result = parse_global_arguments(args.argc(), args.data(), global);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global.subcommand_name == "list-floppy-formats");
+}
+
 TEST_CASE("dispatch_subcommand: describe-machine returns OK", "[cli][dispatch_subcommand]") {
     ArgvHelper args{"beebium", "describe-machine"};
     GlobalConfig global;
