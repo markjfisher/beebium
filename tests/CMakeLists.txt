@@ -94,31 +94,6 @@ add_executable(test_pulse_wd1770 test_pulse_wd1770.cpp)
 target_link_libraries(test_pulse_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_pulse_wd1770)
 
-# Disc geometry tests
-add_executable(test_disc_geometry test_disc_geometry.cpp)
-target_link_libraries(test_disc_geometry PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_disc_geometry)
-
-# Disc image tests
-add_executable(test_disc_image test_disc_image.cpp)
-target_link_libraries(test_disc_image PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_disc_image)
-
-# Memory disc image tests
-add_executable(test_memory_disc_image test_memory_disc_image.cpp)
-target_link_libraries(test_memory_disc_image PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_memory_disc_image)
-
-# Disc drive tests
-add_executable(test_disc_drive test_disc_drive.cpp)
-target_link_libraries(test_disc_drive PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_disc_drive)
-
-# WD1770 disc controller tests
-add_executable(test_wd1770 test_wd1770.cpp)
-target_link_libraries(test_wd1770 PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_wd1770)
-
 # MC6854 ADLC tests
 add_executable(test_mc6854 test_mc6854.cpp)
 target_link_libraries(test_mc6854 PRIVATE beebium_core Catch2::Catch2WithMain)

@@ -6,8 +6,6 @@ add_library(beebium_core STATIC
     src/Sn76489.cpp
     src/KeyboardMapping.cpp
     src/TypeAheadQueue.cpp
-    src/disc/DiscGeometry.cpp
-    src/disc/FileDiscImage.cpp
     src/disc/formats/SsdFormatHandler.cpp
     src/disc/formats/AdfsFormatHandler.cpp
     src/disc/formats/HfeFormatHandler.cpp
