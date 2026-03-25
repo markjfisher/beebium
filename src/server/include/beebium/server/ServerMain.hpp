@@ -16,6 +16,7 @@
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/disc/DiscLoader.hpp"
+#include "beebium/disc/PulseDiscDrive.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
@@ -1242,39 +1243,65 @@ std::optional<int> launch_tube_parasite(
     return ExitCode::SOFTWARE;
 }
 
+// Load a single disc image into a floppy drive.
+// Returns an exit code on error, or std::nullopt on success.
+inline std::optional<int> load_single_disc(PulseDiscDrive& drive, int drive_num,
+                                            const std::string& filepath_or_url) {
+    // Resolve filepath to canonical path, checking existence
+    std::filesystem::path filepath(filepath_or_url);
+    if (filepath_or_url.find("://") == std::string::npos) {
+        // Bare filepath: check existence before trying to canonicalize
+        std::error_code ec;
+        if (!std::filesystem::exists(filepath, ec)) {
+            std::cerr << "Error: disc image not found: " << filepath_or_url << "\n";
+            return ExitCode::NOINPUT;
+        }
+        filepath = std::filesystem::canonical(filepath, ec);
+        if (ec) {
+            std::cerr << "Error: cannot resolve disc image path: " << filepath_or_url
+                      << " (" << ec.message() << ")\n";
+            return ExitCode::NOINPUT;
+        }
+    }
+
+    auto source_url = "file://" + filepath.string();
+    std::cout << "Loading disc into floppy " << drive_num << ": " << filepath.string() << "\n";
+
+    auto result = load_disc_from_url_or_filepath(filepath.string());
+    if (!result) {
+        std::cerr << "Error: " << result.error << "\n";
+        return ExitCode::DATAERR;
+    }
+
+    if (result.disc->is_write_protected()) {
+        std::cout << "  (write-protected)\n";
+    }
+    std::cout << "  format: " << result.disc->format_name() << "\n";
+
+    drive.insert(std::move(result.disc), source_url);
+    return std::nullopt;
+}
+
 // Load disc images into floppy drives.
-// Throws on error.
+// Returns an exit code on error, or std::nullopt on success.
 template<typename MachineType>
-void load_disc_images(MachineType& machine, const ServerConfig<MachineType>& config) {
+std::optional<int> load_disc_images(MachineType& machine, const ServerConfig<MachineType>& config) {
     if constexpr (requires { machine.state().memory.disc_drive_0; }) {
         if (!config.floppy_filepaths[0].empty()) {
-            // Resolve to absolute file:// URL for consistent API behaviour
-            auto source_url = to_absolute_file_url(config.floppy_filepaths[0]);
-            std::cout << "Loading disc into floppy 0: " << source_url << "\n";
-            auto result = load_disc_from_url(source_url);
-            if (!result) {
-                throw std::runtime_error("Failed to load disc: " + result.error);
+            if (auto exit_code = load_single_disc(
+                    machine.state().memory.disc_drive_0, 0, config.floppy_filepaths[0])) {
+                return exit_code;
             }
-            if (result.disc->is_write_protected()) {
-                std::cout << "  (write-protected)\n";
-            }
-            machine.state().memory.disc_drive_0.insert(std::move(result.disc), source_url);
         }
 
         if (!config.floppy_filepaths[1].empty()) {
-            // Resolve to absolute file:// URL for consistent API behaviour
-            auto source_url = to_absolute_file_url(config.floppy_filepaths[1]);
-            std::cout << "Loading disc into floppy 1: " << source_url << "\n";
-            auto result = load_disc_from_url(source_url);
-            if (!result) {
-                throw std::runtime_error("Failed to load disc: " + result.error);
+            if (auto exit_code = load_single_disc(
+                    machine.state().memory.disc_drive_1, 1, config.floppy_filepaths[1])) {
+                return exit_code;
             }
-            if (result.disc->is_write_protected()) {
-                std::cout << "  (write-protected)\n";
-            }
-            machine.state().memory.disc_drive_1.insert(std::move(result.disc), source_url);
         }
     }
+    return std::nullopt;
 }
 
 // Apply startup options (keyboard links) to machine.
@@ -1522,7 +1549,9 @@ public:
             }
 
             // Load disc images
-            load_disc_images(machine, config);
+            if (auto exit_code = load_disc_images(machine, config)) {
+                return *exit_code;
+            }
 
             // Enable video output
             machine.state().memory.enable_video_output();
@@ -2723,7 +2752,9 @@ public:
             if (auto exit_code = install_econet(machine, config)) {
                 return *exit_code;
             }
-            load_disc_images(machine, config);
+            if (auto exit_code = load_disc_images(machine, config)) {
+                return *exit_code;
+            }
 
             // Enable video output only (no audio needed for screenshots)
             machine.state().memory.enable_video_output();
