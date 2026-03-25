@@ -302,51 +302,148 @@ anyway as part of normal instruction execution.
 
 ### Shared memory layout
 
-The shared region contains a single `TubeShared` structure, carefully laid out for
-lock-free access:
+The shared region contains a single `TubeShared` structure (576 bytes, 9 cache lines).
+The struct is `alignas(64)` and `std::is_standard_layout` for safe cross-process mapping.
+Host-written and parasite-written fields are on separate cache lines to prevent false
+sharing.
 
 ```
-TubeShared (cache-line aligned, standard layout)
-├── Header
-│   ├── magic: u32              // 0x54554245 ("TUBE")
-│   └── version: u32            // protocol version (currently 1)
-│
-├── Control (written by host, read by both)
-│   └── control_flags: atomic<u8>   // Q, I, J, M, V, P (bits 0-5)
-│
-├── H-to-P registers (written by host, read by parasite)
-│   ├── r1_h2p: TubeLatch { value: atomic<u8>, ready: atomic<u8> }
-│   ├── r2_h2p: TubeLatch { value: atomic<u8>, ready: atomic<u8> }
-│   ├── r3_h2p: TubeReg3  { data: [atomic<u8>; 2], count: atomic<u8>,
-│   │                        pending: atomic<u8> }
-│   └── r4_h2p: TubeLatch { value: atomic<u8>, ready: atomic<u8> }
-│
-├── P-to-H registers (written by parasite, read by host)
-│   ├── r1_p2h: TubeFifo24 { data: [atomic<u8>; 24], head: atomic<u8>,
-│   │                         tail: atomic<u8>, count: atomic<u8> }
-│   ├── r2_p2h: TubeLatch  { value: atomic<u8>, ready: atomic<u8> }
-│   ├── r3_p2h: TubeReg3   { data: [atomic<u8>; 2], count: atomic<u8>,
-│   │                         pending: atomic<u8> }
-│   └── r4_p2h: TubeLatch  { value: atomic<u8>, ready: atomic<u8> }
-│
-├── Lifecycle mailbox (for reset/freeze/shutdown)
-│   ├── host_command: atomic<u8>
-│   └── parasite_ack: atomic<u8>
-│
-└── Padding to cache line boundary
+Offset  Size  Field                    Purpose                              Writer
+──────  ────  ───────────────────────  ───────────────────────────────────  ──────────
+                    ╔═══ CACHE LINE 0 ($000-$03F) ═══════════════════════╗
+  0       4   magic                    0x54554245 ("TUBE") validation      Immutable
+  4       4   version                  Protocol version (= 1)              Immutable
+  8      56   (padding)                Align control_flags to cache line
+                    ╠═══ CACHE LINE 1 ($040-$07F) ═══════════════════════╣
+ 64       1   control_flags            Q,I,J,M,V,P flag bits              Host
+ 65       2   r1_h2p                   TubeLatch {value, ready}           Host
+ 67       2   r2_h2p                   TubeLatch {value, ready}           Host
+ 69       5   r3_h2p                   TubeReg3 {data[2],head,tail,cnt}  Host
+ 74       2   r4_h2p                   TubeLatch {value, ready}           Host
+ 76      52   (padding)                Align P-to-H registers
+                    ╠═══ CACHE LINE 2 ($080-$0BF) ═══════════════════════╣
+128      27   r1_p2h                   TubeFifo24 {data[24],head,tail,   Parasite
+                                         count}  24-byte SPSC ring
+155       2   r2_p2h                   TubeLatch {value, ready}           Parasite
+157       5   r3_p2h                   TubeReg3 {data[2],head,tail,cnt}  Parasite
+162       2   r4_p2h                   TubeLatch {value, ready}           Parasite
+164      28   (padding)
+                    ╠═══ CACHE LINE 3 ($0C0-$0FF) ═══════════════════════╣
+192       1   host_data_latch          Last value on host data bus         Host
+193       1   parasite_data_latch      Last value on parasite data bus     Parasite
+194      62   (padding)
+                    ╠═══ CACHE LINES 4-5 ($100-$17F) ═══════════════════╣
+256     128   counters                 16 x atomic<uint64_t>              Mixed *
+                    ╠═══ CACHE LINE 6 ($180-$1BF) ═══════════════════════╣
+384       1   bus_stretch_cancel       Break bus-stretch spin-waits        Either
+385      63   (padding)
+                    ╠═══ CACHE LINE 7 ($1C0-$1FF) ═══════════════════════╣
+448       1   debugger_stop_signal     Cross-CPU breakpoint stop           Either
+449      63   (padding)
+                    ╠═══ CACHE LINE 8 ($200-$23F) ═══════════════════════╣
+512       1   host_command             Lifecycle: Reset/Freeze/Shutdown    Host
+513       1   parasite_ack             Lifecycle: ResetDone/Frozen/Exit    Parasite
+514      62   (padding to struct alignment)
+                    ╚════════════════════════════════════════════════════╝
 ```
 
-The `pending` field in `TubeReg3` provides hysteresis for multi-byte transfers:
-- `pending = 0` -- writer phase (space available, writer may deposit bytes)
-- `pending = 1` -- reader phase (data available, reader may consume bytes)
-- Transition to 1: when count reaches the V-dependent threshold (1 or 2) on write
-- Transition to 0: when count reaches 0 on read
+576 bytes total: 264 bytes of data, 312 bytes of alignment padding.
 
-This prevents status-flag flicker during a two-byte transfer, where the reader might
-observe count=1 between the writer's two stores.
+\* The counters block uses single-writer-per-counter discipline (the host increments
+write counters, the parasite increments read counters), but the 128-byte block
+spans two cache lines with both host and parasite counters interleaved. This is
+acceptable because the counters are diagnostic-only and not on the hot path.
+
+#### Data structures
+
+**TubeLatch** (2 bytes) -- used by R1/R2/R4 latches in each direction:
+```cpp
+struct TubeLatch {
+    std::atomic<uint8_t> value{0};   // data byte
+    std::atomic<uint8_t> ready{0};   // 0 = empty, 1 = data available
+};
+```
+
+The latch protocol: writer stores value (relaxed) then sets ready=1 (release).
+Reader loads ready (acquire), loads value (relaxed), then stores ready=0 (release).
+The writer's bus-stretch spin-wait checks `ready != 0` and blocks until the reader
+consumes the byte, preventing overwrite.
+
+**TubeFifo24** (27 bytes) -- used by R1 P-to-H only (sized for OSWRCH):
+```cpp
+struct TubeFifo24 {
+    std::array<std::atomic<uint8_t>, 24> data{};
+    std::atomic<uint8_t> head{0};    // consumer read index
+    std::atomic<uint8_t> tail{0};    // producer write index
+    std::atomic<uint8_t> count{0};   // number of bytes in buffer
+};
+```
+
+Standard lock-free SPSC ring buffer. Parasite (producer) writes at `data[tail]`,
+increments tail (mod 24) and count. Host (consumer) reads from `data[head]`,
+increments head (mod 24) and decrements count. Count uses `fetch_add`/`fetch_sub`
+for safe cross-process access.
+
+**TubeReg3** (5 bytes) -- used by R3 in each direction (NMI transfer channel):
+```cpp
+struct TubeReg3 {
+    std::array<std::atomic<uint8_t>, 2> data{};
+    std::atomic<uint8_t> head{0};    // consumer read index (0 or 1)
+    std::atomic<uint8_t> tail{0};    // producer write index (0 or 1)
+    std::atomic<uint8_t> count{0};   // shared; use fetch_add/fetch_sub
+};
+```
+
+Supports 1-byte mode (V=0, threshold=1) or 2-byte mode (V=1, threshold=2). Data
+availability is derived from `count >= threshold`. The 2-slot design allows the
+producer to deposit up to the threshold before the consumer must drain; this matches
+the Ferranti Tube ULA's hardware FIFO behaviour.
+
+**TubeCounters** (128 bytes) -- diagnostic transfer counters:
+```cpp
+struct TubeCounters {
+    std::atomic<uint64_t> r1_h2p_writes, r1_h2p_reads;   // host wrote, parasite read
+    std::atomic<uint64_t> r2_h2p_writes, r2_h2p_reads;
+    std::atomic<uint64_t> r3_h2p_writes, r3_h2p_reads;
+    std::atomic<uint64_t> r4_h2p_writes, r4_h2p_reads;
+    std::atomic<uint64_t> r1_p2h_writes, r1_p2h_reads;   // parasite wrote, host read
+    std::atomic<uint64_t> r2_p2h_writes, r2_p2h_reads;
+    std::atomic<uint64_t> r3_p2h_writes, r3_p2h_reads;
+    std::atomic<uint64_t> r4_p2h_writes, r4_p2h_reads;
+};
+```
+
+#### Data bus latches
+
+The real Tube ULA's data bus retains the last written value. When a register is read
+empty (no data available), the result is the bus latch value rather than zero. Each
+side has its own latch: `host_data_latch` for the last host write, `parasite_data_latch`
+for the last parasite write. Reference: B-Em commit 97f0ad6, hoglet's hardware tests.
+
+#### Debugger signals
+
+**bus_stretch_cancel** -- set by the debugger when pausing a machine that has a
+pending bus-stretch spin-wait. The spin loops in `TubeHostPort::host_write()` check
+this flag and defer the write (recording it as a pending write for retry on resume)
+rather than spinning indefinitely. Without this, pausing a bus-stretched machine
+would deadlock the debugger.
+
+**debugger_stop_signal** -- set by one processor's breakpoint callback when a
+breakpoint or watchpoint with `stop_counterpart` fires. Both tick loops check this
+flag so the other processor stops within one cycle.
+
+#### Lifecycle mailbox
+
+**host_command** / **parasite_ack** -- simple command/acknowledge protocol for
+lifecycle management (reset, freeze, shutdown). The host stores a command; the
+parasite polls it every 1024 cycles and responds with an acknowledgement.
+
+#### Memory ordering
 
 All atomic fields use `std::memory_order_release` on writes and `std::memory_order_acquire`
 on reads. This provides the necessary happens-before ordering without full barriers.
+The `init()` method uses relaxed stores followed by a release fence, ensuring all
+initial values are visible to the joining process.
 
 ### Single-writer principle
 
