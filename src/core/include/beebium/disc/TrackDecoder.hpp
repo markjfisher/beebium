@@ -15,6 +15,7 @@
 #include "DiscTrack.hpp"
 #include "IbmDiscFormat.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <vector>

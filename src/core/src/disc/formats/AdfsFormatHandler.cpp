@@ -16,7 +16,15 @@
 #include "beebium/disc/TrackDecoder.hpp"
 
 #include <algorithm>
+#include <array>
+#include <filesystem>
 #include <fstream>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace beebium {
 

@@ -19,6 +19,7 @@
 #include "formats/AdfsFormatHandler.hpp"
 #include "formats/HfeFormatHandler.hpp"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
