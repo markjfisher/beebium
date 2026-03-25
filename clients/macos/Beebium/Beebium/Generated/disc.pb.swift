@@ -247,6 +247,12 @@ struct Beebium_GetDriveStatusResponse: Sendable {
   /// Status of each drive
   var drives: [Beebium_DriveStatus] = []
 
+  /// True if controller can be changed at runtime
+  var isSocketed: Bool = false
+
+  /// CLI id of installed controller (if socketed)
+  var installedControllerID: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -303,20 +309,14 @@ struct Beebium_DiscMetadata: Sendable {
   /// Disc name (filename)
   var name: String = String()
 
-  /// 1 for SSD, 2 for DSD
+  /// 1 for single-sided, 2 for double-sided
   var sides: UInt32 = 0
-
-  /// 40 or 80
-  var tracksPerSide: UInt32 = 0
-
-  /// 10 for DFS
-  var sectorsPerTrack: UInt32 = 0
-
-  /// 256 for DFS
-  var sectorSize: UInt32 = 0
 
   /// Write protection status
   var writeProtected: Bool = false
+
+  /// Format name (e.g. "SSD", "ADL", "HFE v3")
+  var format: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -410,6 +410,84 @@ struct Beebium_GetSpinUpDelayResponse: Sendable {
 
   /// Current spin-up delay setting
   var enabled: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Empty - returns all available controller types
+struct Beebium_ListAvailableControllersRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_ListAvailableControllersResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Available controller types
+  var controllers: [Beebium_DiscControllerTypeInfo] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Information about a disc controller type
+struct Beebium_DiscControllerTypeInfo: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// CLI identifier (e.g., "acorn-1770")
+  var id: String = String()
+
+  /// Human-readable name (e.g., "Acorn 1770")
+  var displayName: String = String()
+
+  /// FDC chip name (e.g., "WD1770")
+  var fdcChip: String = String()
+
+  /// Brief description
+  var description_p: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_InstallDiscControllerRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// CLI identifier (e.g., "acorn-1770")
+  var controllerID: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_InstallDiscControllerResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var success: Bool = false
+
+  /// Error message if !success
+  var error: String = String()
+
+  /// Name of installed controller (e.g., "WD1770")
+  var controllerType: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -613,7 +691,7 @@ extension Beebium_GetDriveStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Beebium_GetDriveStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetDriveStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_disc_controller\0\u{3}controller_type\0\u{1}drives\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_disc_controller\0\u{3}controller_type\0\u{1}drives\0\u{3}is_socketed\0\u{3}installed_controller_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -624,6 +702,8 @@ extension Beebium_GetDriveStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._
       case 1: try { try decoder.decodeSingularBoolField(value: &self.hasDiscController_p) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.controllerType) }()
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.drives) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.isSocketed) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.installedControllerID) }()
       default: break
       }
     }
@@ -639,6 +719,12 @@ extension Beebium_GetDriveStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._
     if !self.drives.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.drives, fieldNumber: 3)
     }
+    if self.isSocketed != false {
+      try visitor.visitSingularBoolField(value: self.isSocketed, fieldNumber: 4)
+    }
+    if !self.installedControllerID.isEmpty {
+      try visitor.visitSingularStringField(value: self.installedControllerID, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -646,6 +732,8 @@ extension Beebium_GetDriveStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.hasDiscController_p != rhs.hasDiscController_p {return false}
     if lhs.controllerType != rhs.controllerType {return false}
     if lhs.drives != rhs.drives {return false}
+    if lhs.isSocketed != rhs.isSocketed {return false}
+    if lhs.installedControllerID != rhs.installedControllerID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -722,7 +810,7 @@ extension Beebium_DriveStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImpl
 
 extension Beebium_DiscMetadata: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DiscMetadata"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}sides\0\u{3}tracks_per_side\0\u{3}sectors_per_track\0\u{3}sector_size\0\u{3}write_protected\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}sides\0\u{4}\u{4}write_protected\0\u{1}format\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -732,10 +820,8 @@ extension Beebium_DiscMetadata: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
       case 2: try { try decoder.decodeSingularUInt32Field(value: &self.sides) }()
-      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.tracksPerSide) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.sectorsPerTrack) }()
-      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.sectorSize) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.writeProtected) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.format) }()
       default: break
       }
     }
@@ -748,17 +834,11 @@ extension Beebium_DiscMetadata: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
     if self.sides != 0 {
       try visitor.visitSingularUInt32Field(value: self.sides, fieldNumber: 2)
     }
-    if self.tracksPerSide != 0 {
-      try visitor.visitSingularUInt32Field(value: self.tracksPerSide, fieldNumber: 3)
-    }
-    if self.sectorsPerTrack != 0 {
-      try visitor.visitSingularUInt32Field(value: self.sectorsPerTrack, fieldNumber: 4)
-    }
-    if self.sectorSize != 0 {
-      try visitor.visitSingularUInt32Field(value: self.sectorSize, fieldNumber: 5)
-    }
     if self.writeProtected != false {
       try visitor.visitSingularBoolField(value: self.writeProtected, fieldNumber: 6)
+    }
+    if !self.format.isEmpty {
+      try visitor.visitSingularStringField(value: self.format, fieldNumber: 7)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -766,10 +846,8 @@ extension Beebium_DiscMetadata: SwiftProtobuf.Message, SwiftProtobuf._MessageImp
   static func ==(lhs: Beebium_DiscMetadata, rhs: Beebium_DiscMetadata) -> Bool {
     if lhs.name != rhs.name {return false}
     if lhs.sides != rhs.sides {return false}
-    if lhs.tracksPerSide != rhs.tracksPerSide {return false}
-    if lhs.sectorsPerTrack != rhs.sectorsPerTrack {return false}
-    if lhs.sectorSize != rhs.sectorSize {return false}
     if lhs.writeProtected != rhs.writeProtected {return false}
+    if lhs.format != rhs.format {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -952,6 +1030,170 @@ extension Beebium_GetSpinUpDelayResponse: SwiftProtobuf.Message, SwiftProtobuf._
 
   static func ==(lhs: Beebium_GetSpinUpDelayResponse, rhs: Beebium_GetSpinUpDelayResponse) -> Bool {
     if lhs.enabled != rhs.enabled {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_ListAvailableControllersRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ListAvailableControllersRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_ListAvailableControllersRequest, rhs: Beebium_ListAvailableControllersRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_ListAvailableControllersResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ListAvailableControllersResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}controllers\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.controllers) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.controllers.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.controllers, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_ListAvailableControllersResponse, rhs: Beebium_ListAvailableControllersResponse) -> Bool {
+    if lhs.controllers != rhs.controllers {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_DiscControllerTypeInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".DiscControllerTypeInfo"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}display_name\0\u{3}fdc_chip\0\u{1}description\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.displayName) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.fdcChip) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.displayName.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayName, fieldNumber: 2)
+    }
+    if !self.fdcChip.isEmpty {
+      try visitor.visitSingularStringField(value: self.fdcChip, fieldNumber: 3)
+    }
+    if !self.description_p.isEmpty {
+      try visitor.visitSingularStringField(value: self.description_p, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_DiscControllerTypeInfo, rhs: Beebium_DiscControllerTypeInfo) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.displayName != rhs.displayName {return false}
+    if lhs.fdcChip != rhs.fdcChip {return false}
+    if lhs.description_p != rhs.description_p {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_InstallDiscControllerRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".InstallDiscControllerRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}controller_id\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.controllerID) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.controllerID.isEmpty {
+      try visitor.visitSingularStringField(value: self.controllerID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_InstallDiscControllerRequest, rhs: Beebium_InstallDiscControllerRequest) -> Bool {
+    if lhs.controllerID != rhs.controllerID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_InstallDiscControllerResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".InstallDiscControllerResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0\u{3}controller_type\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.controllerType) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.success != false {
+      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
+    }
+    if !self.error.isEmpty {
+      try visitor.visitSingularStringField(value: self.error, fieldNumber: 2)
+    }
+    if !self.controllerType.isEmpty {
+      try visitor.visitSingularStringField(value: self.controllerType, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_InstallDiscControllerResponse, rhs: Beebium_InstallDiscControllerResponse) -> Bool {
+    if lhs.success != rhs.success {return false}
+    if lhs.error != rhs.error {return false}
+    if lhs.controllerType != rhs.controllerType {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

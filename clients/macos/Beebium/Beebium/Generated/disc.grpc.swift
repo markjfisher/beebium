@@ -51,6 +51,16 @@ internal protocol Beebium_DiscServiceClientProtocol: GRPCClient {
     _ request: Beebium_GetSpinUpDelayRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_GetSpinUpDelayRequest, Beebium_GetSpinUpDelayResponse>
+
+  func listAvailableControllers(
+    _ request: Beebium_ListAvailableControllersRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse>
+
+  func installDiscController(
+    _ request: Beebium_InstallDiscControllerRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse>
 }
 
 extension Beebium_DiscServiceClientProtocol {
@@ -168,6 +178,42 @@ extension Beebium_DiscServiceClientProtocol {
       interceptors: self.interceptors?.makeGetSpinUpDelayInterceptors() ?? []
     )
   }
+
+  /// List available disc controller types (for machines with sockets)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ListAvailableControllers.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func listAvailableControllers(
+    _ request: Beebium_ListAvailableControllersRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.listAvailableControllers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListAvailableControllersInterceptors() ?? []
+    )
+  }
+
+  /// Install a disc controller into the socket (machines with sockets only)
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to InstallDiscController.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func installDiscController(
+    _ request: Beebium_InstallDiscControllerRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.installDiscController.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeInstallDiscControllerInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -265,6 +311,16 @@ internal protocol Beebium_DiscServiceAsyncClientProtocol: GRPCClient {
     _ request: Beebium_GetSpinUpDelayRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_GetSpinUpDelayRequest, Beebium_GetSpinUpDelayResponse>
+
+  func makeListAvailableControllersCall(
+    _ request: Beebium_ListAvailableControllersRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse>
+
+  func makeInstallDiscControllerCall(
+    _ request: Beebium_InstallDiscControllerRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -348,6 +404,30 @@ extension Beebium_DiscServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetSpinUpDelayInterceptors() ?? []
     )
   }
+
+  internal func makeListAvailableControllersCall(
+    _ request: Beebium_ListAvailableControllersRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.listAvailableControllers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListAvailableControllersInterceptors() ?? []
+    )
+  }
+
+  internal func makeInstallDiscControllerCall(
+    _ request: Beebium_InstallDiscControllerRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.installDiscController.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeInstallDiscControllerInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -423,6 +503,30 @@ extension Beebium_DiscServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeGetSpinUpDelayInterceptors() ?? []
     )
   }
+
+  internal func listAvailableControllers(
+    _ request: Beebium_ListAvailableControllersRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_ListAvailableControllersResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.listAvailableControllers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListAvailableControllersInterceptors() ?? []
+    )
+  }
+
+  internal func installDiscController(
+    _ request: Beebium_InstallDiscControllerRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_InstallDiscControllerResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_DiscServiceClientMetadata.Methods.installDiscController.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeInstallDiscControllerInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -461,6 +565,12 @@ internal protocol Beebium_DiscServiceClientInterceptorFactoryProtocol: Sendable 
 
   /// - Returns: Interceptors to use when invoking 'getSpinUpDelay'.
   func makeGetSpinUpDelayInterceptors() -> [ClientInterceptor<Beebium_GetSpinUpDelayRequest, Beebium_GetSpinUpDelayResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'listAvailableControllers'.
+  func makeListAvailableControllersInterceptors() -> [ClientInterceptor<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'installDiscController'.
+  func makeInstallDiscControllerInterceptors() -> [ClientInterceptor<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse>]
 }
 
 internal enum Beebium_DiscServiceClientMetadata {
@@ -474,6 +584,8 @@ internal enum Beebium_DiscServiceClientMetadata {
       Beebium_DiscServiceClientMetadata.Methods.subscribeDiscEvents,
       Beebium_DiscServiceClientMetadata.Methods.setSpinUpDelay,
       Beebium_DiscServiceClientMetadata.Methods.getSpinUpDelay,
+      Beebium_DiscServiceClientMetadata.Methods.listAvailableControllers,
+      Beebium_DiscServiceClientMetadata.Methods.installDiscController,
     ]
   )
 
@@ -513,6 +625,18 @@ internal enum Beebium_DiscServiceClientMetadata {
       path: "/beebium.DiscService/GetSpinUpDelay",
       type: GRPCCallType.unary
     )
+
+    internal static let listAvailableControllers = GRPCMethodDescriptor(
+      name: "ListAvailableControllers",
+      path: "/beebium.DiscService/ListAvailableControllers",
+      type: GRPCCallType.unary
+    )
+
+    internal static let installDiscController = GRPCMethodDescriptor(
+      name: "InstallDiscController",
+      path: "/beebium.DiscService/InstallDiscController",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -542,6 +666,12 @@ internal protocol Beebium_DiscServiceProvider: CallHandlerProvider {
 
   /// Query spin-up delay configuration
   func getSpinUpDelay(request: Beebium_GetSpinUpDelayRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_GetSpinUpDelayResponse>
+
+  /// List available disc controller types (for machines with sockets)
+  func listAvailableControllers(request: Beebium_ListAvailableControllersRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ListAvailableControllersResponse>
+
+  /// Install a disc controller into the socket (machines with sockets only)
+  func installDiscController(request: Beebium_InstallDiscControllerRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_InstallDiscControllerResponse>
 }
 
 extension Beebium_DiscServiceProvider {
@@ -610,6 +740,24 @@ extension Beebium_DiscServiceProvider {
         userFunction: self.getSpinUpDelay(request:context:)
       )
 
+    case "ListAvailableControllers":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ListAvailableControllersRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ListAvailableControllersResponse>(),
+        interceptors: self.interceptors?.makeListAvailableControllersInterceptors() ?? [],
+        userFunction: self.listAvailableControllers(request:context:)
+      )
+
+    case "InstallDiscController":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_InstallDiscControllerRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_InstallDiscControllerResponse>(),
+        interceptors: self.interceptors?.makeInstallDiscControllerInterceptors() ?? [],
+        userFunction: self.installDiscController(request:context:)
+      )
+
     default:
       return nil
     }
@@ -663,6 +811,18 @@ internal protocol Beebium_DiscServiceAsyncProvider: CallHandlerProvider, Sendabl
     request: Beebium_GetSpinUpDelayRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_GetSpinUpDelayResponse
+
+  /// List available disc controller types (for machines with sockets)
+  func listAvailableControllers(
+    request: Beebium_ListAvailableControllersRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_ListAvailableControllersResponse
+
+  /// Install a disc controller into the socket (machines with sockets only)
+  func installDiscController(
+    request: Beebium_InstallDiscControllerRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_InstallDiscControllerResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -738,6 +898,24 @@ extension Beebium_DiscServiceAsyncProvider {
         wrapping: { try await self.getSpinUpDelay(request: $0, context: $1) }
       )
 
+    case "ListAvailableControllers":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_ListAvailableControllersRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_ListAvailableControllersResponse>(),
+        interceptors: self.interceptors?.makeListAvailableControllersInterceptors() ?? [],
+        wrapping: { try await self.listAvailableControllers(request: $0, context: $1) }
+      )
+
+    case "InstallDiscController":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_InstallDiscControllerRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_InstallDiscControllerResponse>(),
+        interceptors: self.interceptors?.makeInstallDiscControllerInterceptors() ?? [],
+        wrapping: { try await self.installDiscController(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -769,6 +947,14 @@ internal protocol Beebium_DiscServiceServerInterceptorFactoryProtocol: Sendable 
   /// - Returns: Interceptors to use when handling 'getSpinUpDelay'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetSpinUpDelayInterceptors() -> [ServerInterceptor<Beebium_GetSpinUpDelayRequest, Beebium_GetSpinUpDelayResponse>]
+
+  /// - Returns: Interceptors to use when handling 'listAvailableControllers'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeListAvailableControllersInterceptors() -> [ServerInterceptor<Beebium_ListAvailableControllersRequest, Beebium_ListAvailableControllersResponse>]
+
+  /// - Returns: Interceptors to use when handling 'installDiscController'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeInstallDiscControllerInterceptors() -> [ServerInterceptor<Beebium_InstallDiscControllerRequest, Beebium_InstallDiscControllerResponse>]
 }
 
 internal enum Beebium_DiscServiceServerMetadata {
@@ -782,6 +968,8 @@ internal enum Beebium_DiscServiceServerMetadata {
       Beebium_DiscServiceServerMetadata.Methods.subscribeDiscEvents,
       Beebium_DiscServiceServerMetadata.Methods.setSpinUpDelay,
       Beebium_DiscServiceServerMetadata.Methods.getSpinUpDelay,
+      Beebium_DiscServiceServerMetadata.Methods.listAvailableControllers,
+      Beebium_DiscServiceServerMetadata.Methods.installDiscController,
     ]
   )
 
@@ -819,6 +1007,18 @@ internal enum Beebium_DiscServiceServerMetadata {
     internal static let getSpinUpDelay = GRPCMethodDescriptor(
       name: "GetSpinUpDelay",
       path: "/beebium.DiscService/GetSpinUpDelay",
+      type: GRPCCallType.unary
+    )
+
+    internal static let listAvailableControllers = GRPCMethodDescriptor(
+      name: "ListAvailableControllers",
+      path: "/beebium.DiscService/ListAvailableControllers",
+      type: GRPCCallType.unary
+    )
+
+    internal static let installDiscController = GRPCMethodDescriptor(
+      name: "InstallDiscController",
+      path: "/beebium.DiscService/InstallDiscController",
       type: GRPCCallType.unary
     )
   }
