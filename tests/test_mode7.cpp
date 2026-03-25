@@ -625,15 +625,22 @@ TEST_CASE("CRTC6845 interlace field alternation", "[crtc6845][mode7][interlace]"
         auto out1 = crtc.tick();
         CHECK(out1.odd_field == 1);  // Initially odd field
 
-        // Run through a full field
-        // 3 rows * 2 scanlines * 4 chars = 24 ticks per field
-        for (int i = 0; i < 24 * 2; ++i) {  // Run two fields
-            crtc.tick();
+        // Run until odd_field goes false (end of first field)
+        Crtc6845::Output out;
+        for (int i = 0; i < 10000; ++i) {
+            out = crtc.tick();
+            if (out.odd_field == 0) break;
         }
+        CHECK(out.odd_field == 0);  // Now in even field
 
-        // After two fields, should be back to odd
-        auto out2 = crtc.tick();
-        CHECK(out2.odd_field == 1);
+        // Run until odd_field goes true again (end of second field)
+        // The interlace dummy raster makes fields different lengths,
+        // so we detect transitions rather than counting a fixed number of ticks.
+        for (int i = 0; i < 10000; ++i) {
+            out = crtc.tick();
+            if (out.odd_field == 1) break;
+        }
+        CHECK(out.odd_field == 1);  // Back to odd field
     }
 }
 
