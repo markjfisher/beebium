@@ -436,6 +436,16 @@ iSCSI is not needed for an initial hard disc implementation. The recommended app
 
 The important thing is to design the target interface with this future in mind, so that adding iSCSI doesn't require restructuring the SCSI emulation layer.
 
+## Pre-formatted Hard Disc Images
+
+[Jon Ripley's BBC Micro Hard Drives page](https://jonripley.com/8bit/HardDrives/) provides 22 blank, pre-formatted ADFS hard disc images ranging from 2 MB to 512 MB. These are raw ADFS old-map format (256-byte sectors, "Hugo" root directory marker) distributed as `.adl` files inside zip archives. They contain no software -- just an empty root directory and free space map.
+
+These images are not directly compatible with existing emulators due to naming conventions (emulators expect `scsiN.dat` + `scsiN.dsc` pairs), but the raw disc data is identical in format. Renaming `2MbHDD.adl` to `scsi0.dat` and allowing the emulator to auto-generate a DSC geometry file is sufficient.
+
+The images are exact power-of-two megabyte sizes, which are not evenly divisible by the standard SCSI geometry stride (33 sectors/track * heads * 256 bytes). This wastes a few KB at the end of the image but is otherwise harmless, since the ADFS free space map records the actual disc size in sectors independently of the CHS geometry.
+
+These images are useful for testing a Beebium SCSI implementation without needing to format discs from within the emulator. They cover the full range of ADFS-supported sizes up to the 512 MB limit.
+
 ## Beebium's Current State
 
 Beebium has the foundation for 1 MHz bus peripherals but no hard disc support:
