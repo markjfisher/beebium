@@ -27,9 +27,11 @@ Two hardware projects -- BeebSCSI and Pi1MHz -- provide high-quality SCSI emulat
 The BBC Micro's hard disc ecosystem was built around the 1 MHz expansion bus. The two main approaches were:
 
 - **SCSI via Acorn ADFS board**: An Acorn-designed host adapter with a WD2793-based data separator, connected to a SASI/SCSI bridge (typically Adaptec ACB-4000) and then a standard SCSI hard drive. The host adapter presents a simplified SASI-like register interface at 0xFC40-0xFC43 on the FRED page.
-- **IDE (later)**: Direct IDE register interface at 0xFC40-0xFC47, used by various third-party boards and the Master 512 co-processor's hard disc.
+- **IDE (later)**: Direct IDE register interface at 0xFC40-0xFC47, used by various third-party boards.
 
-Both share the same base address (0xFC40) and are mutually exclusive -- a machine would have one or the other, never both.
+Both share the same base address (0xFC40) on the FRED page and are mutually exclusive -- a machine would have one or the other, never both.
+
+A third variant existed: the **Torch SASI controller** at `0xFDF0-0xFDF3` on the JIM page, used with Torch Z80 Communicator systems. Despite being associated with the Z80 coprocessor, this controller sits on the **host BBC Micro's 1 MHz bus** -- the Z80 parasite has no independent storage hardware and accesses discs indirectly through a non-standard Tube-like communication link to the host. The Torch SASI controller talked to a Xebec S1410 bridge board connected to a physical Winchester drive (10 or 20 MB).
 
 ### Controller Comparison
 
@@ -40,7 +42,8 @@ Both share the same base address (0xFC40) and are mutually exclusive -- a machin
 | I/O base | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 |
 | Registers | 4 (+00 to +03) | 9 (+00 to +08) | 4 (+00 to +03) | 8 (+00 to +07) | 4 (+00 to +03) |
 | Protocol | Phase-based bus | ATA registers | Phase-based bus | ATA registers | Phase-based bus |
-| Machine target | Model B, Master | Model B, Master | Model B, Master | Model B, Master | Torch Z80 only |
+| I/O page | FRED | FRED | FRED | FRED | JIM |
+| Machine target | Model B, Master | Model B, Master | Model B, Master | Model B, Master | Torch Z80 host |
 
 ## SCSI Command Sets
 
@@ -436,6 +439,94 @@ iSCSI is not needed for an initial hard disc implementation. The recommended app
 
 The important thing is to design the target interface with this future in mind, so that adding iSCSI doesn't require restructuring the SCSI emulation layer.
 
+## BBC Master AIV and LaserDisc Support
+
+The BBC Master AIV (Advanced Interactive Video) system used SCSI to control a Philips VP415 LaserDisc player for the BBC Domesday Project. This is relevant to Beebium's SCSI design because the VP415 appears as a SCSI target on the same bus as hard discs, using the same host adapter protocol but with additional vendor-specific commands.
+
+### AIV Host Adapter
+
+The AIV SCSI Host Adapter is an **internal** version of the standard Acorn SCSI Host Adapter, connected to the Master 128's internal 1 MHz bus (PL12 connector) rather than the external 1 MHz bus. It uses the same register addresses (0xFC40-0xFC43) and the same bus phase protocol, but has several hardware differences:
+
+| Aspect | Standard (External) Adapter | AIV (Internal) Adapter |
+|--------|---------------------------|----------------------|
+| Bus levels | TTL (external 1 MHz bus) | CMOS (internal 1 MHz bus) |
+| Address decoder | 74LS138 / 74HCT138 | 74HC138 |
+| Data bus inversion | Hardware (IC13 74LS240 inverts outbound data) | Software (VFS performs inversion) |
+| IRQ flag polarity | Non-inverted | Inverted (missing inverter on board) |
+| Status bit 2 | Grounded (unused) | Connected to SCSI RESET pin |
+| Address bus width | 8-bit | 4-bit |
+
+The cards are not electrically interchangeable (CMOS vs TTL), but the SCSI protocol is identical. The software differences (data bus inversion, IRQ polarity) are handled by the VFS ROM rather than by hardware.
+
+### Design Implication for Beebium
+
+The AIV adapter differences mean the host adapter emulation should not hard-code data inversion or IRQ polarity. These should be configurable (or handled entirely by the ROM software, as on real hardware). Since both adapters present the same register interface at the same address, a single SCSI host adapter implementation should suffice -- the AIV quirks are compensated for in the VFS ROM, not in the adapter hardware.
+
+### VFS (Video Filing System) ROM
+
+VFS version 1.70 is essentially a read-only variant of ADFS with extensions for VP415 control. It provides:
+- Standard BBC filing system interface for reading data from the LV-ROM disc
+- F-code commands transmitted to the VP415 via SCSI Group 6 vendor-specific commands
+- Software data bus inversion (compensating for the AIV hardware difference)
+- Software IRQ polarity inversion
+
+### VP415 on the SCSI Bus
+
+The VP415 appears as a SCSI target alongside any hard discs. The bus topology uses no arbitration (the simple Acorn host adapter does not support it):
+
+- **Host (initiator) ID**: 1 (0x02 on bus)
+- **ADFS hard discs**: LUN 0-3
+- **VFS LaserDisc**: LUN 0-7
+
+The VP415 is addressed via standard SCSI READ (0x08) for data retrieval and Group 6 vendor-specific commands (0xC8/0xCA) for F-code control of the player.
+
+### VP415 SCSI Commands
+
+Beyond the standard SCSI commands used for hard discs, the VP415 requires two additional Group 6 (vendor-specific) commands:
+
+| Opcode | Command | Direction | Purpose |
+|--------|---------|-----------|---------|
+| 0xC8 | Read F-Code | DATA IN | Read buffered response from VP415 |
+| 0xCA | Write F-Code | DATA OUT | Send F-code command to VP415 |
+
+F-code data is transferred in 256-byte buffers. Commands are ASCII strings terminated by CR (0x0D), null-padded. The VP415 F-code set provides comprehensive playback control:
+
+| Category | Example F-Codes |
+|----------|----------------|
+| Playback | `N` (play), `O` (reverse), `*` (halt), `/` (pause) |
+| Speed | `W` (fast forward), `Z` (fast reverse), `U`/`V` (slow motion) |
+| Navigation | `FnnnnN` (go to frame, play), `FnnnnR` (go to frame, halt) |
+| Audio | `A0`/`A1` (channel 1), `B0`/`B1` (channel 2) |
+| Video | `E0`/`E1` (video off/on), `VP1`-`VP5` (overlay modes) |
+| Status queries | `?F` (frame number), `?D` (disc status), `?P` (player status) |
+| System | `:` (reset), `'` (eject), `,0`/`,1` (standby/load) |
+
+BeebSCSI (designed by Simon Inns, who also leads the Domesday86 recovery project) implements the full VP415 F-code set in its LV-DOS emulation mode, making it the authoritative reference for this protocol.
+
+### Implications for Beebium's SCSI Architecture
+
+The VP415 support reinforces several design decisions:
+
+1. **The SCSI target interface must be generic**, not hard-disc-specific. A VP415 target handles Group 6 commands and F-codes rather than sector read/write. The CDB dispatch should be extensible.
+
+2. **Multiple target types on one bus**: The SCSI bus must support mixed target types (hard disc + LaserDisc player) simultaneously, each with their own command handling.
+
+3. **Group 6 vendor-specific commands must not be rejected**: The command dispatcher should pass unrecognised opcodes to the target implementation rather than returning CHECK CONDITION. Different targets handle different command groups.
+
+4. **The host adapter is the stable part**: Both the standard and AIV adapters present the same register interface. The adapter emulation should be a thin layer; all intelligence lives in the targets.
+
+5. **BeebSCSI is the single best reference**: Simon Inns' implementation handles both ADFS hard discs and VP415 LaserDisc through the same SCSI bus abstraction, which is exactly the architecture Beebium should follow.
+
+### References
+
+- [Domesday86: Acorn BBC Master AIV](https://www.domesday86.com/?page_id=67)
+- [Domesday86: Philips VP415](https://www.domesday86.com/?page_id=316)
+- [Domesday86: VFS ROM](https://www.domesday86.com/?page_id=70)
+- [Domesday86: Acorn AIV SCSI Adapter](https://www.domesday86.com/?page_id=64)
+- [BeebSCSI source (scsi.c, fcode.c)](https://github.com/simoninns/BeebSCSI)
+- [Acorn AIV SCSI Adapter Card KiCad reproduction](https://github.com/simoninns/Acorn-AIV-SCSI-Adapter-Card)
+- [VP415 Emulator](https://github.com/simoninns/VP415Emu)
+
 ## Pre-formatted Hard Disc Images
 
 [Jon Ripley's BBC Micro Hard Drives page](https://jonripley.com/8bit/HardDrives/) provides 22 blank, pre-formatted ADFS hard disc images ranging from 2 MB to 512 MB. These are raw ADFS old-map format (256-byte sectors, "Hugo" root directory marker) distributed as `.adl` files inside zip archives. They contain no software -- just an empty root directory and free space map.
@@ -490,6 +581,353 @@ All implementations agree on the standard geometry:
 - Variable heads and cylinders from DSC descriptor
 - Maximum 512 MB per LUN (ADFS 21-bit LBA limit: 2,097,151 sectors)
 
-### gRPC Service Consideration
+### gRPC Service Architecture
 
-Hard disc management could extend the existing `DiscService` or become a separate `HardDiscService`. Operations needed: mount/unmount image, create blank formatted image, query drive status. The existing disc service patterns (URL-based loading, drive indexing, write protection) translate directly. BeebSCSI's jukebox concept (swapping sets of images at runtime) maps naturally to gRPC service calls.
+The current `DiscService` manages the WD1770 floppy controller. Adding SCSI hard discs, LaserDisc players, and potentially other 1 MHz bus peripherals raises the question of how to structure the gRPC service layer.
+
+#### The Naming Problem
+
+Neither domain-driven naming (FloppyDiscService, HardDiscService) nor capability-driven naming (FixedDiscService, RemovableDiscService) scales well:
+
+- A VP415 LaserDisc player is a SCSI target but not a disc drive at all
+- An Iomega Jaz drive would be a removable SCSI disc, breaking the fixed/removable split
+- "Hard disc" conflates the media type with the controller type (SCSI)
+- The floppy controller (WD1770 on SHEILA) and SCSI adapter (on FRED) are fundamentally different hardware on different buses
+
+#### Follow the Hardware Topology
+
+The gRPC services should mirror the actual hardware tree rather than classifying by media type:
+
+```
+Machine
+  ├─ FloppyControllerService          (WD1770 at 0xFE80/0xFE84)
+  │    Operations: insert/eject disc image, query drive status
+  │
+  ├─ OneHMzBusService                 (FRED/JIM, 0xFC00-0xFDFF)
+  │    Operations: list attached peripherals, attach/detach peripheral
+  │
+  └─ ScsiService                      (via host adapter at 0xFC40)
+       Operations: list targets, attach/detach target, query bus state
+       │
+       ├─ Target 0: ScsiDiscTarget    (hard disc image)
+       │    Operations: mount/unmount image, query geometry, format
+       │
+       ├─ Target 1: ScsiVideoTarget   (VP415 LaserDisc)
+       │    Operations: load disc, send F-code, query player status
+       │
+       └─ Target 2: ScsiDiscTarget    (another disc, or Jaz, etc.)
+            Operations: mount/unmount image, query geometry, format
+```
+
+Key principles:
+
+1. **The existing DiscService should be renamed to FloppyControllerService** (or similar). It manages the WD1770 and its attached drives. It has nothing to do with SCSI.
+
+2. **A OneMHzBusService reports and manages attached peripherals**. Each peripheral type can register its own gRPC service on attachment. This mirrors how Pi1MHz handles multiple simultaneous peripherals at different FRED addresses.
+
+3. **A ScsiService manages the SCSI bus** -- the host adapter and its targets. Targets are polymorphic: a hard disc target and a VP415 target both sit on the same bus but expose different operations. The ScsiService handles bus-level concerns (target enumeration, selection, bus reset) while delegating target-specific operations.
+
+4. **Target-specific sub-services or RPCs** handle the diversity of SCSI devices. A hard disc target supports mount/unmount/format. A VP415 target supports F-code commands and player status queries. Both share the SCSI bus phase protocol but differ in their command sets.
+
+5. **Media type is a property of the target, not of the service**. A ScsiDiscTarget could be backed by a fixed Winchester image, a removable Jaz image, or an iSCSI LUN. The mount/unmount operations are the same; the media characteristics (read-only, removable, capacity) are reported as target properties.
+
+This approach avoids the need to invent taxonomy for every possible SCSI device. New target types (tape drives, optical drives, network-backed storage) slot in without restructuring the service layer. The bus topology is the stable structure; the device types are the variable part.
+
+#### Service Lifecycle and Hardware Presence
+
+ScsiService only makes sense if a SCSI adapter is present on the 1 MHz bus. Beebium already has a pattern for this: `DiscService` is always registered as a gRPC service, but `InstallDiscController()` must be called before disc operations work -- because the `DiscControllerSocket` might be empty. The service is the API surface; the socket is the hardware presence.
+
+The same pattern extends to the 1 MHz bus and SCSI:
+
+```
+OneMHzBusService                     (always registered)
+  ├─ ListPeripherals()               → [{address: 0xFC40, type: "acorn-scsi"}, ...]
+  ├─ InstallPeripheral(type, addr)   → plugs hardware into the bus
+  └─ RemovePeripheral(addr)          → unplugs hardware
+
+ScsiService                          (always registered; operations return
+  │                                   FAILED_PRECONDITION if no adapter installed)
+  ├─ ListTargets()                   → [{id: 0, type: "disc"}, {id: 1, type: "vp415"}]
+  ├─ AttachDiscTarget(id, url)       → mounts a DAT image at SCSI target ID
+  ├─ AttachVideoTarget(id, url)      → attaches VP415 emulation at target ID
+  ├─ DetachTarget(id)
+  ├─ GetTargetStatus(id)
+  └─ SendFCode(id, fcode)            → VP415-specific; error if wrong target type
+```
+
+The lifecycle mirrors real hardware:
+
+```
+1. Server starts.
+   OneMHzBusService and ScsiService registered, but the 1 MHz bus
+   has no peripherals. ScsiService calls return FAILED_PRECONDITION.
+
+2. Client calls OneMHzBusService.InstallPeripheral("acorn-scsi", 0xFC40).
+   A SCSI host adapter is created and plugged into the FredJimRegion.
+   ScsiService now has an adapter to work with.
+
+3. Client calls ScsiService.AttachDiscTarget(0, "file:///path/to/scsi0.dat").
+   Target 0 on the SCSI bus becomes a hard disc backed by that image.
+
+4. The emulated BBC Micro boots ADFS, talks to 0xFC40, finds a disc.
+```
+
+This mirrors the existing `DiscService.InstallDiscController("acorn-1770")` pattern. The bus management service handles hardware presence; the device-specific service handles device operations.
+
+ScsiService is a separate gRPC service (rather than RPCs on OneMHzBusService) because:
+
+- The SCSI bus has its own topology (targets, LUNs) that deserves its own API surface
+- Device-specific operations (F-codes for VP415, geometry for discs) don't belong on a bus management service
+- Other 1 MHz peripherals (Music 5000, speech chip) would get their own services too -- OneMHzBusService should not accumulate every peripheral's API
+- This matches the existing pattern where DiscService is separate from the machine configuration that installs the WD1770
+
+The result is that OneMHzBusService is thin: it reports what's plugged in and provides install/remove operations. Each peripheral type brings its own service for device-specific interaction. The client discovers what's available by querying OneMHzBusService, then talks to the appropriate device service.
+
+#### Future: Dynamically Loaded Peripheral Plugins
+
+To avoid baking all possible 1 MHz bus peripherals into the Beebium server executables, a plugin architecture could allow peripherals (e.g. Music 5000, speech chip) to be loaded at runtime. Plugins would use a C API (not C++) to minimise ABI compatibility issues and ease implementation in other languages.
+
+A key question is whether a plugin could define a gRPC service served by the existing Beebium gRPC server. gRPC C++ does **not** support adding services to a running server -- `ServerBuilder::RegisterService()` must be called before `BuildAndStart()`, and there is no public API to register services afterward. Three approaches are viable:
+
+**Approach A: Generic service with dynamic dispatch.** A `CallbackGenericService` is registered at server startup as a catch-all for RPCs that don't match any built-in service. It receives the full method name (e.g. `/beebium.Music5000Service/SetWaveform`) and raw serialized bytes. Plugins register handlers into a mutable dispatch table keyed by method name. The plugin handles its own protobuf serialization via the C API (receiving/returning `uint8_t*` + length), which avoids C++ ABI coupling entirely. Limitations: gRPC server reflection will not automatically list plugin services; all RPCs are modelled as bidirectional streams at the framework level (unary RPCs are emulated as single-message streams).
+
+**Approach B: Server restart on plugin load.** When a plugin is loaded, the gRPC server is shut down, rebuilt with all existing services plus the plugin's service, and restarted on the same port. This provides full typed service support and working reflection, but severs all active streams during the restart. Acceptable if plugins are loaded only at machine configuration time (not mid-emulation). Beebium clients already handle server reconnection.
+
+**Approach C: Plugin runs its own gRPC server.** Each plugin starts a separate gRPC server on its own port. Beebium already uses this pattern: `ParasiteServer` runs an independent gRPC server for Tube co-processor debugging. Service discovery would need extending to advertise plugin server ports alongside the main server.
+
+For the C plugin API, Approach A is the most natural fit: the plugin exports C functions that receive and return serialized protobuf bytes, completely sidestepping C++ ABI and gRPC framework dependencies. The main server's generic service handles gRPC transport; the plugin handles message content. The plugin would ship its own `.proto` file for client-side code generation, but the server side is just raw bytes through the C API.
+
+**Recommended approach: unified extension registry with pre-start registration.** All 1 MHz bus peripherals -- whether compiled into the server or loaded from shared libraries -- register through the same extension registry before the gRPC server starts. The registry collects extension descriptors; each descriptor provides C API function pointers (init, read, write, tick, etc.), FRED/JIM address claims, and an optional `grpc::Service*` for gRPC registration.
+
+The registry does not care how a module was loaded. It just sees a descriptor:
+
+```c
+typedef struct {
+    const char* name;                          // e.g. "acorn-scsi", "music-5000"
+    const char* version;
+    uint16_t fred_base;                        // e.g. 0xFC40
+    uint16_t fred_end;                         // e.g. 0xFC43
+    beebium_ext_init_fn init;                  // called once at startup
+    beebium_ext_read_fn read;                  // called on FRED/JIM read
+    beebium_ext_write_fn write;                // called on FRED/JIM write
+    beebium_ext_tick_fn tick;                  // called on 1 MHz clock (optional)
+    beebium_ext_shutdown_fn shutdown;           // called at server shutdown
+    void* grpc_service;                        // optional grpc::Service* (opaque to C API)
+} beebium_extension_descriptor;
+```
+
+**Built-in modules** (linked into the server executable) register statically during server initialisation by calling the registry directly:
+
+```cpp
+// In main_model_b.cpp or similar
+extension_registry.register_extension(scsi_host_adapter_descriptor());
+extension_registry.register_extension(econet_clock_descriptor());
+```
+
+**Plugin modules** (shared libraries) are discovered by scanning a plugin directory for `.so`/`.dll`/`.dylib` files. Each is loaded via `dlopen`/`LoadLibrary`, and a well-known C entry point is called to obtain the same descriptor:
+
+```c
+// Each plugin exports this symbol
+const beebium_extension_descriptor* beebium_extension_describe(void);
+```
+
+From the registry's perspective, both paths produce identical descriptors:
+
+```
+Extension Registry
+  ├─ Built-in: SCSI Host Adapter    (linked, registers statically)
+  ├─ Built-in: Econet Clock          (linked, registers statically)
+  ├─ Plugin:   Music 5000            (music5000.dylib, discovered and loaded)
+  └─ Plugin:   Custom peripheral     (myperi.dylib, discovered and loaded)
+```
+
+Core peripherals (SCSI host adapter, Econet) would typically be built-in. Niche or experimental peripherals (Music 5000, speech chip, custom educational hardware) could be plugins, keeping the server executables lean while remaining extensible.
+
+This reflects real hardware practice: you don't hot-plug cards into a 1 MHz bus on a running BBC Micro. If you want to change attached hardware, restart the machine. This is the same constraint that applies to Tube co-processors -- the parasite server starts alongside the main server, not later. Changing the hardware configuration means restarting the Beebium server process, which is the emulator equivalent of power-cycling the machine.
+
+The startup sequence:
+
+```
+1. Beebium server starts, parses command-line options
+2. Built-in extensions register their descriptors with the extension registry
+3. Plugin directory scanned; each .so/.dll/.dylib is dlopen'd
+   and beebium_extension_describe() called to obtain its descriptor
+4. All descriptors validated (no address conflicts, compatible API version)
+5. Each extension's init() function called
+6. ServerBuilder registers all built-in gRPC services
+   + grpc::Service* from any extension descriptors that provide one
+7. BuildAndStart() -- gRPC server begins accepting connections
+8. Emulation begins
+```
+
+Approaches A (generic dispatch) and C (separate server per plugin) remain available as future options if true hot-loading during emulation becomes desirable, but the pre-start unified registry should be the default.
+
+#### SCSI Target Extensibility
+
+The extension architecture has a second level: the SCSI host adapter itself needs to support pluggable targets. A hard disc target and a VP415 LaserDisc target both sit on the same SCSI bus but have entirely different command handling. The host adapter must not own device-specific logic -- it should handle the bus protocol (selection, phases, REQ/ACK) and delegate CDB processing to pluggable target implementations.
+
+Each SCSI target is described by its own C API descriptor:
+
+```c
+typedef struct {
+    const char* name;                            // e.g. "adfs-disc", "vp415"
+    uint8_t default_scsi_id;                     // preferred target ID
+    beebium_scsi_init_fn init;
+    beebium_scsi_handle_cdb_fn handle_cdb;       // receives raw CDB bytes + data buffer
+    beebium_scsi_get_status_fn get_status;
+    beebium_scsi_shutdown_fn shutdown;
+    void* grpc_service;                          // optional target-specific gRPC service
+} beebium_scsi_target_descriptor;
+```
+
+The host adapter calls `target[N].handle_cdb()` when a CDB arrives for target N. A hard disc target processes READ/WRITE against a DAT file. A VP415 target processes Group 6 F-code commands. The adapter is identical in both cases -- it just moves bytes between the 6502 bus and the target.
+
+This means the SCSI host adapter could be built-in with hard disc targets built-in, while a VP415 target ships as a separate plugin. Or all three could be plugins. The combinations work because the interfaces are the same:
+
+```
+Extension Registry (1 MHz bus)
+  ├─ SCSI Host Adapter (built-in)   provides →  SCSI Target Registry
+  ├─ Music 5000 (plugin)
+  └─ ...
+
+SCSI Target Registry (owned by host adapter)
+  ├─ Hard Disc target (built-in)
+  ├─ VP415 target (plugin)
+  └─ ...
+```
+
+The cross-plugin case (SCSI adapter is a plugin, VP415 is also a plugin) requires the VP415 plugin to find and register with the adapter. This is handled by a **two-phase init**:
+
+- **Phase 1**: Init 1 MHz bus extensions. The SCSI host adapter creates its target registry.
+- **Phase 2**: Init sub-bus devices. Each extension whose descriptor declares `attaches_to = "scsi"` is passed a handle to the SCSI adapter's target registry and registers its target descriptor.
+
+This avoids general-purpose dependency resolution. We're handling exactly one level of nesting (bus → device), which is all that's needed for the BBC Micro's peripheral topology. If a third level ever appeared (unlikely), the pattern could be generalised then.
+
+The full startup sequence with two-phase init:
+
+```
+1. Beebium server starts, parses command-line options
+2. Built-in extensions register their descriptors with the extension registry
+3. Plugin directory scanned; .so/.dll/.dylib files loaded,
+   beebium_extension_describe() called for each
+4. All descriptors validated (no address conflicts, compatible API version)
+5. Phase 1 init: 1 MHz bus extensions
+   - SCSI host adapter init() called; creates its target registry
+   - Music 5000 init() called; etc.
+6. Phase 2 init: sub-bus devices
+   - Each descriptor with attaches_to = "scsi" is passed to the
+     SCSI adapter's target registry
+   - Hard disc target init() called with DAT file path
+   - VP415 target init() called (if present)
+7. Collect grpc::Service* from all bus extensions AND all SCSI targets
+8. ServerBuilder registers all built-in gRPC services + extension services
+9. BuildAndStart() -- gRPC server begins accepting connections
+10. Emulation begins
+```
+
+**Key design principle**: the SCSI host adapter must be designed from day one with the target registry as its core abstraction, even if the only initial target is a hard disc. Adding the `handle_cdb` dispatch through a target interface (rather than handling READ/WRITE directly in the adapter) costs almost nothing upfront but prevents a major restructuring when VP415 or other SCSI device support is added later.
+
+#### Generalised Extension Point Architecture
+
+The two-phase init described above is a simplification. Real BBC Micro hardware has multi-port devices (e.g. a joystick interface that connects to both the User Port and the Analogue Port simultaneously) and arbitrary nesting depth. A more general model uses **named extension points** and **dependency graph resolution**.
+
+**Extension points** are named registries where extensions can attach. Some are built-in (always available), others are created dynamically by extensions:
+
+| Extension Point | Type | Provider |
+|----------------|------|----------|
+| `1mhz-bus` | Built-in | Machine hardware |
+| `user-port` | Built-in | User VIA Port B |
+| `analogue-port` | Built-in | Machine hardware |
+| `scsi` | Dynamic | SCSI Host Adapter extension |
+
+**Extensions** declare what they attach to and what they provide:
+
+```c
+typedef struct {
+    const char* name;                    // e.g. "acorn-scsi", "vp415", "joystick"
+    const char** attaches_to;            // extension points consumed (NULL-terminated)
+    const char** provides;               // extension points created (NULL-terminated)
+    beebium_ext_init_fn init;
+    beebium_ext_shutdown_fn shutdown;
+    void* grpc_service;                  // optional grpc::Service*
+    // ... handler function pointers specific to the extension point type
+} beebium_extension_descriptor;
+```
+
+A single plugin (DLL/SO) can contain multiple extensions. The joystick interface plugin would register two extensions: one attaching to `user-port`, one to `analogue-port`. The SCSI host adapter registers one extension attaching to `1mhz-bus` and providing `scsi`.
+
+**Startup resolves a dependency DAG via topological sort:**
+
+```
+1. Enumerate built-in extension points: 1mhz-bus, user-port, analogue-port
+2. Discover all plugins (built-in modules + shared libraries)
+   - Call beebium_extension_describe() on each
+   - Collect all extension descriptors
+3. Build dependency graph from attaches_to / provides declarations
+4. Topological sort (error on cycles with diagnostic message)
+5. Init extensions in dependency order:
+   a. SCSI Host Adapter (needs 1mhz-bus) → creates "scsi" extension point
+   b. Music 5000 (needs 1mhz-bus)
+   c. Hard Disc target (needs scsi)
+   d. VP415 target (needs scsi)
+   e. Joystick (needs user-port AND analogue-port)
+6. Collect grpc::Service* from all initialised extensions
+7. ServerBuilder registers all services, BuildAndStart()
+```
+
+Each extension is simple and focused. The VP415 plugin knows nothing about the 1 MHz bus -- it declares `attaches_to = {"scsi"}` and implements `handle_cdb`. The joystick plugin knows nothing about SCSI -- it declares `attaches_to = {"user-port", "analogue-port"}` and implements port handlers. The dependency graph resolution is infrastructure-layer complexity, done once, keeping individual extensions lean.
+
+Cycles (extension A provides bus X, extension B on bus X provides bus Y, extension A attaches to bus Y) are detected by the topological sort and reported as startup errors. In practice, the BBC Micro's peripheral topology is a tree, so cycles would indicate a misconfigured or buggy plugin.
+
+This architecture means the SCSI extension point is not special -- it's just another named registry, created by whichever extension provides it. If someone later builds a different SCSI adapter (e.g. a Torch SASI adapter at 0xFDF0), it could provide its own `torch-sasi` extension point with the same target interface, and existing SCSI target plugins would work with either adapter by declaring `attaches_to = {"scsi"}` or `attaches_to = {"torch-sasi"}` as appropriate.
+
+#### Extension Points as Hardware Specification
+
+The set of extension points registered at startup defines the machine variant's external hardware. Each hardware policy class (`ModelBHardware`, `ModelBPlusHardware`, etc.) registers the extension points that correspond to its physical ports:
+
+| Extension Point | Model A | Model B | Model B+ | Master 128 | Master AIV |
+|----------------|---------|---------|----------|------------|------------|
+| `1mhz-bus` | - | Yes | Yes | Yes (ext) | Yes (ext+int) |
+| `user-port` | - | Yes | Yes | Yes | Yes |
+| `analogue-port` | - | Yes | Yes | Yes | Yes |
+| `printer-port` | - | Yes | Yes | Yes | Yes |
+| `rs423` | - | Yes | Yes | Yes | Yes |
+| `tube` | - | Yes | Yes | Yes | Yes (65C102) |
+| `cartridge-slots` | - | - | - | Yes (2) | Yes (2) |
+
+The Model A shipped without the User VIA chip (IC69 socket empty), so it has no User Port, no printer port, and no analogue port -- all of which depend on the User VIA. The Model A's extension point set is empty: it has no external peripheral ports at all.
+
+A plugin that declares `attaches_to = {"1mhz-bus"}` will fail to load on a Model A with a clear diagnostic: "extension point '1mhz-bus' not available on this machine". No special-case code is needed -- the absence of the extension point *is* the hardware limitation. You cannot plug a 1 MHz bus Teletext Adapter into a Model A, and the emulator correctly refuses to do so for the same structural reason the real hardware cannot.
+
+This scales in both directions. A fully-loaded Master AIV with SCSI adapter, VP415, hard disc, Music 5000, and joystick interface works because all the required extension points are present and the dependency graph resolves cleanly. A bare Model A with just a printer works because only `printer-port` is registered and no plugins attempt to attach to absent extension points.
+
+The hardware policy classes already define what hardware is present (RAM size, ROM slots, I/O address map). Extension points extend this pattern to external ports, making the machine variant definition the single source of truth for what can be attached.
+
+#### Built-in vs Plugin: Following the Internal/External Boundary
+
+The guiding principle for whether an extension is built into the server executable or shipped as a plugin follows the real hardware's internal/external boundary:
+
+- **Internal hardware** (factory-fitted, soldered, or socketed inside the machine): **built into the server executable**. It is part of the machine definition and is always present.
+- **External hardware** (plugged into a port by the user): **loaded from a plugin**. It is an add-on that the user chooses to attach.
+
+For example, the Master AIV's SCSI host adapter was factory-fitted to the internal 1 MHz bus socket (PL12) on the motherboard. It is part of what makes a Master AIV a Master AIV. In Beebium, `beebium-master-aiv` links the SCSI host adapter code directly and registers it during hardware init -- the adapter is always present, just like the real machine.
+
+A Model B owner who wanted SCSI bought an adapter card and plugged it into the external 1 MHz bus connector. In Beebium, `beebium-model-b` loads `scsi_host_adapter.dylib` from the plugin directory at startup -- the adapter is only present if the user provides the plugin, just like buying the expansion card.
+
+The underlying code is identical -- same extension descriptor, same bus phase state machine, same `handle_cdb` target dispatch. Only the linkage differs:
+
+```
+beebium-master-aiv
+  └─ links scsi_host_adapter.o directly
+     (registered as built-in during hardware policy init)
+
+beebium-model-b
+  └─ loads scsi_host_adapter.dylib at startup
+     (discovered in plugin directory, attaches to "1mhz-bus")
+```
+
+This means:
+- The Master AIV server works without any plugin directory -- its SCSI adapter is always present
+- A Model B server is lean by default, gaining SCSI only when the plugin is provided
+- SCSI target plugins (hard disc, VP415) work with either, without knowing whether the adapter was built-in or loaded from a shared library
+- The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use), with no `#ifdef` or conditional compilation needed
