@@ -7,7 +7,7 @@ A survey of hard disc support across BBC Micro emulators (B-Em, b2, jsbeeb, beeb
 | Emulator | Hard Disc Support | Controllers | Image Formats |
 |----------|------------------|-------------|---------------|
 | B-Em | Yes | SCSI, IDE | DAT+DSC, HDF |
-| b2 | No | - | - |
+| b2 | Yes (recent) | SCSI | DAT+DSC |
 | jsbeeb | No | - | - |
 | beebjit | No | - | - |
 | BeebEm | Yes | SCSI, IDE, SASI | DAT+DSC |
@@ -16,7 +16,7 @@ A survey of hard disc support across BBC Micro emulators (B-Em, b2, jsbeeb, beeb
 | BeebSCSI | Yes (hardware) | SCSI | DAT+DSC, DAT+CFG |
 | Pi1MHz | Yes (hardware) | SCSI | DAT+DSC, DAT+CFG |
 
-Only B-Em and BeebEm implement hard disc emulation in software. b2, jsbeeb, and beebjit are floppy-only (beebjit's README explicitly lists hard drives as out of scope).
+B-Em, b2, and BeebEm implement hard disc emulation in software. b2's SCSI support is a recent addition (June 2025 onwards, stabilised March 2026). jsbeeb and beebjit are floppy-only (beebjit's README explicitly lists hard drives as out of scope).
 
 Two hardware projects -- BeebSCSI and Pi1MHz -- provide high-quality SCSI emulation that plugs into a real BBC Micro's 1 MHz bus. Their implementations are more complete than the software emulators and serve as authoritative references for the Acorn SCSI host adapter protocol.
 
@@ -35,44 +35,46 @@ A third variant existed: the **Torch SASI controller** at `0xFDF0-0xFDF3` on the
 
 ### Controller Comparison
 
-| Feature | B-Em SCSI | B-Em IDE | BeebEm SCSI | BeebEm IDE | BeebEm SASI |
-|---------|-----------|----------|-------------|------------|-------------|
-| Max drives | 4 (LUN 0-3) | 2 | 4 (LUN 0-3) | 4 | 1 |
-| Sector size | 256 bytes | 256 bytes (512 padded) | 256 bytes | 256 bytes | 256 bytes |
-| I/O base | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 |
-| Registers | 4 (+00 to +03) | 9 (+00 to +08) | 4 (+00 to +03) | 8 (+00 to +07) | 4 (+00 to +03) |
-| Protocol | Phase-based bus | ATA registers | Phase-based bus | ATA registers | Phase-based bus |
-| I/O page | FRED | FRED | FRED | FRED | JIM |
-| Machine target | Model B, Master | Model B, Master | Model B, Master | Model B, Master | Torch Z80 host |
+| Feature | B-Em SCSI | B-Em IDE | b2 SCSI | BeebEm SCSI | BeebEm IDE | BeebEm SASI |
+|---------|-----------|----------|---------|-------------|------------|-------------|
+| Max drives | 4 (LUN 0-3) | 2 | 4 (LUN 0-3) | 4 (LUN 0-3) | 4 | 1 |
+| Sector size | 256 bytes | 256 bytes (512 padded) | 256 bytes | 256 bytes | 256 bytes | 256 bytes |
+| I/O base | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 | 0xFC40 |
+| Registers | 4 (+00 to +03) | 9 (+00 to +08) | 4 (+00 to +03) | 4 (+00 to +03) | 8 (+00 to +07) | 4 (+00 to +03) |
+| Protocol | Phase-based bus | ATA registers | Phase-based bus | Phase-based bus | ATA registers | Phase-based bus |
+| I/O page | FRED | FRED | FRED | FRED | FRED | JIM |
+| Machine target | Model B, Master | Model B, Master | Model B, Master, Electron | Model B, Master | Model B, Master | Torch Z80 host |
 
 ## SCSI Command Sets
 
 The software emulators implement minimal command sets sufficient for ADFS, while the hardware projects (BeebSCSI, Pi1MHz) implement substantially more complete SCSI-1 compliance.
 
-| Command | Code | B-Em | BeebEm | BeebSCSI | Pi1MHz | Purpose |
-|---------|------|------|--------|----------|--------|---------|
-| TEST UNIT READY | 0x00 | Yes | Yes | Yes | Yes | Check drive presence |
-| REZERO UNIT | 0x01 | - | Yes (SASI) | Yes | Yes | Seek to track 0 |
-| REQUEST SENSE | 0x03 | Yes | Yes | Yes | Yes | Error status |
-| FORMAT UNIT | 0x04 | Yes | Yes | Yes | Yes | Initialise disc |
-| REASSIGN BLOCKS | 0x07 | - | - | - | Yes | Defect mapping |
-| READ (6) | 0x08 | Yes | Yes | Yes | Yes | Read sectors (21-bit LBA) |
-| VERIFY | 0x09 | - | Yes (SASI) | - | - | Verify sectors |
-| WRITE (6) | 0x0A | Yes | Yes | Yes | Yes | Write sectors (21-bit LBA) |
-| SEEK | 0x0B | - | Yes (SASI) | Yes | Yes | Seek to block |
-| SET GEOMETRY | 0x0C | - | Yes (SASI) | - | - | Configure geometry |
-| TRANSLATE | 0x0F | Yes | - | Yes | Yes | LBA to CHS translation |
-| INQUIRY | 0x12 | - | - | - | Yes | Device identification |
-| MODE SELECT (6) | 0x15 | Yes | - | Yes | Yes | Set device parameters |
-| MODE SENSE (6) | 0x1A | Yes | - | Yes | Yes | Read device parameters |
-| START/STOP UNIT | 0x1B | Yes | - | Yes | Yes | Spindle control |
-| SEND DIAGNOSTIC | 0x1D | - | - | - | Yes | Self-test |
-| READ CAPACITY | 0x25 | - | - | - | Yes | Query disc size |
-| VERIFY (10) | 0x2F | Yes | Yes | Yes | Yes | Range check |
-| READ DEFECT DATA | 0x37 | - | - | - | Yes | Defect list |
-| RAM DIAGNOSTICS | 0xE0 | - | Yes (SASI) | - | - | Self-test |
-| CONTROLLER DIAG | 0xE4 | - | Yes (SASI) | - | - | Self-test |
-| *Vendor-specific* | 0x10-0x14 | - | - | Yes | Yes | BeebSCSI extensions |
+| Command | Code | B-Em | b2 | BeebEm | BeebSCSI | Pi1MHz | Purpose |
+|---------|------|------|----|--------|----------|--------|---------|
+| TEST UNIT READY | 0x00 | Yes | Yes | Yes | Yes | Yes | Check drive presence |
+| REZERO UNIT | 0x01 | - | - | Yes (SASI) | Yes | Yes | Seek to track 0 |
+| REQUEST SENSE | 0x03 | Yes | Yes | Yes | Yes | Yes | Error status |
+| FORMAT UNIT | 0x04 | Yes | Yes | Yes | Yes | Yes | Initialise disc |
+| REASSIGN BLOCKS | 0x07 | - | - | - | - | Yes | Defect mapping |
+| READ (6) | 0x08 | Yes | Yes | Yes | Yes | Yes | Read sectors (21-bit LBA) |
+| VERIFY | 0x09 | - | - | Yes (SASI) | - | - | Verify sectors |
+| WRITE (6) | 0x0A | Yes | Yes | Yes | Yes | Yes | Write sectors (21-bit LBA) |
+| SEEK | 0x0B | - | - | Yes (SASI) | Yes | Yes | Seek to block |
+| SET GEOMETRY | 0x0C | - | - | Yes (SASI) | - | - | Configure geometry |
+| TRANSLATE | 0x0F | Yes | Yes | Yes | Yes | Yes | LBA to CHS translation |
+| INQUIRY | 0x12 | - | - | - | - | Yes | Device identification |
+| MODE SELECT (6) | 0x15 | Yes | Yes | - | Yes | Yes | Set device parameters |
+| MODE SENSE (6) | 0x1A | Yes | Yes | - | Yes | Yes | Read device parameters |
+| START/STOP UNIT | 0x1B | Yes | Yes | - | Yes | Yes | Spindle control |
+| SEND DIAGNOSTIC | 0x1D | - | - | - | - | Yes | Self-test |
+| READ CAPACITY | 0x25 | - | - | - | - | Yes | Query disc size |
+| WRITE (10) | 0x2A | - | Yes | - | - | - | Extended write (32-bit LBA) |
+| WRITE AND VERIFY | 0x2E | - | Yes | - | - | - | Write with verification |
+| VERIFY (10) | 0x2F | Yes | Yes | Yes | Yes | Yes | Range check |
+| READ DEFECT DATA | 0x37 | - | - | - | - | Yes | Defect list |
+| RAM DIAGNOSTICS | 0xE0 | - | - | Yes (SASI) | - | - | Self-test |
+| CONTROLLER DIAG | 0xE4 | - | - | Yes (SASI) | - | - | Self-test |
+| *Vendor-specific* | 0x10-0x14 | - | - | - | Yes | Yes | BeebSCSI extensions |
 
 The minimum viable set for ADFS operation is: TEST UNIT READY (0x00), REQUEST SENSE (0x03), READ (0x08), and WRITE (0x0A). However, MODE SELECT (0x15) and MODE SENSE (0x1A) are needed for geometry configuration, and FORMAT (0x04) is needed for disc initialisation.
 
@@ -348,18 +350,20 @@ Same jukebox directory structure (`/BeebSCSI0/` through `/BeebSCSI7/`) with runt
 
 ## Implementation Complexity Comparison (Updated)
 
-| Aspect | B-Em | BeebEm | BeebSCSI | Pi1MHz |
-|--------|------|--------|----------|--------|
-| SCSI source | ~900 lines | ~900 lines | ~2400 lines | ~2400 lines (ported) |
-| IDE source | ~340 lines | ~260 lines | - | - |
-| SCSI commands | 10 | 10 (+ 6 SASI) | 14 + vendor | 18 + vendor |
-| Max LUNs | 4 | 4 | 8 | 16 |
-| Image format | DAT+DSC | DAT+DSC | DAT+DSC+CFG | DAT+DSC+CFG |
-| Heritage | BeebEm port | Original | Original | BeebSCSI port |
+| Aspect | B-Em | b2 | BeebEm | BeebSCSI | Pi1MHz |
+|--------|------|----|--------|----------|--------|
+| SCSI source | ~900 lines | ~1000 lines | ~900 lines | ~2400 lines | ~2400 lines (ported) |
+| IDE source | ~340 lines | - | ~260 lines | - | - |
+| Image handling | (in SCSI) | ~340 lines | (in SCSI) | ~2000 lines | ~2000 lines (ported) |
+| SCSI commands | 10 | 11 | 10 (+ 6 SASI) | 14 + vendor | 18 + vendor |
+| Max LUNs | 4 | 4 | 4 | 8 | 16 |
+| Image format | DAT+DSC | DAT+DSC | DAT+DSC | DAT+DSC+CFG | DAT+DSC+CFG |
+| Electron support | - | Yes | - | N/A | N/A |
+| Heritage | BeebEm port | Independent | Original | Original | BeebSCSI port |
 
-The software emulators (B-Em, BeebEm) implement the minimum needed to make ADFS work. The hardware projects (BeebSCSI, Pi1MHz) implement substantially more, driven by the need to work with a wider range of ADFS versions and third-party utilities that probe for additional SCSI capabilities.
+The software emulators (B-Em, b2, BeebEm) implement the minimum needed to make ADFS work. b2's implementation is the most recent and has the cleanest architectural separation between SCSI protocol logic (`SCSI` class) and disc image handling (`HardDiskImage` class). The hardware projects (BeebSCSI, Pi1MHz) implement substantially more, driven by the need to work with a wider range of ADFS versions and third-party utilities that probe for additional SCSI capabilities.
 
-For Beebium, the BeebSCSI SCSI state machine is the most authoritative reference. Its clear separation of bus interface, command processing, and filesystem access maps directly onto Beebium's component architecture.
+For Beebium, the BeebSCSI SCSI state machine is the most authoritative reference for protocol completeness. b2's implementation is a useful additional reference for modern C++ idioms and clean separation of concerns.
 
 ## iSCSI as a Storage Backend
 
