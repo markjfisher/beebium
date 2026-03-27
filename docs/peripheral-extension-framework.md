@@ -452,6 +452,56 @@ Three alternative approaches remain available if true hot-loading becomes desira
 12. Emulation begins
 ```
 
+## Implementation Plan: TestScratchRam
+
+The first extension implemented against this framework will be a minimal test peripheral: 8 bytes of scratch RAM mapped at 0xFC50-0xFC57 on the FRED page. This does not correspond to any real BBC Micro hardware -- it exists solely to prove the framework.
+
+### Phase 1: Framework and 6502-Side Access
+
+`TestScratchRam` implements `PeripheralExtension` and `OneMHzBusDevice`. It claims 8 addresses on the 1 MHz bus, stores writes, and returns the stored values on reads. From the 6502 side:
+
+```
+LDA #&42
+STA &FC50       ; write 0x42 to scratch byte 0
+LDA &FC50       ; read back 0x42
+```
+
+This exercises:
+- Extension discovery and registration (built-in module)
+- `OneMHzBusPort::claim_addresses()` with a range
+- `OneMHzBusDevice::read()` and `write()` callbacks
+- Bus stretching (1 MHz timing)
+- Observable state (write a value, read it back)
+
+Tests can verify correct behaviour from both the 6502 side (via the debugger/memory access) and the C++ side (direct calls to the extension).
+
+### Phase 2: gRPC Service
+
+Add a `ScratchRamService` gRPC service to the extension, proving that plugin-provided gRPC services work:
+
+```
+ScratchRamService
+  +-- Read(address)     -> value
+  +-- Write(address, value)
+  +-- ReadAll()         -> 8 bytes
+```
+
+This exercises:
+- `grpc_services()` returning a non-empty vector
+- Service registration via `ServerBuilder` during startup
+- Client-side interaction with an extension-provided service
+- Concurrent access (6502 writes while gRPC reads, or vice versa)
+
+### Phase 3: Plugin Loading
+
+Move `TestScratchRam` from built-in to a plugin (`test_scratch_ram.dylib`), proving dynamic loading works:
+
+- `extern "C"` entry point returns a `TestScratchRam` instance
+- Plugin directory scanning discovers and loads it
+- Same tests pass with no code changes to the extension itself
+
+After Phase 3, the framework is proven end-to-end and the SCSI host adapter can be built with confidence.
+
 ## References
 
 - [Hard Disc Emulation Comparison](hard-disc-comparison.md) -- SCSI protocol details, controller comparisons, image formats, hardware references (BeebSCSI, Pi1MHz), AIV/VP415 LaserDisc support, iSCSI backend
