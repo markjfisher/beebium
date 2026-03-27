@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "extension/OneMHzBusPort.hpp"
 #include "AddressableLatch.hpp"
 #include "AudioBuffer.hpp"
 #include "BankBinding.hpp"
@@ -323,15 +324,8 @@ private:
         }
     };
 
-    // FRED/JIM I/O region (0xFC00-0xFDFF)
-    // These are 1MHz expansion bus regions. When no hardware is connected,
-    // the 74LS245 transceiver actively drives 0xFF onto the data bus.
-    struct FredJimRegion {
-        uint8_t read(uint16_t) const { return 0xFF; }
-        void write(uint16_t, uint8_t) {}
-    };
-
-    FredJimRegion fred_jim_;
+    // 1 MHz expansion bus (FRED/JIM, 0xFC00-0xFDFF).
+    OneMHzBusPort one_mhz_bus_;
 
 public:
     BPlusRomselRegister romsel_reg{sideways, romsel_};
@@ -343,7 +337,7 @@ public:
     // Note: FRED/JIM overlay MOS ROM (first match wins)
     using MemoryMapType = decltype(
         MemoryMap{
-            make_region<0xFC00, 0xFDFF>(std::declval<FredJimRegion&>()),   // FRED/JIM (overlays MOS ROM)
+            make_region<0xFC00, 0xFDFF>(std::declval<OneMHzBusPort&>()),   // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(std::declval<Crtc6845&>()),
             make_region<0xFE18, 0xFE1F, Mirror<0x07>>(std::declval<EconetStationIdRegion&>()),  // Econet station ID + INTOFF
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(std::declval<VideoUlaWithInton&>()),       // Video ULA + INTON
@@ -611,8 +605,13 @@ public:
         // Tick the disc controller (1MHz peripheral clock)
         disc_controller.tick();
 
+        // Tick 1 MHz bus devices
+        one_mhz_bus_.tick();
+
         return nmi;
     }
+
+    OneMHzBusPort& one_mhz_bus() { return one_mhz_bus_; }
 
     // Paging register accessors for testing
     uint8_t romsel() const { return romsel_; }
@@ -1005,7 +1004,7 @@ private:
         // Order matters: first match wins
         // I/O regions overlay MOS ROM at 0xFC00-0xFEFF
         return MemoryMap{
-            make_region<0xFC00, 0xFDFF>(fred_jim_),                              // FRED/JIM (overlays MOS ROM)
+            make_region<0xFC00, 0xFDFF>(one_mhz_bus_),                              // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(crtc),
             make_region<0xFE18, 0xFE1F, Mirror<0x07>>(econet_station_id_region_), // Econet station ID + INTOFF
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula_with_inton_),     // Video ULA + INTON
