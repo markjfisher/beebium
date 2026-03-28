@@ -103,6 +103,7 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
     manifest.name = j.value("name", "");
     manifest.description = j.value("description", "");
     manifest.library_stem = j.value("library", "");
+    manifest.cli_name = j.value("cli", "");
     manifest.manifest_dirpath = manifest_filepath.parent_path();
 
     if (manifest.name.empty()) {
@@ -112,6 +113,22 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
     if (manifest.library_stem.empty()) {
         throw std::runtime_error(
             "Manifest missing 'library' field: " + manifest_filepath.string());
+    }
+
+    // Parse parameter schema
+    if (j.contains("parameters") && j["parameters"].is_array()) {
+        for (const auto& p : j["parameters"]) {
+            ParameterSchema param;
+            param.key = p.value("key", "");
+            param.type = p.value("type", "string");
+            param.description = p.value("description", "");
+            param.position = p.value("position", -1);
+            param.required = p.value("required", false);
+            param.default_value = p.value("default", "");
+            if (!param.key.empty()) {
+                manifest.parameters.push_back(std::move(param));
+            }
+        }
     }
 
     return manifest;

@@ -1,5 +1,26 @@
 {
     "name": "scsi-hard-disc",
     "description": "SCSI hard disc target (DAT+DSC image)",
-    "library": "scsi-hard-disc"
+    "library": "scsi-hard-disc",
+    "cli": "scsi-hdd",
+    "parameters": [
+        {
+            "key": "scsi-id",
+            "type": "integer",
+            "position": 0,
+            "default": "0",
+            "description": "SCSI target ID (0-7)"
+        },
+        {
+            "key": "image",
+            "type": "filepath",
+            "position": 1,
+            "description": "Path to DAT disc image file"
+        },
+        {
+            "key": "adapter-id",
+            "type": "string",
+            "description": "ID of SCSI adapter to attach to"
+        }
+    ]
 }

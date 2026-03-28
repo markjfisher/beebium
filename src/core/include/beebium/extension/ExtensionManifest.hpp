@@ -13,8 +13,11 @@
 #ifndef BEEBIUM_EXTENSION_MANIFEST_HPP
 #define BEEBIUM_EXTENSION_MANIFEST_HPP
 
+#include "ExtensionArgParser.hpp"
+
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace beebium {
 
@@ -23,10 +26,17 @@ namespace beebium {
 // For built-in extensions, this is constructed programmatically.
 // The manifest is the single source of truth for extension metadata.
 struct ExtensionManifest {
-    std::string name;             // e.g. "test-scratch-ram"
+    std::string name;             // e.g. "scsi-hard-disc" (canonical type name)
     std::string description;      // human-readable description
     std::string library_stem;     // shared library filename stem (platform adds suffix)
+    std::string cli_name;         // short CLI alias (e.g. "scsi-hdd"); defaults to name
     std::filesystem::path manifest_dirpath;  // directory containing manifest.json (empty for built-in)
+    std::vector<ParameterSchema> parameters; // parameter schema for CLI/preset/gRPC
+
+    // Effective CLI name: cli_name if set, otherwise name
+    std::string_view effective_cli_name() const {
+        return cli_name.empty() ? std::string_view(name) : std::string_view(cli_name);
+    }
 };
 
 }  // namespace beebium
