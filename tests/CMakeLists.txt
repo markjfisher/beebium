@@ -675,6 +675,19 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_sideways)
 
+    # Plugin loader tests
+    add_executable(test_plugin_loader test_plugin_loader.cpp)
+    target_link_libraries(test_plugin_loader PRIVATE
+        beebium_core
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_plugin_loader PRIVATE
+        BEEBIUM_PLUGIN_DIR="${CMAKE_BINARY_DIR}/src/extensions/test-scratch-ram"
+    )
+    # Ensure the plugin is built before the test runs
+    add_dependencies(test_plugin_loader beebium_plugin_test_scratch_ram)
+    catch_discover_tests(test_plugin_loader)
+
     # PeripheralExtensionService gRPC tests (frontend discovery)
     add_executable(test_grpc_peripheral_extension test_grpc_peripheral_extension.cpp)
     target_link_libraries(test_grpc_peripheral_extension PRIVATE

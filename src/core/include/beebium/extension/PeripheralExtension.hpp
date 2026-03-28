@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_EXTENSION_PERIPHERAL_EXTENSION_HPP
 #define BEEBIUM_EXTENSION_PERIPHERAL_EXTENSION_HPP
 
+#include "ExtensionManifest.hpp"
+
 #include <span>
 #include <string_view>
 #include <vector>
@@ -28,11 +30,25 @@ class ExtensionContext;
 // -- each extension point type defines its own device callback interface
 // (OneMHzBusDevice, UserPortDevice, etc.) which extensions implement via
 // composition rather than inheritance.
+//
+// The manifest is the single source of truth for extension metadata.
+// For dynamically loaded extensions it is read from manifest.json;
+// for built-in extensions it is constructed programmatically.
 class PeripheralExtension {
 public:
     virtual ~PeripheralExtension() = default;
 
-    virtual std::string_view name() const = 0;
+    // Set the manifest (called by the framework before init).
+    void set_manifest(ExtensionManifest manifest) { manifest_ = std::move(manifest); }
+
+    // Access the manifest.
+    const ExtensionManifest& manifest() const { return manifest_; }
+
+    // Extension name (default reads from manifest; can be overridden).
+    virtual std::string_view name() const { return manifest_.name; }
+
+    // Human-readable description (from manifest).
+    std::string_view description() const { return manifest_.description; }
 
     // Extension points this extension requires (e.g. {"1mhz-bus"}).
     virtual std::span<const std::string_view> attaches_to() const = 0;
@@ -51,6 +67,9 @@ public:
     // Zero or more gRPC services for client interaction.
     // Collected after init() and registered with the gRPC ServerBuilder.
     virtual std::vector<grpc::Service*> grpc_services() { return {}; }
+
+protected:
+    ExtensionManifest manifest_;
 };
 
 }  // namespace beebium

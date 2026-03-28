@@ -71,10 +71,11 @@ TEST_CASE("TestScratchRam does not affect adjacent addresses",
 }
 
 TEST_CASE("TestScratchRam name and dependencies", "[extension][scratch-ram]") {
-    TestScratchRam ram;
+    auto ram = TestScratchRam::create();
 
-    REQUIRE(ram.name() == "test-scratch-ram");
-    REQUIRE(ram.attaches_to().size() == 1);
-    REQUIRE(ram.attaches_to()[0] == "1mhz-bus");
-    REQUIRE(ram.provides().empty());
+    REQUIRE(ram->name() == "test-scratch-ram");
+    REQUIRE(ram->attaches_to().size() == 1);
+    REQUIRE(ram->attaches_to()[0] == "1mhz-bus");
+    REQUIRE(ram->provides().empty());
+    REQUIRE(ram->description() == "8 bytes of scratch RAM at 0xFC50 for framework testing");
 }

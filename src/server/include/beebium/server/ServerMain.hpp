@@ -16,6 +16,7 @@
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
 #include "beebium/extension/OneMHzBusPort.hpp"
+#include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
 #include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
@@ -602,6 +603,10 @@ struct ServerConfig {
 
     // Preset file path
     std::optional<std::filesystem::path> preset_filepath;
+
+    // Extension configuration
+    std::string extension_dirpath;
+    std::vector<std::string> extension_names;
 };
 
 template<typename MachineType>
@@ -659,6 +664,8 @@ void print_usage(const char* program_name) {
               << "  --machine-name <name>    Machine name/label (default: from model)\n"
               << "  --allow-shutdown         Allow any client to shut down the server\n"
               << "  --advertise              Enable mDNS service advertisement\n"
+              << "  --extension-dir <path>   Directory containing extension plugins\n"
+              << "  --extension <name>       Load a named extension (repeatable)\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -925,6 +932,10 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             config.allow_shutdown = true;
         } else if (arg == "--advertise") {
             config.advertise = true;
+        } else if (arg == "--extension-dir" && i + 1 < argc) {
+            config.extension_dirpath = argv[++i];
+        } else if (arg == "--extension" && i + 1 < argc) {
+            config.extension_names.push_back(argv[++i]);
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             print_usage<MachineType>(argv[0]);
@@ -1571,6 +1582,7 @@ public:
             machine.reset();
 
             // Set up peripheral extension registry
+            beebium::PluginLoader plugin_loader;
             beebium::ExtensionRegistry extension_registry;
             if constexpr (beebium::HasOneMHzBus<Memory>) {
                 extension_registry.register_extension_point("1mhz-bus");
@@ -1578,6 +1590,23 @@ public:
 
             // Register built-in extensions
             extension_registry.register_extension(beebium::TestScratchRam::create());
+
+            // Load plugin extensions (opt-in by name)
+            if (!config.extension_dirpath.empty()) {
+                auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+                for (const auto& ext_name : config.extension_names) {
+                    auto* manifest = beebium::PluginLoader::find_manifest(manifests, ext_name);
+                    if (!manifest) {
+                        std::cerr << "Error: Extension '" << ext_name
+                                  << "' not found in " << config.extension_dirpath << "\n";
+                        return ExitCode::CONFIG;
+                    }
+                    plugin_loader.load_extension(*manifest, extension_registry);
+                }
+            } else if (!config.extension_names.empty()) {
+                std::cerr << "Error: --extension requires --extension-dir\n";
+                return ExitCode::USAGE;
+            }
 
             // Initialise extensions
             beebium::ExtensionContext extension_context(

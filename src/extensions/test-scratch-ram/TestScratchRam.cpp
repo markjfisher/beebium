@@ -19,7 +19,14 @@ TestScratchRam::TestScratchRam() = default;
 TestScratchRam::~TestScratchRam() = default;
 
 std::unique_ptr<TestScratchRam> TestScratchRam::create() {
-    return std::unique_ptr<TestScratchRam>(new TestScratchRam());
+    auto ext = std::unique_ptr<TestScratchRam>(new TestScratchRam());
+    ext->set_manifest(ExtensionManifest{
+        "test-scratch-ram",
+        "8 bytes of scratch RAM at 0xFC50 for framework testing",
+        "test-scratch-ram",
+        {}
+    });
+    return ext;
 }
 
 void TestScratchRam::init(ExtensionContext& ctx) {

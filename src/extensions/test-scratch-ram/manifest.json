@@ -1,0 +1,5 @@
+{
+    "name": "test-scratch-ram",
+    "description": "8 bytes of scratch RAM at 0xFC50 for framework testing",
+    "library": "test-scratch-ram"
+}

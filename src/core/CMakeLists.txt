@@ -17,6 +17,7 @@ add_library(beebium_core STATIC
     src/ParasiteRunner.cpp
     src/TubeSharedMemory.cpp
     src/Expression.cpp
+    src/PluginLoader.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
@@ -41,3 +42,9 @@ target_include_directories(beebium_core PUBLIC
 
 # Link to 6502 library
 target_link_libraries(beebium_core PUBLIC 6502_lib)
+
+# Link to nlohmann_json (for PluginLoader manifest parsing)
+target_link_libraries(beebium_core PUBLIC nlohmann_json::nlohmann_json)
+
+# Link to platform dynamic loading library (dlopen/dlclose on POSIX)
+target_link_libraries(beebium_core PUBLIC ${CMAKE_DL_LIBS})

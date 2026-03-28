@@ -48,8 +48,6 @@ public:
 
     static std::unique_ptr<TestScratchRam> create();
 
-    std::string_view name() const override { return "test-scratch-ram"; }
-
     std::span<const std::string_view> attaches_to() const override {
         static constexpr std::string_view deps[] = {"1mhz-bus"};
         return deps;
