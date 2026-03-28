@@ -607,7 +607,6 @@ struct ServerConfig {
 
     // Extension configuration
     std::string extension_dirpath;
-    std::vector<std::string> extension_names;  // legacy --extension <name> (no config)
 
     // Parsed extension instances with config (from --<cli-name> flags)
     struct ExtensionInstance {
@@ -673,7 +672,7 @@ void print_usage(const char* program_name) {
               << "  --allow-shutdown         Allow any client to shut down the server\n"
               << "  --advertise              Enable mDNS service advertisement\n"
               << "  --extension-dir <path>   Directory containing extension plugins\n"
-              << "  --extension <name>       Load a named extension (repeatable)\n"
+              << "                           Enables --<extension> flags (see below)\n"
               << "  --help                   Show this help message\n"
               << "\n"
               << "Default sideways ROMs:\n"
@@ -963,9 +962,6 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             // Already handled in first pass, skip
             ++i;
             continue;
-        } else if (arg == "--extension" && i + 1 < argc) {
-            // Legacy form: --extension <name> (no config)
-            config.extension_names.push_back(argv[++i]);
         } else {
             // Check if this is an extension CLI flag (e.g. --acorn-scsi, --scsi-hdd)
             auto manifest_it = cli_name_to_manifest.find(arg);
@@ -1644,21 +1640,9 @@ public:
             extension_registry.register_extension(beebium::TestScratchRam::create());
 
             // Load plugin extensions
+            // Load plugin extensions (from --<cli-name> flags)
             if (!config.extension_dirpath.empty()) {
                 auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
-
-                // Legacy --extension <name> form (no config)
-                for (const auto& ext_name : config.extension_names) {
-                    auto* manifest = beebium::PluginLoader::find_manifest(manifests, ext_name);
-                    if (!manifest) {
-                        std::cerr << "Error: Extension '" << ext_name
-                                  << "' not found in " << config.extension_dirpath << "\n";
-                        return ExitCode::CONFIG;
-                    }
-                    plugin_loader.load_extension(*manifest, extension_registry);
-                }
-
-                // New --<cli-name> form (with parsed config)
                 for (auto& inst : config.extension_instances) {
                     auto* manifest = beebium::PluginLoader::find_manifest(manifests, inst.name);
                     if (!manifest) {
@@ -1673,8 +1657,8 @@ public:
                     plugin_loader.load_extension(*manifest, extension_registry,
                                                   std::move(inst.config));
                 }
-            } else if (!config.extension_names.empty() || !config.extension_instances.empty()) {
-                std::cerr << "Error: Extensions require --extension-dir\n";
+            } else if (!config.extension_instances.empty()) {
+                std::cerr << "Error: Extension flags require --extension-dir\n";
                 return ExitCode::USAGE;
             }
 
