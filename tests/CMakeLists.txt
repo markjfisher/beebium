@@ -36,6 +36,21 @@ add_executable(test_configurable_banked_memory test_configurable_banked_memory.c
 target_link_libraries(test_configurable_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_configurable_banked_memory)
 
+# SCSI test device tests
+add_executable(test_scsi_test_device test_scsi_test_device.cpp)
+target_link_libraries(test_scsi_test_device PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+catch_discover_tests(test_scsi_test_device)
+
+# SCSI bus protocol tests
+add_executable(test_scsi_bus test_scsi_bus.cpp)
+target_link_libraries(test_scsi_bus PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+catch_discover_tests(test_scsi_bus)
+
+# SCSI target registry tests
+add_executable(test_scsi_target_registry test_scsi_target_registry.cpp)
+target_link_libraries(test_scsi_target_registry PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+catch_discover_tests(test_scsi_target_registry)
+
 # 1 MHz bus port tests
 add_executable(test_one_mhz_bus_port test_one_mhz_bus_port.cpp)
 target_link_libraries(test_one_mhz_bus_port PRIVATE beebium_core Catch2::Catch2WithMain)
