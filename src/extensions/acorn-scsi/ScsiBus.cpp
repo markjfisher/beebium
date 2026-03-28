@@ -271,21 +271,18 @@ void ScsiBus::enter_bus_free() {
 }
 
 void ScsiBus::enter_selection() {
-    // Enter Selection phase unconditionally. The target ID is resolved from
-    // the CDB's LUN field (bits 5-7 of byte 1) during command execution.
-    // b2 and BeebEm both ignore the data value written during selection and
-    // always select the first available target. The Acorn SCSI adapter is a
-    // single-target bus in practice (ADFS addresses targets via LUN in the CDB).
-    //
-    // Find the first present target to select.
+    // Enter Selection phase. The target is identified from the selection_data_
+    // byte written to the data register before the selection trigger. Each
+    // bit corresponds to a SCSI ID (bit 0 = ID 0, bit 1 = ID 1, etc.).
+    // Select the first target whose bit is set and that is present.
     for (uint8_t id = 0; id < scsi::MAX_TARGETS; ++id) {
-        if (targets_[id] && targets_[id]->is_present()) {
+        if ((selection_data_ & (1 << id)) && targets_[id] && targets_[id]->is_present()) {
             phase_ = ScsiBusPhase::Selection;
             selected_id_ = id;
             return;
         }
     }
-    // No targets present -- stay in BusFree
+    // No matching target present -- stay in BusFree
 }
 
 void ScsiBus::enter_command() {

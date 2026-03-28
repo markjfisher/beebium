@@ -90,15 +90,9 @@ TEST_CASE("AcornScsiHostAdapter complete TEST UNIT READY through memory map",
     ScsiIntegrationFixture f;
     f.install_test_device(0);
 
-    // Select target 0: write to data register (0xFC40) with bit 0 set
-    f.hw.write(0xFC40, 0x01);
-
-    // Verify selection phase via status register
-    uint8_t sr = f.hw.read(0xFC41);
-    REQUIRE((sr & SR_BSY) != 0);
-
-    // Deassert SEL: write to select register (0xFC42)
-    f.hw.write(0xFC42, 0x00);
+    // Select target 0: write target ID then trigger selection
+    f.hw.write(0xFC40, 0x01);  // write target ID
+    f.hw.write(0xFC42, 0x00);  // trigger Selection → Command
 
     // Now in COMMAND phase -- write 6-byte TEST UNIT READY CDB
     f.hw.write(0xFC40, OP_TEST_UNIT_READY);
@@ -109,7 +103,7 @@ TEST_CASE("AcornScsiHostAdapter complete TEST UNIT READY through memory map",
     f.hw.write(0xFC40, 0x00);
 
     // Should be in STATUS phase
-    sr = f.hw.read(0xFC41);
+    uint8_t sr = f.hw.read(0xFC41);
     REQUIRE((sr & SR_CD) != 0);
     REQUIRE((sr & SR_IO) != 0);
 

@@ -189,7 +189,6 @@ TEST_CASE("ScsiBus READ(6) of ADFS root directory through bus protocol", "[scsi]
 
     // Select target 0
     bus.write_register(REG_DATA, 0x01);
-    REQUIRE(bus.phase() == ScsiBusPhase::Selection);
     bus.write_register(REG_SELECT, 0);
     REQUIRE(bus.phase() == ScsiBusPhase::Command);
 

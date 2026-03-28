@@ -48,13 +48,11 @@ TEST_CASE("ADFS probe: write 0x5A and read back with target", "[scsi][adfs-proto
     dev.set_present(true);
     bus.set_target(0, &dev);
 
-    // ADFS writes test pattern
+    // ADFS writes test pattern -- should NOT enter Selection (probe only)
     bus.write_register(REG_DATA, 0x5A);  // Write0: sel=true
+    CHECK(bus.phase() == ScsiBusPhase::BusFree);
 
-    // With a target present, we enter Selection
-    CHECK(bus.phase() == ScsiBusPhase::Selection);
-
-    // Read back should return 0x5A (last written value)
+    // Read back should return 0x5A
     uint8_t readback = bus.read_register(REG_DATA);
     CHECK(readback == 0x5A);
 }
@@ -67,20 +65,20 @@ TEST_CASE("ADFS probe: full test pattern sequence from trace", "[scsi][adfs-prot
 
     // Replaying the exact sequence from the ADFS boot trace:
 
-    // 1. W reg=0 val=0x5A → sel=true, enters Selection
+    // 1. W reg=0 val=0x5A → sel=true, stays in BusFree (probe)
     bus.write_register(REG_DATA, 0x5A);
-    CHECK(bus.phase() == ScsiBusPhase::Selection);
+    CHECK(bus.phase() == ScsiBusPhase::BusFree);
 
     // 2. W reg=3 val=0x00 → IRQ disable
     bus.write_register(REG_IRQ, 0x00);
-    CHECK(bus.phase() == ScsiBusPhase::Selection);  // still in Selection
+    CHECK(bus.phase() == ScsiBusPhase::BusFree);  // still in BusFree
 
     // 3. R reg=0 → should return 0x5A
     CHECK(bus.read_register(REG_DATA) == 0x5A);
 
     // 4. W reg=0 val=0xA5 → second test pattern
     bus.write_register(REG_DATA, 0xA5);
-    CHECK(bus.phase() == ScsiBusPhase::Selection);
+    CHECK(bus.phase() == ScsiBusPhase::BusFree);
 
     // 5. W reg=3 val=0x00 → IRQ disable
     bus.write_register(REG_IRQ, 0x00);
@@ -101,12 +99,13 @@ TEST_CASE("ADFS probe: full test pattern sequence from trace", "[scsi][adfs-prot
     // After the probe, ADFS reads the status register
     uint8_t sr = bus.read_register(REG_STATUS);
     INFO("Status register after probe: 0x" << std::hex << (int)sr);
-    CHECK((sr & SR_BSY) != 0);  // We're in Selection, BSY should be set
-    CHECK((sr & SR_REQ) != 0);  // REQ always set
+    CHECK((sr & SR_BSY) == 0);  // Still in BusFree, no BSY
+    CHECK((sr & SR_REQ) != 0);  // REQ always set (Acorn adapter quirk)
 
-    // PROBLEM: ADFS loops here reading status forever.
-    // It never writes to REG_SELECT to deassert SEL.
-    // What is ADFS waiting for?
+    // ADFS then initiates a real selection by writing target ID and reg 2
+    bus.write_register(REG_DATA, 0x01);    // target 0
+    bus.write_register(REG_SELECT, 0x00);  // trigger Selection → Command
+    CHECK(bus.phase() == ScsiBusPhase::Command);
 }
 
 TEST_CASE("ADFS probe: what happens if we DON'T enter Selection on probe writes", "[scsi][adfs-protocol]") {
@@ -140,11 +139,11 @@ TEST_CASE("Compare: b2-style selection requires Write2 to enter Command", "[scsi
     bus.set_target(0, &dev);
 
     // Simulate a proper SCSI selection sequence:
-    // 1. Write target ID to data register (sel asserted)
+    // 1. Write target ID to data register (stays in BusFree)
     bus.write_register(REG_DATA, 0x01);  // target 0
-    CHECK(bus.phase() == ScsiBusPhase::Selection);
+    CHECK(bus.phase() == ScsiBusPhase::BusFree);
 
-    // 2. Write to select register (deassert SEL)
+    // 2. Write to select register (triggers Selection → Command)
     bus.write_register(REG_SELECT, 0x00);
     CHECK(bus.phase() == ScsiBusPhase::Command);
 

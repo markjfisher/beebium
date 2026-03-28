@@ -20,13 +20,12 @@ using namespace beebium::scsi;
 
 namespace {
 
-// Helper: select target 0 and transition to COMMAND phase
+// Helper: select target and transition to COMMAND phase.
+// Matches the ADFS protocol: write target ID to data register,
+// then write to select register to trigger selection.
 void select_target(ScsiBus& bus, uint8_t id = 0) {
-    // Write data register with target bit (sel asserted via write to reg 0)
-    bus.write_register(REG_DATA, 1 << id);
-    REQUIRE(bus.phase() == ScsiBusPhase::Selection);
-    // Write select register to deassert SEL and enter COMMAND
-    bus.write_register(REG_SELECT, 0);
+    bus.write_register(REG_DATA, 1 << id);     // Set target ID (stays in BusFree)
+    bus.write_register(REG_SELECT, 0);          // Trigger Selection → Command
     REQUIRE(bus.phase() == ScsiBusPhase::Command);
 }
 
@@ -90,12 +89,12 @@ TEST_CASE("ScsiBus selection with target transitions to COMMAND", "[scsi][bus]")
     dev.set_present(true);
     bus.set_target(0, &dev);
 
-    bus.write_register(REG_DATA, 0x01);  // select target 0
-    REQUIRE(bus.phase() == ScsiBusPhase::Selection);
-    REQUIRE(bus.selected_target_id() == 0);
+    bus.write_register(REG_DATA, 0x01);  // write target ID (stays in BusFree)
+    REQUIRE(bus.phase() == ScsiBusPhase::BusFree);
 
-    bus.write_register(REG_SELECT, 0);  // deassert SEL
+    bus.write_register(REG_SELECT, 0);   // trigger Selection → Command
     REQUIRE(bus.phase() == ScsiBusPhase::Command);
+    REQUIRE(bus.selected_target_id() == 0);
 }
 
 TEST_CASE("ScsiBus selection by target ID", "[scsi][bus]") {
@@ -106,16 +105,22 @@ TEST_CASE("ScsiBus selection by target ID", "[scsi][bus]") {
     SECTION("Target 0") {
         bus.set_target(0, &dev);
         bus.write_register(REG_DATA, 0x01);
+        bus.write_register(REG_SELECT, 0);
+        REQUIRE(bus.phase() == ScsiBusPhase::Command);
         REQUIRE(bus.selected_target_id() == 0);
     }
     SECTION("Target 3") {
         bus.set_target(3, &dev);
         bus.write_register(REG_DATA, 0x08);
+        bus.write_register(REG_SELECT, 0);
+        REQUIRE(bus.phase() == ScsiBusPhase::Command);
         REQUIRE(bus.selected_target_id() == 3);
     }
     SECTION("Target 7") {
         bus.set_target(7, &dev);
         bus.write_register(REG_DATA, 0x80);
+        bus.write_register(REG_SELECT, 0);
+        REQUIRE(bus.phase() == ScsiBusPhase::Command);
         REQUIRE(bus.selected_target_id() == 7);
     }
 }
@@ -127,6 +132,7 @@ TEST_CASE("ScsiBus selection of non-present target stays BUS_FREE", "[scsi][bus]
     bus.set_target(0, &dev);
 
     bus.write_register(REG_DATA, 0x01);
+    bus.write_register(REG_SELECT, 0);
     REQUIRE(bus.phase() == ScsiBusPhase::BusFree);
 }
 
