@@ -176,7 +176,8 @@ std::vector<ExtensionManifest> PluginLoader::scan_manifests(
 }
 
 void PluginLoader::load_extension(const ExtensionManifest& manifest,
-                                   ExtensionRegistry& registry) {
+                                   ExtensionRegistry& registry,
+                                   std::map<std::string, std::string> config) {
     // Build library path
     std::string library_filename = manifest.library_stem + kSharedLibSuffix;
     auto library_filepath = manifest.manifest_dirpath / library_filename;
@@ -215,6 +216,11 @@ void PluginLoader::load_extension(const ExtensionManifest& manifest,
         platform_dlclose(handle);
         throw std::runtime_error(
             "beebium_create_extension() returned null for '" + manifest.name + "'");
+    }
+
+    // Set config before registration (config is available during init())
+    if (!config.empty()) {
+        ext->set_config(std::move(config));
     }
 
     // Register with the registry (transfers ownership)

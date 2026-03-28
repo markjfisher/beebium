@@ -18,6 +18,7 @@
 #include "PeripheralExtension.hpp"
 
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -45,7 +46,10 @@ public:
     // Load a specific extension from its manifest. The shared library
     // named in the manifest is loaded and the entry point called.
     // The resulting extension is registered with the given registry.
-    void load_extension(const ExtensionManifest& manifest, ExtensionRegistry& registry);
+    // If config is provided, it is set on the extension via set_config()
+    // before registration (but before init, which happens later).
+    void load_extension(const ExtensionManifest& manifest, ExtensionRegistry& registry,
+                        std::map<std::string, std::string> config = {});
 
     // Find a manifest by name from a previously scanned list.
     static const ExtensionManifest* find_manifest(

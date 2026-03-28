@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_SERVER_SERVER_MAIN_HPP
 #define BEEBIUM_SERVER_SERVER_MAIN_HPP
 
+#include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
 #include "beebium/extension/OneMHzBusPort.hpp"
@@ -606,7 +607,14 @@ struct ServerConfig {
 
     // Extension configuration
     std::string extension_dirpath;
-    std::vector<std::string> extension_names;
+    std::vector<std::string> extension_names;  // legacy --extension <name> (no config)
+
+    // Parsed extension instances with config (from --<cli-name> flags)
+    struct ExtensionInstance {
+        std::string name;                           // canonical extension name
+        std::map<std::string, std::string> config;  // parsed KV pairs
+    };
+    std::vector<ExtensionInstance> extension_instances;
 };
 
 template<typename MachineType>
@@ -767,10 +775,16 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                                           ServerConfig<MachineType>& config) {
     using Memory = typename MachineType::Memory;
 
-    // First pass: find --preset and load it before other options
-    // This allows CLI options to override preset values
+    // First pass: find --preset and --extension-dir before other options
+    // --preset is loaded first so CLI can override; --extension-dir is needed
+    // to scan manifests so extension CLI flags can be recognised in second pass
     for (int i = start_index; i < argc; ++i) {
         std::string arg = argv[i];
+        if (arg == "--extension-dir" && i + 1 < argc) {
+            config.extension_dirpath = argv[i + 1];
+            ++i;
+            continue;
+        }
         if (arg == "--preset" && i + 1 < argc) {
             config.preset_filepath = argv[i + 1];
             auto result = load_preset(*config.preset_filepath);
@@ -793,6 +807,19 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             // Apply preset as baseline configuration
             apply_preset(config, *result.config);
             break;
+        }
+    }
+
+    // Scan extension manifests (if --extension-dir was provided) so we can
+    // recognise --<cli-name> flags in the second pass
+    std::vector<beebium::ExtensionManifest> scanned_manifests;
+    std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
+    if (!config.extension_dirpath.empty()) {
+        beebium::PluginLoader scanner;
+        scanned_manifests = scanner.scan_manifests(config.extension_dirpath);
+        for (const auto& m : scanned_manifests) {
+            std::string cli = std::string(m.effective_cli_name());
+            cli_name_to_manifest["--" + cli] = &m;
         }
     }
 
@@ -933,13 +960,38 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         } else if (arg == "--advertise") {
             config.advertise = true;
         } else if (arg == "--extension-dir" && i + 1 < argc) {
-            config.extension_dirpath = argv[++i];
+            // Already handled in first pass, skip
+            ++i;
+            continue;
         } else if (arg == "--extension" && i + 1 < argc) {
+            // Legacy form: --extension <name> (no config)
             config.extension_names.push_back(argv[++i]);
         } else {
-            std::cerr << "Unknown argument: " << arg << "\n";
-            print_usage<MachineType>(argv[0]);
-            return ExitCode::USAGE;
+            // Check if this is an extension CLI flag (e.g. --acorn-scsi, --scsi-hdd)
+            auto manifest_it = cli_name_to_manifest.find(arg);
+            if (manifest_it != cli_name_to_manifest.end()) {
+                const auto* manifest = manifest_it->second;
+                std::string arg_string;
+                // Consume the next argv as the colon-separated argument string
+                // (if it exists and doesn't start with --)
+                if (i + 1 < argc && std::string_view(argv[i + 1]).substr(0, 2) != "--") {
+                    arg_string = argv[++i];
+                }
+                auto parse_result = beebium::parse_extension_args(
+                    manifest->effective_cli_name(), arg_string, manifest->parameters);
+                if (!parse_result.ok) {
+                    std::cerr << "Error: " << parse_result.error << "\n";
+                    return ExitCode::USAGE;
+                }
+                config.extension_instances.push_back({
+                    manifest->name,
+                    std::move(parse_result.config)
+                });
+            } else {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                print_usage<MachineType>(argv[0]);
+                return ExitCode::USAGE;
+            }
         }
     }
 
@@ -1591,9 +1643,11 @@ public:
             // Register built-in extensions
             extension_registry.register_extension(beebium::TestScratchRam::create());
 
-            // Load plugin extensions (opt-in by name)
+            // Load plugin extensions
             if (!config.extension_dirpath.empty()) {
                 auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+
+                // Legacy --extension <name> form (no config)
                 for (const auto& ext_name : config.extension_names) {
                     auto* manifest = beebium::PluginLoader::find_manifest(manifests, ext_name);
                     if (!manifest) {
@@ -1603,8 +1657,24 @@ public:
                     }
                     plugin_loader.load_extension(*manifest, extension_registry);
                 }
-            } else if (!config.extension_names.empty()) {
-                std::cerr << "Error: --extension requires --extension-dir\n";
+
+                // New --<cli-name> form (with parsed config)
+                for (auto& inst : config.extension_instances) {
+                    auto* manifest = beebium::PluginLoader::find_manifest(manifests, inst.name);
+                    if (!manifest) {
+                        std::cerr << "Error: Extension '" << inst.name
+                                  << "' not found in " << config.extension_dirpath << "\n";
+                        return ExitCode::CONFIG;
+                    }
+                    // Assign instance ID if not provided
+                    if (inst.config.find("id") == inst.config.end()) {
+                        inst.config["id"] = generate_uuid_v4();
+                    }
+                    plugin_loader.load_extension(*manifest, extension_registry,
+                                                  std::move(inst.config));
+                }
+            } else if (!config.extension_names.empty() || !config.extension_instances.empty()) {
+                std::cerr << "Error: Extensions require --extension-dir\n";
                 return ExitCode::USAGE;
             }
 
