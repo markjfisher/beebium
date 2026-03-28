@@ -492,6 +492,292 @@ TEST_CASE("ScsiBus target returns CHECK CONDITION", "[scsi][bus]") {
 // Multiple transactions
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Multi-block and special-case transfers
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ScsiBus READ(6) multi-block transfer", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    std::vector<uint8_t> data(512, 0xCC);  // 2 blocks
+    dev.set_read_data(data);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    // READ(6): 2 blocks
+    uint8_t cdb[] = {OP_READ_6, 0, 0, 0, 2, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataIn);
+
+    auto result = read_all_data(bus);
+    REQUIRE(result.size() == 512);
+    REQUIRE(result[0] == 0xCC);
+    REQUIRE(result[511] == 0xCC);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus READ(6) block count 0 means 256 blocks", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    // 256 blocks * 256 bytes = 65536 bytes
+    std::vector<uint8_t> data(65536, 0xDD);
+    dev.set_read_data(data);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    // READ(6): block count 0 means 256 blocks
+    uint8_t cdb[] = {OP_READ_6, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataIn);
+
+    auto result = read_all_data(bus);
+    REQUIRE(result.size() == 65536);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus WRITE(6) multi-block transfer", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    // WRITE(6): 2 blocks
+    uint8_t cdb[] = {OP_WRITE_6, 0, 0, 0, 2, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataOut);
+
+    for (int i = 0; i < 512; ++i) {
+        bus.write_register(REG_DATA, static_cast<uint8_t>(i & 0xFF));
+    }
+
+    REQUIRE(bus.phase() == ScsiBusPhase::Status);
+    REQUIRE(dev.recorded_commands()[0].data_out.size() == 512);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus READ(10) transaction", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    std::vector<uint8_t> data(256, 0xEE);
+    dev.set_read_data(data);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    // READ(10): 1 block from LBA 100
+    uint8_t cdb[] = {OP_READ_10, 0, 0, 0, 0, 100, 0, 0, 1, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataIn);
+
+    auto result = read_all_data(bus);
+    REQUIRE(result.size() == 256);
+
+    REQUIRE(dev.recorded_commands()[0].cdb.size() == 10);
+    REQUIRE(dev.recorded_commands()[0].cdb[0] == OP_READ_10);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus WRITE(10) transaction", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    // WRITE(10): 1 block
+    uint8_t cdb[] = {OP_WRITE_10, 0, 0, 0, 0, 0, 0, 0, 1, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataOut);
+
+    for (int i = 0; i < 256; ++i) {
+        bus.write_register(REG_DATA, static_cast<uint8_t>(i));
+    }
+
+    REQUIRE(bus.phase() == ScsiBusPhase::Status);
+    REQUIRE(dev.recorded_commands()[0].cdb[0] == OP_WRITE_10);
+    REQUIRE(dev.recorded_commands()[0].data_out.size() == 256);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus WRITE AND VERIFY transaction", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    uint8_t cdb[] = {OP_WRITE_AND_VERIFY, 0, 0, 0, 0, 0, 0, 0, 1, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataOut);
+
+    for (int i = 0; i < 256; ++i) {
+        bus.write_register(REG_DATA, static_cast<uint8_t>(i));
+    }
+
+    REQUIRE(bus.phase() == ScsiBusPhase::Status);
+    REQUIRE(dev.recorded_commands()[0].cdb[0] == OP_WRITE_AND_VERIFY);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus MODE SENSE returns data", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    dev.set_mode_sense_data(std::vector<uint8_t>(22, 0x55));
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    uint8_t cdb[] = {OP_MODE_SENSE_6, 0, 0, 0, 22, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataIn);
+
+    auto data = read_all_data(bus);
+    REQUIRE(data.size() == 22);
+    REQUIRE(data[0] == 0x55);
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus no-data commands complete to STATUS", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    SECTION("REZERO UNIT") {
+        select_target(bus);
+        uint8_t cdb[] = {OP_REZERO_UNIT, 0, 0, 0, 0, 0};
+        write_cdb(bus, cdb);
+        REQUIRE(bus.phase() == ScsiBusPhase::Status);
+        complete_transaction(bus);
+    }
+    SECTION("SEEK") {
+        select_target(bus);
+        uint8_t cdb[] = {OP_SEEK, 0, 0, 0, 0, 0};
+        write_cdb(bus, cdb);
+        REQUIRE(bus.phase() == ScsiBusPhase::Status);
+        complete_transaction(bus);
+    }
+    SECTION("START/STOP UNIT") {
+        select_target(bus);
+        uint8_t cdb[] = {OP_START_STOP_UNIT, 0, 0, 0, 0, 0};
+        write_cdb(bus, cdb);
+        REQUIRE(bus.phase() == ScsiBusPhase::Status);
+        complete_transaction(bus);
+    }
+    SECTION("FORMAT UNIT") {
+        select_target(bus);
+        uint8_t cdb[] = {OP_FORMAT_UNIT, 0, 0, 0, 0, 0};
+        write_cdb(bus, cdb);
+        REQUIRE(bus.phase() == ScsiBusPhase::Status);
+        complete_transaction(bus);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VP415 vendor-specific commands
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ScsiBus READ F-CODE returns data", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    std::vector<uint8_t> fcode(256, 0);
+    fcode[0] = 'N';  // Play command
+    fcode[1] = 0x0D;  // CR terminator
+    dev.set_read_data(fcode);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    uint8_t cdb[] = {OP_READ_FCODE, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataIn);
+
+    auto data = read_all_data(bus);
+    REQUIRE(data.size() == 256);
+    REQUIRE(data[0] == 'N');
+
+    complete_transaction(bus);
+}
+
+TEST_CASE("ScsiBus WRITE F-CODE accepts data", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+
+    uint8_t cdb[] = {OP_WRITE_FCODE, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    REQUIRE(bus.phase() == ScsiBusPhase::DataOut);
+
+    // Write 256 bytes of F-code data
+    for (int i = 0; i < 256; ++i) {
+        bus.write_register(REG_DATA, static_cast<uint8_t>(i));
+    }
+
+    REQUIRE(bus.phase() == ScsiBusPhase::Status);
+    REQUIRE(dev.recorded_commands()[0].cdb[0] == OP_WRITE_FCODE);
+    REQUIRE(dev.recorded_commands()[0].data_out.size() == 256);
+
+    complete_transaction(bus);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-target transactions
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ScsiBus transactions on different targets", "[scsi][bus]") {
+    ScsiBus bus;
+    ScsiTestDevice dev0, dev3;
+    dev0.set_present(true);
+    dev0.set_description("Target 0");
+    dev3.set_present(true);
+    dev3.set_description("Target 3");
+    bus.set_target(0, &dev0);
+    bus.set_target(3, &dev3);
+
+    // Transaction on target 0
+    select_target(bus, 0);
+    uint8_t cdb1[] = {OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb1);
+    complete_transaction(bus);
+
+    // Transaction on target 3
+    select_target(bus, 3);
+    uint8_t cdb2[] = {OP_INQUIRY, 0, 0, 0, 36, 0};
+    write_cdb(bus, cdb2);
+    read_all_data(bus);
+    complete_transaction(bus);
+
+    REQUIRE(dev0.command_count() == 1);
+    REQUIRE(dev0.recorded_commands()[0].cdb[0] == OP_TEST_UNIT_READY);
+    REQUIRE(dev3.command_count() == 1);
+    REQUIRE(dev3.recorded_commands()[0].cdb[0] == OP_INQUIRY);
+}
+
+// ---------------------------------------------------------------------------
+// Multiple transactions
+// ---------------------------------------------------------------------------
+
 TEST_CASE("ScsiBus multiple transactions on same target", "[scsi][bus]") {
     ScsiBus bus;
     ScsiTestDevice dev;
