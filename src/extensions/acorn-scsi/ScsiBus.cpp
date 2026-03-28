@@ -227,12 +227,12 @@ void ScsiBus::write_data(uint8_t value) {
 
 void ScsiBus::write_select(uint8_t value) {
     // Write to select register (offset 0x02) deasserts SEL.
-    // This is the trigger for the selection handshake:
-    // - In BusFree: enter Selection then immediately Command (the host
-    //   wrote the target ID to reg 0, then reg 2 to start the transaction)
-    // - In Selection: transition to Command
+    // This triggers the selection handshake and transitions to Command.
+    // The value written to reg 2 is NOT passed to write_data -- it is
+    // purely a control signal. Passing it through would inject a spurious
+    // byte into the Command phase CDB buffer.
+    (void)value;
     if (phase_ == ScsiBusPhase::BusFree) {
-        // The selection data was written earlier via Write0 (reg 0)
         enter_selection();
         if (phase_ == ScsiBusPhase::Selection) {
             enter_command();
@@ -240,8 +240,6 @@ void ScsiBus::write_select(uint8_t value) {
     } else if (phase_ == ScsiBusPhase::Selection) {
         enter_command();
     }
-    // Also pass through to write_data for any data-phase handling
-    write_data(value);
 }
 
 // ---------------------------------------------------------------------------
