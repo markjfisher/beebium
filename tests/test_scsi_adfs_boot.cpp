@@ -148,6 +148,9 @@ TEST_CASE("ADFS SCSI boot and *CAT on Model B+", "[scsi][adfs][e2e]") {
     adapter->target_registry().install(0, std::move(disc));
     adapter->target_registry().wire_to_bus(adapter->bus());
 
+    // Enable SCSI bus trace for protocol debugging
+    adapter->bus().set_trace_enabled(true);
+
     // Enable video output and reset
     machine.memory().enable_video_output();
     machine.reset();

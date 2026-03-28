@@ -13,6 +13,7 @@
 #include "ScsiBus.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace beebium {
 
@@ -38,14 +39,26 @@ ScsiTarget* ScsiBus::target(uint8_t id) const {
 // ---------------------------------------------------------------------------
 
 uint8_t ScsiBus::read_register(uint8_t reg) {
+    uint8_t result;
     switch (reg) {
-        case scsi::REG_DATA:   return read_data();
-        case scsi::REG_STATUS: return status_register();
-        default:               return 0xFF;
+        case scsi::REG_DATA:   result = read_data(); break;
+        case scsi::REG_STATUS: result = status_register(); break;
+        default:               result = 0xFF; break;
     }
+    if (trace_enabled_) {
+        std::fprintf(stderr, "SCSI R reg=%d val=0x%02X phase=%s\n",
+                     reg, result,
+                     std::string(scsi_phase_name(phase_)).c_str());
+    }
+    return result;
 }
 
 void ScsiBus::write_register(uint8_t reg, uint8_t value) {
+    if (trace_enabled_) {
+        std::fprintf(stderr, "SCSI W reg=%d val=0x%02X phase=%s\n",
+                     reg, value,
+                     std::string(scsi_phase_name(phase_)).c_str());
+    }
     switch (reg) {
         case scsi::REG_DATA:
             sel_asserted_ = true;
@@ -123,6 +136,14 @@ uint8_t ScsiBus::status_register() const {
 
 uint8_t ScsiBus::read_data() {
     switch (phase_) {
+        case ScsiBusPhase::BusFree:
+        case ScsiBusPhase::Selection:
+            // In BusFree and Selection, return the last value written to the
+            // data register. This is what b2 does (m_last_write) and is needed
+            // for ADFS's selection handshake which writes the target ID then
+            // reads it back to confirm the bus is responding.
+            return last_data_write_;
+
         case ScsiBusPhase::DataIn: {
             if (data_index_ < data_buffer_.size()) {
                 uint8_t byte = data_buffer_[data_index_++];
@@ -156,6 +177,7 @@ uint8_t ScsiBus::read_data() {
 // ---------------------------------------------------------------------------
 
 void ScsiBus::write_data(uint8_t value) {
+    last_data_write_ = value;
     switch (phase_) {
         case ScsiBusPhase::BusFree:
             // Write to data register in BusFree with sel_asserted triggers selection.
@@ -237,26 +259,21 @@ void ScsiBus::enter_bus_free() {
 }
 
 void ScsiBus::enter_selection() {
-    // Enter Selection phase. The target ID is resolved later from the CDB's
-    // LUN field (bits 5-7 of byte 1). For now we select target 0 if present,
-    // matching the single-initiator single-target model used by Acorn ADFS.
-    // The selection_data_ byte written by the host is available but not used
-    // for target resolution by b2 or BeebEm.
-    uint8_t id = 0;
-    for (uint8_t i = 0; i < scsi::MAX_TARGETS; ++i) {
-        if (selection_data_ & (1 << i)) {
-            id = i;
-            break;
+    // Enter Selection phase unconditionally. The target ID is resolved from
+    // the CDB's LUN field (bits 5-7 of byte 1) during command execution.
+    // b2 and BeebEm both ignore the data value written during selection and
+    // always select the first available target. The Acorn SCSI adapter is a
+    // single-target bus in practice (ADFS addresses targets via LUN in the CDB).
+    //
+    // Find the first present target to select.
+    for (uint8_t id = 0; id < scsi::MAX_TARGETS; ++id) {
+        if (targets_[id] && targets_[id]->is_present()) {
+            phase_ = ScsiBusPhase::Selection;
+            selected_id_ = id;
+            return;
         }
     }
-
-    if (id >= scsi::MAX_TARGETS || !targets_[id] || !targets_[id]->is_present()) {
-        // No target -- stay in BusFree
-        return;
-    }
-
-    phase_ = ScsiBusPhase::Selection;
-    selected_id_ = id;
+    // No targets present -- stay in BusFree
 }
 
 void ScsiBus::enter_command() {

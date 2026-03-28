@@ -77,6 +77,9 @@ public:
     // IRQ state
     bool irq_pending() const { return irq_enabled_ && irq_asserted_; }
 
+    // Diagnostic trace
+    void set_trace_enabled(bool enabled) { trace_enabled_ = enabled; }
+
 private:
     // Phase transitions
     void enter_bus_free();
@@ -113,6 +116,7 @@ private:
     // Selection state
     bool sel_asserted_ = false;
     uint8_t selection_data_ = 0;  // data byte written during selection
+    uint8_t last_data_write_ = 0; // last value written to data register
 
     // CDB assembly
     std::array<uint8_t, 12> cdb_buffer_{};
@@ -130,6 +134,9 @@ private:
     // IRQ
     bool irq_enabled_ = false;
     bool irq_asserted_ = false;
+
+    // Trace
+    bool trace_enabled_ = false;
 };
 
 }  // namespace beebium
