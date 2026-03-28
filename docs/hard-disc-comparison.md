@@ -182,15 +182,26 @@ BeebEm provides pre-formatted images but no creation tool.
 
 ## Filing System Requirements
 
-Hard disc access on the BBC Micro requires ADFS (Advanced Disc Filing System). Different ADFS ROM versions support different controllers:
+Hard disc access on the BBC Micro requires ADFS (Advanced Disc Filing System). The ADFS version numbering encodes both the target machine and the hard drive interface type ([JGH's definitive list](https://stardot.org.uk/forums/viewtopic.php?p=81472#p81472)):
 
-| ROM | Version | Controller | Machine |
-|-----|---------|------------|---------|
-| ADFS 1.30 | SCSI | Acorn SCSI | Model B |
-| ADFS 1.33 | IDE | IDE board | Model B |
-| ADFS 1.50 | SCSI | Acorn SCSI | Master 128 |
-| ADFS 1.53 | IDE | IDE board | Master 128 |
-| HADFS 5.30+ | IDE | IDE board | Various |
+- `ADFS x.x0` = SCSI hard drive
+- `ADFS x.x3` = IDE hard drive
+- `ADFS 1.3x` = BBC B/B+, Tube and hard drive support
+- `ADFS 1.5x` = Master/Compact, Tube and hard drive support
+- `ADFS 2.xx` = Master/Compact, includes `*FORMAT`/`*VERIFY` in ROM
+
+| ROM | Controller | Machine | Notes |
+|-----|------------|---------|-------|
+| ADFS 1.00 | SCSI | Electron | |
+| ADFS 1.30 | SCSI | BBC B/B+ | Standard SCSI version for B and B+ |
+| ADFS 1.33 | IDE | BBC B/B+ | |
+| ADFS 1.50 | SCSI | Master/Compact | Included in MOS 3.20 |
+| ADFS 1.53 | IDE | Master/Compact | |
+| ADFS 2.03 | SCSI | Master/Compact | Included in MOS 3.50 |
+| ADFS 2.10 | SCSI | Master/Compact | Included in MOS 5.xx |
+| HADFS 5.30+ | IDE | Various | |
+
+See also: http://mdfs.net/System/ROMs/Filing/Disk/Acorn/
 
 Hard disc drives appear as ADFS drives 0-3, with floppy drives at 4-5.
 
@@ -586,7 +597,7 @@ All implementations agree on the standard geometry:
 - Maximum 512 MB per LUN (ADFS 21-bit LBA limit: 2,097,151 sectors)
 
 
-## Peripheral Extension Architecture
+## Peripheral Extension Architecture 
 
 The gRPC service topology, plugin lifecycle, extension registry, dependency graph resolution, and machine variant hardware specification for peripherals have been extracted to a dedicated design document: [Peripheral Extension Framework](peripheral-extension-framework.md).
 
