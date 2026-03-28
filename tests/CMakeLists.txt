@@ -750,7 +750,7 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_PLUGIN_DIR="${CMAKE_BINARY_DIR}/src/extensions/test-scratch-ram"
     )
     # Ensure the plugin is built before the test runs
-    add_dependencies(test_plugin_loader beebium_plugin_test_scratch_ram)
+    add_dependencies(test_plugin_loader beebium_ext_test_scratch_ram_plugin)
     catch_discover_tests(test_plugin_loader)
 
     # PeripheralExtensionService gRPC tests (frontend discovery)

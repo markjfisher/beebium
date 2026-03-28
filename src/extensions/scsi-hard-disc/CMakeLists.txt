@@ -17,30 +17,30 @@ target_link_libraries(beebium_ext_scsi_hard_disc
 
 # Shared library (plugin)
 if(BEEBIUM_BUILD_SERVICE)
-    add_library(beebium_plugin_scsi_hard_disc SHARED
+    add_library(beebium_ext_scsi_hard_disc_plugin SHARED
         ScsiHardDiscExtension.cpp
         plugin_entry.cpp
     )
 
-    target_include_directories(beebium_plugin_scsi_hard_disc
+    target_include_directories(beebium_ext_scsi_hard_disc_plugin
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    target_link_libraries(beebium_plugin_scsi_hard_disc
+    target_link_libraries(beebium_ext_scsi_hard_disc_plugin
         PRIVATE
             beebium_scsi_core
             beebium_ext_acorn_scsi
     )
 
-    set_target_properties(beebium_plugin_scsi_hard_disc PROPERTIES
+    set_target_properties(beebium_ext_scsi_hard_disc_plugin PROPERTIES
         PREFIX ""
         OUTPUT_NAME "scsi-hard-disc"
     )
 
-    add_custom_command(TARGET beebium_plugin_scsi_hard_disc POST_BUILD
+    add_custom_command(TARGET beebium_ext_scsi_hard_disc_plugin POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-            $<TARGET_FILE_DIR:beebium_plugin_scsi_hard_disc>/manifest.json
+            $<TARGET_FILE_DIR:beebium_ext_scsi_hard_disc_plugin>/manifest.json
         COMMENT "Copying manifest.json for scsi-hard-disc plugin"
     )
 endif()
