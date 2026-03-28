@@ -43,4 +43,37 @@ if(BEEBIUM_BUILD_SERVICE)
             gRPC::grpc++
             protobuf::libprotobuf
     )
+
+    # Shared library (plugin extension)
+    add_library(beebium_plugin_acorn_scsi SHARED
+        AcornScsiHostAdapter.cpp
+        plugin_entry.cpp
+        ${beebium_ext_acorn_scsi_PROTO_SRCS}
+        ${beebium_ext_acorn_scsi_GRPC_SRCS}
+    )
+
+    target_include_directories(beebium_plugin_acorn_scsi
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${beebium_ext_acorn_scsi_OUT_DIR}
+    )
+
+    target_link_libraries(beebium_plugin_acorn_scsi
+        PRIVATE
+            beebium_scsi_core
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
+
+    set_target_properties(beebium_plugin_acorn_scsi PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "acorn-scsi"
+    )
+
+    add_custom_command(TARGET beebium_plugin_acorn_scsi POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+            $<TARGET_FILE_DIR:beebium_plugin_acorn_scsi>/manifest.json
+        COMMENT "Copying manifest.json for acorn-scsi plugin"
+    )
 endif()

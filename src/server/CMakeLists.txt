@@ -34,6 +34,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
     target_link_libraries(${TARGET_NAME}
         PRIVATE
             beebium_service
+            beebium_ext_acorn_scsi
             beebium_ext_test_scratch_ram
             nlohmann_json::nlohmann_json
             stb_image_write

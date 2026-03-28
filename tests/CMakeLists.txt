@@ -783,6 +783,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_server_main PRIVATE
         beebium_service
+        beebium_ext_acorn_scsi
         beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
@@ -801,6 +802,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_cli PRIVATE
         beebium_service
+        beebium_ext_acorn_scsi
         beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
