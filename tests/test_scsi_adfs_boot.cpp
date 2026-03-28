@@ -138,9 +138,13 @@ TEST_CASE("ADFS SCSI boot and *CAT on Model B+", "[scsi][adfs][e2e]") {
     registry.register_extension(AcornScsiHostAdapter::create());
 
     // Hard disc: attaches to "scsi" (dependency resolved by registry)
+    // Configure via the config map, just as the CLI/preset path would
     auto hdd_ext = ScsiHardDiscExtension::create();
-    hdd_ext->set_image_filepath(kAssetsDir / "scsi" / "scsi0.dat");
-    hdd_ext->set_scsi_id(0);
+    hdd_ext->set_config({
+        {"scsi-id", "0"},
+        {"image", (kAssetsDir / "scsi" / "scsi0.dat").string()},
+        {"id", "boot-disc"},
+    });
     registry.register_extension(std::move(hdd_ext));
 
     // Resolve dependencies and init: adapter first (provides "scsi"), then HDD
