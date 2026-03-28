@@ -817,8 +817,21 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // Scan extension manifests (if --extension-dir was provided) so we can
-    // recognise --<cli-name> flags in the second pass
+    // If --extension-dir not specified, derive a default from the executable path.
+    // In a development build layout: executable is at build/src/server/<exe>,
+    // extensions are at build/src/extensions/<name>/
+    if (config.extension_dirpath.empty()) {
+        std::error_code ec;
+        auto exe_path = std::filesystem::canonical(std::filesystem::path(argv[0]), ec);
+        if (!ec) {
+            auto default_ext_dirpath = exe_path.parent_path().parent_path() / "extensions";
+            if (std::filesystem::exists(default_ext_dirpath)) {
+                config.extension_dirpath = default_ext_dirpath.string();
+            }
+        }
+    }
+
+    // Scan extension manifests so we can recognise --<cli-name> flags in the second pass
     std::vector<beebium::ExtensionManifest> scanned_manifests;
     std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
     if (!config.extension_dirpath.empty()) {
