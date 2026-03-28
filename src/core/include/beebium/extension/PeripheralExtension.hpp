@@ -15,7 +15,10 @@
 
 #include "ExtensionManifest.hpp"
 
+#include <map>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -44,6 +47,37 @@ public:
     // Access the manifest.
     const ExtensionManifest& manifest() const { return manifest_; }
 
+    // Set instance configuration (called by the framework before init).
+    // Config is parsed from CLI arguments or preset files.
+    void set_config(std::map<std::string, std::string> config) { config_ = std::move(config); }
+
+    // Access a single config value by key.
+    std::optional<std::string_view> config_value(std::string_view key) const {
+        auto it = config_.find(std::string(key));
+        if (it != config_.end()) {
+            return std::string_view(it->second);
+        }
+        return std::nullopt;
+    }
+
+    // Access all config values.
+    const std::map<std::string, std::string>& config() const { return config_; }
+
+    // Instance ID (from config["id"] or empty if not yet assigned).
+    std::string_view id() const {
+        auto it = config_.find("id");
+        return (it != config_.end()) ? std::string_view(it->second) : std::string_view{};
+    }
+
+    // Display label (from config["label"], falls back to id).
+    std::string_view label() const {
+        auto it = config_.find("label");
+        if (it != config_.end() && !it->second.empty()) {
+            return std::string_view(it->second);
+        }
+        return id();
+    }
+
     // Extension name (default reads from manifest; can be overridden).
     virtual std::string_view name() const { return manifest_.name; }
 
@@ -70,6 +104,7 @@ public:
 
 protected:
     ExtensionManifest manifest_;
+    std::map<std::string, std::string> config_;
 };
 
 }  // namespace beebium
