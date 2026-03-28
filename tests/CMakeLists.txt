@@ -46,6 +46,14 @@ add_executable(test_scsi_hard_disc test_scsi_hard_disc.cpp)
 target_link_libraries(test_scsi_hard_disc PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
 catch_discover_tests(test_scsi_hard_disc)
 
+# SCSI hard disc tests with real ADFS image
+add_executable(test_scsi_hard_disc_adfs test_scsi_hard_disc_adfs.cpp)
+target_link_libraries(test_scsi_hard_disc_adfs PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+target_compile_definitions(test_scsi_hard_disc_adfs PRIVATE
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_scsi_hard_disc_adfs)
+
 # SCSI test device tests
 add_executable(test_scsi_test_device test_scsi_test_device.cpp)
 target_link_libraries(test_scsi_test_device PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
