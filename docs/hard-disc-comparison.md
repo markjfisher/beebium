@@ -552,60 +552,106 @@ The images are exact power-of-two megabyte sizes, which are not evenly divisible
 
 These images are useful for testing a Beebium SCSI implementation without needing to format discs from within the emulator. They cover the full range of ADFS-supported sizes up to the 512 MB limit.
 
-## Beebium's Current State
+## Beebium SCSI Implementation
 
-Beebium has the foundation for 1 MHz bus peripherals but no hard disc support:
-
-- **FRED/JIM region** (0xFC00-0xFDFF) is mapped in all hardware variants (`ModelBHardware`, `ModelBPlusHardware`, `ModelBRomRamBoardHardware`)
-- Currently returns 0xFF on reads (open bus -- 74LS245 transceiver behaviour)
-- A `FredJimRegion` class exists with a TODO comment: "Expand to a socket pattern supporting pluggable devices (speech synthesizers, music co-processors, etc.)"
-- **Bus stretching** is implemented (`BusStretching.hpp`) -- 1 MHz timing for the I/O region is already handled
-- The **disc controller socket pattern** (`DiscControllerSocket`/`DiscControllerInterface`) demonstrates how pluggable peripherals can be added at runtime
-
-## Recommendations for Beebium
+Beebium implements full SCSI hard disc support via the peripheral extension framework. The implementation is tested end-to-end: a Model B+ boots ADFS 1.30, detects the SCSI adapter, reads a real ADFS-formatted hard disc image, and `*CAT` displays the directory listing.
 
 ### Architecture
 
-1. **Extend FredJimRegion into a pluggable peripheral bus**. The existing socket pattern used for disc controllers (`DiscControllerSocket`) provides a proven model. Create a `FredPeripheralSocket` that allows devices to claim address ranges within the FRED page and register read/write handlers. Pi1MHz demonstrates that multiple peripherals at different FRED addresses should coexist cleanly. The SCSI host adapter is implemented as a 1 MHz bus extension using Beebium's peripheral extension framework. The pluggable FRED/JIM bus, extension registry, SCSI target extensibility, and plugin architecture are described in [Peripheral Extension Framework](peripheral-extension-framework.md).
+```
+AcornScsiHostAdapter (PeripheralExtension + OneMHzBusDevice)
+  attaches_to = {"1mhz-bus"}, provides = {"scsi"}
+  registers at 0xFC40-0xFC43 on the FRED page
+  │
+  ├─ ScsiBus (protocol state machine)
+  │    phases: BUS_FREE → SELECTION → COMMAND → DATA_IN/DATA_OUT → STATUS → MESSAGE_IN
+  │    20 SCSI commands, register interface matching Acorn host adapter
+  │
+  └─ ScsiTargetRegistry (8 SCSI IDs)
+       └─ ScsiHardDisc (ScsiTarget)
+            └─ HardDiskImage (DAT+DSC file I/O)
+```
 
-2. **Start with SCSI, not IDE**. SCSI was the standard Acorn hard disc interface and is what ADFS expects. The protocol is well-documented and all four reference implementations agree on the register interface and bus protocol.
+### Components
 
-3. **Use the DAT+DSC format** for compatibility with existing hard disc images from B-Em, BeebEm, BeebSCSI, and Pi1MHz. The format is trivially simple (raw sectors + a small geometry file) and is the de facto standard across the entire ecosystem.
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `ScsiBus` | `src/extensions/acorn-scsi/ScsiBus.hpp/.cpp` | Bus protocol state machine |
+| `ScsiTarget` | `src/extensions/acorn-scsi/ScsiTarget.hpp` | Target interface |
+| `ScsiHardDisc` | `src/extensions/acorn-scsi/ScsiHardDisc.hpp/.cpp` | Hard disc SCSI command handler |
+| `HardDiskImage` | `src/extensions/acorn-scsi/HardDiskImage.hpp/.cpp` | DAT+DSC file I/O |
+| `ScsiTestDevice` | `src/extensions/acorn-scsi/ScsiTestDevice.hpp/.cpp` | Configurable test target |
+| `ScsiTargetRegistry` | `src/extensions/acorn-scsi/ScsiTargetRegistry.hpp` | Target slot management |
+| `AcornScsiHostAdapter` | `src/extensions/acorn-scsi/AcornScsiHostAdapter.hpp/.cpp` | Extension wrapper |
+| `ScsiHostAdapterService` | `src/extensions/acorn-scsi/ScsiHostAdapterService.hpp` | gRPC service |
+| `ScsiConstants` | `src/extensions/acorn-scsi/ScsiConstants.hpp` | Protocol constants |
 
-4. **Use BeebSCSI's scsi.c as the primary reference**. It is the most complete and best-documented SCSI implementation, with clean separation between bus interface, command processing, and storage. Its CPLD/AVR split maps naturally onto Beebium's I/O handler / controller class separation.
+### SCSI Commands Supported
 
-### Minimum Viable Implementation
-
-A functional SCSI hard disc requires:
-- A SCSI host adapter device registered at 0xFC40-0xFC43
-- Bus phase state machine (BUS FREE → SELECTION → COMMAND → DATA → STATUS → MESSAGE)
-- Six SCSI commands: TEST UNIT READY (0x00), REQUEST SENSE (0x03), FORMAT (0x04), READ (0x08), WRITE (0x0A), MODE SENSE (0x1A)
-- DAT file loading with sector-level read/write
-- Auto-start LUN 0 on mount (ADFS never sends START/STOP UNIT)
-- An ADFS ROM in a sideways ROM slot
-
-### Estimated Scope
-
-Based on the reference implementations, a SCSI controller is approximately 600-900 lines of C++ for a B-Em/BeebEm-level implementation, or up to 1500 lines for BeebSCSI-level completeness. The peripheral bus infrastructure (making FRED/JIM pluggable) is the larger architectural task but benefits all future 1 MHz bus peripherals (speech chip, Music 5000, Econet clock, etc.).
+All 20 commands from the union of B-Em, b2, BeebEm, BeebSCSI, and Pi1MHz. See the SCSI Command Sets table above for the full list.
 
 ### Disc Geometry
 
-All implementations agree on the standard geometry:
-- 256-byte sectors (fixed, Acorn SCSI standard)
+- 256-byte sectors (Acorn SCSI standard, not standard 512)
 - 33 sectors per track (ACB-4000 SuperForm 2:1 interleave)
 - Variable heads and cylinders from DSC descriptor
 - Maximum 512 MB per LUN (ADFS 21-bit LBA limit: 2,097,151 sectors)
 
+### Protocol Notes
 
-## Peripheral Extension Architecture 
+Key implementation details discovered during ADFS compatibility testing:
 
-The gRPC service topology, plugin lifecycle, extension registry, dependency graph resolution, and machine variant hardware specification for peripherals have been extracted to a dedicated design document: [Peripheral Extension Framework](peripheral-extension-framework.md).
+- **REQ always set**: The status register always has REQ=1 (0x20), even in BusFree. Both b2 and BeebEm hardcode this. The ADFS SCSI driver locks up without it.
+- **Selection triggered by REG_SELECT**: Writing the target ID to the data register (reg 0) does NOT trigger selection. Selection occurs when the host writes to the select register (reg 2). This prevents false selection during ADFS's hardware probe which writes test patterns (0x5A, 0xA5) to the data register.
+- **Data register read-back**: In BusFree and Selection phases, reading the data register returns the last value written. ADFS uses this for hardware detection.
+- **REG_SELECT is control-only**: The value written to reg 2 must NOT be injected into the CDB buffer. It is purely a control signal that triggers the BusFree→Selection→Command transition.
 
-That document describes how the SCSI host adapter, hard disc targets, and VP415 LaserDisc targets fit into Beebium's general-purpose extensibility model, including:
+### Running Beebium with SCSI Hard Disc
 
-- gRPC service architecture following the hardware topology (FloppyControllerService, OneMHzBusService, ScsiService)
-- Unified extension registry with C API descriptors for both built-in modules and dynamically loaded plugins
-- Sub-bus extensibility (SCSI targets as extensions of the SCSI host adapter extension)
-- Named extension points with dependency graph resolution via topological sort
-- Extension points as hardware specification (machine variants define available ports)
-- The internal/external boundary principle (factory-fitted hardware is built-in; user-attached hardware is a plugin)
+The SCSI adapter is registered as a built-in extension on all server executables. To use it with ADFS:
+
+**Model B+:**
+
+```bash
+beebium-model-b-plus start \
+    --sideways 11:rom:acorn-adfs_1_30.rom
+```
+
+This replaces the default DFS ROM (slot 11) with ADFS 1.30 (the SCSI version for BBC B/B+). The SCSI adapter is active at 0xFC40-0xFC43 automatically.
+
+Hard disc images are currently mounted programmatically (via the `ScsiTargetRegistry` API or the `ScsiHostAdapterService` gRPC service). CLI flags for disc image mounting (`--scsi 0:/path/to/image.dat`) are planned but not yet implemented.
+
+**Model B:**
+
+```bash
+beebium-model-b start \
+    --sideways 5:rom:acorn-adfs_1_30.rom
+```
+
+Uses slot 5 (IC88 socket) for the ADFS ROM. The SCSI adapter works identically.
+
+### Creating and Using Disc Images
+
+**Using existing images:** DAT+DSC file pairs from B-Em, BeebEm, or BeebSCSI work directly. Copy them to a convenient location and mount via the gRPC service or programmatic API.
+
+**Creating blank images:** Use `HardDiskImage::create()` to create a new zero-filled disc image with specified geometry. The disc is "unformatted" -- use ADFS's formatting utility on the 6502 side to initialise the filesystem.
+
+**Pre-formatted images:** [Jon Ripley's BBC Micro Hard Drives page](https://jonripley.com/8bit/HardDrives/) provides 22 blank ADFS-formatted images from 2 MB to 512 MB. Rename from `.adl` to `.dat` and auto-generate geometry.
+
+### Test Coverage
+
+108 SCSI tests across all layers:
+- 15 ScsiTestDevice (configurable responses, recording)
+- 36 ScsiBus protocol (all phases, 20 commands, multi-block, F-codes, multi-target)
+- 5 ScsiTargetRegistry
+- 14 HardDiskImage (create, open, read/write, geometry, format, LBA validation)
+- 17 ScsiHardDisc (all commands, error paths, sense data lifecycle)
+- 8 ADFS image tests (real BeebEm disc image, Hugo signature, geometry)
+- 5 ADFS protocol compatibility (probe patterns, selection handshake)
+- 5 AcornScsiHostAdapter integration (through hardware memory map)
+- 3 ScsiHostAdapterService gRPC
+- 1 End-to-end boot test (Model B+ + ADFS 1.30 + SCSI hard disc + `*CAT`)
+
+## Peripheral Extension Architecture
+
+The peripheral extension framework supporting the SCSI adapter (and all future 1 MHz bus peripherals) is documented in [Peripheral Extension Framework](peripheral-extension-framework.md).
