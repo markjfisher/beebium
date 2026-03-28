@@ -1,506 +1,486 @@
 # Peripheral Extension Framework
 
-## BBC Micro Peripheral Interfaces
+## Overview
 
-The BBC Micro provided several external interfaces for connecting third-party hardware:
+The BBC Micro supported diverse third-party peripherals connected via external ports (1 MHz bus, User Port, Analogue Port, RS-423, Tube). Beebium's peripheral extension framework provides a principled architecture for adding these peripherals as pluggable modules -- either compiled into the server executable (built-in) or loaded from shared libraries at startup (plugins).
 
-| Interface | Address Space | Signal Levels | Present On |
-|-----------|--------------|---------------|------------|
-| 1 MHz Bus (FRED/JIM) | 0xFC00-0xFDFF | TTL (ext), CMOS (int) | Model B, B+, Master |
-| User Port | User VIA Port B | TTL | Model B, B+, Master |
-| Analogue Port | ADC channels 0-3 | Analogue | Model B, B+, Master |
-| Printer Port | User VIA Port A | TTL | Model B, B+, Master |
-| RS-423 Serial | ACIA (6850) | RS-423 | Model B, B+, Master |
-| Tube | 0xFEE0-0xFEEF | TTL | Model B, B+, Master |
-| Cartridge Slots | Sideways ROM space | TTL | Master only |
+Two properties of BBC Micro peripherals drive the framework design:
 
-Not all machines had all interfaces. The Model A shipped without the User VIA chip (IC69 socket empty), so it had no User Port, no printer port, and no analogue port. The Electron had none of these interfaces without add-on hardware.
+**Multi-port devices.** A single peripheral can connect to multiple interfaces simultaneously. The Voltmace Delta 14B/1 joystick interface connects to both the User Port and the Analogue Port. The framework models this with composition: one extension implementing multiple device callback interfaces.
 
-A rich ecosystem of peripherals connected to these interfaces: SCSI hard disc adapters, speech synthesizers (TMS5220), music co-processors (Music 5000), teletext adapters, IEEE-488 (GPIB) controllers, joystick interfaces, Econet network adapters, and many more.
+**Sub-bus topologies.** Some peripherals introduce new buses. An Acorn SCSI Host Adapter plugs into the 1 MHz bus and provides a SCSI bus to which hard drives and LaserDisc players connect. An IEEE-488 adapter provides a GPIB bus. The framework supports this through dynamic extension points: an extension can declare that it provides a new named attachment site for other extensions.
 
-### Two Challenges for Emulation
+For the SCSI use case that motivated this framework, see [Hard Disc Emulation Comparison](hard-disc-comparison.md).
 
-Two properties of BBC Micro peripherals make them difficult to model with a simple "one device, one port" abstraction:
+## Architecture
 
-**1. Multi-port devices.** A single hardware expansion can connect to multiple interfaces simultaneously. For example, the Voltmace Delta 14B/1 joystick interface connected to both the User Port (for digital inputs) and the Analogue Port (for analogue axes) simultaneously. The device is conceptually one unit, but it spans two distinct hardware interfaces.
+### Extension Points
 
-**2. Sub-bus topologies.** Some peripherals don't just connect to the machine -- they introduce an entirely new bus to which further arbitrary devices can be attached. For example:
-
-- An **Acorn SCSI Host Adapter** plugs into the 1 MHz bus and provides a SCSI bus. Hard disc drives, LaserDisc players, and other SCSI devices then connect to that SCSI bus, not directly to the BBC Micro.
-- An **IEEE-488 adapter** plugs into the 1 MHz bus and provides a GPIB bus. Instruments, plotters, and other IEEE-488 devices connect to the GPIB bus.
-- The **Tube** interface provides a processor bus to which various co-processors (6502, Z80, 68000, ARM) can connect.
-
-These sub-buses can host diverse and open-ended sets of devices. The SCSI bus might have a hard disc at target 0 and a Philips VP415 LaserDisc player at target 1 -- two completely different device types sharing one bus, connected through one adapter, on one port.
-
-## Concrete Example: SCSI Hard Disc and LaserDisc
-
-The SCSI subsystem illustrates both challenges and drives the framework design. For full SCSI protocol details, see [Hard Disc Emulation Comparison](hard-disc-comparison.md).
-
-### The Hardware Topology
-
-```
-BBC Micro
-  └─ 1 MHz Bus (FRED page, 0xFC00-0xFCFF)
-       └─ Acorn SCSI Host Adapter (registers at 0xFC40-0xFC43)
-            └─ SCSI Bus
-                 ├─ Target 0: 20 MB Winchester hard disc
-                 ├─ Target 1: Philips VP415 LaserDisc player
-                 └─ Target 2: (empty)
-```
-
-The host adapter is a 1 MHz bus peripheral. The hard disc and LaserDisc player are SCSI bus devices. These are different kinds of thing at different levels of the topology: the adapter handles bus signalling and phase protocols; the targets handle SCSI commands (READ/WRITE for the disc, F-codes for the VP415). The adapter doesn't know or care what its targets do with the commands it delivers.
-
-### Internal vs External Adapters
-
-The same SCSI host adapter exists in two physical forms:
-
-- **External** (Model B): A card plugged into the external 1 MHz bus connector by the user. An add-on purchase.
-- **Internal** (Master AIV): Factory-fitted to the internal 1 MHz bus socket (PL12) on the motherboard. Part of the machine definition.
-
-The SCSI protocol is identical in both cases. The adapter code is the same. Only the physical attachment differs -- and this distinction matters for how we model it in the emulator: the Master AIV's adapter is always present (it's built into the machine), while the Model B's adapter is optional (the user chose to buy it).
-
-### What the Framework Must Support
-
-From this single example, several requirements emerge:
-
-1. **Pluggable 1 MHz bus** -- the SCSI adapter must register at 0xFC40-0xFC43 on the FRED page without modifying the emulator core.
-2. **Sub-bus creation** -- the SCSI adapter must be able to provide a "scsi" bus to which targets can attach.
-3. **Polymorphic targets** -- a hard disc target and a VP415 target have completely different command sets but share the same bus attachment mechanism.
-4. **Built-in or plugin** -- the same adapter code must work as a built-in module (Master AIV) or a dynamically loaded plugin (Model B).
-5. **Machine-variant constraints** -- a Model A has no 1 MHz bus, so the SCSI adapter cannot be attached. This should be enforced structurally, not by special-case code.
-6. **gRPC services per device** -- the SCSI adapter needs a ScsiService for bus management; the VP415 target might need its own RPCs for F-code control. Each device at any level of the topology should be able to expose its own gRPC service.
-
-## Extension Points and Extensions
-
-The framework generalises from the SCSI example using two concepts:
-
-**Extension points** are named attachment sites provided by the machine or by other extensions. They represent places where hardware can be connected:
+Extension points are named attachment sites where extensions can register. Built-in extension points are provided by the machine hardware; dynamic extension points are created by extensions during initialisation.
 
 | Extension Point | Type | Provider |
 |----------------|------|----------|
-| `1mhz-bus` | Built-in | Machine hardware (FRED/JIM region) |
-| `user-port` | Built-in | User VIA Port B |
-| `analogue-port` | Built-in | Machine hardware (ADC) |
-| `printer-port` | Built-in | User VIA Port A |
-| `rs423` | Built-in | ACIA (6850) |
-| `tube` | Built-in | Tube interface |
-| `scsi` | Dynamic | Created by SCSI Host Adapter extension |
-| `gpib` | Dynamic | Created by IEEE-488 adapter extension |
+| `1mhz-bus` | Built-in | Machine hardware (FRED/JIM region, 0xFC00-0xFDFF) |
+| `user-port` | Built-in | User VIA Port B (future) |
+| `analogue-port` | Built-in | ADC (future) |
+| `scsi` | Dynamic | Created by SCSI Host Adapter extension (future) |
 
-Built-in extension points are registered by the machine's hardware policy class at startup. Dynamic extension points are created by extensions during their initialisation -- the SCSI host adapter creates the `scsi` extension point; an IEEE-488 adapter would create `gpib`.
+Which built-in extension points are available depends on the machine variant. A Model A has none (no User VIA, no 1 MHz bus). A Model B has `1mhz-bus`, `user-port`, `analogue-port`, etc. The hardware policy class registers the extension points corresponding to its physical ports.
 
-**Extensions** are modules that attach to extension points and optionally provide new ones. Each extension is a C++ class implementing the `PeripheralExtension` interface:
+### Extensions
+
+Each extension is a C++ class that inherits from `PeripheralExtension` and optionally implements device callback interfaces for the ports it uses. Extensions declare their dependencies (`attaches_to`) and what new extension points they create (`provides`).
 
 ```cpp
+// src/core/include/beebium/extension/PeripheralExtension.hpp
+
 class PeripheralExtension {
 public:
     virtual ~PeripheralExtension() = default;
 
-    // Identity and dependencies
-    virtual std::string_view name() const = 0;            // e.g. "acorn-scsi", "vp415"
+    // Manifest is the single source of truth for metadata.
+    void set_manifest(ExtensionManifest manifest);
+    const ExtensionManifest& manifest() const;
+    virtual std::string_view name() const;         // default reads from manifest
+    std::string_view description() const;          // reads from manifest
+
+    // Dependencies and provisions
     virtual std::span<const std::string_view> attaches_to() const = 0;
     virtual std::span<const std::string_view> provides() const = 0;
 
-    // Lifecycle -- ExtensionContext provides access to the ports declared in attaches_to
+    // Lifecycle
     virtual void init(ExtensionContext& ctx) = 0;
     virtual void shutdown() = 0;
 
-    // Optional gRPC services for client interaction
+    // gRPC services (zero or more)
     virtual std::vector<grpc::Service*> grpc_services() { return {}; }
 };
 ```
 
-The base class handles identity, dependencies, lifecycle, and gRPC services -- concerns common to all peripherals regardless of which port they attach to.
+### Port Handles and Device Callbacks
 
-I/O methods are deliberately **not** on `PeripheralExtension`. A 1 MHz bus peripheral has address-decoded register I/O; a User Port peripheral has 8-bit parallel I/O with handshake lines; an Analogue Port peripheral has ADC channels. These are fundamentally different interaction protocols. Putting them all on the base class (or using a per-port-type subclass hierarchy) would conflate "connects to" with "is-a" -- a Voltmace Delta 14B/1 joystick that connects to both the User Port and Analogue Port would require diamond inheritance from two port-typed base classes.
+I/O methods are not on `PeripheralExtension`. Each extension point type defines a **port handle** (owned by the machine) and a **device callback interface** (implemented by the extension). This composition-based design avoids diamond inheritance for multi-port devices.
 
-Instead, each extension point type defines a **port handle** (owned by the machine) and a **device callback interface** (implemented by the extension). The extension *uses* ports rather than *being* a port-typed object:
+Currently implemented:
 
 ```cpp
-// Port handles -- owned by the machine hardware, passed to extensions via ExtensionContext
+// src/core/include/beebium/extension/OneMHzBusPort.hpp
 
 class OneMHzBusPort {
 public:
-    void claim_addresses(uint16_t base, uint16_t end,
-                         OneMHzBusDevice& device);       // register for read/write callbacks
+    uint8_t read(uint16_t offset);                    // MemoryMappedDevice interface
+    void write(uint16_t offset, uint8_t value);       // MemoryMappedDevice interface
+    void claim_addresses(uint16_t base, uint16_t end, // register device for address range
+                         OneMHzBusDevice& device);
+    void tick();                                       // tick all registered devices
+    bool is_claimed(uint16_t offset) const;
 };
 
-class UserPort {
-public:
-    void set_port_b_handler(UserPortDevice& device);     // register for port B I/O
-};
-
-class AnaloguePort {
-public:
-    void set_channel_handler(int channel,
-                             AnalogueDevice& device);    // register for ADC reads
-};
-
-// Device callback interfaces -- implemented by extensions, one per port type
+// src/core/include/beebium/extension/OneMHzBusDevice.hpp
 
 struct OneMHzBusDevice {
     virtual ~OneMHzBusDevice() = default;
-    virtual uint8_t read(uint16_t address) = 0;
-    virtual void write(uint16_t address, uint8_t value) = 0;
-    virtual void tick() {}                                // 1 MHz clock (optional)
-};
-
-struct UserPortDevice {
-    virtual ~UserPortDevice() = default;
-    virtual uint8_t read_port() = 0;
-    virtual void write_port(uint8_t value) = 0;
-    virtual void cb1_edge(bool rising) {}                 // handshake line
-    virtual void cb2_edge(bool rising) {}                 // handshake line
-};
-
-struct AnalogueDevice {
-    virtual ~AnalogueDevice() = default;
-    virtual uint16_t read_channel() = 0;                  // ADC value (0-65535)
+    virtual uint8_t read(uint16_t offset) = 0;        // offset relative to 0xFC00
+    virtual void write(uint16_t offset, uint8_t value) = 0;
+    virtual void tick() {}
 };
 ```
 
-An extension implements the device callback interfaces for the ports it uses, and receives port handles during `init()` via the `ExtensionContext`. There is no diamond inheritance -- `PeripheralExtension` is the only base class in the extension hierarchy. The device interfaces (`OneMHzBusDevice`, `UserPortDevice`, `AnalogueDevice`) model a *uses* relationship, not *is-a*:
+The `offset` parameter in `OneMHzBusDevice` is relative to 0xFC00 (the start of the FRED page), matching what the MemoryMap's Region binding computes. FRED occupies offsets 0x0000-0x00FF; JIM occupies 0x0100-0x01FF. Unclaimed addresses return 0xFF on read (74LS245 transceiver behaviour).
+
+Future port types (UserPort, AnaloguePort) will follow the same pattern: a port handle class and a device callback interface, added without changing existing code.
+
+### Dependency Resolution
+
+The `ExtensionRegistry` collects extensions and resolves their dependency graph via topological sort (Kahn's algorithm) at startup:
+
+1. Built-in extension points (registered by the hardware policy) are always satisfied
+2. Extensions whose `attaches_to` dependencies are all satisfied are initialised first
+3. After initialisation, any extension points they `provide` become available
+4. This repeats until all extensions are initialised, or a cycle/unsatisfied dependency is detected
+
+Extensions are shut down in reverse initialisation order.
+
+### gRPC Services
+
+Extensions can provide gRPC services by returning them from `grpc_services()`. These are collected after `init()` and registered with the gRPC `ServerBuilder` before the server starts.
+
+A core `PeripheralExtensionService` (always present) lets frontends discover loaded extensions via a `ListExtensions` RPC.
+
+### Extension Manifest
+
+Each extension has an `ExtensionManifest` containing its name, description, and library filename. The manifest is the **single source of truth** for extension metadata -- `PeripheralExtension::name()` reads from the manifest rather than being hard-coded.
+
+For plugins, the manifest is read from a `manifest.json` file alongside the shared library:
+
+```json
+{
+    "name": "test-scratch-ram",
+    "description": "8 bytes of scratch RAM at 0xFC50 for framework testing",
+    "library": "test-scratch-ram"
+}
+```
+
+For built-in extensions, the manifest is constructed programmatically in the factory method.
+
+### Built-in vs Plugin
+
+The guiding principle follows the real hardware's internal/external boundary:
+
+- **Internal hardware** (factory-fitted): built into the server executable
+- **External hardware** (user-attached): loaded from a plugin
+
+The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use). Plugin loading is opt-in via command-line flags:
+
+- `--extension-dir <path>` -- directory containing extension plugins
+- `--extension <name>` -- (repeatable) load a named extension
+
+The `PluginLoader` scans the extension directory for `manifest.json` files without loading any code. Only extensions explicitly named with `--extension` are loaded.
+
+## Developer Guide: Creating a Built-in Extension
+
+This walkthrough uses TestScratchRam (8 bytes of RAM at 0xFC50-0xFC57) as the reference implementation.
+
+### 1. Create the Extension Directory
+
+```
+src/extensions/my-extension/
+    CMakeLists.txt
+    MyExtension.hpp
+    MyExtension.cpp
+    my_extension.proto         (if providing gRPC services)
+    MyExtensionService.hpp     (if providing gRPC services)
+    manifest.json              (for plugin builds)
+    plugin_entry.cpp           (for plugin builds)
+```
+
+Add the subdirectory to `src/extensions/CMakeLists.txt`:
+
+```cmake
+add_subdirectory(my-extension)
+```
+
+### 2. Define the Extension Class
+
+The extension inherits from `PeripheralExtension` and the device callback interface for each port it uses:
 
 ```cpp
-// SCSI host adapter -- uses 1 MHz bus only
-class AcornScsiHostAdapter : public PeripheralExtension,
-                             public OneMHzBusDevice {
+// MyExtension.hpp
+#include <beebium/extension/ExtensionContext.hpp>
+#include <beebium/extension/OneMHzBusDevice.hpp>
+#include <beebium/extension/OneMHzBusPort.hpp>
+#include <beebium/extension/PeripheralExtension.hpp>
+
+namespace beebium {
+
+class MyExtension : public PeripheralExtension,
+                    public OneMHzBusDevice {
 public:
-    void init(ExtensionContext& ctx) override {
-        ctx.get<OneMHzBusPort>().claim_addresses(0xFC40, 0xFC43, *this);
+    MyExtension();
+    ~MyExtension() override;
+
+    static std::unique_ptr<MyExtension> create();
+
+    std::span<const std::string_view> attaches_to() const override {
+        static constexpr std::string_view deps[] = {"1mhz-bus"};
+        return deps;
     }
-    uint8_t read(uint16_t address) override { /* SCSI register read */ }
-    void write(uint16_t address, uint8_t value) override { /* SCSI register write */ }
+
+    std::span<const std::string_view> provides() const override { return {}; }
+
+    void init(ExtensionContext& ctx) override;
+    void shutdown() override;
+
+    // OneMHzBusDevice
+    uint8_t read(uint16_t offset) override;
+    void write(uint16_t offset, uint8_t value) override;
 };
 
-// Voltmace Delta 14B/1 -- uses User Port AND Analogue Port
-class VoltmaceDelta14B1 : public PeripheralExtension,
-                          public UserPortDevice,
-                          public AnalogueDevice {
+}  // namespace beebium
+```
+
+**Key points:**
+- `name()` is inherited from `PeripheralExtension` and reads from the manifest -- do not override it
+- `attaches_to()` declares which extension points are needed
+- `provides()` declares which new extension points this extension creates (empty for leaf extensions)
+- The constructor and destructor must be out-of-line if the class has `unique_ptr` members with incomplete types (pimpl for gRPC service)
+
+### 3. Implement the Extension
+
+```cpp
+// MyExtension.cpp
+#include "MyExtension.hpp"
+
+namespace beebium {
+
+MyExtension::MyExtension() = default;
+MyExtension::~MyExtension() = default;
+
+std::unique_ptr<MyExtension> MyExtension::create() {
+    auto ext = std::unique_ptr<MyExtension>(new MyExtension());
+    ext->set_manifest(ExtensionManifest{
+        "my-extension",
+        "Description of my extension",
+        "my-extension",
+        {}  // empty path for built-in
+    });
+    return ext;
+}
+
+void MyExtension::init(ExtensionContext& ctx) {
+    ctx.get<OneMHzBusPort>().claim_addresses(0x60, 0x63, *this);
+    // Create gRPC service here if needed
+}
+
+void MyExtension::shutdown() {
+    // Clean up gRPC service here if needed
+}
+
+uint8_t MyExtension::read(uint16_t offset) {
+    // Handle read at offset (relative to 0xFC00)
+    return 0xFF;
+}
+
+void MyExtension::write(uint16_t offset, uint8_t value) {
+    // Handle write at offset (relative to 0xFC00)
+}
+
+}  // namespace beebium
+```
+
+**Key points:**
+- Use `create()` factory method to set the manifest programmatically
+- In `init()`, claim addresses on the bus port via `ExtensionContext`
+- Addresses are offsets relative to 0xFC00, not absolute 16-bit addresses
+- `claim_addresses()` throws if the range overlaps with another device
+
+### 4. Add a gRPC Service (Optional)
+
+Define a proto file:
+
+```protobuf
+// my_extension.proto
+syntax = "proto3";
+package beebium;
+
+service MyExtensionService {
+    rpc GetStatus(GetMyStatusRequest) returns (GetMyStatusResponse);
+}
+```
+
+Implement the service:
+
+```cpp
+// MyExtensionService.hpp
+#include "my_extension.grpc.pb.h"
+#include <grpcpp/grpcpp.h>
+
+namespace beebium {
+
+class MyExtensionServiceImpl final : public MyExtensionService::Service {
 public:
-    void init(ExtensionContext& ctx) override {
-        ctx.get<UserPort>().set_port_b_handler(*this);
-        ctx.get<AnaloguePort>().set_channel_handler(0, *this);
-        ctx.get<AnaloguePort>().set_channel_handler(1, *this);
-    }
-    uint8_t read_port() override { /* digital joystick buttons */ }
-    void write_port(uint8_t value) override { /* output lines */ }
-    uint16_t read_channel() override { /* analogue axis position */ }
+    explicit MyExtensionServiceImpl(MyExtension& ext) : ext_(ext) {}
+    // ... implement RPC methods ...
+private:
+    MyExtension& ext_;
 };
+
+}  // namespace beebium
 ```
 
-Only `OneMHzBusPort` and `OneMHzBusDevice` need to exist now. The other port handles and device interfaces can be added when those extension points are implemented, without changing `PeripheralExtension`, the extension registry, or any existing extensions.
-
-The framework uses C++ throughout -- plugins are compiled with the same compiler and version as the host, so there are no ABI compatibility concerns. This avoids the friction of forcing C++ objects through a C interface (manually constructed vtables, `void*` casts for `grpc::Service*`, C string handling) for a benefit that is purely theoretical in this context.
-
-### Mapping the SCSI Example
-
-| Extension | attaches_to | provides | Notes |
-|-----------|-------------|----------|-------|
-| SCSI Host Adapter | `1mhz-bus` | `scsi` | Registers at 0xFC40-0xFC43; creates SCSI target registry |
-| Hard Disc target | `scsi` | - | Handles READ/WRITE CDBs against a DAT image file |
-| VP415 target | `scsi` | - | Handles Group 6 F-code CDBs for LaserDisc control |
-
-The Voltmace Delta 14B/1 joystick interface demonstrates multi-port attachment -- a single extension that uses two ports:
-
-| Extension | attaches_to | provides | Notes |
-|-----------|-------------|----------|-------|
-| Voltmace Delta 14B/1 | `user-port`, `analogue-port` | - | One extension, implements `UserPortDevice` + `AnalogueDevice` |
-
-The Voltmace is one `PeripheralExtension` that declares `attaches_to = {"user-port", "analogue-port"}`. During `init()`, it receives handles to both ports via `ExtensionContext` and registers itself as the device callback for each. No diamond inheritance, no multiple `PeripheralExtension` subclasses -- just one extension implementing two small device interfaces.
-
-## Extension Points as Hardware Specification
-
-The set of extension points registered at startup defines what can be attached to the emulated machine. Each hardware policy class (`ModelBHardware`, `ModelBPlusHardware`, etc.) registers the extension points corresponding to its physical ports:
-
-| Extension Point | Model A | Model B | Model B+ | Master 128 | Master AIV |
-|----------------|---------|---------|----------|------------|------------|
-| `1mhz-bus` | - | Yes | Yes | Yes (ext) | Yes (ext+int) |
-| `user-port` | - | Yes | Yes | Yes | Yes |
-| `analogue-port` | - | Yes | Yes | Yes | Yes |
-| `printer-port` | - | Yes | Yes | Yes | Yes |
-| `rs423` | - | Yes | Yes | Yes | Yes |
-| `tube` | - | Yes | Yes | Yes | Yes (65C102) |
-| `cartridge-slots` | - | - | - | Yes (2) | Yes (2) |
-
-A plugin declaring `attaches_to = {"1mhz-bus"}` fails to load on a Model A with a clear diagnostic: "extension point '1mhz-bus' not available on this machine". No special-case code is needed -- the absence of the extension point *is* the hardware limitation. You cannot plug a Teletext Adapter into a Model A, and the emulator correctly refuses for the same structural reason the real hardware cannot.
-
-This scales in both directions. A fully-loaded Master AIV with SCSI adapter, VP415, hard disc, Music 5000, and joystick interface works because all required extension points are present and the dependency graph resolves cleanly. A bare Model A works because no extension points are registered and no plugins attempt to attach to absent ports.
-
-## Dependency Resolution
-
-Extensions form a directed acyclic graph (DAG) through their `attaches_to` and `provides` declarations. The framework resolves this graph at startup via topological sort:
-
-```
-1. Enumerate built-in extension points: 1mhz-bus, user-port, analogue-port, ...
-2. Discover all extensions (built-in modules + plugins)
-3. Build dependency graph from attaches_to / provides declarations
-4. Topological sort (error on cycles with diagnostic message)
-5. Init extensions in dependency order:
-   a. SCSI Host Adapter (needs 1mhz-bus) --> creates "scsi" extension point
-   b. Music 5000 (needs 1mhz-bus)
-   c. Hard Disc target (needs scsi)
-   d. VP415 target (needs scsi)
-   e. Voltmace Delta 14B/1 (needs user-port AND analogue-port)
-6. Collect grpc::Service* instances from all initialised extensions
-7. ServerBuilder registers all services, BuildAndStart()
-```
-
-Each extension is simple and focused. The VP415 plugin knows nothing about the 1 MHz bus -- it declares `attaches_to = {"scsi"}` and implements `handle_cdb`. The Voltmace plugin knows nothing about SCSI -- it declares `attaches_to = {"user-port", "analogue-port"}` and implements port handlers. The dependency graph resolution is infrastructure-layer complexity, done once, keeping individual extensions lean.
-
-Cycles are detected by the topological sort and reported as startup errors. In practice, the BBC Micro's peripheral topology is a tree, so cycles would indicate a misconfigured or buggy plugin.
-
-## Built-in Modules and Plugins
-
-Extensions can be either compiled into the server executable or loaded from shared libraries. The extension registry treats both identically -- it just sees descriptors.
-
-### Built-in Modules
-
-Built-in modules are linked into the server executable and register statically during server initialisation:
+Override `grpc_services()` in the extension to return the service:
 
 ```cpp
-// In main_model_b.cpp or similar
-extension_registry.register_extension(std::make_unique<ScsiHostAdapterExtension>());
-extension_registry.register_extension(std::make_unique<AcornUserPortRtcExtension>());
+std::vector<grpc::Service*> MyExtension::grpc_services() {
+    if (service_) return {service_.get()};
+    return {};
+}
 ```
 
-### Plugin Modules
+### 5. Build Configuration
 
-Plugin modules are shared libraries discovered by scanning a plugin directory for `.so`/`.dll`/`.dylib` files. Each is loaded via `dlopen`/`LoadLibrary`, and a well-known entry point is called to obtain a `PeripheralExtension` instance. The entry point uses `extern "C"` linkage solely to provide a stable symbol name for `dlsym` -- the returned object and all subsequent interaction is C++:
+```cmake
+# src/extensions/my-extension/CMakeLists.txt
+
+# Compile proto (if providing gRPC services)
+beebium_compile_proto(
+    TARGET beebium_ext_my_extension
+    PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/my_extension.proto
+    PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Static library (built-in)
+add_library(beebium_ext_my_extension STATIC
+    MyExtension.cpp
+    ${beebium_ext_my_extension_PROTO_SRCS}
+    ${beebium_ext_my_extension_GRPC_SRCS}
+)
+
+target_include_directories(beebium_ext_my_extension PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${beebium_ext_my_extension_OUT_DIR}
+)
+
+target_link_libraries(beebium_ext_my_extension PUBLIC
+    beebium_core gRPC::grpc++ protobuf::libprotobuf
+)
+```
+
+### 6. Register as Built-in
+
+In `src/server/include/beebium/server/ServerMain.hpp`, include the header and register the extension alongside other built-ins:
 
 ```cpp
-// Each plugin exports this symbol
-extern "C" std::unique_ptr<beebium::PeripheralExtension> beebium_create_extension();
+#include "MyExtension.hpp"
+
+// In StartSubcommand::invoke(), after registry setup:
+extension_registry.register_extension(beebium::MyExtension::create());
 ```
 
-Plugins must be compiled with the same compiler and version as the Beebium server. This is a deliberate trade-off: it sacrifices cross-compiler and cross-language plugin compatibility in exchange for a natural C++ interface with no casting, no manual vtables, and no `void*` smuggling of `grpc::Service*` pointers. In practice, plugins will be built alongside Beebium using the same toolchain.
+Link the server executables against `beebium_ext_my_extension` in `src/server/CMakeLists.txt`.
 
-### The Registry Doesn't Care
+## Developer Guide: Creating a Plugin Extension
 
-From the registry's perspective, both paths produce `PeripheralExtension` objects with the same interface:
+A plugin extension uses the same source code as a built-in but adds a shared library target and a plugin entry point.
 
-```
-Extension Registry
-  +-  Built-in: ScsiHostAdapterExtension    (linked, registered statically)
-  +-  Built-in: AcornUserPortRtcExtension        (linked, registered statically)
-  +-  Plugin:   Music5000Extension          (music5000.dylib, discovered and loaded)
-  +-  Plugin:   CustomExtension             (myperi.dylib, discovered and loaded)
-```
-
-### The Internal/External Boundary
-
-The guiding principle for whether an extension is built-in or a plugin follows the real hardware:
-
-- **Internal hardware** (factory-fitted, soldered, or socketed inside the machine): **built into the server executable**. It is part of the machine definition and is always present.
-- **External hardware** (plugged into a port by the user): **loaded from a plugin**. It is an add-on that the user chooses to attach.
-
-The Master AIV's SCSI host adapter was factory-fitted to PL12 on the motherboard -- `beebium-master-aiv` links the adapter code directly. A Model B owner bought a SCSI card and plugged it into the external 1 MHz bus -- `beebium-model-b` loads `scsi_host_adapter.dylib` from the plugin directory.
-
-The underlying code is identical. Only the linkage differs:
-
-```
-beebium-master-aiv
-  +-- links scsi_host_adapter.o directly
-     (registered as built-in during hardware policy init)
-
-beebium-model-b
-  +-- loads scsi_host_adapter.dylib at startup
-     (discovered in plugin directory, attaches to "1mhz-bus")
-```
-
-The same source compiles to both a static library (for built-in use) and a shared library (for plugin use), with no conditional compilation needed. SCSI target plugins (hard disc, VP415) work with either, without knowing whether the adapter was built-in or loaded from a shared library. The `PeripheralExtension` and `ScsiTarget` interfaces are the same in both cases -- polymorphism through C++ virtual dispatch, not through function pointer tables or `void*` casts.
-
-## Sub-Bus Target Interface
-
-Extensions that provide sub-buses (like the SCSI host adapter) need their own target registry. The host adapter handles bus protocol (selection, phases, REQ/ACK handshaking) and delegates command processing to pluggable target implementations.
-
-Each SCSI target implements a C++ interface:
+### 1. Add Plugin Entry Point
 
 ```cpp
-class ScsiTarget {
-public:
-    virtual ~ScsiTarget() = default;
+// plugin_entry.cpp
+#include "MyExtension.hpp"
+#include <beebium/extension/ExtensionManifest.hpp>
 
-    virtual std::string_view name() const = 0;       // e.g. "adfs-disc", "vp415"
-    virtual uint8_t default_scsi_id() const = 0;     // preferred target ID
+extern "C" {
 
-    // Command processing -- receives raw CDB and a data buffer for the response
-    virtual ScsiStatus handle_cdb(std::span<const uint8_t> cdb,
-                                  std::span<uint8_t> data_buffer) = 0;
+__attribute__((visibility("default")))
+beebium::PeripheralExtension* beebium_create_extension(
+        const beebium::ExtensionManifest& manifest) {
+    auto* ext = new beebium::MyExtension();
+    ext->set_manifest(manifest);
+    return ext;
+}
 
-    virtual void init() = 0;
-    virtual void shutdown() = 0;
-
-    // Optional gRPC services for target-specific client interaction
-    virtual std::vector<grpc::Service*> grpc_services() { return {}; }
-};
+}
 ```
 
-The host adapter calls `target[N]->handle_cdb()` when a CDB arrives for target N. A hard disc target processes READ/WRITE against a DAT file. A VP415 target processes Group 6 F-code commands. The adapter is identical in both cases -- it just moves bytes between the 6502 bus and the target.
+**Key points:**
+- The entry point is `extern "C"` for `dlsym` lookup
+- It receives the manifest (parsed from `manifest.json` by the `PluginLoader`)
+- It returns a raw pointer -- the framework takes ownership via `std::unique_ptr`
+- Use `__attribute__((visibility("default")))` to ensure the symbol is exported
 
-**Key design principle**: the host adapter must be designed from day one with the target registry as its core abstraction, even if the only initial target is a hard disc. Adding `handle_cdb` dispatch through a target interface costs almost nothing upfront but prevents a major restructuring when VP415 or other device support is added later.
+### 2. Add Manifest
 
-## gRPC Service Architecture
-
-### Follow the Hardware Topology
-
-gRPC services should mirror the hardware tree rather than classifying by media type. Neither domain-driven naming (FloppyDiscService, HardDiscService) nor capability-driven naming (FixedDiscService, RemovableDiscService) scales -- a VP415 is not a disc, a Jaz drive is a removable SCSI disc, and "hard disc" conflates media with controller.
-
-```
-Machine
-  +-- FloppyControllerService          (WD1770 at 0xFE80/0xFE84)
-  |    Operations: insert/eject disc image, query drive status
-  |
-  +-- OneMHzBusService                 (FRED/JIM, 0xFC00-0xFDFF)
-  |    Operations: list attached peripherals, attach/detach peripheral
-  |
-  +-- ScsiService                      (via host adapter at 0xFC40)
-       Operations: list targets, attach/detach target, query bus state
-       |
-       +-- Target 0: ScsiDiscTarget    (hard disc image)
-       |    Operations: mount/unmount image, query geometry, format
-       |
-       +-- Target 1: ScsiVideoTarget   (VP415 LaserDisc)
-       |    Operations: load disc, send F-code, query player status
-       |
-       +-- Target 2: ScsiDiscTarget    (another disc, or Jaz, etc.)
-            Operations: mount/unmount image, query geometry, format
+```json
+{
+    "name": "my-extension",
+    "description": "Description of my extension",
+    "library": "my-extension"
+}
 ```
 
-Key principles:
+The `library` field is the filename stem; the platform adds `.dylib`, `.so`, or `.dll`.
 
-1. **The existing DiscService should be renamed to FloppyControllerService** (or similar). It manages the WD1770 and has nothing to do with SCSI.
+### 3. Add Shared Library Target
 
-2. **OneMHzBusService is thin** -- it reports what's plugged in and provides install/remove operations. Each peripheral type brings its own service for device-specific interaction.
+```cmake
+# Append to src/extensions/my-extension/CMakeLists.txt
 
-3. **ScsiService manages the SCSI bus** -- targets are polymorphic. Bus-level concerns (enumeration, selection, reset) are separate from target-specific operations.
+if(BEEBIUM_BUILD_SERVICE)
+    add_library(beebium_plugin_my_extension SHARED
+        MyExtension.cpp
+        plugin_entry.cpp
+        ${beebium_ext_my_extension_PROTO_SRCS}
+        ${beebium_ext_my_extension_GRPC_SRCS}
+    )
 
-4. **Media type is a property of the target, not of the service**. A ScsiDiscTarget could be backed by a Winchester image, a Jaz image, or an iSCSI LUN.
+    target_include_directories(beebium_plugin_my_extension PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${beebium_ext_my_extension_OUT_DIR}
+    )
 
-### Service Lifecycle and Hardware Presence
+    target_link_libraries(beebium_plugin_my_extension PRIVATE
+        beebium_core gRPC::grpc++ protobuf::libprotobuf
+    )
 
-ScsiService only makes sense if a SCSI adapter is present on the 1 MHz bus. Beebium already has a pattern for this: `DiscService` is always registered as a gRPC service, but `InstallDiscController()` must be called before disc operations work -- because the `DiscControllerSocket` might be empty. The service is the API surface; the socket is the hardware presence.
+    set_target_properties(beebium_plugin_my_extension PROPERTIES
+        PREFIX "" OUTPUT_NAME "my-extension"
+    )
 
-```
-OneMHzBusService                     (always registered)
-  +-- ListPeripherals()               -> [{address: 0xFC40, type: "acorn-scsi"}, ...]
-  +-- InstallPeripheral(type, addr)   -> plugs hardware into the bus
-  +-- RemovePeripheral(addr)          -> unplugs hardware
-
-ScsiService                          (always registered; operations return
-  |                                   FAILED_PRECONDITION if no adapter installed)
-  +-- ListTargets()                   -> [{id: 0, type: "disc"}, {id: 1, type: "vp415"}]
-  +-- AttachDiscTarget(id, url)       -> mounts a DAT image at SCSI target ID
-  +-- AttachVideoTarget(id, url)      -> attaches VP415 emulation at target ID
-  +-- DetachTarget(id)
-  +-- GetTargetStatus(id)
-  +-- SendFCode(id, fcode)            -> VP415-specific; error if wrong target type
-```
-
-The lifecycle mirrors real hardware:
-
-```
-1. Server starts.
-   OneMHzBusService and ScsiService registered, but the 1 MHz bus
-   has no peripherals. ScsiService calls return FAILED_PRECONDITION.
-
-2. Client calls OneMHzBusService.InstallPeripheral("acorn-scsi", 0xFC40).
-   A SCSI host adapter is created and plugged into the FredJimRegion.
-   ScsiService now has an adapter to work with.
-
-3. Client calls ScsiService.AttachDiscTarget(0, "file:///path/to/scsi0.dat").
-   Target 0 on the SCSI bus becomes a hard disc backed by that image.
-
-4. The emulated BBC Micro boots ADFS, talks to 0xFC40, finds a disc.
+    add_custom_command(TARGET beebium_plugin_my_extension POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+            $<TARGET_FILE_DIR:beebium_plugin_my_extension>/manifest.json
+    )
+endif()
 ```
 
-ScsiService is separate from OneMHzBusService because the SCSI bus has its own topology (targets, LUNs) that deserves its own API surface. Other 1 MHz peripherals (Music 5000, speech chip) would get their own services too -- OneMHzBusService should not accumulate every peripheral's API.
+### 4. Load at Runtime
 
-### gRPC Service Registration for Plugins
+```bash
+beebium-model-b start --extension-dir /path/to/plugins --extension my-extension
+```
 
-gRPC C++ does **not** support adding services to a running server -- `ServerBuilder::RegisterService()` must be called before `BuildAndStart()`. Plugins are therefore loaded during server startup, before the gRPC server starts. Each plugin's `grpc_services()` are collected and registered normally via `ServerBuilder`. Full typed service support and gRPC reflection work without any workarounds.
-
-This reflects real hardware practice: you don't hot-plug cards into a 1 MHz bus on a running BBC Micro. Changing the hardware configuration means restarting the Beebium server process -- the emulator equivalent of power-cycling the machine.
-
-Three alternative approaches remain available if true hot-loading becomes desirable in future:
-
-- **Approach A: Generic service with dynamic dispatch.** A `CallbackGenericService` catches unmatched RPCs and dispatches to plugin handlers via a mutable method-name table. Limitation: gRPC reflection won't list plugin services, and all RPCs are modelled as bidirectional streams at the framework level.
-
-- **Approach B: Server restart on plugin load.** Shut down the gRPC server, rebuild with the new service, restart on the same port. Severs active streams but Beebium clients already handle reconnection.
-
-- **Approach C: Plugin runs its own gRPC server.** Beebium already uses this pattern: `ParasiteServer` runs an independent gRPC server for Tube co-processor debugging.
+The `PluginLoader` reads `manifest.json` from subdirectories of `--extension-dir`, then loads only the extensions named by `--extension`. Extensions not named are never loaded.
 
 ## Startup Sequence
 
 ```
-1.  Beebium server starts, parses command-line options
+1.  Server starts, parses command-line options
 2.  Hardware policy class registers built-in extension points
-    (1mhz-bus, user-port, analogue-port, etc. -- varies by machine variant)
-3.  Built-in extensions register their descriptors with the extension registry
-4.  Plugin directory scanned; each .so/.dll/.dylib loaded,
-    beebium_create_extension() called to obtain its PeripheralExtension instance
-5.  All descriptors validated (no address conflicts, compatible API version)
-6.  Dependency graph built from attaches_to / provides declarations
-7.  Topological sort determines init order (error on cycles)
-8.  Extensions initialised in dependency order:
-    - Bus-level extensions first (SCSI adapter, Music 5000, etc.)
-    - Sub-bus devices second (SCSI hard disc target, VP415 target, etc.)
-9.  grpc::Service* instances collected from all initialised extensions
-    (each extension may provide zero or more services)
-10. ServerBuilder registers all built-in gRPC services + extension services
-11. BuildAndStart() -- gRPC server begins accepting connections
-12. Emulation begins
+    (e.g. "1mhz-bus" for Model B; nothing for Model A)
+3.  Built-in extensions register with the extension registry
+4.  If --extension-dir specified, PluginLoader scans for manifest.json files
+5.  For each --extension <name>, the matching manifest is found and the
+    shared library is loaded via dlopen; entry point called with manifest
+6.  All extensions validated (no address conflicts, compatible API version)
+7.  Dependency graph built from attaches_to / provides declarations
+8.  Topological sort determines init order (error on cycles)
+9.  Extensions initialised in dependency order
+10. grpc::Service* instances collected from all initialised extensions
+11. PeripheralExtensionService created (core discovery service)
+12. ServerBuilder registers all built-in + extension + discovery services
+13. BuildAndStart() -- gRPC server begins accepting connections
+14. Emulation begins
 ```
 
-## Implementation Plan: TestScratchRam
-
-The first extension implemented against this framework will be a minimal test peripheral: 8 bytes of scratch RAM mapped at 0xFC50-0xFC57 on the FRED page. This does not correspond to any real BBC Micro hardware -- it exists solely to prove the framework.
-
-### Phase 1: Framework and 6502-Side Access
-
-`TestScratchRam` implements `PeripheralExtension` and `OneMHzBusDevice`. It claims 8 addresses on the 1 MHz bus, stores writes, and returns the stored values on reads. From the 6502 side:
+## Source Tree Layout
 
 ```
-LDA #&42
-STA &FC50       ; write 0x42 to scratch byte 0
-LDA &FC50       ; read back 0x42
+src/
+  core/
+    include/beebium/extension/
+      PeripheralExtension.hpp     # Base class for all extensions
+      ExtensionManifest.hpp       # Manifest data structure
+      ExtensionContext.hpp         # Type-safe port handle access
+      ExtensionRegistry.hpp        # Dependency resolution and lifecycle
+      OneMHzBusPort.hpp            # 1 MHz bus port handle (replaces FredJimRegion)
+      OneMHzBusDevice.hpp          # Device callback interface for 1 MHz bus
+      PluginLoader.hpp             # Manifest scanning and dlopen loading
+    src/
+      PluginLoader.cpp             # Platform-specific dlopen/LoadLibrary
+  extensions/
+    CMakeLists.txt                 # Umbrella for all extensions
+    test-scratch-ram/              # Example: TestScratchRam
+      CMakeLists.txt               # Static + shared library targets
+      TestScratchRam.hpp           # Extension class
+      TestScratchRam.cpp           # Implementation (init, shutdown, service)
+      ScratchRamService.hpp        # gRPC service implementation
+      scratch_ram.proto            # Proto definition
+      manifest.json                # Plugin manifest
+      plugin_entry.cpp             # Plugin entry point
+  service/
+    proto/
+      peripheral_extension.proto   # Core discovery service proto
+    include/beebium/service/
+      PeripheralExtensionService.hpp  # Core discovery service
+      Server.hpp                   # Modified: accepts extension_services span
+  server/
+    include/beebium/server/
+      ServerMain.hpp               # Modified: wires registry into startup
+  cmake/
+    BeebiumProto.cmake             # Reusable proto compilation function
 ```
-
-This exercises:
-- Extension discovery and registration (built-in module)
-- `OneMHzBusPort::claim_addresses()` with a range
-- `OneMHzBusDevice::read()` and `write()` callbacks
-- Bus stretching (1 MHz timing)
-- Observable state (write a value, read it back)
-
-Tests can verify correct behaviour from both the 6502 side (via the debugger/memory access) and the C++ side (direct calls to the extension).
-
-### Phase 2: gRPC Service
-
-Add a `ScratchRamService` gRPC service to the extension, proving that plugin-provided gRPC services work:
-
-```
-ScratchRamService
-  +-- Read(address)     -> value
-  +-- Write(address, value)
-  +-- ReadAll()         -> 8 bytes
-```
-
-This exercises:
-- `grpc_services()` returning a non-empty vector
-- Service registration via `ServerBuilder` during startup
-- Client-side interaction with an extension-provided service
-- Concurrent access (6502 writes while gRPC reads, or vice versa)
-
-### Phase 3: Plugin Loading
-
-Move `TestScratchRam` from built-in to a plugin (`test_scratch_ram.dylib`), proving dynamic loading works:
-
-- `extern "C"` entry point returns a `TestScratchRam` instance
-- Plugin directory scanning discovers and loads it
-- Same tests pass with no code changes to the extension itself
-
-After Phase 3, the framework is proven end-to-end and the SCSI host adapter can be built with confidence.
 
 ## References
 
