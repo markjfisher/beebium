@@ -12,6 +12,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/sideways.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/econet.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/tube.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/peripheral_extension.proto
 )
 
 # Output directories for generated code

@@ -1,0 +1,22 @@
+syntax = "proto3";
+package beebium;
+
+// Service for discovering loaded peripheral extensions.
+// This is a core service (always present), not an extension-provided service.
+// Frontends use it to enumerate what extensions are loaded and what they provide.
+service PeripheralExtensionService {
+    // List all loaded and initialised extensions.
+    rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
+}
+
+message ListExtensionsRequest {}
+
+message ListExtensionsResponse {
+    repeated ExtensionInfo extensions = 1;
+}
+
+message ExtensionInfo {
+    string name = 1;
+    repeated string attaches_to = 2;
+    repeated string provides = 3;
+}

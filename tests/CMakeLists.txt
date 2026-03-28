@@ -675,6 +675,15 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_sideways)
 
+    # PeripheralExtensionService gRPC tests (frontend discovery)
+    add_executable(test_grpc_peripheral_extension test_grpc_peripheral_extension.cpp)
+    target_link_libraries(test_grpc_peripheral_extension PRIVATE
+        beebium_service
+        beebium_ext_test_scratch_ram
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_peripheral_extension)
+
     # ScratchRam extension gRPC service tests
     add_executable(test_grpc_scratch_ram test_grpc_scratch_ram.cpp)
     target_link_libraries(test_grpc_scratch_ram PRIVATE

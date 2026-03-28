@@ -16,6 +16,7 @@
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
 #include "beebium/extension/OneMHzBusPort.hpp"
+#include "beebium/service/PeripheralExtensionService.hpp"
 #include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
@@ -1582,7 +1583,14 @@ public:
             beebium::ExtensionContext extension_context(
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr);
             extension_registry.resolve_and_init(extension_context);
+
+            // Create core discovery service for frontends to enumerate extensions
+            beebium::service::PeripheralExtensionServiceImpl peripheral_extension_service(
+                extension_registry);
+
+            // Collect all extension-provided services plus the discovery service
             auto extension_services = extension_registry.collect_grpc_services();
+            extension_services.push_back(&peripheral_extension_service);
 
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";

@@ -104,6 +104,11 @@ public:
         return services;
     }
 
+    // Iterate initialised extensions (for PeripheralExtensionService discovery).
+    std::span<PeripheralExtension* const> extensions() const {
+        return init_order_;
+    }
+
     // Query the number of registered extensions.
     size_t extension_count() const { return extensions_.size(); }
 
