@@ -608,33 +608,73 @@ Key implementation details discovered during ADFS compatibility testing:
 
 ### Running Beebium with SCSI Hard Disc
 
-The SCSI adapter is registered as a built-in extension on all server executables. To use it with ADFS:
+The SCSI adapter and hard disc target are **plugin extensions** (no BBC Micro model except the Master AIV had a built-in SCSI adapter). Both must be loaded explicitly via `--extension-dir` and their respective CLI flags.
 
-**Model B+:**
+**Model B+ with one hard disc:**
 
 ```bash
 beebium-model-b-plus start \
-    --sideways 11:rom:acorn-adfs_1_30.rom
+    --sideways 11:rom:acorn-adfs_1_30.rom \
+    --extension-dir build/src/extensions \
+    --acorn-scsi \
+    --scsi-hdd 0:/path/to/scsi0.dat
 ```
 
-This replaces the default DFS ROM (slot 11) with ADFS 1.30 (the SCSI version for BBC B/B+). The SCSI adapter is active at 0xFC40-0xFC43 automatically.
+This:
+1. Replaces the default DFS ROM (slot 11) with ADFS 1.30 (the SCSI version for BBC B/B+)
+2. Loads the Acorn SCSI Host Adapter plugin (registers at 0xFC40-0xFC43)
+3. Loads a SCSI hard disc target at SCSI ID 0 with the specified image
 
-Hard disc images are currently mounted programmatically (via the `ScsiTargetRegistry` API or the `ScsiHostAdapterService` gRPC service). CLI flags for disc image mounting (`--scsi 0:/path/to/image.dat`) are planned but not yet implemented.
+**Model B+ with two hard discs:**
+
+```bash
+beebium-model-b-plus start \
+    --sideways 11:rom:acorn-adfs_1_30.rom \
+    --extension-dir build/src/extensions \
+    --acorn-scsi \
+    --scsi-hdd 0:/path/to/system.dat \
+    --scsi-hdd 1:/path/to/data.dat
+```
+
+ADFS sees these as drives 0 and 1. Floppy drives are at drives 4-5.
 
 **Model B:**
 
 ```bash
 beebium-model-b start \
-    --sideways 5:rom:acorn-adfs_1_30.rom
+    --sideways 5:rom:acorn-adfs_1_30.rom \
+    --extension-dir build/src/extensions \
+    --acorn-scsi \
+    --scsi-hdd 0:/path/to/scsi0.dat
 ```
 
-Uses slot 5 (IC88 socket) for the ADFS ROM. The SCSI adapter works identically.
+Uses slot 5 (IC88 socket) for the ADFS ROM.
+
+**With named instances (advanced):**
+
+```bash
+--acorn-scsi id=my-scsi \
+--scsi-hdd 0:/path/to/drive.dat:adapter-id=my-scsi:id=boot:label=System Disc
+```
+
+### Preset File Example
+
+```json
+{
+    "name": "Model B+ with SCSI",
+    "model": "model-b-plus",
+    "extensions": [
+        {"name": "acorn-scsi"},
+        {"name": "scsi-hard-disc", "config": {"scsi-id": "0", "image": "scsi0.dat"}}
+    ]
+}
+```
 
 ### Creating and Using Disc Images
 
-**Using existing images:** DAT+DSC file pairs from B-Em, BeebEm, or BeebSCSI work directly. Copy them to a convenient location and mount via the gRPC service or programmatic API.
+**Using existing images:** DAT+DSC file pairs from B-Em, BeebEm, or BeebSCSI work directly. Copy them to a convenient location and specify the DAT filepath on the `--scsi-hdd` flag.
 
-**Creating blank images:** Use `HardDiskImage::create()` to create a new zero-filled disc image with specified geometry. The disc is "unformatted" -- use ADFS's formatting utility on the 6502 side to initialise the filesystem.
+**Creating blank images:** Use `HardDiskImage::create()` programmatically to create a new zero-filled disc image with specified geometry. The disc is "unformatted" -- use ADFS's formatting utility on the 6502 side to initialise the filesystem.
 
 **Pre-formatted images:** [Jon Ripley's BBC Micro Hard Drives page](https://jonripley.com/8bit/HardDrives/) provides 22 blank ADFS-formatted images from 2 MB to 512 MB. Rename from `.adl` to `.dat` and auto-generate geometry.
 

@@ -109,19 +109,114 @@ A core `PeripheralExtensionService` (always present) lets frontends discover loa
 
 ### Extension Manifest
 
-Each extension has an `ExtensionManifest` containing its name, description, and library filename. The manifest is the **single source of truth** for extension metadata -- `PeripheralExtension::name()` reads from the manifest rather than being hard-coded.
-
-For plugins, the manifest is read from a `manifest.json` file alongside the shared library:
+Each extension has a `manifest.json` file alongside its shared library. The manifest is the **single source of truth** for extension metadata, CLI syntax, and parameter schema:
 
 ```json
 {
-    "name": "test-scratch-ram",
-    "description": "8 bytes of scratch RAM at 0xFC50 for framework testing",
-    "library": "test-scratch-ram"
+    "name": "scsi-hard-disc",
+    "description": "SCSI hard disc target (DAT+DSC image)",
+    "library": "scsi-hard-disc",
+    "cli": "scsi-hdd",
+    "parameters": [
+        {"key": "scsi-id", "type": "integer", "position": 0, "default": "0",
+         "description": "SCSI target ID (0-7)"},
+        {"key": "image", "type": "filepath", "position": 1,
+         "description": "Path to DAT disc image file"},
+        {"key": "adapter-id", "type": "string", "keyword_only": true,
+         "description": "ID of SCSI adapter to attach to"}
+    ]
 }
 ```
 
-For built-in extensions, the manifest is constructed programmatically in the factory method.
+Fields:
+- `name` -- canonical extension type name (used in presets, gRPC, dependency resolution)
+- `cli` -- short CLI flag name (e.g. `--scsi-hdd`); defaults to `name` if omitted
+- `library` -- shared library filename stem (platform adds `.dylib`/`.so`/`.dll`)
+- `parameters` -- schema for CLI/preset/gRPC configuration (see below)
+
+Parameter schema fields:
+- `key` -- parameter name
+- `type` -- `string`, `integer`, `boolean`, or `filepath`
+- `position` -- positional index (0, 1, ...); omit or -1 for keyword-only
+- `required` -- whether the parameter must be provided (default: false)
+- `default` -- default value if not provided
+- `description` -- human-readable description (used in error messages and gRPC)
+
+Two framework-managed parameters are injected automatically and do not appear in the manifest:
+- `id` -- instance identity (auto-generated UUID, overridable via `id=<value>`)
+- `label` -- display name for GUIs (falls back to `id` if not set)
+
+### Instance Identity
+
+Every extension instance has an `id` (stable identity for referencing, logging, gRPC) and an optional `label` (display name for GUIs). If not provided by the user, `id` is auto-generated as a UUID and `label` falls back to `id`.
+
+Extension-specific identifiers use qualified names to avoid collision with `id`: e.g. `scsi-id` for the SCSI target number, `adapter-id` to reference a parent adapter.
+
+### CLI Syntax
+
+Each extension becomes a first-class `--<cli-name>` flag. Arguments are colon-separated with positional and keyword support:
+
+```bash
+beebium-model-b-plus start \
+    --extension-dir build/src/extensions \
+    --acorn-scsi \
+    --scsi-hdd 0:/path/to/drive0.dat \
+    --scsi-hdd 1:/path/to/drive1.dat
+```
+
+Positional arguments may also be written in keyword form (must be in the correct positional slot):
+
+```bash
+--scsi-hdd scsi-id=0:image=/path/to/drive.dat
+```
+
+Keyword-only arguments (for advanced options):
+
+```bash
+--acorn-scsi id=scsi-a
+--scsi-hdd 0:/path/to/drive.dat:adapter-id=scsi-a:id=boot-disc:label=System Disc
+```
+
+Filepaths are always the last positional element so shell tab-completion works. URI schemes (`file://`, `http://`) are preserved (colons in `://` are not split).
+
+Multiple instances of the same extension are created via repeated flags. Each invocation creates a separate instance with its own config and auto-generated id.
+
+### Preset File Integration
+
+Presets can include an `extensions` array:
+
+```json
+{
+    "name": "Model B+ with SCSI hard disc",
+    "model": "model-b-plus",
+    "extensions": [
+        {"name": "acorn-scsi"},
+        {"name": "scsi-hard-disc", "config": {"scsi-id": "0", "image": "scsi0.dat"}},
+        {"name": "scsi-hard-disc", "config": {"scsi-id": "1", "image": "scsi1.dat"}}
+    ]
+}
+```
+
+Extensions from presets are applied as baseline configuration; CLI flags can add more.
+
+### gRPC Discovery
+
+The `PeripheralExtensionService.ListExtensions` RPC returns loaded extensions with their full configuration:
+
+```protobuf
+message ExtensionInfo {
+    string name = 1;                        // extension type
+    string id = 2;                          // instance identity
+    string label = 3;                       // display name
+    repeated string attaches_to = 4;
+    repeated string provides = 5;
+    map<string, string> config = 6;         // current configuration
+    repeated ParameterSchemaInfo parameters = 7;  // from manifest
+    string description = 8;
+}
+```
+
+GUI frontends can call `ListExtensions()` to discover loaded extensions, inspect their configuration, and present available parameters for editing.
 
 ### Built-in vs Plugin
 
@@ -130,12 +225,9 @@ The guiding principle follows the real hardware's internal/external boundary:
 - **Internal hardware** (factory-fitted): built into the server executable
 - **External hardware** (user-attached): loaded from a plugin
 
-The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use). Plugin loading is opt-in via command-line flags:
+The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use). No BBC Micro model (except the Master AIV, not yet emulated) had a built-in SCSI adapter -- it was an external card. The SCSI adapter and hard disc target are plugins, loaded via `--extension-dir` and `--acorn-scsi`/`--scsi-hdd` flags.
 
-- `--extension-dir <path>` -- directory containing extension plugins
-- `--extension <name>` -- (repeatable) load a named extension
-
-The `PluginLoader` scans the extension directory for `manifest.json` files without loading any code. Only extensions explicitly named with `--extension` are loaded.
+Plugin loading requires `--extension-dir <path>` which tells the server where to find extension shared libraries and manifests. Extension flags are only recognised after `--extension-dir` is processed.
 
 ## Developer Guide: Creating a Built-in Extension
 
@@ -426,22 +518,29 @@ The `PluginLoader` reads `manifest.json` from subdirectories of `--extension-dir
 ## Startup Sequence
 
 ```
-1.  Server starts, parses command-line options
-2.  Hardware policy class registers built-in extension points
+1.  Server starts
+2.  First-pass argument parsing: extract --extension-dir and --preset
+3.  If --preset specified, load preset (including extensions section)
+4.  Scan extension manifests from --extension-dir (no code loaded)
+5.  Build CLI name lookup table from manifest cli fields
+6.  Second-pass argument parsing: recognise --<cli-name> flags,
+    parse colon-separated arguments against manifest parameter schemas
+7.  Hardware policy class registers built-in extension points
     (e.g. "1mhz-bus" for Model B; nothing for Model A)
-3.  Built-in extensions register with the extension registry
-4.  If --extension-dir specified, PluginLoader scans for manifest.json files
-5.  For each --extension <name>, the matching manifest is found and the
-    shared library is loaded via dlopen; entry point called with manifest
-6.  All extensions validated (no address conflicts, compatible API version)
-7.  Dependency graph built from attaches_to / provides declarations
-8.  Topological sort determines init order (error on cycles)
-9.  Extensions initialised in dependency order
-10. grpc::Service* instances collected from all initialised extensions
-11. PeripheralExtensionService created (core discovery service)
-12. ServerBuilder registers all built-in + extension + discovery services
-13. BuildAndStart() -- gRPC server begins accepting connections
-14. Emulation begins
+8.  Built-in extensions registered with auto-generated ids
+9.  Plugin extensions loaded for each CLI/preset extension instance:
+    - dlopen shared library, call beebium_create_extension(manifest)
+    - set_config() with parsed config map (including auto-generated id)
+10. Dependency graph built from attaches_to / provides declarations
+11. Topological sort determines init order (error on cycles)
+12. Extensions initialised in dependency order:
+    - init() receives ExtensionContext with port handles and provider lookup
+    - After init, providers registered in context for downstream extensions
+13. grpc::Service* instances collected from all initialised extensions
+14. PeripheralExtensionService created (core discovery service)
+15. ServerBuilder registers all built-in + extension + discovery services
+16. BuildAndStart() -- gRPC server begins accepting connections
+17. Emulation begins
 ```
 
 ## Source Tree Layout
@@ -450,34 +549,46 @@ The `PluginLoader` reads `manifest.json` from subdirectories of `--extension-dir
 src/
   core/
     include/beebium/extension/
-      PeripheralExtension.hpp     # Base class for all extensions
-      ExtensionManifest.hpp       # Manifest data structure
-      ExtensionContext.hpp         # Type-safe port handle access
-      ExtensionRegistry.hpp        # Dependency resolution and lifecycle
-      OneMHzBusPort.hpp            # 1 MHz bus port handle (replaces FredJimRegion)
-      OneMHzBusDevice.hpp          # Device callback interface for 1 MHz bus
-      PluginLoader.hpp             # Manifest scanning and dlopen loading
+      PeripheralExtension.hpp     # Base class (identity, config, lifecycle)
+      ExtensionManifest.hpp       # Manifest + parameter schema
+      ExtensionArgParser.hpp      # Schema-driven CLI argument parser
+      ExtensionContext.hpp         # Port handles + provider lookup
+      ExtensionRegistry.hpp       # Dependency resolution and lifecycle
+      OneMHzBusPort.hpp           # 1 MHz bus port handle
+      OneMHzBusDevice.hpp         # Device callback interface for 1 MHz bus
+      PluginLoader.hpp            # Manifest scanning and dlopen loading
     src/
-      PluginLoader.cpp             # Platform-specific dlopen/LoadLibrary
+      PluginLoader.cpp            # Platform-specific dlopen/LoadLibrary
+      ExtensionArgParser.cpp      # Colon-separated argument parser
   extensions/
-    CMakeLists.txt                 # Umbrella for all extensions
-    test-scratch-ram/              # Example: TestScratchRam
-      CMakeLists.txt               # Static + shared library targets
-      TestScratchRam.hpp           # Extension class
-      TestScratchRam.cpp           # Implementation (init, shutdown, service)
-      ScratchRamService.hpp        # gRPC service implementation
-      scratch_ram.proto            # Proto definition
-      manifest.json                # Plugin manifest
-      plugin_entry.cpp             # Plugin entry point
+    CMakeLists.txt                # Umbrella for all extensions
+    test-scratch-ram/             # TestScratchRam (test fixture)
+      manifest.json
+      ...
+    acorn-scsi/                   # Acorn SCSI Host Adapter (plugin)
+      manifest.json               # cli: "acorn-scsi"
+      AcornScsiHostAdapter.hpp/cpp
+      ScsiBus.hpp/cpp             # Bus protocol state machine
+      ScsiTarget.hpp              # Target interface
+      ScsiHardDisc.hpp/cpp        # Hard disc target
+      HardDiskImage.hpp/cpp       # DAT+DSC file I/O
+      ScsiHostAdapterService.hpp  # gRPC service
+      scsi_host_adapter.proto
+      plugin_entry.cpp
+    scsi-hard-disc/               # SCSI Hard Disc Target (plugin)
+      manifest.json               # cli: "scsi-hdd", parameters: scsi-id, image
+      ScsiHardDiscExtension.hpp/cpp
+      plugin_entry.cpp
   service/
     proto/
-      peripheral_extension.proto   # Core discovery service proto
+      peripheral_extension.proto  # Core discovery service (id, label, config, schema)
     include/beebium/service/
-      PeripheralExtensionService.hpp  # Core discovery service
-      Server.hpp                   # Modified: accepts extension_services span
+      PeripheralExtensionService.hpp
+      Server.hpp                  # Accepts extension_services span
   server/
     include/beebium/server/
-      ServerMain.hpp               # Modified: wires registry into startup
+      ServerMain.hpp              # Three-pass parsing, extension loading
+      PresetLoader.hpp            # Preset extensions section
   cmake/
     BeebiumProto.cmake             # Reusable proto compilation function
 ```
