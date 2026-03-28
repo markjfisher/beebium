@@ -151,6 +151,7 @@ add_subdirectory(third_party/stb)
 # Subdirectories
 add_subdirectory(src/6502)
 add_subdirectory(src/core)
+add_subdirectory(src/extensions)
 add_subdirectory(src/discovery)
 
 if(BEEBIUM_BUILD_SERVICE)

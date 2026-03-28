@@ -43,17 +43,17 @@ catch_discover_tests(test_one_mhz_bus_port)
 
 # Extension registry tests
 add_executable(test_extension_registry test_extension_registry.cpp)
-target_link_libraries(test_extension_registry PRIVATE beebium_core Catch2::Catch2WithMain)
+target_link_libraries(test_extension_registry PRIVATE beebium_ext_test_scratch_ram beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_extension_registry)
 
 # TestScratchRam unit tests
 add_executable(test_scratch_ram test_scratch_ram.cpp)
-target_link_libraries(test_scratch_ram PRIVATE beebium_core Catch2::Catch2WithMain)
+target_link_libraries(test_scratch_ram PRIVATE beebium_ext_test_scratch_ram beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_scratch_ram)
 
 # TestScratchRam integration tests (through full hardware memory map)
 add_executable(test_scratch_ram_integration test_scratch_ram_integration.cpp)
-target_link_libraries(test_scratch_ram_integration PRIVATE beebium_core Catch2::Catch2WithMain)
+target_link_libraries(test_scratch_ram_integration PRIVATE beebium_ext_test_scratch_ram beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_scratch_ram_integration)
 
 # Model B ROM/RAM Board hardware tests

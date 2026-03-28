@@ -11,7 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/extension/ExtensionRegistry.hpp>
-#include <beebium/extension/TestScratchRam.hpp>
+#include <TestScratchRam.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

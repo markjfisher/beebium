@@ -13,10 +13,10 @@
 #ifndef BEEBIUM_EXTENSION_TEST_SCRATCH_RAM_HPP
 #define BEEBIUM_EXTENSION_TEST_SCRATCH_RAM_HPP
 
-#include "ExtensionContext.hpp"
-#include "OneMHzBusDevice.hpp"
-#include "OneMHzBusPort.hpp"
-#include "PeripheralExtension.hpp"
+#include <beebium/extension/ExtensionContext.hpp>
+#include <beebium/extension/OneMHzBusDevice.hpp>
+#include <beebium/extension/OneMHzBusPort.hpp>
+#include <beebium/extension/PeripheralExtension.hpp>
 
 #include <array>
 #include <cstdint>

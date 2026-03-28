@@ -13,7 +13,7 @@
 #include <beebium/ModelBHardware.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/ExtensionRegistry.hpp>
-#include <beebium/extension/TestScratchRam.hpp>
+#include <TestScratchRam.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

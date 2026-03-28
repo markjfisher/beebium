@@ -12,7 +12,7 @@
 
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/OneMHzBusPort.hpp>
-#include <beebium/extension/TestScratchRam.hpp>
+#include <TestScratchRam.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
