@@ -143,6 +143,9 @@ if(BEEBIUM_BUILD_SERVICE)
     else()
         find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
     endif()
+
+    # Proto compilation helper
+    include(${CMAKE_SOURCE_DIR}/cmake/BeebiumProto.cmake)
 endif()
 
 # Third-party libraries

@@ -1,0 +1,34 @@
+syntax = "proto3";
+package beebium;
+
+service ScratchRamService {
+    // Read a single byte from the scratch RAM.
+    rpc Read(ScratchRamReadRequest) returns (ScratchRamReadResponse);
+
+    // Write a single byte to the scratch RAM.
+    rpc Write(ScratchRamWriteRequest) returns (ScratchRamWriteResponse);
+
+    // Read all 8 bytes of the scratch RAM.
+    rpc ReadAll(ScratchRamReadAllRequest) returns (ScratchRamReadAllResponse);
+}
+
+message ScratchRamReadRequest {
+    uint32 offset = 1;  // 0-7
+}
+
+message ScratchRamReadResponse {
+    uint32 value = 1;
+}
+
+message ScratchRamWriteRequest {
+    uint32 offset = 1;  // 0-7
+    uint32 value = 2;
+}
+
+message ScratchRamWriteResponse {}
+
+message ScratchRamReadAllRequest {}
+
+message ScratchRamReadAllResponse {
+    bytes data = 1;  // 8 bytes
+}

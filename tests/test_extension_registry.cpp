@@ -182,7 +182,7 @@ TEST_CASE("ExtensionRegistry with TestScratchRam", "[extension][registry]") {
     ExtensionContext ctx(&port);
 
     registry.register_extension_point("1mhz-bus");
-    registry.register_extension(std::make_unique<TestScratchRam>());
+    registry.register_extension(TestScratchRam::create());
 
     registry.resolve_and_init(ctx);
 

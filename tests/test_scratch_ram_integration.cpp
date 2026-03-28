@@ -25,7 +25,7 @@ TEST_CASE("TestScratchRam accessible through ModelBHardware memory map",
 
     ExtensionRegistry registry;
     registry.register_extension_point("1mhz-bus");
-    registry.register_extension(std::make_unique<TestScratchRam>());
+    registry.register_extension(TestScratchRam::create());
 
     ExtensionContext ctx(&hw.one_mhz_bus());
     registry.resolve_and_init(ctx);

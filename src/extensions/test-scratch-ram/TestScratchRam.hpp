@@ -20,23 +20,33 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace beebium {
+
+class ScratchRamServiceImpl;
 
 // 8 bytes of scratch RAM at FRED offsets 0x50-0x57 (absolute 0xFC50-0xFC57).
 //
 // This extension exists to validate the PeripheralExtension framework
 // end-to-end: extension registration, dependency resolution, address claiming,
-// read/write dispatch through the MemoryMap, and 1 MHz bus ticking.
-// It is a permanent test fixture, not a real BBC Micro peripheral.
+// read/write dispatch through the MemoryMap, gRPC service provision, and
+// 1 MHz bus ticking. It is a permanent test fixture, not a real BBC Micro
+// peripheral.
 class TestScratchRam : public PeripheralExtension,
                        public OneMHzBusDevice {
 public:
     static constexpr uint16_t kBaseOffset = 0x50;
     static constexpr uint16_t kEndOffset = 0x57;
     static constexpr uint16_t kSize = kEndOffset - kBaseOffset + 1;  // 8 bytes
+
+    TestScratchRam();
+    ~TestScratchRam() override;
+
+    static std::unique_ptr<TestScratchRam> create();
 
     std::string_view name() const override { return "test-scratch-ram"; }
 
@@ -47,11 +57,10 @@ public:
 
     std::span<const std::string_view> provides() const override { return {}; }
 
-    void init(ExtensionContext& ctx) override {
-        ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
-    }
+    void init(ExtensionContext& ctx) override;
+    void shutdown() override;
 
-    void shutdown() override {}
+    std::vector<grpc::Service*> grpc_services() override;
 
     // OneMHzBusDevice interface
 
@@ -63,12 +72,13 @@ public:
         ram_[offset - kBaseOffset] = value;
     }
 
-    // Direct access for testing
+    // Direct access for testing and service implementation
     uint8_t peek(uint16_t index) const { return ram_[index]; }
     void poke(uint16_t index, uint8_t value) { ram_[index] = value; }
 
 private:
     std::array<uint8_t, kSize> ram_{};
+    std::unique_ptr<ScratchRamServiceImpl> service_;
 };
 
 }  // namespace beebium
