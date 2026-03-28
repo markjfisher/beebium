@@ -38,8 +38,14 @@ std::unique_ptr<ScsiHardDiscExtension> ScsiHardDiscExtension::create() {
 }
 
 void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
-    // Discover the SCSI adapter via the "scsi" extension point
-    adapter_ = ctx.provider("scsi");
+    // Discover the SCSI adapter via the "scsi" extension point.
+    // If adapter-id is specified, look up a specific adapter; otherwise use the default.
+    auto adapter_id = config_value("adapter-id");
+    if (adapter_id) {
+        adapter_ = ctx.provider("scsi", std::string(*adapter_id));
+    } else {
+        adapter_ = ctx.provider("scsi");
+    }
     if (!adapter_) {
         throw std::runtime_error(
             "ScsiHardDiscExtension: no SCSI adapter found (missing 'scsi' provider)");
@@ -51,11 +57,31 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
             "ScsiHardDiscExtension: 'scsi' provider is not an AcornScsiHostAdapter");
     }
 
+    // Read SCSI target ID from config (default 0)
+    uint8_t target_id = 0;
+    auto scsi_id_str = config_value("scsi-id");
+    if (scsi_id_str) {
+        target_id = static_cast<uint8_t>(std::stoi(std::string(*scsi_id_str)));
+    } else if (scsi_id_ != 0) {
+        // Legacy: use programmatic setter value
+        target_id = scsi_id_;
+    }
+
+    // Read image filepath from config
+    std::filesystem::path image_path;
+    auto image_str = config_value("image");
+    if (image_str) {
+        image_path = std::string(*image_str);
+    } else if (!image_filepath_.empty()) {
+        // Legacy: use programmatic setter value
+        image_path = image_filepath_;
+    }
+
     // If an image filepath was configured, load it and install as a target
-    if (!image_filepath_.empty()) {
-        auto image = HardDiskImage::open(image_filepath_);
+    if (!image_path.empty()) {
+        auto image = HardDiskImage::open(image_path);
         disc_ = std::make_unique<ScsiHardDisc>(std::move(image));
-        scsi_adapter->target_registry().install(scsi_id_, std::move(disc_));
+        scsi_adapter->target_registry().install(target_id, std::move(disc_));
         scsi_adapter->target_registry().wire_to_bus(scsi_adapter->bus());
     }
 }
