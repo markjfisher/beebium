@@ -1666,6 +1666,7 @@ public:
 
             // Load plugin extensions (from --<cli-name> flags)
             if (!config.extension_dirpath.empty()) {
+                std::cout << "Extension directory: " << config.extension_dirpath << "\n";
                 auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
                 for (auto& inst : config.extension_instances) {
                     auto* manifest = beebium::PluginLoader::find_manifest(manifests, inst.name);
@@ -1678,6 +1679,16 @@ public:
                     if (inst.config.find("id") == inst.config.end()) {
                         inst.config["id"] = generate_uuid_v4();
                     }
+                    std::cout << "Loading extension: " << inst.name;
+                    if (inst.config.count("id")) {
+                        std::cout << " (id=" << inst.config["id"] << ")";
+                    }
+                    std::cout << "\n";
+                    for (const auto& [key, value] : inst.config) {
+                        if (key != "id") {
+                            std::cout << "  " << key << "=" << value << "\n";
+                        }
+                    }
                     plugin_loader.load_extension(*manifest, extension_registry,
                                                   std::move(inst.config));
                 }
@@ -1686,10 +1697,28 @@ public:
                 return ExitCode::USAGE;
             }
 
-            // Initialise extensions
+            // Initialise extensions (dependency resolution + topological sort)
+            std::cout << "Initialising extensions...\n";
             beebium::ExtensionContext extension_context(
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr);
             extension_registry.resolve_and_init(extension_context);
+
+            // Log initialisation order
+            for (auto* ext : extension_registry.extensions()) {
+                std::cout << "  " << ext->name();
+                if (!ext->id().empty()) {
+                    std::cout << " [" << ext->id() << "]";
+                }
+                if (!ext->provides().empty()) {
+                    std::cout << " provides:";
+                    for (auto p : ext->provides()) std::cout << " " << p;
+                }
+                if (!ext->attaches_to().empty()) {
+                    std::cout << " on:";
+                    for (auto a : ext->attaches_to()) std::cout << " " << a;
+                }
+                std::cout << "\n";
+            }
 
             // Create core discovery service for frontends to enumerate extensions
             beebium::service::PeripheralExtensionServiceImpl peripheral_extension_service(

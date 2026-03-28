@@ -51,11 +51,12 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
             "ScsiHardDiscExtension: no SCSI adapter found (missing 'scsi' provider)");
     }
 
-    auto* scsi_adapter = dynamic_cast<AcornScsiHostAdapter*>(adapter_);
-    if (!scsi_adapter) {
-        throw std::runtime_error(
-            "ScsiHardDiscExtension: 'scsi' provider is not an AcornScsiHostAdapter");
-    }
+    // The "scsi" extension point contract guarantees the provider is an
+    // AcornScsiHostAdapter. We use static_cast rather than dynamic_cast to
+    // avoid requiring the adapter's RTTI (typeinfo) in the plugin binary,
+    // which would force linking the adapter's static library and cause
+    // duplicate protobuf descriptor registration at dlopen time.
+    auto* scsi_adapter = static_cast<AcornScsiHostAdapter*>(adapter_);
 
     // Read SCSI target ID from config (default 0)
     uint8_t target_id = 0;

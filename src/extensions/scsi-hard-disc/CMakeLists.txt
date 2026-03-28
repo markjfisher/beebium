@@ -23,13 +23,17 @@ if(BEEBIUM_BUILD_SERVICE)
     )
 
     target_include_directories(beebium_ext_scsi_hard_disc_plugin
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            # Need AcornScsiHostAdapter.hpp for dynamic_cast, but must NOT link
+            # the acorn-scsi library (it contains proto descriptors that would
+            # conflict with the already-loaded acorn-scsi plugin)
+            ${CMAKE_SOURCE_DIR}/src/extensions/acorn-scsi
     )
 
     target_link_libraries(beebium_ext_scsi_hard_disc_plugin
         PRIVATE
             beebium_scsi_core
-            beebium_ext_acorn_scsi
     )
 
     set_target_properties(beebium_ext_scsi_hard_disc_plugin PROPERTIES
