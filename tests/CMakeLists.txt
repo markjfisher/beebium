@@ -51,6 +51,11 @@ add_executable(test_scsi_target_registry test_scsi_target_registry.cpp)
 target_link_libraries(test_scsi_target_registry PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
 catch_discover_tests(test_scsi_target_registry)
 
+# Acorn SCSI host adapter integration tests (through hardware memory map)
+add_executable(test_acorn_scsi_integration test_acorn_scsi_integration.cpp)
+target_link_libraries(test_acorn_scsi_integration PRIVATE beebium_ext_acorn_scsi Catch2::Catch2WithMain)
+catch_discover_tests(test_acorn_scsi_integration)
+
 # 1 MHz bus port tests
 add_executable(test_one_mhz_bus_port test_one_mhz_bus_port.cpp)
 target_link_libraries(test_one_mhz_bus_port PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -720,6 +725,15 @@ if(BEEBIUM_BUILD_SERVICE)
         Catch2::Catch2WithMain
     )
     catch_discover_tests(test_grpc_scratch_ram)
+
+    # SCSI host adapter gRPC service tests
+    add_executable(test_grpc_scsi_host_adapter test_grpc_scsi_host_adapter.cpp)
+    target_link_libraries(test_grpc_scsi_host_adapter PRIVATE
+        beebium_service
+        beebium_ext_acorn_scsi
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_scsi_host_adapter)
 
     # Econet service tests
     add_executable(test_grpc_econet test_grpc_econet.cpp)

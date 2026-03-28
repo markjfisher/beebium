@@ -1,0 +1,33 @@
+syntax = "proto3";
+package beebium;
+
+// Service for managing the Acorn SCSI host adapter and its attached targets.
+service ScsiHostAdapterService {
+    // List all SCSI targets (installed devices on the bus).
+    rpc ListTargets(ListScsiTargetsRequest) returns (ListScsiTargetsResponse);
+
+    // Query the current SCSI bus state.
+    rpc GetBusStatus(GetScsiBusStatusRequest) returns (GetScsiBusStatusResponse);
+}
+
+message ListScsiTargetsRequest {}
+
+message ListScsiTargetsResponse {
+    repeated ScsiTargetInfo targets = 1;
+}
+
+message ScsiTargetInfo {
+    uint32 id = 1;              // SCSI ID 0-7
+    bool present = 2;           // target responding on the bus
+    string device_type = 3;     // e.g. "hard-disc", "test-device", "vp415"
+    string description = 4;     // human-readable description
+}
+
+message GetScsiBusStatusRequest {}
+
+message GetScsiBusStatusResponse {
+    string phase = 1;           // e.g. "BUS_FREE", "COMMAND", "DATA_IN"
+    uint32 selected_target = 2; // 0xFF if none selected
+    uint32 status_register = 3; // raw status register byte
+    bool irq_pending = 4;
+}
