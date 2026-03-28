@@ -62,7 +62,7 @@ TEST_CASE("AcornScsiHostAdapter accessible through ModelBHardware",
     ScsiIntegrationFixture f;
 
     // Status register should be readable at 0xFC41
-    REQUIRE(f.hw.read(0xFC41) == 0x00);  // BUS_FREE: all bits clear
+    REQUIRE(f.hw.read(0xFC41) == SR_REQ);  // BUS_FREE: only REQ set (Acorn adapter quirk)
 }
 
 TEST_CASE("AcornScsiHostAdapter claims correct address range",
@@ -122,7 +122,7 @@ TEST_CASE("AcornScsiHostAdapter complete TEST UNIT READY through memory map",
     REQUIRE(message == MSG_COMMAND_COMPLETE);
 
     // Back to BUS_FREE
-    REQUIRE(f.hw.read(0xFC41) == 0x00);
+    REQUIRE(f.hw.read(0xFC41) == SR_REQ);  // BUS_FREE
 }
 
 TEST_CASE("AcornScsiHostAdapter READ(6) through memory map",
@@ -161,5 +161,5 @@ TEST_CASE("AcornScsiHostAdapter READ(6) through memory map",
     // Status + Message + BUS_FREE
     f.hw.read(0xFC40);  // status
     f.hw.read(0xFC40);  // message
-    REQUIRE(f.hw.read(0xFC41) == 0x00);  // BUS_FREE
+    REQUIRE(f.hw.read(0xFC41) == SR_REQ);  // BUS_FREE (only REQ set)
 }

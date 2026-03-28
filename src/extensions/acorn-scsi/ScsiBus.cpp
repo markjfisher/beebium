@@ -69,40 +69,44 @@ void ScsiBus::write_register(uint8_t reg, uint8_t value) {
 // ---------------------------------------------------------------------------
 
 uint8_t ScsiBus::status_register() const {
-    uint8_t sr = 0;
+    // REQ is always set (0x20) -- this matches the Acorn SCSI host adapter
+    // hardware behaviour and is required by the ADFS SCSI driver. Both b2
+    // and BeebEm hardcode REQ=1 in all phases. BeebEm comments: "don't know
+    // why req has to always be active? If start at 0x00, ADFS lock up on entry".
+    uint8_t sr = scsi::SR_REQ;
 
     switch (phase_) {
         case ScsiBusPhase::BusFree:
-            // All bits clear
+            // Only REQ set, all others clear
             break;
 
         case ScsiBusPhase::Selection:
-            sr = scsi::SR_BSY | scsi::SR_REQ;
+            sr |= scsi::SR_BSY;
             break;
 
         case ScsiBusPhase::Command:
             // CD=1 IO=0 : host writes command bytes
-            sr = scsi::SR_BSY | scsi::SR_REQ | scsi::SR_CD;
+            sr |= scsi::SR_BSY | scsi::SR_CD;
             break;
 
         case ScsiBusPhase::DataIn:
             // CD=0 IO=1 : host reads data
-            sr = scsi::SR_BSY | scsi::SR_REQ | scsi::SR_IO;
+            sr |= scsi::SR_BSY | scsi::SR_IO;
             break;
 
         case ScsiBusPhase::DataOut:
             // CD=0 IO=0 : host writes data
-            sr = scsi::SR_BSY | scsi::SR_REQ;
+            sr |= scsi::SR_BSY;
             break;
 
         case ScsiBusPhase::Status:
             // CD=1 IO=1 : host reads status byte
-            sr = scsi::SR_BSY | scsi::SR_REQ | scsi::SR_CD | scsi::SR_IO;
+            sr |= scsi::SR_BSY | scsi::SR_CD | scsi::SR_IO;
             break;
 
         case ScsiBusPhase::MessageIn:
             // CD=1 IO=1 MSG=1 : host reads message byte
-            sr = scsi::SR_BSY | scsi::SR_REQ | scsi::SR_CD | scsi::SR_IO | scsi::SR_MSG;
+            sr |= scsi::SR_BSY | scsi::SR_CD | scsi::SR_IO | scsi::SR_MSG;
             break;
     }
 
@@ -154,15 +158,24 @@ uint8_t ScsiBus::read_data() {
 void ScsiBus::write_data(uint8_t value) {
     switch (phase_) {
         case ScsiBusPhase::BusFree:
-            // Write to data register in BusFree with sel_asserted triggers selection
+            // Write to data register in BusFree with sel_asserted triggers selection.
+            // The data value is saved for later target ID resolution but does NOT
+            // determine whether selection occurs -- matching b2/BeebEm behaviour
+            // where ADFS writes the target bitmask and the emulator just enters
+            // Selection unconditionally.
             if (sel_asserted_) {
-                // value contains the target ID as a bit mask
-                for (uint8_t id = 0; id < scsi::MAX_TARGETS; ++id) {
-                    if (value & (1 << id)) {
-                        enter_selection(id);
-                        return;
-                    }
-                }
+                selection_data_ = value;
+                enter_selection();
+            }
+            break;
+
+        case ScsiBusPhase::Selection:
+            // Write to data register in Selection with !sel (i.e. via Write2
+            // which calls WriteData after clearing sel) transitions to Command.
+            // This matches b2's protocol where Write2 deasserts SEL and also
+            // passes the value through WriteData.
+            if (!sel_asserted_) {
+                enter_command();
             }
             break;
 
@@ -188,13 +201,11 @@ void ScsiBus::write_data(uint8_t value) {
 // Select register write
 // ---------------------------------------------------------------------------
 
-void ScsiBus::write_select(uint8_t /*value*/) {
-    // Write to select register (offset 0x02) deasserts SEL.
-    // In BeebEm/b2, this triggers the transition from Selection to Command
-    // when the bus is in Selection phase.
-    if (phase_ == ScsiBusPhase::Selection) {
-        enter_command();
-    }
+void ScsiBus::write_select(uint8_t value) {
+    // Write to select register (offset 0x02) deasserts SEL then passes the
+    // value through write_data -- matching b2's Write2 which does both.
+    // In Selection phase, write_data sees !sel and transitions to Command.
+    write_data(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,15 +236,27 @@ void ScsiBus::enter_bus_free() {
     data_index_ = 0;
 }
 
-void ScsiBus::enter_selection(uint8_t target_id) {
-    if (target_id >= scsi::MAX_TARGETS || !targets_[target_id] ||
-        !targets_[target_id]->is_present()) {
-        // No target at this ID -- stay in BusFree
+void ScsiBus::enter_selection() {
+    // Enter Selection phase. The target ID is resolved later from the CDB's
+    // LUN field (bits 5-7 of byte 1). For now we select target 0 if present,
+    // matching the single-initiator single-target model used by Acorn ADFS.
+    // The selection_data_ byte written by the host is available but not used
+    // for target resolution by b2 or BeebEm.
+    uint8_t id = 0;
+    for (uint8_t i = 0; i < scsi::MAX_TARGETS; ++i) {
+        if (selection_data_ & (1 << i)) {
+            id = i;
+            break;
+        }
+    }
+
+    if (id >= scsi::MAX_TARGETS || !targets_[id] || !targets_[id]->is_present()) {
+        // No target -- stay in BusFree
         return;
     }
 
     phase_ = ScsiBusPhase::Selection;
-    selected_id_ = target_id;
+    selected_id_ = id;
 }
 
 void ScsiBus::enter_command() {

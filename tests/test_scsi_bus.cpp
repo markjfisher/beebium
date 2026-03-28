@@ -68,9 +68,14 @@ TEST_CASE("ScsiBus starts in BUS_FREE phase", "[scsi][bus]") {
     REQUIRE(bus.phase() == ScsiBusPhase::BusFree);
 }
 
-TEST_CASE("ScsiBus status register all zeros in BUS_FREE", "[scsi][bus]") {
+TEST_CASE("ScsiBus status register in BUS_FREE has REQ set", "[scsi][bus]") {
     ScsiBus bus;
-    REQUIRE(bus.status_register() == 0x00);
+    // REQ is always set on the Acorn SCSI adapter (required by ADFS)
+    REQUIRE(bus.status_register() == SR_REQ);
+    REQUIRE((bus.status_register() & SR_BSY) == 0);
+    REQUIRE((bus.status_register() & SR_CD) == 0);
+    REQUIRE((bus.status_register() & SR_IO) == 0);
+    REQUIRE((bus.status_register() & SR_MSG) == 0);
 }
 
 TEST_CASE("ScsiBus selection with no target stays BUS_FREE", "[scsi][bus]") {

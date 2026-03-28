@@ -124,6 +124,6 @@ TEST_CASE("ScsiHostAdapterService GetBusStatus returns BUS_FREE initially",
     REQUIRE(status.ok());
     REQUIRE(response.phase() == "BUS_FREE");
     REQUIRE(response.selected_target() == 0xFF);
-    REQUIRE(response.status_register() == 0x00);
+    REQUIRE(response.status_register() == 0x20);  // REQ always set (Acorn adapter quirk)
     REQUIRE(response.irq_pending() == false);
 }

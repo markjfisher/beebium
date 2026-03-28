@@ -80,7 +80,7 @@ public:
 private:
     // Phase transitions
     void enter_bus_free();
-    void enter_selection(uint8_t target_id);
+    void enter_selection();
     void enter_command();
     void enter_data_in(std::vector<uint8_t> data);
     void enter_data_out(size_t expected_bytes);
@@ -112,6 +112,7 @@ private:
 
     // Selection state
     bool sel_asserted_ = false;
+    uint8_t selection_data_ = 0;  // data byte written during selection
 
     // CDB assembly
     std::array<uint8_t, 12> cdb_buffer_{};
