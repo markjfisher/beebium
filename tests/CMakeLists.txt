@@ -675,6 +675,15 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_sideways)
 
+    # ScratchRam extension gRPC service tests
+    add_executable(test_grpc_scratch_ram test_grpc_scratch_ram.cpp)
+    target_link_libraries(test_grpc_scratch_ram PRIVATE
+        beebium_service
+        beebium_ext_test_scratch_ram
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_scratch_ram)
+
     # Econet service tests
     add_executable(test_grpc_econet test_grpc_econet.cpp)
     target_link_libraries(test_grpc_econet PRIVATE
@@ -723,6 +732,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_server_main PRIVATE
         beebium_service
+        beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain
@@ -740,6 +750,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_cli PRIVATE
         beebium_service
+        beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain

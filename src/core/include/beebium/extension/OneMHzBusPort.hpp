@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -107,6 +108,12 @@ private:
 
     std::array<OneMHzBusDevice*, kSize> device_map_;
     std::vector<OneMHzBusDevice*> tickable_devices_;
+};
+
+// Concept to detect hardware that has a 1 MHz bus port.
+template<typename T>
+concept HasOneMHzBus = requires(T& hw) {
+    { hw.one_mhz_bus() } -> std::convertible_to<OneMHzBusPort&>;
 };
 
 }  // namespace beebium

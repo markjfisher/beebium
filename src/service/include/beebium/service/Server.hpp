@@ -35,6 +35,7 @@
 
 #include <grpcpp/grpcpp.h>
 #include <memory>
+#include <span>
 #include <string>
 #include <sstream>
 #include <thread>
@@ -65,10 +66,12 @@ public:
     /// @param enable_advertisement Start mDNS advertisement on startup
     /// @param policy_config Shutdown policy configuration
     /// @param shutdown_callback Callback to invoke when client requests shutdown
+    /// @param extension_services Additional gRPC services from peripheral extensions
     void start(Provenance provenance, MachineIdentity identity,
                bool enable_advertisement = false,
                ShutdownPolicyConfig policy_config = {},
-               ShutdownCallback shutdown_callback = nullptr);
+               ShutdownCallback shutdown_callback = nullptr,
+               std::span<grpc::Service*> extension_services = {});
 
     /// Stop the server and wait for shutdown
     void stop();
@@ -162,7 +165,8 @@ template<typename MachineType>
 void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
                                 bool enable_advertisement,
                                 ShutdownPolicyConfig policy_config,
-                                ShutdownCallback shutdown_callback) {
+                                ShutdownCallback shutdown_callback,
+                                std::span<grpc::Service*> extension_services) {
     if (impl_->running) {
         return;
     }
@@ -244,6 +248,11 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->sideways_service.get());
     builder.RegisterService(impl_->econet_service.get());
     builder.RegisterService(impl_->tube_service.get());
+
+    // Register extension-provided services
+    for (auto* svc : extension_services) {
+        builder.RegisterService(svc);
+    }
 
     impl_->grpc_server = builder.BuildAndStart();
 

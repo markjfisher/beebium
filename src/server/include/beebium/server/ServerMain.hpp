@@ -13,6 +13,10 @@
 #ifndef BEEBIUM_SERVER_SERVER_MAIN_HPP
 #define BEEBIUM_SERVER_SERVER_MAIN_HPP
 
+#include "beebium/extension/ExtensionContext.hpp"
+#include "beebium/extension/ExtensionRegistry.hpp"
+#include "beebium/extension/OneMHzBusPort.hpp"
+#include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/disc/DiscLoader.hpp"
@@ -1565,6 +1569,21 @@ public:
             // Reset machine
             machine.reset();
 
+            // Set up peripheral extension registry
+            beebium::ExtensionRegistry extension_registry;
+            if constexpr (beebium::HasOneMHzBus<Memory>) {
+                extension_registry.register_extension_point("1mhz-bus");
+            }
+
+            // Register built-in extensions
+            extension_registry.register_extension(beebium::TestScratchRam::create());
+
+            // Initialise extensions
+            beebium::ExtensionContext extension_context(
+                beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr);
+            extension_registry.resolve_and_init(extension_context);
+            auto extension_services = extension_registry.collect_grpc_services();
+
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";
             beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
@@ -1617,7 +1636,8 @@ public:
                 }
             };
             server.start(std::move(provenance), std::move(identity),
-                        config.advertise, shutdown_policy_config, std::move(shutdown_callback));
+                        config.advertise, shutdown_policy_config, std::move(shutdown_callback),
+                        extension_services);
 
             // Wire Tube shared memory to TubeService (Phase 2: after server starts)
             if (tube_shm) {
@@ -1675,6 +1695,7 @@ public:
             }
 
             server.stop();
+            extension_registry.shutdown();
 
         } catch (const std::exception& e) {
             std::cerr << "Error: " << e.what() << "\n";
