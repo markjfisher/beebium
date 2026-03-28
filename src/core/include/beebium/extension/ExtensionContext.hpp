@@ -14,21 +14,27 @@
 #define BEEBIUM_EXTENSION_CONTEXT_HPP
 
 #include "OneMHzBusPort.hpp"
+#include "PeripheralExtension.hpp"
 
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <unordered_map>
 
 namespace beebium {
 
-// Provides type-safe access to port handles during extension init().
+// Provides type-safe access to port handles and initialised extension
+// providers during extension init().
 //
-// Each port type is accessed via get<PortType>(). New port types are added
-// by adding a pointer member and an if-constexpr branch in get<>().
+// Port handles are accessed via get<PortType>().
+// Extension providers are accessed via provider(extension_point_name).
 class ExtensionContext {
 public:
     explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr)
         : one_mhz_bus_port_(one_mhz_bus_port) {}
 
+    // Type-safe port handle access.
     template<typename T>
     T& get() {
         if constexpr (std::is_same_v<T, OneMHzBusPort>) {
@@ -52,8 +58,27 @@ public:
         }
     }
 
+    // Access an initialised extension that provides a named extension point.
+    // The dependency resolver guarantees the provider is initialised before
+    // any extension that attaches_to the same extension point.
+    // Returns nullptr if no provider is registered for the given name.
+    PeripheralExtension* provider(std::string_view extension_point) const {
+        auto it = providers_.find(std::string(extension_point));
+        if (it != providers_.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    // Register an initialised extension as the provider of a named extension
+    // point. Called by ExtensionRegistry after each extension's init().
+    void register_provider(std::string_view extension_point, PeripheralExtension* ext) {
+        providers_[std::string(extension_point)] = ext;
+    }
+
 private:
     OneMHzBusPort* one_mhz_bus_port_;
+    std::unordered_map<std::string, PeripheralExtension*> providers_;
 };
 
 }  // namespace beebium

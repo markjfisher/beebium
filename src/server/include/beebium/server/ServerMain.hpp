@@ -18,7 +18,6 @@
 #include "beebium/extension/OneMHzBusPort.hpp"
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
-#include "AcornScsiHostAdapter.hpp"
 #include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
@@ -1591,7 +1590,6 @@ public:
 
             // Register built-in extensions
             extension_registry.register_extension(beebium::TestScratchRam::create());
-            extension_registry.register_extension(beebium::AcornScsiHostAdapter::create());
 
             // Load plugin extensions (opt-in by name)
             if (!config.extension_dirpath.empty()) {

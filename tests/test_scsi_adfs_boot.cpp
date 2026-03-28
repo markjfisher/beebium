@@ -26,8 +26,7 @@
 #include <6502/6502.h>
 
 #include <AcornScsiHostAdapter.hpp>
-#include <ScsiHardDisc.hpp>
-#include <HardDiskImage.hpp>
+#include <ScsiHardDiscExtension.hpp>
 
 #include "test_keyboard_helpers.hpp"
 
@@ -131,25 +130,22 @@ TEST_CASE("ADFS SCSI boot and *CAT on Model B+", "[scsi][adfs][e2e]") {
     machine.memory().load_basic(basic.data(), basic.size());
     machine.memory().load_dfs(adfs.data(), adfs.size());  // ADFS goes in the DFS slot
 
-    // Install SCSI adapter on the 1 MHz bus
+    // Install SCSI adapter and hard disc as extensions (simulating plugin loading)
     ExtensionRegistry registry;
     registry.register_extension_point("1mhz-bus");
-    auto adapter_ext = AcornScsiHostAdapter::create();
-    auto* adapter = adapter_ext.get();
-    registry.register_extension(std::move(adapter_ext));
 
+    // SCSI adapter: attaches to "1mhz-bus", provides "scsi"
+    registry.register_extension(AcornScsiHostAdapter::create());
+
+    // Hard disc: attaches to "scsi" (dependency resolved by registry)
+    auto hdd_ext = ScsiHardDiscExtension::create();
+    hdd_ext->set_image_filepath(kAssetsDir / "scsi" / "scsi0.dat");
+    hdd_ext->set_scsi_id(0);
+    registry.register_extension(std::move(hdd_ext));
+
+    // Resolve dependencies and init: adapter first (provides "scsi"), then HDD
     ExtensionContext ctx(&machine.memory().one_mhz_bus());
     registry.resolve_and_init(ctx);
-
-    // Load SCSI disc image and install as target 0
-    auto image = HardDiskImage::open(kAssetsDir / "scsi" / "scsi0.dat");
-    REQUIRE(image != nullptr);
-    auto disc = std::make_unique<ScsiHardDisc>(std::move(image));
-    adapter->target_registry().install(0, std::move(disc));
-    adapter->target_registry().wire_to_bus(adapter->bus());
-
-    // Uncomment to enable SCSI bus trace for protocol debugging:
-    // adapter->bus().set_trace_enabled(true);
 
     // Enable video output and reset
     machine.memory().enable_video_output();

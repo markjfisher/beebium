@@ -1,0 +1,5 @@
+{
+    "name": "scsi-hard-disc",
+    "description": "SCSI hard disc target (DAT+DSC image)",
+    "library": "scsi-hard-disc"
+}

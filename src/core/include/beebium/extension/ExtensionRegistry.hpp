@@ -82,6 +82,9 @@ public:
 
             for (auto provided : ext->provides()) {
                 available.emplace(provided);
+                // Make this extension available to downstream extensions
+                // that attach_to this extension point.
+                ctx.register_provider(provided, ext);
             }
         }
     }

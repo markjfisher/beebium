@@ -62,7 +62,7 @@ catch_discover_tests(test_scsi_hard_disc_adfs)
 # SCSI ADFS full boot end-to-end test
 add_executable(test_scsi_adfs_boot test_scsi_adfs_boot.cpp)
 target_link_libraries(test_scsi_adfs_boot PRIVATE
-    beebium_ext_acorn_scsi
+    beebium_ext_scsi_hard_disc
     Catch2::Catch2WithMain
 )
 target_compile_definitions(test_scsi_adfs_boot PRIVATE
@@ -818,7 +818,6 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_server_main PRIVATE
         beebium_service
-        beebium_ext_acorn_scsi
         beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
@@ -837,7 +836,6 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     target_link_libraries(test_cli PRIVATE
         beebium_service
-        beebium_ext_acorn_scsi
         beebium_ext_test_scratch_ram
         nlohmann_json::nlohmann_json
         stb_image_write
