@@ -1,0 +1,189 @@
+// Copyright © 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+// Full end-to-end integration test: Boot a Model B+ with ADFS ROM and
+// SCSI hard disc, select the hard disc, and execute *CAT to verify the
+// complete stack from 6502 code through ADFS through SCSI bus protocol
+// to disc image file I/O.
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <beebium/Machines.hpp>
+#include <beebium/FrameAllocator.hpp>
+#include <beebium/FrameBuffer.hpp>
+#include <beebium/FrameRenderer.hpp>
+#include <beebium/extension/ExtensionContext.hpp>
+#include <beebium/extension/ExtensionRegistry.hpp>
+#include <6502/6502.h>
+
+#include <AcornScsiHostAdapter.hpp>
+#include <ScsiHardDisc.hpp>
+#include <HardDiskImage.hpp>
+
+#include "test_keyboard_helpers.hpp"
+
+#include <filesystem>
+#include <fstream>
+
+using namespace beebium;
+
+namespace {
+
+#ifdef BEEBIUM_ROM_DIR
+const std::filesystem::path kRomDir = BEEBIUM_ROM_DIR;
+#else
+const std::filesystem::path kRomDir;
+#endif
+
+#ifdef BEEBIUM_TEST_ASSETS_DIR
+const std::filesystem::path kAssetsDir = BEEBIUM_TEST_ASSETS_DIR;
+#else
+const std::filesystem::path kAssetsDir;
+#endif
+
+std::vector<uint8_t> load_rom(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file) return {};
+    return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+
+bool roms_available() {
+    return !kRomDir.empty()
+        && std::filesystem::exists(kRomDir / "acorn-mos_2_0.rom")
+        && std::filesystem::exists(kRomDir / "bbc-basic_2.rom");
+}
+
+bool adfs_available() {
+    return !kAssetsDir.empty()
+        && std::filesystem::exists(kAssetsDir / "roms" / "acorn-adfs_1_30.rom")
+        && std::filesystem::exists(kAssetsDir / "scsi" / "scsi0.dat")
+        && std::filesystem::exists(kAssetsDir / "scsi" / "scsi0.dsc");
+}
+
+template<typename MachineType>
+std::string read_mode7_screen(MachineType& machine, int row, int col, int length) {
+    std::string result;
+    uint16_t addr = 0x7C00 + row * 40 + col;
+    for (int i = 0; i < length; ++i) {
+        uint8_t ch = machine.read(addr + i);
+        if (ch >= 0x20 && ch <= 0x7E) {
+            result += static_cast<char>(ch);
+        } else {
+            result += '.';
+        }
+    }
+    return result;
+}
+
+template<typename MachineType>
+bool find_string_on_screen(MachineType& machine, const std::string& target, int max_rows = 25) {
+    for (int row = 0; row < max_rows; ++row) {
+        std::string screen_row = read_mode7_screen(machine, row, 0, 40);
+        if (screen_row.find(target) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+template<typename MachineType>
+void dump_screen(MachineType& machine) {
+    for (int row = 0; row < 25; ++row) {
+        WARN("  Row " << row << ": [" << read_mode7_screen(machine, row, 0, 40) << "]");
+    }
+}
+
+void run_cycles(ModelBPlus& machine, FrameRenderer& renderer, uint64_t cycles) {
+    for (uint64_t i = 0; i < cycles; ++i) {
+        machine.step();
+        if (machine.memory().video_output.has_value()) {
+            renderer.process(machine.memory().video_output.value());
+        }
+    }
+}
+
+}  // namespace
+
+TEST_CASE("ADFS SCSI boot and *CAT on Model B+", "[scsi][adfs][e2e]") {
+    if (!roms_available()) SKIP("ROMs not available");
+    if (!adfs_available()) SKIP("ADFS ROM or SCSI disc image not available");
+
+    // Load ROMs
+    auto mos = load_rom(kRomDir / "acorn-mos_2_0.rom");
+    auto basic = load_rom(kRomDir / "bbc-basic_2.rom");
+    auto adfs = load_rom(kAssetsDir / "roms" / "acorn-adfs_1_30.rom");
+    REQUIRE(mos.size() == 16384);
+    REQUIRE(basic.size() == 16384);
+    REQUIRE(adfs.size() == 16384);
+
+    // Set up Model B+ with MOS 2.0, BASIC, and ADFS 1.30
+    ModelBPlus machine;
+    machine.memory().load_mos(mos.data(), mos.size());
+    machine.memory().load_basic(basic.data(), basic.size());
+    machine.memory().load_dfs(adfs.data(), adfs.size());  // ADFS goes in the DFS slot
+
+    // Install SCSI adapter on the 1 MHz bus
+    ExtensionRegistry registry;
+    registry.register_extension_point("1mhz-bus");
+    auto adapter_ext = AcornScsiHostAdapter::create();
+    auto* adapter = adapter_ext.get();
+    registry.register_extension(std::move(adapter_ext));
+
+    ExtensionContext ctx(&machine.memory().one_mhz_bus());
+    registry.resolve_and_init(ctx);
+
+    // Load SCSI disc image and install as target 0
+    auto image = HardDiskImage::open(kAssetsDir / "scsi" / "scsi0.dat");
+    REQUIRE(image != nullptr);
+    auto disc = std::make_unique<ScsiHardDisc>(std::move(image));
+    adapter->target_registry().install(0, std::move(disc));
+    adapter->target_registry().wire_to_bus(adapter->bus());
+
+    // Enable video output and reset
+    machine.memory().enable_video_output();
+    machine.reset();
+
+    // Set up frame rendering
+    HeapFrameAllocator allocator;
+    FrameBuffer fb(&allocator, 640, 512);
+    FrameRenderer renderer(&fb);
+
+    // Boot to BASIC prompt (~4M cycles)
+    INFO("Booting Model B+ with ADFS and SCSI hard disc...");
+    run_cycles(machine, renderer, 4'000'000);
+
+    // Check boot messages
+    INFO("Screen after boot:");
+    dump_screen(machine);
+
+    REQUIRE(find_string_on_screen(machine, "Acorn ADFS"));
+    REQUIRE(find_string_on_screen(machine, "BASIC"));
+
+    // Type *CAT to catalogue the hard disc
+    INFO("Typing *CAT...");
+    beebium::test::type_string_with_shift(machine, renderer, "*CAT\r", 100000);
+
+    // Wait for ADFS to read the disc catalogue via SCSI
+    INFO("Waiting for SCSI disc access...");
+    run_cycles(machine, renderer, 10'000'000);
+
+    // Check the catalogue output
+    INFO("Screen after *CAT:");
+    dump_screen(machine);
+
+    // The BeebEm scsi0.dat image should contain ADFS directory entries.
+    // At minimum, ADFS *CAT should show the directory header.
+    // The "$" root directory should be displayed.
+    CHECK(find_string_on_screen(machine, "$"));
+
+    registry.shutdown();
+}

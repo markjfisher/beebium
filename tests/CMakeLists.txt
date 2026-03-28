@@ -54,6 +54,18 @@ target_compile_definitions(test_scsi_hard_disc_adfs PRIVATE
 )
 catch_discover_tests(test_scsi_hard_disc_adfs)
 
+# SCSI ADFS full boot end-to-end test
+add_executable(test_scsi_adfs_boot test_scsi_adfs_boot.cpp)
+target_link_libraries(test_scsi_adfs_boot PRIVATE
+    beebium_ext_acorn_scsi
+    Catch2::Catch2WithMain
+)
+target_compile_definitions(test_scsi_adfs_boot PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_scsi_adfs_boot)
+
 # SCSI test device tests
 add_executable(test_scsi_test_device test_scsi_test_device.cpp)
 target_link_libraries(test_scsi_test_device PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
