@@ -1636,10 +1636,13 @@ public:
                 extension_registry.register_extension_point("1mhz-bus");
             }
 
-            // Register built-in extensions
-            extension_registry.register_extension(beebium::TestScratchRam::create());
+            // Register built-in extensions (assign auto-generated ids)
+            {
+                auto scratch_ram = beebium::TestScratchRam::create();
+                scratch_ram->set_config({{"id", generate_uuid_v4()}});
+                extension_registry.register_extension(std::move(scratch_ram));
+            }
 
-            // Load plugin extensions
             // Load plugin extensions (from --<cli-name> flags)
             if (!config.extension_dirpath.empty()) {
                 auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);

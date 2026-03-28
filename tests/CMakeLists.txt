@@ -36,6 +36,11 @@ add_executable(test_configurable_banked_memory test_configurable_banked_memory.c
 target_link_libraries(test_configurable_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_configurable_banked_memory)
 
+# Extension identity tests (id, label, qualified provider lookup)
+add_executable(test_extension_identity test_extension_identity.cpp)
+target_link_libraries(test_extension_identity PRIVATE beebium_ext_test_scratch_ram beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_extension_identity)
+
 # Extension argument parser tests
 add_executable(test_extension_arg_parser test_extension_arg_parser.cpp)
 target_link_libraries(test_extension_arg_parser PRIVATE beebium_core Catch2::Catch2WithMain)
