@@ -180,22 +180,24 @@ void ScsiBus::write_data(uint8_t value) {
     last_data_write_ = value;
     switch (phase_) {
         case ScsiBusPhase::BusFree:
-            // Write to data register in BusFree with sel_asserted triggers selection.
-            // The data value is saved for later target ID resolution but does NOT
-            // determine whether selection occurs -- matching b2/BeebEm behaviour
-            // where ADFS writes the target bitmask and the emulator just enters
-            // Selection unconditionally.
+            // Write to data register in BusFree. Save the value for read-back
+            // (ADFS probe) but do NOT enter Selection. Selection is triggered
+            // by the write to REG_SELECT (reg 2) which deasserts SEL.
+            //
+            // ADFS writes test patterns (0x5A, 0xA5) to the data register
+            // during its hardware probe and reads them back. If we entered
+            // Selection on these writes, ADFS would see BSY=1 and loop
+            // forever. Instead, we stay in BusFree and let the probe succeed.
+            // When ADFS later initiates a real SCSI transaction, it writes
+            // the target ID to reg 0 then writes to reg 2 to begin selection.
             if (sel_asserted_) {
                 selection_data_ = value;
-                enter_selection();
             }
             break;
 
         case ScsiBusPhase::Selection:
-            // Write to data register in Selection with !sel (i.e. via Write2
-            // which calls WriteData after clearing sel) transitions to Command.
-            // This matches b2's protocol where Write2 deasserts SEL and also
-            // passes the value through WriteData.
+            // Write to data register in Selection. If SEL is deasserted
+            // (write came via write_select/reg 2), transition to Command.
             if (!sel_asserted_) {
                 enter_command();
             }
@@ -224,9 +226,21 @@ void ScsiBus::write_data(uint8_t value) {
 // ---------------------------------------------------------------------------
 
 void ScsiBus::write_select(uint8_t value) {
-    // Write to select register (offset 0x02) deasserts SEL then passes the
-    // value through write_data -- matching b2's Write2 which does both.
-    // In Selection phase, write_data sees !sel and transitions to Command.
+    // Write to select register (offset 0x02) deasserts SEL.
+    // This is the trigger for the selection handshake:
+    // - In BusFree: enter Selection then immediately Command (the host
+    //   wrote the target ID to reg 0, then reg 2 to start the transaction)
+    // - In Selection: transition to Command
+    if (phase_ == ScsiBusPhase::BusFree) {
+        // The selection data was written earlier via Write0 (reg 0)
+        enter_selection();
+        if (phase_ == ScsiBusPhase::Selection) {
+            enter_command();
+        }
+    } else if (phase_ == ScsiBusPhase::Selection) {
+        enter_command();
+    }
+    // Also pass through to write_data for any data-phase handling
     write_data(value);
 }
 
