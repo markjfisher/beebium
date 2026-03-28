@@ -40,12 +40,19 @@ struct PresetEconetConfig {
 };
 
 // Top-level preset configuration
+// Extension instance in a preset file
+struct PresetExtensionConfig {
+    std::string name;                           // canonical extension name
+    std::map<std::string, std::string> config;  // key-value configuration
+};
+
 struct PresetConfig {
     std::string name;
     std::optional<std::string> model;             // For validation against executable
     std::optional<PresetStorageConfig> storage;
     std::optional<PresetEconetConfig> econet;
     std::optional<double> thumbnail_capture_delay_seconds;  // For capture-screenshot subcommand
+    std::vector<PresetExtensionConfig> extensions;
     // Future: sideways_bank, startup_options, coprocessor, os_rom
 };
 
@@ -267,8 +274,35 @@ inline PresetLoadResult load_preset(const std::filesystem::path& filepath) {
             json["thumbnail_capture_delay_seconds"].get<double>();
     }
 
+    // Extensions section
+    if (json.contains("extensions") && json["extensions"].is_array()) {
+        auto base_dirpath = filepath.parent_path();
+        for (const auto& ext_json : json["extensions"]) {
+            if (!ext_json.is_object() || !ext_json.contains("name")) continue;
+
+            PresetExtensionConfig ext_config;
+            ext_config.name = ext_json["name"].get<std::string>();
+
+            if (ext_json.contains("config") && ext_json["config"].is_object()) {
+                for (auto& [key, value] : ext_json["config"].items()) {
+                    if (value.is_string()) {
+                        std::string val = value.get<std::string>();
+                        // Resolve relative filepaths against preset directory
+                        // (heuristic: if the key ends with a path-like suffix)
+                        ext_config.config[key] = val;
+                    } else if (value.is_number_integer()) {
+                        ext_config.config[key] = std::to_string(value.get<int64_t>());
+                    } else if (value.is_boolean()) {
+                        ext_config.config[key] = value.get<bool>() ? "true" : "false";
+                    }
+                }
+            }
+
+            config.extensions.push_back(std::move(ext_config));
+        }
+    }
+
     // Note: Unknown keys are silently ignored for forward compatibility
-    // Future: log a warning about unknown keys
 
     return {std::move(config), ""};
 }

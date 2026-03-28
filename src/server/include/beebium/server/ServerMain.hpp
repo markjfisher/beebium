@@ -758,6 +758,14 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
             config.aun_port = econet.aun_port;  // may be nullopt (no network)
         }
     }
+
+    // Extensions (from preset, applied as baseline; CLI can add more)
+    for (const auto& ext : preset.extensions) {
+        typename ServerConfig<MachineType>::ExtensionInstance inst;
+        inst.name = ext.name;
+        inst.config = ext.config;
+        config.extension_instances.push_back(std::move(inst));
+    }
 }
 
 // Parse command-line arguments for the 'start' subcommand into a ServerConfig struct.
