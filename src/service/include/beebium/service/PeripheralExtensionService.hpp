@@ -35,11 +35,31 @@ public:
         for (auto* ext : registry_.extensions()) {
             auto* info = response->add_extensions();
             info->set_name(std::string(ext->name()));
+            info->set_id(std::string(ext->id()));
+            info->set_label(std::string(ext->label()));
+            info->set_description(std::string(ext->description()));
+
             for (auto dep : ext->attaches_to()) {
                 info->add_attaches_to(std::string(dep));
             }
             for (auto provided : ext->provides()) {
                 info->add_provides(std::string(provided));
+            }
+
+            // Current instance config
+            for (const auto& [key, value] : ext->config()) {
+                (*info->mutable_config())[key] = value;
+            }
+
+            // Parameter schema from manifest
+            for (const auto& param : ext->manifest().parameters) {
+                auto* p = info->add_parameters();
+                p->set_key(param.key);
+                p->set_type(param.type);
+                p->set_description(param.description);
+                p->set_position(param.position);
+                p->set_required(param.required);
+                p->set_default_value(param.default_value);
             }
         }
         return grpc::Status::OK;

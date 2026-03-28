@@ -16,7 +16,21 @@ message ListExtensionsResponse {
 }
 
 message ExtensionInfo {
-    string name = 1;
-    repeated string attaches_to = 2;
-    repeated string provides = 3;
+    string name = 1;                        // extension type (from manifest)
+    string id = 2;                          // instance identity (UUID or user-provided)
+    string label = 3;                       // display name (falls back to id)
+    repeated string attaches_to = 4;
+    repeated string provides = 5;
+    map<string, string> config = 6;         // current instance configuration
+    repeated ParameterSchemaInfo parameters = 7;  // from manifest schema
+    string description = 8;                 // from manifest
+}
+
+message ParameterSchemaInfo {
+    string key = 1;
+    string type = 2;                        // "string", "integer", "boolean", "filepath"
+    string description = 3;
+    int32 position = 4;                     // -1 = keyword-only
+    bool required = 5;
+    string default_value = 6;
 }
