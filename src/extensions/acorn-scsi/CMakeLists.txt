@@ -5,6 +5,8 @@ add_library(beebium_scsi_core STATIC
     ScsiBus.cpp
     ScsiTestDevice.cpp
     ScsiTargetRegistry.cpp
+    HardDiskImage.cpp
+    ScsiHardDisc.cpp
 )
 
 target_include_directories(beebium_scsi_core

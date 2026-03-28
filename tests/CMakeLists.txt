@@ -36,6 +36,16 @@ add_executable(test_configurable_banked_memory test_configurable_banked_memory.c
 target_link_libraries(test_configurable_banked_memory PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_configurable_banked_memory)
 
+# Hard disk image (DAT+DSC) tests
+add_executable(test_hard_disk_image test_hard_disk_image.cpp)
+target_link_libraries(test_hard_disk_image PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+catch_discover_tests(test_hard_disk_image)
+
+# SCSI hard disc target tests
+add_executable(test_scsi_hard_disc test_scsi_hard_disc.cpp)
+target_link_libraries(test_scsi_hard_disc PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
+catch_discover_tests(test_scsi_hard_disc)
+
 # SCSI test device tests
 add_executable(test_scsi_test_device test_scsi_test_device.cpp)
 target_link_libraries(test_scsi_test_device PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
