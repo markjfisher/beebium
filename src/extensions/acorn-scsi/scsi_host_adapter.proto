@@ -8,6 +8,11 @@ service ScsiHostAdapterService {
 
     // Query the current SCSI bus state.
     rpc GetBusStatus(GetScsiBusStatusRequest) returns (GetScsiBusStatusResponse);
+
+    // Stream SCSI bus events in real-time. Events are emitted for phase
+    // transitions, commands dispatched, data transfers, and completion.
+    // The stream continues until the client disconnects.
+    rpc WatchBusEvents(WatchScsiBusEventsRequest) returns (stream ScsiBusEvent);
 }
 
 message ListScsiTargetsRequest {}
@@ -30,4 +35,72 @@ message GetScsiBusStatusResponse {
     uint32 selected_target = 2; // 0xFF if none selected
     uint32 status_register = 3; // raw status register byte
     bool irq_pending = 4;
+}
+
+// Request to start watching SCSI bus events.
+message WatchScsiBusEventsRequest {
+    // If true, include register-level reads/writes (verbose).
+    // If false, only include command-level events.
+    bool include_register_access = 1;
+}
+
+// A single SCSI bus event.
+message ScsiBusEvent {
+    uint64 cycle_count = 1;     // emulated cycle count when the event occurred
+
+    oneof event {
+        PhaseChangeEvent phase_change = 2;
+        CommandEvent command = 3;
+        DataTransferEvent data_transfer = 4;
+        StatusEvent status = 5;
+        RegisterAccessEvent register_access = 6;
+        SelectionEvent selection = 7;
+    }
+}
+
+// The bus transitioned to a new phase.
+message PhaseChangeEvent {
+    string from_phase = 1;      // e.g. "COMMAND"
+    string to_phase = 2;        // e.g. "DATA_OUT"
+}
+
+// A complete SCSI command was dispatched to a target.
+message CommandEvent {
+    uint32 target_id = 1;       // SCSI target that received the command
+    uint32 opcode = 2;          // SCSI opcode (e.g. 0x08 = READ(6), 0x0A = WRITE(6))
+    string opcode_name = 3;     // human-readable name (e.g. "WRITE(6)")
+    bytes cdb = 4;              // complete Command Descriptor Block
+    uint32 lba = 5;             // logical block address (decoded from CDB)
+    uint32 block_count = 6;     // number of blocks (decoded from CDB)
+}
+
+// A data transfer phase completed (or is in progress).
+message DataTransferEvent {
+    string direction = 1;       // "IN" (target->host) or "OUT" (host->target)
+    uint32 bytes_expected = 2;  // total bytes expected for this transfer
+    uint32 bytes_transferred = 3; // bytes transferred so far
+    bool complete = 4;          // true when transfer is complete
+}
+
+// Command completed with a status byte.
+message StatusEvent {
+    uint32 target_id = 1;
+    uint32 status_byte = 2;     // 0x00 = GOOD, 0x02 = CHECK CONDITION, etc.
+    string status_name = 3;     // human-readable name
+    uint32 message_byte = 4;    // message byte (typically 0x00 = COMMAND COMPLETE)
+}
+
+// A target was selected on the bus.
+message SelectionEvent {
+    uint32 target_id = 1;       // selected target ID
+    bool success = 2;           // true if target responded
+}
+
+// A register read or write (verbose, only if requested).
+message RegisterAccessEvent {
+    string operation = 1;       // "READ" or "WRITE"
+    uint32 register_index = 2;  // 0=data, 1=status, 2=select, 3=irq
+    string register_name = 3;   // "DATA", "STATUS", "SELECT", "IRQ"
+    uint32 value = 4;           // byte value read/written
+    string phase = 5;           // current bus phase
 }
