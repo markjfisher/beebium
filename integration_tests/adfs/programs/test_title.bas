@@ -1,0 +1,6 @@
+10 *ADFS
+20 REM Test *TITLE with spaces
+30 *TITLE Test Disc Title
+40 *CAT
+50 PRINT "TEST:TITLE-SET:PASS"
+60 PRINT "DONE"

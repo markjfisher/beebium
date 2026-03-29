@@ -10,40 +10,44 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""ADFS integration test: *CAT and *EX commands on a blank disc."""
+"""ADFS integration test: *MOUNT resets current directory to root."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from beebium.screen import screen_contains, dump_screen
+from beebium.screen import dump_screen
 
 from adfs_test_support.basictool import tokenise
 from adfs_test_support.disc_builder import build_test_disc
 from adfs_test_support.helpers import load_and_run, parse_results
 
-from adfs_test_support import PROGRAMS_DIRPATH
+PROGRAM_FILEPATH = Path(__file__).parent.parent / "programs" / "test_mount.bas"
 
 
 @pytest.fixture
 def test_disc_ssd(basictool_filepath):
-    """Tokenise test_cat.bas and build a DFS SSD."""
-    source = (PROGRAMS_DIRPATH / "test_cat.bas").read_text()
+    """Tokenise test_mount.bas and build a DFS SSD."""
+    source = PROGRAM_FILEPATH.read_text()
     tokenised = tokenise(source, basictool_filepath)
     return build_test_disc("TEST", tokenised)
 
 
-def test_adfs_cat_on_blank_disc(bbc_adfs):
-    """Run *CAT and *EX on a blank ADFS hard disc."""
+def test_adfs_dir_to_subdirectory(bbc_adfs):
+    """*DIR changes into a subdirectory before *MOUNT."""
     ok = load_and_run(bbc_adfs)
     assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
-
     results = parse_results(bbc_adfs)
-    assert results.get("CAT-ROOT") == "PASS", \
-        f"*CAT failed:\n{dump_screen(bbc_adfs.memory)}"
-    assert results.get("EX-ROOT") == "PASS", \
-        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"
+    assert results.get("DIR-SUB") == "PASS", \
+        f"*DIR to subdirectory failed:\n{dump_screen(bbc_adfs.memory)}"
 
-    # Verify the root directory marker appears on screen
-    assert screen_contains(bbc_adfs.memory, "$"), \
-        f"Root directory '$' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+
+def test_adfs_mount_resets_to_root(bbc_adfs):
+    """*MOUNT resets current selected directory to root."""
+    ok = load_and_run(bbc_adfs)
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    results = parse_results(bbc_adfs)
+    assert results.get("MOUNT-ROOT") == "PASS", \
+        f"*MOUNT did not reset to root:\n{dump_screen(bbc_adfs.memory)}"

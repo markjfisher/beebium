@@ -28,9 +28,11 @@ from pathlib import Path
 
 import pytest
 
+from beebium.client import Beebium
 from beebium.screen import screen_contains, dump_screen
 
-from adfs_test_support.basictool import build_basictool
+from adfs_test_support.basictool import build_basictool, tokenise
+from adfs_test_support.disc_builder import build_test_disc
 from adfs_test_support.hard_disc_image import extract_blank_adfs_image
 
 
@@ -141,5 +143,85 @@ def bplus_server_filepath():
 def blank_scsi_disc(tmp_path):
     """Extract a fresh blank 2 MB ADFS hard disc image for this test."""
     return extract_blank_adfs_image(tmp_path / "scsi0.dat", size_mb=2)
+
+
+@pytest.fixture
+def blank_scsi_disc_4mb(tmp_path):
+    """Extract a fresh blank 4 MB ADFS hard disc image for this test."""
+    return extract_blank_adfs_image(tmp_path / "scsi0.dat", size_mb=4)
+
+
+@pytest.fixture
+def blank_scsi_disc_8mb(tmp_path):
+    """Extract a fresh blank 8 MB ADFS hard disc image for this test."""
+    return extract_blank_adfs_image(tmp_path / "scsi0.dat", size_mb=8)
+
+
+from adfs_test_support import PROGRAMS_DIRPATH  # noqa: F401 (re-exported for tests)
+
+# ADFS ROM goes in slot 9 (IC62). Slots 14/15 are shared with BASIC on the B+.
+ADFS_SLOT = 9
+DFS_SLOT = 11
+
+
+def _make_bbc_adfs(bplus_server_filepath, mos_filepath, basic_filepath,
+                   adfs_rom_filepath, dfs_rom_filepath,
+                   scsi_dat_filepath, test_disc_ssd, tmp_path):
+    """Launch Model B+ with ADFS + SCSI + test program on floppy.
+
+    Returns a context manager yielding the Beebium instance.
+    """
+    ssd_filepath = tmp_path / "test.ssd"
+    ssd_filepath.write_bytes(test_disc_ssd)
+
+    extra_args = [
+        "--sideways", f"{ADFS_SLOT}:rom:{adfs_rom_filepath}",
+        "--sideways", f"{DFS_SLOT}:rom:{dfs_rom_filepath}",
+        "--floppy", f"0:{ssd_filepath}",
+        "--acorn-scsi",
+        "--scsi-hdd", f"0:{scsi_dat_filepath}",
+    ]
+
+    return Beebium.launch(
+        mos_filepath=mos_filepath,
+        basic_filepath=basic_filepath,
+        server_filepath=bplus_server_filepath,
+        extra_args=extra_args,
+        startup_timeout=15.0,
+    )
+
+
+@pytest.fixture
+def bbc_adfs(bplus_server_filepath, mos_filepath, basic_filepath,
+             adfs_rom_filepath, dfs_rom_filepath,
+             blank_scsi_disc, test_disc_ssd, tmp_path):
+    """Launch Model B+ with ADFS on a blank 2 MB SCSI disc + test program."""
+    with _make_bbc_adfs(bplus_server_filepath, mos_filepath, basic_filepath,
+                        adfs_rom_filepath, dfs_rom_filepath,
+                        blank_scsi_disc, test_disc_ssd, tmp_path) as bbc:
+        bbc.debugger.stop()
+        ok = bbc.run_until_or_timeout(
+            lambda: screen_contains(bbc.memory, ">"),
+            emulated_seconds=10.0,
+        )
+        assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+        yield bbc
+
+
+@pytest.fixture
+def bbc_adfs_4mb(bplus_server_filepath, mos_filepath, basic_filepath,
+                 adfs_rom_filepath, dfs_rom_filepath,
+                 blank_scsi_disc_4mb, test_disc_ssd, tmp_path):
+    """Launch Model B+ with ADFS on a blank 4 MB SCSI disc + test program."""
+    with _make_bbc_adfs(bplus_server_filepath, mos_filepath, basic_filepath,
+                        adfs_rom_filepath, dfs_rom_filepath,
+                        blank_scsi_disc_4mb, test_disc_ssd, tmp_path) as bbc:
+        bbc.debugger.stop()
+        ok = bbc.run_until_or_timeout(
+            lambda: screen_contains(bbc.memory, ">"),
+            emulated_seconds=10.0,
+        )
+        assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+        yield bbc
 
 

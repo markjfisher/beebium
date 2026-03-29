@@ -1,0 +1,62 @@
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+#
+# This file is part of Beebium.
+#
+# Beebium is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. Beebium is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License along with Beebium.
+# If not, see <https://www.gnu.org/licenses/>.
+
+"""ADFS integration test: *RENAME including cross-directory moves."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from beebium.screen import dump_screen
+
+from adfs_test_support.basictool import tokenise
+from adfs_test_support.disc_builder import build_test_disc
+from adfs_test_support.helpers import load_and_run, parse_results
+
+PROGRAM_FILEPATH = Path(__file__).parent.parent / "programs" / "test_rename.bas"
+
+
+@pytest.fixture
+def test_disc_ssd(basictool_filepath):
+    """Tokenise test_rename.bas and build a DFS SSD."""
+    source = PROGRAM_FILEPATH.read_text()
+    tokenised = tokenise(source, basictool_filepath)
+    return build_test_disc("TEST", tokenised)
+
+
+def test_adfs_rename_old_gone(bbc_adfs):
+    """After *RENAME, the old name no longer exists."""
+    ok = load_and_run(bbc_adfs)
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    results = parse_results(bbc_adfs)
+    assert results.get("OLD-GONE") == "PASS", \
+        f"Old file still exists after rename:\n{dump_screen(bbc_adfs.memory)}"
+
+
+def test_adfs_rename_new_exists(bbc_adfs):
+    """After *RENAME, the new name exists."""
+    ok = load_and_run(bbc_adfs)
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    results = parse_results(bbc_adfs)
+    assert results.get("NEW-EXISTS") == "PASS", \
+        f"New file not found after rename:\n{dump_screen(bbc_adfs.memory)}"
+
+
+def test_adfs_rename_cross_directory(bbc_adfs):
+    """*RENAME can move a file between directories."""
+    ok = load_and_run(bbc_adfs)
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    results = parse_results(bbc_adfs)
+    assert results.get("CROSS-DIR") == "PASS", \
+        f"Cross-directory rename failed:\n{dump_screen(bbc_adfs.memory)}"

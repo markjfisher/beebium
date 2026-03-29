@@ -10,9 +10,11 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""ADFS integration test: *CAT and *EX commands on a blank disc."""
+"""ADFS integration test: *TITLE with spaces and *CAT verification."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -22,28 +24,23 @@ from adfs_test_support.basictool import tokenise
 from adfs_test_support.disc_builder import build_test_disc
 from adfs_test_support.helpers import load_and_run, parse_results
 
-from adfs_test_support import PROGRAMS_DIRPATH
+PROGRAM_FILEPATH = Path(__file__).parent.parent / "programs" / "test_title.bas"
 
 
 @pytest.fixture
 def test_disc_ssd(basictool_filepath):
-    """Tokenise test_cat.bas and build a DFS SSD."""
-    source = (PROGRAMS_DIRPATH / "test_cat.bas").read_text()
+    """Tokenise test_title.bas and build a DFS SSD."""
+    source = PROGRAM_FILEPATH.read_text()
     tokenised = tokenise(source, basictool_filepath)
     return build_test_disc("TEST", tokenised)
 
 
-def test_adfs_cat_on_blank_disc(bbc_adfs):
-    """Run *CAT and *EX on a blank ADFS hard disc."""
+def test_adfs_title_with_spaces(bbc_adfs):
+    """*TITLE sets a multi-word title visible in *CAT output."""
     ok = load_and_run(bbc_adfs)
     assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
-
     results = parse_results(bbc_adfs)
-    assert results.get("CAT-ROOT") == "PASS", \
-        f"*CAT failed:\n{dump_screen(bbc_adfs.memory)}"
-    assert results.get("EX-ROOT") == "PASS", \
-        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"
-
-    # Verify the root directory marker appears on screen
-    assert screen_contains(bbc_adfs.memory, "$"), \
-        f"Root directory '$' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+    assert results.get("TITLE-SET") == "PASS", \
+        f"*TITLE failed:\n{dump_screen(bbc_adfs.memory)}"
+    assert screen_contains(bbc_adfs.memory, "Test Disc Title"), \
+        f"Title 'Test Disc Title' not found on screen:\n{dump_screen(bbc_adfs.memory)}"

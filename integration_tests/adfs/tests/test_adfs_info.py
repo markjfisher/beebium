@@ -10,9 +10,11 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""ADFS integration test: *CAT and *EX commands on a blank disc."""
+"""ADFS integration test: *INFO and *EX display file details."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -22,28 +24,33 @@ from adfs_test_support.basictool import tokenise
 from adfs_test_support.disc_builder import build_test_disc
 from adfs_test_support.helpers import load_and_run, parse_results
 
-from adfs_test_support import PROGRAMS_DIRPATH
+PROGRAM_FILEPATH = Path(__file__).parent.parent / "programs" / "test_info.bas"
 
 
 @pytest.fixture
 def test_disc_ssd(basictool_filepath):
-    """Tokenise test_cat.bas and build a DFS SSD."""
-    source = (PROGRAMS_DIRPATH / "test_cat.bas").read_text()
+    """Tokenise test_info.bas and build a DFS SSD."""
+    source = PROGRAM_FILEPATH.read_text()
     tokenised = tokenise(source, basictool_filepath)
     return build_test_disc("TEST", tokenised)
 
 
-def test_adfs_cat_on_blank_disc(bbc_adfs):
-    """Run *CAT and *EX on a blank ADFS hard disc."""
+def test_adfs_info(bbc_adfs):
+    """*INFO shows file details including addresses and length."""
     ok = load_and_run(bbc_adfs)
     assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
-
     results = parse_results(bbc_adfs)
-    assert results.get("CAT-ROOT") == "PASS", \
-        f"*CAT failed:\n{dump_screen(bbc_adfs.memory)}"
-    assert results.get("EX-ROOT") == "PASS", \
-        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"
+    assert results.get("INFO") == "PASS", \
+        f"*INFO failed:\n{dump_screen(bbc_adfs.memory)}"
+    # Verify the file name DATA appears in the *INFO output
+    assert screen_contains(bbc_adfs.memory, "DATA"), \
+        f"File name 'DATA' not found in *INFO output:\n{dump_screen(bbc_adfs.memory)}"
 
-    # Verify the root directory marker appears on screen
-    assert screen_contains(bbc_adfs.memory, "$"), \
-        f"Root directory '$' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+
+def test_adfs_ex(bbc_adfs):
+    """*EX shows directory listing with file details."""
+    ok = load_and_run(bbc_adfs)
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    results = parse_results(bbc_adfs)
+    assert results.get("EX") == "PASS", \
+        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"

@@ -1,0 +1,5 @@
+10 *ADFS
+20 REM Test *FREE on blank disc
+30 *FREE
+40 PRINT "TEST:FREE:PASS"
+50 PRINT "DONE"
