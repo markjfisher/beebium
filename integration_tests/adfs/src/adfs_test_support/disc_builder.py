@@ -20,8 +20,12 @@ from __future__ import annotations
 
 from oaknut_dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
-# BBC BASIC file metadata for DFS
-BASIC_LOAD_ADDRESS = 0xFF1900   # PAGE when DFS is active
+# BBC BASIC file metadata for DFS disc images.
+# BASIC programs are relocatable -- CHAIN/LOAD always load at the current
+# PAGE regardless of the stored load address. These values match what
+# BBC BASIC's SAVE command writes on a B+ with DFS + ADFS ROMs installed
+# (PAGE=&1F00).
+BASIC_LOAD_ADDRESS = 0xFF1F00   # PAGE on B+ with DFS + ADFS
 BASIC_EXEC_ADDRESS = 0xFF8023   # BASIC ROM entry point
 
 # 40-track single-sided: 40 * 10 * 256 = 102400 bytes

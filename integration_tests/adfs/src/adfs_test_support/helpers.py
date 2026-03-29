@@ -23,21 +23,38 @@ def load_and_run(bbc: Beebium, emulated_seconds: float = 30.0) -> bool:
 
     Returns True if the program completed (DONE appeared on screen).
     """
-    # Switch to DFS to access the floppy
+    # Switch to DFS, then CHAIN the test program from floppy.
+    # CHAIN does LOAD+RUN atomically. The program's first line should
+    # be *ADFS to switch the filing system back to ADFS.
+    #
+    # We wait for the command echo and subsequent prompt to avoid
+    # typing the next command before the previous one has finished.
     bbc.keyboard.type("*DISC\r")
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, ">"),
+        lambda: _has_prompt_after(bbc, "*DISC"),
         emulated_seconds=5.0,
     )
-    assert ok, f"Failed to get prompt after *DISC:\n{dump_screen(bbc.memory)}"
+    assert ok, f"*DISC failed:\n{dump_screen(bbc.memory)}"
 
-    # Load and run the test program from floppy
     bbc.keyboard.type('CHAIN "TEST"\r')
     ok = bbc.run_until_or_timeout(
         lambda: screen_contains(bbc.memory, "DONE"),
         emulated_seconds=emulated_seconds,
     )
     return ok
+
+
+def _has_prompt_after(bbc: Beebium, command: str) -> bool:
+    """Check that a '>' prompt appears on a line AFTER the given command."""
+    rows = read_mode7_screen(bbc.memory)
+    found_command = False
+    for row in rows:
+        stripped = row.strip()
+        if command in stripped:
+            found_command = True
+        elif found_command and stripped == ">":
+            return True
+    return False
 
 
 def parse_results(bbc: Beebium) -> dict[str, str]:
