@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <string>
 
 namespace beebium {
 
