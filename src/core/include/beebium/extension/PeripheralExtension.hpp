@@ -22,6 +22,13 @@
 #include <string_view>
 #include <vector>
 
+// Cross-platform symbol export for plugin entry points
+#ifdef _WIN32
+#define BEEBIUM_PLUGIN_EXPORT __declspec(dllexport)
+#else
+#define BEEBIUM_PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
 namespace grpc { class Service; }
 
 namespace beebium {

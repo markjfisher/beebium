@@ -15,7 +15,7 @@
 
 extern "C" {
 
-__attribute__((visibility("default")))
+BEEBIUM_PLUGIN_EXPORT
 beebium::PeripheralExtension* beebium_create_extension(const beebium::ExtensionManifest& manifest) {
     auto* ext = new beebium::AcornScsiHostAdapter();
     ext->set_manifest(manifest);

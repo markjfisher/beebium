@@ -47,7 +47,7 @@ std::unique_ptr<HardDiskImage> HardDiskImage::open(
         (perms & std::filesystem::perms::owner_write) == std::filesystem::perms::none;
 
     // Open DAT file
-    image->dat_file_ = std::fopen(dat_filepath.c_str(),
+    image->dat_file_ = std::fopen(dat_filepath.string().c_str(),
                                    image->write_protected_ ? "rb" : "r+b");
     if (!image->dat_file_) {
         throw std::runtime_error("Cannot open DAT file: " + dat_filepath.string());
@@ -55,7 +55,7 @@ std::unique_ptr<HardDiskImage> HardDiskImage::open(
 
     // Load or generate DSC
     if (std::filesystem::exists(image->dsc_filepath_)) {
-        FILE* dsc_file = std::fopen(image->dsc_filepath_.c_str(), "rb");
+        FILE* dsc_file = std::fopen(image->dsc_filepath_.string().c_str(), "rb");
         if (dsc_file) {
             std::fread(image->dsc_data_.data(), 1, kDscSize, dsc_file);
             std::fclose(dsc_file);
@@ -77,7 +77,7 @@ std::unique_ptr<HardDiskImage> HardDiskImage::create(
 
     // Create zero-filled DAT file
     {
-        FILE* f = std::fopen(dat_filepath.c_str(), "wb");
+        FILE* f = std::fopen(dat_filepath.string().c_str(), "wb");
         if (!f) {
             throw std::runtime_error("Cannot create DAT file: " + dat_filepath.string());
         }
@@ -110,7 +110,7 @@ std::unique_ptr<HardDiskImage> HardDiskImage::create(
     image->write_dsc();
 
     // Open DAT for read/write
-    image->dat_file_ = std::fopen(dat_filepath.c_str(), "r+b");
+    image->dat_file_ = std::fopen(dat_filepath.string().c_str(), "r+b");
     if (!image->dat_file_) {
         throw std::runtime_error("Cannot reopen DAT file: " + dat_filepath.string());
     }
@@ -186,7 +186,7 @@ void HardDiskImage::format() {
     uint64_t total_bytes = static_cast<uint64_t>(total_sectors()) * scsi::ACORN_BLOCK_SIZE;
 
     {
-        FILE* f = std::fopen(dat_filepath_.c_str(), "wb");
+        FILE* f = std::fopen(dat_filepath_.string().c_str(), "wb");
         if (f) {
             std::array<uint8_t, 4096> zeros{};
             uint64_t remaining = total_bytes;
@@ -199,7 +199,7 @@ void HardDiskImage::format() {
         }
     }
 
-    dat_file_ = std::fopen(dat_filepath_.c_str(), "r+b");
+    dat_file_ = std::fopen(dat_filepath_.string().c_str(), "r+b");
 }
 
 void HardDiskImage::generate_default_dsc(uint64_t file_size) {
@@ -223,7 +223,7 @@ void HardDiskImage::generate_default_dsc(uint64_t file_size) {
 }
 
 void HardDiskImage::write_dsc() {
-    FILE* f = std::fopen(dsc_filepath_.c_str(), "wb");
+    FILE* f = std::fopen(dsc_filepath_.string().c_str(), "wb");
     if (f) {
         std::fwrite(dsc_data_.data(), 1, kDscSize, f);
         std::fclose(f);
