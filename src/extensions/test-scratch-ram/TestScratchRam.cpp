@@ -29,6 +29,14 @@ std::unique_ptr<TestScratchRam> TestScratchRam::create() {
     return ext;
 }
 
+uint8_t TestScratchRam::read(uint16_t offset) {
+    return ram_[offset - kBaseOffset];
+}
+
+void TestScratchRam::write(uint16_t offset, uint8_t value) {
+    ram_[offset - kBaseOffset] = value;
+}
+
 void TestScratchRam::init(ExtensionContext& ctx) {
     ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
     service_ = std::make_unique<ScratchRamServiceImpl>(*this);

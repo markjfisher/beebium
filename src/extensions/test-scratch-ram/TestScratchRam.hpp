@@ -62,13 +62,8 @@ public:
 
     // OneMHzBusDevice interface
 
-    uint8_t read(uint16_t offset) override {
-        return ram_[offset - kBaseOffset];
-    }
-
-    void write(uint16_t offset, uint8_t value) override {
-        ram_[offset - kBaseOffset] = value;
-    }
+    uint8_t read(uint16_t offset) override;
+    void write(uint16_t offset, uint8_t value) override;
 
     // Direct access for testing and service implementation
     uint8_t peek(uint16_t index) const { return ram_[index]; }
