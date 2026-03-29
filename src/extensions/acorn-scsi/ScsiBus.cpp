@@ -328,6 +328,14 @@ void ScsiBus::enter_status(uint8_t status, uint8_t message) {
     phase_ = ScsiBusPhase::Status;
     status_byte_ = status;
     message_byte_ = message;
+    // Assert IRQ to notify the host that a phase change occurred.
+    // ADFS uses IRQ-driven I/O for SCSI operations: after sending a
+    // command or data, it enables IRQ and waits for the interrupt handler
+    // to signal completion. Without this, ADFS hangs after DATA_OUT
+    // transfers because it never learns the bus has reached STATUS phase.
+    if (irq_enabled_) {
+        irq_asserted_ = true;
+    }
 }
 
 void ScsiBus::enter_message_in() {
