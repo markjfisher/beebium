@@ -176,7 +176,7 @@ jobs:
             -DBEEBIUM_BUILD_SERVER=ON
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure

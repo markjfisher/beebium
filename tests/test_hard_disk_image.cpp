@@ -44,7 +44,7 @@ struct TempDir {
 
 // Create a test DAT file with patterned sectors
 void create_test_dat(const std::filesystem::path& filepath, uint32_t num_sectors) {
-    FILE* f = std::fopen(filepath.c_str(), "wb");
+    FILE* f = std::fopen(filepath.string().c_str(), "wb");
     REQUIRE(f != nullptr);
     for (uint32_t s = 0; s < num_sectors; ++s) {
         std::array<uint8_t, ACORN_BLOCK_SIZE> sector;
@@ -67,7 +67,7 @@ void create_test_dsc(const std::filesystem::path& filepath,
     dsc[17] = 0x80;
     dsc[19] = 0x80;
 
-    FILE* f = std::fopen(filepath.c_str(), "wb");
+    FILE* f = std::fopen(filepath.string().c_str(), "wb");
     REQUIRE(f != nullptr);
     std::fwrite(dsc.data(), 1, 22, f);
     std::fclose(f);
