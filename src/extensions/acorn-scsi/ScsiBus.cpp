@@ -51,6 +51,7 @@ uint8_t ScsiBus::read_register(uint8_t reg) {
                      reg, result,
                      std::string(scsi_phase_name(phase_)).c_str());
     }
+    emit_register_access("READ", reg, result);
     return result;
 }
 
@@ -60,6 +61,7 @@ void ScsiBus::write_register(uint8_t reg, uint8_t value) {
                      reg, value,
                      std::string(scsi_phase_name(phase_)).c_str());
     }
+    emit_register_access("WRITE", reg, value);
     switch (reg) {
         case scsi::REG_DATA:
             sel_asserted_ = true;
@@ -149,6 +151,9 @@ uint8_t ScsiBus::read_data() {
             if (data_index_ < data_buffer_.size()) {
                 uint8_t byte = data_buffer_[data_index_++];
                 if (data_index_ >= data_buffer_.size()) {
+                    emit_data_transfer("IN",
+                        static_cast<uint32_t>(data_buffer_.size()),
+                        static_cast<uint32_t>(data_index_), true);
                     enter_status(status_byte_, message_byte_);
                 }
                 return byte;
@@ -212,6 +217,9 @@ void ScsiBus::write_data(uint8_t value) {
             if (data_index_ < data_buffer_.size()) {
                 data_buffer_[data_index_++] = value;
                 if (data_index_ >= data_buffer_.size()) {
+                    emit_data_transfer("OUT",
+                        static_cast<uint32_t>(data_buffer_.size()),
+                        static_cast<uint32_t>(data_index_), true);
                     dispatch_command();
                 }
             }
@@ -262,7 +270,9 @@ void ScsiBus::write_irq_control(uint8_t value) {
 // ---------------------------------------------------------------------------
 
 void ScsiBus::enter_bus_free() {
+    auto old_phase = scsi_phase_name(phase_);
     phase_ = ScsiBusPhase::BusFree;
+    emit_phase_change(old_phase, scsi_phase_name(phase_));
     selected_id_ = 0xFF;
     sel_asserted_ = false;
     cdb_index_ = 0;
@@ -280,13 +290,16 @@ void ScsiBus::enter_selection() {
         if ((selection_data_ & (1 << id)) && targets_[id] && targets_[id]->is_present()) {
             phase_ = ScsiBusPhase::Selection;
             selected_id_ = id;
+            emit_selection(id, true);
             return;
         }
     }
     // No matching target present -- stay in BusFree
+    emit_selection(0xFF, false);
 }
 
 void ScsiBus::enter_command() {
+    emit_phase_change(scsi_phase_name(phase_), "COMMAND");
     phase_ = ScsiBusPhase::Command;
     cdb_index_ = 0;
     cdb_expected_length_ = 0;  // determined by first byte (opcode)
@@ -294,24 +307,31 @@ void ScsiBus::enter_command() {
 }
 
 void ScsiBus::enter_data_in(std::vector<uint8_t> data) {
+    emit_phase_change(scsi_phase_name(phase_), "DATA_IN");
+    emit_data_transfer("IN", static_cast<uint32_t>(data.size()), 0, false);
     phase_ = ScsiBusPhase::DataIn;
     data_buffer_ = std::move(data);
     data_index_ = 0;
 }
 
 void ScsiBus::enter_data_out(size_t expected_bytes) {
+    emit_phase_change(scsi_phase_name(phase_), "DATA_OUT");
+    emit_data_transfer("OUT", static_cast<uint32_t>(expected_bytes), 0, false);
     phase_ = ScsiBusPhase::DataOut;
     data_buffer_.resize(expected_bytes, 0);
     data_index_ = 0;
 }
 
 void ScsiBus::enter_status(uint8_t status, uint8_t message) {
+    emit_phase_change(scsi_phase_name(phase_), "STATUS");
+    emit_status(selected_id_, status, message);
     phase_ = ScsiBusPhase::Status;
     status_byte_ = status;
     message_byte_ = message;
 }
 
 void ScsiBus::enter_message_in() {
+    emit_phase_change(scsi_phase_name(phase_), "MESSAGE_IN");
     phase_ = ScsiBusPhase::MessageIn;
 }
 
@@ -332,6 +352,7 @@ void ScsiBus::receive_cdb_byte(uint8_t byte) {
     if (cdb_index_ >= cdb_expected_length_) {
         // CDB complete -- determine what to do
         auto cdb = std::span<const uint8_t>(cdb_buffer_.data(), cdb_expected_length_);
+        emit_command(selected_id_, cdb);
         auto transfer = decode_transfer(cdb);
 
         switch (transfer.direction) {
@@ -469,6 +490,135 @@ ScsiBus::TransferInfo ScsiBus::decode_transfer(std::span<const uint8_t> cdb) {
             // Unknown opcode -- treat as no data
             return {TransferInfo::Direction::None, 0};
     }
+}
+
+// ---------------------------------------------------------------------------
+// Event emission helpers
+// ---------------------------------------------------------------------------
+
+static std::string scsi_opcode_name(uint8_t opcode) {
+    switch (opcode) {
+        case scsi::OP_TEST_UNIT_READY:  return "TEST UNIT READY";
+        case scsi::OP_REZERO_UNIT:      return "REZERO UNIT";
+        case scsi::OP_REQUEST_SENSE:    return "REQUEST SENSE";
+        case scsi::OP_FORMAT_UNIT:      return "FORMAT UNIT";
+        case scsi::OP_READ_6:           return "READ(6)";
+        case scsi::OP_WRITE_6:          return "WRITE(6)";
+        case scsi::OP_SEEK:             return "SEEK";
+        case scsi::OP_TRANSLATE:        return "TRANSLATE";
+        case scsi::OP_INQUIRY:          return "INQUIRY";
+        case scsi::OP_MODE_SELECT_6:    return "MODE SELECT(6)";
+        case scsi::OP_MODE_SENSE_6:     return "MODE SENSE(6)";
+        case scsi::OP_START_STOP_UNIT:  return "START/STOP UNIT";
+        case scsi::OP_SEND_DIAGNOSTIC:  return "SEND DIAGNOSTIC";
+        case scsi::OP_READ_CAPACITY:    return "READ CAPACITY";
+        case scsi::OP_READ_10:          return "READ(10)";
+        case scsi::OP_WRITE_10:         return "WRITE(10)";
+        case scsi::OP_WRITE_AND_VERIFY: return "WRITE AND VERIFY";
+        case scsi::OP_VERIFY_10:        return "VERIFY(10)";
+        case scsi::OP_READ_FCODE:       return "READ F-CODE";
+        case scsi::OP_WRITE_FCODE:      return "WRITE F-CODE";
+        default:                        return "UNKNOWN(0x" + std::to_string(opcode) + ")";
+    }
+}
+
+static std::string scsi_status_name(uint8_t status) {
+    switch (status) {
+        case scsi::STATUS_GOOD:            return "GOOD";
+        case scsi::STATUS_CHECK_CONDITION: return "CHECK CONDITION";
+        case scsi::STATUS_BUSY:            return "BUSY";
+        default:                           return "UNKNOWN";
+    }
+}
+
+static constexpr const char* register_name(uint8_t reg) {
+    switch (reg) {
+        case scsi::REG_DATA:   return "DATA";
+        case scsi::REG_STATUS: return "STATUS";
+        case scsi::REG_SELECT: return "SELECT";
+        case scsi::REG_IRQ:    return "IRQ";
+        default:               return "?";
+    }
+}
+
+void ScsiBus::emit_phase_change(std::string_view from, std::string_view to) {
+    if (!event_buffer_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::PhaseChange;
+    e.from_phase = std::string(from);
+    e.to_phase = std::string(to);
+    event_buffer_->push(std::move(e));
+}
+
+void ScsiBus::emit_selection(uint8_t id, bool success) {
+    if (!event_buffer_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::Selection;
+    e.target_id = id;
+    e.selection_success = success;
+    event_buffer_->push(std::move(e));
+}
+
+void ScsiBus::emit_command(uint8_t target_id, std::span<const uint8_t> cdb) {
+    if (!event_buffer_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::Command;
+    e.target_id = target_id;
+    e.opcode = cdb.empty() ? 0 : cdb[0];
+    e.opcode_name = scsi_opcode_name(e.opcode);
+    e.cdb.assign(cdb.begin(), cdb.end());
+
+    // Decode LBA and block count from CDB
+    if (cdb.size() >= 6 && (e.opcode == scsi::OP_READ_6 || e.opcode == scsi::OP_WRITE_6)) {
+        e.lba = (static_cast<uint32_t>(cdb[1] & 0x1F) << 16)
+              | (static_cast<uint32_t>(cdb[2]) << 8)
+              | static_cast<uint32_t>(cdb[3]);
+        e.block_count = cdb[4] == 0 ? 256 : cdb[4];
+    } else if (cdb.size() >= 10 && (e.opcode == scsi::OP_READ_10 || e.opcode == scsi::OP_WRITE_10
+               || e.opcode == scsi::OP_WRITE_AND_VERIFY)) {
+        e.lba = (static_cast<uint32_t>(cdb[2]) << 24)
+              | (static_cast<uint32_t>(cdb[3]) << 16)
+              | (static_cast<uint32_t>(cdb[4]) << 8)
+              | static_cast<uint32_t>(cdb[5]);
+        e.block_count = (static_cast<uint32_t>(cdb[7]) << 8) | cdb[8];
+    }
+
+    event_buffer_->push(std::move(e));
+}
+
+void ScsiBus::emit_data_transfer(std::string_view direction, uint32_t expected,
+                                  uint32_t transferred, bool complete) {
+    if (!event_buffer_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::DataTransfer;
+    e.direction = std::string(direction);
+    e.bytes_expected = expected;
+    e.bytes_transferred = transferred;
+    e.transfer_complete = complete;
+    event_buffer_->push(std::move(e));
+}
+
+void ScsiBus::emit_status(uint8_t target_id, uint8_t status, uint8_t message) {
+    if (!event_buffer_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::Status;
+    e.target_id = target_id;
+    e.status_byte = status;
+    e.status_name = scsi_status_name(status);
+    e.message_byte = message;
+    event_buffer_->push(std::move(e));
+}
+
+void ScsiBus::emit_register_access(std::string_view op, uint8_t reg, uint8_t value) {
+    if (!event_buffer_ || !event_register_access_) return;
+    ScsiInternalEvent e;
+    e.type = ScsiInternalEvent::Type::RegisterAccess;
+    e.operation = std::string(op);
+    e.register_index = reg;
+    e.register_name = register_name(reg);
+    e.value = value;
+    e.phase = std::string(scsi_phase_name(phase_));
+    event_buffer_->push(std::move(e));
 }
 
 }  // namespace beebium

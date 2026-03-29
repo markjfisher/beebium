@@ -15,6 +15,7 @@
 
 #include "ScsiConstants.hpp"
 #include "ScsiTarget.hpp"
+#include "ScsiBusEventBuffer.hpp"
 
 #include <array>
 #include <cstdint>
@@ -77,8 +78,14 @@ public:
     // IRQ state
     bool irq_pending() const { return irq_enabled_ && irq_asserted_; }
 
-    // Diagnostic trace
+    // Diagnostic trace (stderr)
     void set_trace_enabled(bool enabled) { trace_enabled_ = enabled; }
+
+    // Structured event stream. The bus emits events to any attached buffer.
+    // The buffer is owned externally (typically by the gRPC service).
+    // Set to nullptr to disable event capture. Thread-safe.
+    void set_event_buffer(ScsiBusEventBuffer* buffer) { event_buffer_ = buffer; }
+    void set_event_register_access(bool enabled) { event_register_access_ = enabled; }
 
 private:
     // Phase transitions
@@ -137,6 +144,19 @@ private:
 
     // Trace
     bool trace_enabled_ = false;
+
+    // Event stream
+    ScsiBusEventBuffer* event_buffer_ = nullptr;
+    bool event_register_access_ = false;
+
+    // Event emission helpers
+    void emit_phase_change(std::string_view from, std::string_view to);
+    void emit_selection(uint8_t id, bool success);
+    void emit_command(uint8_t target_id, std::span<const uint8_t> cdb);
+    void emit_data_transfer(std::string_view direction, uint32_t expected,
+                            uint32_t transferred, bool complete);
+    void emit_status(uint8_t target_id, uint8_t status, uint8_t message);
+    void emit_register_access(std::string_view op, uint8_t reg, uint8_t value);
 };
 
 }  // namespace beebium
