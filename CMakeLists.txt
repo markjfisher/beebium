@@ -6,6 +6,10 @@ project(beebium
     LANGUAGES C CXX
 )
 
+# Position-independent code for all targets (required on Linux where static
+# libraries are linked into plugin shared libraries)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # C++ Standard (C++20 for concepts, constexpr improvements, std::span)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
