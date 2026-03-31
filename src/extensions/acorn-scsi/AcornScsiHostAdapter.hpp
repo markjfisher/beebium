@@ -72,6 +72,10 @@ public:
         bus_.write_register(static_cast<uint8_t>(offset - kBaseOffset), value);
     }
 
+    bool irq_pending() const override {
+        return bus_.irq_pending();
+    }
+
     // Access to internals for testing and service
     ScsiBus& bus() { return bus_; }
     const ScsiBus& bus() const { return bus_; }

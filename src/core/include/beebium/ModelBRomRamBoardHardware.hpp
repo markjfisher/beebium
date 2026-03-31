@@ -94,11 +94,12 @@ public:
     Via6522 system_via;
     Via6522 user_via;
 
-    // IRQ aggregator type - polls VIAs and Tube for IRQ status
+    // IRQ aggregator type - polls VIAs, Tube, and 1 MHz bus for IRQ status
     using IrqAggregatorType = IrqAggregator<
-        IrqBinding<Via6522, 0>,     // System VIA → bit 0
-        IrqBinding<Via6522, 1>,     // User VIA → bit 1
-        IrqBinding<TubeSocket, 2>   // Tube HIRQ → bit 2
+        IrqBinding<Via6522, 0>,        // System VIA → bit 0
+        IrqBinding<Via6522, 1>,        // User VIA → bit 1
+        IrqBinding<TubeSocket, 2>,     // Tube HIRQ → bit 2
+        IrqBinding<OneMHzBusPort, 3>   // 1 MHz bus devices (e.g. SCSI) → bit 3
     >;
 
     // Video hardware
@@ -653,7 +654,8 @@ private:
         return beebium::make_irq_aggregator(
             make_irq_binding<0>(system_via),
             make_irq_binding<1>(user_via),
-            make_irq_binding<2>(tube_socket)
+            make_irq_binding<2>(tube_socket),
+            make_irq_binding<3>(one_mhz_bus_)
         );
     }
 

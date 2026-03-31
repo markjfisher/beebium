@@ -28,6 +28,11 @@ struct OneMHzBusDevice {
     virtual uint8_t read(uint16_t offset) = 0;
     virtual void write(uint16_t offset, uint8_t value) = 0;
     virtual void tick() {}
+
+    // IRQ support. Devices that generate interrupts override this to
+    // return true when their IRQ line is asserted. The OneMHzBusPort
+    // aggregates IRQ status from all attached devices.
+    virtual bool irq_pending() const { return false; }
 };
 
 }  // namespace beebium

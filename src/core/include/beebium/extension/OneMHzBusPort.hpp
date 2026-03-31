@@ -99,6 +99,16 @@ public:
         return offset < kSize && device_map_[offset] != nullptr;
     }
 
+    // Poll IRQ status from all attached devices.
+    // Returns true if any device on the 1 MHz bus is asserting IRQ.
+    // Used by the IrqAggregator to include 1 MHz bus IRQs.
+    bool irq_pending() const {
+        for (auto* dev : tickable_devices_) {
+            if (dev->irq_pending()) return true;
+        }
+        return false;
+    }
+
 private:
     static std::string to_hex(uint16_t value) {
         char buf[8];
