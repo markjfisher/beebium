@@ -45,7 +45,7 @@ def test_adfs_free_2mb(bbc_adfs):
 
     rows = read_mode7_screen(bbc_adfs.memory)
     screen_text = "\n".join(rows)
-    assert "Bytes free" in screen_text or "bytes free" in screen_text, \
+    assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
         f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
 
 
@@ -59,5 +59,5 @@ def test_adfs_free_4mb(bbc_adfs_4mb):
 
     rows = read_mode7_screen(bbc_adfs_4mb.memory)
     screen_text = "\n".join(rows)
-    assert "Bytes free" in screen_text or "bytes free" in screen_text, \
+    assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
         f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs_4mb.memory)}"

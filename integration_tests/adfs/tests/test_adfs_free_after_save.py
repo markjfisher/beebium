@@ -47,5 +47,5 @@ def test_adfs_free_decreases_after_save(bbc_adfs):
 
     rows = read_mode7_screen(bbc_adfs.memory)
     screen_text = "\n".join(rows)
-    assert "Bytes free" in screen_text or "bytes free" in screen_text, \
-        f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+    assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
+        f"'Bytes Free' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
