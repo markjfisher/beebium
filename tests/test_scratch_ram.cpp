@@ -35,11 +35,11 @@ TEST_CASE("TestScratchRam write and read back", "[extension][scratch-ram]") {
     TestScratchRam ram;
     ram.init(ctx);
 
-    port.write(0x50, 0x42);
-    REQUIRE(port.read(0x50) == 0x42);
+    port.write(TestScratchRam::kBaseOffset, 0x42);
+    REQUIRE(port.read(TestScratchRam::kBaseOffset) == 0x42);
 
-    port.write(0x57, 0xAB);
-    REQUIRE(port.read(0x57) == 0xAB);
+    port.write(TestScratchRam::kEndOffset, 0xAB);
+    REQUIRE(port.read(TestScratchRam::kEndOffset) == 0xAB);
 }
 
 TEST_CASE("TestScratchRam all 8 bytes independent", "[extension][scratch-ram]") {
@@ -64,10 +64,10 @@ TEST_CASE("TestScratchRam does not affect adjacent addresses",
     TestScratchRam ram;
     ram.init(ctx);
 
-    port.write(0x50, 0xFF);
+    port.write(TestScratchRam::kBaseOffset, 0xFF);
 
-    REQUIRE(port.read(0x4F) == 0xFF);  // unclaimed, returns open bus 0xFF
-    REQUIRE(port.read(0x58) == 0xFF);  // unclaimed, returns open bus 0xFF
+    REQUIRE(port.read(TestScratchRam::kBaseOffset - 1) == 0xFF);  // unclaimed, returns open bus 0xFF
+    REQUIRE(port.read(TestScratchRam::kEndOffset + 1) == 0xFF);  // unclaimed, returns open bus 0xFF
 }
 
 TEST_CASE("TestScratchRam name and dependencies", "[extension][scratch-ram]") {
@@ -77,5 +77,5 @@ TEST_CASE("TestScratchRam name and dependencies", "[extension][scratch-ram]") {
     REQUIRE(ram->attaches_to().size() == 1);
     REQUIRE(ram->attaches_to()[0] == "1mhz-bus");
     REQUIRE(ram->provides().empty());
-    REQUIRE(ram->description() == "8 bytes of scratch RAM at 0xFC50 for framework testing");
+    REQUIRE(ram->description() == "8 bytes of scratch RAM at 0xFC80 (Test Hardware) for framework testing");
 }

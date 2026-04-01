@@ -29,7 +29,9 @@ namespace beebium {
 
 class ScratchRamServiceImpl;
 
-// 8 bytes of scratch RAM at FRED offsets 0x50-0x57 (absolute 0xFC50-0xFC57).
+// 8 bytes of scratch RAM at FRED offsets 0x80-0x87 (absolute 0xFC80-0xFC87).
+// This is within the "Test Hardware" range (FC80-FC8F) defined in the
+// Acorn 1 MHz Bus Application Note 003.
 //
 // This extension exists to validate the PeripheralExtension framework
 // end-to-end: extension registration, dependency resolution, address claiming,
@@ -39,8 +41,8 @@ class ScratchRamServiceImpl;
 class TestScratchRam : public PeripheralExtension,
                        public OneMHzBusDevice {
 public:
-    static constexpr uint16_t kBaseOffset = 0x50;
-    static constexpr uint16_t kEndOffset = 0x57;
+    static constexpr uint16_t kBaseOffset = 0x80;
+    static constexpr uint16_t kEndOffset = 0x87;
     static constexpr uint16_t kSize = kEndOffset - kBaseOffset + 1;  // 8 bytes
 
     TestScratchRam();

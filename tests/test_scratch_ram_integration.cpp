@@ -30,24 +30,27 @@ TEST_CASE("TestScratchRam accessible through ModelBHardware memory map",
     ExtensionContext ctx(&hw.one_mhz_bus());
     registry.resolve_and_init(ctx);
 
+    constexpr uint16_t base = 0xFC00 + TestScratchRam::kBaseOffset;
+    constexpr uint16_t end  = 0xFC00 + TestScratchRam::kEndOffset;
+
     SECTION("Write and read back through hardware memory map") {
-        hw.write(0xFC50, 0x42);
-        REQUIRE(hw.read(0xFC50) == 0x42);
+        hw.write(base, 0x42);
+        REQUIRE(hw.read(base) == 0x42);
     }
 
     SECTION("All 8 bytes accessible through memory map") {
-        for (uint16_t i = 0; i < 8; ++i) {
-            hw.write(0xFC50 + i, static_cast<uint8_t>(0xA0 + i));
+        for (uint16_t i = 0; i < TestScratchRam::kSize; ++i) {
+            hw.write(base + i, static_cast<uint8_t>(0xA0 + i));
         }
-        for (uint16_t i = 0; i < 8; ++i) {
-            REQUIRE(hw.read(0xFC50 + i) == static_cast<uint8_t>(0xA0 + i));
+        for (uint16_t i = 0; i < TestScratchRam::kSize; ++i) {
+            REQUIRE(hw.read(base + i) == static_cast<uint8_t>(0xA0 + i));
         }
     }
 
     SECTION("Addresses outside scratch RAM still return 0xFF") {
-        hw.write(0xFC50, 0x42);  // prove writes work
-        REQUIRE(hw.read(0xFC4F) == 0xFF);
-        REQUIRE(hw.read(0xFC58) == 0xFF);
+        hw.write(base, 0x42);  // prove writes work
+        REQUIRE(hw.read(base - 1) == 0xFF);
+        REQUIRE(hw.read(end + 1) == 0xFF);
         REQUIRE(hw.read(0xFC00) == 0xFF);
         REQUIRE(hw.read(0xFDFF) == 0xFF);
     }
@@ -61,7 +64,7 @@ TEST_CASE("ModelBHardware FRED/JIM returns 0xFF without extensions",
 
     // No extensions registered -- all FRED/JIM should be open bus
     REQUIRE(hw.read(0xFC00) == 0xFF);
-    REQUIRE(hw.read(0xFC50) == 0xFF);
+    REQUIRE(hw.read(0xFC80) == 0xFF);
     REQUIRE(hw.read(0xFD00) == 0xFF);
     REQUIRE(hw.read(0xFDFF) == 0xFF);
 }
