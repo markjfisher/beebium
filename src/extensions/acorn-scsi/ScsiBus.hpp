@@ -78,9 +78,6 @@ public:
     // IRQ state
     bool irq_pending() const { return irq_enabled_ && irq_asserted_; }
 
-    // Diagnostic trace (stderr)
-    void set_trace_enabled(bool enabled) { trace_enabled_ = enabled; }
-
     // Structured event stream. The bus emits events to any attached buffer.
     // The buffer is owned externally (typically by the gRPC service).
     // Set to nullptr to disable event capture. Thread-safe.
@@ -141,9 +138,6 @@ private:
     // IRQ
     bool irq_enabled_ = false;
     bool irq_asserted_ = false;
-
-    // Trace
-    bool trace_enabled_ = false;
 
     // Event stream
     ScsiBusEventBuffer* event_buffer_ = nullptr;

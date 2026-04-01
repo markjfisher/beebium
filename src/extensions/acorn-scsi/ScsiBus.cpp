@@ -12,8 +12,6 @@
 
 #include "ScsiBus.hpp"
 
-#include <algorithm>
-#include <cstdio>
 #include <string>
 
 namespace beebium {
@@ -46,24 +44,17 @@ uint8_t ScsiBus::read_register(uint8_t reg) {
         case scsi::REG_STATUS: result = status_register(); break;
         default:               result = 0xFF; break;
     }
-    if (trace_enabled_) {
-        std::fprintf(stderr, "SCSI R reg=%d val=0x%02X phase=%s\n",
-                     reg, result,
-                     std::string(scsi_phase_name(phase_)).c_str());
-    }
     emit_register_access("READ", reg, result);
     return result;
 }
 
 void ScsiBus::write_register(uint8_t reg, uint8_t value) {
-    if (trace_enabled_) {
-        std::fprintf(stderr, "SCSI W reg=%d val=0x%02X phase=%s\n",
-                     reg, value,
-                     std::string(scsi_phase_name(phase_)).c_str());
-    }
     emit_register_access("WRITE", reg, value);
     switch (reg) {
         case scsi::REG_DATA:
+            // Writing to registers 0 or 1 asserts SEL on the bus. This
+            // distinguishes data bus writes from the select register (reg 2)
+            // which deasserts SEL to trigger the selection handshake.
             sel_asserted_ = true;
             write_data(value);
             break;
@@ -551,26 +542,17 @@ static constexpr const char* register_name(uint8_t reg) {
 
 void ScsiBus::emit_phase_change(std::string_view from, std::string_view to) {
     if (!event_buffer_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::PhaseChange;
-    e.from_phase = std::string(from);
-    e.to_phase = std::string(to);
-    event_buffer_->push(std::move(e));
+    event_buffer_->push(ScsiPhaseChangeEvent{std::string(from), std::string(to)});
 }
 
 void ScsiBus::emit_selection(uint8_t id, bool success) {
     if (!event_buffer_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::Selection;
-    e.target_id = id;
-    e.selection_success = success;
-    event_buffer_->push(std::move(e));
+    event_buffer_->push(ScsiSelectionEvent{id, success});
 }
 
 void ScsiBus::emit_command(uint8_t target_id, std::span<const uint8_t> cdb) {
     if (!event_buffer_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::Command;
+    ScsiCommandEvent e;
     e.target_id = target_id;
     e.opcode = cdb.empty() ? 0 : cdb[0];
     e.opcode_name = scsi_opcode_name(e.opcode);
@@ -597,36 +579,21 @@ void ScsiBus::emit_command(uint8_t target_id, std::span<const uint8_t> cdb) {
 void ScsiBus::emit_data_transfer(std::string_view direction, uint32_t expected,
                                   uint32_t transferred, bool complete) {
     if (!event_buffer_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::DataTransfer;
-    e.direction = std::string(direction);
-    e.bytes_expected = expected;
-    e.bytes_transferred = transferred;
-    e.transfer_complete = complete;
-    event_buffer_->push(std::move(e));
+    event_buffer_->push(ScsiDataTransferEvent{
+        std::string(direction), expected, transferred, complete});
 }
 
 void ScsiBus::emit_status(uint8_t target_id, uint8_t status, uint8_t message) {
     if (!event_buffer_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::Status;
-    e.target_id = target_id;
-    e.status_byte = status;
-    e.status_name = scsi_status_name(status);
-    e.message_byte = message;
-    event_buffer_->push(std::move(e));
+    event_buffer_->push(ScsiStatusEvent{
+        target_id, status, scsi_status_name(status), message});
 }
 
 void ScsiBus::emit_register_access(std::string_view op, uint8_t reg, uint8_t value) {
     if (!event_buffer_ || !event_register_access_) return;
-    ScsiInternalEvent e;
-    e.type = ScsiInternalEvent::Type::RegisterAccess;
-    e.operation = std::string(op);
-    e.register_index = reg;
-    e.register_name = register_name(reg);
-    e.value = value;
-    e.phase = std::string(scsi_phase_name(phase_));
-    event_buffer_->push(std::move(e));
+    event_buffer_->push(ScsiRegisterAccessEvent{
+        std::string(op), reg, register_name(reg), value,
+        std::string(scsi_phase_name(phase_))});
 }
 
 }  // namespace beebium

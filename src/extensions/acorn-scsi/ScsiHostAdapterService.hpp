@@ -70,56 +70,46 @@ public:
 
             ::beebium::ScsiBusEvent proto_event;
 
-            switch (internal_event.type) {
-                case beebium::ScsiInternalEvent::Type::PhaseChange: {
+            std::visit([&proto_event](auto&& ev) {
+                using T = std::decay_t<decltype(ev)>;
+
+                if constexpr (std::is_same_v<T, ScsiPhaseChangeEvent>) {
                     auto* e = proto_event.mutable_phase_change();
-                    e->set_from_phase(internal_event.from_phase);
-                    e->set_to_phase(internal_event.to_phase);
-                    break;
-                }
-                case beebium::ScsiInternalEvent::Type::Selection: {
+                    e->set_from_phase(ev.from_phase);
+                    e->set_to_phase(ev.to_phase);
+                } else if constexpr (std::is_same_v<T, ScsiSelectionEvent>) {
                     auto* e = proto_event.mutable_selection();
-                    e->set_target_id(internal_event.target_id);
-                    e->set_success(internal_event.selection_success);
-                    break;
-                }
-                case beebium::ScsiInternalEvent::Type::Command: {
+                    e->set_target_id(ev.target_id);
+                    e->set_success(ev.success);
+                } else if constexpr (std::is_same_v<T, ScsiCommandEvent>) {
                     auto* e = proto_event.mutable_command();
-                    e->set_target_id(internal_event.target_id);
-                    e->set_opcode(internal_event.opcode);
-                    e->set_opcode_name(internal_event.opcode_name);
-                    e->set_cdb(std::string(internal_event.cdb.begin(),
-                                           internal_event.cdb.end()));
-                    e->set_lba(internal_event.lba);
-                    e->set_block_count(internal_event.block_count);
-                    break;
-                }
-                case beebium::ScsiInternalEvent::Type::DataTransfer: {
+                    e->set_target_id(ev.target_id);
+                    e->set_opcode(ev.opcode);
+                    e->set_opcode_name(ev.opcode_name);
+                    e->set_cdb(std::string(ev.cdb.begin(), ev.cdb.end()));
+                    e->set_lba(ev.lba);
+                    e->set_block_count(ev.block_count);
+                } else if constexpr (std::is_same_v<T, ScsiDataTransferEvent>) {
                     auto* e = proto_event.mutable_data_transfer();
-                    e->set_direction(internal_event.direction);
-                    e->set_bytes_expected(internal_event.bytes_expected);
-                    e->set_bytes_transferred(internal_event.bytes_transferred);
-                    e->set_complete(internal_event.transfer_complete);
-                    break;
-                }
-                case beebium::ScsiInternalEvent::Type::Status: {
+                    e->set_direction(ev.direction);
+                    e->set_bytes_expected(ev.bytes_expected);
+                    e->set_bytes_transferred(ev.bytes_transferred);
+                    e->set_complete(ev.complete);
+                } else if constexpr (std::is_same_v<T, ScsiStatusEvent>) {
                     auto* e = proto_event.mutable_status();
-                    e->set_target_id(internal_event.target_id);
-                    e->set_status_byte(internal_event.status_byte);
-                    e->set_status_name(internal_event.status_name);
-                    e->set_message_byte(internal_event.message_byte);
-                    break;
-                }
-                case beebium::ScsiInternalEvent::Type::RegisterAccess: {
+                    e->set_target_id(ev.target_id);
+                    e->set_status_byte(ev.status_byte);
+                    e->set_status_name(ev.status_name);
+                    e->set_message_byte(ev.message_byte);
+                } else if constexpr (std::is_same_v<T, ScsiRegisterAccessEvent>) {
                     auto* e = proto_event.mutable_register_access();
-                    e->set_operation(internal_event.operation);
-                    e->set_register_index(internal_event.register_index);
-                    e->set_register_name(internal_event.register_name);
-                    e->set_value(internal_event.value);
-                    e->set_phase(internal_event.phase);
-                    break;
+                    e->set_operation(ev.operation);
+                    e->set_register_index(ev.register_index);
+                    e->set_register_name(ev.register_name);
+                    e->set_value(ev.value);
+                    e->set_phase(ev.phase);
                 }
-            }
+            }, internal_event);
 
             if (!writer->Write(proto_event)) break;
         }

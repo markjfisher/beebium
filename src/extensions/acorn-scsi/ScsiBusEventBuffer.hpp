@@ -18,56 +18,63 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace beebium {
 
-// A structured SCSI bus event for diagnostic observation.
-struct ScsiInternalEvent {
-    enum class Type {
-        PhaseChange,
-        Selection,
-        Command,
-        DataTransfer,
-        Status,
-        RegisterAccess,
-    };
+// Typed event structs for each SCSI bus event kind.
 
-    Type type;
-
-    // PhaseChange
+struct ScsiPhaseChangeEvent {
     std::string from_phase;
     std::string to_phase;
+};
 
-    // Selection
+struct ScsiSelectionEvent {
     uint8_t target_id = 0xFF;
-    bool selection_success = false;
+    bool success = false;
+};
 
-    // Command
+struct ScsiCommandEvent {
+    uint8_t target_id = 0;
     uint8_t opcode = 0;
     std::string opcode_name;
     std::vector<uint8_t> cdb;
     uint32_t lba = 0;
     uint32_t block_count = 0;
+};
 
-    // DataTransfer
-    std::string direction;      // "IN" or "OUT"
+struct ScsiDataTransferEvent {
+    std::string direction;          // "IN" or "OUT"
     uint32_t bytes_expected = 0;
     uint32_t bytes_transferred = 0;
-    bool transfer_complete = false;
+    bool complete = false;
+};
 
-    // Status
+struct ScsiStatusEvent {
+    uint8_t target_id = 0;
     uint8_t status_byte = 0;
     std::string status_name;
     uint8_t message_byte = 0;
+};
 
-    // RegisterAccess
-    std::string operation;      // "READ" or "WRITE"
+struct ScsiRegisterAccessEvent {
+    std::string operation;          // "READ" or "WRITE"
     uint8_t register_index = 0;
     std::string register_name;
     uint8_t value = 0;
-    std::string phase;          // current phase at time of access
+    std::string phase;
 };
+
+// A SCSI bus event: a variant of typed event structs.
+using ScsiInternalEvent = std::variant<
+    ScsiPhaseChangeEvent,
+    ScsiSelectionEvent,
+    ScsiCommandEvent,
+    ScsiDataTransferEvent,
+    ScsiStatusEvent,
+    ScsiRegisterAccessEvent
+>;
 
 // Thread-safe bounded event buffer.
 //
