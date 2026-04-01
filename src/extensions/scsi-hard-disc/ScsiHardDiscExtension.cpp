@@ -32,7 +32,9 @@ std::unique_ptr<ScsiHardDiscExtension> ScsiHardDiscExtension::create() {
         "scsi-hard-disc",
         "SCSI hard disc target (DAT+DSC image)",
         "scsi-hard-disc",
-        {}
+        {},   // cli_name (uses name)
+        {},   // manifest_dirpath (built-in, no manifest file)
+        {},   // parameters
     });
     return ext;
 }

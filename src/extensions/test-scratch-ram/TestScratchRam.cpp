@@ -24,7 +24,9 @@ std::unique_ptr<TestScratchRam> TestScratchRam::create() {
         "test-scratch-ram",
         "8 bytes of scratch RAM at 0xFC80 (Test Hardware) for framework testing",
         "test-scratch-ram",
-        {}
+        {},   // cli_name (uses name)
+        {},   // manifest_dirpath (built-in, no manifest file)
+        {},   // parameters
     });
     return ext;
 }

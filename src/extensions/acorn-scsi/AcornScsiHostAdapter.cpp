@@ -24,7 +24,9 @@ std::unique_ptr<AcornScsiHostAdapter> AcornScsiHostAdapter::create() {
         "acorn-scsi",
         "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)",
         "acorn-scsi",
-        {}
+        {},   // cli_name (uses name)
+        {},   // manifest_dirpath (built-in, no manifest file)
+        {},   // parameters
     });
     return adapter;
 }
