@@ -383,3 +383,162 @@ voltage.
 - BeebEm: `Src/UserPortRTC.cpp`, `Src/UserPortRTC.h` (GPL, Ken Lowe 2004)
   Full protocol-level emulation of the SAF3019P via User VIA Port B
 - BeebEm: `Help/rtc.html` -- user documentation for all three RTC types
+
+
+## Beebium Peripheral Extension Implementation Notes
+
+The User Port RTC should be implemented as a loadable peripheral extension
+plugin, following the pattern established by the Acorn SCSI Host Adapter
+(`acorn-scsi`) and SCSI Hard Disc (`scsi-hard-disc`) extensions.
+
+### Extension Architecture
+
+```
+src/extensions/user-port-rtc/
+    manifest.json               # Plugin metadata + CLI parameter schema
+    UserPortRtcExtension.hpp    # PeripheralExtension subclass
+    UserPortRtcExtension.cpp
+    Saf3019p.hpp                # SAF3019P chip emulation (protocol + registers)
+    Saf3019p.cpp
+    user_port_rtc.proto         # gRPC service definition
+    UserPortRtcService.hpp      # gRPC service implementation
+    plugin_entry.cpp            # BEEBIUM_PLUGIN_EXPORT entry point
+    CMakeLists.txt
+```
+
+### Extension Point: User Port
+
+The extension framework currently has one device callback interface:
+`OneMHzBusDevice` for 1 MHz bus peripherals. The User Port RTC needs a
+second interface type:
+
+```cpp
+struct UserPortDevice {
+    virtual ~UserPortDevice() = default;
+    virtual uint8_t update_port_b(uint8_t output, uint8_t ddr) = 0;
+};
+```
+
+This mirrors the existing `ViaPeripheral::update_port_b()` signature. The
+extension context would provide a `UserPort` handle alongside `OneMHzBusPort`:
+
+```cpp
+// In ExtensionContext:
+template<> UserPort& get<UserPort>();
+```
+
+The User VIA's peripheral callback is then bridged to the UserPort, which
+dispatches to attached UserPortDevice instances.
+
+The extension declares `attaches_to: ["user-port"]` in its manifest, and the
+machine hardware provides the `"user-port"` extension point.
+
+### Plugin Manifest
+
+```json
+{
+    "name": "user-port-rtc",
+    "description": "Acorn Econet Level 3 File Server Real Time Clock Module (SAF3019P)",
+    "library": "user-port-rtc",
+    "cli": "rtc",
+    "parameters": [
+        {
+            "key": "time-offset",
+            "type": "string",
+            "description": "Offset from host wall-clock time (e.g. +1h, -30m, 1985-03-15T10:30)",
+            "default": "0"
+        },
+        {
+            "key": "y2k-mode",
+            "type": "string",
+            "description": "Year storage mode: 'original' (1981-2000), 'beebmaster' (1981-2108)",
+            "default": "beebmaster"
+        }
+    ]
+}
+```
+
+CLI usage: `--rtc` or `--rtc time-offset=-10y` (set clock 10 years in the past).
+
+### SAF3019P Emulation
+
+The `Saf3019p` class encapsulates the chip state machine and register set,
+independent of the extension framework:
+
+- **CBUS protocol state machine:** Tracks CLB edges, DLEN state, bit counter,
+  shift register. Driven by `clock_edge()` and `set_dlen()` calls from the
+  UserPortDevice wrapper.
+- **Register storage:** 8 BCD registers with correct wrapping behaviour per
+  register type (month mod 20, date/hour mod 40, minute mod 80).
+- **Time source:** Time counter registers (0, 2, 4, 6) are computed from
+  `host_wall_clock + time_offset` rather than free-running. This avoids
+  needing a 32.768 kHz oscillator simulation and gives accurate time.
+- **Alarm/year registers (1, 3, 5, 7):** Stored persistently. Register 1
+  holds the year offset; register 7 holds the dongle detection value.
+
+### gRPC Service
+
+```protobuf
+service UserPortRtcService {
+    // Read/write individual SAF3019P registers (BCD values)
+    rpc ReadRegister(ReadRtcRegisterRequest) returns (ReadRtcRegisterResponse);
+    rpc WriteRegister(WriteRtcRegisterRequest) returns (WriteRtcRegisterResponse);
+
+    // High-level time access
+    rpc GetTime(GetRtcTimeRequest) returns (GetRtcTimeResponse);
+    rpc SetTimeOffset(SetRtcTimeOffsetRequest) returns (SetRtcTimeOffsetResponse);
+
+    // Configuration
+    rpc GetConfig(GetRtcConfigRequest) returns (GetRtcConfigResponse);
+    rpc SetConfig(SetRtcConfigRequest) returns (SetRtcConfigResponse);
+}
+
+message GetRtcTimeResponse {
+    uint32 year = 1;        // full 4-digit year (e.g. 1985)
+    uint32 month = 2;       // 1-12
+    uint32 day = 3;         // 1-31
+    uint32 hour = 4;        // 0-23
+    uint32 minute = 5;      // 0-59
+    string y2k_mode = 6;    // "original" or "beebmaster"
+    int64 time_offset_seconds = 7;  // offset from host wall-clock
+}
+```
+
+### Time Offset Model
+
+The emulated BBC Micro's perception of current time is:
+
+    emulated_time = host_wall_clock_utc + time_offset
+
+The offset can be set via:
+- CLI parameter at startup (`--rtc time-offset=-10y`)
+- gRPC `SetTimeOffset` RPC at runtime (for frontend date/time picker UIs)
+- Absolute time specification (`--rtc time-offset=1985-03-15T10:30`) which
+  computes the offset as `specified_time - now`
+
+When ADFS or the Level 3 File Server reads time registers, the Saf3019p
+class decomposes `emulated_time` into month/day/hour/minute and returns the
+appropriate BCD values. Writes to time counter registers adjust the offset
+to match.
+
+### IRQ Considerations
+
+The SAF3019P has no interrupt connection to the BBC Micro through the User
+Port. The COMP (alarm comparator) output connects to PB5 and POWF (power
+fail) connects to PB7, but these are active-low and typically read as high
+(no alarm, no power fail). No IRQ routing through OneMHzBusDevice is needed
+-- this is purely a polled device accessed through VIA Port B.
+
+### Testing Strategy
+
+Unit tests for the SAF3019P should cover:
+- CBUS protocol bit-banging (clock edges, read/write sequences)
+- Register read/write with BCD wrapping
+- Dongle detection sequence (write &13, read back, write &00, read back)
+- Time counter computation from offset
+- Y2K mode year encoding/decoding
+
+Integration tests (Python, following the ADFS test pattern) should:
+- Boot with Level 3 File Server ROM and verify "Clock failure" does NOT appear
+- Verify the file server reads correct date/time
+- Test the gRPC time access API
