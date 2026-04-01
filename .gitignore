@@ -90,3 +90,4 @@ oracle/public
 
 disassembly/*
 !disassembly/*.py
+/build-debug/
