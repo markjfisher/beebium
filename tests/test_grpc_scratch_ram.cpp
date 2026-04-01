@@ -148,15 +148,15 @@ TEST_CASE("ScratchRamService gRPC write visible to 6502 memory read", "[grpc][ex
         fixture.stub().Write(&ctx, request, &response);
     }
 
-    // Read via 6502 memory map (address 0xFC50 + 5 = 0xFC55)
-    REQUIRE(fixture.machine().state().memory.read(0xFC55) == 0xCD);
+    // Read via 6502 memory map (address 0xFC00 + kBaseOffset + 5)
+    REQUIRE(fixture.machine().state().memory.read(0xFC00 + beebium::TestScratchRam::kBaseOffset + 5) == 0xCD);
 }
 
 TEST_CASE("ScratchRamService 6502 write visible to gRPC read", "[grpc][extension][scratch-ram]") {
     ScratchRamGrpcFixture fixture;
 
-    // Write via 6502 memory map
-    fixture.machine().state().memory.write(0xFC52, 0xEF);
+    // Write via 6502 memory map (address 0xFC00 + kBaseOffset + 2)
+    fixture.machine().state().memory.write(0xFC00 + beebium::TestScratchRam::kBaseOffset + 2, 0xEF);
 
     // Read via gRPC
     grpc::ClientContext ctx;

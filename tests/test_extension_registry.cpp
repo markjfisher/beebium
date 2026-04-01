@@ -187,7 +187,7 @@ TEST_CASE("ExtensionRegistry with TestScratchRam", "[extension][registry]") {
     registry.resolve_and_init(ctx);
 
     REQUIRE(registry.init_count() == 1);
-    REQUIRE(port.is_claimed(0x50));
-    REQUIRE(port.is_claimed(0x57));
-    REQUIRE_FALSE(port.is_claimed(0x58));
+    REQUIRE(port.is_claimed(beebium::TestScratchRam::kBaseOffset));
+    REQUIRE(port.is_claimed(beebium::TestScratchRam::kEndOffset));
+    REQUIRE_FALSE(port.is_claimed(beebium::TestScratchRam::kEndOffset + 1));
 }

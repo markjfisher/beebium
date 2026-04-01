@@ -90,10 +90,11 @@ TEST_CASE("PluginLoader load_extension loads and registers extension",
     REQUIRE(registry.init_count() == 1);
     REQUIRE(registry.extensions()[0]->name() == "test-scratch-ram");
 
-    // Verify the extension is functional: write and read via the bus port
-    port.write(0x50, 0xAB);
-    REQUIRE(port.read(0x50) == 0xAB);
-    REQUIRE(port.read(0x58) == 0xFF);  // unclaimed
+    // Verify the extension is functional: write and read via the bus port.
+    // TestScratchRam occupies 0x80-0x87 (Test Hardware range per Acorn App Note 003).
+    port.write(0x80, 0xAB);
+    REQUIRE(port.read(0x80) == 0xAB);
+    REQUIRE(port.read(0x88) == 0xFF);  // unclaimed
 
     registry.shutdown();
 }
