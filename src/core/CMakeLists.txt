@@ -19,6 +19,7 @@ add_library(beebium_core STATIC
     src/Expression.cpp
     src/PluginLoader.cpp
     src/ExtensionArgParser.cpp
+    src/UserPort.cpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp

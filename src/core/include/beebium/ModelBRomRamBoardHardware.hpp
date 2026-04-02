@@ -13,6 +13,7 @@
 #pragma once
 
 #include "extension/OneMHzBusPort.hpp"
+#include "extension/UserPort.hpp"
 #include "AddressableLatch.hpp"
 #include "AudioBuffer.hpp"
 #include "ClockTypes.hpp"
@@ -93,6 +94,9 @@ public:
 
     Via6522 system_via;
     Via6522 user_via;
+
+    // User Port handle (must be declared after user_via for init order)
+    UserPort user_port_{user_via};
 
     // IRQ aggregator type - polls VIAs, Tube, and 1 MHz bus for IRQ status
     using IrqAggregatorType = IrqAggregator<
@@ -319,6 +323,8 @@ public:
     }
 
     OneMHzBusPort& one_mhz_bus() { return one_mhz_bus_; }
+
+    UserPort& user_port() { return user_port_; }
 
     // Startup Options
     void set_startup_options(uint8_t options) {

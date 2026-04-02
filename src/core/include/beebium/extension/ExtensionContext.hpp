@@ -15,6 +15,7 @@
 
 #include "OneMHzBusPort.hpp"
 #include "PeripheralExtension.hpp"
+#include "UserPort.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -31,8 +32,10 @@ namespace beebium {
 // Extension providers are accessed via provider(extension_point_name).
 class ExtensionContext {
 public:
-    explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr)
-        : one_mhz_bus_port_(one_mhz_bus_port) {}
+    explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr,
+                             UserPort* user_port = nullptr)
+        : one_mhz_bus_port_(one_mhz_bus_port)
+        , user_port_(user_port) {}
 
     // Type-safe port handle access.
     template<typename T>
@@ -43,6 +46,12 @@ public:
                     "ExtensionContext: 1mhz-bus port not available on this machine");
             }
             return *one_mhz_bus_port_;
+        } else if constexpr (std::is_same_v<T, UserPort>) {
+            if (!user_port_) {
+                throw std::runtime_error(
+                    "ExtensionContext: user-port not available on this machine");
+            }
+            return *user_port_;
         } else {
             static_assert(!std::is_same_v<T, T>, "Unknown port type");
         }
@@ -53,6 +62,8 @@ public:
     bool has() const {
         if constexpr (std::is_same_v<T, OneMHzBusPort>) {
             return one_mhz_bus_port_ != nullptr;
+        } else if constexpr (std::is_same_v<T, UserPort>) {
+            return user_port_ != nullptr;
         } else {
             return false;
         }
@@ -98,6 +109,7 @@ public:
 
 private:
     OneMHzBusPort* one_mhz_bus_port_;
+    UserPort* user_port_;
     std::unordered_map<std::string, PeripheralExtension*> providers_;
 };
 

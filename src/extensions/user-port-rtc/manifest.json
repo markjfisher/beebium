@@ -1,0 +1,18 @@
+{
+    "name": "user-port-rtc",
+    "description": "SAF3019P Real Time Clock on User Port (Acorn Level 3 File Server)",
+    "library": "user-port-rtc",
+    "cli": "rtc",
+    "parameters": [
+        {
+            "key": "time",
+            "type": "string",
+            "description": "Set emulated clock to absolute datetime (e.g. 1985-03-15T10:30)"
+        },
+        {
+            "key": "offset",
+            "type": "string",
+            "description": "Offset from host local time (e.g. -10y, +5h, -365d)"
+        }
+    ]
+}

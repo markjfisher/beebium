@@ -1656,6 +1656,9 @@ public:
             if constexpr (beebium::HasOneMHzBus<Memory>) {
                 extension_registry.register_extension_point("1mhz-bus");
             }
+            if constexpr (beebium::HasUserPort<Memory>) {
+                extension_registry.register_extension_point("user-port");
+            }
 
             // Register built-in extensions (assign auto-generated ids)
             {
@@ -1700,7 +1703,8 @@ public:
             // Initialise extensions (dependency resolution + topological sort)
             std::cout << "Initialising extensions...\n";
             beebium::ExtensionContext extension_context(
-                beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr);
+                beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
+                beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr);
             extension_registry.resolve_and_init(extension_context);
 
             // Log initialisation order

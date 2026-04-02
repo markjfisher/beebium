@@ -229,6 +229,21 @@ add_executable(test_via6522 test_via6522.cpp)
 target_link_libraries(test_via6522 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_via6522)
 
+# User Port framework tests
+add_executable(test_user_port test_user_port.cpp)
+target_link_libraries(test_user_port PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_user_port)
+
+# SAF3019P RTC chip emulation tests
+add_executable(test_saf3019p test_saf3019p.cpp)
+target_link_libraries(test_saf3019p PRIVATE beebium_rtc_core Catch2::Catch2WithMain)
+catch_discover_tests(test_saf3019p)
+
+# Time parser tests
+add_executable(test_time_parser test_time_parser.cpp)
+target_link_libraries(test_time_parser PRIVATE beebium_rtc_core Catch2::Catch2WithMain)
+catch_discover_tests(test_time_parser)
+
 # SN76489 sound chip tests
 add_executable(test_sn76489 test_sn76489.cpp)
 target_link_libraries(test_sn76489 PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -779,6 +794,15 @@ if(BEEBIUM_BUILD_SERVICE)
         Catch2::Catch2WithMain
     )
     catch_discover_tests(test_grpc_scsi_host_adapter)
+
+    # User Port RTC gRPC service tests
+    add_executable(test_grpc_user_port_rtc test_grpc_user_port_rtc.cpp)
+    target_link_libraries(test_grpc_user_port_rtc PRIVATE
+        beebium_service
+        beebium_ext_user_port_rtc
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_user_port_rtc)
 
     # Econet service tests
     add_executable(test_grpc_econet test_grpc_econet.cpp)

@@ -1,0 +1,54 @@
+syntax = "proto3";
+package beebium;
+
+// Service for managing the SAF3019P Real Time Clock on the User Port.
+service UserPortRtcService {
+    // Read the current emulated date and time (decoded from chip registers).
+    rpc GetTime(GetRtcTimeRequest) returns (GetRtcTimeResponse);
+
+    // Set the emulated date and time (writes all chip registers).
+    // Returns INVALID_ARGUMENT if the year is outside the representable
+    // range (1981-2000).
+    rpc SetTime(SetRtcTimeRequest) returns (SetRtcTimeResponse);
+
+    // Read all 8 raw BCD register values.
+    rpc GetRegisters(GetRtcRegistersRequest) returns (GetRtcRegistersResponse);
+
+    // Write a single register with a raw BCD value.
+    // The chip's per-register wrapping is applied faithfully.
+    rpc SetRegister(SetRtcRegisterRequest) returns (SetRtcRegisterResponse);
+}
+
+message GetRtcTimeRequest {}
+
+message GetRtcTimeResponse {
+    int32 year = 1;     // full year (1981 + register 1 offset)
+    int32 month = 2;    // 1-12
+    int32 day = 3;      // 1-31
+    int32 hour = 4;     // 0-23
+    int32 minute = 5;   // 0-59
+    string iso8601 = 6; // e.g. "1985-06-15T14:30"
+}
+
+message SetRtcTimeRequest {
+    string iso8601 = 1; // e.g. "1985-06-15T14:30"
+}
+
+message SetRtcTimeResponse {}
+
+message GetRtcRegistersRequest {}
+
+message GetRtcRegistersResponse {
+    // 8 BCD register values in order:
+    //   [0] month counter, [1] month alarm (year), [2] date counter,
+    //   [3] date alarm (old month + leap flag), [4] hours counter,
+    //   [5] hours alarm (unused), [6] minutes counter, [7] minutes alarm (dongle)
+    repeated uint32 registers = 1;
+}
+
+message SetRtcRegisterRequest {
+    uint32 register_index = 1;  // 0-7
+    uint32 bcd_value = 2;       // raw BCD byte (wrapping applied by chip)
+}
+
+message SetRtcRegisterResponse {}
