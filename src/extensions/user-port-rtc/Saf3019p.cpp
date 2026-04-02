@@ -28,12 +28,18 @@ Saf3019p::Saf3019p()
 //////////////////////////////////////////////////////////////////////////////
 
 void Saf3019p::write(uint8_t value) {
-    // Detect falling edge on CLB (was high, now low)
+    // Detect rising edge on CLB (was low, now high) for read phase
+    if (in_read_phase_ && (last_value_ & PB_CLB) == 0 && (value & PB_CLB) != 0) {
+        // In read phase: shift out the next data bit on each CLB rising edge.
+        // Per SAF3019P datasheet Fig. 3, DATA changes on CLB rising edge during TIME READ.
+        data_output_bit_ = data_shift_register_ & 0x01;
+        data_shift_register_ >>= 1;
+    }
+
+    // Detect falling edge on CLB (was high, now low) for address/write phases
     if ((last_value_ & PB_CLB) != 0 && (value & PB_CLB) == 0) {
         if (in_read_phase_) {
-            // In read phase: shift out the next data bit on each CLB falling edge
-            data_output_bit_ = data_shift_register_ & 0x01;
-            data_shift_register_ >>= 1;
+            // Read phase: falling edge does nothing (data shifted on rising edge)
         } else if ((value & PB_DLEN) != 0) {
             // DLEN high: shift DATA into command register
             command_shift_register_ = (command_shift_register_ >> 1)
@@ -158,20 +164,26 @@ int Saf3019p::days_in_current_month() const {
 
 bool Saf3019p::initialise(const DateTime& dt) {
     int year_offset = dt.year - 1981;
-    if (year_offset < 0 || year_offset > 19) {
-        return false;  // Cannot represent in register 1 (wraps mod 20)
+
+    // Validate year range based on layout
+    switch (layout_) {
+        case RegisterLayout::Acorn:
+            // Register 1 is a 5-bit BCD month alarm field; wraps at 20
+            if (year_offset < 0 || year_offset > 19) return false;
+            break;
+        case RegisterLayout::V126:
+            // Register 7 is a 7-bit minute alarm field storing binary 0-99
+            if (year_offset < 0 || year_offset > 99) return false;
+            break;
     }
 
     std::lock_guard lock(mutex_);
 
-    // Counter registers
+    // Counter registers (same for all layouts)
     registers_[0] = to_bcd(dt.month);
     registers_[2] = to_bcd(dt.day);
     registers_[4] = to_bcd(dt.hour);
     registers_[6] = to_bcd(dt.minute);
-
-    // Year in register 1 (alarm register, repurposed)
-    registers_[1] = to_bcd(year_offset);
 
     // Register 3: old month (low nibble) + leap flag (bit 4)
     // This mirrors what the FS's SETMFX routine computes.
@@ -183,11 +195,19 @@ bool Saf3019p::initialise(const DateTime& dt) {
     }
     registers_[3] = reg3;
 
-    // Register 5: unused
-    registers_[5] = 0x00;
-
-    // Register 7: clear (dongle detection uses this)
-    registers_[7] = 0x00;
+    // Year and dongle registers depend on layout
+    switch (layout_) {
+        case RegisterLayout::Acorn:
+            registers_[1] = to_bcd(year_offset);  // Year in reg 1 (BCD)
+            registers_[5] = 0x00;                  // Unused
+            registers_[7] = 0x00;                  // Dongle detection
+            break;
+        case RegisterLayout::V126:
+            registers_[1] = 0x00;                  // Unused
+            registers_[5] = 0x00;                  // Dongle detection
+            registers_[7] = static_cast<uint8_t>(year_offset);  // Year in reg 7 (binary)
+            break;
+    }
 
     // Reset prescaler
     accumulated_seconds_ = 0;
@@ -210,7 +230,11 @@ void Saf3019p::write_register(int reg, uint8_t bcd_value) {
 
     switch (reg) {
         case 0:  // Month counter
-            if (bcd_value == 0) {
+        {
+            // Strip the UC bit (bit 6) -- it controls the comparator mode,
+            // not part of the stored counter value (SAF3019P datasheet Table 3).
+            uint8_t data = bcd_value & 0x3F;
+            if (data == 0) {
                 // Prescaler reset: writing 0 to month resets seconds counter.
                 // If accumulated seconds >= 30, increment minutes (coarse correction).
                 if (accumulated_seconds_ >= 30) {
@@ -219,8 +243,9 @@ void Saf3019p::write_register(int reg, uint8_t bcd_value) {
                 accumulated_seconds_ = 0;
                 return;  // Do not store 0 as month
             }
-            registers_[0] = wrap_month_counter(bcd_value);
+            registers_[0] = wrap_month_counter(data);
             break;
+        }
 
         case 1:  // Month alarm (year storage)
             registers_[1] = wrap_month_alarm(bcd_value);
@@ -242,8 +267,19 @@ void Saf3019p::write_register(int reg, uint8_t bcd_value) {
 
 Saf3019p::DateTime Saf3019p::current_datetime() const {
     std::lock_guard lock(mutex_);
+
+    int year_offset = 0;
+    switch (layout_) {
+        case RegisterLayout::Acorn:
+            year_offset = from_bcd(registers_[1]);  // BCD in reg 1
+            break;
+        case RegisterLayout::V126:
+            year_offset = registers_[7];  // Binary in reg 7
+            break;
+    }
+
     return {
-        .year = 1981 + from_bcd(registers_[1]),
+        .year = 1981 + year_offset,
         .month = from_bcd(registers_[0]),
         .day = from_bcd(registers_[2]),
         .hour = from_bcd(registers_[4]),

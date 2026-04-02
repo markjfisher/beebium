@@ -120,6 +120,7 @@ static void cbus_write(Saf3019p& chip, int reg, uint8_t bcd_value) {
 // Perform a CBUS READ (TIME ADDRESS + TIME READ):
 // 4 address bits clocked with DLEN high (start, S, A0, A1),
 // then DLEN goes low to trigger the read, then clock out 7 data bits.
+// Data shifts on CLB RISING edge during TIME READ (per SAF3019P datasheet).
 static uint8_t cbus_read(Saf3019p& chip, int reg) {
     // Send TIME ADDRESS (4 bits with DLEN high)
     clock_bit(chip, 1);                  // start bit
@@ -130,18 +131,22 @@ static uint8_t cbus_read(Saf3019p& chip, int reg) {
     // End address phase: DLEN goes low, triggering the read
     end_transmission(chip);
 
-    // Read 7 data bits by clocking CLB (data shifts on falling edge)
-    // The first bit is already available after end_transmission.
-    uint8_t value = 0;
-    // First bit is available immediately after the read was triggered
-    value |= (chip.read_data_bit() & 1);
-    for (int i = 1; i < 7; i++) {
-        // Clock CLB high then low (falling edge shifts to next bit)
-        chip.write(CLB);  // CLB high, DLEN low
-        chip.write(0x00); // CLB low (falling edge)
-        value |= ((chip.read_data_bit() & 1) << i);
+    // DLEN high, CLB low (prepare for read phase)
+    chip.write(DLEN);  // &04
+
+    // Read 7 bits using the v1.26 protocol:
+    // First bit available immediately, then CLB rising shifts to next
+    uint8_t sr = 0;
+    sr = (sr >> 1) | ((chip.read_data_bit() & 1) << 7);
+
+    for (int i = 0; i < 6; i++) {
+        chip.write(DLEN | CLB);  // CLB high (rising edge → next bit)
+        sr = (sr >> 1) | ((chip.read_data_bit() & 1) << 7);
+        chip.write(DLEN);        // CLB low
     }
-    return value;
+
+    chip.write(0x00);  // Reset ORB
+    return sr >> 1;    // Right-justify 7-bit value
 }
 
 // Reset the CBUS protocol (simulates DDRB being written with 0xA7)

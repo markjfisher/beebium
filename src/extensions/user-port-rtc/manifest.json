@@ -13,6 +13,12 @@
             "key": "offset",
             "type": "string",
             "description": "Offset from host local time (e.g. -10y, +5h, -365d)"
+        },
+        {
+            "key": "layout",
+            "type": "string",
+            "description": "Register layout: 'acorn' (year in reg 1, dongle in reg 7) or 'v126' (year in reg 7, dongle in reg 5)",
+            "default": "acorn"
         }
     ]
 }

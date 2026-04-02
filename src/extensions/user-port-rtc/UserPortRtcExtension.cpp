@@ -49,16 +49,32 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
         target_dt = current_local_datetime();
     }
 
-    // Validate year is representable
+    // Parse register layout
+    auto layout_val = config_value("layout");
+    if (layout_val) {
+        if (*layout_val == "v126") {
+            chip_.set_layout(RegisterLayout::V126);
+        } else if (*layout_val == "acorn") {
+            chip_.set_layout(RegisterLayout::Acorn);
+        } else {
+            throw std::runtime_error(
+                "RTC extension: unknown layout '" + std::string(*layout_val) +
+                "' (valid: 'acorn', 'v126')");
+        }
+    }
+
+    // Validate year is representable for the chosen layout
     int year_offset = target_dt.year - 1981;
-    if (year_offset < 0 || year_offset > 19) {
+    int max_offset = (chip_.layout() == RegisterLayout::V126) ? 99 : 19;
+    if (year_offset < 0 || year_offset > max_offset) {
+        std::string range = (chip_.layout() == RegisterLayout::V126)
+            ? "1981-2080" : "1981-2000";
         throw std::runtime_error(
             "RTC extension: year " + std::to_string(target_dt.year) +
-            " cannot be represented by the SAF3019P (valid range: 1981-2000).\n"
-            "  The SAF3019P stores the year as an offset from 1981 in a register\n"
-            "  that wraps at 20. Use --rtc time=YYYY-MM-DDThh:mm with a date in\n"
-            "  the range 1981-2000, or use --rtc offset=-Ny to shift the clock\n"
-            "  back from the current year.");
+            " cannot be represented (valid range: " + range + " for layout '" +
+            std::string(layout_val.value_or("acorn")) + "').\n"
+            "  Use --rtc time=YYYY-MM-DDThhmm with a date in range,\n"
+            "  or use --rtc offset=-Ny to shift the clock back.");
     }
 
     // Initialise the chip

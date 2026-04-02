@@ -20,6 +20,16 @@
 
 namespace beebium {
 
+// Register layout describes how the BBC software uses the SAF3019P's alarm
+// registers for year storage and dongle detection. The chip hardware is the
+// same; only the software convention differs.
+enum class RegisterLayout {
+    // Original Acorn (v1.06, v1.24): year in reg 1 (BCD, 0-19), dongle in reg 7
+    Acorn,
+    // L3 v1.26 (Martin): year in reg 7 (binary, 0-99), dongle in reg 5
+    V126,
+};
+
 // Faithful emulation of the Signetics/Philips SAF3019P CMOS clock/timer IC.
 //
 // The chip provides:
@@ -65,10 +75,17 @@ public:
     // Advance counters by a specific number of minutes (for testing).
     void advance_by_minutes(int minutes);
 
+    // --- Register layout ---
+
+    void set_layout(RegisterLayout layout) { layout_ = layout; }
+    RegisterLayout layout() const { return layout_; }
+
     // --- Startup initialisation ---
 
-    // Initialise all 8 registers from a DateTime.
-    // Returns false if the year cannot be represented (outside 1981-2000).
+    // Initialise all 8 registers from a DateTime using the current layout.
+    // Returns false if the year cannot be represented.
+    //   Acorn: year offset 0-19 in reg 1 (BCD), valid 1981-2000
+    //   V126:  year offset 0-99 in reg 7 (binary), valid 1981-2080
     bool initialise(const DateTime& dt);
 
     // --- Register access (for gRPC / debugging) ---
@@ -92,6 +109,9 @@ private:
     int data_shift_register_ = 0;
     uint8_t data_output_bit_ = 1;  // current DATA pin state (PB0 output)
     bool in_read_phase_ = false;   // true after TIME ADDRESS triggers a read
+
+    // Register layout (software convention for year/dongle storage)
+    RegisterLayout layout_ = RegisterLayout::Acorn;
 
     // 8 BCD registers
     std::array<uint8_t, 8> registers_{};
