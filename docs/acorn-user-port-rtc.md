@@ -269,65 +269,171 @@ No User Port RTC emulation. Only emulates the MC146818 for Master 128.
 No User Port RTC emulation. Only emulates the HD146818 for Master 128.
 
 
-## Beebium Implementation Considerations
+## Beebium Implementation
 
-### Integration Point
+The Acorn User Port RTC is implemented as the `acorn-rtc` peripheral extension
+plugin, loaded dynamically via the extension framework.
 
-Beebium's `ViaPeripheral` abstract interface is the natural integration point.
-A `UserPortRtcPeripheral` class would implement `update_port_b()` to intercept
-the CBUS protocol, exactly as BeebEm does at its User VIA write/read hooks.
+### Architecture
 
 ```
-class UserPortRtcPeripheral : public ViaPeripheral {
-    uint8_t update_port_b(uint8_t output, uint8_t ddr) override;
-};
+src/extensions/acorn-rtc/
+    manifest.json               # Plugin metadata + CLI parameter schema
+    AcornRtcExtension.hpp/cpp   # PeripheralExtension + UserPortDevice
+    Saf3019p.hpp/cpp            # SAF3019P chip emulation
+    TimeParser.hpp/cpp          # CLI time/offset parsing
+    acorn_rtc.proto             # gRPC service definition
+    AcornRtcService.hpp         # gRPC service implementation
+    plugin_entry.cpp            # BEEBIUM_PLUGIN_EXPORT entry point
+    CMakeLists.txt
 ```
 
-The `update_port_b()` method receives the output register value and DDR on
-every port interaction, providing the falling-edge detection needed for the
-CBUS clock. The return value provides the input pin state including the DATA
-bit read back.
+### User Port Framework
 
-### Design Choices
+The extension framework was extended with a `UserPortDevice` interface that
+exposes only the User Port signals (PB0--PB7, CB1, CB2) -- deliberately NOT
+a subclass of `ViaPeripheral` to prevent extensions from accessing Port A or
+CA1/CA2. The `UserPort` handle enforces a single-device constraint (the User
+Port has one physical connector) and contains an internal `ViaPeripheral`
+bridge that forwards only Port B and CB1/CB2.
 
-1. **Protocol-level vs register-level emulation:** BeebEm's protocol-level
-   approach (detecting clock edges in port writes) is appropriate. The BBC
-   software bit-bangs at a pace many orders of magnitude slower than the
-   emulation, so timing precision is not critical -- only the logical sequence
-   of edges matters.
+### SAF3019P Chip Emulation
 
-2. **Time source:** Use the host system clock for time counter registers
-   (0, 2, 4, 6), as BeebEm does. This avoids the need to simulate a 32.768 kHz
-   crystal oscillator and gives the user accurate real-world time.
+The `Saf3019p` class faithfully emulates the chip's behaviour:
 
-3. **Alarm register persistence:** The year (register 1) and other alarm
-   register values must persist across emulator sessions. This could be handled
-   through the gRPC service layer or a configuration file.
+- **CBUS protocol state machine:** Detects CLB edges on VIA Port B writes.
+  Data is sampled on CLB falling edges during address/write phases. During
+  TIME READ, data shifts on CLB **rising** edges (per datasheet Fig. 3).
+- **Register wrapping:** Raw-byte wrapping per register type, matching
+  BeebEm's empirical findings (month counter complex ranges, month alarm
+  mod 20, date/hour ranges, minute ranges).
+- **UC bit handling:** Register 0 (month counter) writes strip bit 6 (the
+  UC comparator control bit) before applying wrapping.
+- **Internal counter advancement:** Counters advance at wall-clock rate
+  following the chip's own month-length table. February is always 28 days
+  (no year awareness). The FS's `REDFIX` routine compensates for this in
+  leap years.
+- **Prescaler reset:** Writing BCD 0 to register 0 resets the internal
+  seconds accumulator. If accumulated seconds >= 30, minutes are incremented
+  (coarse time correction per datasheet).
 
-4. **gRPC exposure:** A new RTC-related service or extension to SystemService
-   could allow frontends to enable/disable the User Port RTC and configure the
-   initial register state (particularly the year).
+### Time Model
 
-5. **Wrapping behaviour:** The BCD value wrapping in BeebEm's implementation
-   appears to be derived from empirical testing rather than the datasheet.
-   Beebium should replicate this exactly, since the Level 3 file server's
-   time-setting code may depend on wrapping behaviour.
+Counters are self-contained after initialisation. There is no persistent
+offset from the host clock. At startup, the CLI `--acorn-rtc time=...` or
+`--acorn-rtc offset=...` computes a target datetime which is decomposed into
+register values. After that, the chip's counters free-run at wall-clock pace.
+BBC software can set the time via CBUS writes (e.g. Econet function code 28).
+The gRPC service provides equivalent read/write access from the host side.
+
+This design avoids conflicts with the FS's year rollover detection (which
+compares the current month to the stored old month in register 3) and the
+leap year fixup (which compensates for the chip's 28-day February). An
+offset-based approach was rejected because auto-computing the year would
+race with the FS's year increment, and deriving month/day from the host clock
+(which knows about Feb 29) would cause spurious REDFIX corrections.
+
+### Register Layouts
+
+Two register layouts are supported via the `layout` CLI parameter:
+
+**`4bit-year`** (default): Original Acorn convention (v1.06, v1.24).
+- Register 1: year as BCD offset from 1981 (0--15). Range: 1981--1996.
+- Register 7: dongle detection.
+- Register 5: unused.
+
+**`7bit-year`**: Revised convention (L3 FS v1.26 and similar).
+- Register 7: year as binary 2-digit value (0--99). Range: 1981--2099.
+- Register 5: dongle detection.
+- Register 1: unused.
+
+The chip hardware emulation is identical for both; only `initialise()` and
+`current_datetime()` differ in which register holds the year and how it is
+encoded.
+
+### CLI Usage
+
+```
+--acorn-rtc                              # Host local time, 4bit-year layout
+--acorn-rtc time=1985-10-26T0121         # Specific time (compact ISO 8601)
+--acorn-rtc offset=-10y                  # 10 years before host time
+--acorn-rtc layout=7bit-year             # 7-bit year layout
+--acorn-rtc layout=7bit-year:time=1985-10-26T0121
+```
+
+Note: the compact ISO 8601 format (`T0121` not `T01:21`) avoids the colon
+being interpreted as an extension argument separator.
+
+### gRPC Service
+
+```protobuf
+service AcornRtcService {
+    rpc GetTime(GetRtcTimeRequest) returns (GetRtcTimeResponse);
+    rpc SetTime(SetRtcTimeRequest) returns (SetRtcTimeResponse);
+    rpc GetRegisters(GetRtcRegistersRequest) returns (GetRtcRegistersResponse);
+    rpc SetRegister(SetRtcRegisterRequest) returns (SetRtcRegisterResponse);
+}
+```
+
+`SetTime` validates the year is representable for the current layout and
+returns `INVALID_ARGUMENT` if not. `SetRegister` applies chip wrapping
+faithfully with no validation (allowing testing of wrapping behaviour).
+
+### Differences from BeebEm
+
+1. **Faithful counter advancement:** BeebEm derives time counters from
+   the host clock on every read. Beebium advances counters internally
+   following the SAF3019P's own calendar rules, avoiding conflicts with
+   the FS's leap year fixup and year rollover detection.
+2. **CLB edge polarity:** BeebEm shifts data on CLB falling edges in
+   all phases. Beebium correctly shifts on CLB rising edges during
+   TIME READ (per datasheet Fig. 3).
+3. **UC bit:** BeebEm passes the full byte including bit 6 to the month
+   counter wrapping. Beebium strips the UC bit before wrapping.
+4. **Register layouts:** BeebEm supports only the original Acorn layout.
+   Beebium supports both 4-bit and 7-bit year layouts.
 
 
-## Year 2000 Problem
+## Year Storage Schemes
 
-The original Acorn design stores the year as a 4-bit BCD offset from 1981 in
-register 1, supporting only 1981--2000 (values 0--19).
+The SAF3019P has no year counter. Different software versions use different
+alarm registers to store the year, creating incompatible conventions.
 
-### Community Workarounds
+### 4-Bit Year (Original Acorn, v1.06--v1.24)
 
-**BeebMaster's Y2KFIX:** Stores year bits 0--3 in register 1 and bits 4--6 in
-register 5 (hours alarm, previously unused). The year is reconstructed as:
-`year = 1981 + reg1 + (reg5 * 16)`, supporting years up to 2108.
+Year stored as a 4-bit BCD offset from 1981 in register 1 (the month alarm
+register, which has a 5-bit field but Acorn uses only 4 bits). Range:
+1981--1996 (offsets 0--15). The 4-bit limitation comes from the in-memory
+DATE format, not the chip. See `docs/FileServer-RTC-and-Timekeeping.md` for
+the full evolution from 4-bit to 7-bit year encoding.
 
-**mm67's patched Level 3 FS (v1.26):** Stores a 7-bit binary year (0--99)
-directly in register 7, but this conflicts with the dongle detection value and
-requires a patched file server ROM.
+### 7-Bit Year (L3 FS v1.26)
+
+Year stored as a binary 2-digit value (0--99) in register 7 (the minute alarm
+register, 7-bit field). The dongle detection is moved to register 5 (hours
+alarm). Range: 1981--2099. Note that register 7 stores the absolute 2-digit
+year (e.g. 85 for 1985), not an offset from 1981.
+
+### BeebMaster's Y2KFIX
+
+Stores year bits 0--3 in register 1 and bits 4--6 in register 5 (hours alarm).
+The year is reconstructed as `year = 1981 + reg1 + (reg5 * 16)`, supporting
+years up to 2108. Not currently supported by Beebium.
+
+### J.G. Harston's Y2K Patch (v0.92, v1.25)
+
+Extended the in-memory year format to 7 bits but deliberately disabled writes
+to the SAF3019P (SETTME returns immediately). In v1.25, RDDONG is replaced
+with OSWORD 14 to read the BBC Master's onboard RTC instead of the SAF3019P.
+See `docs/FileServer-RTC-and-Timekeeping.md` for details.
+
+### SAF3019P Register 1 Width Limitation
+
+The SAF3019P's month alarm register (register 1) has only 5 data bits. BCD
+values 0--19 (decimal 0--19) round-trip correctly. BCD 20 (0x20) requires
+bit 5, which is not stored; it reads back as 0. This means year offsets
+above 19 are silently corrupted. See `docs/FileServer-RTC-and-Timekeeping.md`
+section "Alarm Register Bit Widths and the Year 2001 Problem."
 
 ### Date Rollover Bug
 
@@ -385,160 +491,27 @@ voltage.
 - BeebEm: `Help/rtc.html` -- user documentation for all three RTC types
 
 
-## Beebium Peripheral Extension Implementation Notes
+## Testing
 
-The User Port RTC should be implemented as a loadable peripheral extension
-plugin, following the pattern established by the Acorn SCSI Host Adapter
-(`acorn-scsi`) and SCSI Hard Disc (`scsi-hard-disc`) extensions.
+### C++ Unit Tests
 
-### Extension Architecture
+- `test_saf3019p.cpp`: BCD wrapping, counter advancement (including 28-day
+  February rollover), CBUS write/read protocol, dongle detection, prescaler
+  reset, initialisation with leap flag. 13 test cases, 109 assertions.
+- `test_saf3019p_v126.cpp`: Exact replication of the L3 v1.26 CBUS byte
+  sequences (DNG05, DNG30, DNG10, DNG00) at the raw ORB level. Dongle
+  detection on register 5, RDDONG/WRDONG with both register layouts.
+  6 test cases, 36 assertions.
+- `test_user_port.cpp`: UserPort framework (device attachment, CB1/CB2
+  forwarding, Port A isolation, single-device constraint). 5 test cases.
+- `test_time_parser.cpp`: ISO 8601 parsing (standard and compact formats),
+  relative offsets. 5 test cases.
+- `test_grpc_acorn_rtc.cpp`: gRPC service round-trip (GetTime, SetTime,
+  GetRegisters, SetRegister, year range validation). 5 test cases.
 
-```
-src/extensions/user-port-rtc/
-    manifest.json               # Plugin metadata + CLI parameter schema
-    UserPortRtcExtension.hpp    # PeripheralExtension subclass
-    UserPortRtcExtension.cpp
-    Saf3019p.hpp                # SAF3019P chip emulation (protocol + registers)
-    Saf3019p.cpp
-    user_port_rtc.proto         # gRPC service definition
-    UserPortRtcService.hpp      # gRPC service implementation
-    plugin_entry.cpp            # BEEBIUM_PLUGIN_EXPORT entry point
-    CMakeLists.txt
-```
+### Integration Tests
 
-### Extension Point: User Port
-
-The extension framework currently has one device callback interface:
-`OneMHzBusDevice` for 1 MHz bus peripherals. The User Port RTC needs a
-second interface type:
-
-```cpp
-struct UserPortDevice {
-    virtual ~UserPortDevice() = default;
-    virtual uint8_t update_port_b(uint8_t output, uint8_t ddr) = 0;
-};
-```
-
-This mirrors the existing `ViaPeripheral::update_port_b()` signature. The
-extension context would provide a `UserPort` handle alongside `OneMHzBusPort`:
-
-```cpp
-// In ExtensionContext:
-template<> UserPort& get<UserPort>();
-```
-
-The User VIA's peripheral callback is then bridged to the UserPort, which
-dispatches to attached UserPortDevice instances.
-
-The extension declares `attaches_to: ["user-port"]` in its manifest, and the
-machine hardware provides the `"user-port"` extension point.
-
-### Plugin Manifest
-
-```json
-{
-    "name": "user-port-rtc",
-    "description": "Acorn Econet Level 3 File Server Real Time Clock Module (SAF3019P)",
-    "library": "user-port-rtc",
-    "cli": "rtc",
-    "parameters": [
-        {
-            "key": "time-offset",
-            "type": "string",
-            "description": "Offset from host wall-clock time (e.g. +1h, -30m, 1985-03-15T10:30)",
-            "default": "0"
-        },
-        {
-            "key": "y2k-mode",
-            "type": "string",
-            "description": "Year storage mode: 'original' (1981-2000), 'beebmaster' (1981-2108)",
-            "default": "beebmaster"
-        }
-    ]
-}
-```
-
-CLI usage: `--rtc` or `--rtc time-offset=-10y` (set clock 10 years in the past).
-
-### SAF3019P Emulation
-
-The `Saf3019p` class encapsulates the chip state machine and register set,
-independent of the extension framework:
-
-- **CBUS protocol state machine:** Tracks CLB edges, DLEN state, bit counter,
-  shift register. Driven by `clock_edge()` and `set_dlen()` calls from the
-  UserPortDevice wrapper.
-- **Register storage:** 8 BCD registers with correct wrapping behaviour per
-  register type (month mod 20, date/hour mod 40, minute mod 80).
-- **Time source:** Time counter registers (0, 2, 4, 6) are computed from
-  `host_wall_clock + time_offset` rather than free-running. This avoids
-  needing a 32.768 kHz oscillator simulation and gives accurate time.
-- **Alarm/year registers (1, 3, 5, 7):** Stored persistently. Register 1
-  holds the year offset; register 7 holds the dongle detection value.
-
-### gRPC Service
-
-```protobuf
-service UserPortRtcService {
-    // Read/write individual SAF3019P registers (BCD values)
-    rpc ReadRegister(ReadRtcRegisterRequest) returns (ReadRtcRegisterResponse);
-    rpc WriteRegister(WriteRtcRegisterRequest) returns (WriteRtcRegisterResponse);
-
-    // High-level time access
-    rpc GetTime(GetRtcTimeRequest) returns (GetRtcTimeResponse);
-    rpc SetTimeOffset(SetRtcTimeOffsetRequest) returns (SetRtcTimeOffsetResponse);
-
-    // Configuration
-    rpc GetConfig(GetRtcConfigRequest) returns (GetRtcConfigResponse);
-    rpc SetConfig(SetRtcConfigRequest) returns (SetRtcConfigResponse);
-}
-
-message GetRtcTimeResponse {
-    uint32 year = 1;        // full 4-digit year (e.g. 1985)
-    uint32 month = 2;       // 1-12
-    uint32 day = 3;         // 1-31
-    uint32 hour = 4;        // 0-23
-    uint32 minute = 5;      // 0-59
-    string y2k_mode = 6;    // "original" or "beebmaster"
-    int64 time_offset_seconds = 7;  // offset from host wall-clock
-}
-```
-
-### Time Offset Model
-
-The emulated BBC Micro's perception of current time is:
-
-    emulated_time = host_wall_clock_utc + time_offset
-
-The offset can be set via:
-- CLI parameter at startup (`--rtc time-offset=-10y`)
-- gRPC `SetTimeOffset` RPC at runtime (for frontend date/time picker UIs)
-- Absolute time specification (`--rtc time-offset=1985-03-15T10:30`) which
-  computes the offset as `specified_time - now`
-
-When ADFS or the Level 3 File Server reads time registers, the Saf3019p
-class decomposes `emulated_time` into month/day/hour/minute and returns the
-appropriate BCD values. Writes to time counter registers adjust the offset
-to match.
-
-### IRQ Considerations
-
-The SAF3019P has no interrupt connection to the BBC Micro through the User
-Port. The COMP (alarm comparator) output connects to PB5 and POWF (power
-fail) connects to PB7, but these are active-low and typically read as high
-(no alarm, no power fail). No IRQ routing through OneMHzBusDevice is needed
--- this is purely a polled device accessed through VIA Port B.
-
-### Testing Strategy
-
-Unit tests for the SAF3019P should cover:
-- CBUS protocol bit-banging (clock edges, read/write sequences)
-- Register read/write with BCD wrapping
-- Dongle detection sequence (write &13, read back, write &00, read back)
-- Time counter computation from offset
-- Y2K mode year encoding/decoding
-
-Integration tests (Python, following the ADFS test pattern) should:
-- Boot with Level 3 File Server ROM and verify "Clock failure" does NOT appear
-- Verify the file server reads correct date/time
-- Test the gRPC time access API
+- `integration_tests/acorn-rtc/`: BBC BASIC program that bit-bangs the CBUS
+  protocol via OSBYTE 150/151, performs dongle detection on register 7, and
+  reads all time registers. Tokenised via basictool, loaded from DFS SSD,
+  run in the emulator, screen output verified by Python test.
