@@ -217,9 +217,9 @@ TEST_CASE("v1.26 RDDONG reads all registers correctly (V126 layout)", "[saf3019p
     int oldmonth_raw = tread(chip, 3);
     REQUIRE((oldmonth_raw & 0x0F) == 10);
 
-    // V126 layout: year in reg 7 (binary), reg 1 = 0
-    REQUIRE(tbread(chip, 7) == 4);  // 1985 - 1981 = 4, binary
-    REQUIRE(tbread(chip, 1) == 0);  // Unused in V126
+    // V126 layout: year in reg 7 is 2-digit year (binary), reg 1 = 0
+    REQUIRE(tbread(chip, 7) == 85);  // 1985 → 2-digit year 85
+    REQUIRE(tbread(chip, 1) == 0);   // Unused in V126
 
     // current_datetime should decode year from reg 7
     auto result = chip.current_datetime();
@@ -253,7 +253,7 @@ TEST_CASE("V126 layout: year range extended to 1981-2080", "[saf3019p][v126][lay
     SECTION("Year 2026 is representable") {
         Saf3019p::DateTime dt{2026, 4, 2, 10, 30};
         REQUIRE(chip.initialise(dt));
-        REQUIRE(tbread(chip, 7) == 45);  // 2026 - 1981 = 45, binary
+        REQUIRE(tbread(chip, 7) == 26);  // 2026 → 2-digit year 26
         auto result = chip.current_datetime();
         REQUIRE(result.year == 2026);
     }
@@ -261,12 +261,26 @@ TEST_CASE("V126 layout: year range extended to 1981-2080", "[saf3019p][v126][lay
     SECTION("Year 2080 is representable") {
         Saf3019p::DateTime dt{2080, 1, 1, 0, 0};
         REQUIRE(chip.initialise(dt));
-        REQUIRE(tbread(chip, 7) == 99);  // 2080 - 1981 = 99
+        REQUIRE(tbread(chip, 7) == 80);  // 2080 → 2-digit year 80
     }
 
-    SECTION("Year 2081 is out of range") {
-        Saf3019p::DateTime dt{2081, 1, 1, 0, 0};
+    SECTION("Year 2099 is representable (2-digit 99)") {
+        Saf3019p::DateTime dt{2099, 1, 1, 0, 0};
+        REQUIRE(chip.initialise(dt));
+        REQUIRE(tbread(chip, 7) == 99);
+    }
+
+    SECTION("Year 1980 is out of range") {
+        Saf3019p::DateTime dt{1980, 1, 1, 0, 0};
         REQUIRE_FALSE(chip.initialise(dt));
+    }
+
+    SECTION("Year 1985 stores as 85") {
+        Saf3019p::DateTime dt{1985, 6, 15, 10, 0};
+        REQUIRE(chip.initialise(dt));
+        REQUIRE(tbread(chip, 7) == 85);
+        auto result = chip.current_datetime();
+        REQUIRE(result.year == 1985);
     }
 
     SECTION("Acorn layout rejects year 2026") {

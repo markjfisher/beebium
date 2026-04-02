@@ -64,11 +64,19 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
     }
 
     // Validate year is representable for the chosen layout
-    int year_offset = target_dt.year - 1981;
-    int max_offset = (chip_.layout() == RegisterLayout::V126) ? 99 : 19;
-    if (year_offset < 0 || year_offset > max_offset) {
-        std::string range = (chip_.layout() == RegisterLayout::V126)
-            ? "1981-2080" : "1981-2000";
+    bool valid = true;
+    std::string range;
+    if (chip_.layout() == RegisterLayout::V126) {
+        // V126: 2-digit year (0-99), century inferred. Valid: 1981-2099.
+        valid = (target_dt.year >= 1981 && target_dt.year <= 2099);
+        range = "1981-2099";
+    } else {
+        // Acorn: offset 0-19 from 1981. Valid: 1981-2000.
+        int offset = target_dt.year - 1981;
+        valid = (offset >= 0 && offset <= 19);
+        range = "1981-2000";
+    }
+    if (!valid) {
         throw std::runtime_error(
             "RTC extension: year " + std::to_string(target_dt.year) +
             " cannot be represented (valid range: " + range + " for layout '" +

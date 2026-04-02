@@ -163,18 +163,23 @@ int Saf3019p::days_in_current_month() const {
 //////////////////////////////////////////////////////////////////////////////
 
 bool Saf3019p::initialise(const DateTime& dt) {
-    int year_offset = dt.year - 1981;
-
     // Validate year range based on layout
     switch (layout_) {
-        case RegisterLayout::Acorn:
+        case RegisterLayout::Acorn: {
             // Register 1 is a 5-bit BCD month alarm field; wraps at 20
+            int year_offset = dt.year - 1981;
             if (year_offset < 0 || year_offset > 19) return false;
             break;
-        case RegisterLayout::V126:
-            // Register 7 is a 7-bit minute alarm field storing binary 0-99
-            if (year_offset < 0 || year_offset > 99) return false;
+        }
+        case RegisterLayout::V126: {
+            // Register 7 stores the 2-digit year (0-99) in binary.
+            // v1.26 stores DYEAR as absolute year (e.g. 85 for 1985, 26 for 2026).
+            int two_digit_year = dt.year % 100;
+            // Reject years before 1981 (would be ambiguous)
+            if (dt.year < 1981) return false;
+            (void)two_digit_year;  // used below
             break;
+        }
     }
 
     std::lock_guard lock(mutex_);
@@ -197,16 +202,21 @@ bool Saf3019p::initialise(const DateTime& dt) {
 
     // Year and dongle registers depend on layout
     switch (layout_) {
-        case RegisterLayout::Acorn:
-            registers_[1] = to_bcd(year_offset);  // Year in reg 1 (BCD)
+        case RegisterLayout::Acorn: {
+            int year_offset = dt.year - 1981;
+            registers_[1] = to_bcd(year_offset);  // Year offset in reg 1 (BCD)
             registers_[5] = 0x00;                  // Unused
             registers_[7] = 0x00;                  // Dongle detection
             break;
-        case RegisterLayout::V126:
+        }
+        case RegisterLayout::V126: {
+            // v1.26 stores the 2-digit year directly (85 for 1985, 26 for 2026)
+            int two_digit_year = dt.year % 100;
             registers_[1] = 0x00;                  // Unused
             registers_[5] = 0x00;                  // Dongle detection
-            registers_[7] = static_cast<uint8_t>(year_offset);  // Year in reg 7 (binary)
+            registers_[7] = static_cast<uint8_t>(two_digit_year);  // 2-digit year in reg 7 (binary)
             break;
+        }
     }
 
     // Reset prescaler
@@ -268,18 +278,22 @@ void Saf3019p::write_register(int reg, uint8_t bcd_value) {
 Saf3019p::DateTime Saf3019p::current_datetime() const {
     std::lock_guard lock(mutex_);
 
-    int year_offset = 0;
+    int year = 0;
     switch (layout_) {
         case RegisterLayout::Acorn:
-            year_offset = from_bcd(registers_[1]);  // BCD in reg 1
+            year = 1981 + from_bcd(registers_[1]);  // BCD offset from 1981 in reg 1
             break;
-        case RegisterLayout::V126:
-            year_offset = registers_[7];  // Binary in reg 7
+        case RegisterLayout::V126: {
+            // 2-digit year in reg 7 (binary). Century determined by value:
+            // 0-80 → 2000-2080, 81-99 → 1981-1999
+            int two_digit = registers_[7];
+            year = (two_digit >= 81) ? (1900 + two_digit) : (2000 + two_digit);
             break;
+        }
     }
 
     return {
-        .year = 1981 + year_offset,
+        .year = year,
         .month = from_bcd(registers_[0]),
         .day = from_bcd(registers_[2]),
         .hour = from_bcd(registers_[4]),
