@@ -13,6 +13,8 @@
 #include "beebium/extension/UserPort.hpp"
 #include "beebium/Via6522.hpp"
 
+#include <stdexcept>
+
 namespace beebium {
 
 // Bridge between ViaPeripheral (what the VIA calls) and UserPortDevice

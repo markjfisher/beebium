@@ -311,7 +311,7 @@ struct Parser {
         }
 
         (void)start;
-        emit_const(value);
+        emit_const(static_cast<uint32_t>(value));
     }
 };
 

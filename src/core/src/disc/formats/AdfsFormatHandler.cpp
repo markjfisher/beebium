@@ -196,7 +196,7 @@ DiscLoadResult AdfsFormatHandler::load(std::span<const uint8_t> file_data,
                                          const std::filesystem::path& source_filepath) const {
     std::string ext = source_filepath.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     auto geom = classify_adfs_extension(ext, file_data.size());
     if (!geom) {

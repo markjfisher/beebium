@@ -194,7 +194,7 @@ DiscLoadResult SsdFormatHandler::load(std::span<const uint8_t> file_data,
     // Determine extension
     std::string ext = source_filepath.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     auto type = classify_extension(ext);
     if (type == SsdType::None) {
         return {nullptr, "Not an SSD/DSD file: " + source_filepath.string()};
