@@ -10,10 +10,10 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef BEEBIUM_USER_PORT_RTC_SERVICE_HPP
-#define BEEBIUM_USER_PORT_RTC_SERVICE_HPP
+#ifndef BEEBIUM_ACORN_RTC_SERVICE_HPP
+#define BEEBIUM_ACORN_RTC_SERVICE_HPP
 
-#include "user_port_rtc.grpc.pb.h"
+#include "acorn_rtc.grpc.pb.h"
 #include "Saf3019p.hpp"
 #include "TimeParser.hpp"
 
@@ -24,9 +24,9 @@
 
 namespace beebium {
 
-class UserPortRtcServiceImpl final : public UserPortRtcService::Service {
+class AcornRtcServiceImpl final : public AcornRtcService::Service {
 public:
-    explicit UserPortRtcServiceImpl(Saf3019p& chip)
+    explicit AcornRtcServiceImpl(Saf3019p& chip)
         : chip_(chip) {}
 
     grpc::Status GetTime(
@@ -108,4 +108,4 @@ private:
 
 }  // namespace beebium
 
-#endif  // BEEBIUM_USER_PORT_RTC_SERVICE_HPP
+#endif  // BEEBIUM_ACORN_RTC_SERVICE_HPP

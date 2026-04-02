@@ -2,7 +2,7 @@ syntax = "proto3";
 package beebium;
 
 // Service for managing the SAF3019P Real Time Clock on the User Port.
-service UserPortRtcService {
+service AcornRtcService {
     // Read the current emulated date and time (decoded from chip registers).
     rpc GetTime(GetRtcTimeRequest) returns (GetRtcTimeResponse);
 

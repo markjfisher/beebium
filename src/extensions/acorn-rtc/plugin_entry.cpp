@@ -10,14 +10,14 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include "UserPortRtcExtension.hpp"
+#include "AcornRtcExtension.hpp"
 #include <beebium/extension/ExtensionManifest.hpp>
 
 extern "C" {
 
 BEEBIUM_PLUGIN_EXPORT
 beebium::PeripheralExtension* beebium_create_extension(const beebium::ExtensionManifest& manifest) {
-    auto* ext = new beebium::UserPortRtcExtension();
+    auto* ext = new beebium::AcornRtcExtension();
     ext->set_manifest(manifest);
     return ext;
 }

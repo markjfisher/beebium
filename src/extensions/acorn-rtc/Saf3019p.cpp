@@ -165,13 +165,13 @@ int Saf3019p::days_in_current_month() const {
 bool Saf3019p::initialise(const DateTime& dt) {
     // Validate year range based on layout
     switch (layout_) {
-        case RegisterLayout::Acorn: {
+        case RegisterLayout::FourBitYear: {
             // Register 1 is a 5-bit BCD month alarm field; wraps at 20
             int year_offset = dt.year - 1981;
             if (year_offset < 0 || year_offset > 19) return false;
             break;
         }
-        case RegisterLayout::V126: {
+        case RegisterLayout::SevenBitYear: {
             // Register 7 stores the 2-digit year (0-99) in binary.
             // v1.26 stores DYEAR as absolute year (e.g. 85 for 1985, 26 for 2026).
             int two_digit_year = dt.year % 100;
@@ -202,14 +202,14 @@ bool Saf3019p::initialise(const DateTime& dt) {
 
     // Year and dongle registers depend on layout
     switch (layout_) {
-        case RegisterLayout::Acorn: {
+        case RegisterLayout::FourBitYear: {
             int year_offset = dt.year - 1981;
             registers_[1] = to_bcd(year_offset);  // Year offset in reg 1 (BCD)
             registers_[5] = 0x00;                  // Unused
             registers_[7] = 0x00;                  // Dongle detection
             break;
         }
-        case RegisterLayout::V126: {
+        case RegisterLayout::SevenBitYear: {
             // v1.26 stores the 2-digit year directly (85 for 1985, 26 for 2026)
             int two_digit_year = dt.year % 100;
             registers_[1] = 0x00;                  // Unused
@@ -280,10 +280,10 @@ Saf3019p::DateTime Saf3019p::current_datetime() const {
 
     int year = 0;
     switch (layout_) {
-        case RegisterLayout::Acorn:
+        case RegisterLayout::FourBitYear:
             year = 1981 + from_bcd(registers_[1]);  // BCD offset from 1981 in reg 1
             break;
-        case RegisterLayout::V126: {
+        case RegisterLayout::SevenBitYear: {
             // 2-digit year in reg 7 (binary). Century determined by value:
             // 0-80 → 2000-2080, 81-99 → 1981-1999
             int two_digit = registers_[7];

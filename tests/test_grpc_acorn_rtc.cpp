@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// Test gRPC UserPortRtcService provided by the UserPortRtcExtension.
+// Test gRPC AcornRtcService provided by the AcornRtcExtension.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,23 +18,23 @@
 #include "beebium/service/Server.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
-#include "UserPortRtcExtension.hpp"
+#include "AcornRtcExtension.hpp"
 
-#include "user_port_rtc.grpc.pb.h"
+#include "acorn_rtc.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
 namespace {
 
-class UserPortRtcGrpcFixture {
+class AcornRtcGrpcFixture {
 public:
-    UserPortRtcGrpcFixture() {
+    AcornRtcGrpcFixture() {
         machine_.reset();
 
         // Set up extension registry with user-port extension point
         registry_.register_extension_point("user-port");
 
         // Create and configure the RTC extension with a known time
-        auto rtc = std::make_unique<beebium::UserPortRtcExtension>();
+        auto rtc = std::make_unique<beebium::AcornRtcExtension>();
         rtc->set_config({
             {"id", "test-rtc"},
             {"time", "1985-06-15T14:30"}
@@ -55,29 +55,29 @@ public:
 
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-        stub_ = beebium::UserPortRtcService::NewStub(channel_);
+        stub_ = beebium::AcornRtcService::NewStub(channel_);
     }
 
-    ~UserPortRtcGrpcFixture() {
+    ~AcornRtcGrpcFixture() {
         server_->stop();
         registry_.shutdown();
     }
 
-    beebium::UserPortRtcService::Stub& stub() { return *stub_; }
+    beebium::AcornRtcService::Stub& stub() { return *stub_; }
 
 private:
     beebium::ModelB machine_;
     beebium::ExtensionRegistry registry_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<beebium::UserPortRtcService::Stub> stub_;
+    std::unique_ptr<beebium::AcornRtcService::Stub> stub_;
 };
 
 }  // namespace
 
-TEST_CASE("UserPortRtcService GetTime returns initialised values",
-          "[grpc][extension][user-port-rtc]") {
-    UserPortRtcGrpcFixture fixture;
+TEST_CASE("AcornRtcService GetTime returns initialised values",
+          "[grpc][extension][acorn-rtc]") {
+    AcornRtcGrpcFixture fixture;
 
     grpc::ClientContext ctx;
     beebium::GetRtcTimeRequest request;
@@ -93,9 +93,9 @@ TEST_CASE("UserPortRtcService GetTime returns initialised values",
     REQUIRE(response.iso8601() == "1985-06-15T14:30");
 }
 
-TEST_CASE("UserPortRtcService SetTime updates registers",
-          "[grpc][extension][user-port-rtc]") {
-    UserPortRtcGrpcFixture fixture;
+TEST_CASE("AcornRtcService SetTime updates registers",
+          "[grpc][extension][acorn-rtc]") {
+    AcornRtcGrpcFixture fixture;
 
     // Set a new time
     {
@@ -122,9 +122,9 @@ TEST_CASE("UserPortRtcService SetTime updates registers",
     }
 }
 
-TEST_CASE("UserPortRtcService SetTime rejects out-of-range year",
-          "[grpc][extension][user-port-rtc]") {
-    UserPortRtcGrpcFixture fixture;
+TEST_CASE("AcornRtcService SetTime rejects out-of-range year",
+          "[grpc][extension][acorn-rtc]") {
+    AcornRtcGrpcFixture fixture;
 
     grpc::ClientContext ctx;
     beebium::SetRtcTimeRequest request;
@@ -136,9 +136,9 @@ TEST_CASE("UserPortRtcService SetTime rejects out-of-range year",
     REQUIRE(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
 }
 
-TEST_CASE("UserPortRtcService GetRegisters returns 8 values",
-          "[grpc][extension][user-port-rtc]") {
-    UserPortRtcGrpcFixture fixture;
+TEST_CASE("AcornRtcService GetRegisters returns 8 values",
+          "[grpc][extension][acorn-rtc]") {
+    AcornRtcGrpcFixture fixture;
 
     grpc::ClientContext ctx;
     beebium::GetRtcRegistersRequest request;
@@ -157,9 +157,9 @@ TEST_CASE("UserPortRtcService GetRegisters returns 8 values",
     REQUIRE(response.registers(1) == 0x04);
 }
 
-TEST_CASE("UserPortRtcService SetRegister applies wrapping",
-          "[grpc][extension][user-port-rtc]") {
-    UserPortRtcGrpcFixture fixture;
+TEST_CASE("AcornRtcService SetRegister applies wrapping",
+          "[grpc][extension][acorn-rtc]") {
+    AcornRtcGrpcFixture fixture;
 
     // Write BCD 0x71 to register 7 (minute alarm, wrapping test)
     {

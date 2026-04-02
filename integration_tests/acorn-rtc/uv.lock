@@ -24,26 +24,7 @@ requires-dist = [
 provides-extras = ["dev", "imaging", "discovery"]
 
 [[package]]
-name = "beebium-adfs-tests"
-version = "0.1.0"
-source = { editable = "../adfs" }
-dependencies = [
-    { name = "beebium" },
-    { name = "oaknut-dfs" },
-    { name = "pytest" },
-    { name = "pytest-timeout" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "beebium", editable = "../../clients/python" },
-    { name = "oaknut-dfs" },
-    { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-timeout", specifier = ">=2.0.0" },
-]
-
-[[package]]
-name = "beebium-rtc-tests"
+name = "beebium-acorn-rtc-tests"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -58,6 +39,25 @@ dependencies = [
 requires-dist = [
     { name = "beebium", editable = "../../clients/python" },
     { name = "beebium-adfs-tests", editable = "../adfs" },
+    { name = "oaknut-dfs" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.0.0" },
+]
+
+[[package]]
+name = "beebium-adfs-tests"
+version = "0.1.0"
+source = { editable = "../adfs" }
+dependencies = [
+    { name = "beebium" },
+    { name = "oaknut-dfs" },
+    { name = "pytest" },
+    { name = "pytest-timeout" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beebium", editable = "../../clients/python" },
     { name = "oaknut-dfs" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-timeout", specifier = ">=2.0.0" },

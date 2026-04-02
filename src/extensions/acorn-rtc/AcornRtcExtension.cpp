@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include "UserPortRtcExtension.hpp"
+#include "AcornRtcExtension.hpp"
 #include "TimeParser.hpp"
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/UserPort.hpp>
@@ -20,16 +20,16 @@
 
 namespace beebium {
 
-std::span<const std::string_view> UserPortRtcExtension::attaches_to() const {
+std::span<const std::string_view> AcornRtcExtension::attaches_to() const {
     static constexpr std::string_view deps[] = {"user-port"};
     return deps;
 }
 
-std::span<const std::string_view> UserPortRtcExtension::provides() const {
+std::span<const std::string_view> AcornRtcExtension::provides() const {
     return {};
 }
 
-void UserPortRtcExtension::init(ExtensionContext& ctx) {
+void AcornRtcExtension::init(ExtensionContext& ctx) {
     // Determine the target datetime for initialisation
     Saf3019p::DateTime target_dt;
 
@@ -38,7 +38,7 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
 
     if (time_val && offset_val) {
         throw std::runtime_error(
-            "RTC extension: 'time' and 'offset' are mutually exclusive");
+            "Acorn RTC: 'time' and 'offset' are mutually exclusive");
     }
 
     if (time_val) {
@@ -52,21 +52,21 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
     // Parse register layout
     auto layout_val = config_value("layout");
     if (layout_val) {
-        if (*layout_val == "v126") {
-            chip_.set_layout(RegisterLayout::V126);
-        } else if (*layout_val == "acorn") {
-            chip_.set_layout(RegisterLayout::Acorn);
+        if (*layout_val == "7bit-year") {
+            chip_.set_layout(RegisterLayout::SevenBitYear);
+        } else if (*layout_val == "4bit-year") {
+            chip_.set_layout(RegisterLayout::FourBitYear);
         } else {
             throw std::runtime_error(
-                "RTC extension: unknown layout '" + std::string(*layout_val) +
-                "' (valid: 'acorn', 'v126')");
+                "Acorn RTC: unknown layout '" + std::string(*layout_val) +
+                "' (valid: '4bit-year', '7bit-year')");
         }
     }
 
     // Validate year is representable for the chosen layout
     bool valid = true;
     std::string range;
-    if (chip_.layout() == RegisterLayout::V126) {
+    if (chip_.layout() == RegisterLayout::SevenBitYear) {
         // V126: 2-digit year (0-99), century inferred. Valid: 1981-2099.
         valid = (target_dt.year >= 1981 && target_dt.year <= 2099);
         range = "1981-2099";
@@ -78,19 +78,19 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
     }
     if (!valid) {
         throw std::runtime_error(
-            "RTC extension: year " + std::to_string(target_dt.year) +
+            "Acorn RTC: year " + std::to_string(target_dt.year) +
             " cannot be represented (valid range: " + range + " for layout '" +
-            std::string(layout_val.value_or("acorn")) + "').\n"
-            "  Use --rtc time=YYYY-MM-DDThhmm with a date in range,\n"
-            "  or use --rtc offset=-Ny to shift the clock back.");
+            std::string(layout_val.value_or("4bit-year")) + "').\n"
+            "  Use --acorn-rtc time=YYYY-MM-DDThhmm with a date in range,\n"
+            "  or use --acorn-rtc offset=-Ny to shift the clock back.");
     }
 
     // Initialise the chip
     if (!chip_.initialise(target_dt)) {
-        throw std::runtime_error("RTC extension: failed to initialise SAF3019P");
+        throw std::runtime_error("Acorn RTC: failed to initialise SAF3019P");
     }
 
-    std::cout << "RTC: initialised to "
+    std::cout << "Acorn RTC: initialised to "
               << target_dt.year << "-"
               << (target_dt.month < 10 ? "0" : "") << target_dt.month << "-"
               << (target_dt.day < 10 ? "0" : "") << target_dt.day << "T"
@@ -98,24 +98,24 @@ void UserPortRtcExtension::init(ExtensionContext& ctx) {
               << (target_dt.minute < 10 ? "0" : "") << target_dt.minute << "\n";
 
     // Create gRPC service
-    service_ = std::make_unique<UserPortRtcServiceImpl>(chip_);
+    service_ = std::make_unique<AcornRtcServiceImpl>(chip_);
 
     // Attach to User Port
     ctx.get<UserPort>().attach(*this);
 }
 
-void UserPortRtcExtension::shutdown() {
+void AcornRtcExtension::shutdown() {
     service_.reset();
 }
 
-std::vector<grpc::Service*> UserPortRtcExtension::grpc_services() {
+std::vector<grpc::Service*> AcornRtcExtension::grpc_services() {
     if (service_) {
         return {service_.get()};
     }
     return {};
 }
 
-uint8_t UserPortRtcExtension::update_port_b(uint8_t output, uint8_t ddr) {
+uint8_t AcornRtcExtension::update_port_b(uint8_t output, uint8_t ddr) {
     // Detect DDRB reset pattern: bits 0-2 all set to output
     bool ddr_outputs = (ddr & 0x07) == 0x07;
     if (ddr_outputs && !ddr_reset_armed_) {

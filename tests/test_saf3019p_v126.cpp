@@ -198,7 +198,7 @@ TEST_CASE("v1.26 RDDONG reads all registers correctly (Acorn layout)", "[saf3019
 
 TEST_CASE("v1.26 RDDONG reads all registers correctly (V126 layout)", "[saf3019p][v126][rddong][layout]") {
     Saf3019p chip;
-    chip.set_layout(RegisterLayout::V126);
+    chip.set_layout(RegisterLayout::SevenBitYear);
     Saf3019p::DateTime dt{1985, 10, 26, 1, 21};
     REQUIRE(chip.initialise(dt));
 
@@ -248,7 +248,7 @@ TEST_CASE("v1.26 WRDONG writes all registers correctly", "[saf3019p][v126][wrdon
 
 TEST_CASE("V126 layout: year range extended to 1981-2080", "[saf3019p][v126][layout]") {
     Saf3019p chip;
-    chip.set_layout(RegisterLayout::V126);
+    chip.set_layout(RegisterLayout::SevenBitYear);
 
     SECTION("Year 2026 is representable") {
         Saf3019p::DateTime dt{2026, 4, 2, 10, 30};
@@ -284,7 +284,7 @@ TEST_CASE("V126 layout: year range extended to 1981-2080", "[saf3019p][v126][lay
     }
 
     SECTION("Acorn layout rejects year 2026") {
-        chip.set_layout(RegisterLayout::Acorn);
+        chip.set_layout(RegisterLayout::FourBitYear);
         Saf3019p::DateTime dt{2026, 4, 2, 10, 30};
         REQUIRE_FALSE(chip.initialise(dt));
     }

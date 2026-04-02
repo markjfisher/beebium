@@ -1,8 +1,8 @@
 {
-    "name": "user-port-rtc",
-    "description": "SAF3019P Real Time Clock on User Port (Acorn Level 3 File Server)",
-    "library": "user-port-rtc",
-    "cli": "rtc",
+    "name": "acorn-rtc",
+    "description": "Acorn User Port Real Time Clock Module (SAF3019P)",
+    "library": "acorn-rtc",
+    "cli": "acorn-rtc",
     "parameters": [
         {
             "key": "time",
@@ -17,8 +17,8 @@
         {
             "key": "layout",
             "type": "string",
-            "description": "Register layout: 'acorn' (year in reg 1, dongle in reg 7) or 'v126' (year in reg 7, dongle in reg 5)",
-            "default": "acorn"
+            "description": "Register layout: '4bit-year' (year in reg 1, dongle in reg 7) or '7bit-year' (year in reg 7, dongle in reg 5)",
+            "default": "4bit-year"
         }
     ]
 }

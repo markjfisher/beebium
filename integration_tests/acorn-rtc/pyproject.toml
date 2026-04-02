@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "beebium-rtc-tests"
+name = "beebium-acorn-rtc-tests"
 version = "0.1.0"
 description = "User Port RTC integration tests for the Beebium BBC Micro emulator"
 license = "GPL-3.0-or-later"

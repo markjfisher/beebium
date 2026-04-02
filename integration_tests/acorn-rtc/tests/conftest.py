@@ -122,7 +122,7 @@ def extension_dirpath():
         raise FileNotFoundError(f"BEEBIUM_EXTENSION_DIR={env} is not a directory")
     repo_root = Path(__file__).parent.parent.parent.parent
     candidates = [
-        repo_root / "build" / "src" / "extensions" / "user-port-rtc",
+        repo_root / "build" / "src" / "extensions" / "acorn-rtc",
     ]
     for c in candidates:
         if c.is_dir():
@@ -158,7 +158,7 @@ def bbc_rtc(model_b_server_filepath, mos_filepath, basic_filepath,
         "--fdc", "acorn-1770",
         "--floppy", f"0:{ssd_filepath}",
         "--extension-dir", str(extension_dirpath),
-        "--rtc", "time=1985-06-15T1430",
+        "--acorn-rtc", "time=1985-06-15T1430",
     ]
 
     with Beebium.launch(

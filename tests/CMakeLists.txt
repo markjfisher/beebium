@@ -801,13 +801,13 @@ if(BEEBIUM_BUILD_SERVICE)
     catch_discover_tests(test_grpc_scsi_host_adapter)
 
     # User Port RTC gRPC service tests
-    add_executable(test_grpc_user_port_rtc test_grpc_user_port_rtc.cpp)
-    target_link_libraries(test_grpc_user_port_rtc PRIVATE
+    add_executable(test_grpc_acorn_rtc test_grpc_acorn_rtc.cpp)
+    target_link_libraries(test_grpc_acorn_rtc PRIVATE
         beebium_service
-        beebium_ext_user_port_rtc
+        beebium_ext_acorn_rtc
         Catch2::Catch2WithMain
     )
-    catch_discover_tests(test_grpc_user_port_rtc)
+    catch_discover_tests(test_grpc_acorn_rtc)
 
     # Econet service tests
     add_executable(test_grpc_econet test_grpc_econet.cpp)

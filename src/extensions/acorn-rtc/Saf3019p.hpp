@@ -24,10 +24,14 @@ namespace beebium {
 // registers for year storage and dongle detection. The chip hardware is the
 // same; only the software convention differs.
 enum class RegisterLayout {
-    // Original Acorn (v1.06, v1.24): year in reg 1 (BCD, 0-19), dongle in reg 7
-    Acorn,
-    // L3 v1.26 (Martin): year in reg 7 (binary, 0-99), dongle in reg 5
-    V126,
+    // 4-bit year: year as BCD offset from 1981 in register 1 (4 bits of
+    // the 5-bit month alarm field). Dongle detection on register 7.
+    // Used by original Acorn FS releases (v1.06, v1.24). Range: 1981-1996.
+    FourBitYear,
+    // 7-bit year: year as binary 2-digit value (0-99) in register 7 (the
+    // full 7-bit minute alarm field). Dongle detection on register 5.
+    // Used by L3 FS v1.26 and similar revisions. Range: 1981-2099.
+    SevenBitYear,
 };
 
 // Faithful emulation of the Signetics/Philips SAF3019P CMOS clock/timer IC.
@@ -111,7 +115,7 @@ private:
     bool in_read_phase_ = false;   // true after TIME ADDRESS triggers a read
 
     // Register layout (software convention for year/dongle storage)
-    RegisterLayout layout_ = RegisterLayout::Acorn;
+    RegisterLayout layout_ = RegisterLayout::FourBitYear;
 
     // 8 BCD registers
     std::array<uint8_t, 8> registers_{};

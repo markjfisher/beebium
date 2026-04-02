@@ -10,11 +10,11 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef BEEBIUM_USER_PORT_RTC_EXTENSION_HPP
-#define BEEBIUM_USER_PORT_RTC_EXTENSION_HPP
+#ifndef BEEBIUM_ACORN_RTC_EXTENSION_HPP
+#define BEEBIUM_ACORN_RTC_EXTENSION_HPP
 
 #include "Saf3019p.hpp"
-#include "UserPortRtcService.hpp"
+#include "AcornRtcService.hpp"
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/extension/UserPortDevice.hpp>
 
@@ -25,11 +25,11 @@
 
 namespace beebium {
 
-class UserPortRtcExtension : public PeripheralExtension,
+class AcornRtcExtension : public PeripheralExtension,
                               public UserPortDevice {
 public:
-    UserPortRtcExtension() = default;
-    ~UserPortRtcExtension() override = default;
+    AcornRtcExtension() = default;
+    ~AcornRtcExtension() override = default;
 
     // PeripheralExtension interface
     std::span<const std::string_view> attaches_to() const override;
@@ -47,9 +47,9 @@ public:
 private:
     Saf3019p chip_;
     bool ddr_reset_armed_ = false;
-    std::unique_ptr<UserPortRtcServiceImpl> service_;
+    std::unique_ptr<AcornRtcServiceImpl> service_;
 };
 
 }  // namespace beebium
 
-#endif  // BEEBIUM_USER_PORT_RTC_EXTENSION_HPP
+#endif  // BEEBIUM_ACORN_RTC_EXTENSION_HPP
