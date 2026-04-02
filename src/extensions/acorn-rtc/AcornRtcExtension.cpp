@@ -52,42 +52,33 @@ void AcornRtcExtension::init(ExtensionContext& ctx) {
     // Parse register layout
     auto layout_val = config_value("layout");
     if (layout_val) {
-        if (*layout_val == "7bit-year") {
-            chip_.set_layout(RegisterLayout::SevenBitYear);
-        } else if (*layout_val == "4bit-year") {
-            chip_.set_layout(RegisterLayout::FourBitYear);
+        if (*layout_val == "4bit-year-in-r1") {
+            chip_.set_layout(RegisterLayout::FourBitYearInR1);
+        } else if (*layout_val == "7bit-year-in-r7") {
+            chip_.set_layout(RegisterLayout::SevenBitYearInR7);
+        } else if (*layout_val == "7bit-year-in-r1r5") {
+            chip_.set_layout(RegisterLayout::SevenBitYearInR1R5);
         } else {
             throw std::runtime_error(
                 "Acorn RTC: unknown layout '" + std::string(*layout_val) +
-                "' (valid: '4bit-year', '7bit-year')");
+                "' (valid: '4bit-year-in-r1', '7bit-year-in-r7', '7bit-year-in-r1r5')");
         }
     }
 
-    // Validate year is representable for the chosen layout
-    bool valid = true;
-    std::string range;
-    if (chip_.layout() == RegisterLayout::SevenBitYear) {
-        // V126: 2-digit year (0-99), century inferred. Valid: 1981-2099.
-        valid = (target_dt.year >= 1981 && target_dt.year <= 2099);
-        range = "1981-2099";
-    } else {
-        // Acorn: offset 0-19 from 1981. Valid: 1981-2000.
-        int offset = target_dt.year - 1981;
-        valid = (offset >= 0 && offset <= 19);
-        range = "1981-2000";
-    }
-    if (!valid) {
+    // Initialise the chip (validates year range for the layout)
+    if (!chip_.initialise(target_dt)) {
+        std::string range;
+        switch (chip_.layout()) {
+            case RegisterLayout::FourBitYearInR1: range = "1981-1996"; break;
+            case RegisterLayout::SevenBitYearInR7: range = "1981-2099"; break;
+            case RegisterLayout::SevenBitYearInR1R5: range = "1981-2108"; break;
+        }
         throw std::runtime_error(
             "Acorn RTC: year " + std::to_string(target_dt.year) +
             " cannot be represented (valid range: " + range + " for layout '" +
-            std::string(layout_val.value_or("4bit-year")) + "').\n"
+            std::string(layout_val.value_or("4bit-year-in-r1")) + "').\n"
             "  Use --acorn-rtc time=YYYY-MM-DDThhmm with a date in range,\n"
             "  or use --acorn-rtc offset=-Ny to shift the clock back.");
-    }
-
-    // Initialise the chip
-    if (!chip_.initialise(target_dt)) {
-        throw std::runtime_error("Acorn RTC: failed to initialise SAF3019P");
     }
 
     std::cout << "Acorn RTC: initialised to "

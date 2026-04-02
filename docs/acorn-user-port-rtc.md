@@ -335,21 +335,30 @@ race with the FS's year increment, and deriving month/day from the host clock
 
 ### Register Layouts
 
-Two register layouts are supported via the `layout` CLI parameter:
+Three register layouts are supported via the `layout` CLI parameter:
 
-**`4bit-year`** (default): Original Acorn convention (v1.06, v1.24).
+**`4bit-year-in-r1`** (default): Original Acorn convention.
 - Register 1: year as BCD offset from 1981 (0--15). Range: 1981--1996.
 - Register 7: dongle detection.
 - Register 5: unused.
+- Used by: Acorn FS v0.90, v1.01--v1.07, v1.24.
 
-**`7bit-year`**: Revised convention (L3 FS v1.26 and similar).
+**`7bit-year-in-r7`**: Year relocated to register 7.
 - Register 7: year as binary 2-digit value (0--99). Range: 1981--2099.
 - Register 5: dongle detection.
 - Register 1: unused.
+- Used by: L3 FS v1.26 and similar revisions.
 
-The chip hardware emulation is identical for both; only `initialise()` and
-`current_datetime()` differ in which register holds the year and how it is
-encoded.
+**`7bit-year-in-r1r5`**: BeebMaster Y2KFIX scheme.
+- Register 1: low 4 bits of year offset from 1981.
+- Register 5: high 3 bits of year offset from 1981.
+- Year = 1981 + reg1 + (reg5 * 16). Range: 1981--2108.
+- Register 7: dongle detection.
+- Used by: BeebMaster Y2KFIX patched FS binaries.
+
+The chip hardware emulation is identical for all three; only `initialise()`
+and `current_datetime()` differ in which registers hold the year and how it
+is encoded.
 
 ### CLI Usage
 
@@ -357,8 +366,8 @@ encoded.
 --acorn-rtc                              # Host local time, 4bit-year layout
 --acorn-rtc time=1985-10-26T0121         # Specific time (compact ISO 8601)
 --acorn-rtc offset=-10y                  # 10 years before host time
---acorn-rtc layout=7bit-year             # 7-bit year layout
---acorn-rtc layout=7bit-year:time=1985-10-26T0121
+--acorn-rtc layout=7bit-year-in-r7             # 7-bit year layout
+--acorn-rtc layout=7bit-year-in-r7:time=1985-10-26T0121
 ```
 
 Note: the compact ISO 8601 format (`T0121` not `T01:21`) avoids the colon

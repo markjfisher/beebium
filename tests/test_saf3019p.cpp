@@ -499,9 +499,14 @@ TEST_CASE("SAF3019P initialise rejects unrepresentable years", "[saf3019p][init]
         REQUIRE(chip.initialise(dt));
     }
 
-    SECTION("Year 2000 (offset 19) is accepted") {
-        Saf3019p::DateTime dt{2000, 1, 1, 0, 0};
+    SECTION("Year 1996 (offset 15) is accepted") {
+        Saf3019p::DateTime dt{1996, 1, 1, 0, 0};
         REQUIRE(chip.initialise(dt));
+    }
+
+    SECTION("Year 1997 (offset 16) is rejected for 4-bit layout") {
+        Saf3019p::DateTime dt{1997, 1, 1, 0, 0};
+        REQUIRE_FALSE(chip.initialise(dt));
     }
 }
 

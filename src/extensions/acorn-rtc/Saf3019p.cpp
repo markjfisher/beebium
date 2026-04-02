@@ -165,19 +165,18 @@ int Saf3019p::days_in_current_month() const {
 bool Saf3019p::initialise(const DateTime& dt) {
     // Validate year range based on layout
     switch (layout_) {
-        case RegisterLayout::FourBitYear: {
-            // Register 1 is a 5-bit BCD month alarm field; wraps at 20
+        case RegisterLayout::FourBitYearInR1: {
             int year_offset = dt.year - 1981;
-            if (year_offset < 0 || year_offset > 19) return false;
+            if (year_offset < 0 || year_offset > 15) return false;
             break;
         }
-        case RegisterLayout::SevenBitYear: {
-            // Register 7 stores the 2-digit year (0-99) in binary.
-            // v1.26 stores DYEAR as absolute year (e.g. 85 for 1985, 26 for 2026).
-            int two_digit_year = dt.year % 100;
-            // Reject years before 1981 (would be ambiguous)
-            if (dt.year < 1981) return false;
-            (void)two_digit_year;  // used below
+        case RegisterLayout::SevenBitYearInR7: {
+            if (dt.year < 1981 || dt.year > 2099) return false;
+            break;
+        }
+        case RegisterLayout::SevenBitYearInR1R5: {
+            int year_offset = dt.year - 1981;
+            if (year_offset < 0 || year_offset > 127) return false;
             break;
         }
     }
@@ -202,19 +201,26 @@ bool Saf3019p::initialise(const DateTime& dt) {
 
     // Year and dongle registers depend on layout
     switch (layout_) {
-        case RegisterLayout::FourBitYear: {
+        case RegisterLayout::FourBitYearInR1: {
             int year_offset = dt.year - 1981;
-            registers_[1] = to_bcd(year_offset);  // Year offset in reg 1 (BCD)
+            registers_[1] = to_bcd(year_offset);  // BCD offset in reg 1
             registers_[5] = 0x00;                  // Unused
             registers_[7] = 0x00;                  // Dongle detection
             break;
         }
-        case RegisterLayout::SevenBitYear: {
-            // v1.26 stores the 2-digit year directly (85 for 1985, 26 for 2026)
+        case RegisterLayout::SevenBitYearInR7: {
             int two_digit_year = dt.year % 100;
             registers_[1] = 0x00;                  // Unused
             registers_[5] = 0x00;                  // Dongle detection
-            registers_[7] = static_cast<uint8_t>(two_digit_year);  // 2-digit year in reg 7 (binary)
+            registers_[7] = static_cast<uint8_t>(two_digit_year);
+            break;
+        }
+        case RegisterLayout::SevenBitYearInR1R5: {
+            // BeebMaster Y2KFIX: year = 1981 + reg1 + (reg5 * 16)
+            int year_offset = dt.year - 1981;
+            registers_[1] = to_bcd(year_offset & 0x0F);         // Low 4 bits
+            registers_[5] = to_bcd((year_offset >> 4) & 0x07);  // High 3 bits
+            registers_[7] = 0x00;                                 // Dongle detection
             break;
         }
     }
@@ -280,14 +286,17 @@ Saf3019p::DateTime Saf3019p::current_datetime() const {
 
     int year = 0;
     switch (layout_) {
-        case RegisterLayout::FourBitYear:
-            year = 1981 + from_bcd(registers_[1]);  // BCD offset from 1981 in reg 1
+        case RegisterLayout::FourBitYearInR1:
+            year = 1981 + from_bcd(registers_[1]);
             break;
-        case RegisterLayout::SevenBitYear: {
-            // 2-digit year in reg 7 (binary). Century determined by value:
-            // 0-80 → 2000-2080, 81-99 → 1981-1999
+        case RegisterLayout::SevenBitYearInR7: {
             int two_digit = registers_[7];
             year = (two_digit >= 81) ? (1900 + two_digit) : (2000 + two_digit);
+            break;
+        }
+        case RegisterLayout::SevenBitYearInR1R5: {
+            int year_offset = from_bcd(registers_[1]) + (from_bcd(registers_[5]) * 16);
+            year = 1981 + year_offset;
             break;
         }
     }

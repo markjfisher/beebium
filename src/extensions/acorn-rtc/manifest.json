@@ -17,8 +17,8 @@
         {
             "key": "layout",
             "type": "string",
-            "description": "Register layout: '4bit-year' (year in reg 1, dongle in reg 7) or '7bit-year' (year in reg 7, dongle in reg 5)",
-            "default": "4bit-year"
+            "description": "Register layout: '4bit-year-in-r1' (Acorn original), '7bit-year-in-r7' (L3 v1.26), '7bit-year-in-r1r5' (BeebMaster Y2KFIX)",
+            "default": "4bit-year-in-r1"
         }
     ]
 }
