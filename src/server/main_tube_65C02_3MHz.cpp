@@ -270,6 +270,7 @@ int main(int argc, char* argv[]) {
            !runner.shutdown_requested())
     {
         runner.run(cycles_per_tick);
+        clock.report_cycles(runner.cycle_count());
         clock.wait_for_tick();
     }
 

@@ -1505,6 +1505,11 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
         run_duration += std::chrono::steady_clock::now() - run_start;
 
+        // Report cycle count to PI controller for drift tracking
+        if (use_pacing) {
+            pacing_clock.report_cycles(machine.cycle_count());
+        }
+
         // Wait for next tick (pacing clock handles timing)
         if (use_pacing) {
             pacing_clock.wait_for_tick();
