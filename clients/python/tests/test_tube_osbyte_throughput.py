@@ -12,11 +12,9 @@
 
 """Tube OSBYTE throughput test.
 
-Measures wall-clock time for 256 OSBYTE 51 (Econet poll) calls through
-the Tube with ANFS active. Uses a minimal BASIC program that pokes a
-13-byte machine code loop, prints START, CALLs it, prints DONE.
-
-Expected throughput on real hardware: ~1100 OSBYTE/s (~0.9ms each).
+Measures wall-clock time for OSBYTE calls through the Tube under normal
+paced execution. No coupled stepping -- pure real-time pacing throughout,
+matching interactive use.
 """
 
 from __future__ import annotations
@@ -31,56 +29,48 @@ from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains, dump_screen, read_mode7_screen
 
-from tube_test_helpers import TUBE_CYCLES_PER_KEY, run_until_or_timeout
+
+OSBYTE_COUNT = 16
 
 
-# Minimal BASIC program -- no assembler, no disc, just DATA/POKE/CALL.
-# Machine code (13 bytes at &2000):
-#   LDA #51 / LDX #0 / JSR &FFF4 / INC &2030 / BNE loop / RTS
-# Counter at &2030 wraps from 0 -> 255 -> 0, giving 256 iterations.
-BASIC_PROGRAM = (
-    '10 FOR I%=0 TO 12:READ B%:?(&2000+I%)=B%:NEXT\r'
-    '20 ?&2030=0\r'
-    '30 PRINT "START"\r'
-    '40 CALL &2000\r'
-    '50 PRINT "DONE"\r'
-    '60 DATA &A9,&33,&A2,0,&20,&F4,&FF,&EE,&30,&20,&D0,&F4,&60\r'
-)
-
-OSBYTE_COUNT = 256
+def _wait_for(bbc, text, timeout=60):
+    """Wait for text to appear at the start of a screen row."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for row in read_mode7_screen(bbc.memory):
+            if row.strip().startswith(text):
+                return True
+        time.sleep(0.5)
+    return False
 
 
 @pytest.fixture(scope="function")
-def bbc_tube_econet(
-    mos_filepath: Path,
-    basic_filepath: Path | None,
-    beebium_roms_dirpath: Path,
-) -> Beebium:
-    """Model B ROM/RAM board with Tube and Econet/ANFS."""
+def bbc(beebium_roms_dirpath: Path, mos_filepath: Path, basic_filepath: Path | None):
+    """Model B ROM/RAM board with Tube and ANFS. No coupled stepping."""
     repo_root = Path(__file__).parent.parent.parent.parent
     exe_suffix = ".exe" if sys.platform == "win32" else ""
-    romram_server = None
-    for candidate in [
+    server = None
+    for c in [
         repo_root / "build-release" / "src" / "server" / f"beebium-model-b-romram{exe_suffix}",
         repo_root / "build" / "src" / "server" / f"beebium-model-b-romram{exe_suffix}",
     ]:
-        if candidate.exists():
-            romram_server = candidate
+        if c.exists():
+            server = c
             break
-    if romram_server is None:
+    if server is None:
         pytest.skip("beebium-model-b-romram not found")
 
-    anfs_rom = beebium_roms_dirpath / "acorn-anfs_4_18.rom"
-    if not anfs_rom.exists():
-        pytest.skip(f"ANFS ROM not found: {anfs_rom}")
+    anfs = beebium_roms_dirpath / "acorn-anfs_4_18.rom"
+    if not anfs.exists():
+        pytest.skip(f"ANFS ROM not found: {anfs}")
 
     try:
         with Beebium.launch(
             mos_filepath=mos_filepath,
             basic_filepath=basic_filepath,
-            server_filepath=romram_server,
+            server_filepath=server,
             extra_args=[
-                "--sideways", f"9:rom:{anfs_rom}",
+                "--sideways", f"9:rom:{anfs}",
                 "--tube", "65C02-3MHz",
                 "--station", "254",
                 "--aun-port", "0",
@@ -93,78 +83,59 @@ def bbc_tube_econet(
 
 
 @pytest.mark.timeout(300)
-def test_tube_osbyte_throughput(bbc_tube_econet):
-    """Measure OSBYTE 51 throughput through the Tube with ANFS active.
+def test_tube_osbyte_throughput(bbc):
+    """Measure OSBYTE 51 throughput through the Tube under normal pacing."""
 
-    Wall-clock time between START and DONE markers gives the real-world
-    throughput for 256 OSBYTE 51 calls through the Tube.
-    """
-    bbc = bbc_tube_econet
+    # Wait for boot (normal pacing, no coupled stepping)
+    assert _wait_for(bbc, ">", timeout=30), \
+        f"Boot failed:\n{dump_screen(bbc.memory)}"
+    assert screen_contains(bbc.memory, "TUBE"), \
+        f"Tube not active:\n{dump_screen(bbc.memory)}"
 
-    # Boot to Tube BASIC prompt
-    ok = run_until_or_timeout(
-        bbc,
-        lambda: screen_contains(bbc.memory, ">"),
-        emulated_seconds=15.0,
-    )
-    assert ok, "Failed to boot to BASIC prompt with Tube"
+    # Type a minimal program: poke machine code, print =GO, CALL, print =OK
+    lines = [
+        '10 FOR I%=0 TO 12:READ B%:?(&2000+I%)=B%:NEXT',
+        f'20 ?&2030=256-{OSBYTE_COUNT}',
+        '30 PRINT "=GO"',
+        '40 CALL &2000',
+        '50 PRINT "=OK"',
+        '60 DATA &A9,&33,&A2,0,&20,&F4,&FF,&EE,&30,&20,&D0,&F4,&60',
+        'RUN',
+    ]
+    for line in lines:
+        bbc.keyboard.type(line + "\r")
+        time.sleep(0.3)
 
-    # Type the short BASIC program
-    bbc.keyboard.type(BASIC_PROGRAM, cycles_per_key=TUBE_CYCLES_PER_KEY)
-
-    # Wait for all lines to be entered
-    run_until_or_timeout(
-        bbc,
-        lambda: screen_contains(bbc.memory, ">60"),
-        emulated_seconds=60.0,
-    )
-
-    # Type RUN
-    bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
-
-    # Resume with real-time pacing
-    bbc.debugger.ensure_running()
-
-    def _screen_has(text):
-        for row in read_mode7_screen(bbc.memory):
-            if row.strip().startswith(text):
-                return True
-        return False
-
-    # Wait for START
-    deadline = time.monotonic() + 120
-    while not _screen_has("START"):
-        time.sleep(0.2)
-        if time.monotonic() > deadline:
-            print(f"\nScreen:\n{dump_screen(bbc.memory)}")
-            pytest.fail("Program did not reach START within 120s")
+    # Wait for =GO (program started, about to call OSBYTE loop)
+    assert _wait_for(bbc, "=GO", timeout=60), \
+        f"Program did not reach =GO:\n{dump_screen(bbc.memory)}"
 
     t0 = time.monotonic()
 
-    # Wait for DONE
-    while not _screen_has("DONE"):
-        time.sleep(0.2)
-        if time.monotonic() - t0 > 120:
-            print(f"\nScreen:\n{dump_screen(bbc.memory)}")
-            pytest.fail("OSBYTE loop did not complete within 120s")
-
+    # Wait for =OK (OSBYTE loop complete)
+    ok = _wait_for(bbc, "=OK", timeout=120)
     t1 = time.monotonic()
     wall_seconds = t1 - t0
 
-    wall_rate = OSBYTE_COUNT / wall_seconds
-    wall_latency = wall_seconds / OSBYTE_COUNT * 1000
+    print(f"\n{dump_screen(bbc.memory)}")
 
-    print(f"\n{'='*60}")
-    print(f"Tube OSBYTE 51 throughput (with ANFS)")
-    print(f"{'='*60}")
-    print(f"  OSBYTE calls:          {OSBYTE_COUNT}")
-    print(f"  Wall-clock time:       {wall_seconds:.2f}s")
-    print(f"  Throughput:            {wall_rate:.0f} OSBYTE/s")
-    print(f"  Latency:               {wall_latency:.1f} ms/OSBYTE")
-    print(f"  Expected (real HW):    ~1100 OSBYTE/s, ~0.9 ms/OSBYTE")
-    print(f"{'='*60}")
+    if not ok:
+        pytest.fail(
+            f"{OSBYTE_COUNT} OSBYTE 51 calls did not complete in 120 wall-clock "
+            f"seconds under normal pacing."
+        )
 
-    assert wall_rate > 500, (
-        f"OSBYTE throughput is {wall_rate:.0f}/s "
-        f"({wall_latency:.1f} ms each), expected >500/s."
+    rate = OSBYTE_COUNT / wall_seconds
+    latency = wall_seconds / OSBYTE_COUNT * 1000
+
+    print(f"\n{'='*50}")
+    print(f"  {OSBYTE_COUNT} OSBYTE 51 calls: {wall_seconds:.2f}s")
+    print(f"  Throughput: {rate:.0f} OSBYTE/s")
+    print(f"  Latency:    {latency:.1f} ms/call")
+    print(f"  Expected:   ~1100 OSBYTE/s, ~0.9 ms/call")
+    print(f"{'='*50}")
+
+    assert rate > 500, (
+        f"OSBYTE throughput {rate:.0f}/s ({latency:.1f}ms each), "
+        f"expected >500/s."
     )
