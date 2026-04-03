@@ -41,7 +41,7 @@ public:
     /// @param kp               Proportional gain (cycles of drift → ns of sleep adjustment)
     /// @param ki               Integral gain (accumulated drift → ns of sleep adjustment)
     PacingController(uint32_t target_clock_hz, uint32_t pacing_hz,
-                     double kp = 750.0, double ki = 100.0)
+                     double kp = 250.0, double ki = 200.0)
         : target_clock_hz_(target_clock_hz)
         , cycles_per_tick_(target_clock_hz / pacing_hz)
         , base_interval_ns_(1'000'000'000.0 / pacing_hz)
@@ -66,17 +66,25 @@ public:
         // Drift: positive = ahead of real-time (need to slow down)
         double drift = static_cast<double>(total_cycles) - target_cycles;
 
-        // Accumulate integral (uncapped -- debt is tracked fully)
-        integral_ += drift;
+        // Tentatively accumulate integral
+        double candidate_integral = integral_ + drift;
 
         // PI output: base interval adjusted by proportional and integral terms
+        double max_sleep = base_interval_ns_ * 2.0;
         double sleep_ns = base_interval_ns_
                         + kp_ * drift
-                        + ki_ * integral_;
+                        + ki_ * candidate_integral;
 
-        // Clamp to [0, max_sleep]. Never sleep negative. Limit maximum
-        // to 2x the base interval to avoid starving the emulation.
-        double max_sleep = base_interval_ns_ * 2.0;
+        // Anti-windup: only commit the integral update if the output is
+        // not saturated. When the output is clamped (at 0 or max_sleep),
+        // growing the integral further cannot change the output and would
+        // cause unbounded accumulation that destabilises recovery.
+        if (sleep_ns >= 0.0 && sleep_ns <= max_sleep) {
+            // Output within bounds: commit the integral update
+            integral_ = candidate_integral;
+        }
+        // If saturated, integral_ stays unchanged (conditional integration)
+
         sleep_ns = std::clamp(sleep_ns, 0.0, max_sleep);
 
         ++tick_count_;
