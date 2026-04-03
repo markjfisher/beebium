@@ -203,27 +203,33 @@ private:
             }
 
             // Sleep until next tick, interruptible by I/O pending.
-            // The sleep duration is fixed (base interval). The controller
-            // adapts by varying cycles, not sleep.
+            // When I/O wakes us early, we signal a tick immediately
+            // (with reduced cycles from the deficit controller) but
+            // do NOT advance next_tick -- the remainder of the interval
+            // is used for the next sleep, allowing multiple I/O wakeups
+            // within a single base interval.
             auto now = Clock::now();
+            bool io_woke = false;
             if (next_tick > now) {
                 if (io_pending_) {
-                    static constexpr auto poll_interval =
-                        std::chrono::microseconds(200);
+                    // Spin-check io_pending with brief yields. Using
+                    // sleep_for would add ~200us+ minimum latency per
+                    // R2 byte exchange, limiting Tube throughput. Spinning
+                    // gives sub-microsecond response but uses more CPU
+                    // during I/O-active periods. When idle (no I/O pending),
+                    // we exit the loop at next_tick and the outer loop's
+                    // normal sleep takes over.
                     while (Clock::now() < next_tick && running_) {
                         if (io_pending_->load(std::memory_order_relaxed)) {
                             io_pending_->store(false, std::memory_order_relaxed);
+                            io_woke = true;
                             {
                                 std::lock_guard<std::mutex> lock(mutex_);
                                 ++ticks_io_woken_;
                             }
                             break;
                         }
-                        auto remaining = next_tick - Clock::now();
-                        if (remaining > poll_interval)
-                            std::this_thread::sleep_for(poll_interval);
-                        else if (remaining > Duration::zero())
-                            std::this_thread::sleep_for(remaining);
+                        std::this_thread::yield();
                     }
                 } else {
                     std::this_thread::sleep_until(next_tick);
@@ -238,16 +244,20 @@ private:
             }
             cv_.notify_one();
 
-            // Advance deadline. If we fell behind, skip ahead.
-            next_tick += interval_;
-            now = Clock::now();
-            if (next_tick + interval_ < now) {
-                auto behind = (now - next_tick) / interval_;
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    ticks_skipped_ += static_cast<uint64_t>(behind);
+            // Only advance the deadline when the full interval elapsed
+            // (not when woken early by I/O). This allows multiple short
+            // ticks within one base interval for rapid Tube handshakes.
+            if (!io_woke) {
+                next_tick += interval_;
+                now = Clock::now();
+                if (next_tick + interval_ < now) {
+                    auto behind = (now - next_tick) / interval_;
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        ticks_skipped_ += static_cast<uint64_t>(behind);
+                    }
+                    next_tick += interval_ * (behind + 1);
                 }
-                next_tick += interval_ * (behind + 1);
             }
         }
     }
