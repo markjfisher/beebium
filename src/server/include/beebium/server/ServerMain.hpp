@@ -1472,6 +1472,11 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
     }
 
+    // Wire pacing clock to gRPC SystemService for stats monitoring
+    if (use_pacing) {
+        server.set_pacing_clock(&pacing_clock);
+    }
+
     // Set up shutdown callbacks so signal handler can interrupt blocked waits
     // and notify clients of impending shutdown
     g_request_machine_shutdown = [&machine]() { machine.request_shutdown(); };

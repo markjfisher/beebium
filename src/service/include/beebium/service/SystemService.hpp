@@ -14,6 +14,7 @@
 #define BEEBIUM_SERVICE_SYSTEM_SERVICE_HPP
 
 #include "system.grpc.pb.h"
+#include "beebium/PacingClock.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
@@ -73,6 +74,9 @@ public:
     SystemServiceImpl(const SystemServiceImpl&) = delete;
     SystemServiceImpl& operator=(const SystemServiceImpl&) = delete;
 
+    /// Set the pacing clock for stats monitoring. Call after construction.
+    void set_pacing_clock(PacingClock* clock) { pacing_clock_ = clock; }
+
     grpc::Status GetSystemInfo(
         grpc::ServerContext* context,
         const GetSystemInfoRequest* request,
@@ -102,6 +106,16 @@ public:
         grpc::ServerContext* context,
         const SetAdvertisementRequest* request,
         SetAdvertisementResponse* response) override;
+
+    grpc::Status GetPacingStats(
+        grpc::ServerContext* context,
+        const GetPacingStatsRequest* request,
+        beebium::PacingStats* response) override;
+
+    grpc::Status WatchPacingStats(
+        grpc::ServerContext* context,
+        const WatchPacingStatsRequest* request,
+        grpc::ServerWriter<beebium::PacingStats>* writer) override;
 
     /// Notify all watchers that shutdown is imminent.
     /// Called from signal handler or shutdown path.
@@ -136,6 +150,7 @@ private:
     ShutdownCallback shutdown_callback_;
     uint16_t server_port_;
     uint32_t clock_speed_hz_;
+    PacingClock* pacing_clock_ = nullptr;
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -469,6 +484,59 @@ grpc::Status SystemServiceImpl<MachineType>::SetAdvertisement(
     state->set_enabled(adv_state.advertising);
     state->set_advertised_name(adv_state.actual_name);
 
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::GetPacingStats(
+    grpc::ServerContext* /*context*/,
+    const GetPacingStatsRequest* /*request*/,
+    beebium::PacingStats* response) {
+
+    if (!pacing_clock_) {
+        return {grpc::StatusCode::UNAVAILABLE, "Pacing clock not configured"};
+    }
+    auto stats = pacing_clock_->timing_stats();
+    response->set_ticks_executed(stats.ticks_executed);
+    response->set_ticks_skipped(stats.ticks_skipped);
+    response->set_ticks_io_skipped(stats.ticks_io_skipped);
+    response->set_avg_overshoot_us(stats.avg_overshoot_us);
+    response->set_max_recent_overshoot_us(stats.max_recent_overshoot_us);
+    response->set_safety_margin_us(stats.safety_margin_us);
+    response->set_controller_drift(stats.controller_drift);
+    response->set_controller_integral(stats.controller_integral);
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::WatchPacingStats(
+    grpc::ServerContext* context,
+    const WatchPacingStatsRequest* request,
+    grpc::ServerWriter<beebium::PacingStats>* writer) {
+
+    if (!pacing_clock_) {
+        return {grpc::StatusCode::UNAVAILABLE, "Pacing clock not configured"};
+    }
+
+    auto interval = std::chrono::milliseconds(
+        request->interval_ms() > 0 ? request->interval_ms() : 1000);
+
+    while (!context->IsCancelled()) {
+        std::this_thread::sleep_for(interval);
+
+        auto stats = pacing_clock_->timing_stats();
+        beebium::PacingStats msg;
+        msg.set_ticks_executed(stats.ticks_executed);
+        msg.set_ticks_skipped(stats.ticks_skipped);
+        msg.set_ticks_io_skipped(stats.ticks_io_skipped);
+        msg.set_avg_overshoot_us(stats.avg_overshoot_us);
+        msg.set_max_recent_overshoot_us(stats.max_recent_overshoot_us);
+        msg.set_safety_margin_us(stats.safety_margin_us);
+        msg.set_controller_drift(stats.controller_drift);
+        msg.set_controller_integral(stats.controller_integral);
+
+        if (!writer->Write(msg)) break;
+    }
     return grpc::Status::OK;
 }
 
