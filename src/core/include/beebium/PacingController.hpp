@@ -13,124 +13,78 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 namespace beebium {
 
-/// PI controller for emulation pacing.
+/// Deficit-based pacing controller (PWM mode).
 ///
-/// Computes the sleep duration for each pacing tick to keep the emulated
-/// clock rate tracking wall-clock time at the target frequency. Uses a
-/// proportional-integral controller with uncapped integral (debt) that
-/// ensures time debt from I/O-skipped ticks is fully repaid over time.
+/// Computes the number of cycles to execute per tick by calculating how
+/// many cycles are "owed" at the current wall-clock time: the difference
+/// between target cumulative cycles and actual cumulative cycles.
+///
+/// This naturally adapts to variable tick periods:
+/// - During a normal 5ms tick: deficit ≈ 10,000 cycles (at 2 MHz)
+/// - During a 200μs I/O-interrupted tick: deficit ≈ 400 cycles
+/// - After an I/O burst: deficit is reduced by excess cycles, causing
+///   one or two recovery ticks at reduced speed, then back to normal
+///
+/// No PI gains, no integral, no anti-windup. The deficit IS the control
+/// signal -- it directly tells the emulation how many cycles to run.
 ///
 /// The controller is a pure computation -- no threading, no clocks, no
 /// side effects. This makes it unit-testable with synthetic time sequences.
 ///
-/// Usage:
-///   PacingController ctrl(2'000'000, 200);  // 2 MHz, 200 Hz ticks
-///   // Each tick:
-///   auto sleep_ns = ctrl.update(wall_elapsed_ns, cycles_executed, io_pending);
-///   // sleep for sleep_ns nanoseconds, then run cycles_per_tick more cycles
-///
 class PacingController {
 public:
     /// @param target_clock_hz  Target emulated clock frequency (e.g., 2000000)
-    /// @param pacing_hz        Tick rate (e.g., 200)
-    /// @param kp               Proportional gain (cycles of drift → ns of sleep adjustment)
-    /// @param ki               Integral gain (accumulated drift → ns of sleep adjustment)
-    /// @param max_sleep_ratio Maximum sleep as a multiple of base interval.
-    ///   Controls how aggressively debt is repaid. 1.5 = emulation runs at
-    ///   67% speed during repayment. 2.0 = 50% speed. Lower values give
-    ///   smoother output but slower recovery.
+    /// @param pacing_hz        Tick rate (e.g., 200) -- used only for base_cycles
+    /// @param max_cycles_ratio Ceiling as multiple of base cycles (e.g., 1.5 = 150%)
     PacingController(uint32_t target_clock_hz, uint32_t pacing_hz,
-                     double kp = 250.0, double ki = 200.0,
-                     double max_sleep_ratio = 1.5)
+                     double max_cycles_ratio = 1.5)
         : target_clock_hz_(target_clock_hz)
-        , cycles_per_tick_(target_clock_hz / pacing_hz)
-        , base_interval_ns_(1'000'000'000.0 / pacing_hz)
-        , kp_(kp)
-        , ki_(ki)
-        , max_sleep_ratio_(max_sleep_ratio) {}
+        , base_cycles_(target_clock_hz / pacing_hz)
+        , max_cycles_(static_cast<uint32_t>(base_cycles_ * max_cycles_ratio)) {}
 
-    /// Update the controller with the latest tick's measurements.
+    /// Compute cycles to execute in the next tick.
     ///
-    /// @param wall_elapsed_ns  Wall-clock nanoseconds since the controller was
-    ///                         created (or reset). Monotonically increasing.
-    /// @param total_cycles     Total emulated cycles executed since creation/reset.
-    /// @param io_pending       True if I/O was pending this tick (informational).
-    /// @return Recommended sleep duration in nanoseconds for this tick.
-    ///         Zero means "run the next tick immediately" (catching up).
-    int64_t update(int64_t wall_elapsed_ns, uint64_t total_cycles, bool io_pending) {
-        (void)io_pending;  // Could be used for adaptive Ki in future
-
+    /// @param wall_elapsed_ns  Wall-clock nanoseconds since start/reset.
+    /// @param total_cycles     Total emulated cycles executed since start/reset.
+    /// @return Number of cycles to execute. Zero if ahead of real-time.
+    uint32_t update(int64_t wall_elapsed_ns, uint64_t total_cycles) {
         // How many cycles SHOULD have been executed by now?
-        double target_cycles = (static_cast<double>(wall_elapsed_ns) / 1e9)
-                             * target_clock_hz_;
+        double target = (static_cast<double>(wall_elapsed_ns) / 1e9)
+                      * target_clock_hz_;
 
-        // Drift: positive = ahead of real-time (need to slow down)
-        double drift = static_cast<double>(total_cycles) - target_cycles;
+        // Deficit: how many cycles are "owed". Positive = behind, need to run.
+        double deficit = target - static_cast<double>(total_cycles);
 
-        // Tentatively accumulate integral
-        double candidate_integral = integral_ + drift;
-
-        // PI output: base interval adjusted by proportional and integral terms
-        double max_sleep = base_interval_ns_ * max_sleep_ratio_;
-        double sleep_ns = base_interval_ns_
-                        + kp_ * drift
-                        + ki_ * candidate_integral;
-
-        // Back-calculation anti-windup: if the output would saturate,
-        // set the integral to the value that produces exactly the clamp
-        // limit. This prevents unbounded integral growth while preserving
-        // accurate debt tracking -- when drift reverses, the integral
-        // starts from the correct position rather than a stale one.
-        if (sleep_ns > max_sleep) {
-            integral_ = (max_sleep - base_interval_ns_ - kp_ * drift) / ki_;
-            sleep_ns = max_sleep;
-        } else if (sleep_ns < 0.0) {
-            integral_ = (0.0 - base_interval_ns_ - kp_ * drift) / ki_;
-            sleep_ns = 0.0;
-        } else {
-            integral_ = candidate_integral;
-        }
+        last_drift_ = -deficit;  // drift = ahead (positive = ahead, for monitoring)
 
         ++tick_count_;
-        last_drift_ = drift;
 
-        return static_cast<int64_t>(sleep_ns);
+        return static_cast<uint32_t>(std::clamp(deficit, 0.0,
+            static_cast<double>(max_cycles_)));
     }
 
     /// Reset the controller state (e.g., after a pause/resume).
     void reset() {
-        integral_ = 0.0;
         tick_count_ = 0;
         last_drift_ = 0.0;
     }
 
     // --- Accessors for monitoring/testing ---
 
-    double integral() const { return integral_; }
     double last_drift() const { return last_drift_; }
+    double integral() const { return 0.0; }  // No integral in deficit mode
     uint64_t tick_count() const { return tick_count_; }
-    uint32_t cycles_per_tick() const { return cycles_per_tick_; }
-    double base_interval_ns() const { return base_interval_ns_; }
-    double kp() const { return kp_; }
-    double ki() const { return ki_; }
-
-    void set_gains(double kp, double ki) { kp_ = kp; ki_ = ki; }
+    uint32_t base_cycles() const { return base_cycles_; }
 
 private:
     uint32_t target_clock_hz_;
-    uint32_t cycles_per_tick_;
-    double base_interval_ns_;
-    double kp_;
-    double ki_;
-    double max_sleep_ratio_;
+    uint32_t base_cycles_;
+    uint32_t max_cycles_;
 
-    // Controller state
-    double integral_ = 0.0;
     double last_drift_ = 0.0;
     uint64_t tick_count_ = 0;
 };

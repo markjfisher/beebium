@@ -269,9 +269,10 @@ int main(int argc, char* argv[]) {
     while (!g_shutdown_requested.load(std::memory_order_acquire) &&
            !runner.shutdown_requested())
     {
-        runner.run(cycles_per_tick);
-        clock.report_cycles(runner.cycle_count());
         clock.wait_for_tick();
+        uint64_t cycles = clock.cycles_for_next_tick();
+        runner.run(cycles);
+        clock.report_cycles(runner.cycle_count());
     }
 
     clock.stop();

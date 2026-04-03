@@ -1505,19 +1505,18 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
             break;
         }
 
-        // Run cycles
-        auto run_start = std::chrono::steady_clock::now();
-        machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
-        run_duration += std::chrono::steady_clock::now() - run_start;
-
-        // Report cycle count to PI controller for drift tracking
         if (use_pacing) {
-            pacing_clock.report_cycles(machine.cycle_count());
-        }
-
-        // Wait for next tick (pacing clock handles timing)
-        if (use_pacing) {
+            // Wait for tick, then ask controller how many cycles to run
             pacing_clock.wait_for_tick();
+            uint64_t cycles = pacing_clock.cycles_for_next_tick();
+            auto run_start = std::chrono::steady_clock::now();
+            machine.run(cycles);
+            run_duration += std::chrono::steady_clock::now() - run_start;
+            pacing_clock.report_cycles(machine.cycle_count());
+        } else {
+            auto run_start = std::chrono::steady_clock::now();
+            machine.run(cycles_per_frame);
+            run_duration += std::chrono::steady_clock::now() - run_start;
         }
 
         // Periodic pacing stats (every 5 seconds)
@@ -1543,11 +1542,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                           << (100.0 * actual_hz / target_hz) << "%)"
                           << " | vsync " << std::setprecision(1) << vsync_hz << " Hz"
                           << " | skipped " << stats.ticks_skipped
-                          << " | io " << stats.ticks_io_skipped
+                          << " | io " << stats.ticks_io_woken
                           << " | drift " << std::setprecision(0) << stats.controller_drift
-                          << " | debt " << std::setprecision(0) << stats.controller_integral
-                          << " | margin " << std::setprecision(0)
-                          << stats.safety_margin_us << " us"
                           << " | run " << std::setprecision(1) << run_pct << "%"
                           << "\n";
                 last_stats_time = now;

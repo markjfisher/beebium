@@ -499,10 +499,7 @@ grpc::Status SystemServiceImpl<MachineType>::GetPacingStats(
     auto stats = pacing_clock_->timing_stats();
     response->set_ticks_executed(stats.ticks_executed);
     response->set_ticks_skipped(stats.ticks_skipped);
-    response->set_ticks_io_skipped(stats.ticks_io_skipped);
-    response->set_avg_overshoot_us(stats.avg_overshoot_us);
-    response->set_max_recent_overshoot_us(stats.max_recent_overshoot_us);
-    response->set_safety_margin_us(stats.safety_margin_us);
+    response->set_ticks_io_skipped(stats.ticks_io_woken);
     response->set_controller_drift(stats.controller_drift);
     response->set_controller_integral(stats.controller_integral);
     return grpc::Status::OK;
@@ -528,10 +525,7 @@ grpc::Status SystemServiceImpl<MachineType>::WatchPacingStats(
         beebium::PacingStats msg;
         msg.set_ticks_executed(stats.ticks_executed);
         msg.set_ticks_skipped(stats.ticks_skipped);
-        msg.set_ticks_io_skipped(stats.ticks_io_skipped);
-        msg.set_avg_overshoot_us(stats.avg_overshoot_us);
-        msg.set_max_recent_overshoot_us(stats.max_recent_overshoot_us);
-        msg.set_safety_margin_us(stats.safety_margin_us);
+        msg.set_ticks_io_skipped(stats.ticks_io_woken);
         msg.set_controller_drift(stats.controller_drift);
         msg.set_controller_integral(stats.controller_integral);
 
