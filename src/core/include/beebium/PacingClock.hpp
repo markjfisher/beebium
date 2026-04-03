@@ -260,9 +260,30 @@ private:
                 auto sleep_target = next_tick_ - current_margin;
                 auto before_sleep = Clock::now();
 
-                // Sleep until near the target time (check io_pending during spin)
+                // Sleep until near the target time. When an io_pending flag
+                // is configured, use short sleep intervals (200us) so we
+                // can check the flag and wake early when I/O arrives. Without
+                // the flag, use the original uninterruptible sleep_until.
                 if (sleep_target > before_sleep) {
-                    std::this_thread::sleep_until(sleep_target);
+                    if (io_pending_) {
+                        // Interruptible sleep: short intervals with I/O checks
+                        static constexpr auto io_poll_interval =
+                            std::chrono::microseconds(200);
+                        while (Clock::now() < sleep_target && running_) {
+                            if (io_pending_->load(std::memory_order_relaxed)) {
+                                break;  // I/O arrived, stop sleeping
+                            }
+                            auto remaining = sleep_target - Clock::now();
+                            if (remaining > io_poll_interval) {
+                                std::this_thread::sleep_for(io_poll_interval);
+                            } else if (remaining > Duration::zero()) {
+                                std::this_thread::sleep_for(remaining);
+                            }
+                        }
+                    } else {
+                        // No I/O flag: use efficient uninterruptible sleep
+                        std::this_thread::sleep_until(sleep_target);
+                    }
                 }
 
                 auto after_sleep = Clock::now();
