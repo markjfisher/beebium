@@ -16,6 +16,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 
 namespace beebium {
@@ -110,6 +111,16 @@ public:
     // Decode current register state into a DateTime.
     DateTime current_datetime() const;
 
+    // --- Activity callback ---
+
+    // Called when a CBUS register read or write completes.
+    // is_read: true for read, false for write.
+    // reg: register number (0-7).
+    // value: BCD register value.
+    using ActivityCallback = std::function<void(bool is_read, int reg, uint8_t value)>;
+
+    void set_activity_callback(ActivityCallback cb) { activity_callback_ = std::move(cb); }
+
     // --- Prescaler access (for testing) ---
 
     int accumulated_seconds() const { return accumulated_seconds_; }
@@ -136,6 +147,9 @@ private:
 
     // Thread safety for register access (gRPC vs emulation thread)
     mutable std::mutex mutex_;
+
+    // Activity callback (called outside mutex lock)
+    ActivityCallback activity_callback_;
 
     // Internal counter advancement
     void advance_one_minute();

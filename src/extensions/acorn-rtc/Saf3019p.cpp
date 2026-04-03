@@ -53,20 +53,32 @@ void Saf3019p::write(uint8_t value) {
                 int reg = (cmd & 0x0F) >> 1;
                 auto data = static_cast<uint8_t>(cmd >> 4);
 
-                std::lock_guard lock(mutex_);
-                write_register(reg, data);
+                {
+                    std::lock_guard lock(mutex_);
+                    write_register(reg, data);
+                }
+                if (activity_callback_) {
+                    activity_callback_(false, reg, data);
+                }
             } else {
                 // READ operation: extract address, load register into shift register
                 int cmd = command_shift_register_ >> 12;
                 int reg = (cmd & 0x0F) >> 1;
 
-                std::lock_guard lock(mutex_);
-                data_shift_register_ = read_register(reg);
-                // Enter read phase -- subsequent CLB edges shift out data bits
-                in_read_phase_ = true;
-                // First bit is immediately available
-                data_output_bit_ = data_shift_register_ & 0x01;
-                data_shift_register_ >>= 1;
+                uint8_t reg_value;
+                {
+                    std::lock_guard lock(mutex_);
+                    reg_value = read_register(reg);
+                    data_shift_register_ = reg_value;
+                    // Enter read phase -- subsequent CLB edges shift out data bits
+                    in_read_phase_ = true;
+                    // First bit is immediately available
+                    data_output_bit_ = data_shift_register_ & 0x01;
+                    data_shift_register_ >>= 1;
+                }
+                if (activity_callback_) {
+                    activity_callback_(true, reg, reg_value);
+                }
             }
         }
     }

@@ -19,15 +19,30 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
+#include <thread>
 
 namespace beebium {
 
 class AcornRtcServiceImpl final : public AcornRtcService::Service {
 public:
     explicit AcornRtcServiceImpl(Saf3019p& chip)
-        : chip_(chip) {}
+        : chip_(chip) {
+        // Wire up the activity callback to push events to the queue
+        chip_.set_activity_callback(
+            [this](bool is_read, int reg, uint8_t value) {
+                push_activity_event(is_read, reg, value);
+            });
+    }
+
+    ~AcornRtcServiceImpl() override {
+        chip_.set_activity_callback(nullptr);
+    }
 
     grpc::Status GetTime(
             grpc::ServerContext*,
@@ -102,8 +117,56 @@ public:
         return grpc::Status::OK;
     }
 
+    grpc::Status WatchActivity(
+            grpc::ServerContext* context,
+            const WatchActivityRequest*,
+            grpc::ServerWriter<RtcActivityEvent>* writer) override {
+        while (!context->IsCancelled()) {
+            RtcActivityEvent event;
+            {
+                std::unique_lock lock(event_mutex_);
+                event_cv_.wait_for(lock, std::chrono::milliseconds(100),
+                    [this] { return !event_queue_.empty(); });
+                if (event_queue_.empty()) continue;
+                event = std::move(event_queue_.front());
+                event_queue_.pop_front();
+            }
+            if (!writer->Write(event)) break;
+        }
+        return grpc::Status::OK;
+    }
+
 private:
     Saf3019p& chip_;
+
+    // Activity event queue (bounded, drops oldest when full)
+    static constexpr size_t MAX_QUEUED_EVENTS = 256;
+    std::mutex event_mutex_;
+    std::condition_variable event_cv_;
+    std::deque<RtcActivityEvent> event_queue_;
+
+    void push_activity_event(bool is_read, int reg, uint8_t value) {
+        auto now = std::chrono::steady_clock::now();
+        auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+            now.time_since_epoch()).count();
+
+        RtcActivityEvent event;
+        event.set_type(is_read
+            ? RtcActivityEvent::REGISTER_READ
+            : RtcActivityEvent::REGISTER_WRITE);
+        event.set_register_number(reg);
+        event.set_value(value);
+        event.set_timestamp_us(us);
+
+        {
+            std::lock_guard lock(event_mutex_);
+            if (event_queue_.size() >= MAX_QUEUED_EVENTS) {
+                event_queue_.pop_front();
+            }
+            event_queue_.push_back(std::move(event));
+        }
+        event_cv_.notify_one();
+    }
 };
 
 }  // namespace beebium
