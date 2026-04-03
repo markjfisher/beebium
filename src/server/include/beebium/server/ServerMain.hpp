@@ -1543,6 +1543,9 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                           << (100.0 * actual_hz / target_hz) << "%)"
                           << " | vsync " << std::setprecision(1) << vsync_hz << " Hz"
                           << " | skipped " << stats.ticks_skipped
+                          << " | io " << stats.ticks_io_skipped
+                          << " | drift " << std::setprecision(0) << stats.controller_drift
+                          << " | debt " << std::setprecision(0) << stats.controller_integral
                           << " | margin " << std::setprecision(0)
                           << stats.safety_margin_us << " us"
                           << " | run " << std::setprecision(1) << run_pct << "%"
