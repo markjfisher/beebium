@@ -271,8 +271,11 @@ int main(int argc, char* argv[]) {
     {
         clock.wait_for_tick();
         uint64_t cycles = clock.cycles_for_next_tick();
+        auto run_start = std::chrono::steady_clock::now();
         runner.run(cycles);
-        clock.report_cycles(runner.cycle_count());
+        auto exec_time = std::chrono::steady_clock::now() - run_start;
+        clock.report_cycles(runner.cycle_count(),
+            std::chrono::duration_cast<std::chrono::nanoseconds>(exec_time));
     }
 
     clock.stop();

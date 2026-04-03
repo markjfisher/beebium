@@ -1511,8 +1511,10 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
             uint64_t cycles = pacing_clock.cycles_for_next_tick();
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles);
-            run_duration += std::chrono::steady_clock::now() - run_start;
-            pacing_clock.report_cycles(machine.cycle_count());
+            auto exec_time = std::chrono::steady_clock::now() - run_start;
+            run_duration += exec_time;
+            pacing_clock.report_cycles(machine.cycle_count(),
+                std::chrono::duration_cast<std::chrono::nanoseconds>(exec_time));
         } else {
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles_per_frame);

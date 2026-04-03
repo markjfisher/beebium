@@ -97,8 +97,18 @@ public:
     bool is_running() const { return running_; }
 
     /// Called by emulation thread after each run() to report cycle count.
-    void report_cycles(uint64_t total_cycles) {
+    /// Also accounts for execution time: the wall-clock time spent in run()
+    /// is "free" (not charged against the deficit) because on real hardware
+    /// the CPU is also busy during that time.
+    void report_cycles(uint64_t total_cycles,
+                       std::chrono::nanoseconds execution_time = {}) {
         total_cycles_.store(total_cycles, std::memory_order_release);
+        if (execution_time.count() > 0) {
+            // Advance the start reference by the execution time.
+            // This makes the deficit controller "not see" the execution
+            // time, so it doesn't try to compensate for it.
+            start_time_ += execution_time;
+        }
     }
 
     /// Called by emulation thread to get cycles for the next tick.
