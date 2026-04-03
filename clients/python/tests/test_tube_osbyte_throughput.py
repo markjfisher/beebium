@@ -30,7 +30,7 @@ from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains, dump_screen, read_mode7_screen
 
 
-OSBYTE_COUNT = 16
+OSBYTE_COUNT = 32
 
 
 def _wait_for(bbc, text, timeout=60):
@@ -92,50 +92,96 @@ def test_tube_osbyte_throughput(bbc):
     assert screen_contains(bbc.memory, "TUBE"), \
         f"Tube not active:\n{dump_screen(bbc.memory)}"
 
-    # Type a minimal program: poke machine code, print =GO, CALL, print =OK
+    # BASIC program: poke a 1-OSBYTE machine code routine, then call it
+    # N times, recording TIME before and after each call. Print results.
+    #
+    # Machine code at &2000 (7 bytes):
+    #   LDA #51 / LDX #0 / JSR &FFF4 / RTS
+    #
+    # BASIC times each call individually via TIME, storing results in
+    # an array. Then prints each latency in centiseconds.
     lines = [
-        '10 FOR I%=0 TO 12:READ B%:?(&2000+I%)=B%:NEXT',
-        f'20 ?&2030=256-{OSBYTE_COUNT}',
-        '30 PRINT "=GO"',
-        '40 CALL &2000',
-        '50 PRINT "=OK"',
-        '60 DATA &A9,&33,&A2,0,&20,&F4,&FF,&EE,&30,&20,&D0,&F4,&60',
+        '10 FOR I%=0 TO 7:READ B%:?(&2000+I%)=B%:NEXT',
+        f'20 N%={OSBYTE_COUNT}',
+        '30 DIM R%(N%)',
+        '40 PRINT "=GO"',
+        '50 FOR I%=1 TO N%',
+        '60 T%=TIME:CALL &2000:R%(I%)=TIME-T%',
+        '70 NEXT',
+        '80 FOR I%=1 TO N%:PRINT R%(I%);:NEXT',
+        '90 PRINT:PRINT "=OK"',
+        '100 DATA &A9,&33,&A2,0,&20,&F4,&FF,&60',
         'RUN',
     ]
     for line in lines:
         bbc.keyboard.type(line + "\r")
         time.sleep(0.3)
 
-    # Wait for =GO (program started, about to call OSBYTE loop)
+    # Wait for =GO
     assert _wait_for(bbc, "=GO", timeout=60), \
         f"Program did not reach =GO:\n{dump_screen(bbc.memory)}"
 
     t0 = time.monotonic()
 
-    # Wait for =OK (OSBYTE loop complete)
-    ok = _wait_for(bbc, "=OK", timeout=120)
+    # Wait for =OK
+    ok = _wait_for(bbc, "=OK", timeout=180)
     t1 = time.monotonic()
     wall_seconds = t1 - t0
 
+    rows = read_mode7_screen(bbc.memory)
     print(f"\n{dump_screen(bbc.memory)}")
 
     if not ok:
+        print(f"\n{dump_screen(bbc.memory)}")
         pytest.fail(
-            f"{OSBYTE_COUNT} OSBYTE 51 calls did not complete in 120 wall-clock "
+            f"{OSBYTE_COUNT} OSBYTE 51 calls did not complete in 180 wall-clock "
             f"seconds under normal pacing."
         )
 
-    rate = OSBYTE_COUNT / wall_seconds
-    latency = wall_seconds / OSBYTE_COUNT * 1000
+    # Parse per-call centisecond values from the output.
+    # Values are printed space-separated and may wrap across multiple rows.
+    # Due to scrolling, some may appear ABOVE =GO on screen. Collect all
+    # integers from rows that contain only numbers (not program listings).
+    latencies_cs = []
+    for row in rows:
+        s = row.strip()
+        if not s or s.startswith(">") or s.startswith("="):
+            continue
+        # Row contains only numbers (BASIC PRINT output)
+        for token in s.split():
+            try:
+                latencies_cs.append(int(token))
+            except ValueError:
+                pass
+
+    # Convert centiseconds to milliseconds
+    latencies_ms = [cs * 10.0 for cs in latencies_cs]
+
+    wall_rate = OSBYTE_COUNT / wall_seconds
+    wall_latency = wall_seconds / OSBYTE_COUNT * 1000
 
     print(f"\n{'='*50}")
-    print(f"  {OSBYTE_COUNT} OSBYTE 51 calls: {wall_seconds:.2f}s")
-    print(f"  Throughput: {rate:.0f} OSBYTE/s")
-    print(f"  Latency:    {latency:.1f} ms/call")
-    print(f"  Expected:   ~1100 OSBYTE/s, ~0.9 ms/call")
+    print(f"  Tube OSBYTE 51 latency distribution")
+    print(f"{'='*50}")
+    print(f"  Calls:     {OSBYTE_COUNT}")
+    print(f"  Wall time: {wall_seconds:.2f}s")
+    print(f"  Wall avg:  {wall_latency:.1f} ms/call")
+    print(f"  Wall rate: {wall_rate:.0f} OSBYTE/s")
+
+    if latencies_ms:
+        avg = sum(latencies_ms) / len(latencies_ms)
+        lo = min(latencies_ms)
+        hi = max(latencies_ms)
+        print(f"\n  BASIC TIME per call (10ms resolution):")
+        print(f"    min:  {lo:.0f} ms")
+        print(f"    mean: {avg:.1f} ms")
+        print(f"    max:  {hi:.0f} ms")
+        print(f"    raw (cs): {' '.join(str(cs) for cs in latencies_cs)}")
+
+    print(f"\n  Expected: ~0.9 ms/call, ~1100 OSBYTE/s")
     print(f"{'='*50}")
 
-    assert rate > 500, (
-        f"OSBYTE throughput {rate:.0f}/s ({latency:.1f}ms each), "
+    assert wall_rate > 500, (
+        f"OSBYTE throughput {wall_rate:.0f}/s ({wall_latency:.1f}ms each), "
         f"expected >500/s."
     )
