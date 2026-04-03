@@ -125,7 +125,9 @@ public:
     // Read from ADLC registers.
     uint8_t read_adlc(uint16_t offset) {
         if (enabled_ && adlc_) {
-            return adlc_->read(offset);
+            uint8_t result = adlc_->read(offset);
+            cached_adlc_irq_ = adlc_->irq_output();
+            return result;
         }
 
         // Empty socket: fast 2MHz open bus returns last bus value (capacitance)
@@ -136,6 +138,7 @@ public:
     void write_adlc(uint16_t offset, uint8_t value) {
         if (enabled_ && adlc_) {
             adlc_->write(offset, value);
+            cached_adlc_irq_ = adlc_->irq_output();
         }
         // Empty socket: writes fall through (ignored)
     }
@@ -156,7 +159,7 @@ public:
     //   2. NMI enable flip-flop is set (INTON fired, INTOFF not yet fired)
     //   3. ADLC IRQ output is active (interrupt condition exists)
     bool nmi_pending() const {
-        return enabled_ && nmi_enable_ff_ && adlc_ && adlc_->irq_output();
+        return enabled_ && nmi_enable_ff_ && cached_adlc_irq_;
     }
 
     // --- Clock ---
@@ -164,16 +167,22 @@ public:
     // 2MHz clock edges — delegates to ADLC when populated, no-op when empty.
     // The handshake is ticked before the ADLC so that timeout-generated frames
     // are available when the ADLC's byte trickle calls receive_frame().
+    // Caches the ADLC IRQ output after ticking so nmi_pending() can avoid
+    // the unique_ptr dereference on every 2MHz NMI poll.
     void tick_rising() {
         if (enabled_) {
             if (handshake_) handshake_->tick();
-            if (adlc_) adlc_->tick_rising();
+            if (adlc_) {
+                adlc_->tick_rising();
+                cached_adlc_irq_ = adlc_->irq_output();
+            }
         }
     }
 
     void tick_falling() {
         if (enabled_ && adlc_) {
             adlc_->tick_falling();
+            cached_adlc_irq_ = adlc_->irq_output();
         }
     }
 
@@ -208,6 +217,7 @@ private:
     std::unique_ptr<Mc6854> adlc_;
     uint8_t station_id_ = 0;
     bool enabled_ = false;
+    bool cached_adlc_irq_ = false;
     bool nmi_enable_ff_ = false;
     const uint8_t* last_bus_value_ptr_ = nullptr;
 };

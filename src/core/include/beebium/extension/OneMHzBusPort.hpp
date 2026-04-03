@@ -88,10 +88,12 @@ public:
     }
 
     // Tick all registered devices (called at 1 MHz from poll_nmi).
+    // Invalidates the IRQ cache since device state may have changed.
     void tick() {
         for (auto* dev : tickable_devices_) {
             dev->tick();
         }
+        irq_dirty_ = true;
     }
 
     // Query whether any device has claimed the given offset.
@@ -102,11 +104,20 @@ public:
     // Poll IRQ status from all attached devices.
     // Returns true if any device on the 1 MHz bus is asserting IRQ.
     // Used by the IrqAggregator to include 1 MHz bus IRQs.
+    // Caches the result between tick() calls to avoid redundant virtual
+    // dispatch at 2 MHz when tick() only runs at 1 MHz.
     bool irq_pending() const {
-        for (auto* dev : tickable_devices_) {
-            if (dev->irq_pending()) return true;
+        if (irq_dirty_) {
+            cached_irq_ = false;
+            for (auto* dev : tickable_devices_) {
+                if (dev->irq_pending()) {
+                    cached_irq_ = true;
+                    break;
+                }
+            }
+            irq_dirty_ = false;
         }
-        return false;
+        return cached_irq_;
     }
 
 private:
@@ -118,6 +129,8 @@ private:
 
     std::array<OneMHzBusDevice*, kSize> device_map_;
     std::vector<OneMHzBusDevice*> tickable_devices_;
+    mutable bool cached_irq_ = false;
+    mutable bool irq_dirty_ = true;
 };
 
 // Concept to detect hardware that has a 1 MHz bus port.

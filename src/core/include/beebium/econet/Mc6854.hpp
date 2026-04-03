@@ -164,15 +164,27 @@ public:
         }
     }
 
-    // 2MHz clock edges — called on every E-clock transition
+    // 2MHz clock edges — called on every E-clock transition.
+    // Status is only recomputed when something has actually changed
+    // (register write, byte timer fire, backend state change, or
+    // deferred FV promotion). When the network is idle this reduces
+    // update_status() calls from 4M/sec to ~31K/sec.
     void tick_rising() {
         advance_byte_timer();
-        update_status();
+        check_backend_changed();
+        if (status_dirty_) {
+            update_status();
+            status_dirty_ = false;
+        }
     }
 
     void tick_falling() {
         advance_byte_timer();
-        update_status();
+        check_backend_changed();
+        if (status_dirty_) {
+            update_status();
+            status_dirty_ = false;
+        }
     }
 
     // Set byte trickle period (in 2MHz half-cycles). Default 128 (~32us per byte).
@@ -232,6 +244,11 @@ public:
         // Reset byte timer
         byte_timer_ = 0;
 
+        // Reset dirty flag and cached backend state
+        cached_connected_ = backend_.is_connected();
+        cached_receiving_flags_ = backend_.is_receiving_flags();
+        cached_expecting_frame_ = backend_.is_expecting_frame();
+        status_dirty_ = true;
     }
 
     // IRQ output pin (directly drives NMI via BBC glue logic)
@@ -280,6 +297,32 @@ public:
     bool ovrn_stored() const { return ovrn_stored_; }
 
 private:
+    // Check if the backend state has changed since the last tick.
+    // Caches all three backend query results to avoid virtual calls on every
+    // tick. Only sets status_dirty_ when something actually transitions.
+    void check_backend_changed() {
+        bool connected = backend_.is_connected();
+        bool receiving_flags = backend_.is_receiving_flags();
+        bool expecting_frame = backend_.is_expecting_frame();
+        if (connected != cached_connected_
+                || receiving_flags != cached_receiving_flags_
+                || expecting_frame != cached_expecting_frame_) {
+            cached_connected_ = connected;
+            cached_receiving_flags_ = receiving_flags;
+            cached_expecting_frame_ = expecting_frame;
+            status_dirty_ = true;
+        }
+    }
+
+    // Refresh cached backend state and run update_status(). Called from
+    // register read/write paths where we need immediate, accurate status.
+    void update_status_from_register() {
+        cached_connected_ = backend_.is_connected();
+        cached_receiving_flags_ = backend_.is_receiving_flags();
+        cached_expecting_frame_ = backend_.is_expecting_frame();
+        update_status();
+    }
+
     // --- Register read/write ---
 
     uint8_t read_sr1() {
@@ -321,7 +364,7 @@ private:
             if (was_last && !fv_stored_) {
                 fv_deferred_ = true;
             }
-            update_status();
+            update_status_from_register();
             return data;
         }
         return 0x00;
@@ -370,7 +413,7 @@ private:
         }
 
         cr1_ = value;
-        update_status();
+        update_status_from_register();
     }
 
     void write_cr2_or_cr3(uint8_t value) {
@@ -416,7 +459,7 @@ private:
             // Store CR2 without auto-clearing bits
             cr2_ = value & ~auto_clear_mask;
         }
-        update_status();
+        update_status_from_register();
     }
 
     void write_cr4_or_tx_last(uint8_t value) {
@@ -490,7 +533,7 @@ private:
             flush_tx_frame();
         }
 
-        update_status();
+        update_status_from_register();
     }
 
     // --- Byte trickle timer ---
@@ -500,6 +543,7 @@ private:
             byte_timer_ = 0;
             tx_process_byte();
             rx_process_byte();
+            status_dirty_ = true;
         }
     }
 
@@ -741,16 +785,17 @@ private:
         // FIFO state, FV is a stored latch (fv_stored_) cleared by CLR_RX_ST
         // or RX_RESET.
 
-        // DCD present: reflects backend connection (DCD=1 when disconnected)
-        // Computed before TDRA because TDRA requires carrier to be present.
-        bool dcd_present = !backend_.is_connected();
+        // DCD present: reflects backend connection (DCD=1 when disconnected).
+        // Uses cached_connected_ which is refreshed by check_backend_changed()
+        // on each tick, and by update_status_from_register() on register access.
+        bool dcd_present = !cached_connected_;
 
         // CTS (Clear To Send) input: on Econet, CTS is driven by the collision
         // detection hardware. CTS is LOW (clear to send) when the clock box is
         // present (backend connected) AND RTS is asserted (CR2 bit 7). CTS is
         // HIGH (not clear to send) when either the clock is absent or RTS is
         // not asserted. This matches BeebEm's CTS logic.
-        cts_input_ = !(backend_.is_connected() && (cr2_ & CR2_RTS));
+        cts_input_ = !(cached_connected_ && (cr2_ & CR2_RTS));
 
         // TDRA: TX data register available
         // In 2-byte mode (CR2b1), requires room for 2 bytes (at most 1 entry in FIFO).
@@ -779,7 +824,7 @@ private:
             && rx_fifo_empty()
             && !fv_stored_
             && (rx_buffer_index_ >= rx_frame_buffer_.size())
-            && !backend_.is_expecting_frame();
+            && !cached_expecting_frame_;
 
         // INACTIVE reflects whether data frames are being received, independent
         // of clock box flag fill. On real Econet, FD (SR1) and INACTIVE (SR2) are
@@ -798,7 +843,7 @@ private:
         // NFS 3.60+ probes SR1 during service call 1 and interprets a non-zero
         // FD bit as "another ROM already initialised the ADLC", disabling itself.
         bool fd_condition = (cr3_ & CR3_FD_ENABLE)
-            && (fd_stored_ || backend_.is_receiving_flags());
+            && (fd_stored_ || cached_receiving_flags_);
 
         // --- Stored condition edge detection ---
 
@@ -994,6 +1039,17 @@ private:
     int byte_timer_ = 0;
     int byte_period_ = 128;  // Default: 128 half-cycles = 32us per byte (~200kbps)
 
+    // Dirty flag for deferred status recomputation. When false, tick_rising/
+    // tick_falling skip the expensive update_status() call. Set by any operation
+    // that changes state affecting SR1/SR2 or IRQ output.
+    bool status_dirty_ = true;
+
+    // Cached backend state to avoid per-tick virtual call overhead.
+    // Updated by check_backend_changed() (tick path) and
+    // update_status_from_register() (register access path).
+    bool cached_connected_ = false;
+    bool cached_receiving_flags_ = false;
+    bool cached_expecting_frame_ = false;
 };
 
 }  // namespace beebium

@@ -1474,6 +1474,7 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
     auto last_stats_time = std::chrono::steady_clock::now();
     uint64_t last_cycle_count = machine.cycle_count();
+    std::chrono::steady_clock::duration run_duration{};
     // Reset VSYNC edge counter for frequency measurement
     machine.memory().system_via_peripheral.consume_vsync_rising_edges();
     while (g_running) {
@@ -1492,7 +1493,9 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         }
 
         // Run cycles
+        auto run_start = std::chrono::steady_clock::now();
         machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
+        run_duration += std::chrono::steady_clock::now() - run_start;
 
         // Wait for next tick (pacing clock handles timing)
         if (use_pacing) {
@@ -1512,6 +1515,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                 double target_hz = static_cast<double>(Memory::default_pacing_config().base_clock_hz);
                 uint32_t vsync_edges = machine.memory().system_via_peripheral.consume_vsync_rising_edges();
                 double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
+                double run_secs = std::chrono::duration<double>(run_duration).count();
+                double run_pct = 100.0 * run_secs / elapsed_secs;
                 std::cerr << "Pacing: "
                           << std::fixed << std::setprecision(3)
                           << (actual_hz / 1e6) << " MHz"
@@ -1522,9 +1527,11 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                           << " | skipped " << stats.ticks_skipped
                           << " | margin " << std::setprecision(0)
                           << stats.safety_margin_us << " us"
+                          << " | run " << std::setprecision(1) << run_pct << "%"
                           << "\n";
                 last_stats_time = now;
                 last_cycle_count = current_cycles;
+                run_duration = {};
             }
         }
     }

@@ -924,3 +924,8 @@ if(BEEBIUM_BUILD_SERVICE)
     # run sequentially to avoid races when CTest runs tests in parallel.
     catch_discover_tests(test_preset_subcommands PROPERTIES RESOURCE_LOCK preset_dir)
 endif()
+
+# Step performance benchmarks (run with --benchmark-samples N, not during normal ctest)
+add_executable(test_step_performance test_step_performance.cpp)
+target_link_libraries(test_step_performance PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_step_performance)
