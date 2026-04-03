@@ -41,7 +41,7 @@ public:
     /// @param pacing_hz        Tick rate (e.g., 200) -- used only for base_cycles
     /// @param max_cycles_ratio Ceiling as multiple of base cycles (e.g., 1.5 = 150%)
     PacingController(uint32_t target_clock_hz, uint32_t pacing_hz,
-                     double max_cycles_ratio = 1.5)
+                     double max_cycles_ratio = 1.05)
         : target_clock_hz_(target_clock_hz)
         , base_cycles_(target_clock_hz / pacing_hz)
         , max_cycles_(static_cast<uint32_t>(base_cycles_ * max_cycles_ratio)) {}
