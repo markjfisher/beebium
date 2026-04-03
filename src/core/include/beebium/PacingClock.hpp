@@ -246,8 +246,12 @@ private:
                 }
                 cv_.notify_one();
 
-                // Advance next_tick to avoid accumulating debt
-                next_tick_ = Clock::now() + interval_;
+                // Advance next_tick normally (do NOT reset to now). This
+                // accumulates time debt from the skipped sleep, which is
+                // repaid by sleeping longer on subsequent non-I/O ticks.
+                // Without this, the emulation runs faster than real-time
+                // during I/O bursts, breaking cycle-counting timing code.
+                next_tick_ += interval_;
             } else {
                 // Normal path: sleep until near the tick deadline
 
@@ -296,8 +300,6 @@ private:
                     }
                 }
 
-                auto now = Clock::now();
-
                 // Signal emulation thread
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -311,17 +313,21 @@ private:
 
                 // Advance to next tick
                 next_tick_ += interval_;
+            }
 
-                // Handle falling behind: if we're more than one interval late,
-                // skip ahead rather than trying to catch up
-                if (next_tick_ + interval_ < now) {
-                    auto intervals_behind = (now - next_tick_) / interval_;
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        ticks_skipped_ += static_cast<uint64_t>(intervals_behind);
-                    }
-                    next_tick_ += interval_ * (intervals_behind + 1);
+            // Handle falling behind (applies to both I/O-skip and normal paths):
+            // If next_tick_ has fallen more than one interval behind wall-clock
+            // (from a burst of I/O-skipped ticks), skip ahead to avoid a long
+            // catch-up period. The emulation ran ahead during the burst; this
+            // limits how far behind the pacing clock falls before resetting.
+            auto now = Clock::now();
+            if (next_tick_ + interval_ < now) {
+                auto intervals_behind = (now - next_tick_) / interval_;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    ticks_skipped_ += static_cast<uint64_t>(intervals_behind);
                 }
+                next_tick_ += interval_ * (intervals_behind + 1);
             }
         }
     }
