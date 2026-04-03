@@ -40,13 +40,19 @@ public:
     /// @param pacing_hz        Tick rate (e.g., 200)
     /// @param kp               Proportional gain (cycles of drift → ns of sleep adjustment)
     /// @param ki               Integral gain (accumulated drift → ns of sleep adjustment)
+    /// @param max_sleep_ratio Maximum sleep as a multiple of base interval.
+    ///   Controls how aggressively debt is repaid. 1.5 = emulation runs at
+    ///   67% speed during repayment. 2.0 = 50% speed. Lower values give
+    ///   smoother output but slower recovery.
     PacingController(uint32_t target_clock_hz, uint32_t pacing_hz,
-                     double kp = 250.0, double ki = 200.0)
+                     double kp = 250.0, double ki = 200.0,
+                     double max_sleep_ratio = 1.5)
         : target_clock_hz_(target_clock_hz)
         , cycles_per_tick_(target_clock_hz / pacing_hz)
         , base_interval_ns_(1'000'000'000.0 / pacing_hz)
         , kp_(kp)
-        , ki_(ki) {}
+        , ki_(ki)
+        , max_sleep_ratio_(max_sleep_ratio) {}
 
     /// Update the controller with the latest tick's measurements.
     ///
@@ -70,22 +76,25 @@ public:
         double candidate_integral = integral_ + drift;
 
         // PI output: base interval adjusted by proportional and integral terms
-        double max_sleep = base_interval_ns_ * 2.0;
+        double max_sleep = base_interval_ns_ * max_sleep_ratio_;
         double sleep_ns = base_interval_ns_
                         + kp_ * drift
                         + ki_ * candidate_integral;
 
-        // Anti-windup: only commit the integral update if the output is
-        // not saturated. When the output is clamped (at 0 or max_sleep),
-        // growing the integral further cannot change the output and would
-        // cause unbounded accumulation that destabilises recovery.
-        if (sleep_ns >= 0.0 && sleep_ns <= max_sleep) {
-            // Output within bounds: commit the integral update
+        // Back-calculation anti-windup: if the output would saturate,
+        // set the integral to the value that produces exactly the clamp
+        // limit. This prevents unbounded integral growth while preserving
+        // accurate debt tracking -- when drift reverses, the integral
+        // starts from the correct position rather than a stale one.
+        if (sleep_ns > max_sleep) {
+            integral_ = (max_sleep - base_interval_ns_ - kp_ * drift) / ki_;
+            sleep_ns = max_sleep;
+        } else if (sleep_ns < 0.0) {
+            integral_ = (0.0 - base_interval_ns_ - kp_ * drift) / ki_;
+            sleep_ns = 0.0;
+        } else {
             integral_ = candidate_integral;
         }
-        // If saturated, integral_ stays unchanged (conditional integration)
-
-        sleep_ns = std::clamp(sleep_ns, 0.0, max_sleep);
 
         ++tick_count_;
         last_drift_ = drift;
@@ -118,6 +127,7 @@ private:
     double base_interval_ns_;
     double kp_;
     double ki_;
+    double max_sleep_ratio_;
 
     // Controller state
     double integral_ = 0.0;

@@ -202,13 +202,14 @@ TEST_CASE("PacingController gain tuning search", "[pacing][tuning]") {
         double final_drift;
         double final_integral;
         double max_sleep_ratio;  // max sleep / base interval
+        double max_sleep_change; // max consecutive sleep change ratio
         double recovery_rate;    // avg MHz during recovery
         bool oscillates;         // sign changes in drift during recovery
     };
 
     std::vector<GainResult> results;
 
-    for (double kp : {100.0, 250.0, 500.0, 750.0, 1000.0}) {
+    for (double kp : {50.0, 100.0, 250.0, 500.0, 750.0}) {
         for (double ki : {10.0, 25.0, 50.0, 100.0, 200.0}) {
             PacingController ctrl(2'000'000, 200, kp, ki);
 
@@ -223,10 +224,18 @@ TEST_CASE("PacingController gain tuning search", "[pacing][tuning]") {
                 }
             }
 
+            double base = ctrl.base_interval_ns();
             double max_ratio = 0;
-            for (auto& t : ticks) {
-                double ratio = static_cast<double>(t.sleep_ns) / ctrl.base_interval_ns();
+            double max_change = 0;
+            for (size_t i = 0; i < ticks.size(); i++) {
+                double ratio = static_cast<double>(ticks[i].sleep_ns) / base;
                 max_ratio = std::max(max_ratio, ratio);
+                if (i > 0) {
+                    double change = std::abs(
+                        static_cast<double>(ticks[i].sleep_ns - ticks[i-1].sleep_ns))
+                        / base;
+                    max_change = std::max(max_change, change);
+                }
             }
 
             double rate = average_clock_rate(ticks, 200, 500);
@@ -236,6 +245,7 @@ TEST_CASE("PacingController gain tuning search", "[pacing][tuning]") {
                 ticks.back().drift,
                 ticks.back().integral,
                 max_ratio,
+                max_change,
                 rate,
                 sign_changes > 5
             });
@@ -244,15 +254,17 @@ TEST_CASE("PacingController gain tuning search", "[pacing][tuning]") {
 
     // Print results table for manual inspection
     std::cout << "\n  Gain tuning results (50-tick burst, 400 ticks recovery):\n";
-    std::cout << "  " << std::string(90, '-') << "\n";
-    std::cout << "  Kp      Ki      Drift     Integral   MaxSleep  Rate(MHz)  Osc?\n";
-    std::cout << "  " << std::string(90, '-') << "\n";
+    std::cout << "  " << std::string(100, '-') << "\n";
+    std::cout << "  Kp      Ki      Drift     Integral   MaxSleep  MaxChg  Rate(MHz)  Osc?\n";
+    std::cout << "  " << std::string(100, '-') << "\n";
 
     GainResult best = results[0];
     double best_score = 1e18;
 
     for (auto& r : results) {
+        // Score: low drift + low integral + smooth (low max change) + no oscillation
         double score = std::abs(r.final_drift) + std::abs(r.final_integral) / 100.0
+                     + r.max_sleep_change * 1000.0
                      + (r.oscillates ? 1e6 : 0);
 
         std::cout << "  " << std::setw(6) << r.kp
@@ -260,6 +272,7 @@ TEST_CASE("PacingController gain tuning search", "[pacing][tuning]") {
                   << "  " << std::setw(9) << std::fixed << std::setprecision(0) << r.final_drift
                   << "  " << std::setw(10) << r.final_integral
                   << "  " << std::setw(8) << std::setprecision(2) << r.max_sleep_ratio
+                  << "  " << std::setw(6) << std::setprecision(2) << r.max_sleep_change
                   << "  " << std::setw(9) << std::setprecision(0) << r.recovery_rate / 1e6
                   << "  " << (r.oscillates ? "YES" : "no") << "\n";
 
