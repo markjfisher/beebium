@@ -197,13 +197,11 @@ private:
                 continue;
             }
 
-            // Check I/O pending flag (consumed, not used to skip sleep)
-            bool io_pending = io_pending_ &&
+            // Check I/O pending flag
+            bool io_skip = io_pending_ &&
                 io_pending_->load(std::memory_order_acquire);
-            if (io_pending) {
+            if (io_skip) {
                 io_pending_->store(false, std::memory_order_relaxed);
-                std::lock_guard<std::mutex> lock(mutex_);
-                ++ticks_io_skipped_;
             }
 
             // Read current emulation state for the PI controller
@@ -212,63 +210,73 @@ private:
                 now - start_time_).count();
             uint64_t cycles = total_cycles_.load(std::memory_order_acquire);
 
-            // The PI controller decides the sleep duration for ALL ticks,
-            // whether I/O was pending or not. When the emulation is ahead
-            // (positive drift), the controller sleeps longer. When behind
-            // (negative drift from I/O bursts), it sleeps less or not at all.
-            int64_t sleep_ns = controller_.update(wall_elapsed_ns, cycles, io_pending);
+            // Ask the PI controller for the recommended sleep duration
+            int64_t sleep_ns = controller_.update(wall_elapsed_ns, cycles, io_skip);
 
-            // Subtract safety margin for spin-wait precision
-            Duration current_margin;
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                current_margin = safety_margin_;
-            }
-            auto sleep_duration = Duration(sleep_ns) - current_margin;
-            auto sleep_target = now + sleep_duration;
-
-            if (sleep_duration > Duration::zero()) {
-                if (io_pending_) {
-                    // Interruptible sleep: short intervals with I/O checks.
-                    // If new I/O arrives mid-sleep, break out early so the
-                    // next tick can process it promptly.
-                    static constexpr auto io_poll_interval =
-                        std::chrono::microseconds(200);
-                    while (Clock::now() < sleep_target && running_) {
-                        if (io_pending_->load(std::memory_order_relaxed))
-                            break;
-                        auto remaining = sleep_target - Clock::now();
-                        if (remaining > io_poll_interval)
-                            std::this_thread::sleep_for(io_poll_interval);
-                        else if (remaining > Duration::zero())
-                            std::this_thread::sleep_for(remaining);
-                    }
-                } else {
-                    std::this_thread::sleep_until(sleep_target);
+            if (io_skip) {
+                // I/O pending: override controller and signal immediately.
+                // The controller still saw the update (tracking drift/integral)
+                // so it knows we skipped sleeping and will compensate later.
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    tick_ready_ = true;
+                    ++ticks_executed_;
+                    ++ticks_io_skipped_;
                 }
-            }
+                cv_.notify_one();
+            } else {
+                // Normal path: sleep for the controller-recommended duration
 
-            auto after_sleep = Clock::now();
+                // Subtract safety margin for spin-wait precision
+                Duration current_margin;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    current_margin = safety_margin_;
+                }
+                auto sleep_duration = Duration(sleep_ns) - current_margin;
+                auto sleep_target = now + sleep_duration;
 
-            // Spin-wait for remaining margin (precision), interruptible
-            auto tick_deadline = now + Duration(sleep_ns);
-            while (Clock::now() < tick_deadline && running_) {
-                if (io_pending_ &&
-                    io_pending_->load(std::memory_order_relaxed))
-                    break;
-            }
+                if (sleep_duration > Duration::zero()) {
+                    if (io_pending_) {
+                        // Interruptible sleep: short intervals with I/O checks
+                        static constexpr auto io_poll_interval =
+                            std::chrono::microseconds(200);
+                        while (Clock::now() < sleep_target && running_) {
+                            if (io_pending_->load(std::memory_order_relaxed))
+                                break;
+                            auto remaining = sleep_target - Clock::now();
+                            if (remaining > io_poll_interval)
+                                std::this_thread::sleep_for(io_poll_interval);
+                            else if (remaining > Duration::zero())
+                                std::this_thread::sleep_for(remaining);
+                        }
+                    } else {
+                        std::this_thread::sleep_until(sleep_target);
+                    }
+                }
 
-            // Signal emulation thread
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                tick_ready_ = true;
-                ++ticks_executed_;
-            }
-            cv_.notify_one();
+                auto after_sleep = Clock::now();
 
-            // Adapt safety margin
-            if (sleep_duration > Duration::zero()) {
-                adapt_margin(sleep_target, after_sleep);
+                // Spin-wait for remaining margin (precision)
+                auto tick_deadline = now + Duration(sleep_ns);
+                while (Clock::now() < tick_deadline && running_) {
+                    if (io_pending_ &&
+                        io_pending_->load(std::memory_order_relaxed))
+                        break;
+                }
+
+                // Signal emulation thread
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    tick_ready_ = true;
+                    ++ticks_executed_;
+                }
+                cv_.notify_one();
+
+                // Adapt safety margin
+                if (sleep_duration > Duration::zero()) {
+                    adapt_margin(sleep_target, after_sleep);
+                }
             }
         }
     }
