@@ -12,66 +12,94 @@
 
 """Tube OSBYTE throughput test.
 
-Uses BASIC to poke a tight machine code OSBYTE loop into parasite RAM,
-execute it, and print "DONE" on completion. The test measures wall-clock
-time from CALL to DONE.
-
-Uses OSBYTE 150 (read SHEILA byte, X=0) which MUST traverse the Tube
-to the host -- the parasite cannot handle it locally.
+Measures wall-clock time for 256 OSBYTE 51 (Econet poll) calls through
+the Tube with ANFS active. Uses a minimal BASIC program that pokes a
+13-byte machine code loop, prints START, CALLs it, prints DONE.
 
 Expected throughput on real hardware: ~1100 OSBYTE/s (~0.9ms each).
-Observed in Beebium with independent 200 Hz pacing: ~67 OSBYTE/s (~15ms each).
 """
 
 from __future__ import annotations
 
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
-from beebium.screen import screen_contains, dump_screen
+from beebium.client import Beebium
+from beebium.exceptions import ServerNotFoundError
+from beebium.screen import screen_contains, dump_screen, read_mode7_screen
 
 from tube_test_helpers import TUBE_CYCLES_PER_KEY, run_until_or_timeout
 
 
-# BASIC program with inline assembler.
-# Assembles a tight OSBYTE 150 loop, CALLs it, prints "DONE <centiseconds>".
-# OSBYTE 150 (read SHEILA byte X=0) must traverse the Tube to the host.
+# Minimal BASIC program -- no assembler, no disc, just DATA/POKE/CALL.
+# Machine code (13 bytes at &2000):
+#   LDA #51 / LDX #0 / JSR &FFF4 / INC &2030 / BNE loop / RTS
+# Counter at &2030 wraps from 0 -> 255 -> 0, giving 256 iterations.
 BASIC_PROGRAM = (
-    '10 osbyte=&FFF4\r'
-    '20 DIM code% 32\r'
-    '30 count=code%+24\r'
-    '40 FOR pass%=0 TO 2 STEP 2\r'
-    '50 P%=code%\r'
-    '60 [OPT pass%\r'
-    '70 .loop\r'
-    '80 LDA #150\r'
-    '90 LDX #0\r'
-    '100 JSR osbyte\r'
-    '110 INC count\r'
-    '120 BNE loop\r'
-    '130 RTS\r'
-    '140 ]\r'
-    '150 NEXT\r'
-    '160 ?count=0\r'
-    '170 T%=TIME\r'
-    '180 CALL code%\r'
-    '190 T%=TIME-T%\r'
-    '200 PRINT "DONE ";T%\r'
+    '10 FOR I%=0 TO 12:READ B%:?(&2000+I%)=B%:NEXT\r'
+    '20 ?&2030=0\r'
+    '30 PRINT "START"\r'
+    '40 CALL &2000\r'
+    '50 PRINT "DONE"\r'
+    '60 DATA &A9,&33,&A2,0,&20,&F4,&FF,&EE,&30,&20,&D0,&F4,&60\r'
 )
 
 OSBYTE_COUNT = 256
 
 
-@pytest.mark.timeout(120)
-def test_tube_osbyte_throughput(bbc_tube):
-    """Measure OSBYTE throughput through the Tube.
+@pytest.fixture(scope="function")
+def bbc_tube_econet(
+    mos_filepath: Path,
+    basic_filepath: Path | None,
+    beebium_roms_dirpath: Path,
+) -> Beebium:
+    """Model B ROM/RAM board with Tube and Econet/ANFS."""
+    repo_root = Path(__file__).parent.parent.parent.parent
+    exe_suffix = ".exe" if sys.platform == "win32" else ""
+    romram_server = None
+    for candidate in [
+        repo_root / "build-release" / "src" / "server" / f"beebium-model-b-romram{exe_suffix}",
+        repo_root / "build" / "src" / "server" / f"beebium-model-b-romram{exe_suffix}",
+    ]:
+        if candidate.exists():
+            romram_server = candidate
+            break
+    if romram_server is None:
+        pytest.skip("beebium-model-b-romram not found")
 
-    Pokes a loop that calls OSBYTE 150 (read SHEILA) 256 times on the
-    parasite, measures elapsed centiseconds via BASIC TIME, and reports
-    the throughput.
+    anfs_rom = beebium_roms_dirpath / "acorn-anfs_4_18.rom"
+    if not anfs_rom.exists():
+        pytest.skip(f"ANFS ROM not found: {anfs_rom}")
+
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=romram_server,
+            extra_args=[
+                "--sideways", f"9:rom:{anfs_rom}",
+                "--tube", "65C02-3MHz",
+                "--station", "254",
+                "--aun-port", "0",
+            ],
+            startup_timeout=20.0,
+        ) as instance:
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
+
+
+@pytest.mark.timeout(300)
+def test_tube_osbyte_throughput(bbc_tube_econet):
+    """Measure OSBYTE 51 throughput through the Tube with ANFS active.
+
+    Wall-clock time between START and DONE markers gives the real-world
+    throughput for 256 OSBYTE 51 calls through the Tube.
     """
-    bbc = bbc_tube
+    bbc = bbc_tube_econet
 
     # Boot to Tube BASIC prompt
     ok = run_until_or_timeout(
@@ -81,80 +109,62 @@ def test_tube_osbyte_throughput(bbc_tube):
     )
     assert ok, "Failed to boot to BASIC prompt with Tube"
 
-    # Type the BASIC program
+    # Type the short BASIC program
     bbc.keyboard.type(BASIC_PROGRAM, cycles_per_key=TUBE_CYCLES_PER_KEY)
 
-    # Run enough emulated time for BASIC to accept the program
+    # Wait for all lines to be entered
     run_until_or_timeout(
         bbc,
-        lambda: screen_contains(bbc.memory, ">"),
-        emulated_seconds=10.0,
+        lambda: screen_contains(bbc.memory, ">60"),
+        emulated_seconds=60.0,
     )
 
-    # Type RUN and switch to real-time pacing for the measurement
+    # Type RUN
     bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
 
     # Resume with real-time pacing
     bbc.debugger.ensure_running()
-    # Parasite is automatically running (it wasn't stopped independently)
+
+    def _screen_has(text):
+        for row in read_mode7_screen(bbc.memory):
+            if row.strip().startswith(text):
+                return True
+        return False
+
+    # Wait for START
+    deadline = time.monotonic() + 120
+    while not _screen_has("START"):
+        time.sleep(0.2)
+        if time.monotonic() > deadline:
+            print(f"\nScreen:\n{dump_screen(bbc.memory)}")
+            pytest.fail("Program did not reach START within 120s")
 
     t0 = time.monotonic()
 
-    # Wait for "DONE" on screen
-    while True:
-        time.sleep(0.5)
-        from beebium.screen import read_mode7_screen
-        rows = read_mode7_screen(bbc.memory)
-        screen_text = "\n".join(rows)
-        if "DONE" in screen_text:
-            break
-        elapsed = time.monotonic() - t0
-        if elapsed > 90:
+    # Wait for DONE
+    while not _screen_has("DONE"):
+        time.sleep(0.2)
+        if time.monotonic() - t0 > 120:
             print(f"\nScreen:\n{dump_screen(bbc.memory)}")
-            pytest.fail("OSBYTE loop did not complete within 90s")
+            pytest.fail("OSBYTE loop did not complete within 120s")
 
     t1 = time.monotonic()
     wall_seconds = t1 - t0
 
-    # Parse the BASIC TIME value from the screen
-    # Screen should show: "DONE <centiseconds>"
-    basic_cs = None
-    for row in rows:
-        row = row.strip()
-        if row.startswith("DONE"):
-            parts = row.split()
-            if len(parts) >= 2:
-                try:
-                    basic_cs = int(parts[1])
-                except ValueError:
-                    pass
-
-    osbyte_per_sec_wall = OSBYTE_COUNT / wall_seconds
-    ms_per_osbyte_wall = (wall_seconds / OSBYTE_COUNT) * 1000
+    wall_rate = OSBYTE_COUNT / wall_seconds
+    wall_latency = wall_seconds / OSBYTE_COUNT * 1000
 
     print(f"\n{'='*60}")
-    print(f"Tube OSBYTE throughput results")
+    print(f"Tube OSBYTE 51 throughput (with ANFS)")
     print(f"{'='*60}")
     print(f"  OSBYTE calls:          {OSBYTE_COUNT}")
     print(f"  Wall-clock time:       {wall_seconds:.2f}s")
-    print(f"  Throughput (wall):     {osbyte_per_sec_wall:.0f} OSBYTE/s")
-    print(f"  Latency (wall):        {ms_per_osbyte_wall:.1f} ms/OSBYTE")
-    if basic_cs is not None:
-        emulated_secs = basic_cs / 100.0
-        osbyte_per_sec_emu = OSBYTE_COUNT / emulated_secs
-        ms_per_osbyte_emu = (emulated_secs / OSBYTE_COUNT) * 1000
-        print(f"  BASIC TIME (cs):       {basic_cs}")
-        print(f"  Emulated time:         {emulated_secs:.2f}s")
-        print(f"  Throughput (emulated): {osbyte_per_sec_emu:.0f} OSBYTE/s")
-        print(f"  Latency (emulated):    {ms_per_osbyte_emu:.1f} ms/OSBYTE")
+    print(f"  Throughput:            {wall_rate:.0f} OSBYTE/s")
+    print(f"  Latency:               {wall_latency:.1f} ms/OSBYTE")
     print(f"  Expected (real HW):    ~1100 OSBYTE/s, ~0.9 ms/OSBYTE")
     print(f"{'='*60}")
 
-    # The throughput should be at least 500 OSBYTE/s.
-    # On real hardware it's ~1100/s. With the tick-boundary bug it's ~67/s.
-    assert osbyte_per_sec_wall > 500, (
-        f"OSBYTE throughput is {osbyte_per_sec_wall:.0f}/s "
-        f"({ms_per_osbyte_wall:.1f} ms each), expected >500/s. "
-        f"Tick-boundary latency between host and parasite pacing "
-        f"is the cause."
+    assert wall_rate > 500, (
+        f"OSBYTE throughput is {wall_rate:.0f}/s "
+        f"({wall_latency:.1f} ms each), expected >500/s."
     )
