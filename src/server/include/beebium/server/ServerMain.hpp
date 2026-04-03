@@ -1447,14 +1447,22 @@ void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
 // This function blocks until g_running becomes false (signal handler sets it).
 // Sets up shutdown callbacks for clean signal handling.
 template<typename MachineType>
-void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
+void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server,
+                        TubeShared* tube_shared = nullptr) {
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
     bool use_pacing = !platform::get_env("BEEBIUM_NO_PACING").has_value();
 
+    // If a Tube is connected, pass its io_pending flag to the pacing clock
+    // so that Tube register writes from the parasite cause the host to
+    // skip sleeping and process the I/O immediately.
+    std::atomic<bool>* io_pending = tube_shared
+        ? &tube_shared->io_pending_host
+        : nullptr;
+
     // Create and start pacing clock with machine-specific configuration
-    PacingClock pacing_clock(Memory::default_pacing_config());
+    PacingClock pacing_clock(Memory::default_pacing_config(), io_pending);
 
     if (use_pacing) {
         pacing_clock.start();
@@ -1826,7 +1834,8 @@ public:
             handle_wait_mode(machine, config.wait_mode);
 
             // Run main emulation loop (blocks until shutdown)
-            run_emulation_loop(machine, server);
+            run_emulation_loop(machine, server,
+                               tube_shm ? tube_shm->get() : nullptr);
 
             std::cout << "\nShutting down...\n";
 

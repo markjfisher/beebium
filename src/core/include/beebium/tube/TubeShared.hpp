@@ -165,6 +165,17 @@ struct alignas(64) TubeShared {
     // which is a bus-stretching concern, not a debugger concern.
     alignas(64) std::atomic<bool> debugger_stop_signal{false};
 
+    // --- I/O pending flags ---
+    // Set by one side after writing to a Tube register, to signal the other
+    // side's PacingClock that it should skip sleeping and run another tick
+    // immediately. Cleared by the receiving side's PacingClock at the start
+    // of each tick. These flags reduce Tube R2 handshake latency from ~50ms
+    // (one pacing tick per boundary crossing) to near-zero (back-to-back ticks).
+    //
+    // Host writes io_pending_parasite; parasite writes io_pending_host.
+    alignas(64) std::atomic<bool> io_pending_host{false};
+    std::atomic<bool> io_pending_parasite{false};
+
     // --- Lifecycle mailbox ---
     alignas(64) std::atomic<uint8_t> host_command{0};
     std::atomic<uint8_t> parasite_ack{0};
@@ -230,6 +241,8 @@ struct alignas(64) TubeShared {
 
         bus_stretch_cancel.store(false, std::memory_order_relaxed);
         debugger_stop_signal.store(false, std::memory_order_relaxed);
+        io_pending_host.store(false, std::memory_order_relaxed);
+        io_pending_parasite.store(false, std::memory_order_relaxed);
         host_command.store(0, std::memory_order_relaxed);
         parasite_ack.store(0, std::memory_order_relaxed);
 

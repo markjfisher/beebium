@@ -234,6 +234,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         }
         shared_->r1_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r1_h2p.ready.store(1, std::memory_order_release);
+        shared_->io_pending_parasite.store(true, std::memory_order_release);
         uint64_t seq = shared_->counters.r1_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         register_trace_.record(seq, 1, value, true);
         break;
@@ -248,6 +249,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         shared_->r2_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r2_h2p.ready.store(1, std::memory_order_release);
         shared_->counters.r2_h2p_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_parasite.store(true, std::memory_order_release);
         break;
     }
 
@@ -275,6 +277,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         shared_->r3_h2p.tail.store(tail ^ 1, std::memory_order_relaxed);
         shared_->r3_h2p.count.fetch_add(1, std::memory_order_release);
         shared_->counters.r3_h2p_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_parasite.store(true, std::memory_order_release);
         break;
     }
 
@@ -296,6 +299,7 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         shared_->r4_h2p.value.store(value, std::memory_order_relaxed);
         shared_->r4_h2p.ready.store(1, std::memory_order_release);
         shared_->counters.r4_h2p_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_parasite.store(true, std::memory_order_release);
         break;
     }
     }

@@ -232,6 +232,7 @@ void TubeParasitePort::parasite_write(uint8_t offset, uint8_t value)
         // R1 data: write to P-to-H 24-byte FIFO.
         enqueue_r1_p2h(value);
         shared_->counters.r1_p2h_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_host.store(true, std::memory_order_release);
         break;
     }
 
@@ -245,6 +246,7 @@ void TubeParasitePort::parasite_write(uint8_t offset, uint8_t value)
         shared_->r2_p2h.value.store(value, std::memory_order_relaxed);
         shared_->r2_p2h.ready.store(1, std::memory_order_release);
         shared_->counters.r2_p2h_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_host.store(true, std::memory_order_release);
         break;
     }
 
@@ -256,6 +258,7 @@ void TubeParasitePort::parasite_write(uint8_t offset, uint8_t value)
         // R3 data: write to P-to-H register.
         enqueue_r3_p2h(value);
         shared_->counters.r3_p2h_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_host.store(true, std::memory_order_release);
         break;
     }
 
@@ -268,6 +271,7 @@ void TubeParasitePort::parasite_write(uint8_t offset, uint8_t value)
         shared_->r4_p2h.value.store(value, std::memory_order_relaxed);
         shared_->r4_p2h.ready.store(1, std::memory_order_release);
         shared_->counters.r4_p2h_writes.fetch_add(1, std::memory_order_relaxed);
+        shared_->io_pending_host.store(true, std::memory_order_release);
         break;
     }
     }

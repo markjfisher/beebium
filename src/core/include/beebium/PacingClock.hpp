@@ -53,7 +53,13 @@ public:
     using TimePoint = Clock::time_point;
 
     /// Construct a pacing clock with the given configuration.
-    explicit PacingClock(const PacingConfig& config)
+    ///
+    /// @param io_pending Optional pointer to an atomic flag that external I/O
+    ///   sources can set to request an immediate tick (skip sleeping). The
+    ///   PacingClock clears the flag after each tick. When nullptr (default),
+    ///   the clock operates in pure time-driven mode.
+    explicit PacingClock(const PacingConfig& config,
+                         std::atomic<bool>* io_pending = nullptr)
         : config_(config)
         , interval_(config.tick_interval())
         , safety_margin_(interval_ / 10)  // Start conservative: 10% margin
@@ -61,7 +67,8 @@ public:
         , max_margin_(interval_ / 2)
         , running_(false)
         , tick_ready_(false)
-        , paused_(false) {}
+        , paused_(false)
+        , io_pending_(io_pending) {}
 
     ~PacingClock() {
         stop();
@@ -179,6 +186,7 @@ public:
         double safety_margin_us;      // Current safety margin
         uint64_t ticks_executed;      // Total ticks executed
         uint64_t ticks_skipped;       // Ticks skipped due to falling behind
+        uint64_t ticks_io_skipped;    // Ticks where sleep was skipped for I/O
     };
 
     TimingStats timing_stats() const {
@@ -188,7 +196,8 @@ public:
             max_recent_overshoot_ns_ / 1000.0,
             static_cast<double>(safety_margin_.count()) / 1000.0,
             ticks_executed_,
-            ticks_skipped_
+            ticks_skipped_,
+            ticks_io_skipped_
         };
     }
 
@@ -218,52 +227,80 @@ private:
                 continue;
             }
 
-            // Calculate sleep target (interval minus adaptive safety margin)
-            Duration current_margin;
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                current_margin = safety_margin_;
-            }
-            auto sleep_target = next_tick_ - current_margin;
-            auto before_sleep = Clock::now();
-
-            // Sleep until near the target time
-            if (sleep_target > before_sleep) {
-                std::this_thread::sleep_until(sleep_target);
+            // Check if I/O is pending -- if so, skip sleeping entirely
+            // and run another tick immediately. This allows back-to-back
+            // ticks during Tube handshakes or other real-time I/O.
+            bool io_skip = io_pending_ &&
+                io_pending_->load(std::memory_order_acquire);
+            if (io_skip) {
+                io_pending_->store(false, std::memory_order_relaxed);
             }
 
-            auto after_sleep = Clock::now();
-
-            // Spin-wait for precise timing
-            while (Clock::now() < next_tick_ && running_) {
-                // Spin (could use _mm_pause() on x86 for power efficiency)
-            }
-
-            auto now = Clock::now();
-
-            // Signal emulation thread
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                tick_ready_ = true;
-                ++ticks_executed_;
-            }
-            cv_.notify_one();
-
-            // Adapt safety margin based on observed overshoot
-            adapt_margin(sleep_target, after_sleep);
-
-            // Advance to next tick
-            next_tick_ += interval_;
-
-            // Handle falling behind: if we're more than one interval late,
-            // skip ahead rather than trying to catch up
-            if (next_tick_ + interval_ < now) {
-                auto intervals_behind = (now - next_tick_) / interval_;
+            if (io_skip) {
+                // I/O pending: signal immediately, don't sleep
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    ticks_skipped_ += static_cast<uint64_t>(intervals_behind);
+                    tick_ready_ = true;
+                    ++ticks_executed_;
+                    ++ticks_io_skipped_;
                 }
-                next_tick_ += interval_ * (intervals_behind + 1);
+                cv_.notify_one();
+
+                // Advance next_tick to avoid accumulating debt
+                next_tick_ = Clock::now() + interval_;
+            } else {
+                // Normal path: sleep until near the tick deadline
+
+                // Calculate sleep target (interval minus adaptive safety margin)
+                Duration current_margin;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    current_margin = safety_margin_;
+                }
+                auto sleep_target = next_tick_ - current_margin;
+                auto before_sleep = Clock::now();
+
+                // Sleep until near the target time (check io_pending during spin)
+                if (sleep_target > before_sleep) {
+                    std::this_thread::sleep_until(sleep_target);
+                }
+
+                auto after_sleep = Clock::now();
+
+                // Spin-wait for precise timing, but break out early if I/O arrives
+                while (Clock::now() < next_tick_ && running_) {
+                    if (io_pending_ &&
+                        io_pending_->load(std::memory_order_relaxed)) {
+                        break;  // I/O arrived during spin-wait
+                    }
+                }
+
+                auto now = Clock::now();
+
+                // Signal emulation thread
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    tick_ready_ = true;
+                    ++ticks_executed_;
+                }
+                cv_.notify_one();
+
+                // Adapt safety margin based on observed overshoot
+                adapt_margin(sleep_target, after_sleep);
+
+                // Advance to next tick
+                next_tick_ += interval_;
+
+                // Handle falling behind: if we're more than one interval late,
+                // skip ahead rather than trying to catch up
+                if (next_tick_ + interval_ < now) {
+                    auto intervals_behind = (now - next_tick_) / interval_;
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        ticks_skipped_ += static_cast<uint64_t>(intervals_behind);
+                    }
+                    next_tick_ += interval_ * (intervals_behind + 1);
+                }
             }
         }
     }
@@ -314,6 +351,7 @@ private:
     double max_recent_overshoot_ns_ = 0.0;
     uint64_t ticks_executed_ = 0;
     uint64_t ticks_skipped_ = 0;
+    uint64_t ticks_io_skipped_ = 0;
 
     // Timing
     TimePoint next_tick_;
@@ -328,6 +366,9 @@ private:
     std::condition_variable pause_cv_;
     bool tick_ready_;
     bool paused_;
+
+    // I/O pending flag (optional, cross-process via shared memory)
+    std::atomic<bool>* io_pending_ = nullptr;
 };
 
 } // namespace beebium

@@ -256,7 +256,7 @@ int main(int argc, char* argv[]) {
         .pacing_hz = 200,
         .speed_multiplier = 1.0
     };
-    beebium::PacingClock clock(pacing_config);
+    beebium::PacingClock clock(pacing_config, &shm.get()->io_pending_parasite);
     uint64_t cycles_per_tick = pacing_config.cycles_per_tick();
 
     std::cout << "Starting 65C02 at " << PARASITE_CLOCK_HZ / 1'000'000 << " MHz "
