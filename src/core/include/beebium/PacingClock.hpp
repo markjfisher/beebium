@@ -102,14 +102,13 @@ public:
     }
 
     /// Called by emulation thread to get cycles for the next tick.
-    /// Uses the deficit controller with current wall-clock and cycle count.
+    /// Uses the wall-clock timestamp captured by the timer thread at the
+    /// moment the tick fired, avoiding condition variable wakeup latency.
     uint64_t cycles_for_next_tick() {
         if (config_.is_unlimited()) {
             return config_.cycles_per_tick();
         }
-        auto now = Clock::now();
-        auto wall_ns = std::chrono::duration_cast<Duration>(
-            now - start_time_).count();
+        auto wall_ns = tick_wall_ns_.load(std::memory_order_acquire);
         uint64_t cycles = total_cycles_.load(std::memory_order_acquire);
         return controller_.update(wall_ns, cycles);
     }
@@ -236,6 +235,15 @@ private:
                 }
             }
 
+            // Record the wall-clock time at this tick for the deficit
+            // controller. Must be captured here (timer thread) rather
+            // than in cycles_for_next_tick() (emulation thread) to avoid
+            // including the condition variable wakeup latency in the deficit.
+            tick_wall_ns_.store(
+                std::chrono::duration_cast<Duration>(
+                    Clock::now() - start_time_).count(),
+                std::memory_order_release);
+
             // Signal emulation thread
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -277,6 +285,7 @@ private:
     // Timing
     TimePoint start_time_;
     std::atomic<uint64_t> total_cycles_{0};
+    std::atomic<int64_t> tick_wall_ns_{0};
 
     // Thread control
     std::atomic<bool> running_;
