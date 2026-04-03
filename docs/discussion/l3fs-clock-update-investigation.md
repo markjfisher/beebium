@@ -34,9 +34,8 @@ every 30 seconds. In Beebium it updates every 3-5 minutes.
 ## Investigation Method
 
 All measurements were empirical, using gRPC diagnostic APIs to observe the
-running system from the outside. No code changes were needed for the core
-measurements (only for the new `WatchActivity` stream used by the
-integration test).
+running system from the outside. No reasoning about what *should* happen --
+only what *does* happen.
 
 ### Tools used
 
@@ -48,6 +47,16 @@ integration test).
 | `Memory.ReadBytes()` | Dump memory at hotspot addresses |
 | `AcornRtcService.WatchActivity()` | Stream register read/write events (new) |
 | Python `time.monotonic()` | Wall-clock timestamps for rate calculations |
+| BASIC `TIME` | Emulated centisecond timestamps per OSBYTE call |
+
+### Key principle
+
+The Tube requires host-side code to function. This code lives in the ANFS
+ROM (specifically the "Tube host code" component, which is the complement
+of the parasite's Tube client at $F800-$FFFF). Without the ANFS ROM loaded,
+the Tube is not operational -- the parasite connects but no R2 commands are
+dispatched. Any test of Tube behaviour MUST have the ANFS ROM present and
+verify "TUBE" appears in the boot message ("Acorn TUBE 6502 64K").
 
 
 ## Findings
@@ -134,83 +143,95 @@ Total: **~400 OSBYTE calls** per WAIT3 invocation.
 On real hardware, each Tube OSBYTE takes ~0.9ms, giving
 400 * 0.9ms = 360ms per WAIT3.
 
-### 7. Tube R2 throughput is the bottleneck
+### 7. Parasite MOS OSBYTE dispatch (from Tube client disassembly)
 
-Measured via `DeviceInspection.GetTubeState()` Tube transfer counters over
-12 x 5-second intervals during steady-state L3FS operation:
+Source: `acorn-6502-tube-client-1.10` disassembly.
 
-| Metric | Measured | Expected (real HW) |
-|--------|----------|---------------------|
-| R2 host-to-parasite | 67 bytes/s | ~1100 bytes/s |
-| R2 parasite-to-host | 202 bytes/s | ~3300 bytes/s |
-| OSBYTE calls/sec | **67/s** | **~1100/s** |
-| Time per OSBYTE | **14.9 ms** | **~0.9 ms** |
+The parasite MOS at `osbyte_impl` ($FA73) dispatches all OSBYTE calls:
 
-The throughput is **16x slower** than real hardware.
+- **A < &80** (e.g. OSBYTE 51 = &33): `osbyte_low` at $FA77. Sends
+  command byte 4, then X, then A via Tube R2. Waits for one response byte.
+- **A >= &80** (e.g. OSBYTE 150 = &96): Checks for &82/&83/&84 (handled
+  locally). All others via `osbyte_high` at $FAA8: sends command byte 6,
+  then X, Y, A via R2. Waits for carry+Y and X response bytes.
 
-Tube R4 (the command dispatch register) showed zero transfers during
-steady-state operation. All OSBYTE traffic goes through R2 (the
-single-byte data channel), consistent with the parasite MOS protocol.
+Both paths go through R2 to the host. The parasite spends most of its time
+spinning at the R2 status poll loops (`BIT $FEFA` / `BVC` or `BPL`),
+waiting for the host to consume or produce R2 bytes.
 
-### 8. Parasite is spinning on Tube R2 status
+### 8. Tube host code (from ANFS ROM disassembly)
 
-PC sampling (75,068 samples over 10 seconds) revealed:
+Source: `anfs-4.08.53` disassembly. The Tube host code is relocated from
+the ANFS ROM to zero page ($0000-$06FF) at boot time.
 
-| Address | % Time | Code |
-|---------|--------|------|
-| $FA93 | 50.1% | `BIT $FEFA` (Tube R2 status) |
-| $FA96 | 41.2% | `BPL $FA93` (loop while bit 7 clear) |
-| $FA82 | 3.9% | `BIT $FEFA` (earlier R2 wait) |
-| $FA85 | 3.0% | `BVC $FA82` (loop while bit 6 clear) |
-
-The parasite spends **91% of its time** in a two-instruction spin loop at
-`$FA93`-`$FA96`, waiting for the host to place a response byte in Tube R2.
-
-Note: the parasite MOS accesses Tube registers at `$FEFA`/`$FEFB`. Since
-the Tube ULA registers repeat every 8 bytes, `$FEFA & 0x07 = 0x02` = R2
-status and `$FEFB & 0x07 = 0x03` = R2 data.
-
-The full parasite OSBYTE dispatch code at `$FA77`:
+The main loop at `:0036` (matching our PC sampling hotspot exactly):
 
 ```
-$FA77: PHA            ; Save A (OSBYTE number)
-$FA78: LDA #$04       ; Tube command type 4 = OSBYTE
-$FA7A: BIT $FEFA      ; \
-$FA7D: BVC $FA7A      ; / Wait R2 ready, write command type
-$FA7F: STA $FEFB      ;
-$FA82: BIT $FEFA      ; \
-$FA85: BVC $FA82      ; / Wait R2 ready, write X parameter
-$FA87: STX $FEFB      ;
-$FA8A: PLA            ; Restore A
-$FA8B: BIT $FEFA      ; \
-$FA8E: BVC $FA8B      ; / Wait R2 ready, write A parameter
-$FA90: STA $FEFB      ;
-$FA93: BIT $FEFA      ; \
-$FA96: BPL $FA93      ; / Wait for host response (bit 7 = data available)
-$FA98: LDX $FEFB      ; Read result X from R2
-$FA9B: RTS
+.tube_main_loop
+    BIT $FEE0           ; :0037 - check R1 (OSWRCH from parasite)
+    BPL tube_poll_r2    ; :0039 - no R1 data: check R2
+    LDA $FEE1           ; :003B - read R1 data byte
+    JSR $FFEE           ; :003E - OSWRCH (display character)
+.tube_poll_r2
+    BIT $FEE2           ; :0041 - check R2 (command from parasite)
+    BPL tube_main_loop  ; :0044 - no R2 data: loop back to R1
+    ...                 ;        - dispatch R2 command
 ```
 
-### 9. Host polling loop checks R2 intermittently
+The R2 dispatch table uses even command numbers as byte offsets:
 
-The host-side Tube polling loop at `$0036`:
+| Cmd | Handler | Purpose |
+|-----|---------|---------|
+| 4   | `tube_osbyte_2param` | OSBYTE < &80 (2 params: X, A) |
+| 6   | `tube_osbyte_long`   | OSBYTE >= &80 (3 params: X, Y, A) |
+
+The `tube_osbyte_2param` handler reads X and A from R2, calls host OSBYTE,
+sends X result back via R2, then returns to `tube_main_loop`. Each R2
+read/write involves polling the R2 status register.
+
+### 9. Per-call OSBYTE latency measurement
+
+A targeted test (`test_tube_osbyte_throughput.py`) measures individual
+OSBYTE 51 call latency under normal paced execution. The test:
+
+1. Boots Model B ROM/RAM board with Tube + ANFS (verified by "TUBE" in
+   boot message)
+2. Types a BASIC program that pokes a single-OSBYTE machine code routine
+   (`LDA #51 / LDX #0 / JSR &FFF4 / RTS`)
+3. Calls it 32 times, timing each with BASIC `TIME` (10ms resolution)
+4. Measures wall-clock time between `=GO` and `=OK` markers
+
+Results (consistent across runs):
 
 ```
-$0036: BIT $FEE0      ; Check R1 status (OSWRCH)
-$0039: BPL $0041      ; Skip if no R1 data
-$003B: LDA $FEE1      ; Read R1 data
-$003E: JSR $FFEE      ; Process OSWRCH character
-$0041: BIT $FEE2      ; Check R2 status
-$0044: BPL $0036      ; Loop if no R2 data -> check R1 again
-$0046: ...            ; Process R2 data (OSBYTE dispatch)
+  Wall time: 3.03s
+  Wall avg:  94.5 ms/call
+  Wall rate: 11 OSBYTE/s
+
+  BASIC TIME per call (10ms resolution):
+    min:  30 ms (3 cs)
+    mean: 53 ms (5.3 cs)
+    max:  60 ms (6 cs)
+    raw:  6 5 6 5 6 5 3 6 5 6 5 6 5 6 5 6 5 3 6 5 6 5 6 5 6 5 6 5 6 5
 ```
 
-The host alternates between checking R1 (screen output) and R2 (OSBYTE
-commands). When R2 has data, it falls through to the command dispatcher.
+Key observations:
 
-Host PC sampling (74,929 samples) showed the host spending 18% of time in
-this polling loop and 21% in ROM code at $8E40 (likely ANFS/Econet
-handling).
+- **Alternating 5/6 pattern**: Values alternate between 5 and 6
+  centiseconds (50-60ms), with occasional 3s (30ms). This is consistent
+  with a fixed number of tick-boundary crossings per call, with occasional
+  lucky alignment.
+- **~10-12 ticks per OSBYTE**: At 200 Hz pacing (5ms/tick), 50-60ms
+  corresponds to 10-12 tick boundaries crossed per OSBYTE round-trip.
+  Each R2 byte transfer potentially stalls at a tick boundary (up to 5ms
+  per stall). A low OSBYTE round-trip involves ~6 R2 operations (host
+  main loop dispatch + 2 reads + OSBYTE execution + 1 write + return),
+  each potentially crossing a tick boundary.
+- **Wall-clock overhead**: The wall-clock average (94.5ms) exceeds the
+  BASIC TIME mean (53ms) because the FOR/NEXT loop and BASIC variable
+  storage between calls also involve Tube operations.
+- **Expected on real hardware**: ~0.9ms per OSBYTE, ~1100 OSBYTE/s.
+  The measured latency is **55-67x slower** than real hardware.
 
 
 ## Root Cause
@@ -232,29 +253,57 @@ must wait up to **5ms** for the host to wake up, see the data, and process
 it. Conversely, when the host writes the response back to R2, the parasite
 may need to wait for its next tick to see it.
 
-A single OSBYTE call requires multiple R2 handshakes:
+A single OSBYTE call requires multiple R2 handshakes. The Tube host code
+polls R2 in a tight loop, but this loop only runs during host ticks. Each
+R2 byte transfer that crosses a tick boundary adds up to 5ms of latency.
 
-1. Parasite writes command type → host must wake up to read it
-2. Parasite writes X parameter → host must process it
-3. Parasite writes A parameter → host must process it
-4. Host writes result X → parasite must wake up to read it
+The measured per-call latency of 50-60ms (10-12 ticks) is consistent with
+~6 R2 operations per OSBYTE, each crossing 1-2 tick boundaries on average.
 
-Each handshake potentially crosses a tick boundary, adding up to 5ms of
-latency. With 3-4 tick boundary crossings per OSBYTE, the measured
-**14.9ms per OSBYTE** is consistent with approximately **3 tick
-boundaries** per call.
+### Confirming evidence
+
+1. **Clock rates are correct** (2.000/3.000 MHz) -- the slowdown is not
+   due to incorrect cycle rates.
+2. **Parasite PC sampling** shows 91% of time at the R2 status poll loop
+   ($FA93-$FA96), confirming the parasite is waiting for the host.
+3. **Host PC sampling** shows 18% of time at the Tube main loop
+   ($0036-$0044), confirming the host spends most of its time elsewhere
+   (sleeping in the pacing clock).
+4. **Alternating 5/6 pattern** in per-call measurements is characteristic
+   of tick-boundary alignment effects -- not random jitter.
+5. **Same code under coupled stepping** (no independent pacing) completes
+   in <1 emulated second, confirming pacing is the bottleneck.
 
 ### Impact on L3FS
 
 | Metric | Real hardware | Beebium | Ratio |
 |--------|---------------|---------|-------|
-| OSBYTE throughput | ~1100/s | 67/s | 16x slower |
-| WAIT3 duration | 0.36s | 6.0s | 17x slower |
-| PRTIM interval | 30s | 510s (~8.5 min) | 17x slower |
+| OSBYTE latency | ~0.9 ms | 50-60 ms | 55-67x |
+| OSBYTE throughput | ~1100/s | 11-32/s | 35-100x |
+| WAIT3 duration | 0.36s | ~20-36s | 55-100x |
+| PRTIM interval | 30s | 28-51 min | 55-100x |
 
 The L3FS calls OSBYTE 51 approximately 34,000 times between each RTC read
-(85 WAIT3 calls * 400 OSBYTE calls each). At 67 OSBYTE/s, this takes
-**510 seconds** instead of the expected 30 seconds.
+(85 WAIT3 calls * 400 OSBYTE calls each). At the measured rate of
+11-32 OSBYTE/s, this takes **17-51 minutes** instead of the expected
+30 seconds.
+
+### False leads eliminated
+
+1. **OSBYTE 150 without ANFS**: Early tests using OSBYTE 150 without the
+   ANFS ROM showed fast throughput (~3200+ OSBYTE/s). This was because
+   **the Tube was not operational** -- without the ANFS ROM, the host never
+   loads the Tube host code. The boot message showed "BBC Computer 32K"
+   (no Tube) instead of "Acorn TUBE 6502 64K". These measurements were
+   invalid.
+
+2. **Coupled stepping artefacts**: Tests using `CoupledSystem` (the Python
+   client's coupled stepping mode) showed different behaviour from normal
+   pacing. Coupled stepping bypasses the independent pacing entirely,
+   running both processors in lock-step via cycle-budget breakpoints. This
+   is useful for fast program entry but does not reproduce the production
+   pacing behaviour. The final test uses only normal paced execution
+   throughout.
 
 
 ## Artefacts Created
@@ -262,8 +311,8 @@ The L3FS calls OSBYTE 51 approximately 34,000 times between each RTC read
 ### New gRPC API: `AcornRtcService.WatchActivity`
 
 Streaming RPC that emits events when the BBC reads or writes SAF3019P
-registers via the CBUS protocol. Analogous to watching the DATA LED on Ken
-Lowe's reproduction hardware.
+registers via the CBUS protocol. Analogous to watching the DATA LED on
+Ken Lowe's reproduction hardware.
 
 Files modified:
 - `src/extensions/acorn-rtc/acorn_rtc.proto` -- added `WatchActivity` RPC
@@ -279,38 +328,51 @@ Files modified:
 - `clients/python/src/beebium/_proto/acorn_rtc_pb2_grpc.py` -- generated
   Python stub (with fixed import path)
 
-### Integration test
+### Tube OSBYTE throughput test
+
+`clients/python/tests/test_tube_osbyte_throughput.py`
+
+Fast (20s), self-contained test that measures per-call OSBYTE 51 latency
+under normal paced execution with the Tube active. No coupled stepping, no
+disc images, no external dependencies beyond MOS + BASIC + ANFS ROMs.
+
+- Boots Model B ROM/RAM board with Tube + ANFS + Econet
+- Verifies "TUBE" in boot message (Tube host code loaded)
+- Types a BASIC program that pokes and calls a single-OSBYTE machine code
+  loop 32 times, timing each call with BASIC TIME
+- Reports min/mean/max latency and wall-clock throughput
+- Asserts throughput >500 OSBYTE/s (currently fails at ~11/s)
+
+### L3FS clock update integration test (slow, opt-in)
 
 `integration_tests/l3fs-clock/tests/test_l3fs_clock_update.py`
 
 Boots the full L3FS stack, monitors the `WatchActivity` stream for 3
 minutes, groups events into RDDONG calls (6-register read sequences), and
-asserts the average interval is ~30 seconds. Currently **fails as expected**,
-detecting only 1 RDDONG call in 180 seconds.
+asserts the average interval is ~30 seconds. Currently fails, detecting
+only 1 RDDONG call in 180 seconds.
 
-Marked `@pytest.mark.slow` -- excluded from default test runs, run with
-`pytest -m slow`.
+Marked `@pytest.mark.slow` -- excluded from default test runs.
 
 ### Diagnostic scripts
 
 All in `integration_tests/l3fs-clock/tests/`:
 
 - `measure_clock_rates.py` -- confirmed host/parasite clock rates and Tube
-  transfer throughput (finding: 67 OSBYTE/s, 14.9ms each)
-- `measure_parasite_activity.py` -- PC sampling showing 91% time at R2
-  spin loop
+  transfer throughput
 - `measure_r2_per_tick.py` -- detailed R2 throughput vs pacing rate
   analysis
-- `disassemble_hotspots.py` -- memory dumps at hot addresses for manual
-  disassembly
+- `measure_parasite_activity.py` -- PC sampling showing 91% time at R2
+  spin loop
+- `disassemble_hotspots.py` -- memory dumps at hot addresses
 
 
 ## What Needs to Change
 
-The fix must allow Tube R2 handshakes to complete within a single pacing
-tick on each side, rather than requiring each side to wake up from a
-pacing sleep. This is a host-parasite synchronisation problem, not a
-clock rate problem.
+The fix must allow Tube R2 handshakes to complete without stalling at
+pacing tick boundaries. The host and parasite must be able to exchange R2
+bytes within the same wall-clock instant, rather than each waiting for the
+other's next tick.
 
 Possible approaches (not yet evaluated):
 
@@ -319,17 +381,17 @@ Possible approaches (not yet evaluated):
    process the OSBYTE immediately rather than waiting up to 5ms for its
    next scheduled tick.
 
-2. **Run the host polling loop during the pacing sleep** -- allow the
-   host's Tube polling loop to run even while the pacing clock is sleeping,
-   so it can respond to R2 data without waiting for the next tick.
+2. **Synchronise host and parasite ticks** -- ensure both processors run
+   their batches in lock-step rather than independently, so R2 handshakes
+   complete within a single combined tick.
 
 3. **Increase pacing frequency** -- higher Hz = smaller ticks = less
    latency per boundary crossing. However, this increases CPU usage and
    may affect audio/video quality.
 
-4. **Synchronise host and parasite ticks** -- ensure both processors run
-   their batches in lock-step rather than independently, so R2 handshakes
-   complete within a single combined tick.
+4. **Run the Tube host polling loop during pacing sleep** -- allow the
+   host's Tube polling code to execute even while the pacing clock is
+   waiting, so R2 data is consumed promptly.
 
 
 ## Unrelated Observations
@@ -340,9 +402,9 @@ Possible approaches (not yet evaluated):
 that blocks all `receive_frame()` polling after a completed Econet
 transaction. There is a TODO at line 130 acknowledging this should be
 replaced with a buffered approach. This is **not** the cause of the clock
-update issue (the cooldown only activates after completed transactions, and
-no Econet transactions occur during idle polling), but it may affect
-Econet throughput in other scenarios.
+update issue (confirmed empirically: the slowdown affects all OSBYTE calls,
+not just Econet polling), but it may affect Econet throughput in other
+scenarios.
 
 ### Pacing stats not available via gRPC
 
