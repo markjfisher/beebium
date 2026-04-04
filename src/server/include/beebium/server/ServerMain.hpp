@@ -22,6 +22,7 @@
 #include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
+#include "beebium/SleepQuantum.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
@@ -1454,20 +1455,24 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     // Check for BEEBIUM_NO_PACING environment variable for debugging
     bool use_pacing = !platform::get_env("BEEBIUM_NO_PACING").has_value();
 
+    // Measure the platform's sleep quantum for smooth pacing
+    auto quantum = beebium::measure_sleep_quantum();
+
     // If a Tube is connected, pass its io_pending flag to the pacing clock
-    // so that Tube register writes from the parasite cause the host to
-    // skip sleeping and process the I/O immediately.
+    // for sub-quantum wakeup on Tube register writes.
     std::atomic<bool>* io_pending = tube_shared
         ? &tube_shared->io_pending_host
         : nullptr;
 
-    // Create and start pacing clock with machine-specific configuration
-    PacingClock pacing_clock(Memory::default_pacing_config(), io_pending);
+    // Create and start pacing clock with measured quantum
+    PacingClock pacing_clock(Memory::default_pacing_config(), quantum, io_pending);
 
     if (use_pacing) {
         pacing_clock.start();
-        std::cout << "Pacing: " << Memory::default_pacing_config().pacing_hz << " Hz, "
-                  << Memory::default_pacing_config().cycles_per_tick() << " cycles/tick\n";
+        std::cout << "Pacing: quantum " << quantum.count() / 1000 << " us"
+                  << ", nominal " << pacing_clock.config().base_clock_hz / 1'000'000 << " MHz"
+                  << (io_pending ? " (I/O interruptible)" : "")
+                  << "\n";
     } else {
         std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
     }
@@ -1506,15 +1511,12 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         }
 
         if (use_pacing) {
-            // Wait for tick, then ask controller how many cycles to run
             pacing_clock.wait_for_tick();
             uint64_t cycles = pacing_clock.cycles_for_next_tick();
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles);
-            auto exec_time = std::chrono::steady_clock::now() - run_start;
-            run_duration += exec_time;
-            pacing_clock.report_cycles(machine.cycle_count(),
-                std::chrono::duration_cast<std::chrono::nanoseconds>(exec_time));
+            run_duration += std::chrono::steady_clock::now() - run_start;
+            pacing_clock.report_cycles(machine.cycle_count());
         } else {
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles_per_frame);
@@ -1543,9 +1545,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                           << std::setprecision(1)
                           << (100.0 * actual_hz / target_hz) << "%)"
                           << " | vsync " << std::setprecision(1) << vsync_hz << " Hz"
-                          << " | skipped " << stats.ticks_skipped
                           << " | io " << stats.ticks_io_woken
-                          << " | drift " << std::setprecision(0) << stats.controller_drift
+                          << " | deficit " << std::setprecision(0) << stats.controller_deficit
                           << " | run " << std::setprecision(1) << run_pct << "%"
                           << "\n";
                 last_stats_time = now;

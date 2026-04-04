@@ -498,9 +498,8 @@ grpc::Status SystemServiceImpl<MachineType>::GetPacingStats(
     }
     auto stats = pacing_clock_->timing_stats();
     response->set_ticks_executed(stats.ticks_executed);
-    response->set_ticks_skipped(stats.ticks_skipped);
     response->set_ticks_io_skipped(stats.ticks_io_woken);
-    response->set_controller_drift(stats.controller_drift);
+    response->set_controller_drift(stats.controller_deficit);
     response->set_controller_integral(stats.controller_integral);
     return grpc::Status::OK;
 }
@@ -524,9 +523,8 @@ grpc::Status SystemServiceImpl<MachineType>::WatchPacingStats(
         auto stats = pacing_clock_->timing_stats();
         beebium::PacingStats msg;
         msg.set_ticks_executed(stats.ticks_executed);
-        msg.set_ticks_skipped(stats.ticks_skipped);
         msg.set_ticks_io_skipped(stats.ticks_io_woken);
-        msg.set_controller_drift(stats.controller_drift);
+        msg.set_controller_drift(stats.controller_deficit);
         msg.set_controller_integral(stats.controller_integral);
 
         if (!writer->Write(msg)) break;

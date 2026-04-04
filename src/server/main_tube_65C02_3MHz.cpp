@@ -23,6 +23,7 @@
 //   beebium-model-b --tube 65C02-3MHz
 
 #include <beebium/PacingClock.hpp>
+#include <beebium/SleepQuantum.hpp>
 #include <beebium/tube/ParasiteRunner.hpp>
 #include <beebium/tube/TubeSharedMemory.hpp>
 #include <beebium/service/ParasiteServer.hpp>
@@ -250,18 +251,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --- Pacing clock (3 MHz, 200 Hz tick rate) ---
+    // --- Measure sleep quantum and create pacing clock ---
+    auto quantum = beebium::measure_sleep_quantum();
     beebium::PacingConfig pacing_config{
         .base_clock_hz = PARASITE_CLOCK_HZ,
-        .pacing_hz = 200,
+        .pacing_hz = 200,  // Nominal (unused by quantum-based pacing)
         .speed_multiplier = 1.0
     };
-    beebium::PacingClock clock(pacing_config, &shm.get()->io_pending_parasite);
-    uint64_t cycles_per_tick = pacing_config.cycles_per_tick();
+    beebium::PacingClock clock(pacing_config, quantum,
+                                &shm.get()->io_pending_parasite);
 
     std::cout << "Starting 65C02 at " << PARASITE_CLOCK_HZ / 1'000'000 << " MHz "
-              << "(" << cycles_per_tick << " cycles/tick at "
-              << pacing_config.pacing_hz << " Hz)\n";
+              << "(quantum " << quantum.count() / 1000 << " us)\n";
 
     // --- Main execution loop ---
     clock.start();
@@ -271,11 +272,8 @@ int main(int argc, char* argv[]) {
     {
         clock.wait_for_tick();
         uint64_t cycles = clock.cycles_for_next_tick();
-        auto run_start = std::chrono::steady_clock::now();
         runner.run(cycles);
-        auto exec_time = std::chrono::steady_clock::now() - run_start;
-        clock.report_cycles(runner.cycle_count(),
-            std::chrono::duration_cast<std::chrono::nanoseconds>(exec_time));
+        clock.report_cycles(runner.cycle_count());
     }
 
     clock.stop();
