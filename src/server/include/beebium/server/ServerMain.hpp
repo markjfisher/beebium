@@ -1470,6 +1470,7 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     if (use_pacing) {
         pacing_clock.start();
         std::cout << "Pacing: quantum " << quantum.count() / 1000 << " us"
+                  << " (" << 1'000'000'000 / quantum.count() << " Hz)"
                   << ", nominal " << pacing_clock.config().base_clock_hz / 1'000'000 << " MHz"
                   << (io_pending ? " (I/O interruptible)" : "")
                   << "\n";

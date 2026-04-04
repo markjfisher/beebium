@@ -262,7 +262,8 @@ int main(int argc, char* argv[]) {
                                 &shm.get()->io_pending_parasite);
 
     std::cout << "Starting 65C02 at " << PARASITE_CLOCK_HZ / 1'000'000 << " MHz "
-              << "(quantum " << quantum.count() / 1000 << " us)\n";
+              << "(quantum " << quantum.count() / 1000 << " us, "
+              << 1'000'000'000 / quantum.count() << " Hz)\n";
 
     // --- Main execution loop ---
     clock.start();
