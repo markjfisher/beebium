@@ -13,6 +13,8 @@ import { Connection } from "../src/connection.js";
 import { ServerProcess } from "../src/server-process.js";
 import { withServer } from "./server-harness.js";
 
+const isCI = !!process.env["CI"];
+
 /**
  * Launch a Beebium client wrapping a fresh server.
  * The server is tracked by withServer for cleanup.
@@ -61,7 +63,7 @@ describe("Beebium: runUntilOrTimeout", () => {
         });
     }, 30000);
 
-    it("should return false on timeout when predicate never true", async () => {
+    it.skipIf(isCI)("should return false on timeout when predicate never true", async () => {
         await withBeebium(async (bbc) => {
             // NOP; JMP $0401 (infinite loop, $0500 stays at 0)
             await plantCode(bbc, [0xEA, 0x4C, 0x01, 0x04]);

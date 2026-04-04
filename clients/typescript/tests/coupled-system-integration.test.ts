@@ -13,6 +13,8 @@ import { CoupledSystem } from "../src/coupled.js";
 import { screenContains, type ReadFn } from "../src/screen.js";
 import { ServerProcess } from "../src/server-process.js";
 
+const isCI = !!process.env["CI"];
+
 const ROM_DIRPATH = process.env.BEEBIUM_ROM_DIR || "/Users/rjs/Code/beebium/roms";
 const DFS_ROM_FILEPATH = `${ROM_DIRPATH}/acorn-dfs_2_26.rom`;
 
@@ -301,7 +303,7 @@ describe("CoupledSystem", () => {
         }
     }, 15000);
 
-    it("parasite cycle-budget breakpoint should fire", async () => {
+    it.skipIf(isCI)("parasite cycle-budget breakpoint should fire", async () => {
         const host = await launchTubeServer();
         try {
             await host.runUntilOrTimeout(

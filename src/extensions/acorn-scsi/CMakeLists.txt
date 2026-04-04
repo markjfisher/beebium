@@ -19,52 +19,62 @@ target_link_libraries(beebium_scsi_core
 
 # Full extension with gRPC service (depends on service layer)
 if(BEEBIUM_BUILD_SERVICE)
-    # Compile proto
+    # Compile proto -- use an OBJECT library so the generated sources are
+    # built exactly once, avoiding MSBuild parallel-build races on Windows.
     beebium_compile_proto(
         TARGET beebium_ext_acorn_scsi
         PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/scsi_host_adapter.proto
         PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    # Static library (built-in extension)
-    add_library(beebium_ext_acorn_scsi STATIC
-        AcornScsiHostAdapter.cpp
+    add_library(beebium_ext_acorn_scsi_proto OBJECT
         ${beebium_ext_acorn_scsi_PROTO_SRCS}
         ${beebium_ext_acorn_scsi_GRPC_SRCS}
     )
 
-    target_include_directories(beebium_ext_acorn_scsi
+    target_include_directories(beebium_ext_acorn_scsi_proto
+        PUBLIC ${beebium_ext_acorn_scsi_OUT_DIR}
+    )
+
+    target_link_libraries(beebium_ext_acorn_scsi_proto
         PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${beebium_ext_acorn_scsi_OUT_DIR}
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
+
+    set_target_properties(beebium_ext_acorn_scsi_proto PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    # Static library (built-in extension)
+    add_library(beebium_ext_acorn_scsi STATIC
+        AcornScsiHostAdapter.cpp
+    )
+
+    target_include_directories(beebium_ext_acorn_scsi
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     target_link_libraries(beebium_ext_acorn_scsi
         PUBLIC
             beebium_scsi_core
-            gRPC::grpc++
-            protobuf::libprotobuf
+            beebium_ext_acorn_scsi_proto
     )
 
     # Shared library (plugin extension)
     add_library(beebium_ext_acorn_scsi_plugin SHARED
         AcornScsiHostAdapter.cpp
         plugin_entry.cpp
-        ${beebium_ext_acorn_scsi_PROTO_SRCS}
-        ${beebium_ext_acorn_scsi_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_scsi_plugin
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${beebium_ext_acorn_scsi_OUT_DIR}
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     target_link_libraries(beebium_ext_acorn_scsi_plugin
         PRIVATE
             beebium_scsi_core
-            gRPC::grpc++
-            protobuf::libprotobuf
+            beebium_ext_acorn_scsi_proto
     )
 
     set_target_properties(beebium_ext_acorn_scsi_plugin PROPERTIES

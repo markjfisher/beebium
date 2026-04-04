@@ -13,54 +13,66 @@ target_include_directories(beebium_rtc_core
 
 # Full extension with gRPC service (depends on service layer)
 if(BEEBIUM_BUILD_SERVICE)
-    # Compile proto
+    # Compile proto -- use an OBJECT library so the generated sources are
+    # built exactly once, avoiding MSBuild parallel-build races on Windows
+    # where both the static and shared targets would try to generate the
+    # same .pb.cc file simultaneously.
     beebium_compile_proto(
         TARGET beebium_ext_acorn_rtc
         PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/acorn_rtc.proto
         PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    # Static library (built-in extension)
-    add_library(beebium_ext_acorn_rtc STATIC
-        AcornRtcExtension.cpp
+    add_library(beebium_ext_acorn_rtc_proto OBJECT
         ${beebium_ext_acorn_rtc_PROTO_SRCS}
         ${beebium_ext_acorn_rtc_GRPC_SRCS}
     )
 
-    target_include_directories(beebium_ext_acorn_rtc
+    target_include_directories(beebium_ext_acorn_rtc_proto
+        PUBLIC ${beebium_ext_acorn_rtc_OUT_DIR}
+    )
+
+    target_link_libraries(beebium_ext_acorn_rtc_proto
         PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${beebium_ext_acorn_rtc_OUT_DIR}
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
+
+    set_target_properties(beebium_ext_acorn_rtc_proto PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    # Static library (built-in extension)
+    add_library(beebium_ext_acorn_rtc STATIC
+        AcornRtcExtension.cpp
+    )
+
+    target_include_directories(beebium_ext_acorn_rtc
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     target_link_libraries(beebium_ext_acorn_rtc
         PUBLIC
             beebium_rtc_core
             beebium_core
-            gRPC::grpc++
-            protobuf::libprotobuf
+            beebium_ext_acorn_rtc_proto
     )
 
     # Shared library (plugin extension)
     add_library(beebium_ext_acorn_rtc_plugin SHARED
         AcornRtcExtension.cpp
         plugin_entry.cpp
-        ${beebium_ext_acorn_rtc_PROTO_SRCS}
-        ${beebium_ext_acorn_rtc_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_rtc_plugin
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${beebium_ext_acorn_rtc_OUT_DIR}
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     target_link_libraries(beebium_ext_acorn_rtc_plugin
         PRIVATE
             beebium_rtc_core
             beebium_core
-            gRPC::grpc++
-            protobuf::libprotobuf
+            beebium_ext_acorn_rtc_proto
     )
 
     set_target_properties(beebium_ext_acorn_rtc_plugin PROPERTIES

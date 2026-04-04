@@ -39,7 +39,7 @@ public:
     /// @param max_ratio        Maximum cycles as multiple of nominal per-quantum
     ///                         cycles. 1.015 = allow 1.5% overshoot for smooth
     ///                         catch-up after deficits.
-    PacingController(uint32_t target_clock_hz, int64_t quantum_ns,
+    PacingController(uint64_t target_clock_hz, int64_t quantum_ns,
                      double max_ratio = 3.0)
         : target_clock_hz_(target_clock_hz)
         , nominal_cycles_(static_cast<uint32_t>(
@@ -76,7 +76,7 @@ public:
     uint32_t max_cycles() const { return max_cycles_; }
 
 private:
-    uint32_t target_clock_hz_;
+    uint64_t target_clock_hz_;
     uint32_t nominal_cycles_;   // cycles per quantum at 1x speed
     uint32_t max_cycles_;       // ceiling per tick
 
