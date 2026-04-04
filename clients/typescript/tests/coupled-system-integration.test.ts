@@ -325,24 +325,21 @@ describe("CoupledSystem", () => {
             // Start host too (parasite may need it for Tube I/O)
             try { await host.debugger.run(); } catch { /* already running */ }
 
-            // Use the stream pattern to avoid the race condition.
-            // We rely on the stream event for the stopped state rather
-            // than a separate isRunning() call, which could race.
+            // Use the stream pattern to wait for the breakpoint to fire,
+            // then read the authoritative state via getState().
             const iter = parasite.debugger.watchExecutionState();
             await iter.next(); // consume initial state
             await parasite.debugger.run();
-            let stoppedState: { isRunning: boolean; cycleCount: bigint } | undefined;
             for await (const event of iter) {
-                if (!event.state.isRunning) {
-                    stoppedState = event.state;
-                    break;
-                }
+                if (!event.state.isRunning) break;
             }
 
-            // Parasite should have stopped (confirmed by stream event)
-            expect(stoppedState).toBeDefined();
-            expect(stoppedState!.isRunning).toBe(false);
-            expect(Number(stoppedState!.cycleCount)).toBeGreaterThanOrEqual(targetCycles);
+            // Read authoritative state after the stream confirms the stop.
+            // Don't use the stream event's snapshot (may be stale) or a
+            // separate isRunning() call (may race with restart).
+            const finalState = await parasite.debugger.getState();
+            expect(finalState.isRunning).toBe(false);
+            expect(finalState.cycleCount).toBeGreaterThanOrEqual(BigInt(targetCycles));
 
             // Stop host too
             if (await host.debugger.isRunning()) await host.debugger.stop();
