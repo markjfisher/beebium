@@ -59,7 +59,7 @@ public:
         last_deficit_ = deficit;
         ++tick_count_;
 
-        if (deficit <= 0.0) return 0;
+        if (deficit <= 0.0) return 1;  // Always run at least 1 cycle
         if (deficit > static_cast<double>(max_cycles_)) return max_cycles_;
         return static_cast<uint32_t>(deficit);
     }
