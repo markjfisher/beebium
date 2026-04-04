@@ -40,7 +40,7 @@ public:
     ///                         cycles. 1.015 = allow 1.5% overshoot for smooth
     ///                         catch-up after deficits.
     PacingController(uint32_t target_clock_hz, int64_t quantum_ns,
-                     double max_ratio = 1.015)
+                     double max_ratio = 3.0)
         : target_clock_hz_(target_clock_hz)
         , nominal_cycles_(static_cast<uint32_t>(
               static_cast<double>(target_clock_hz) * quantum_ns / 1e9))
