@@ -105,6 +105,14 @@ worst-case Tube latency from one full quantum to ~100us.
 Without the flag (no Tube attached), the timer uses a single efficient
 `sleep_for` call with no polling overhead.
 
+Note: with the measured quantum already at ~100us on macOS, the
+interruptible sleep provides at most ~100us of latency improvement
+over a simple non-interruptible `sleep_for`. The mechanism could be
+removed entirely with negligible impact on Tube throughput at this
+quantum size. It is retained because it may be more significant on
+platforms with larger quanta (e.g., Windows at ~1-2ms), and the
+additional code complexity is minimal.
+
 ## Architecture
 
 ### Components
