@@ -406,10 +406,67 @@ update issue (confirmed empirically: the slowdown affects all OSBYTE calls,
 not just Econet polling), but it may affect Econet throughput in other
 scenarios.
 
-### Pacing stats not available via gRPC
+### Pacing stats now available via gRPC
 
-The console output `Pacing: 2.000 MHz (target 2.000 MHz, 100.0%) | vsync
-50.0 Hz | skipped 119 | margin 1195 us | run 17.0%` is computed in the
-server main loop but not exposed via any gRPC service. This data would be
-valuable for GUI frontends and diagnostic tooling, from both host and
-parasite. Noted for future work.
+`SystemService.GetPacingStats` and `WatchPacingStats` expose tick counts,
+I/O wakeup counts, and deficit from both host and parasite servers.
+
+
+## Resolution
+
+The root cause -- independent 200 Hz pacing of host and parasite creating
+50-60ms latency on Tube R2 handshakes -- was resolved by replacing the
+fixed-frequency pacing with an adaptive sleep quantum approach.
+
+### The fix
+
+Every pacing iteration: run N crystal ticks, then do one minimum-length
+OS sleep. N is computed by a deficit controller (`target - actual`,
+clamped). The sleep quantum is measured empirically at startup (~100us
+on macOS Apple Silicon).
+
+This is a fundamental redesign: instead of fixed-frequency fixed-batch
+pacing (200 Hz × 10,000 cycles), the emulation makes smooth, continuous
+progress with tiny, frequent batches (~200 cycles every ~100us). The
+Tube I/O latency is naturally bounded by the quantum -- no special
+wakeup mechanism is needed.
+
+See `docs/pacing.md` for the full design, and
+`docs/discussion/pacing-approaches-evaluation.md` for the approaches
+tried during development.
+
+### Results
+
+| Metric | Before | After | Real hardware |
+|--------|--------|-------|---------------|
+| OSBYTE throughput | 11/s | 1280-1347/s | ~1100/s |
+| OSBYTE latency | 50-60ms | 0.74-0.78ms | ~0.9ms |
+| L3FS clock update | 3-5 min | ~36s | ~30s |
+| Clock accuracy | Minutes behind | Current minute | Current minute |
+
+The clock updates every ~36 seconds (vs ~30 on real hardware, 3-5
+minutes before the fix). It always shows the correct current time.
+The initial display after the L3FS startup questionnaire may show the
+previous minute because the RTC was read before the questionnaire, not
+at display time. This matches real hardware behaviour.
+
+### Importance of the L3FS as a test case
+
+The Level 3 File Server was the ideal test case because it exercises
+every aspect of the multi-process pacing problem simultaneously:
+
+1. **Sustained Tube I/O**: ~34,000 OSBYTE calls per clock update cycle
+   (85 WAIT3 iterations × 400 polls each)
+2. **Cross-process synchronisation**: all I/O traverses the Tube R2
+   protocol between host and parasite processes
+3. **Timing-sensitive polling**: the WAIT3 loop is calibrated with
+   `ONEMS=5` and `WAITCL=80` for the real Tube's latency
+4. **Real-time clock accuracy**: the SAF3019P RTC tracks wall-clock
+   time, so any pacing drift shows up as incorrect displayed time
+5. **Disc loading**: extended FDC activity stresses clock stretching
+   and execution time accounting
+6. **Econet**: active network hardware adds interrupt load
+
+The fix that works for the L3FS -- smooth, continuous progress via
+adaptive quantum -- works for all Tube software because it addresses
+the fundamental pacing architecture, not the specific symptoms.

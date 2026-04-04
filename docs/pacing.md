@@ -1,225 +1,211 @@
-# Emulation Pacing and PI Control
+# Emulation Pacing
 
 ## Overview
 
 Beebium paces emulation to run at real-time speed: a 2 MHz BBC Micro
-executes 2 million cycles per wall-clock second. Without pacing, modern
-CPUs would execute the emulation hundreds of times faster than real-time,
-breaking timing-dependent software (games, music, delay loops).
+executes 2 million crystal oscillator ticks per wall-clock second. On
+a modern host CPU (~3 GHz), each emulated tick takes ~1ns of host time.
+The remaining ~499ns per tick is spent sleeping. How this sleeping is
+distributed is the pacing problem.
 
 When a Tube coprocessor is attached, two independent processes (host and
-parasite) must both run at their correct clock rates (2 MHz and 3 MHz
-respectively), exchanging data through shared memory Tube registers with
-sub-millisecond latency.
+parasite) must both run at their correct crystal frequencies (2 MHz and
+3 MHz respectively), exchanging data through shared memory Tube registers
+with sub-millisecond latency.
 
-## Architecture
+## Design: Adaptive Sleep Quantum with Deficit Controller
 
-Each processor (host and parasite) has its own `PacingClock` instance
-running a dedicated timer thread. The emulation thread runs in a loop:
+### The loop
+
+Every iteration: run N cycles, then do one minimum-length OS sleep.
+N varies smoothly, controlled by a deficit calculation. The sleep
+duration is fixed at the platform's measured quantum.
 
 ```cpp
 clock.start();
 while (running) {
-    machine.run(clock.cycles_per_tick());   // Execute one tick of cycles
-    clock.report_cycles(machine.cycle_count());  // Inform the controller
-    clock.wait_for_tick();                  // Block until next tick
+    clock.wait_for_tick();                    // one quantum sleep
+    uint64_t n = clock.cycles_for_next_tick(); // deficit controller
+    machine.run(n);                           // execute n crystal ticks
+    clock.report_cycles(machine.cycle_count()); // feed back
 }
 clock.stop();
 ```
 
-The timer thread computes sleep durations using a PI controller and
-signals the emulation thread when to run the next batch.
+Progress is perfectly smooth: every iteration is identical in structure.
+Only N varies, and it changes gradually.
 
-### Configuration
+### Adaptive sleep quantum
 
-| Parameter | Host (Model B) | Parasite (65C02) |
-|-----------|----------------|------------------|
-| Target clock | 2 MHz | 3 MHz |
-| Pacing rate | 200 Hz | 200 Hz |
-| Cycles per tick | 10,000 | 15,000 |
-| Tick interval | 5 ms | 5 ms |
+The minimum reliable sleep varies by platform and hardware. It is
+measured empirically at emulator startup by firing 100 minimum-length
+`nanosleep` calls and taking the median actual duration.
 
-## PI Controller
+Typical measured values:
+- macOS Apple Silicon: ~100us
+- Linux with high-res timers: ~50-200us
+- Windows with timeBeginPeriod: ~1-2ms
 
-### Problem
+The deficit controller adapts to whatever quantum it gets. With a 100us
+quantum on macOS, the nominal cycles per tick are 200 (at 2 MHz). With
+a 1ms quantum on Windows, nominal is 2,000. The average rate converges
+to the target regardless of tick granularity.
 
-Emulation speed must match wall-clock time on average. During I/O bursts
-(Tube register handshakes), ticks are skipped (no sleep) to reduce
-latency. This causes the emulation to run ahead of real-time. The
-accumulated time debt must be repaid progressively to maintain the
-correct average clock rate, without starving the emulation or causing
-visible pauses.
+### Deficit controller
 
-### Design
-
-`PacingController` is a proportional-integral (PI) controller that
-computes the sleep duration for each tick:
+The controller computes how many cycles are "owed" at the current
+wall-clock time:
 
 ```
-drift = total_cycles_executed - (wall_elapsed × target_clock_hz)
-integral += drift
-sleep_ns = base_interval + Kp × drift + Ki × integral
-sleep_ns = clamp(sleep_ns, 0, 2 × base_interval)
+target = wall_elapsed × target_clock_hz
+deficit = target - actual_cycles
+N = clamp(deficit, 0, max_cycles)
 ```
 
-- **Drift** (proportional term): how far ahead (+) or behind (−) the
-  emulation is right now, in cycles. Positive drift → sleep longer.
-- **Integral**: accumulated drift over time. Represents the total time
-  debt. Uncapped -- debt is tracked fully and repaid progressively.
-- **Output clamp**: sleep duration is limited to [0, 2× base interval].
-  The max prevents stalling; zero means "run immediately" (catching up).
+No PI gains, no integral term, no anti-windup. The deficit IS the
+control signal. When the OS sleep overshoots (e.g., 130us instead
+of 100us), the next tick's deficit is larger, so more cycles run.
+The average rate self-corrects on every tick.
 
-### Gains
+`max_cycles` is set to 3× nominal. This allows absorbing up to 200us
+of sleep overshoot per tick while keeping individual batches small
+enough to be imperceptible (<300us of BBC time per batch).
 
-Selected by automated grid search (`test_pacing_controller.cpp`):
+### Speed control
 
-| Gain | Value | Role |
-|------|-------|------|
-| Kp | 750 | Immediate response to drift (ns sleep per cycle of drift) |
-| Ki | 100 | Gradual debt repayment (ns sleep per accumulated cycle of drift) |
+The deficit naturally supports variable speed by scaling the target:
 
-The tuning test verifies convergence after I/O bursts, absence of
-oscillation, and correct average clock rate for both 2 MHz and 3 MHz
-configurations.
+| Speed | Effective target | N per quantum (100us) |
+|-------|------------------|-----------------------|
+| 1×    | 2 MHz            | ~200                  |
+| 2×    | 4 MHz            | ~400                  |
+| 0.5×  | 1 MHz            | ~100                  |
+| Max   | unlimited        | max_cycles            |
 
-### Separation of Concerns
+Speed changes are instant and smooth -- just change the multiplier.
 
-`PacingController` is a pure computation class with no threading, no
-clocks, and no side effects. It takes `(wall_elapsed_ns, total_cycles,
-io_pending)` and returns `sleep_ns`. This makes it unit-testable with
-synthetic time sequences.
+### Clock stretching
 
-`PacingClock` owns the timer thread, condition variables, adaptive sleep
-margin, and I/O pending flag. It calls `PacingController::update()` on
-each tick to get the sleep duration.
+The BBC Micro's crystal oscillator frequency is constant. During clock
+stretching (1 MHz device access), the CPU halts but the crystal keeps
+ticking. Our `cycle_count` counts crystal ticks including stretch
+cycles, which is the correct pacing reference. Clock stretching reduces
+instruction throughput but not the crystal tick rate. No special
+handling is needed -- the deficit controller paces to the crystal
+frequency automatically.
 
-## I/O Pending Flag
+### I/O pending (optional Tube optimisation)
 
-### Problem
+When a Tube coprocessor writes to a shared register, it sets an
+`io_pending` flag in shared memory. The sleeping timer thread checks
+this flag during its interruptible sleep loop (polling at ~100us
+intervals) and breaks out early when I/O arrives. This reduces
+worst-case Tube latency from one full quantum to ~100us.
 
-When the parasite writes to a Tube register, the host may be sleeping
-in its pacing clock. Without intervention, the host won't see the data
-for up to 5 ms (one tick interval). A single OSBYTE call requires ~6
-R2 handshakes; at 5 ms per boundary crossing, this adds 50-60 ms of
-latency (measured empirically).
+Without the flag (no Tube attached), the timer uses a single efficient
+`sleep_for` call with no polling overhead.
 
-### Design
+## Architecture
 
-Each side has an `io_pending` atomic flag in `TubeShared`:
+### Components
 
-- `io_pending_host`: set by parasite when it writes R1/R2/R3/R4 data
-- `io_pending_parasite`: set by host when it writes R1/R2/R3/R4 data
+| Component | File | Purpose |
+|-----------|------|---------|
+| SleepQuantum | `SleepQuantum.hpp` | Measure platform sleep quantum at startup |
+| PacingController | `PacingController.hpp` | Deficit computation (pure, testable) |
+| PacingClock | `PacingClock.hpp` | Timer thread + emulation thread coordination |
+| PacingConfig | `PacingConfig.hpp` | Target clock rate, speed multiplier |
 
-The PacingClock checks the flag in two places:
+### Thread model
 
-1. **Before sleeping**: if set, skip the sleep entirely and signal a
-   tick immediately. The PI controller still tracks the skipped time
-   as drift, which it repays later.
-2. **During interruptible sleep**: instead of a single `sleep_until()`,
-   the timer thread sleeps in 200 μs intervals, checking the flag
-   between each. This limits worst-case interrupt latency to ~200 μs.
+Each processor (host and parasite) has its own PacingClock:
 
-### Generalisation
+- **Timer thread**: sleeps for one quantum, signals `tick_ready` via
+  condition variable. Trivial loop with no control logic.
+- **Emulation thread**: waits for tick, computes deficit, runs cycles,
+  reports. All control logic is here.
 
-The `io_pending` pointer is not Tube-specific. Any I/O source can set
-the flag to request an immediate tick. Future candidates:
+### Tube shared memory
 
-- Econet ADLC: set when `AunBackend::receive_frame()` finds a UDP
-  packet waiting
-- User Port devices with async external I/O
-- Any peripheral extension with real-time input requirements
+Both processors share `TubeShared` (via `shm_open`/`mmap`) containing:
+- Tube register latches/FIFOs (atomic, acquire/release)
+- `io_pending_host` / `io_pending_parasite` flags
+- Transfer counters for diagnostics
 
-## Adaptive Sleep Margin
+### gRPC monitoring
 
-The timer thread uses a spin-wait phase after sleeping for precise
-tick timing. The duration of this phase (the "safety margin") is
-learned adaptively from observed OS sleep overshoot:
+`SystemService.GetPacingStats` and `WatchPacingStats` expose:
+- `ticks_executed`, `ticks_io_woken`
+- `controller_deficit` (current deficit in cycles)
 
-- Exponential moving average of overshoot (~0.1 alpha)
-- Recent maximum with decay (0.95 factor)
-- New margin = average + 0.5 × recent max
-- Clamped to [100 μs, interval/2]
+Available from both host and parasite servers.
 
-This minimises CPU-burning spin time while maintaining timing precision.
+## Performance
 
-## Results
+### Measured results (macOS Apple Silicon, 100us quantum)
 
-### Before the fix
+| Metric | Before fix | After fix | Real hardware |
+|--------|-----------|-----------|---------------|
+| OSBYTE throughput | 11/s | 1280-1347/s | ~1100/s |
+| OSBYTE latency | 50-60ms | 0.74-0.78ms | ~0.9ms |
+| L3FS clock update | 3-5 min | ~36s | ~30s |
+| Clock rate | 2.000 MHz | 2.000 MHz | 2.000 MHz |
+| Deficit (steady) | N/A | ~260 cycles | N/A |
+| CPU usage (idle) | ~17% | ~19% | N/A |
 
-| Metric | Value |
-|--------|-------|
-| OSBYTE throughput | 11/s |
-| Per-call latency | 50-60 ms |
-| Distribution | Alternating 5/6 centiseconds |
-| L3FS clock update | Every 3-5 minutes |
+### Why the L3FS clock matters
 
-### After the fix
+The Acorn Level 3 File Server v1.26 provided the original motivation
+for this work. The L3FS runs on a 65C02 Tube coprocessor and polls the
+SAF3019P Real Time Clock dongle on the User Port approximately every
+30 seconds. Each poll involves ~34,000 OSBYTE 51 calls through the
+Tube (85 iterations of a 400-call polling loop). With the original
+independent 200 Hz pacing, each OSBYTE took 50-60ms (due to tick
+boundary stalls), causing the clock to update only every 3-5 minutes.
 
-| Metric | Value |
-|--------|-------|
-| OSBYTE throughput | 1219-1280/s |
-| Per-call latency | 0.78-0.82 ms |
-| Distribution | Almost all 0 centiseconds |
-| L3FS clock update | Every ~7 seconds (wall-clock) |
-| Expected (real HW) | ~1100/s, ~0.9 ms |
+The L3FS exercised every aspect of the pacing problem simultaneously:
+sustained Tube I/O, cross-process synchronisation, timing-sensitive
+polling loops, and real-time clock accuracy. Fixing the pacing for
+the L3FS fixed it for all Tube software.
+
+## Design Evolution
+
+The current design emerged from extensive experimentation. Earlier
+approaches and their limitations are documented in
+`docs/discussion/pacing-approaches-evaluation.md`. Key lessons:
+
+1. **Varying sleep duration fails** because I/O interruption undermines
+   the controller. Sleep and I/O latency are the same variable.
+2. **Varying cycle count works** because it separates I/O latency
+   (sleep, always interruptible) from rate control (cycles).
+3. **PI controllers on sleep duration** suffered integral windup and
+   couldn't be tuned for both burst and recovery conditions.
+4. **The deficit controller is simpler and more robust** -- no gains
+   to tune, no integral to manage, no anti-windup needed.
+5. **Short, fixed-duration sleeps** give naturally low I/O latency
+   without needing special wakeup mechanisms.
+6. **Crystal frequency is the correct pacing reference** -- cycle_count
+   includes stretch cycles, which is what the real crystal produces.
 
 ## Possible Enhancements
 
-### Anti-windup clamping
+### Coordinated host-parasite ticking
 
-The integral term is currently uncapped. During sustained I/O bursts,
-it grows without bound. When the burst ends, the controller commands
-maximum sleep (2× interval) for many ticks to drain the integral. If
-the burst was very long, this recovery period could cause a noticeable
-slowdown.
+The host could publish its cycle count to TubeShared after each tick.
+The parasite would read it and track the host's progress, keeping
+both processors in phase. This would further reduce Tube handshake
+latency by ensuring both processors are awake simultaneously.
 
-Standard anti-windup techniques:
+### Higher-precision sleep on Linux
 
-- **Conditional integration**: only accumulate integral when the output
-  is not saturated. If sleep is already clamped at 0 or 2×, the integral
-  can't influence the output, so stop growing it.
-- **Back-calculation**: when the output saturates, reduce the integral
-  by the difference between the unclamped and clamped output.
-- **Integral clamp**: limit the integral to ±N (losing full debt
-  tracking but bounding recovery time).
+Linux supports `timerfd_create` with nanosecond precision. Using
+`timerfd` instead of `nanosleep` could reduce the quantum to ~10us
+on Linux, giving even smoother progress and lower I/O latency.
 
-Conditional integration is the most appropriate: it prevents windup
-without losing debt tracking during normal operation.
+### External I/O wakeup
 
-### Pacing statistics via gRPC
-
-The console pacing output includes clock rate, vsync Hz, skipped ticks,
-safety margin, and run percentage. The PI controller adds drift and
-integral. None of this is currently available via gRPC.
-
-A streaming `WatchPacingStats` RPC on the SystemService would allow
-frontends to monitor pacing health in real-time. This should be
-available from both host and parasite servers. Useful for:
-
-- GUI frontend performance displays
-- Diagnostic tooling
-- Detecting sustained integral growth (windup warning)
-- Monitoring I/O-skipped tick rate during Tube/Econet activity
-
-### Kernel-level wakeup
-
-The current interruptible sleep uses 200 μs polling intervals. A
-pipe-based or eventfd-based wakeup could reduce this to ~10-100 μs
-(kernel wakeup latency). This would be a further refinement if the
-200 μs polling proves insufficient or wastes too much CPU.
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/core/include/beebium/PacingController.hpp` | PI controller (pure computation) |
-| `src/core/include/beebium/PacingClock.hpp` | Timer thread, sleep logic, I/O flag |
-| `src/core/include/beebium/PacingConfig.hpp` | Clock rate, tick rate, speed multiplier |
-| `src/core/include/beebium/tube/TubeShared.hpp` | io_pending flags in shared memory |
-| `src/core/src/TubeHostPort.cpp` | Sets io_pending_parasite on writes |
-| `src/core/src/TubeParasitePort.cpp` | Sets io_pending_host on writes |
-| `src/server/include/beebium/server/ServerMain.hpp` | Host main loop, report_cycles() |
-| `src/server/main_tube_65C02_3MHz.cpp` | Parasite main loop, report_cycles() |
-| `tests/test_pacing_controller.cpp` | PI controller unit tests + gain tuning |
-| `clients/python/tests/test_tube_osbyte_throughput.py` | End-to-end throughput test |
-| `docs/discussion/l3fs-clock-update-investigation.md` | Investigation that motivated this work |
+For Econet (UDP packets arriving from other machines), the io_pending
+mechanism could be extended: a background thread polls the UDP socket
+and sets `io_pending_host` when data arrives, waking the timer thread
+from sleep. This would reduce Econet receive latency from one quantum
+to ~100us.
