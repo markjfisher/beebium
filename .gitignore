@@ -91,3 +91,6 @@ oracle/public
 disassembly/*
 !disassembly/*.py
 /build-debug/
+
+# Local machine-specific development notes
+docs/local-*.md

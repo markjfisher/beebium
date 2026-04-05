@@ -210,6 +210,55 @@ Linux supports `timerfd_create` with nanosecond precision. Using
 `timerfd` instead of `nanosleep` could reduce the quantum to ~10us
 on Linux, giving even smoother progress and lower I/O latency.
 
+### Shorter sleep quantum on Windows
+
+The current implementation uses `std::this_thread::sleep_for` which on
+Windows resolves to the system timer, defaulting to ~15.6ms (64 Hz). The
+`measure_sleep_quantum` function detects this, giving nominal cycles of
+~31,000 per tick at 2 MHz -- large batches that increase latency.
+
+Several approaches could reduce the Windows quantum to sub-millisecond:
+
+1. **`NtSetTimerResolution` (undocumented ntdll)**
+   Sets the system timer resolution down to 0.5ms. Used by many games
+   and emulators. Call once at startup:
+   ```cpp
+   ULONG actualResolution;
+   ZwSetTimerResolution(1, true, &actualResolution); // 100ns units
+   ```
+   After this, `sleep_for` granularity drops to ~0.5-1ms. No busy-wait
+   needed. System-wide side effect (increases power consumption).
+
+2. **`NtDelayExecution` (undocumented ntdll)**
+   Direct kernel sleep with 100ns resolution units. Combined with
+   `ZwSetTimerResolution`, achieves ~0.5ms actual resolution:
+   ```cpp
+   LARGE_INTEGER interval;
+   interval.QuadPart = -1 * (int)(milliseconds * 10000.0f);
+   NtDelayExecution(false, &interval);
+   ```
+
+3. **`CreateWaitableTimerExW` with `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`**
+   Available since Windows 10 1803 (April 2018). Documented, supported
+   API for high-resolution waitable timers. Does not require setting
+   global timer resolution.
+
+4. **Hybrid sleep + busy-wait (from SO answer 77941601)**
+   Use `NtSetTimerResolution` + `sleep_for` for the bulk of the wait,
+   then `QueryPerformanceCounter` spin-wait for the final ~200us. Claims
+   sub-microsecond precision. Trades CPU for accuracy in the tail.
+
+5. **`timeBeginPeriod` / `timeEndPeriod` (documented multimedia API)**
+   Sets minimum timer resolution to 1ms. Simpler than `NtSetTimerResolution`
+   but limited to 1ms floor. System-wide effect.
+
+For Beebium, approach (3) is preferred if targeting Windows 10 1803+,
+as it is documented and per-timer rather than system-wide. Approach (1)
+is the fallback for older systems. The hybrid approach (4) could be
+layered on top if sub-millisecond precision is needed.
+
+Reference: https://stackoverflow.com/q/85122 (collected approaches)
+
 ### External I/O wakeup
 
 For Econet (UDP packets arriving from other machines), the io_pending
