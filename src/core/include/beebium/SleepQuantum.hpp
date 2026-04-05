@@ -12,39 +12,45 @@
 
 #pragma once
 
+#include "PlatformSleep.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <thread>
 #include <vector>
 
 namespace beebium {
 
 /// Measure the platform's minimum reliable sleep duration.
 ///
-/// Fires a burst of minimum-length nanosleep calls and returns the
-/// median actual duration. This accounts for platform differences
-/// (macOS ~500us, Linux ~50us, Windows ~1ms) and hardware variation
-/// (laptop on battery vs plugged in).
+/// Fires a burst of minimum-length sleep calls using PlatformSleep
+/// and returns the median actual duration. This measures the real
+/// quantum we'll get in production, accounting for platform differences:
+///
+/// - macOS: ~2-100us (nanosleep)
+/// - Linux: ~50-200us (nanosleep)
+/// - Windows with HIGH_RES timer: ~5us
+/// - Windows without HIGH_RES: ~15.6ms (system timer)
 ///
 /// Called once at emulator startup. Takes a few milliseconds.
-inline std::chrono::nanoseconds measure_sleep_quantum(int samples = 100) {
+inline std::chrono::nanoseconds measure_sleep_quantum(
+        const PlatformSleep& sleeper, int samples = 100) {
     using Clock = std::chrono::steady_clock;
+    using namespace std::chrono;
 
     std::vector<int64_t> durations;
     durations.reserve(samples);
 
     // Warm up (first few sleeps may be slower)
     for (int i = 0; i < 5; i++) {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+        sleeper.sleep(nanoseconds(1));
     }
 
     for (int i = 0; i < samples; i++) {
         auto before = Clock::now();
-        std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+        sleeper.sleep(nanoseconds(1));
         auto after = Clock::now();
-        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            after - before).count();
+        auto ns = duration_cast<nanoseconds>(after - before).count();
         durations.push_back(ns);
     }
 
@@ -55,7 +61,7 @@ inline std::chrono::nanoseconds measure_sleep_quantum(int samples = 100) {
     // Floor at 100us (sanity -- no platform is faster than this reliably)
     median = std::max(median, int64_t{100'000});
 
-    return std::chrono::nanoseconds(median);
+    return nanoseconds(median);
 }
 
 } // namespace beebium

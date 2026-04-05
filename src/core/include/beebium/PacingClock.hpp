@@ -14,6 +14,7 @@
 
 #include "PacingConfig.hpp"
 #include "PacingController.hpp"
+#include "PlatformSleep.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -51,12 +52,15 @@ public:
 
     /// @param config    Pacing configuration (target clock rate, speed).
     /// @param quantum   Measured sleep quantum from measure_sleep_quantum().
+    /// @param sleeper   Platform-specific sleep implementation (moved in).
     /// @param io_pending Optional I/O pending flag for sub-quantum wakeup.
     PacingClock(const PacingConfig& config, Duration quantum,
+                PlatformSleep sleeper,
                 std::atomic<bool>* io_pending = nullptr)
         : config_(config)
         , quantum_(quantum)
         , controller_(config.base_clock_hz, quantum.count())
+        , sleeper_(std::move(sleeper))
         , io_pending_(io_pending) {}
 
     ~PacingClock() { stop(); }
@@ -213,13 +217,13 @@ private:
                     }
                     auto remaining = deadline - Clock::now();
                     if (remaining > poll_interval)
-                        std::this_thread::sleep_for(poll_interval);
+                        sleeper_.sleep(poll_interval);
                     else if (remaining > Duration::zero())
-                        std::this_thread::sleep_for(remaining);
+                        sleeper_.sleep(std::chrono::duration_cast<Duration>(remaining));
                 }
             } else {
                 // Non-interruptible: single efficient sleep
-                std::this_thread::sleep_for(quantum_);
+                sleeper_.sleep(quantum_);
             }
 
             // Signal emulation thread
@@ -238,6 +242,9 @@ private:
 
     // Deficit controller
     PacingController controller_;
+
+    // Platform-specific high-resolution sleep
+    PlatformSleep sleeper_; // must be after controller_ to match initialiser order
 
     // Stats
     uint64_t ticks_executed_ = 0;
