@@ -1455,8 +1455,9 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     // Check for BEEBIUM_NO_PACING environment variable for debugging
     bool use_pacing = !platform::get_env("BEEBIUM_NO_PACING").has_value();
 
-    // Measure the platform's sleep quantum for smooth pacing
-    auto quantum = beebium::measure_sleep_quantum();
+    // Create platform-specific sleep and measure its quantum
+    PlatformSleep sleeper;
+    auto quantum = beebium::measure_sleep_quantum(sleeper);
 
     // If a Tube is connected, pass its io_pending flag to the pacing clock
     // for sub-quantum wakeup on Tube register writes.
@@ -1465,7 +1466,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
         : nullptr;
 
     // Create and start pacing clock with measured quantum
-    PacingClock pacing_clock(Memory::default_pacing_config(), quantum, io_pending);
+    PacingClock pacing_clock(Memory::default_pacing_config(), quantum,
+                             std::move(sleeper), io_pending);
 
     if (use_pacing) {
         pacing_clock.start();

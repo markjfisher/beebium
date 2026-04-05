@@ -252,13 +252,15 @@ int main(int argc, char* argv[]) {
     }
 
     // --- Measure sleep quantum and create pacing clock ---
-    auto quantum = beebium::measure_sleep_quantum();
+    beebium::PlatformSleep sleeper;
+    auto quantum = beebium::measure_sleep_quantum(sleeper);
     beebium::PacingConfig pacing_config{
         .base_clock_hz = PARASITE_CLOCK_HZ,
         .pacing_hz = 200,  // Nominal (unused by quantum-based pacing)
         .speed_multiplier = 1.0
     };
     beebium::PacingClock clock(pacing_config, quantum,
+                                std::move(sleeper),
                                 &shm.get()->io_pending_parasite);
 
     std::cout << "Starting 65C02 at " << PARASITE_CLOCK_HZ / 1'000'000 << " MHz "
