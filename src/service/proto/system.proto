@@ -27,6 +27,12 @@ service SystemService {
 
     // Enable or disable mDNS service advertisement at runtime
     rpc SetAdvertisement(SetAdvertisementRequest) returns (SetAdvertisementResponse);
+
+    // Get current pacing statistics (PI controller state, timing, I/O skip counts).
+    rpc GetPacingStats(GetPacingStatsRequest) returns (PacingStats);
+
+    // Stream pacing statistics at a configurable interval.
+    rpc WatchPacingStats(WatchPacingStatsRequest) returns (stream PacingStats);
 }
 
 message GetSystemInfoRequest {
@@ -233,4 +239,31 @@ message SetAdvertisementResponse {
     // The resulting state after the operation
     // Note: enabled may be false even if requested true, if mDNS is unavailable
     AdvertisementState state = 1;
+}
+
+// === Pacing Stats RPC ===
+
+message GetPacingStatsRequest {}
+
+message WatchPacingStatsRequest {
+    // Minimum interval between updates in milliseconds (default: 1000).
+    uint32 interval_ms = 1;
+}
+
+// Pacing statistics snapshot.
+// Available from both host and parasite SystemService instances.
+message PacingStats {
+    // Emulation timing
+    uint64 ticks_executed = 1;         // Total ticks executed since start
+    uint64 ticks_skipped = 2;          // Ticks skipped (falling behind)
+    uint64 ticks_io_skipped = 3;       // Ticks where sleep was skipped for I/O
+
+    // Adaptive sleep margin
+    double avg_overshoot_us = 4;       // Average OS sleep overshoot (microseconds)
+    double max_recent_overshoot_us = 5;// Recent maximum overshoot
+    double safety_margin_us = 6;       // Current adaptive safety margin
+
+    // PI controller state
+    double controller_drift = 7;       // Current drift in cycles (+ = ahead)
+    double controller_integral = 8;    // Accumulated drift (time debt)
 }

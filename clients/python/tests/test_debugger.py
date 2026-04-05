@@ -19,8 +19,6 @@ Each test gets a fresh BBC Micro instance via the ``bbc`` fixture.
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from beebium.client import Beebium
@@ -249,11 +247,16 @@ class TestWatchpoints:
         plant_and_run_from(bbc, code)
         bbc.memory.address.bus[0x0500] = 0xAB
         bbc.debugger.add_watchpoint(0x0500, 0x0501, type="write")
-        bbc.debugger.run()
-        # Run a short time then stop manually -- the watchpoint should NOT fire
-        time.sleep(0.05)
-        bbc.debugger.stop()
-        # If it didn't fire, the machine ran past our code
+        # Use a cycle-budget breakpoint to run a deterministic number of
+        # cycles. The write watchpoint should not fire (only a read occurs).
+        cycle_count = bbc.debugger.get_state().cycle_count
+        bp_id = bbc.debugger.add_breakpoint(
+            0x0000, end_address=0x10000,
+            condition=f"cycles >= {cycle_count + 1000}",
+        )
+        run_and_wait_for_stop(bbc)
+        bbc.debugger.remove_breakpoint(bp_id)
+        # If the write watchpoint didn't fire, we hit the cycle-budget breakpoint
         assert bbc.debugger.is_stopped
 
 
@@ -289,9 +292,15 @@ class TestConditionalWatchpoints:
         bbc.debugger.add_watchpoint(
             0x0500, 0x0501, type="write", condition="false"
         )
-        bbc.debugger.run()
-        time.sleep(0.05)
-        bbc.debugger.stop()
+        # Use a cycle-budget breakpoint to run a deterministic number of
+        # cycles instead of relying on wall-clock sleep.
+        cycle_count = bbc.debugger.get_state().cycle_count
+        bp_id = bbc.debugger.add_breakpoint(
+            0x0000, end_address=0x10000,
+            condition=f"cycles >= {cycle_count + 1000}",
+        )
+        run_and_wait_for_stop(bbc)
+        bbc.debugger.remove_breakpoint(bp_id)
         # The watchpoint with condition false should not have stopped execution
         assert bbc.memory.address.peek[0x0500] == 0x42  # write happened
 

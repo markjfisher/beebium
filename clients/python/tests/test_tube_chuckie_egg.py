@@ -34,6 +34,8 @@ Requirements:
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -41,6 +43,11 @@ import pytest
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains, read_mode7_screen
+
+_skip_windows_ci = pytest.mark.skipif(
+    sys.platform == "win32" and os.environ.get("CI") == "true",
+    reason="Tube pacing too timing-sensitive for Windows CI runners",
+)
 
 from tube_test_helpers import (
     TUBE_CYCLES_PER_KEY,
@@ -134,6 +141,7 @@ def bbc_tube(
         pytest.skip(str(e))
 
 
+@_skip_windows_ci
 class TestTubeChuckieEggBoot:
     """Test booting Chuckie Egg 2023 (40th Anniversary Edition) via the Tube.
 

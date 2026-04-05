@@ -93,6 +93,13 @@ public:
     /// Access the TubeService (for host startup to set shared memory pointer).
     TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
 
+    /// Set the pacing clock for gRPC stats monitoring.
+    void set_pacing_clock(PacingClock* clock) {
+        if (impl_->system_service) {
+            impl_->system_service->set_pacing_clock(clock);
+        }
+    }
+
 private:
     struct Impl {
         MachineType& machine;

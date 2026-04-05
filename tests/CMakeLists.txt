@@ -929,3 +929,13 @@ endif()
 add_executable(test_step_performance test_step_performance.cpp)
 target_link_libraries(test_step_performance PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_step_performance)
+
+# Pacing controller PI tests
+add_executable(test_pacing_controller test_pacing_controller.cpp)
+target_link_libraries(test_pacing_controller PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_pacing_controller)
+
+# Sleep quantum measurement (platform-specific sleep techniques)
+add_executable(test_sleep_quantum test_sleep_quantum.cpp)
+target_link_libraries(test_sleep_quantum PRIVATE Catch2::Catch2WithMain)
+catch_discover_tests(test_sleep_quantum)

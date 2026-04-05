@@ -17,6 +17,10 @@ service AcornRtcService {
     // Write a single register with a raw BCD value.
     // The chip's per-register wrapping is applied faithfully.
     rpc SetRegister(SetRtcRegisterRequest) returns (SetRtcRegisterResponse);
+
+    // Stream CBUS activity events (register reads and writes by the BBC).
+    // Analogous to watching the DATA LED on Ken Lowe's reproduction hardware.
+    rpc WatchActivity(WatchActivityRequest) returns (stream RtcActivityEvent);
 }
 
 message GetRtcTimeRequest {}
@@ -52,3 +56,18 @@ message SetRtcRegisterRequest {
 }
 
 message SetRtcRegisterResponse {}
+
+// --- Watch Activity ---
+
+message WatchActivityRequest {}
+
+message RtcActivityEvent {
+    enum EventType {
+        REGISTER_READ = 0;
+        REGISTER_WRITE = 1;
+    }
+    EventType type = 1;
+    int32 register_number = 2;
+    int32 value = 3;           // BCD value read or written
+    int64 timestamp_us = 4;    // Microseconds since epoch (steady_clock)
+}

@@ -22,6 +22,7 @@
 #include "TestScratchRam.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
+#include "beebium/SleepQuantum.hpp"
 #include "beebium/disc/DiscLoader.hpp"
 #include "beebium/disc/DiscDrive.hpp"
 #include "beebium/disc/DiscControllerRegistry.hpp"
@@ -1447,21 +1448,41 @@ void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
 // This function blocks until g_running becomes false (signal handler sets it).
 // Sets up shutdown callbacks for clean signal handling.
 template<typename MachineType>
-void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
+void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server,
+                        TubeShared* tube_shared = nullptr) {
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
     bool use_pacing = !platform::get_env("BEEBIUM_NO_PACING").has_value();
 
-    // Create and start pacing clock with machine-specific configuration
-    PacingClock pacing_clock(Memory::default_pacing_config());
+    // Create platform-specific sleep and measure its quantum
+    PlatformSleep sleeper;
+    auto quantum = beebium::measure_sleep_quantum(sleeper);
+
+    // If a Tube is connected, pass its io_pending flag to the pacing clock
+    // for sub-quantum wakeup on Tube register writes.
+    std::atomic<bool>* io_pending = tube_shared
+        ? &tube_shared->io_pending_host
+        : nullptr;
+
+    // Create and start pacing clock with measured quantum
+    PacingClock pacing_clock(Memory::default_pacing_config(), quantum,
+                             std::move(sleeper), io_pending);
 
     if (use_pacing) {
         pacing_clock.start();
-        std::cout << "Pacing: " << Memory::default_pacing_config().pacing_hz << " Hz, "
-                  << Memory::default_pacing_config().cycles_per_tick() << " cycles/tick\n";
+        std::cout << "Pacing: quantum " << quantum.count() / 1000 << " us"
+                  << " (" << 1'000'000'000 / quantum.count() << " Hz)"
+                  << ", nominal " << pacing_clock.config().base_clock_hz / 1'000'000 << " MHz"
+                  << (io_pending ? " (I/O interruptible)" : "")
+                  << "\n";
     } else {
         std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
+    }
+
+    // Wire pacing clock to gRPC SystemService for stats monitoring
+    if (use_pacing) {
+        server.set_pacing_clock(&pacing_clock);
     }
 
     // Set up shutdown callbacks so signal handler can interrupt blocked waits
@@ -1492,14 +1513,17 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
             break;
         }
 
-        // Run cycles
-        auto run_start = std::chrono::steady_clock::now();
-        machine.run(use_pacing ? pacing_clock.cycles_per_tick() : cycles_per_frame);
-        run_duration += std::chrono::steady_clock::now() - run_start;
-
-        // Wait for next tick (pacing clock handles timing)
         if (use_pacing) {
             pacing_clock.wait_for_tick();
+            uint64_t cycles = pacing_clock.cycles_for_next_tick();
+            auto run_start = std::chrono::steady_clock::now();
+            machine.run(cycles);
+            run_duration += std::chrono::steady_clock::now() - run_start;
+            pacing_clock.report_cycles(machine.cycle_count());
+        } else {
+            auto run_start = std::chrono::steady_clock::now();
+            machine.run(cycles_per_frame);
+            run_duration += std::chrono::steady_clock::now() - run_start;
         }
 
         // Periodic pacing stats (every 5 seconds)
@@ -1524,9 +1548,8 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                           << std::setprecision(1)
                           << (100.0 * actual_hz / target_hz) << "%)"
                           << " | vsync " << std::setprecision(1) << vsync_hz << " Hz"
-                          << " | skipped " << stats.ticks_skipped
-                          << " | margin " << std::setprecision(0)
-                          << stats.safety_margin_us << " us"
+                          << " | io " << stats.ticks_io_woken
+                          << " | deficit " << std::setprecision(0) << stats.controller_deficit
                           << " | run " << std::setprecision(1) << run_pct << "%"
                           << "\n";
                 last_stats_time = now;
@@ -1826,7 +1849,8 @@ public:
             handle_wait_mode(machine, config.wait_mode);
 
             // Run main emulation loop (blocks until shutdown)
-            run_emulation_loop(machine, server);
+            run_emulation_loop(machine, server,
+                               tube_shm ? tube_shm->get() : nullptr);
 
             std::cout << "\nShutting down...\n";
 
