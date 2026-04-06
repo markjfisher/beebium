@@ -253,12 +253,19 @@ describe("Debugger: Watchpoints", () => {
             await mem.address.bus.writeByte(0x0500, 0xAB);
             await dbg.addWatchpoint(0x0500, 0x0501, "write");
 
-            // Run, then stop manually after a short delay
+            // Use a cycle-budget breakpoint to run a deterministic number
+            // of cycles. The write watchpoint should not fire (only a read).
+            const cycleCount = (await dbg.getState()).cycleCount;
+            const bpId = await dbg.addBreakpoint(0x0000, {
+                endAddress: 0x10000,
+                condition: `cycles >= ${cycleCount + BigInt(1000)}`,
+            });
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
-            await new Promise((r) => setTimeout(r, 50));
-            await dbg.stop();
+            await stopPromise;
+            await dbg.removeBreakpoint(bpId);
 
-            // If the watchpoint didn't fire, execution ran past the code
+            // If the write watchpoint didn't fire, we hit the cycle-budget breakpoint
             expect(await dbg.isStopped()).toBe(true);
         });
     });
@@ -303,9 +310,17 @@ describe("Debugger: Conditional Watchpoints", () => {
                 condition: "false",
             });
 
+            // Use a cycle-budget breakpoint to run a deterministic number
+            // of cycles instead of relying on wall-clock sleep.
+            const cycleCount = (await dbg.getState()).cycleCount;
+            const bpId = await dbg.addBreakpoint(0x0000, {
+                endAddress: 0x10000,
+                condition: `cycles >= ${cycleCount + BigInt(1000)}`,
+            });
+            const stopPromise = dbg.waitForStop();
             await dbg.run();
-            await new Promise((r) => setTimeout(r, 50));
-            await dbg.stop();
+            await stopPromise;
+            await dbg.removeBreakpoint(bpId);
 
             // The write still happened, but the watchpoint didn't stop execution
             expect(await mem.address.peek.readByte(0x0500)).toBe(0x42);
