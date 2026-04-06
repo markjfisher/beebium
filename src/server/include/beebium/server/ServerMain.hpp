@@ -1689,6 +1689,9 @@ public:
             if constexpr (beebium::HasUserPort<Memory>) {
                 extension_registry.register_extension_point("user-port");
             }
+            if constexpr (beebium::HasTubeSocket<Memory>) {
+                extension_registry.register_extension_point("tube");
+            }
 
             // Register built-in extensions (assign auto-generated ids)
             {
@@ -1734,7 +1737,8 @@ public:
             std::cout << "Initialising extensions...\n";
             beebium::ExtensionContext extension_context(
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
-                beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr);
+                beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr,
+                beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr);
             extension_registry.resolve_and_init(extension_context);
 
             // Log initialisation order

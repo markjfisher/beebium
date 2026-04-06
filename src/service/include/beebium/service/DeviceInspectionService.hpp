@@ -226,9 +226,10 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
 
     // R3 H-to-P register.
     auto* r3_h2p = response->mutable_r3_h2p();
-    uint8_t r3_h2p_count = shared->r3_h2p.count.load(std::memory_order_acquire);
+    auto r3_h2p_state = shared->r3_h2p.state.load(std::memory_order_acquire);
+    uint8_t r3_h2p_count = TubeReg3::count_of(r3_h2p_state);
     r3_h2p->set_count(r3_h2p_count);
-    r3_h2p->set_pending(r3_h2p_count >= threshold);
+    r3_h2p->set_pending(TubeReg3::pending_of(r3_h2p_state));
     r3_h2p->set_threshold(threshold);
     if (r3_h2p_count > 0) {
         std::string data;
@@ -242,9 +243,10 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
 
     // R3 P-to-H register.
     auto* r3_p2h = response->mutable_r3_p2h();
-    uint8_t r3_p2h_count = shared->r3_p2h.count.load(std::memory_order_acquire);
+    auto r3_p2h_state = shared->r3_p2h.state.load(std::memory_order_acquire);
+    uint8_t r3_p2h_count = TubeReg3::count_of(r3_p2h_state);
     r3_p2h->set_count(r3_p2h_count);
-    r3_p2h->set_pending(r3_p2h_count >= threshold);
+    r3_p2h->set_pending(TubeReg3::pending_of(r3_p2h_state));
     r3_p2h->set_threshold(threshold);
     if (r3_p2h_count > 0) {
         std::string data;
@@ -293,8 +295,10 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
     }
     {
         uint8_t s = 0x1F;
-        bool h2p_data = shared->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+        bool h2p_data = TubeReg3::pending_of(
+            shared->r3_h2p.state.load(std::memory_order_acquire));
+        bool p2h_space = !TubeReg3::pending_of(
+            shared->r3_p2h.state.load(std::memory_order_acquire));
         if (h2p_data) s |= TubeUla::DATA_AVAILABLE;
         if (p2h_space) s |= TubeUla::SPACE_AVAILABLE;
         if (h2p_data || p2h_space) s |= 0x20;
@@ -321,8 +325,10 @@ inline void fill_tube_state_from_shared(const TubeHostPort& host_port, TubeState
     // PNMI level (from shared state).
     bool pnmi_level = false;
     if (flags & TubeUla::FLAG_M) {
-        bool h2p_data = shared->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+        bool h2p_data = TubeReg3::pending_of(
+            shared->r3_h2p.state.load(std::memory_order_acquire));
+        bool p2h_space = !TubeReg3::pending_of(
+            shared->r3_p2h.state.load(std::memory_order_acquire));
         pnmi_level = h2p_data || p2h_space;
     }
     irq->set_pnmi_level(pnmi_level);

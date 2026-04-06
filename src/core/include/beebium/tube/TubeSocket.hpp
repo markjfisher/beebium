@@ -91,11 +91,23 @@ public:
     // Disable the Tube socket (detach second processor).
     // Reverts to empty-socket behaviour.
     void disable() {
+        installed_backend_ = nullptr;
         backend_ = std::make_unique<EmptyTubeBackend>(&last_bus_value_ptr_);
     }
 
+    // Install an externally-owned backend (used by extensions).
+    // The extension owns the backend's lifetime and must keep it alive while
+    // installed. Call disable() or install_backend(nullptr) to detach.
+    void install_backend(TubeHostBackend* backend) {
+        installed_backend_ = backend;
+        if (!backend) {
+            disable();
+        }
+    }
+
     bool enabled() const {
-        return dynamic_cast<EmptyTubeBackend*>(backend_.get()) == nullptr;
+        return installed_backend_ != nullptr
+            || dynamic_cast<EmptyTubeBackend*>(backend_.get()) == nullptr;
     }
 
     // Set pointer to the MemoryMap's last_bus_value for open bus emulation.
@@ -108,16 +120,16 @@ public:
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
-        return backend_->host_read(static_cast<uint8_t>(offset));
+        return active_backend()->host_read(static_cast<uint8_t>(offset));
     }
 
     // Side-effect-free read for debugger inspection.
     uint8_t peek(uint16_t offset) const {
-        return backend_->host_peek(static_cast<uint8_t>(offset));
+        return active_backend()->host_peek(static_cast<uint8_t>(offset));
     }
 
     void write(uint16_t offset, uint8_t value) {
-        backend_->host_write(static_cast<uint8_t>(offset), value);
+        active_backend()->host_write(static_cast<uint8_t>(offset), value);
     }
 
     // --- Bus stretching ---
@@ -125,7 +137,7 @@ public:
     // Complete any write that was deferred by bus_stretch_cancel.
     // Called by Machine::run() after resume. See TubeHostBackend for details.
     void complete_pending_write() {
-        backend_->complete_pending_write();
+        active_backend()->complete_pending_write();
     }
 
     // Returns true if the last host access could not complete because
@@ -133,7 +145,7 @@ public:
     // meaningful in in-process mode (TubeUla); the shared memory
     // TubeHostPort uses spin-waits instead.
     bool stretched() const {
-        return backend_->stretched();
+        return active_backend()->stretched();
     }
 
     // --- IrqSource interface (satisfies IrqSource concept) ---
@@ -143,13 +155,13 @@ public:
     // machine-level IRQ aggregation framework.
 
     bool irq_pending() const {
-        return backend_->hirq();
+        return active_backend()->hirq();
     }
 
     // --- Reset ---
 
     void reset() {
-        backend_->reset();
+        active_backend()->reset();
     }
 
     // --- Accessors ---
@@ -178,7 +190,17 @@ public:
     }
 
 private:
-    std::unique_ptr<TubeHostBackend> backend_;
+    // Returns the active backend: the installed (extension-owned) backend
+    // if set, otherwise the owned backend.
+    TubeHostBackend* active_backend() {
+        return installed_backend_ ? installed_backend_ : backend_.get();
+    }
+    const TubeHostBackend* active_backend() const {
+        return installed_backend_ ? installed_backend_ : backend_.get();
+    }
+
+    std::unique_ptr<TubeHostBackend> backend_;  // owned backend (empty or legacy)
+    TubeHostBackend* installed_backend_ = nullptr;  // non-owning, extension-owned
     const uint8_t* last_bus_value_ptr_ = nullptr;
 };
 
