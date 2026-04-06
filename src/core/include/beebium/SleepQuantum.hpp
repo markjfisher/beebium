@@ -21,34 +21,46 @@
 
 namespace beebium {
 
-/// Measure the platform's minimum reliable sleep duration.
+/// Measure the platform's actual sleep quantum.
 ///
-/// Fires a burst of minimum-length sleep calls using PlatformSleep
-/// and returns the median actual duration. This measures the real
-/// quantum we'll get in production, accounting for platform differences:
+/// Requests a short sleep (100us) using PlatformSleep and measures
+/// the actual wall-clock duration over many samples, returning the
+/// median. This captures the real minimum sleep duration including
+/// platform overhead and timer granularity:
 ///
-/// - macOS: ~2-100us (nanosleep)
-/// - Linux: ~50-200us (nanosleep)
-/// - Windows with HIGH_RES timer: ~5us
+/// - macOS: ~130us (nanosleep overshoots 100us slightly)
+/// - Linux: ~150us (similar)
+/// - Windows + HIGH_RES + NtSetTimerResolution: ~496us
 /// - Windows without HIGH_RES: ~15.6ms (system timer)
 ///
-/// Called once at emulator startup. Takes a few milliseconds.
+/// The pacing clock sleeps for this measured quantum each tick, and
+/// the deficit controller uses it to compute the correct number of
+/// cycles per tick. The measurement must reflect what the timer
+/// thread will actually experience.
+///
+/// Called once at emulator startup. Takes a fraction of a second.
 inline std::chrono::nanoseconds measure_sleep_quantum(
         const PlatformSleep& sleeper, int samples = 100) {
     using Clock = std::chrono::steady_clock;
     using namespace std::chrono;
+
+    // Sleep for a short target duration. On all platforms this is
+    // within the "floor" zone where the actual duration is dominated
+    // by the platform's minimum sleep granularity, which is exactly
+    // the quantum we want to measure.
+    constexpr auto target = microseconds(100);
 
     std::vector<int64_t> durations;
     durations.reserve(samples);
 
     // Warm up (first few sleeps may be slower)
     for (int i = 0; i < 5; i++) {
-        sleeper.sleep(nanoseconds(1));
+        sleeper.sleep(target);
     }
 
     for (int i = 0; i < samples; i++) {
         auto before = Clock::now();
-        sleeper.sleep(nanoseconds(1));
+        sleeper.sleep(target);
         auto after = Clock::now();
         auto ns = duration_cast<nanoseconds>(after - before).count();
         durations.push_back(ns);
@@ -56,12 +68,7 @@ inline std::chrono::nanoseconds measure_sleep_quantum(
 
     // Return the median (robust against outliers)
     std::sort(durations.begin(), durations.end());
-    auto median = durations[static_cast<size_t>(samples / 2)];
-
-    // Floor at 100us (sanity -- no platform is faster than this reliably)
-    median = std::max(median, int64_t{100'000});
-
-    return nanoseconds(median);
+    return nanoseconds(durations[static_cast<size_t>(samples / 2)]);
 }
 
 } // namespace beebium

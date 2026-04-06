@@ -370,4 +370,90 @@ TEST_CASE("Sleep quantum: hybrid sleep+busywait (500us)", "[sleep][quantum][wind
     restore_timer_resolution();
 }
 
+// Shared sweep infrastructure
+struct SweepPoint {
+    int64_t requested_us;
+    int64_t median_us;
+    int64_t p25_us;
+    int64_t p75_us;
+};
+
+const std::vector<int64_t> sweep_targets_us = {
+    1, 2, 5, 10, 20, 50, 100, 150, 200, 300, 400, 500,
+    600, 700, 800, 900, 1000, 1500, 2000, 3000, 5000
+};
+
+template <typename SleepFn>
+std::vector<SweepPoint> run_sweep(SleepFn sleep_fn, int samples = 200) {
+    std::vector<SweepPoint> points;
+    for (auto target_us : sweep_targets_us) {
+        auto target_ns = target_us * 1000;
+        for (int i = 0; i < 5; ++i) sleep_fn(target_ns);
+
+        std::vector<int64_t> durations;
+        durations.reserve(samples);
+        for (int i = 0; i < samples; ++i) {
+            auto before = Clock::now();
+            sleep_fn(target_ns);
+            auto after = Clock::now();
+            auto ns = std::chrono::duration_cast<Duration>(after - before).count();
+            durations.push_back(ns / 1000);
+        }
+        std::sort(durations.begin(), durations.end());
+        points.push_back({
+            target_us,
+            durations[samples / 2],
+            durations[samples / 4],
+            durations[3 * samples / 4]
+        });
+    }
+    return points;
+}
+
+void print_sweep(const char* label, const std::vector<SweepPoint>& points) {
+    std::cout << "\n" << label << " (microseconds)\n"
+              << "  requested    p25  median    p75  ratio\n"
+              << "  ---------  -----  ------  -----  -----\n";
+    for (const auto& p : points) {
+        double ratio = static_cast<double>(p.median_us) /
+                       static_cast<double>(p.requested_us);
+        std::cout << "  " << std::setw(7) << p.requested_us
+                  << "  " << std::setw(5) << p.p25_us
+                  << "  " << std::setw(6) << p.median_us
+                  << "  " << std::setw(5) << p.p75_us
+                  << "  " << std::fixed << std::setprecision(2)
+                  << std::setw(5) << ratio << "x\n";
+    }
+}
+
+TEST_CASE("Sleep sweep: HIGH_RES timer (no NtSetTimerResolution)", "[sleep][sweep][windows]") {
+    HighResTimer timer;
+    REQUIRE(timer.valid());
+    auto points = run_sweep([&](int64_t ns) { timer.sleep(ns); });
+    print_sweep("HIGH_RES timer (no NtSetTimerResolution)", points);
+}
+
+TEST_CASE("Sleep sweep: HIGH_RES timer + NtSetTimerResolution", "[sleep][sweep][windows]") {
+    HighResTimer timer;
+    REQUIRE(timer.valid());
+    set_timer_resolution_max();
+    auto points = run_sweep([&](int64_t ns) { timer.sleep(ns); });
+    print_sweep("HIGH_RES timer + NtSetTimerResolution", points);
+    restore_timer_resolution();
+}
+
+TEST_CASE("Sleep sweep: NtDelayExecution + NtSetTimerResolution", "[sleep][sweep][windows]") {
+    set_timer_resolution_max();
+    auto points = run_sweep(sleep_nt_delay);
+    print_sweep("NtDelayExecution + NtSetTimerResolution", points);
+    restore_timer_resolution();
+}
+
+TEST_CASE("Sleep sweep: std::sleep_for + NtSetTimerResolution", "[sleep][sweep][windows]") {
+    set_timer_resolution_max();
+    auto points = run_sweep(sleep_std);
+    print_sweep("std::sleep_for + NtSetTimerResolution", points);
+    restore_timer_resolution();
+}
+
 #endif // _WIN32
