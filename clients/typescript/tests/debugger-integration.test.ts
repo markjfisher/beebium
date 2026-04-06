@@ -258,7 +258,7 @@ describe("Debugger: Watchpoints", () => {
             const cycleCount = (await dbg.getState()).cycleCount;
             const bpId = await dbg.addBreakpoint(0x0000, {
                 endAddress: 0x10000,
-                condition: `cycles >= ${cycleCount + BigInt(1000)}`,
+                condition: `cycles >= ${cycleCount + 1000}`,
             });
             const stopPromise = dbg.waitForStop();
             await dbg.run();
@@ -315,7 +315,7 @@ describe("Debugger: Conditional Watchpoints", () => {
             const cycleCount = (await dbg.getState()).cycleCount;
             const bpId = await dbg.addBreakpoint(0x0000, {
                 endAddress: 0x10000,
-                condition: `cycles >= ${cycleCount + BigInt(1000)}`,
+                condition: `cycles >= ${cycleCount + 1000}`,
             });
             const stopPromise = dbg.waitForStop();
             await dbg.run();
