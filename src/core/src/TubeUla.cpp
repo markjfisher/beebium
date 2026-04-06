@@ -21,6 +21,7 @@ TubeUla::TubeUla()
 
 void TubeUla::reset()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     control_flags_ = 0;
     stretched_ = false;
     pending_write_ = false;
@@ -67,11 +68,11 @@ void TubeUla::soft_reset()
     pending_write_ = false;
 
     // Interrupt state.
-    hirq_ = false;
-    pirq_ = false;
-    pnmi_level_ = false;
+    hirq_.store(false, std::memory_order_relaxed);
+    pirq_.store(false, std::memory_order_relaxed);
+    pnmi_level_.store(false, std::memory_order_relaxed);
     prev_pnmi_ = false;
-    pnmi_edge_ = false;
+    pnmi_edge_.store(false, std::memory_order_relaxed);
 
     update_interrupts();
 }
@@ -82,6 +83,7 @@ void TubeUla::soft_reset()
 
 uint8_t TubeUla::host_read(uint8_t offset)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     uint8_t result = 0;
 
     switch (offset & 7) {
@@ -188,6 +190,7 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
 uint8_t TubeUla::host_peek(uint8_t offset) const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     uint8_t result = 0;
 
     switch (offset & 7) {
@@ -243,6 +246,7 @@ uint8_t TubeUla::host_peek(uint8_t offset) const
 
 uint8_t TubeUla::parasite_peek(uint8_t offset) const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     uint8_t result = 0;
 
     switch (offset & 7) {
@@ -302,6 +306,7 @@ uint8_t TubeUla::parasite_peek(uint8_t offset) const
 
 void TubeUla::host_write(uint8_t offset, uint8_t value)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     switch (offset & 7) {
     case 0: {
         // Control flag register.
@@ -404,6 +409,7 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
 
 uint8_t TubeUla::parasite_read(uint8_t offset)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     uint8_t result = 0;
 
     switch (offset & 7) {
@@ -520,6 +526,7 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
 
 void TubeUla::parasite_write(uint8_t offset, uint8_t value)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     switch (offset & 7) {
     case 0:
         // Parasite cannot write to control register.
@@ -629,27 +636,32 @@ void TubeUla::try_complete_pending_write()
 
 bool TubeUla::hirq() const
 {
-    return hirq_;
+    return hirq_.load(std::memory_order_acquire);
 }
 
 bool TubeUla::pirq() const
 {
-    return pirq_;
+    return pirq_.load(std::memory_order_acquire);
 }
 
 bool TubeUla::pnmi() const
 {
-    return pnmi_edge_;
+    return pnmi_edge_.load(std::memory_order_acquire);
 }
 
 void TubeUla::update_interrupts()
 {
+    // Called under mutex_. Computes interrupt outputs and stores them
+    // to atomics for lock-free polling by hirq()/pirq()/pnmi().
+
     // HIRQ: Q=1 AND R4 P-to-H has data available.
-    hirq_ = (control_flags_ & FLAG_Q) && r4_.p2h_available;
+    hirq_.store((control_flags_ & FLAG_Q) && r4_.p2h_available,
+                std::memory_order_release);
 
     // PIRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data).
-    pirq_ = ((control_flags_ & FLAG_I) && r1_.h2p_available)
-          || ((control_flags_ & FLAG_J) && r4_.h2p_available);
+    pirq_.store(((control_flags_ & FLAG_I) && r1_.h2p_available)
+             || ((control_flags_ & FLAG_J) && r4_.h2p_available),
+                std::memory_order_release);
 
     // PNMI level computation.
     bool new_pnmi = false;
@@ -662,14 +674,14 @@ void TubeUla::update_interrupts()
 
     // Edge detection: fire on 0-to-1 transition.
     if (new_pnmi && !prev_pnmi_)
-        pnmi_edge_ = true;
+        pnmi_edge_.store(true, std::memory_order_release);
 
     // Clear edge when the level drops (cause removed).
     if (!new_pnmi)
-        pnmi_edge_ = false;
+        pnmi_edge_.store(false, std::memory_order_release);
 
     prev_pnmi_ = new_pnmi;
-    pnmi_level_ = new_pnmi;
+    pnmi_level_.store(new_pnmi, std::memory_order_release);
 }
 
 }  // namespace beebium

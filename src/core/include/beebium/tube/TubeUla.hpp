@@ -15,16 +15,24 @@
 #include "TubeHostBackend.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 
 namespace beebium {
 
 // Tube ULA register model.
 //
 // Models the Acorn Tube ULA's four register sets, control flags, and
-// interrupt outputs. This is a plain in-process implementation -- no shared
-// memory, no atomics. It is the authoritative FIFO model used for both
-// in-process testing and as the basis for the shared-memory variant.
+// interrupt outputs. This is the authoritative FIFO model used for both
+// in-process testing and as the register bridge in the extension-based
+// coprocessor architecture.
+//
+// Thread safety: all public methods are safe for concurrent access from
+// two threads (host thread calling host_read/host_write/hirq, extension
+// thread calling parasite_read/parasite_write/pirq/pnmi). A mutex protects
+// register state; interrupt outputs are cached as atomics for lock-free
+// polling by the host's IRQ aggregator.
 //
 // The host and parasite sides see different views of the same registers:
 // different status bits, different read/write targets. The caller selects
@@ -166,12 +174,18 @@ private:
     // Try to complete a pending write after the parasite drains a register.
     void try_complete_pending_write();
 
-    // Interrupt output state (cached, recomputed after each access).
-    bool hirq_ = false;
-    bool pirq_ = false;
-    bool pnmi_level_ = false;  // current level of PNMI condition
-    bool prev_pnmi_ = false;   // for edge detection
-    bool pnmi_edge_ = false;   // latched rising edge
+    // Interrupt output state. Cached as atomics so hirq()/pirq()/pnmi()
+    // can be polled from another thread without acquiring the mutex.
+    // Updated under the mutex by update_interrupts().
+    std::atomic<bool> hirq_{false};
+    std::atomic<bool> pirq_{false};
+    std::atomic<bool> pnmi_level_{false};
+    bool prev_pnmi_ = false;   // for edge detection (only accessed under mutex)
+    std::atomic<bool> pnmi_edge_{false};
+
+    // Mutex protecting all register state. Acquired by every public method.
+    // Interrupt outputs are atomic and can be read without the mutex.
+    mutable std::mutex mutex_;
 };
 
 }  // namespace beebium

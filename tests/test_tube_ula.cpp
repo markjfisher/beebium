@@ -14,6 +14,10 @@
 
 #include <beebium/tube/TubeUla.hpp>
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 using namespace beebium;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1248,5 +1252,153 @@ TEST_CASE("Register access mirroring", "[tube][addressing]") {
         // Read back via offset 8 (same register due to 3-bit mask).
         uint8_t stat = tube.host_read(8);
         REQUIRE((stat & TubeUla::FLAG_Q) != 0);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Thread safety: concurrent host and parasite access
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("TubeUla concurrent R2 handshake", "[tube][thread]") {
+    // R2 is a simple 1-byte latch in each direction, making it a good
+    // candidate for testing concurrent access without bus stretching.
+    TubeUla tube;
+    constexpr int num_transfers = 1000;
+    std::atomic<bool> start{false};
+    std::atomic<int> host_received{0};
+    std::atomic<int> parasite_received{0};
+
+    // Parasite thread: write to R2 P-to-H, read from R2 H-to-P.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_transfers; ++i) {
+            // Write a byte to host via R2.
+            tube.parasite_write(3, static_cast<uint8_t>(i & 0xFF));
+            // Poll for host's reply via R2.
+            for (int polls = 0; polls < 100000; ++polls) {
+                uint8_t status = tube.parasite_read(2);
+                if (status & TubeUla::DATA_AVAILABLE) {
+                    tube.parasite_read(3);
+                    parasite_received.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: read from R2 P-to-H, write to R2 H-to-P.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_transfers; ++i) {
+        // Poll for parasite's byte via R2.
+        for (int polls = 0; polls < 100000; ++polls) {
+            uint8_t status = tube.host_read(2);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                tube.host_read(3);
+                host_received.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+            std::this_thread::yield();
+        }
+        // Reply to parasite via R2.
+        tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
+    }
+
+    parasite_thread.join();
+    CHECK(host_received.load() == num_transfers);
+    CHECK(parasite_received.load() == num_transfers);
+}
+
+TEST_CASE("TubeUla concurrent R1 FIFO transfer", "[tube][thread]") {
+    // R1 P-to-H is a 24-byte FIFO. Transfer a large number of bytes
+    // concurrently to verify no data loss or corruption.
+    TubeUla tube;
+    constexpr int num_bytes = 5000;
+    std::atomic<bool> start{false};
+    std::vector<uint8_t> received;
+    received.reserve(num_bytes);
+
+    // Parasite thread: write bytes into R1 P-to-H FIFO.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_bytes; ++i) {
+            // Poll until FIFO has space.
+            for (int polls = 0; polls < 1000000; ++polls) {
+                uint8_t status = tube.parasite_read(0);
+                if (status & TubeUla::SPACE_AVAILABLE) {
+                    tube.parasite_write(1, static_cast<uint8_t>(i & 0xFF));
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: read bytes from R1 P-to-H FIFO.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_bytes; ++i) {
+        for (int polls = 0; polls < 1000000; ++polls) {
+            uint8_t status = tube.host_read(0);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                received.push_back(tube.host_read(1));
+                break;
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    parasite_thread.join();
+    REQUIRE(received.size() == num_bytes);
+    for (int i = 0; i < num_bytes; ++i) {
+        INFO("byte " << i);
+        CHECK(received[i] == static_cast<uint8_t>(i & 0xFF));
+    }
+}
+
+TEST_CASE("TubeUla concurrent R3 NMI-style transfer", "[tube][thread]") {
+    // R3 H-to-P in 1-byte mode with M=1 (NMI enabled). The host writes
+    // bytes and the parasite reads them driven by PNMI, verifying
+    // concurrent access to the 2-byte R3 FIFO and interrupt outputs.
+    TubeUla tube;
+    constexpr int num_bytes = 2000;
+    std::atomic<bool> start{false};
+    std::vector<uint8_t> received;
+    received.reserve(num_bytes);
+
+    // Enable M flag (PNMI from R3).
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+
+    // Parasite thread: poll pnmi_level and read R3 data.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_bytes; ++i) {
+            for (int polls = 0; polls < 1000000; ++polls) {
+                uint8_t status = tube.parasite_read(4);
+                if (status & TubeUla::DATA_AVAILABLE) {
+                    received.push_back(tube.parasite_read(5));
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: write bytes to R3 H-to-P.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_bytes; ++i) {
+        uint8_t value = static_cast<uint8_t>(i & 0xFF);
+        tube.host_write(5, value);
+        // host_write sets stretched_ if FIFO full; need to let parasite drain.
+        while (tube.stretched()) {
+            std::this_thread::yield();
+            tube.complete_pending_write();
+        }
+    }
+
+    parasite_thread.join();
+    REQUIRE(received.size() == num_bytes);
+    for (int i = 0; i < num_bytes; ++i) {
+        INFO("byte " << i);
+        CHECK(received[i] == static_cast<uint8_t>(i & 0xFF));
     }
 }
