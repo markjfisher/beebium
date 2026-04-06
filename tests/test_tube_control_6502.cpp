@@ -238,7 +238,7 @@ TEST_CASE("6502 control flags: soft reset clears all registers", "[tube][6502][c
     // Verify registers are cleared
     CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) == 0);
     CHECK(shared.r4_h2p.ready.load(std::memory_order_acquire) == 0);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 0);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 0);
 
     // Note: T flag also ORs its bit into control_flags (T=0x40, but only
     // bits 5-0 are stored as flags).  The original flags (I, M) should
@@ -413,7 +413,7 @@ TEST_CASE("6502 control flags: V=0 R3 is 1-byte mode", "[tube][6502][control]") 
 
     // Write 1 byte -- should succeed immediately
     host.host_write(5, 0xAA);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 1);
 
     // Host status should show R3 H2P full (bit 6 = 0)
     uint8_t status = host.host_read(4);
@@ -432,9 +432,9 @@ TEST_CASE("6502 control flags: V=1 R3 is 2-byte mode", "[tube][6502][control]") 
 
     // Write 2 bytes -- both should succeed immediately
     host.host_write(5, 0xAA);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 1);
     host.host_write(5, 0xBB);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_acquire) == 2);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 2);
 
     // Host status should show R3 H2P full (bit 6 = 0)
     uint8_t status = host.host_read(4);

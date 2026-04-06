@@ -73,21 +73,21 @@ uint8_t TubeHostPort::host_read(uint8_t offset)
 
     case 4: {
         // R3 status (host perspective).
-        // Bit 7: R3 P-to-H data available (count >= threshold).
-        // Bit 6: R3 H-to-P space available (count < threshold).
+        // Bit 7: R3 P-to-H data available (pending flag from packed state).
+        // Bit 6: R3 H-to-P space available (no pending write awaiting read).
         // Bits 5-0: read as 1 (App Note 004, note 11).
         result = 0x3F;
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        if (shared_->r3_p2h.count.load(std::memory_order_acquire) >= threshold)
+        if (TubeReg3::pending_of(shared_->r3_p2h.state.load(std::memory_order_acquire)))
             result |= TubeUla::DATA_AVAILABLE;
-        if (shared_->r3_h2p.count.load(std::memory_order_acquire) < threshold)
+        if (!TubeReg3::pending_of(shared_->r3_h2p.state.load(std::memory_order_acquire)))
             result |= TubeUla::SPACE_AVAILABLE;
         break;
     }
 
     case 5: {
         // R3 data: read from P-to-H register.
-        uint8_t pre_count = shared_->r3_p2h.count.load(std::memory_order_acquire);
+        uint8_t pre_count = TubeReg3::count_of(
+            shared_->r3_p2h.state.load(std::memory_order_acquire));
         result = dequeue_r3_p2h();
         if (pre_count > 0)
             shared_->counters.r3_p2h_reads.fetch_add(1, std::memory_order_relaxed);
@@ -162,15 +162,15 @@ uint8_t TubeHostPort::host_peek(uint8_t offset) const
         break;
     case 4: {
         result = 0x3F;
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        if (shared_->r3_p2h.count.load(std::memory_order_acquire) >= threshold)
+        if (TubeReg3::pending_of(shared_->r3_p2h.state.load(std::memory_order_acquire)))
             result |= TubeUla::DATA_AVAILABLE;
-        if (shared_->r3_h2p.count.load(std::memory_order_acquire) < threshold)
+        if (!TubeReg3::pending_of(shared_->r3_h2p.state.load(std::memory_order_acquire)))
             result |= TubeUla::SPACE_AVAILABLE;
         break;
     }
     case 5: {
-        uint8_t count = shared_->r3_p2h.count.load(std::memory_order_acquire);
+        uint8_t count = TubeReg3::count_of(
+            shared_->r3_p2h.state.load(std::memory_order_acquire));
         if (count > 0) {
             uint8_t head = shared_->r3_p2h.head.load(std::memory_order_relaxed);
             result = shared_->r3_p2h.data[head].load(std::memory_order_acquire);
@@ -259,12 +259,10 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
 
     case 5: {
         // R3 data: write to H-to-P circular buffer.
-        // Bus stretching: spin until the register has space.
-        // In 1-byte mode (V=0), space available when count < 1.
-        // In 2-byte mode (V=1), space available when count < 2.
-        auto flags = shared_->control_flags.load(std::memory_order_acquire);
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        while (shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold) {
+        // Bus stretching: spin until the register has space (count < 2).
+        // The physical FIFO is always 2 slots; bus stretching fires when full.
+        while (TubeReg3::count_of(
+                shared_->r3_h2p.state.load(std::memory_order_acquire)) >= 2) {
             if (shared_->bus_stretch_cancel.load(std::memory_order_relaxed)) {
                 has_pending_write_ = true;
                 pending_offset_ = offset;
@@ -275,7 +273,17 @@ void TubeHostPort::host_write(uint8_t offset, uint8_t value)
         uint8_t tail = shared_->r3_h2p.tail.load(std::memory_order_relaxed);
         shared_->r3_h2p.data[tail].store(value, std::memory_order_relaxed);
         shared_->r3_h2p.tail.store(tail ^ 1, std::memory_order_relaxed);
-        shared_->r3_h2p.count.fetch_add(1, std::memory_order_release);
+        // CAS to atomically increment count and set pending if threshold reached.
+        auto flags_v = shared_->control_flags.load(std::memory_order_acquire);
+        uint8_t threshold = (flags_v & TubeUla::FLAG_V) ? 2 : 1;
+        uint16_t old_state = shared_->r3_h2p.state.load(std::memory_order_acquire);
+        uint16_t new_state;
+        do {
+            uint8_t new_count = TubeReg3::count_of(old_state) + 1;
+            bool pending = TubeReg3::pending_of(old_state) || (new_count >= threshold);
+            new_state = TubeReg3::pack(new_count, pending);
+        } while (!shared_->r3_h2p.state.compare_exchange_weak(
+            old_state, new_state, std::memory_order_release, std::memory_order_acquire));
         shared_->counters.r3_h2p_writes.fetch_add(1, std::memory_order_relaxed);
         shared_->io_pending_parasite.store(true, std::memory_order_release);
         break;
@@ -361,7 +369,7 @@ void TubeHostPort::soft_reset()
     shared_->r3_h2p.data[1].store(0, std::memory_order_relaxed);
     shared_->r3_h2p.head.store(0, std::memory_order_relaxed);
     shared_->r3_h2p.tail.store(0, std::memory_order_relaxed);
-    shared_->r3_h2p.count.store(0, std::memory_order_relaxed);
+    shared_->r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_relaxed);
 
     shared_->r4_h2p.value.store(0, std::memory_order_relaxed);
     shared_->r4_h2p.ready.store(0, std::memory_order_relaxed);
@@ -377,11 +385,12 @@ void TubeHostPort::soft_reset()
 
     // R3 P-to-H: initialise with dummy byte to prevent spurious PNMI
     // on the parasite side (matches TubeUla::soft_reset behaviour).
+    // pending=true because the dummy byte counts as a complete transfer.
     shared_->r3_p2h.data[0].store(0, std::memory_order_relaxed);
     shared_->r3_p2h.data[1].store(0, std::memory_order_relaxed);
     shared_->r3_p2h.head.store(0, std::memory_order_relaxed);
     shared_->r3_p2h.tail.store(1, std::memory_order_relaxed);
-    shared_->r3_p2h.count.store(1, std::memory_order_relaxed);
+    shared_->r3_p2h.state.store(TubeReg3::pack(1, true), std::memory_order_relaxed);
 
     shared_->r4_p2h.value.store(0, std::memory_order_relaxed);
     shared_->r4_p2h.ready.store(0, std::memory_order_relaxed);
@@ -410,14 +419,26 @@ uint8_t TubeHostPort::dequeue_r1_p2h()
 
 uint8_t TubeHostPort::dequeue_r3_p2h()
 {
-    uint8_t count = shared_->r3_p2h.count.load(std::memory_order_acquire);
+    uint16_t old_state = shared_->r3_p2h.state.load(std::memory_order_acquire);
+    uint8_t count = TubeReg3::count_of(old_state);
     if (count == 0)
         return shared_->parasite_data_latch.load(std::memory_order_relaxed);
 
+    // Read data at head. Safe: only consumer modifies head, and producer
+    // writes at tail (different from head when count > 0).
     uint8_t head = shared_->r3_p2h.head.load(std::memory_order_relaxed);
     uint8_t value = shared_->r3_p2h.data[head].load(std::memory_order_acquire);
     shared_->r3_p2h.head.store(head ^ 1, std::memory_order_relaxed);
-    shared_->r3_p2h.count.fetch_sub(1, std::memory_order_release);
+
+    // CAS to atomically decrement count and clear pending if empty.
+    uint16_t new_state;
+    do {
+        count = TubeReg3::count_of(old_state);
+        uint8_t new_count = count - 1;
+        bool pending = (new_count == 0) ? false : TubeReg3::pending_of(old_state);
+        new_state = TubeReg3::pack(new_count, pending);
+    } while (!shared_->r3_p2h.state.compare_exchange_weak(
+        old_state, new_state, std::memory_order_release, std::memory_order_acquire));
 
     return value;
 }

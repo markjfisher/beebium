@@ -129,11 +129,11 @@ TEST_CASE("6502 R3 NMI transfer: single byte", "[tube][6502][r3]") {
     host.host_write(5, 0x42);
 
     // Verify R3 state before ticking
-    INFO("R3 H2P count: " << shared.r3_h2p.count.load());
+    INFO("R3 H2P count: " << TubeReg3::count_of(shared.r3_h2p.state.load()));
     INFO("control_flags: " << std::hex << static_cast<int>(shared.control_flags.load()));
     INFO("pnmi_level: " << parasite_port.pnmi_level());
 
-    REQUIRE(shared.r3_h2p.count.load() == 1);
+    REQUIRE(TubeReg3::count_of(shared.r3_h2p.state.load()) == 1);
     REQUIRE(parasite_port.pnmi_level() == true);
 
     for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {

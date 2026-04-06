@@ -90,7 +90,7 @@ TEST_CASE("TubeHostPort: reset initialises R3 P-to-H with dummy byte", "[tube][h
 
     // R3 P-to-H should have count=1 (dummy byte to prevent spurious PNMI,
     // matching TubeUla::soft_reset behaviour).
-    CHECK(shared.r3_p2h.count.load(std::memory_order_relaxed) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_relaxed)) == 1);
 }
 
 // ===========================================================================
@@ -280,7 +280,7 @@ TEST_CASE("TubeHostPort: R3 H-to-P write in 1-byte mode", "[tube][host_port]") {
     port.host_write(5, 0x33);
 
     CHECK(shared.r3_h2p.data[0].load(std::memory_order_relaxed) == 0x33);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_relaxed) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_relaxed)) == 1);
 }
 
 TEST_CASE("TubeHostPort: R3 H-to-P write in 2-byte mode", "[tube][host_port]") {
@@ -293,11 +293,11 @@ TEST_CASE("TubeHostPort: R3 H-to-P write in 2-byte mode", "[tube][host_port]") {
 
     // Write first byte -- count below threshold
     port.host_write(5, 0x44);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_relaxed) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_relaxed)) == 1);
 
     // Write second byte -- count reaches threshold
     port.host_write(5, 0x55);
-    CHECK(shared.r3_h2p.count.load(std::memory_order_relaxed) == 2);
+    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_relaxed)) == 2);
 }
 
 TEST_CASE("TubeHostPort: R3 P-to-H read and consume", "[tube][host_port]") {
@@ -310,7 +310,7 @@ TEST_CASE("TubeHostPort: R3 P-to-H read and consume", "[tube][host_port]") {
     shared.r3_p2h.data[1].store(0x77, std::memory_order_relaxed);
     shared.r3_p2h.head.store(0, std::memory_order_relaxed);
     shared.r3_p2h.tail.store(0, std::memory_order_relaxed);  // wrapped after writing 2
-    shared.r3_p2h.count.store(2, std::memory_order_release);
+    shared.r3_p2h.state.store(TubeReg3::pack(2, true), std::memory_order_release);
 
     // Status: data available
     uint8_t status = port.host_read(4);
@@ -318,11 +318,11 @@ TEST_CASE("TubeHostPort: R3 P-to-H read and consume", "[tube][host_port]") {
 
     // Read first byte (shifts second down)
     CHECK(port.host_read(5) == 0x66);
-    CHECK(shared.r3_p2h.count.load(std::memory_order_relaxed) == 1);
+    CHECK(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_relaxed)) == 1);
 
     // Read second byte
     CHECK(port.host_read(5) == 0x77);
-    CHECK(shared.r3_p2h.count.load(std::memory_order_relaxed) == 0);
+    CHECK(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_relaxed)) == 0);
 }
 
 TEST_CASE("TubeHostPort: R3 status reflects H-to-P space", "[tube][host_port]") {

@@ -90,14 +90,15 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 4: {
         // R3 status (parasite perspective).
-        // Bit 7: R3 H-to-P data available (count >= threshold).
-        // Bit 6: R3 P-to-H space available (count < threshold).
+        // Bit 7: R3 H-to-P data available (pending flag from packed state).
+        // Bit 6: R3 P-to-H space available (no pending P-to-H transfer).
         // Bit 5: N flag -- NMI action required (raw condition, independent of M).
         // Bits 4-0: read as 1 (App Note 004, note 11).
         result = 0x1F;
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+        bool h2p_data = TubeReg3::pending_of(
+            shared_->r3_h2p.state.load(std::memory_order_acquire));
+        bool p2h_space = !TubeReg3::pending_of(
+            shared_->r3_p2h.state.load(std::memory_order_acquire));
         if (h2p_data)
             result |= TubeUla::DATA_AVAILABLE;
         if (p2h_space)
@@ -109,7 +110,8 @@ uint8_t TubeParasitePort::parasite_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from H-to-P register (shift down).
-        uint8_t pre_count = shared_->r3_h2p.count.load(std::memory_order_acquire);
+        uint8_t pre_count = TubeReg3::count_of(
+            shared_->r3_h2p.state.load(std::memory_order_acquire));
         result = dequeue_r3_h2p();
         if (pre_count > 0)
             shared_->counters.r3_h2p_reads.fetch_add(1, std::memory_order_relaxed);
@@ -180,9 +182,10 @@ uint8_t TubeParasitePort::parasite_peek(uint8_t offset) const
         break;
     case 4: {
         result = 0x1F;
-        uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-        bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-        bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+        bool h2p_data = TubeReg3::pending_of(
+            shared_->r3_h2p.state.load(std::memory_order_acquire));
+        bool p2h_space = !TubeReg3::pending_of(
+            shared_->r3_p2h.state.load(std::memory_order_acquire));
         if (h2p_data)
             result |= TubeUla::DATA_AVAILABLE;
         if (p2h_space)
@@ -192,7 +195,8 @@ uint8_t TubeParasitePort::parasite_peek(uint8_t offset) const
         break;
     }
     case 5: {
-        uint8_t count = shared_->r3_h2p.count.load(std::memory_order_acquire);
+        uint8_t count = TubeReg3::count_of(
+            shared_->r3_h2p.state.load(std::memory_order_acquire));
         if (count > 0) {
             uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
             result = shared_->r3_h2p.data[head].load(std::memory_order_acquire);
@@ -310,19 +314,15 @@ bool TubeParasitePort::pnmi_level() const
         return false;
 
     // PNMI fires when M=1 AND either:
-    //   - R3 H-to-P has data available (count >= threshold), OR
-    //   - R3 P-to-H FIFO is empty (count < threshold) -- space available
+    //   - R3 H-to-P has a pending transfer (sticky data available), OR
+    //   - R3 P-to-H has no pending transfer (space available)
     //
-    // This matches jsbeeb (tube.js line 109) and the Tube Application Note:
-    //   "M=1, V=0: 1 or 2 bytes in H-to-P R3 FIFO or 0 bytes in P-to-H R3 FIFO"
-    //   "M=1, V=1: 2 bytes in H-to-P R3 FIFO"
-    //
-    // Note: B-Em only checks H-to-P data, but jsbeeb checks both and works
-    // with CE2023. The Tube Application Note explicitly describes the P-to-H
-    // space condition for 1-byte mode.
-    uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
-    bool h2p_data = shared_->r3_h2p.count.load(std::memory_order_acquire) >= threshold;
-    bool p2h_space = shared_->r3_p2h.count.load(std::memory_order_acquire) < threshold;
+    // Uses the packed pending flags which provide sticky hysteresis,
+    // matching TubeUla::update_interrupts() and reference emulators.
+    bool h2p_data = TubeReg3::pending_of(
+        shared_->r3_h2p.state.load(std::memory_order_acquire));
+    bool p2h_space = !TubeReg3::pending_of(
+        shared_->r3_p2h.state.load(std::memory_order_acquire));
     return h2p_data || p2h_space;
 }
 
@@ -360,7 +360,7 @@ void TubeParasitePort::reset()
     shared_->r3_p2h.data[1].store(0, std::memory_order_relaxed);
     shared_->r3_p2h.head.store(0, std::memory_order_relaxed);
     shared_->r3_p2h.tail.store(1, std::memory_order_relaxed);
-    shared_->r3_p2h.count.store(1, std::memory_order_relaxed);
+    shared_->r3_p2h.state.store(TubeReg3::pack(1, true), std::memory_order_relaxed);
 
     shared_->r4_p2h.value.store(0, std::memory_order_relaxed);
     shared_->r4_p2h.ready.store(0, std::memory_order_relaxed);
@@ -377,7 +377,7 @@ void TubeParasitePort::reset()
     shared_->r3_h2p.data[1].store(0, std::memory_order_relaxed);
     shared_->r3_h2p.head.store(0, std::memory_order_relaxed);
     shared_->r3_h2p.tail.store(0, std::memory_order_relaxed);
-    shared_->r3_h2p.count.store(0, std::memory_order_relaxed);
+    shared_->r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_relaxed);
 
     shared_->r4_h2p.value.store(0, std::memory_order_relaxed);
     shared_->r4_h2p.ready.store(0, std::memory_order_relaxed);
@@ -408,28 +408,57 @@ void TubeParasitePort::enqueue_r1_p2h(uint8_t value)
 
 uint8_t TubeParasitePort::dequeue_r3_h2p()
 {
-    uint8_t count = shared_->r3_h2p.count.load(std::memory_order_acquire);
+    uint16_t old_state = shared_->r3_h2p.state.load(std::memory_order_acquire);
+    uint8_t count = TubeReg3::count_of(old_state);
     if (count == 0)
         return shared_->host_data_latch.load(std::memory_order_relaxed);
 
     uint8_t head = shared_->r3_h2p.head.load(std::memory_order_relaxed);
     uint8_t value = shared_->r3_h2p.data[head].load(std::memory_order_acquire);
     shared_->r3_h2p.head.store(head ^ 1, std::memory_order_relaxed);
-    shared_->r3_h2p.count.fetch_sub(1, std::memory_order_release);
+
+    // CAS to atomically decrement count and clear pending if empty.
+    uint16_t new_state;
+    do {
+        count = TubeReg3::count_of(old_state);
+        uint8_t new_count = count - 1;
+        bool pending = (new_count == 0) ? false : TubeReg3::pending_of(old_state);
+        new_state = TubeReg3::pack(new_count, pending);
+    } while (!shared_->r3_h2p.state.compare_exchange_weak(
+        old_state, new_state, std::memory_order_release, std::memory_order_acquire));
 
     return value;
 }
 
 void TubeParasitePort::enqueue_r3_p2h(uint8_t value)
 {
-    uint8_t count = shared_->r3_p2h.count.load(std::memory_order_acquire);
+    uint16_t old_state = shared_->r3_p2h.state.load(std::memory_order_acquire);
+    uint8_t count = TubeReg3::count_of(old_state);
     if (count >= 2)
         return;
 
     uint8_t tail = shared_->r3_p2h.tail.load(std::memory_order_relaxed);
     shared_->r3_p2h.data[tail].store(value, std::memory_order_relaxed);
     shared_->r3_p2h.tail.store(tail ^ 1, std::memory_order_relaxed);
-    shared_->r3_p2h.count.fetch_add(1, std::memory_order_release);
+
+    // CAS to atomically increment count and set pending if threshold reached.
+    // Note: threshold depends on V flag, but the producer doesn't know V here.
+    // Use threshold=1 as the conservative default (always set pending when
+    // count >= 1). The host reads V when checking status, and the pending
+    // flag being set "too early" is safe -- it just means the host sees
+    // DATA_AVAILABLE before both bytes of a V=1 pair are present, which
+    // matches the TubeUla behaviour (pending is set per-byte in TubeUla too).
+    // Actually, TubeUla sets pending when count >= threshold. We must
+    // replicate that. The V flag is in shared_->control_flags.
+    auto flags = shared_->control_flags.load(std::memory_order_acquire);
+    uint8_t threshold = (flags & TubeUla::FLAG_V) ? 2 : 1;
+    uint16_t new_state;
+    do {
+        uint8_t new_count = TubeReg3::count_of(old_state) + 1;
+        bool pending = TubeReg3::pending_of(old_state) || (new_count >= threshold);
+        new_state = TubeReg3::pack(new_count, pending);
+    } while (!shared_->r3_p2h.state.compare_exchange_weak(
+        old_state, new_state, std::memory_order_release, std::memory_order_acquire));
 }
 
 }  // namespace beebium

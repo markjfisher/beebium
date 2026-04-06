@@ -373,7 +373,7 @@ TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "
     // Now simulate the host depositing data into R3 H-to-P.
     // This makes H-to-P data available, so PNMI goes high.
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
 
     CHECK(port.pnmi_level());
 
@@ -392,7 +392,7 @@ TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "
     // Simulate the NMI handler consuming the R3 data, which deasserts PNMI.
     // Without this, RTI would immediately re-trigger NMI (correct behaviour
     // -- the condition is still asserted).
-    shared.r3_h2p.count.store(0, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
     CHECK_FALSE(port.pnmi_level());
 
     // Run more cycles: the RTI at &F980 returns to the NOP stream.
@@ -421,7 +421,7 @@ TEST_CASE("ParasiteCpu PNMI: not triggered when M flag is clear", "[parasite][cp
 
     // M flag is clear (default). Deposit R3 H-to-P data.
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
 
     // PNMI level should be false (M=0 disables PNMI).
     CHECK_FALSE(port.pnmi_level());
@@ -460,7 +460,7 @@ TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]")
 
     // Now simulate host consuming the dummy byte from P-to-H (decrementing count).
     // This makes P-to-H space available, so PNMI goes high.
-    shared.r3_p2h.count.store(0, std::memory_order_release);
+    shared.r3_p2h.state.store(TubeReg3::pack(0, false), std::memory_order_release);
 
     CHECK(port.pnmi_level());
 
@@ -490,7 +490,7 @@ TEST_CASE("ParasiteCpu PNMI: second edge after level drops and rises", "[parasit
 
     // First NMI: deposit R3 H-to-P data.
     shared.r3_h2p.data[0].store(0x11, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
     CHECK(port.pnmi_level());
 
     // Run enough for NMI + RTI (7 + 6 = 13 cycles, give some margin).
@@ -501,10 +501,10 @@ TEST_CASE("ParasiteCpu PNMI: second edge after level drops and rises", "[parasit
 
     // Simulate parasite consuming the R3 H-to-P data (via a register access
     // in the NMI handler, but here we manipulate shared state directly).
-    shared.r3_h2p.count.store(0, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
 
     // Also make P-to-H occupied so PNMI drops fully.
-    shared.r3_p2h.count.store(1, std::memory_order_release);
+    shared.r3_p2h.state.store(TubeReg3::pack(1, true), std::memory_order_release);
 
     // PNMI level should now be false.
     CHECK_FALSE(port.pnmi_level());
@@ -514,7 +514,7 @@ TEST_CASE("ParasiteCpu PNMI: second edge after level drops and rises", "[parasit
 
     // Second NMI: deposit new R3 H-to-P data.
     shared.r3_h2p.data[0].store(0x22, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
     CHECK(port.pnmi_level());
 
     // Run -- second NMI should fire.
@@ -543,7 +543,7 @@ TEST_CASE("ParasiteCpu PNMI: NMI cannot be masked by SEI", "[parasite][cpu][nmi]
 
     // Trigger PNMI.
     shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.count.store(1, std::memory_order_release);
+    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
 
     // Run -- NMI should fire despite SEI (NMI is non-maskable).
     cpu.run(20);

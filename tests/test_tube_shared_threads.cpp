@@ -67,14 +67,22 @@ bool parasite_enqueue_r1(TubeFifo24& fifo, uint8_t value) {
 // Parasite writes to R3 P-to-H register.
 // Returns true if written, false if full.
 bool parasite_write_r3(TubeReg3& reg, uint8_t value) {
-    uint8_t count = reg.count.load(std::memory_order_acquire);
+    uint16_t old_state = reg.state.load(std::memory_order_acquire);
+    uint8_t count = TubeReg3::count_of(old_state);
     if (count >= 2)
         return false;
 
     uint8_t tail = reg.tail.load(std::memory_order_relaxed);
     reg.data[tail].store(value, std::memory_order_relaxed);
     reg.tail.store(tail ^ 1, std::memory_order_relaxed);
-    reg.count.fetch_add(1, std::memory_order_release);
+
+    // CAS to atomically increment count and set pending.
+    uint16_t new_state;
+    do {
+        uint8_t new_count = TubeReg3::count_of(old_state) + 1;
+        new_state = TubeReg3::pack(new_count, true);
+    } while (!reg.state.compare_exchange_weak(
+        old_state, new_state, std::memory_order_release, std::memory_order_acquire));
     return true;
 }
 
@@ -499,7 +507,7 @@ TEST_CASE("TubeShared cross-thread: R3 two-byte transfer from parasite to host",
     host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
 
     // Clear the R3 P-to-H dummy byte from init
-    shared.r3_p2h.count.store(0, std::memory_order_release);
+    shared.r3_p2h.state.store(TubeReg3::pack(0, false), std::memory_order_release);
 
     std::atomic<bool> parasite_written{false};
 
@@ -522,7 +530,7 @@ TEST_CASE("TubeShared cross-thread: R3 two-byte transfer from parasite to host",
     CHECK(host.host_read(5) == 0xBB);
 
     // Count should be zero, data no longer available
-    CHECK(shared.r3_p2h.count.load(std::memory_order_acquire) == 0);
+    CHECK(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_acquire)) == 0);
     status = host.host_read(4);
     CHECK((status & TubeUla::DATA_AVAILABLE) == 0);
 }

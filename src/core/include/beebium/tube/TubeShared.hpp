@@ -55,15 +55,39 @@ struct TubeFifo24 {
 // 2-slot circular buffer (R3 in each direction).
 // Supports 1-byte or 2-byte transfer mode (selected by V flag).
 // Producer writes at data[tail], consumer reads from data[head].
-// Count uses fetch_add/fetch_sub for safe cross-process access.
-// Data availability is derived from count >= threshold; there is no separate
-// pending flag because it cannot be kept consistent with count across processes
-// without an atomic coupling mechanism.
+//
+// Count and a "pending" (data-available) flag are packed into a single
+// std::atomic<uint16_t> and updated via CAS. This provides the sticky
+// status flag hysteresis described in the Tube Application Note and
+// implemented by reference emulators (B-em, BeebEm, B2):
+//
+//   - pending is SET when count reaches threshold after a producer write
+//   - pending is CLEARED when count reaches 0 after a consumer read
+//   - pending remains SET while count is between 0 and threshold
+//     (e.g., after reading byte 1 of a 2-byte V=1 transfer)
+//
+// Status reads use the pending flag rather than recomputing from count,
+// preventing the transient false-empty condition that occurs when count
+// is decremented from threshold to threshold-1.
 struct TubeReg3 {
     std::array<std::atomic<uint8_t>, 2> data{};
     std::atomic<uint8_t> head{0};     // consumer read index (0 or 1)
     std::atomic<uint8_t> tail{0};     // producer write index (0 or 1)
-    std::atomic<uint8_t> count{0};    // shared; use fetch_add/fetch_sub
+
+    // Packed: low byte = count (0-2), high byte = pending flag (0 or 1).
+    std::atomic<uint16_t> state{0};
+
+    // Pack helpers.
+    static constexpr uint16_t pack(uint8_t count, bool pending) {
+        return static_cast<uint16_t>(count)
+             | (static_cast<uint16_t>(pending ? 1 : 0) << 8);
+    }
+    static constexpr uint8_t count_of(uint16_t s) {
+        return static_cast<uint8_t>(s & 0xFF);
+    }
+    static constexpr bool pending_of(uint16_t s) {
+        return (s >> 8) != 0;
+    }
 };
 
 // Per-register transfer counters for diagnostics.
@@ -201,7 +225,7 @@ struct alignas(64) TubeShared {
         r3_h2p.data[1].store(0, std::memory_order_relaxed);
         r3_h2p.head.store(0, std::memory_order_relaxed);
         r3_h2p.tail.store(0, std::memory_order_relaxed);
-        r3_h2p.count.store(0, std::memory_order_relaxed);
+        r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_relaxed);
         r4_h2p.value.store(0, std::memory_order_relaxed);
         r4_h2p.ready.store(0, std::memory_order_relaxed);
 
@@ -215,7 +239,7 @@ struct alignas(64) TubeShared {
         r3_p2h.data[1].store(0, std::memory_order_relaxed);
         r3_p2h.head.store(0, std::memory_order_relaxed);
         r3_p2h.tail.store(0, std::memory_order_relaxed);
-        r3_p2h.count.store(0, std::memory_order_relaxed);
+        r3_p2h.state.store(TubeReg3::pack(0, false), std::memory_order_relaxed);
         r4_p2h.value.store(0, std::memory_order_relaxed);
         r4_p2h.ready.store(0, std::memory_order_relaxed);
 
