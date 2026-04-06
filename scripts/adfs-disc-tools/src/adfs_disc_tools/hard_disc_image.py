@@ -10,23 +10,22 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Extract blank pre-formatted ADFS hard disc images for testing.
+"""Extract blank pre-formatted ADFS hard disc images.
 
 The images come from Jon Ripley's BBC Micro Hard Drives page:
 https://jonripley.com/8bit/HardDrives/
 
 The archive BBCHDDs.zip contains nested zip files, each holding a single
-.adl image. This module extracts a specific size, renames it to .dat,
+.adl image. This module extracts a specific size, writes it as .dat,
 and synthesises a .dsc geometry sidecar file.
 """
 
 from __future__ import annotations
 
+import importlib.resources
 import io
 import zipfile
 from pathlib import Path
-
-BLANK_IMAGES_ZIP = Path(__file__).parent.parent.parent.parent.parent / "tests" / "assets" / "scsi" / "BBCHDDs.zip"
 
 SECTORS_PER_TRACK = 33
 SECTOR_SIZE = 256
@@ -34,6 +33,11 @@ SECTOR_SIZE = 256
 # Available sizes in the archive (MB)
 AVAILABLE_SIZES_MB = [2, 4, 8, 16, 20, 24, 32, 40, 48, 56, 64, 80, 96,
                       100, 128, 192, 200, 256, 300, 320, 400, 512]
+
+
+def _blank_images_zip() -> Path:
+    """Return the path to the bundled BBCHDDs.zip archive."""
+    return importlib.resources.files("adfs_disc_tools.data").joinpath("BBCHDDs.zip")
 
 
 def extract_blank_adfs_image(dest_filepath: Path, size_mb: int = 2) -> Path:
@@ -61,8 +65,10 @@ def extract_blank_adfs_image(dest_filepath: Path, size_mb: int = 2) -> Path:
     inner_zip_name = f"{size_mb}MbHDD.zip"
     adl_name = f"{size_mb}MbHDD.adl"
 
+    blank_images_zip_filepath = _blank_images_zip()
+
     # Extract inner zip from outer archive, then extract .adl from inner zip
-    with zipfile.ZipFile(BLANK_IMAGES_ZIP) as outer_zf:
+    with zipfile.ZipFile(blank_images_zip_filepath) as outer_zf:
         inner_zip_data = outer_zf.read(inner_zip_name)
 
     with zipfile.ZipFile(io.BytesIO(inner_zip_data)) as inner_zf:

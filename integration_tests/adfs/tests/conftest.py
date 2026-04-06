@@ -33,7 +33,7 @@ from beebium.screen import screen_contains, dump_screen
 
 from adfs_test_support.basictool import build_basictool, tokenise
 from adfs_test_support.disc_builder import build_test_disc
-from adfs_test_support.hard_disc_image import extract_blank_adfs_image
+from adfs_disc_tools import extract_blank_adfs_image
 
 
 # ---- Session-scope fixtures ----
