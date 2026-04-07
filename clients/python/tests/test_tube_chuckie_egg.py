@@ -121,7 +121,7 @@ def bbc_tube(
             basic_filepath=basic_filepath,
             server_filepath=beebium_server_filepath,
             extra_args=[
-                "--tube", "65C02-3MHz",
+                "--tube-65c02",
                 "--fdc", "acorn-1770",
                 "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
             ],

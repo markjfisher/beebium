@@ -1197,6 +1197,1162 @@ class DebuggerControl(object):
             _registered_method=True)
 
 
+class ParasiteDebuggerControlStub(object):
+    """Parasite (second processor) debugger service.
+    Same RPCs as DebuggerControl but registered under a distinct service name
+    so both can coexist on the same gRPC server.
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetState = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/GetState',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ExecutionState.FromString,
+                _registered_method=True)
+        self.Run = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/Run',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.RunResponse.FromString,
+                _registered_method=True)
+        self.Stop = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/Stop',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.StopResponse.FromString,
+                _registered_method=True)
+        self.Reset = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/Reset',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ResetResponse.FromString,
+                _registered_method=True)
+        self.StepInstruction = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/StepInstruction',
+                request_serializer=debugger__pb2.StepRequest.SerializeToString,
+                response_deserializer=debugger__pb2.StepResponse.FromString,
+                _registered_method=True)
+        self.StepCycle = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/StepCycle',
+                request_serializer=debugger__pb2.StepRequest.SerializeToString,
+                response_deserializer=debugger__pb2.StepResponse.FromString,
+                _registered_method=True)
+        self.WatchExecutionState = channel.unary_stream(
+                '/beebium.ParasiteDebuggerControl/WatchExecutionState',
+                request_serializer=debugger__pb2.WatchExecutionStateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.ExecutionStateEvent.FromString,
+                _registered_method=True)
+        self.ReadMemory = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ReadMemory',
+                request_serializer=debugger__pb2.ReadMemoryRequest.SerializeToString,
+                response_deserializer=debugger__pb2.ReadMemoryResponse.FromString,
+                _registered_method=True)
+        self.WriteMemory = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/WriteMemory',
+                request_serializer=debugger__pb2.WriteMemoryRequest.SerializeToString,
+                response_deserializer=debugger__pb2.WriteMemoryResponse.FromString,
+                _registered_method=True)
+        self.PeekMemory = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/PeekMemory',
+                request_serializer=debugger__pb2.PeekMemoryRequest.SerializeToString,
+                response_deserializer=debugger__pb2.PeekMemoryResponse.FromString,
+                _registered_method=True)
+        self.GetMemoryRegions = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/GetMemoryRegions',
+                request_serializer=debugger__pb2.GetMemoryRegionsRequest.SerializeToString,
+                response_deserializer=debugger__pb2.GetMemoryRegionsResponse.FromString,
+                _registered_method=True)
+        self.PeekRegion = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/PeekRegion',
+                request_serializer=debugger__pb2.RegionAccessRequest.SerializeToString,
+                response_deserializer=debugger__pb2.RegionAccessResponse.FromString,
+                _registered_method=True)
+        self.ReadRegion = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ReadRegion',
+                request_serializer=debugger__pb2.RegionAccessRequest.SerializeToString,
+                response_deserializer=debugger__pb2.RegionAccessResponse.FromString,
+                _registered_method=True)
+        self.WriteRegion = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/WriteRegion',
+                request_serializer=debugger__pb2.WriteRegionRequest.SerializeToString,
+                response_deserializer=debugger__pb2.WriteRegionResponse.FromString,
+                _registered_method=True)
+        self.AddBreakpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/AddBreakpoint',
+                request_serializer=debugger__pb2.AddBreakpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.AddBreakpointResponse.FromString,
+                _registered_method=True)
+        self.RemoveBreakpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/RemoveBreakpoint',
+                request_serializer=debugger__pb2.RemoveBreakpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.RemoveBreakpointResponse.FromString,
+                _registered_method=True)
+        self.EnableBreakpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/EnableBreakpoint',
+                request_serializer=debugger__pb2.EnableBreakpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.EnableBreakpointResponse.FromString,
+                _registered_method=True)
+        self.ListBreakpoints = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ListBreakpoints',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ListBreakpointsResponse.FromString,
+                _registered_method=True)
+        self.ClearBreakpoints = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ClearBreakpoints',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ClearBreakpointsResponse.FromString,
+                _registered_method=True)
+        self.AddWatchpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/AddWatchpoint',
+                request_serializer=debugger__pb2.AddWatchpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.AddWatchpointResponse.FromString,
+                _registered_method=True)
+        self.RemoveWatchpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/RemoveWatchpoint',
+                request_serializer=debugger__pb2.RemoveWatchpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.RemoveWatchpointResponse.FromString,
+                _registered_method=True)
+        self.EnableWatchpoint = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/EnableWatchpoint',
+                request_serializer=debugger__pb2.EnableWatchpointRequest.SerializeToString,
+                response_deserializer=debugger__pb2.EnableWatchpointResponse.FromString,
+                _registered_method=True)
+        self.ListWatchpoints = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ListWatchpoints',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ListWatchpointsResponse.FromString,
+                _registered_method=True)
+        self.ClearWatchpoints = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/ClearWatchpoints',
+                request_serializer=debugger__pb2.Empty.SerializeToString,
+                response_deserializer=debugger__pb2.ClearWatchpointsResponse.FromString,
+                _registered_method=True)
+        self.Get6502State = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/Get6502State',
+                request_serializer=debugger__pb2.Get6502StateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.Cpu6502State.FromString,
+                _registered_method=True)
+        self.Set6502State = channel.unary_unary(
+                '/beebium.ParasiteDebuggerControl/Set6502State',
+                request_serializer=debugger__pb2.Set6502StateRequest.SerializeToString,
+                response_deserializer=debugger__pb2.Set6502StateResponse.FromString,
+                _registered_method=True)
+
+
+class ParasiteDebuggerControlServicer(object):
+    """Parasite (second processor) debugger service.
+    Same RPCs as DebuggerControl but registered under a distinct service name
+    so both can coexist on the same gRPC server.
+    """
+
+    def GetState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Run(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Stop(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Reset(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StepInstruction(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StepCycle(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WatchExecutionState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WriteMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PeekMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetMemoryRegions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PeekRegion(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadRegion(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WriteRegion(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddBreakpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveBreakpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EnableBreakpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListBreakpoints(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ClearBreakpoints(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddWatchpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveWatchpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EnableWatchpoint(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListWatchpoints(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ClearWatchpoints(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Get6502State(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Set6502State(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_ParasiteDebuggerControlServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetState,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ExecutionState.SerializeToString,
+            ),
+            'Run': grpc.unary_unary_rpc_method_handler(
+                    servicer.Run,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.RunResponse.SerializeToString,
+            ),
+            'Stop': grpc.unary_unary_rpc_method_handler(
+                    servicer.Stop,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.StopResponse.SerializeToString,
+            ),
+            'Reset': grpc.unary_unary_rpc_method_handler(
+                    servicer.Reset,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ResetResponse.SerializeToString,
+            ),
+            'StepInstruction': grpc.unary_unary_rpc_method_handler(
+                    servicer.StepInstruction,
+                    request_deserializer=debugger__pb2.StepRequest.FromString,
+                    response_serializer=debugger__pb2.StepResponse.SerializeToString,
+            ),
+            'StepCycle': grpc.unary_unary_rpc_method_handler(
+                    servicer.StepCycle,
+                    request_deserializer=debugger__pb2.StepRequest.FromString,
+                    response_serializer=debugger__pb2.StepResponse.SerializeToString,
+            ),
+            'WatchExecutionState': grpc.unary_stream_rpc_method_handler(
+                    servicer.WatchExecutionState,
+                    request_deserializer=debugger__pb2.WatchExecutionStateRequest.FromString,
+                    response_serializer=debugger__pb2.ExecutionStateEvent.SerializeToString,
+            ),
+            'ReadMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadMemory,
+                    request_deserializer=debugger__pb2.ReadMemoryRequest.FromString,
+                    response_serializer=debugger__pb2.ReadMemoryResponse.SerializeToString,
+            ),
+            'WriteMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.WriteMemory,
+                    request_deserializer=debugger__pb2.WriteMemoryRequest.FromString,
+                    response_serializer=debugger__pb2.WriteMemoryResponse.SerializeToString,
+            ),
+            'PeekMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.PeekMemory,
+                    request_deserializer=debugger__pb2.PeekMemoryRequest.FromString,
+                    response_serializer=debugger__pb2.PeekMemoryResponse.SerializeToString,
+            ),
+            'GetMemoryRegions': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMemoryRegions,
+                    request_deserializer=debugger__pb2.GetMemoryRegionsRequest.FromString,
+                    response_serializer=debugger__pb2.GetMemoryRegionsResponse.SerializeToString,
+            ),
+            'PeekRegion': grpc.unary_unary_rpc_method_handler(
+                    servicer.PeekRegion,
+                    request_deserializer=debugger__pb2.RegionAccessRequest.FromString,
+                    response_serializer=debugger__pb2.RegionAccessResponse.SerializeToString,
+            ),
+            'ReadRegion': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadRegion,
+                    request_deserializer=debugger__pb2.RegionAccessRequest.FromString,
+                    response_serializer=debugger__pb2.RegionAccessResponse.SerializeToString,
+            ),
+            'WriteRegion': grpc.unary_unary_rpc_method_handler(
+                    servicer.WriteRegion,
+                    request_deserializer=debugger__pb2.WriteRegionRequest.FromString,
+                    response_serializer=debugger__pb2.WriteRegionResponse.SerializeToString,
+            ),
+            'AddBreakpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddBreakpoint,
+                    request_deserializer=debugger__pb2.AddBreakpointRequest.FromString,
+                    response_serializer=debugger__pb2.AddBreakpointResponse.SerializeToString,
+            ),
+            'RemoveBreakpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveBreakpoint,
+                    request_deserializer=debugger__pb2.RemoveBreakpointRequest.FromString,
+                    response_serializer=debugger__pb2.RemoveBreakpointResponse.SerializeToString,
+            ),
+            'EnableBreakpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnableBreakpoint,
+                    request_deserializer=debugger__pb2.EnableBreakpointRequest.FromString,
+                    response_serializer=debugger__pb2.EnableBreakpointResponse.SerializeToString,
+            ),
+            'ListBreakpoints': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListBreakpoints,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ListBreakpointsResponse.SerializeToString,
+            ),
+            'ClearBreakpoints': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClearBreakpoints,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ClearBreakpointsResponse.SerializeToString,
+            ),
+            'AddWatchpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddWatchpoint,
+                    request_deserializer=debugger__pb2.AddWatchpointRequest.FromString,
+                    response_serializer=debugger__pb2.AddWatchpointResponse.SerializeToString,
+            ),
+            'RemoveWatchpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveWatchpoint,
+                    request_deserializer=debugger__pb2.RemoveWatchpointRequest.FromString,
+                    response_serializer=debugger__pb2.RemoveWatchpointResponse.SerializeToString,
+            ),
+            'EnableWatchpoint': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnableWatchpoint,
+                    request_deserializer=debugger__pb2.EnableWatchpointRequest.FromString,
+                    response_serializer=debugger__pb2.EnableWatchpointResponse.SerializeToString,
+            ),
+            'ListWatchpoints': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListWatchpoints,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ListWatchpointsResponse.SerializeToString,
+            ),
+            'ClearWatchpoints': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClearWatchpoints,
+                    request_deserializer=debugger__pb2.Empty.FromString,
+                    response_serializer=debugger__pb2.ClearWatchpointsResponse.SerializeToString,
+            ),
+            'Get6502State': grpc.unary_unary_rpc_method_handler(
+                    servicer.Get6502State,
+                    request_deserializer=debugger__pb2.Get6502StateRequest.FromString,
+                    response_serializer=debugger__pb2.Cpu6502State.SerializeToString,
+            ),
+            'Set6502State': grpc.unary_unary_rpc_method_handler(
+                    servicer.Set6502State,
+                    request_deserializer=debugger__pb2.Set6502StateRequest.FromString,
+                    response_serializer=debugger__pb2.Set6502StateResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'beebium.ParasiteDebuggerControl', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('beebium.ParasiteDebuggerControl', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class ParasiteDebuggerControl(object):
+    """Parasite (second processor) debugger service.
+    Same RPCs as DebuggerControl but registered under a distinct service name
+    so both can coexist on the same gRPC server.
+    """
+
+    @staticmethod
+    def GetState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/GetState',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ExecutionState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Run(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/Run',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.RunResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Stop(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/Stop',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.StopResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Reset(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/Reset',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ResetResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StepInstruction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/StepInstruction',
+            debugger__pb2.StepRequest.SerializeToString,
+            debugger__pb2.StepResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StepCycle(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/StepCycle',
+            debugger__pb2.StepRequest.SerializeToString,
+            debugger__pb2.StepResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WatchExecutionState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/WatchExecutionState',
+            debugger__pb2.WatchExecutionStateRequest.SerializeToString,
+            debugger__pb2.ExecutionStateEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ReadMemory',
+            debugger__pb2.ReadMemoryRequest.SerializeToString,
+            debugger__pb2.ReadMemoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WriteMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/WriteMemory',
+            debugger__pb2.WriteMemoryRequest.SerializeToString,
+            debugger__pb2.WriteMemoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PeekMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/PeekMemory',
+            debugger__pb2.PeekMemoryRequest.SerializeToString,
+            debugger__pb2.PeekMemoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMemoryRegions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/GetMemoryRegions',
+            debugger__pb2.GetMemoryRegionsRequest.SerializeToString,
+            debugger__pb2.GetMemoryRegionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PeekRegion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/PeekRegion',
+            debugger__pb2.RegionAccessRequest.SerializeToString,
+            debugger__pb2.RegionAccessResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadRegion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ReadRegion',
+            debugger__pb2.RegionAccessRequest.SerializeToString,
+            debugger__pb2.RegionAccessResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WriteRegion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/WriteRegion',
+            debugger__pb2.WriteRegionRequest.SerializeToString,
+            debugger__pb2.WriteRegionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddBreakpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/AddBreakpoint',
+            debugger__pb2.AddBreakpointRequest.SerializeToString,
+            debugger__pb2.AddBreakpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveBreakpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/RemoveBreakpoint',
+            debugger__pb2.RemoveBreakpointRequest.SerializeToString,
+            debugger__pb2.RemoveBreakpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnableBreakpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/EnableBreakpoint',
+            debugger__pb2.EnableBreakpointRequest.SerializeToString,
+            debugger__pb2.EnableBreakpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListBreakpoints(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ListBreakpoints',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ListBreakpointsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClearBreakpoints(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ClearBreakpoints',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ClearBreakpointsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddWatchpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/AddWatchpoint',
+            debugger__pb2.AddWatchpointRequest.SerializeToString,
+            debugger__pb2.AddWatchpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveWatchpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/RemoveWatchpoint',
+            debugger__pb2.RemoveWatchpointRequest.SerializeToString,
+            debugger__pb2.RemoveWatchpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnableWatchpoint(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/EnableWatchpoint',
+            debugger__pb2.EnableWatchpointRequest.SerializeToString,
+            debugger__pb2.EnableWatchpointResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListWatchpoints(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ListWatchpoints',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ListWatchpointsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClearWatchpoints(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/ClearWatchpoints',
+            debugger__pb2.Empty.SerializeToString,
+            debugger__pb2.ClearWatchpointsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Get6502State(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/Get6502State',
+            debugger__pb2.Get6502StateRequest.SerializeToString,
+            debugger__pb2.Cpu6502State.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Set6502State(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.ParasiteDebuggerControl/Set6502State',
+            debugger__pb2.Set6502StateRequest.SerializeToString,
+            debugger__pb2.Set6502StateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class DeviceInspectionStub(object):
     """BBC Micro device state inspection.
     Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.

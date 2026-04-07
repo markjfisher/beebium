@@ -12,7 +12,7 @@
 
 """Integration tests for booting 6502 Second Processor Elite via the Tube.
 
-These tests launch a Beebium server with --tube 65C02-3MHz, insert the
+These tests launch a Beebium server with --tube-65c02, insert the
 6502 Second Processor Elite disc, and attempt to boot it. The goal is to
 exercise the full Tube data transfer pipeline under real workload.
 
@@ -99,7 +99,7 @@ def bbc_tube(
             basic_filepath=basic_filepath,
             server_filepath=beebium_server_filepath,
             extra_args=[
-                "--tube", "65C02-3MHz",
+                "--tube-65c02",
                 "--fdc", "acorn-1770",
                 "--sideways", f"14:rom:{dfs_1770_rom_filepath}",
             ],

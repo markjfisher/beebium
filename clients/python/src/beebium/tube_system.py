@@ -10,10 +10,10 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Coupled system abstraction for host-parasite debugging.
+"""Tube system abstraction for host-parasite debugging.
 
-Manages both host and parasite as a single unit, hiding the complexity
-of bus-stretch cancellation, pacing asymmetry, and stop ordering.
+Manages both host and parasite as a single unit for coordinated
+execution control, breakpointing, and predicate-based stopping.
 """
 
 from __future__ import annotations
@@ -45,28 +45,28 @@ class TubeSystem:
         system = TubeSystem.from_host(bbc)
     """
 
-    def __init__(self, host: Beebium, parasite: Beebium, *, owns_parasite: bool = False):
-        """Create a coupled system from existing host and parasite clients.
+    def __init__(self, host: Beebium, parasite: Beebium):
+        """Create a Tube system from existing host and parasite clients.
 
         Args:
             host: The host BBC Micro client.
             parasite: The parasite (second processor) client.
-            owns_parasite: If True, close the parasite on ``close()``.
         """
         self._host = host
         self._parasite = parasite
-        self._owns_parasite = owns_parasite
 
     @classmethod
-    def from_host(cls, host: Beebium, timeout: float = 5.0) -> TubeSystem:
-        """Create a coupled system by discovering the parasite from the host.
+    def from_host(cls, host: Beebium) -> TubeSystem:
+        """Create a Tube system from the host.
+
+        The parasite client shares the same gRPC connection as the host,
+        routing debugger calls to the ParasiteDebuggerControl service.
 
         Args:
             host: The host BBC Micro client.
-            timeout: Connection timeout for the parasite.
         """
-        parasite = host.connect_parasite(timeout=timeout)
-        return cls(host, parasite, owns_parasite=True)
+        parasite = host.connect_parasite()
+        return cls(host, parasite)
 
     @property
     def host(self) -> Beebium:
@@ -82,11 +82,7 @@ class TubeSystem:
         self._parasite.debugger.ensure_running()
 
     def stop(self) -> None:
-        """Stop both processors (bus-stretch safe).
-
-        Stopping either side breaks the other out of any bus-stretch
-        spin-wait via the bus_stretch_cancel flag in TubeShared.
-        """
+        """Stop both processors."""
         self._host.debugger.ensure_stopped()
         self._parasite.debugger.ensure_stopped()
 
@@ -174,11 +170,9 @@ class TubeSystem:
             self.stop()
 
     def close(self) -> None:
-        """Close the coupled system, stopping both processors.
+        """Close the Tube system, stopping both processors.
 
-        If the parasite was auto-discovered (``owns_parasite=True``),
-        it is closed. The host is not closed.
+        The host is not closed (the caller owns it). The parasite
+        shares the host's connection and does not need separate cleanup.
         """
         self.stop()
-        if self._owns_parasite:
-            self._parasite.close()

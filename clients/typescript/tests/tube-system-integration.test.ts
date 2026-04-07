@@ -33,7 +33,7 @@ afterEach(async () => {
 async function launchTubeServer(): Promise<Beebium> {
     const host = await Beebium.launch({
         args: [
-            "--tube", "65C02-3MHz",
+            "--tube-65c02",
             "--fdc", "acorn-1770",
             "--sideways", `14:rom:${DFS_ROM_FILEPATH}`,
         ],
