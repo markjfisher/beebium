@@ -609,6 +609,20 @@ target_compile_definitions(test_tube_inprocess PRIVATE
 )
 catch_discover_tests(test_tube_inprocess)
 
+# Tube 65C02 coprocessor extension tests
+add_executable(test_tube_extension test_tube_extension.cpp)
+target_include_directories(test_tube_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/acorn-65c02-coprocessor
+)
+target_link_libraries(test_tube_extension PRIVATE
+    beebium_ext_acorn_65c02
+    Catch2::Catch2WithMain
+)
+target_compile_definitions(test_tube_extension PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_tube_extension)
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
