@@ -12,6 +12,8 @@
 
 #include <beebium/tube/TubeUla.hpp>
 
+#include <thread>
+
 namespace beebium {
 
 TubeUla::TubeUla()
@@ -23,8 +25,6 @@ void TubeUla::reset()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     control_flags_ = 0;
-    stretched_ = false;
-    pending_write_ = false;
     soft_reset();
 }
 
@@ -62,10 +62,6 @@ void TubeUla::soft_reset()
     r4_.p2h_data = 0;
     r4_.p2h_available = false;
     r4_.p2h_full = false;
-
-    // Bus stretching state.
-    stretched_ = false;
-    pending_write_ = false;
 
     // Interrupt state.
     hirq_.store(false, std::memory_order_relaxed);
@@ -306,7 +302,7 @@ uint8_t TubeUla::parasite_peek(uint8_t offset) const
 
 void TubeUla::host_write(uint8_t offset, uint8_t value)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     switch (offset & 7) {
     case 0: {
         // Control flag register.
@@ -327,15 +323,13 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
 
     case 1: {
         // R1 data: write to H-to-P latch.
-        // Bus stretching: if the latch is full (parasite hasn't read the
-        // previous byte), the real Tube ULA halts the host CPU. We buffer
-        // the write and set stretched_.
-        if (r1_.h2p_full) {
-            stretched_ = true;
-            pending_write_ = true;
-            pending_write_offset_ = offset;
-            pending_write_value_ = value;
-            return;
+        // Bus stretching: if the latch is full, spin-wait for the parasite
+        // thread to drain it. Release the mutex while waiting so the
+        // parasite can call parasite_read().
+        while (r1_.h2p_full) {
+            lock.unlock();
+            std::this_thread::yield();
+            lock.lock();
         }
         r1_.h2p_data = value;
         r1_.h2p_available = true;
@@ -362,14 +356,11 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
 
     case 5: {
         // R3 data: write to H-to-P FIFO.
-        // Bus stretching: if the 2-byte FIFO is physically full, the real
-        // Tube ULA halts the host CPU. We buffer the write and set stretched_.
-        if (r3_.h2p_count >= 2) {
-            stretched_ = true;
-            pending_write_ = true;
-            pending_write_offset_ = offset;
-            pending_write_value_ = value;
-            return;
+        // Bus stretching: if the 2-byte FIFO is full, spin-wait.
+        while (r3_.h2p_count >= 2) {
+            lock.unlock();
+            std::this_thread::yield();
+            lock.lock();
         }
         r3_.h2p_data[r3_.h2p_count] = value;
         r3_.h2p_count++;
@@ -386,12 +377,10 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
     case 7: {
         // R4 data: write to H-to-P latch.
         // Bus stretching: same as R1.
-        if (r4_.h2p_full) {
-            stretched_ = true;
-            pending_write_ = true;
-            pending_write_offset_ = offset;
-            pending_write_value_ = value;
-            return;
+        while (r4_.h2p_full) {
+            lock.unlock();
+            std::this_thread::yield();
+            lock.lock();
         }
         r4_.h2p_data = value;
         r4_.h2p_available = true;
@@ -516,10 +505,6 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
     }
 
     // If the host is stretched on a pending write, check whether draining
-    // this register allows the pending write to complete.
-    if (pending_write_)
-        try_complete_pending_write();
-
     update_interrupts();
     return result;
 }
@@ -584,50 +569,6 @@ void TubeUla::parasite_write(uint8_t offset, uint8_t value)
     }
 
     update_interrupts();
-}
-
-// ---------------------------------------------------------------------------
-// Bus stretching: pending write completion
-// ---------------------------------------------------------------------------
-
-void TubeUla::try_complete_pending_write()
-{
-    switch (pending_write_offset_ & 7) {
-    case 1:
-        if (!r1_.h2p_full) {
-            r1_.h2p_data = pending_write_value_;
-            r1_.h2p_available = true;
-            r1_.h2p_full = true;
-            pending_write_ = false;
-            stretched_ = false;
-        }
-        break;
-    case 5:
-        if (r3_.h2p_count < 2) {
-            r3_.h2p_data[r3_.h2p_count] = pending_write_value_;
-            r3_.h2p_count++;
-            uint8_t threshold = (control_flags_ & FLAG_V) ? 2 : 1;
-            if (r3_.h2p_count >= threshold)
-                r3_.h2p_pending = true;
-            pending_write_ = false;
-            stretched_ = false;
-        }
-        break;
-    case 7:
-        if (!r4_.h2p_full) {
-            r4_.h2p_data = pending_write_value_;
-            r4_.h2p_available = true;
-            r4_.h2p_full = true;
-            pending_write_ = false;
-            stretched_ = false;
-        }
-        break;
-    default:
-        // Should not happen -- only R1, R3, R4 can stretch.
-        pending_write_ = false;
-        stretched_ = false;
-        break;
-    }
 }
 
 // ---------------------------------------------------------------------------

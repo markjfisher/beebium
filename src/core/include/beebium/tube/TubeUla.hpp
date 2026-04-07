@@ -89,9 +89,9 @@ public:
     // Test whether the parasite reset line is currently asserted.
     bool parasite_reset_active() const { return (control_flags_ & FLAG_P) != 0; }
 
-    // Bus stretching: returns true if the last host access could not complete
-    // because the register was full (write) or empty (read).
-    bool stretched() const override { return stretched_; }
+    // Bus stretching: host_write spin-waits when a register is full, so
+    // stretched() always returns false (the write completes before returning).
+    bool stretched() const override { return false; }
 
     // Access the NMI edge detector state (parasite-local).
     bool prev_pnmi() const { return prev_pnmi_; }
@@ -162,20 +162,6 @@ private:
         bool p2h_full = false;
     } r4_;
 
-    // Bus stretching state.
-    //
-    // When the host writes to a full H-to-P register (R1, R3, R4) the real
-    // Tube ULA halts the host CPU until the parasite drains the register.
-    // In this in-process model the write is buffered and stretched_ is set.
-    // The pending write completes automatically when the parasite reads the
-    // blocked register.
-    bool stretched_ = false;
-    bool pending_write_ = false;
-    uint8_t pending_write_offset_ = 0;
-    uint8_t pending_write_value_ = 0;
-
-    // Try to complete a pending write after the parasite drains a register.
-    void try_complete_pending_write();
 
     // Interrupt output state. Cached as atomics so hirq()/pirq()/pnmi()
     // can be polled from another thread without acquiring the mutex.
