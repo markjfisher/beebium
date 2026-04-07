@@ -70,7 +70,7 @@ void TubeUla::soft_reset()
     hirq_.store(false, std::memory_order_relaxed);
     pirq_.store(false, std::memory_order_relaxed);
     pnmi_level_.store(false, std::memory_order_relaxed);
-    prev_pnmi_ = false;
+    prev_pnmi_.store(false, std::memory_order_relaxed);
     pnmi_edge_.store(false, std::memory_order_relaxed);
 
     // Release fence so all relaxed stores are visible.
@@ -637,14 +637,15 @@ void TubeUla::update_interrupts()
     }
 
     // Edge detection: fire on 0-to-1 transition.
-    if (new_pnmi && !prev_pnmi_)
+    bool prev = prev_pnmi_.load(std::memory_order_acquire);
+    if (new_pnmi && !prev)
         pnmi_edge_.store(true, std::memory_order_release);
 
     // Clear edge when the level drops (cause removed).
     if (!new_pnmi)
         pnmi_edge_.store(false, std::memory_order_release);
 
-    prev_pnmi_ = new_pnmi;
+    prev_pnmi_.store(new_pnmi, std::memory_order_release);
     pnmi_level_.store(new_pnmi, std::memory_order_release);
 }
 

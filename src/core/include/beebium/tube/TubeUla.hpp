@@ -98,7 +98,7 @@ public:
     bool stretched() const override { return false; }
 
     // Access the NMI edge detector state (parasite-local).
-    bool prev_pnmi() const { return prev_pnmi_; }
+    bool prev_pnmi() const { return prev_pnmi_.load(std::memory_order_acquire); }
 
 private:
     // Soft reset (T flag) -- clears all register data but preserves control flags.
@@ -172,7 +172,7 @@ private:
     std::atomic<bool> hirq_{false};
     std::atomic<bool> pirq_{false};
     std::atomic<bool> pnmi_level_{false};
-    bool prev_pnmi_ = false;   // parasite-local, only accessed from parasite thread
+    std::atomic<bool> prev_pnmi_{false};  // PNMI edge detector state
     std::atomic<bool> pnmi_edge_{false};
 };
 
