@@ -7,7 +7,7 @@
 
 import type { Beebium } from "./client.js";
 
-export class CoupledSystem {
+export class TubeSystem {
     private readonly host: Beebium;
     private readonly parasite: Beebium;
     private readonly ownsParasite: boolean;
@@ -28,9 +28,9 @@ export class CoupledSystem {
     /**
      * Create a coupled system by discovering the parasite from the host.
      */
-    static async fromHost(host: Beebium): Promise<CoupledSystem> {
+    static async fromHost(host: Beebium): Promise<TubeSystem> {
         const parasite = await host.connectParasite();
-        return new CoupledSystem(host, parasite, true);
+        return new TubeSystem(host, parasite, true);
     }
 
     /** Get the host client. */

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from beebium.client import Beebium
 
 
-class CoupledSystem:
+class TubeSystem:
     """Manages a host and parasite as a single unit.
 
     Both processors are run and stopped together. Predicates for
@@ -35,14 +35,14 @@ class CoupledSystem:
 
     Usage::
 
-        system = CoupledSystem(host, parasite)
+        system = TubeSystem(host, parasite)
         system.run()
         # ...
         system.stop()
 
     Or with auto-discovery::
 
-        system = CoupledSystem.from_host(bbc)
+        system = TubeSystem.from_host(bbc)
     """
 
     def __init__(self, host: Beebium, parasite: Beebium, *, owns_parasite: bool = False):
@@ -58,7 +58,7 @@ class CoupledSystem:
         self._owns_parasite = owns_parasite
 
     @classmethod
-    def from_host(cls, host: Beebium, timeout: float = 5.0) -> CoupledSystem:
+    def from_host(cls, host: Beebium, timeout: float = 5.0) -> TubeSystem:
         """Create a coupled system by discovering the parasite from the host.
 
         Args:
