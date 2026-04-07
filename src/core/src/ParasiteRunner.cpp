@@ -19,7 +19,17 @@ namespace beebium {
 
 ParasiteRunner::ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom)
     : shared_(shared)
-    , tube_port_(shared)
+    , owned_port_(std::make_unique<TubeParasitePort>(shared))
+    , tube_port_(*owned_port_)
+    , memory_(tube_port_, rom)
+    , cpu_(memory_, tube_port_)
+{
+    std::copy(rom.begin(), rom.end(), rom_.begin());
+}
+
+ParasiteRunner::ParasiteRunner(TubeParasiteBackend& backend, std::span<const uint8_t, 2048> rom)
+    : shared_(nullptr)
+    , tube_port_(backend)
     , memory_(tube_port_, rom)
     , cpu_(memory_, tube_port_)
 {
@@ -69,8 +79,8 @@ void ParasiteRunner::run(uint64_t cycles) {
 
             cpu_.tick();
 
-            // Check cross-processor debugger stop signal
-            if (shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
+            // Check cross-processor debugger stop signal (shared-memory mode only)
+            if (shared_ && shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
                 shared_->debugger_stop_signal.store(false, std::memory_order_relaxed);
                 pause();
                 return;
@@ -116,8 +126,10 @@ void ParasiteRunner::resume() {
     paused_.store(false, std::memory_order_release);
     // Clear any stale cross-processor stop signal so we don't
     // immediately re-stop on the first cycle of the new run.
-    shared_->debugger_stop_signal.store(false, std::memory_order_release);
-    shared_->bus_stretch_cancel.store(false, std::memory_order_release);
+    if (shared_) {
+        shared_->debugger_stop_signal.store(false, std::memory_order_release);
+        shared_->bus_stretch_cancel.store(false, std::memory_order_release);
+    }
     pause_cv_.notify_all();
     ++sequence_;
 }
@@ -128,6 +140,10 @@ void ParasiteRunner::request_shutdown() {
 }
 
 bool ParasiteRunner::poll_mailbox() {
+    // In extension mode (shared_ == nullptr), no mailbox to poll.
+    if (!shared_)
+        return true;
+
     auto cmd = static_cast<TubeLifecycleCommand>(
         shared_->host_command.load(std::memory_order_acquire));
 

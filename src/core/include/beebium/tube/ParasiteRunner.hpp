@@ -14,6 +14,7 @@
 
 #include "ParasiteCpu.hpp"
 #include "ParasiteMemoryMap.hpp"
+#include "TubeParasiteBackend.hpp"
 #include "TubeParasitePort.hpp"
 #include "TubeShared.hpp"
 #include "../Types.hpp"
@@ -54,7 +55,13 @@ public:
     using Memory = ParasiteMemoryMap;
     using BreakpointHitCallback = std::function<void(const BreakpointEntry& bp, uint16_t pc)>;
     // Construct with a pointer to the shared memory region and a 2 KB ROM image.
+    // Uses TubeParasitePort for cross-process communication (legacy mode).
     ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom);
+
+    // Construct with an external parasite backend and a 2 KB ROM image.
+    // The caller owns the backend and must keep it alive for the runner's lifetime.
+    // shared_ is null -- mailbox polling and debugger_stop_signal are disabled.
+    ParasiteRunner(TubeParasiteBackend& backend, std::span<const uint8_t, 2048> rom);
     ~ParasiteRunner() = default;
 
     // Non-copyable (owns M6502 with internal pointers)
@@ -192,8 +199,8 @@ public:
     ParasiteMemoryMap& memory_map() { return memory_; }
     const ParasiteMemoryMap& memory_map() const { return memory_; }
 
-    TubeParasitePort& tube_port() { return tube_port_; }
-    const TubeParasitePort& tube_port() const { return tube_port_; }
+    TubeParasiteBackend& tube_port() { return tube_port_; }
+    const TubeParasiteBackend& tube_port() const { return tube_port_; }
 
 private:
     // How often to poll the lifecycle mailbox (in CPU cycles).
@@ -209,8 +216,9 @@ private:
     // Block while frozen. Returns false if shutdown was requested.
     bool wait_while_frozen();
 
-    TubeShared* shared_;
-    TubeParasitePort tube_port_;
+    TubeShared* shared_;                                // null in extension mode
+    std::unique_ptr<TubeParasitePort> owned_port_;       // only set in shared-memory mode
+    TubeParasiteBackend& tube_port_;                     // reference to active port
     ParasiteMemoryMap memory_;
     ParasiteCpu cpu_;
 

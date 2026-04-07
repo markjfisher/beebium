@@ -649,6 +649,11 @@ bool TubeUla::pnmi() const
     return pnmi_edge_.load(std::memory_order_acquire);
 }
 
+bool TubeUla::pnmi_level() const
+{
+    return pnmi_level_.load(std::memory_order_acquire);
+}
+
 void TubeUla::update_interrupts()
 {
     // Called under mutex_. Computes interrupt outputs and stores them

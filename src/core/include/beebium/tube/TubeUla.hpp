@@ -13,6 +13,7 @@
 #pragma once
 
 #include "TubeHostBackend.hpp"
+#include "TubeParasiteBackend.hpp"
 
 #include <array>
 #include <atomic>
@@ -39,7 +40,7 @@ namespace beebium {
 // the perspective by calling host_read/host_write or parasite_read/
 // parasite_write.
 
-class TubeUla : public TubeHostBackend {
+class TubeUla : public TubeHostBackend, public TubeParasiteBackend {
 public:
     // Status flag bits (bits 7 and 6 of status register reads)
     static constexpr uint8_t DATA_AVAILABLE = 0x80;  // bit 7
@@ -66,19 +67,21 @@ public:
     void host_write(uint8_t offset, uint8_t value) override;
 
     // Parasite-side register access (offsets 0-7, mirrored from &FEF8-&FEFF).
-    uint8_t parasite_read(uint8_t offset);
-    uint8_t parasite_peek(uint8_t offset) const;
-    void parasite_write(uint8_t offset, uint8_t value);
+    uint8_t parasite_read(uint8_t offset) override;
+    uint8_t parasite_peek(uint8_t offset) const override;
+    void parasite_write(uint8_t offset, uint8_t value) override;
 
     // Interrupt outputs (active high in this model; caller inverts if needed).
     // These use the Tube-specific names from Application Note 004:
     //   hirq -- Host IRQ (active when Q=1 and R4 has P-to-H data)
     //   pirq -- Parasite IRQ (active when I=1 and R1 has data, or J=1 and R4 has data)
     //   pnmi -- Parasite NMI (edge-triggered from R3 activity when M=1)
+    //   pnmi_level -- raw combinational PNMI output (for M6502 edge detection)
     // TubeSocket adapts hirq() to the generic IrqSource::irq_pending() interface.
     bool hirq() const override;
-    bool pirq() const;
+    bool pirq() const override;
     bool pnmi() const;
+    bool pnmi_level() const override;
 
     // Read control flags (bits 0-5: Q, I, J, M, V, P).
     uint8_t control_flags() const { return control_flags_; }

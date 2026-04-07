@@ -13,6 +13,7 @@
 #pragma once
 
 #include "RegisterTrace.hpp"
+#include "TubeParasiteBackend.hpp"
 #include "TubeShared.hpp"
 #include "TubeUla.hpp"  // for FLAG_* constants
 
@@ -35,7 +36,7 @@ namespace beebium {
 //
 // Memory ordering: stores use release, loads use acquire.
 
-class TubeParasitePort {
+class TubeParasitePort : public TubeParasiteBackend {
 public:
     explicit TubeParasitePort(TubeShared* shared)
         : shared_(shared)
@@ -43,16 +44,16 @@ public:
         assert(shared_ != nullptr);
     }
 
-    // --- Parasite register access (offsets 0-7) ---
+    // --- TubeParasiteBackend interface ---
 
-    uint8_t parasite_read(uint8_t offset);
-    uint8_t parasite_peek(uint8_t offset) const;
-    void parasite_write(uint8_t offset, uint8_t value);
+    uint8_t parasite_read(uint8_t offset) override;
+    uint8_t parasite_peek(uint8_t offset) const override;
+    void parasite_write(uint8_t offset, uint8_t value) override;
 
     // --- Interrupt outputs ---
 
     // PIRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data).
-    bool pirq() const;
+    bool pirq() const override;
 
     // PNMI (edge-detected): latched rising edge from R3 activity when M=1.
     // Only updates during parasite_read/parasite_write calls.
@@ -64,13 +65,13 @@ public:
     // shared state. Active when M=1 AND (R3 H-to-P has data OR R3 P-to-H
     // has space). Use this with M6502_SetDeviceNMI, which does its own
     // edge detection internally.
-    bool pnmi_level() const;
+    bool pnmi_level() const override;
 
     // --- Reset ---
 
     // Clear all register data. Called when the parasite receives a reset
     // command via the lifecycle mailbox.
-    void reset();
+    void reset() override;
 
     // --- Accessors for testing ---
 

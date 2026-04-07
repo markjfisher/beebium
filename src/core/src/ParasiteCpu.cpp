@@ -14,7 +14,7 @@
 
 namespace beebium {
 
-ParasiteCpu::ParasiteCpu(ParasiteMemoryMap& memory, TubeParasitePort& tube_port)
+ParasiteCpu::ParasiteCpu(ParasiteMemoryMap& memory, TubeParasiteBackend& tube_port)
     : memory_(memory)
     , tube_port_(tube_port)
     , cycle_count_(0)

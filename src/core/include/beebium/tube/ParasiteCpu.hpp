@@ -14,7 +14,7 @@
 
 #include "InstructionTrace.hpp"
 #include "ParasiteMemoryMap.hpp"
-#include "TubeParasitePort.hpp"
+#include "TubeParasiteBackend.hpp"
 
 #include <6502/6502.h>
 #include <cstdint>
@@ -37,7 +37,7 @@ namespace beebium {
 
 class ParasiteCpu {
 public:
-    ParasiteCpu(ParasiteMemoryMap& memory, TubeParasitePort& tube_port);
+    ParasiteCpu(ParasiteMemoryMap& memory, TubeParasiteBackend& tube_port);
     ~ParasiteCpu();
 
     // Non-copyable (M6502 contains internal pointers)
@@ -89,7 +89,7 @@ private:
     static constexpr M6502_DeviceNMIFlags kPnmiMask = 1;
 
     ParasiteMemoryMap& memory_;
-    TubeParasitePort& tube_port_;
+    TubeParasiteBackend& tube_port_;
     M6502 cpu_;
     uint64_t cycle_count_ = 0;
 
