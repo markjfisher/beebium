@@ -80,6 +80,8 @@ class Beebium:
         self._connection = connection
         self._server = server
         self._instance_uuid = instance_uuid
+        self._owns_connection = server is not None  # parasite views don't own the connection
+        self._debugger_stub_override = None  # set for parasite views
         self._debugger: Debugger | None = None
         self._cpu: CPU | None = None
         self._keyboard: Keyboard | None = None
@@ -97,6 +99,18 @@ class Beebium:
         self._econet: Econet | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
+
+    @classmethod
+    def _from_parasite_stub(cls, connection: Connection) -> Beebium:
+        """Create a parasite view sharing the same connection.
+
+        The returned client routes debugger calls to the
+        ParasiteDebuggerControl service. It does not own the connection.
+        """
+        client = cls(connection)
+        client._owns_connection = False
+        client._debugger_stub_override = connection.parasite_debugger_stub
+        return client
 
     @classmethod
     def connect(cls, target: str | None = None, timeout: float = 5.0) -> Beebium:
@@ -191,7 +205,8 @@ class Beebium:
     def debugger(self) -> Debugger:
         """Access debugger control (execution, breakpoints)."""
         if self._debugger is None:
-            self._debugger = Debugger(self._connection.debugger_stub)
+            stub = self._debugger_stub_override or self._connection.debugger_stub
+            self._debugger = Debugger(stub)
         return self._debugger
 
     @property
@@ -309,34 +324,28 @@ class Beebium:
             self._tube = Tube(self._connection.tube_stub)
         return self._tube
 
-    def connect_parasite(self, timeout: float = 5.0) -> Beebium:
-        """Connect to the parasite's gRPC server.
+    def connect_parasite(self) -> Beebium:
+        """Get a Beebium client for the parasite processor.
 
-        Queries the host's Tube status for the parasite's gRPC address,
-        then returns a new Beebium instance connected to the parasite.
-        This gives access to the parasite's debugger, CPU, and memory.
-
-        Args:
-            timeout: Connection timeout in seconds.
+        Returns a Beebium instance that shares the same gRPC connection
+        but routes debugger calls to the ParasiteDebuggerControl service.
+        The parasite client does not own the connection and should not
+        be closed independently.
 
         Returns:
-            A Beebium client connected to the parasite's gRPC server.
+            A Beebium client for the parasite processor.
 
         Raises:
-            BeebiumConnectionError: If the parasite is not connected or the
-                connection cannot be established.
+            BeebiumConnectionError: If no Tube coprocessor extension is active.
         """
         status = self.tube.status
-        if not status.parasite_connected:
-            raise BeebiumConnectionError("No parasite is connected")
-        address = status.parasite_grpc_address
-        if not address:
-            raise BeebiumConnectionError("Parasite has not registered its gRPC endpoint")
-        return Beebium.connect(target=address, timeout=timeout)
+        if not status.enabled:
+            raise BeebiumConnectionError("No Tube coprocessor is active")
+        return Beebium._from_parasite_stub(self._connection)
 
     @contextlib.contextmanager
-    def parasite(self, timeout: float = 5.0) -> Iterator[Beebium]:
-        """Context manager that connects to the parasite and closes on exit.
+    def parasite(self) -> Iterator[Beebium]:
+        """Context manager for the parasite processor.
 
         Usage::
 
@@ -344,14 +353,9 @@ class Beebium:
                 print(parasite.cpu.registers)
 
         Raises:
-            BeebiumConnectionError: If the parasite is not connected or the
-                connection cannot be established.
+            BeebiumConnectionError: If no Tube coprocessor is active.
         """
-        parasite = self.connect_parasite(timeout=timeout)
-        try:
-            yield parasite
-        finally:
-            parasite.close()
+        yield self.connect_parasite()
 
     # =========================================================================
     # Emulated time helpers

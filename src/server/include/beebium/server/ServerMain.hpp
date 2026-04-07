@@ -20,6 +20,7 @@
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
 #include "TestScratchRam.hpp"
+#include "SecondProcessor65C02Extension.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/SleepQuantum.hpp"
@@ -31,9 +32,7 @@
 #include "beebium/econet/AunBackend.hpp"
 #include "beebium/econet/TestBackend.hpp"
 #include "beebium/tube/TubeConcepts.hpp"
-#include "beebium/tube/TubeSharedMemory.hpp"
 #include "beebium/service/Server.hpp"
-#include "beebium/server/SubprocessManager.hpp"
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/PresetPaths.hpp"
 #include "beebium/server/RomPaths.hpp"
@@ -568,10 +567,6 @@ struct ServerConfig {
     std::array<std::string, 2> floppy_filepaths;
     std::string fdc_type;
 
-    // Tube coprocessor configuration
-    std::string tube_stem;                            // Empty = no Tube (e.g. "65C02-3MHz")
-    std::vector<std::string> tube_parasite_args;      // Forwarded --tube-* args (prefix stripped)
-
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
     std::optional<uint16_t> aun_port = beebium::AUN_DEFAULT_PORT;  // nullopt = no network
@@ -651,11 +646,6 @@ void print_usage(const char* program_name) {
                   << beebium::AUN_DEFAULT_PORT << ", none = no network)\n"
                   << "  --aun-map <net.stn:ip[:port]>\n"
                   << "                           Map Econet address to IP (repeatable)\n";
-    }
-
-    if constexpr (HasTubeSocket<Memory>) {
-        std::cerr << "  --tube <stem>            Attach Tube coprocessor (e.g. 65C02-3MHz)\n"
-                  << "                           Launches beebium-tube-<stem> as subprocess\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -832,15 +822,36 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // Scan extension manifests so we can recognise --<cli-name> flags in the second pass
+    // Register built-in extension manifests so the CLI parser recognises them.
+    std::vector<beebium::ExtensionManifest> builtin_manifests;
+    {
+        beebium::ExtensionManifest m;
+        m.name = "acorn-65c02-coprocessor";
+        m.description = "Acorn 65C02 3 MHz second processor";
+        m.cli_name = "tube-65c02";
+        m.parameters.push_back({"rom", "filepath", "Path to 2KB Tube client ROM image", -1, false, ""});
+        builtin_manifests.push_back(std::move(m));
+    }
+
+    // Normalise an extension CLI flag to lowercase for case-insensitive matching.
+    auto to_lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return s;
+    };
+
+    // Scan plugin extension manifests so we can recognise --<cli-name> flags in the second pass
     std::vector<beebium::ExtensionManifest> scanned_manifests;
     std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
+    for (const auto& m : builtin_manifests) {
+        cli_name_to_manifest[to_lower("--" + std::string(m.effective_cli_name()))] = &m;
+    }
     if (!config.extension_dirpath.empty()) {
         beebium::PluginLoader scanner;
         scanned_manifests = scanner.scan_manifests(config.extension_dirpath);
         for (const auto& m : scanned_manifests) {
             std::string cli = std::string(m.effective_cli_name());
-            cli_name_to_manifest["--" + cli] = &m;
+            cli_name_to_manifest[to_lower("--" + cli)] = &m;
         }
     }
 
@@ -966,16 +977,6 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--machine-name" && i + 1 < argc) {
             config.machine_name = argv[++i];
-        } else if (arg == "--tube" && i + 1 < argc) {
-            config.tube_stem = argv[++i];
-        } else if (arg.rfind("--tube-", 0) == 0 && arg.size() > 7) {
-            // Forward --tube-X as --X to the parasite process
-            std::string forwarded = "--" + std::string(arg.substr(7));
-            config.tube_parasite_args.push_back(forwarded);
-            // If the next arg doesn't start with --, treat it as the value
-            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--", 0) != 0) {
-                config.tube_parasite_args.push_back(argv[++i]);
-            }
         } else if (arg == "--allow-shutdown") {
             config.allow_shutdown = true;
         } else if (arg == "--advertise") {
@@ -986,7 +987,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             continue;
         } else {
             // Check if this is an extension CLI flag (e.g. --acorn-scsi, --scsi-hdd)
-            auto manifest_it = cli_name_to_manifest.find(arg);
+            auto manifest_it = cli_name_to_manifest.find(to_lower(arg));
             if (manifest_it != cli_name_to_manifest.end()) {
                 const auto* manifest = manifest_it->second;
                 std::string arg_string;
@@ -1202,133 +1203,6 @@ std::optional<int> install_econet(MachineType& machine, const ServerConfig<Machi
     return std::nullopt;
 }
 
-// Install Tube coprocessor for machines with Tube sockets.
-// Creates shared memory and enables the TubeSocket. The parasite subprocess
-// is launched later (after the gRPC server starts) by launch_tube_parasite().
-// Returns exit code on error, nullopt on success.
-// On success, tube_shm is set to the shared memory manager (caller must keep alive).
-template<typename MachineType>
-std::optional<int> install_tube(
-    MachineType& machine,
-    const ServerConfig<MachineType>& config,
-    std::unique_ptr<beebium::TubeSharedMemory>& tube_shm)
-{
-    using Memory = typename MachineType::Memory;
-
-    if constexpr (HasTubeSocket<Memory>) {
-        if (!config.tube_stem.empty()) {
-            // Generate shared memory suffix from machine UUID.
-            // Strip hyphens and truncate to stay within macOS shm_open's
-            // 30-character name limit (PSHMNAMLEN - 1, excluding leading '/').
-            auto shm_id = config.machine_uuid.empty()
-                ? generate_uuid_v4() : config.machine_uuid;
-            std::erase(shm_id, '-');
-            std::string shm_suffix = "tube_" + shm_id.substr(0, 24);
-
-            try {
-                tube_shm = std::make_unique<beebium::TubeSharedMemory>(
-                    shm_suffix, beebium::TubeSharedMemoryRole::Creator);
-            } catch (const std::runtime_error& e) {
-                std::cerr << "Error: Failed to create Tube shared memory: " << e.what() << "\n";
-                return ExitCode::SOFTWARE;
-            }
-
-            machine.state().memory.tube_socket.enable(tube_shm->get());
-
-            std::cout << "Tube coprocessor: " << config.tube_stem
-                      << " (shared memory: " << tube_shm->name() << ")\n";
-        }
-    } else if (!config.tube_stem.empty()) {
-        std::cerr << "Warning: --tube option ignored (machine has no Tube socket)\n";
-    }
-
-    return std::nullopt;
-}
-
-// Launch the Tube parasite subprocess.
-// Finds the parasite executable (beebium-tube-<stem>), spawns it with
-// --host=localhost:<port>, and returns the Subprocess handle.
-// Returns exit code on error, nullopt on success.
-template<typename MachineType>
-std::optional<int> launch_tube_parasite(
-    const ServerConfig<MachineType>& config,
-    uint16_t server_port,
-    const char* host_argv0,
-    service::TubeServiceImpl<MachineType>& tube_service,
-    std::optional<Subprocess>& parasite_process)
-{
-    if (config.tube_stem.empty()) {
-        return std::nullopt;
-    }
-
-    std::string executable_name = "beebium-tube-" + config.tube_stem;
-
-    auto executable_filepath = find_sibling_executable(
-        executable_name,
-        std::filesystem::path(host_argv0));
-
-    if (!executable_filepath) {
-        std::cerr << "Error: Tube parasite executable not found: " << executable_name << "\n"
-                  << "Searched: " << std::filesystem::path(host_argv0).parent_path().string()
-                  << " and PATH\n";
-        return ExitCode::NOINPUT;
-    }
-
-    // Build argument list
-    std::vector<std::string> args;
-    args.push_back(executable_filepath->string());
-    args.push_back("--host=localhost:" + std::to_string(server_port));
-
-    // Forward the ROM directory so the parasite can find its boot ROM
-    try {
-        auto rom_dirpath = RomPaths::find_rom_directory();
-        args.push_back("--rom-dir=" + rom_dirpath.string());
-    } catch (...) {
-        // ROM directory not found; let the parasite try its own search
-    }
-
-    // Append forwarded --tube-* args (already prefix-stripped)
-    for (const auto& arg : config.tube_parasite_args) {
-        args.push_back(arg);
-    }
-
-    std::cout << "Launching Tube parasite: " << executable_filepath->string() << "\n";
-
-    auto subprocess = spawn_subprocess(*executable_filepath, args);
-    if (!subprocess) {
-        std::cerr << "Error: Failed to launch Tube parasite: " << executable_name << "\n";
-        return ExitCode::SOFTWARE;
-    }
-
-    // Wait for the parasite to call TubeService.Connect, polling for
-    // either a successful connection or early process death.
-    static constexpr int CONNECT_TIMEOUT_MS = 10000;
-    static constexpr int POLL_INTERVAL_MS = 50;
-    int elapsed_ms = 0;
-
-    while (elapsed_ms < CONNECT_TIMEOUT_MS) {
-        // Check if the parasite has already connected
-        if (tube_service.wait_for_connection(POLL_INTERVAL_MS)) {
-            parasite_process = std::move(*subprocess);
-            return std::nullopt;
-        }
-        elapsed_ms += POLL_INTERVAL_MS;
-
-        // Check if the process died (missing ROM, bad args, etc.)
-        if (!subprocess->is_alive()) {
-            std::cerr << "Error: Tube parasite exited before connecting\n";
-            return ExitCode::SOFTWARE;
-        }
-    }
-
-    // Timed out waiting for Connect
-    std::cerr << "Error: Tube parasite did not connect within "
-              << CONNECT_TIMEOUT_MS / 1000 << " seconds\n";
-    subprocess->terminate();
-    subprocess->wait(1000);
-    return ExitCode::SOFTWARE;
-}
-
 // Load a single disc image into a floppy drive.
 // Returns an exit code on error, or std::nullopt on success.
 inline std::optional<int> load_single_disc(DiscDrive& drive, int drive_num,
@@ -1448,8 +1322,7 @@ void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
 // This function blocks until g_running becomes false (signal handler sets it).
 // Sets up shutdown callbacks for clean signal handling.
 template<typename MachineType>
-void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server,
-                        TubeShared* tube_shared = nullptr) {
+void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
@@ -1459,22 +1332,15 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     PlatformSleep sleeper;
     auto quantum = beebium::measure_sleep_quantum(sleeper);
 
-    // If a Tube is connected, pass its io_pending flag to the pacing clock
-    // for sub-quantum wakeup on Tube register writes.
-    std::atomic<bool>* io_pending = tube_shared
-        ? &tube_shared->io_pending_host
-        : nullptr;
-
     // Create and start pacing clock with measured quantum
     PacingClock pacing_clock(Memory::default_pacing_config(), quantum,
-                             std::move(sleeper), io_pending);
+                             std::move(sleeper));
 
     if (use_pacing) {
         pacing_clock.start();
         std::cout << "Pacing: quantum " << quantum.count() / 1000 << " us"
                   << " (" << 1'000'000'000 / quantum.count() << " Hz)"
                   << ", nominal " << pacing_clock.config().base_clock_hz / 1'000'000 << " MHz"
-                  << (io_pending ? " (I/O interruptible)" : "")
                   << "\n";
     } else {
         std::cout << "Pacing: DISABLED (BEEBIUM_NO_PACING set)\n";
@@ -1650,19 +1516,6 @@ public:
                 return *exit_code;
             }
 
-            // Install Tube coprocessor (Phase 1: create shared memory, enable socket)
-            // The parasite subprocess is launched after the gRPC server starts.
-            std::unique_ptr<beebium::TubeSharedMemory> tube_shm;
-            if (auto exit_code = install_tube(machine, config, tube_shm)) {
-                return *exit_code;
-            }
-
-            // Wire TubeShared to Machine for bus stretch cancellation and
-            // cross-processor debugger stop signal.
-            if (tube_shm) {
-                machine.set_tube_shared(tube_shm->get());
-            }
-
             // Load disc images
             if (auto exit_code = load_disc_images(machine, config)) {
                 return *exit_code;
@@ -1689,6 +1542,9 @@ public:
             if constexpr (beebium::HasUserPort<Memory>) {
                 extension_registry.register_extension_point("user-port");
             }
+            if constexpr (beebium::HasTubeSocket<Memory>) {
+                extension_registry.register_extension_point("tube");
+            }
 
             // Register built-in extensions (assign auto-generated ids)
             {
@@ -1697,44 +1553,56 @@ public:
                 extension_registry.register_extension(std::move(scratch_ram));
             }
 
-            // Load plugin extensions (from --<cli-name> flags)
+            // Load extensions (from --<cli-name> flags)
+            std::vector<beebium::ExtensionManifest> plugin_manifests;
             if (!config.extension_dirpath.empty()) {
                 std::cout << "Extension directory: " << config.extension_dirpath << "\n";
-                auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
-                for (auto& inst : config.extension_instances) {
-                    auto* manifest = beebium::PluginLoader::find_manifest(manifests, inst.name);
-                    if (!manifest) {
-                        std::cerr << "Error: Extension '" << inst.name
-                                  << "' not found in " << config.extension_dirpath << "\n";
-                        return ExitCode::CONFIG;
-                    }
-                    // Assign instance ID if not provided
-                    if (inst.config.find("id") == inst.config.end()) {
-                        inst.config["id"] = generate_uuid_v4();
-                    }
-                    std::cout << "Loading extension: " << inst.name;
-                    if (inst.config.count("id")) {
-                        std::cout << " (id=" << inst.config["id"] << ")";
-                    }
-                    std::cout << "\n";
-                    for (const auto& [key, value] : inst.config) {
-                        if (key != "id") {
-                            std::cout << "  " << key << "=" << value << "\n";
-                        }
-                    }
-                    plugin_loader.load_extension(*manifest, extension_registry,
-                                                  std::move(inst.config));
+                plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+            }
+            for (auto& inst : config.extension_instances) {
+                // Assign instance ID if not provided
+                if (inst.config.find("id") == inst.config.end()) {
+                    inst.config["id"] = generate_uuid_v4();
                 }
-            } else if (!config.extension_instances.empty()) {
-                std::cerr << "Error: Extension flags require --extension-dir\n";
-                return ExitCode::USAGE;
+                std::cout << "Loading extension: " << inst.name;
+                if (inst.config.count("id")) {
+                    std::cout << " (id=" << inst.config["id"] << ")";
+                }
+                std::cout << "\n";
+                for (const auto& [key, value] : inst.config) {
+                    if (key != "id") {
+                        std::cout << "  " << key << "=" << value << "\n";
+                    }
+                }
+
+                // Try built-in extensions first.
+                if (inst.name == "acorn-65c02-coprocessor") {
+                    auto ext = std::make_unique<beebium::SecondProcessor65C02Extension>();
+                    ext->set_config(std::move(inst.config));
+                    extension_registry.register_extension(std::move(ext));
+                    continue;
+                }
+
+                // Fall back to plugin loading.
+                auto* manifest = beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
+                if (!manifest) {
+                    std::cerr << "Error: Extension '" << inst.name << "' not found";
+                    if (!config.extension_dirpath.empty()) {
+                        std::cerr << " in " << config.extension_dirpath;
+                    }
+                    std::cerr << "\n";
+                    return ExitCode::CONFIG;
+                }
+                plugin_loader.load_extension(*manifest, extension_registry,
+                                              std::move(inst.config));
             }
 
             // Initialise extensions (dependency resolution + topological sort)
             std::cout << "Initialising extensions...\n";
             beebium::ExtensionContext extension_context(
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
-                beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr);
+                beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr,
+                beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr);
             extension_registry.resolve_and_init(extension_context);
 
             // Log initialisation order
@@ -1817,61 +1685,34 @@ public:
                         config.advertise, shutdown_policy_config, std::move(shutdown_callback),
                         extension_services);
 
-            // Wire Tube shared memory to TubeService (Phase 2: after server starts)
-            if (tube_shm) {
-                server.tube_service()->set_shared_memory(tube_shm.get());
-            }
-
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block
             std::cout << "Listening on port " << server.port() << std::endl;
             std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
 
-            // Launch Tube parasite subprocess (needs gRPC port for Connect handshake)
-            std::optional<Subprocess> tube_parasite;
-            if (auto exit_code = launch_tube_parasite(config, server.port(), argv[0], *server.tube_service(), tube_parasite)) {
-                server.stop();
-                return *exit_code;
-            }
-
-            // Register the parasite for signal-time cleanup so it receives
-            // SIGTERM even if this process is killed before reaching the
-            // normal shutdown path below.
-            if (tube_parasite && tube_parasite->valid()) {
-#ifdef _WIN32
-                platform::register_child_process(tube_parasite->native_handle());
-#else
-                platform::register_child_process(tube_parasite->pid());
-#endif
+            // Wire cross-processor debugger stop for Tube extensions.
+            // When a breakpoint with stop_counterpart fires on one side,
+            // the callback pauses the other side.
+            for (auto* ext : extension_registry.extensions()) {
+                auto* tube_ext = dynamic_cast<beebium::SecondProcessor65C02Extension*>(ext);
+                if (tube_ext && tube_ext->running()) {
+                    // Host breakpoint → pause parasite
+                    server.debugger_service().set_counterpart_stop_callback(
+                        tube_ext->parasite_pause_callback());
+                    // Parasite breakpoint → pause host
+                    tube_ext->wire_counterpart_stop([&machine] {
+                        machine.pause();
+                    });
+                }
             }
 
             // Handle wait mode
             handle_wait_mode(machine, config.wait_mode);
 
             // Run main emulation loop (blocks until shutdown)
-            run_emulation_loop(machine, server,
-                               tube_shm ? tube_shm->get() : nullptr);
+            run_emulation_loop(machine, server);
 
             std::cout << "\nShutting down...\n";
-
-            // Terminate Tube parasite if running
-            if (tube_parasite && tube_parasite->valid()) {
-                // Send SHUTDOWN via lifecycle mailbox
-                if (tube_shm) {
-                    tube_shm->get()->host_command.store(
-                        static_cast<uint8_t>(beebium::TubeLifecycleCommand::Shutdown),
-                        std::memory_order_release);
-                }
-
-                // Wait up to 2 seconds for graceful exit
-                if (!tube_parasite->wait(2000)) {
-                    std::cerr << "Warning: Tube parasite did not exit gracefully, terminating\n";
-                    tube_parasite->terminate();
-                    tube_parasite->wait(1000);
-                }
-
-                platform::unregister_child_process();
-            }
 
             server.stop();
             extension_registry.shutdown();

@@ -11,11 +11,8 @@ add_library(beebium_core STATIC
     src/disc/formats/HfeFormatHandler.cpp
     src/econet/AunBackend.cpp
     src/TubeUla.cpp
-    src/TubeHostPort.cpp
-    src/TubeParasitePort.cpp
     src/ParasiteCpu.cpp
     src/ParasiteRunner.cpp
-    src/TubeSharedMemory.cpp
     src/Expression.cpp
     src/PluginLoader.cpp
     src/ExtensionArgParser.cpp

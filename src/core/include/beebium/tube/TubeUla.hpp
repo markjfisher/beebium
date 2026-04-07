@@ -13,8 +13,10 @@
 #pragma once
 
 #include "TubeHostBackend.hpp"
+#include "TubeParasiteBackend.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 
 namespace beebium {
@@ -22,16 +24,23 @@ namespace beebium {
 // Tube ULA register model.
 //
 // Models the Acorn Tube ULA's four register sets, control flags, and
-// interrupt outputs. This is a plain in-process implementation -- no shared
-// memory, no atomics. It is the authoritative FIFO model used for both
-// in-process testing and as the basis for the shared-memory variant.
+// interrupt outputs. This is the authoritative FIFO model used for both
+// in-process testing and as the register bridge in the extension-based
+// coprocessor architecture.
+//
+// Thread safety: lock-free. All register fields are atomic with
+// acquire/release ordering. Each register direction follows the SPSC
+// (single-producer, single-consumer) pattern:
+//   - H-to-P: host writes (producer), parasite reads (consumer)
+//   - P-to-H: parasite writes (producer), host reads (consumer)
+// No mutex is needed. Bus stretching uses atomic spin-waits.
 //
 // The host and parasite sides see different views of the same registers:
 // different status bits, different read/write targets. The caller selects
 // the perspective by calling host_read/host_write or parasite_read/
 // parasite_write.
 
-class TubeUla : public TubeHostBackend {
+class TubeUla : public TubeHostBackend, public TubeParasiteBackend {
 public:
     // Status flag bits (bits 7 and 6 of status register reads)
     static constexpr uint8_t DATA_AVAILABLE = 0x80;  // bit 7
@@ -58,29 +67,35 @@ public:
     void host_write(uint8_t offset, uint8_t value) override;
 
     // Parasite-side register access (offsets 0-7, mirrored from &FEF8-&FEFF).
-    uint8_t parasite_read(uint8_t offset);
-    uint8_t parasite_peek(uint8_t offset) const;
-    void parasite_write(uint8_t offset, uint8_t value);
+    uint8_t parasite_read(uint8_t offset) override;
+    uint8_t parasite_peek(uint8_t offset) const override;
+    void parasite_write(uint8_t offset, uint8_t value) override;
 
     // Interrupt outputs (active high in this model; caller inverts if needed).
     // These use the Tube-specific names from Application Note 004:
     //   hirq -- Host IRQ (active when Q=1 and R4 has P-to-H data)
     //   pirq -- Parasite IRQ (active when I=1 and R1 has data, or J=1 and R4 has data)
     //   pnmi -- Parasite NMI (edge-triggered from R3 activity when M=1)
+    //   pnmi_level -- raw combinational PNMI output (for M6502 edge detection)
     // TubeSocket adapts hirq() to the generic IrqSource::irq_pending() interface.
     bool hirq() const override;
-    bool pirq() const;
+    bool pirq() const override;
     bool pnmi() const;
+    bool pnmi_level() const override;
 
     // Read control flags (bits 0-5: Q, I, J, M, V, P).
-    uint8_t control_flags() const { return control_flags_; }
+    uint8_t control_flags() const {
+        return control_flags_.load(std::memory_order_acquire);
+    }
 
     // Test whether the parasite reset line is currently asserted.
-    bool parasite_reset_active() const { return (control_flags_ & FLAG_P) != 0; }
+    bool parasite_reset_active() const {
+        return (control_flags_.load(std::memory_order_acquire) & FLAG_P) != 0;
+    }
 
-    // Bus stretching: returns true if the last host access could not complete
-    // because the register was full (write) or empty (read).
-    bool stretched() const override { return stretched_; }
+    // Bus stretching: host_write spin-waits when a register is full, so
+    // stretched() always returns false (the write completes before returning).
+    bool stretched() const override { return false; }
 
     // Access the NMI edge detector state (parasite-local).
     bool prev_pnmi() const { return prev_pnmi_; }
@@ -89,89 +104,78 @@ private:
     // Soft reset (T flag) -- clears all register data but preserves control flags.
     void soft_reset();
 
-    // Recompute interrupt outputs after any register access.
-    void update_interrupts();
+    // Recompute interrupt outputs.
+    // Split by thread ownership to avoid data races on edge detection state.
+    void update_host_interrupts();     // HIRQ only (called from host thread)
+    void update_parasite_interrupts(); // PIRQ + PNMI (called from parasite thread)
 
     // Control flag register (bits 0-5: Q, I, J, M, V, P).
-    uint8_t control_flags_ = 0;
+    // Single writer (host thread).
+    std::atomic<uint8_t> control_flags_{0};
+
+    // Atomic latch: 1-byte data with ready/full flags.
+    // Used for R1 H-to-P, R2 both directions, R4 both directions.
+    // Producer stores data (relaxed) then sets ready+full (release).
+    // Consumer loads ready (acquire), loads data (relaxed), clears (release).
+    struct AtomicLatch {
+        std::atomic<uint8_t> data{0};
+        std::atomic<bool> available{false};  // data waiting for consumer
+        std::atomic<bool> full{false};       // producer cannot write
+    };
+
+    // Atomic SPSC ring buffer (24 bytes, for R1 P-to-H).
+    struct AtomicFifo24 {
+        std::array<std::atomic<uint8_t>, 24> data{};
+        std::atomic<uint8_t> head{0};   // consumer reads here
+        std::atomic<uint8_t> tail{0};   // producer writes here
+        std::atomic<uint8_t> count{0};  // modified by both via fetch_add/fetch_sub
+    };
+
+    // Atomic 2-slot register (for R3, each direction).
+    // Count and pending flag packed into atomic<uint16_t> -- see TubeShared.hpp
+    // TubeReg3 for the pack/unpack helpers (not reused here to avoid the
+    // dependency, but the same bit layout applies).
+    struct AtomicReg3 {
+        std::array<std::atomic<uint8_t>, 2> data{};
+        std::atomic<uint8_t> head{0};
+        std::atomic<uint8_t> tail{0};
+        // Packed: low byte = count (0-2), high byte = pending flag (0 or 1).
+        std::atomic<uint16_t> state{0};
+
+        static constexpr uint16_t pack(uint8_t count, bool pending) {
+            return static_cast<uint16_t>(count)
+                 | (static_cast<uint16_t>(pending ? 1 : 0) << 8);
+        }
+        static constexpr uint8_t count_of(uint16_t s) {
+            return static_cast<uint8_t>(s & 0xFF);
+        }
+        static constexpr bool pending_of(uint16_t s) {
+            return (s >> 8) != 0;
+        }
+    };
 
     // Register 1: H-to-P is a 1-byte latch; P-to-H is a 24-byte FIFO.
-    struct {
-        uint8_t h2p_data = 0;
-        bool h2p_available = false;  // data waiting for parasite to read
-        bool h2p_full = false;       // host cannot write (parasite hasn't read yet)
-
-        std::array<uint8_t, 24> p2h_fifo{};
-        uint8_t p2h_head = 0;
-        uint8_t p2h_tail = 0;
-        uint8_t p2h_count = 0;
-    } r1_;
+    AtomicLatch r1_h2p_;
+    AtomicFifo24 r1_p2h_;
 
     // Register 2: 1-byte latch in each direction.
-    struct {
-        uint8_t h2p_data = 0;
-        bool h2p_available = false;
-        bool h2p_full = false;
+    AtomicLatch r2_h2p_;
+    AtomicLatch r2_p2h_;
 
-        uint8_t p2h_data = 0;
-        bool p2h_available = false;
-        bool p2h_full = false;
-    } r2_;
-
-    // Register 3: 2-byte FIFO in each direction, configurable as 1 or 2-byte.
-    //
-    // The pending flags track whether a complete transfer has been deposited
-    // and is awaiting consumption.  They provide hysteresis so that the
-    // space-available / data-available status bits remain correct when the
-    // count is between 0 and threshold during a multi-byte transfer.
-    //
-    //   pending = false  ->  writer phase (space available)
-    //   pending = true   ->  reader phase (data available)
-    //
-    // Transitions: set when count reaches threshold on write; cleared when
-    // count reaches 0 on read.
-    struct {
-        std::array<uint8_t, 2> h2p_data{};
-        uint8_t h2p_count = 0;
-        bool h2p_pending = false;  // complete H-to-P transfer awaiting parasite read
-
-        std::array<uint8_t, 2> p2h_data{};
-        uint8_t p2h_count = 0;
-        bool p2h_pending = false;  // complete P-to-H transfer awaiting host read
-    } r3_;
+    // Register 3: 2-byte FIFO in each direction.
+    AtomicReg3 r3_h2p_;
+    AtomicReg3 r3_p2h_;
 
     // Register 4: 1-byte latch in each direction.
-    struct {
-        uint8_t h2p_data = 0;
-        bool h2p_available = false;
-        bool h2p_full = false;
+    AtomicLatch r4_h2p_;
+    AtomicLatch r4_p2h_;
 
-        uint8_t p2h_data = 0;
-        bool p2h_available = false;
-        bool p2h_full = false;
-    } r4_;
-
-    // Bus stretching state.
-    //
-    // When the host writes to a full H-to-P register (R1, R3, R4) the real
-    // Tube ULA halts the host CPU until the parasite drains the register.
-    // In this in-process model the write is buffered and stretched_ is set.
-    // The pending write completes automatically when the parasite reads the
-    // blocked register.
-    bool stretched_ = false;
-    bool pending_write_ = false;
-    uint8_t pending_write_offset_ = 0;
-    uint8_t pending_write_value_ = 0;
-
-    // Try to complete a pending write after the parasite drains a register.
-    void try_complete_pending_write();
-
-    // Interrupt output state (cached, recomputed after each access).
-    bool hirq_ = false;
-    bool pirq_ = false;
-    bool pnmi_level_ = false;  // current level of PNMI condition
-    bool prev_pnmi_ = false;   // for edge detection
-    bool pnmi_edge_ = false;   // latched rising edge
+    // Interrupt output state (lock-free, updated by update_interrupts()).
+    std::atomic<bool> hirq_{false};
+    std::atomic<bool> pirq_{false};
+    std::atomic<bool> pnmi_level_{false};
+    bool prev_pnmi_ = false;   // PNMI edge detector (parasite thread only)
+    std::atomic<bool> pnmi_edge_{false};
 };
 
 }  // namespace beebium

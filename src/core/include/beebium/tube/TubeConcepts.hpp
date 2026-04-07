@@ -21,9 +21,8 @@ namespace beebium {
 
 // Host-side interface for the Tube ULA.
 //
-// Satisfied by TubeUla (full in-process model) and TubeHostPort (shared
-// memory adapter). TubeSocket delegates to whichever implementation is
-// active via std::variant.
+// Satisfied by TubeUla (full in-process model). TubeSocket delegates to
+// whichever TubeHostBackend implementation is active.
 //
 // The four required operations are the host processor's view of the Tube:
 //   host_read/host_write -- register access at &FEE0-&FEE7

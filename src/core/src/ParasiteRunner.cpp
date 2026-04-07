@@ -17,9 +17,8 @@
 
 namespace beebium {
 
-ParasiteRunner::ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom)
-    : shared_(shared)
-    , tube_port_(shared)
+ParasiteRunner::ParasiteRunner(TubeParasiteBackend& backend, std::span<const uint8_t, 2048> rom)
+    : tube_port_(backend)
     , memory_(tube_port_, rom)
     , cpu_(memory_, tube_port_)
 {
@@ -44,13 +43,8 @@ void ParasiteRunner::run(uint64_t cycles) {
         if (!wait_if_paused())
             return;  // Shutdown during pause
 
-        // Check lifecycle mailbox (may reset cycle_count)
-        if (!poll_mailbox())
-            return;  // Shutdown or freeze
-
-        // Execute a batch of cycles (up to the next mailbox poll or remaining)
-        uint64_t batch = std::min(remaining, mailbox_poll_interval);
-        uint64_t batch_end = cpu_.cycle_count() + batch;
+        // Execute a batch of cycles
+        uint64_t batch_end = cpu_.cycle_count() + remaining;
 
         while (cpu_.cycle_count() < batch_end) {
             // Check breakpoints before tick(), when register updates are complete.
@@ -69,13 +63,6 @@ void ParasiteRunner::run(uint64_t cycles) {
 
             cpu_.tick();
 
-            // Check cross-processor debugger stop signal
-            if (shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
-                shared_->debugger_stop_signal.store(false, std::memory_order_relaxed);
-                pause();
-                return;
-            }
-
             // Inline watchpoint check (every bus access, after tick)
             if (!watchpoint_entries_.empty()) {
                 const uint16_t addr = cpu_.cpu().abus.w;
@@ -91,7 +78,7 @@ void ParasiteRunner::run(uint64_t cycles) {
                 }
             }
         }
-        remaining -= batch;
+        break;  // single batch covers all remaining cycles
     }
 }
 
@@ -114,10 +101,6 @@ void ParasiteRunner::pause() {
 
 void ParasiteRunner::resume() {
     paused_.store(false, std::memory_order_release);
-    // Clear any stale cross-processor stop signal so we don't
-    // immediately re-stop on the first cycle of the new run.
-    shared_->debugger_stop_signal.store(false, std::memory_order_release);
-    shared_->bus_stretch_cancel.store(false, std::memory_order_release);
     pause_cv_.notify_all();
     ++sequence_;
 }
@@ -127,66 +110,11 @@ void ParasiteRunner::request_shutdown() {
     pause_cv_.notify_all();
 }
 
-bool ParasiteRunner::poll_mailbox() {
-    auto cmd = static_cast<TubeLifecycleCommand>(
-        shared_->host_command.load(std::memory_order_acquire));
-
-    switch (cmd) {
-    case TubeLifecycleCommand::None:
-        return true;
-
-    case TubeLifecycleCommand::Reset:
-        // Clear the command so it doesn't re-trigger after reset.
-        shared_->host_command.store(
-            static_cast<uint8_t>(TubeLifecycleCommand::None),
-            std::memory_order_release);
-        reset();
-        shared_->parasite_ack.store(
-            static_cast<uint8_t>(TubeLifecycleAck::ResetDone),
-            std::memory_order_release);
-        return true;  // Continue execution after reset
-
-    case TubeLifecycleCommand::Freeze:
-        shared_->parasite_ack.store(
-            static_cast<uint8_t>(TubeLifecycleAck::Frozen),
-            std::memory_order_release);
-        return wait_while_frozen();
-
-    case TubeLifecycleCommand::Shutdown:
-        shutdown_requested_.store(true, std::memory_order_release);
-        shared_->parasite_ack.store(
-            static_cast<uint8_t>(TubeLifecycleAck::Exiting),
-            std::memory_order_release);
-        return false;
-    }
-
-    return true;  // Unknown command -- ignore
-}
-
 bool ParasiteRunner::wait_if_paused() {
     std::unique_lock<std::mutex> lock(pause_mutex_);
     while (paused_.load(std::memory_order_acquire)
            && !shutdown_requested_.load(std::memory_order_acquire)) {
         pause_cv_.wait_for(lock, std::chrono::milliseconds(100));
-    }
-    return !shutdown_requested_.load(std::memory_order_acquire);
-}
-
-bool ParasiteRunner::wait_while_frozen() {
-    // Block until the host changes the command (e.g. to None, Reset, or Shutdown).
-    while (!shutdown_requested_.load(std::memory_order_acquire)) {
-        auto cmd = static_cast<TubeLifecycleCommand>(
-            shared_->host_command.load(std::memory_order_acquire));
-        if (cmd != TubeLifecycleCommand::Freeze)
-            break;
-
-        std::unique_lock<std::mutex> lock(pause_mutex_);
-        pause_cv_.wait_for(lock, std::chrono::milliseconds(100), [this] {
-            return shutdown_requested_.load(std::memory_order_acquire)
-                || static_cast<TubeLifecycleCommand>(
-                       shared_->host_command.load(std::memory_order_acquire))
-                   != TubeLifecycleCommand::Freeze;
-        });
     }
     return !shutdown_requested_.load(std::memory_order_acquire);
 }

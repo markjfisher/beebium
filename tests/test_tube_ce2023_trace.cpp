@@ -26,7 +26,7 @@
 #include <beebium/FrameRenderer.hpp>
 #include <beebium/disc/DiscLoader.hpp>
 #include <beebium/tube/ParasiteRunner.hpp>
-#include <beebium/tube/TubeShared.hpp>
+#include <beebium/tube/TubeUla.hpp>
 
 #include <array>
 #include <cstdint>
@@ -79,7 +79,7 @@ std::array<uint8_t, TUBE_ROM_SIZE> load_tube_rom() {
 }
 
 struct TestFixture {
-    TubeShared shared;
+    TubeUla tube;
     ModelB machine;
     std::unique_ptr<ParasiteRunner> parasite;
     HeapFrameAllocator allocator;
@@ -90,8 +90,6 @@ struct TestFixture {
         : fb(&allocator, 640, 512)
         , renderer(&fb)
     {
-        shared.init();
-
         auto rom_dirpath = std::filesystem::path(BEEBIUM_ROM_DIR);
         auto assets_dirpath = std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR);
 
@@ -108,17 +106,13 @@ struct TestFixture {
         REQUIRE(disc_result.success());
         machine.memory().disc_drive_0.insert(std::move(disc_result.disc));
 
-        machine.state().memory.tube_socket.enable(&shared);
+        machine.state().memory.tube_socket.install_backend(&tube);
         machine.memory().enable_video_output();
         machine.memory().set_auto_boot(true);
         machine.reset();
 
-        shared.host_command.store(
-            static_cast<uint8_t>(TubeLifecycleCommand::None),
-            std::memory_order_release);
-
         auto tube_rom = load_tube_rom();
-        parasite = std::make_unique<ParasiteRunner>(&shared, tube_rom);
+        parasite = std::make_unique<ParasiteRunner>(tube, tube_rom);
         parasite->reset();
     }
 

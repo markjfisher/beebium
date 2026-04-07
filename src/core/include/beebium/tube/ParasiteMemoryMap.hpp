@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "TubeParasitePort.hpp"
+#include "TubeParasiteBackend.hpp"
 
 #include "beebium/MemoryRegion.hpp"
 
@@ -52,7 +52,7 @@ public:
     static constexpr std::string_view REGION_TUBE = "tube_registers";
     // Construct with a reference to the Tube port and a 2 KB ROM image.
     // The ROM span must be exactly 2048 bytes.
-    ParasiteMemoryMap(TubeParasitePort& tube_port, std::span<const uint8_t, 2048> rom)
+    ParasiteMemoryMap(TubeParasiteBackend& tube_port, std::span<const uint8_t, 2048> rom)
         : tube_port_(tube_port)
         , rom_enabled_(true)
     {
@@ -195,7 +195,7 @@ private:
         return address >= 0xFEF8 && address <= 0xFEFF;
     }
 
-    TubeParasitePort& tube_port_;
+    TubeParasiteBackend& tube_port_;
     std::array<uint8_t, 65536> ram_;
     std::array<uint8_t, 2048> rom_;
     bool rom_enabled_;

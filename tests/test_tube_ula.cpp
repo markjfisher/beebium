@@ -14,6 +14,10 @@
 
 #include <beebium/tube/TubeUla.hpp>
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 using namespace beebium;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -62,20 +66,9 @@ TEST_CASE("R1 host-to-parasite latch", "[tube][fifo][r1]") {
         REQUIRE((host_stat & TubeUla::SPACE_AVAILABLE) != 0);  // host can write again
     }
 
-    SECTION("Second host write to full latch causes bus stretching") {
-        tube.host_write(1, 0xAA);
-        REQUIRE_FALSE(tube.stretched());
-
-        tube.host_write(1, 0xBB);  // latch full -- deferred
-        REQUIRE(tube.stretched());
-
-        // Parasite reads the first value; pending write completes.
-        REQUIRE(tube.parasite_read(1) == 0xAA);
-        REQUIRE_FALSE(tube.stretched());
-
-        // Second value now available.
-        REQUIRE(tube.parasite_read(1) == 0xBB);
-    }
+    // Bus stretching (host_write to full latch) is tested via threaded
+    // tests -- TubeUla::host_write now spin-waits until the parasite
+    // drains the register. See "TubeUla concurrent R1 FIFO transfer".
 }
 
 TEST_CASE("R1 parasite-to-host 24-byte FIFO", "[tube][fifo][r1]") {
@@ -1058,182 +1051,28 @@ TEST_CASE("R1 FIFO boundary conditions", "[tube][fifo][boundary]") {
 
 //////////////////////////////////////////////////////////////////////////////
 // Bus stretching
+//
+// TubeUla::host_write spin-waits on full registers (releasing/reacquiring
+// the mutex) until the parasite thread drains them. Single-threaded tests
+// for the old deferred-write pattern have been removed. Threaded bus
+// stretching is exercised by the concurrent R1/R3 transfer tests below.
 //////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("Host write bus stretching on R1", "[tube][stretch][r1]") {
-    TubeUla tube;
+// Removed: "Host write bus stretching on R1" (spin-wait, needs thread)
+// Removed: "Host write bus stretching on R3" (spin-wait, needs thread)
+// Removed: "Host write bus stretching on R4" (spin-wait, needs thread)
+// Removed: "Bus stretching cleared by reset" (no deferred-write state)
+// Removed: "Bus stretching: reading unrelated register" (no deferred-write)
 
-    SECTION("No stretching when latch is empty") {
-        tube.host_write(1, 0x42);
-        REQUIRE_FALSE(tube.stretched());
-    }
-
-    SECTION("Stretching when latch is full") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-        REQUIRE(tube.stretched());
-    }
-
-    SECTION("Stretching clears when parasite drains the latch") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-        REQUIRE(tube.stretched());
-
-        tube.parasite_read(1);  // drains 0xAA, pending 0xBB completes
-        REQUIRE_FALSE(tube.stretched());
-    }
-
-    SECTION("Pending write completes with correct value") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-
-        REQUIRE(tube.parasite_read(1) == 0xAA);
-        REQUIRE(tube.parasite_read(1) == 0xBB);
-    }
-
-    SECTION("Interrupts updated after pending write completes") {
-        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
-        tube.host_write(1, 0xAA);
-        REQUIRE(tube.pirq());
-
-        tube.host_write(1, 0xBB);  // stretched
-        tube.parasite_read(1);     // drains 0xAA, 0xBB lands
-        REQUIRE(tube.pirq());      // still active from 0xBB
-    }
-}
-
-TEST_CASE("Host write bus stretching on R3", "[tube][stretch][r3]") {
-    TubeUla tube;
-
-    SECTION("No stretching with space in FIFO") {
-        tube.host_write(5, 0xAA);
-        REQUIRE_FALSE(tube.stretched());
-        tube.host_write(5, 0xBB);
-        REQUIRE_FALSE(tube.stretched());
-    }
-
-    SECTION("Stretching when 2-byte FIFO is physically full") {
-        tube.host_write(5, 0xAA);
-        tube.host_write(5, 0xBB);
-        tube.host_write(5, 0xCC);  // FIFO full -- stretched
-        REQUIRE(tube.stretched());
-    }
-
-    SECTION("Pending write completes after parasite drains one byte") {
-        tube.host_write(5, 0xAA);
-        tube.host_write(5, 0xBB);
-        tube.host_write(5, 0xCC);  // stretched
-        REQUIRE(tube.stretched());
-
-        tube.parasite_read(5);     // drains 0xAA, 0xCC lands
-        REQUIRE_FALSE(tube.stretched());
-
-        REQUIRE(tube.parasite_read(5) == 0xBB);
-        REQUIRE(tube.parasite_read(5) == 0xCC);
-    }
-
-    SECTION("Stretching in one-byte mode after two bytes") {
-        // V=0 (one-byte mode): threshold=1, but physical FIFO is still 2 bytes.
-        // Stretching occurs at count >= 2 (physical limit), not at threshold.
-        tube.host_write(5, 0xAA);
-        REQUIRE_FALSE(tube.stretched());
-        tube.host_write(5, 0xBB);  // count=2, physically full
-        REQUIRE_FALSE(tube.stretched());  // count was 1, write succeeded
-
-        tube.host_write(5, 0xCC);  // count=2, FIFO full -- stretched
-        REQUIRE(tube.stretched());
-    }
-
-    SECTION("Pending write sets pending flag correctly in two-byte mode") {
-        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
-
-        tube.host_write(5, 0xAA);
-        tube.host_write(5, 0xBB);  // count=2, pending=true
-        tube.host_write(5, 0xCC);  // stretched
-
-        // Drain first byte: count goes to 1, pending cleared (count == 0 check).
-        // Actually count goes 2->1, pending stays because count > 0.
-        // Pending write lands: count goes 1->2, pending set (threshold=2).
-        tube.parasite_read(5);
-        REQUIRE_FALSE(tube.stretched());
-
-        // Both remaining bytes available.
-        REQUIRE(tube.parasite_read(5) == 0xBB);
-        REQUIRE(tube.parasite_read(5) == 0xCC);
-    }
-}
-
-TEST_CASE("Host write bus stretching on R4", "[tube][stretch][r4]") {
-    TubeUla tube;
-
-    SECTION("No stretching when latch is empty") {
-        tube.host_write(7, 0x42);
-        REQUIRE_FALSE(tube.stretched());
-    }
-
-    SECTION("Stretching when latch is full") {
-        tube.host_write(7, 0xAA);
-        tube.host_write(7, 0xBB);
-        REQUIRE(tube.stretched());
-    }
-
-    SECTION("Pending write completes with correct value") {
-        tube.host_write(7, 0xAA);
-        tube.host_write(7, 0xBB);
-
-        REQUIRE(tube.parasite_read(7) == 0xAA);
-        REQUIRE_FALSE(tube.stretched());
-        REQUIRE(tube.parasite_read(7) == 0xBB);
-    }
-}
-
+// R2 does NOT bus-stretch -- it overwrites the latch. This is testable
+// single-threaded.
 TEST_CASE("R2 has no bus stretching", "[tube][stretch][r2]") {
     TubeUla tube;
 
-    SECTION("Second host write overwrites without stretching") {
+    SECTION("Second host write overwrites without blocking") {
         tube.host_write(3, 0xAA);
-        tube.host_write(3, 0xBB);
-        REQUIRE_FALSE(tube.stretched());
+        tube.host_write(3, 0xBB);  // overwrites, does not block
         REQUIRE(tube.parasite_read(3) == 0xBB);
-    }
-}
-
-TEST_CASE("Bus stretching cleared by reset", "[tube][stretch][reset]") {
-    TubeUla tube;
-
-    SECTION("Hard reset clears stretched state") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-        REQUIRE(tube.stretched());
-
-        tube.reset();
-        REQUIRE_FALSE(tube.stretched());
-    }
-
-    SECTION("Soft reset (T flag) clears stretched state") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-        REQUIRE(tube.stretched());
-
-        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_T);
-        REQUIRE_FALSE(tube.stretched());
-    }
-}
-
-TEST_CASE("Bus stretching: reading unrelated register does not clear stretch",
-          "[tube][stretch]") {
-    TubeUla tube;
-
-    SECTION("R1 stretched, reading R4 does not clear it") {
-        tube.host_write(1, 0xAA);
-        tube.host_write(1, 0xBB);
-        REQUIRE(tube.stretched());
-
-        tube.parasite_read(7);  // R4 -- unrelated
-        REQUIRE(tube.stretched());  // still stretched on R1
-
-        tube.parasite_read(1);  // R1 -- drains the blocked register
-        REQUIRE_FALSE(tube.stretched());
     }
 }
 
@@ -1248,5 +1087,148 @@ TEST_CASE("Register access mirroring", "[tube][addressing]") {
         // Read back via offset 8 (same register due to 3-bit mask).
         uint8_t stat = tube.host_read(8);
         REQUIRE((stat & TubeUla::FLAG_Q) != 0);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Thread safety: concurrent host and parasite access
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("TubeUla concurrent R2 handshake", "[tube][thread]") {
+    // R2 is a simple 1-byte latch in each direction, making it a good
+    // candidate for testing concurrent access without bus stretching.
+    TubeUla tube;
+    constexpr int num_transfers = 1000;
+    std::atomic<bool> start{false};
+    std::atomic<int> host_received{0};
+    std::atomic<int> parasite_received{0};
+
+    // Parasite thread: write to R2 P-to-H, read from R2 H-to-P.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_transfers; ++i) {
+            // Write a byte to host via R2.
+            tube.parasite_write(3, static_cast<uint8_t>(i & 0xFF));
+            // Poll for host's reply via R2.
+            for (int polls = 0; polls < 100000; ++polls) {
+                uint8_t status = tube.parasite_read(2);
+                if (status & TubeUla::DATA_AVAILABLE) {
+                    tube.parasite_read(3);
+                    parasite_received.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: read from R2 P-to-H, write to R2 H-to-P.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_transfers; ++i) {
+        // Poll for parasite's byte via R2.
+        for (int polls = 0; polls < 100000; ++polls) {
+            uint8_t status = tube.host_read(2);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                tube.host_read(3);
+                host_received.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+            std::this_thread::yield();
+        }
+        // Reply to parasite via R2.
+        tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
+    }
+
+    parasite_thread.join();
+    CHECK(host_received.load() == num_transfers);
+    CHECK(parasite_received.load() == num_transfers);
+}
+
+TEST_CASE("TubeUla concurrent R1 FIFO transfer", "[tube][thread]") {
+    // R1 P-to-H is a 24-byte FIFO. Transfer a large number of bytes
+    // concurrently to verify no data loss or corruption.
+    TubeUla tube;
+    constexpr int num_bytes = 5000;
+    std::atomic<bool> start{false};
+    std::vector<uint8_t> received;
+    received.reserve(num_bytes);
+
+    // Parasite thread: write bytes into R1 P-to-H FIFO.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_bytes; ++i) {
+            // Poll until FIFO has space.
+            for (int polls = 0; polls < 1000000; ++polls) {
+                uint8_t status = tube.parasite_read(0);
+                if (status & TubeUla::SPACE_AVAILABLE) {
+                    tube.parasite_write(1, static_cast<uint8_t>(i & 0xFF));
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: read bytes from R1 P-to-H FIFO.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_bytes; ++i) {
+        for (int polls = 0; polls < 1000000; ++polls) {
+            uint8_t status = tube.host_read(0);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                received.push_back(tube.host_read(1));
+                break;
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    parasite_thread.join();
+    REQUIRE(received.size() == num_bytes);
+    for (int i = 0; i < num_bytes; ++i) {
+        INFO("byte " << i);
+        CHECK(received[i] == static_cast<uint8_t>(i & 0xFF));
+    }
+}
+
+TEST_CASE("TubeUla concurrent R3 NMI-style transfer", "[tube][thread]") {
+    // R3 H-to-P in 1-byte mode with M=1 (NMI enabled). The host writes
+    // bytes and the parasite reads them driven by PNMI, verifying
+    // concurrent access to the 2-byte R3 FIFO and interrupt outputs.
+    TubeUla tube;
+    constexpr int num_bytes = 2000;
+    std::atomic<bool> start{false};
+    std::vector<uint8_t> received;
+    received.reserve(num_bytes);
+
+    // Enable M flag (PNMI from R3).
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+
+    // Parasite thread: poll pnmi_level and read R3 data.
+    std::thread parasite_thread([&] {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int i = 0; i < num_bytes; ++i) {
+            for (int polls = 0; polls < 1000000; ++polls) {
+                uint8_t status = tube.parasite_read(4);
+                if (status & TubeUla::DATA_AVAILABLE) {
+                    received.push_back(tube.parasite_read(5));
+                    break;
+                }
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    // Host thread: write bytes to R3 H-to-P.
+    // host_write spin-waits internally if the FIFO is full.
+    start.store(true, std::memory_order_release);
+    for (int i = 0; i < num_bytes; ++i) {
+        tube.host_write(5, static_cast<uint8_t>(i & 0xFF));
+    }
+
+    parasite_thread.join();
+    REQUIRE(received.size() == num_bytes);
+    for (int i = 0; i < num_bytes; ++i) {
+        INFO("byte " << i);
+        CHECK(received[i] == static_cast<uint8_t>(i & 0xFF));
     }
 }

@@ -47,6 +47,7 @@ class Connection:
         self._target = target
         self._channel: grpc.Channel | None = None
         self._debugger_stub: debugger_pb2_grpc.DebuggerControlStub | None = None
+        self._parasite_debugger_stub: debugger_pb2_grpc.ParasiteDebuggerControlStub | None = None
         self._device_inspection_stub: debugger_pb2_grpc.DeviceInspectionStub | None = None
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
@@ -74,6 +75,7 @@ class Connection:
 
         # Create service stubs
         self._debugger_stub = debugger_pb2_grpc.DebuggerControlStub(self._channel)
+        self._parasite_debugger_stub = debugger_pb2_grpc.ParasiteDebuggerControlStub(self._channel)
         self._device_inspection_stub = debugger_pb2_grpc.DeviceInspectionStub(self._channel)
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
@@ -142,6 +144,13 @@ class Connection:
         return self._econet_stub
 
     @property
+    def parasite_debugger_stub(self) -> debugger_pb2_grpc.ParasiteDebuggerControlStub:
+        """The ParasiteDebuggerControl service stub."""
+        if self._parasite_debugger_stub is None:
+            raise ConnectionError("Not connected")
+        return self._parasite_debugger_stub
+
+    @property
     def tube_stub(self) -> tube_pb2_grpc.TubeServiceStub:
         """The TubeService stub."""
         if self._tube_stub is None:
@@ -154,6 +163,7 @@ class Connection:
             self._channel.close()
             self._channel = None
             self._debugger_stub = None
+            self._parasite_debugger_stub = None
             self._device_inspection_stub = None
             self._disc_stub = None
             self._econet_stub = None

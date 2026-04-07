@@ -14,7 +14,7 @@
 
 namespace beebium {
 
-ParasiteCpu::ParasiteCpu(ParasiteMemoryMap& memory, TubeParasitePort& tube_port)
+ParasiteCpu::ParasiteCpu(ParasiteMemoryMap& memory, TubeParasiteBackend& tube_port)
     : memory_(memory)
     , tube_port_(tube_port)
     , cycle_count_(0)
@@ -49,9 +49,14 @@ void ParasiteCpu::tick() {
     (*cpu_.tfn)(&cpu_);
 
     // Perform bus access through the memory map.
+    // Uninteresting reads (e.g. page-cross fixup cycles) use peek to
+    // avoid Tube register side effects. This prevents the CE2023 hang
+    // where a fixup-cycle read consumed a Tube R1 latch byte.
     const uint16_t addr = cpu_.abus.w;
     if (cpu_.read) {
-        cpu_.dbus = memory_.read(addr);
+        cpu_.dbus = (cpu_.read == M6502ReadType_Uninteresting)
+            ? memory_.peek(addr)
+            : memory_.read(addr);
         // Memory read watchpoint: record reads from watched addresses
         // in the instruction trace as pseudo-entries with opcode=$FE.
         // Also records ad.w (the base address register) in the cycle field

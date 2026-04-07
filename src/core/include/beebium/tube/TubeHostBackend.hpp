@@ -19,8 +19,7 @@ namespace beebium {
 // Abstract host-side interface for the Tube ULA.
 //
 // Implemented by:
-//   TubeUla        -- full in-process model (both host and parasite sides)
-//   TubeHostPort   -- shared memory adapter (host side only, parasite in another process)
+//   TubeUla          -- full in-process model (both host and parasite sides)
 //   EmptyTubeBackend -- null object for an empty socket (no second processor)
 //
 // TubeSocket holds a unique_ptr<TubeHostBackend> and delegates all register
@@ -52,20 +51,14 @@ public:
     // in-process TubeUla model this is reported as a flag; the caller is
     // responsible for stepping the parasite until stretched() returns false.
     //
-    // TubeHostPort (shared memory) uses spin-waits instead, so it always
-    // returns false here.
+    // The in-process TubeUla model reports bus stretch as a flag; the caller
+    // is responsible for stepping the parasite until stretched() returns false.
     virtual bool stretched() const { return false; }
 
-    // Complete any write that was deferred by bus_stretch_cancel.
-    //
-    // When a host_write spin-waits on a full latch/FIFO and bus_stretch_cancel
-    // breaks the spin, the write is stored as pending. This method retries
-    // the pending write. If the latch/FIFO has been drained (parasite read
-    // during the pause), the write succeeds. If not, the spin loop runs again
-    // and may be cancelled again.
+    // Complete any write that was deferred during a bus-stretched pause.
     //
     // Called by Machine::run() after resume, before the step loop.
-    // Default: no-op (only TubeHostPort uses deferred writes).
+    // Default: no-op.
     virtual void complete_pending_write() {}
 
     // Full hardware reset (HRST).

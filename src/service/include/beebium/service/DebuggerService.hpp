@@ -16,7 +16,6 @@
 #include "debugger.grpc.pb.h"
 #include "beebium/MemoryRegion.hpp"
 #include "beebium/Types.hpp"
-#include "beebium/tube/TubeShared.hpp"
 #include <moodycamel/readerwriterqueue.h>
 #include <grpcpp/grpcpp.h>
 #include <algorithm>
@@ -241,7 +240,18 @@ private:
     void enqueue_event(StopReason reason, const WatchpointHitInfo& watchpoint_hit);
     void signal_counterpart_stop();
 
+public:
+    // Set a callback invoked when a breakpoint/watchpoint with
+    // stop_counterpart fires. The callback should pause the counterpart
+    // processor. Used by the Tube extension to coordinate host and parasite.
+    using CounterpartStopCallback = std::function<void()>;
+    void set_counterpart_stop_callback(CounterpartStopCallback cb) {
+        counterpart_stop_cb_ = std::move(cb);
+    }
+
+private:
     MachineType& machine_;
+    CounterpartStopCallback counterpart_stop_cb_;
     std::mutex mutex_;
     std::vector<BreakpointRecord> breakpoints_;
     std::atomic<uint32_t> next_breakpoint_id_{1};
@@ -1004,11 +1014,8 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::signal_counterpart_stop() {
-    auto* shared = machine_.tube_shared();
-    if (shared) {
-        shared->debugger_stop_signal.store(true, std::memory_order_release);
-        shared->bus_stretch_cancel.store(true, std::memory_order_release);
-    }
+    if (counterpart_stop_cb_)
+        counterpart_stop_cb_();
 }
 
 template<typename MachineType>

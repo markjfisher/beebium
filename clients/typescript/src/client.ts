@@ -80,6 +80,7 @@ export class Beebium {
     private _sound?: Sound;
     private _tubeUla?: TubeUlaInspection;
     private _basic?: Basic;
+    private _debuggerStubOverride?: unknown;  // ParasiteDebuggerControlClient
 
     private constructor(
         connection: Connection,
@@ -89,6 +90,16 @@ export class Beebium {
         this.connection = connection;
         this.server = server ?? null;
         this.instanceUuid = instanceUuid ?? randomUUID();
+    }
+
+    /**
+     * Create a parasite view sharing the same connection.
+     * Routes debugger calls to the ParasiteDebuggerControl service.
+     */
+    private static fromParasiteStub(connection: Connection): Beebium {
+        const client = new Beebium(connection);
+        client._debuggerStubOverride = connection.parasiteDebuggerStub;
+        return client;
     }
 
     /**
@@ -153,7 +164,8 @@ export class Beebium {
     /** Access debugger control (execution, breakpoints). */
     get debugger(): Debugger {
         if (this._debugger === undefined) {
-            this._debugger = new Debugger(this.connection.debuggerStub);
+            const stub = this._debuggerStubOverride ?? this.connection.debuggerStub;
+            this._debugger = new Debugger(stub as any);
         }
         return this._debugger;
     }
@@ -297,18 +309,20 @@ export class Beebium {
      * @throws ConnectionError if the parasite is not connected or the
      *     connection cannot be established.
      */
-    async connectParasite(timeoutMs = 5000): Promise<Beebium> {
+    /**
+     * Get a Beebium client for the parasite processor.
+     *
+     * Returns a Beebium instance that shares the same gRPC connection
+     * but routes debugger calls to the ParasiteDebuggerControl service.
+     *
+     * @throws ConnectionError if no Tube coprocessor extension is active.
+     */
+    async connectParasite(): Promise<Beebium> {
         const status = await this.tube.getStatus();
-        if (!status.parasiteConnected) {
-            throw new ConnectionError("No parasite is connected");
+        if (!status.enabled) {
+            throw new ConnectionError("No Tube coprocessor is active");
         }
-        const address = status.parasiteGrpcAddress;
-        if (!address) {
-            throw new ConnectionError(
-                "Parasite has not registered its gRPC endpoint",
-            );
-        }
-        return Beebium.connect(address, timeoutMs);
+        return Beebium.fromParasiteStub(this.connection);
     }
 
     // =========================================================================

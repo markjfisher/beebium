@@ -14,20 +14,17 @@
 //
 // A small 6502 program polls R1 status and reads R1 data bytes,
 // storing them into a results buffer in parasite RAM. The host
-// writes bytes through TubeHostPort on a separate thread. After
+// writes bytes through TubeUla on a separate thread. After
 // the transfer, the results buffer is compared byte-by-byte.
 //
 // This exercises the full path: ParasiteCpu::tick() -> memory_.read()
-// -> TubeParasitePort::parasite_read() -> shared memory atomics,
-// including the per-tick pirq()/pnmi_level() calls.
+// -> TubeUla::parasite_read(), including the per-tick pirq()/pnmi_level()
+// calls.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -96,14 +93,11 @@ static void plant_r1_reader(ParasiteMemoryMap& mem, uint8_t num_bytes) {
 // ============================================================================
 
 TEST_CASE("6502 R1 polled read: single byte", "[tube][6502][r1]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r1_reader(memory, 1);
 
@@ -118,7 +112,7 @@ TEST_CASE("6502 R1 polled read: single byte", "[tube][6502][r1]") {
 
     // Host writes one byte on a separate thread
     std::thread host_thread([&] {
-        host.host_write(1, 0x42);
+        tube.host_write(1, 0x42);
     });
 
     // Run CPU until STP (or timeout)
@@ -132,14 +126,11 @@ TEST_CASE("6502 R1 polled read: single byte", "[tube][6502][r1]") {
 }
 
 TEST_CASE("6502 R1 polled read: 702 bytes across threads", "[tube][6502][r1]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     // For > 255 bytes we need a 16-bit counter. Use a simpler approach:
     // read 200 bytes (fits in X register) and verify those.
@@ -152,7 +143,7 @@ TEST_CASE("6502 R1 polled read: 702 bytes across threads", "[tube][6502][r1]") {
 
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            host.host_write(1, static_cast<uint8_t>(i & 0xFF));
+            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
         }
     });
 
@@ -174,14 +165,11 @@ TEST_CASE("6502 R1 polled read: 200 bytes, repeated 50 times", "[tube][6502][r1]
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(CODE_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r1_reader(memory, NUM_BYTES);
         memory.read(0xFEF8);
@@ -193,7 +181,7 @@ TEST_CASE("6502 R1 polled read: 200 bytes, repeated 50 times", "[tube][6502][r1]
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                host.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
+                tube.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
             }
         });
 
@@ -219,14 +207,11 @@ TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tu
     // After each tick, check if the CPU just completed a read from $FEF9.
     // If so, verify that cpu.dbus matches the expected byte.
 
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r1_reader(memory, NUM_BYTES);
@@ -242,7 +227,7 @@ TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tu
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
             uint8_t val = static_cast<uint8_t>(i & 0xFF);
-            host.host_write(1, val);
+            tube.host_write(1, val);
             last_host_value.store(val, std::memory_order_release);
             host_write_count.store(i + 1, std::memory_order_release);
         }
@@ -287,14 +272,11 @@ TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube
     // host's write counter. If it does, the parasite consumed a byte
     // that the host hadn't finished writing yet.
 
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r1_reader(memory, NUM_BYTES);
@@ -307,19 +289,24 @@ TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube
 
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            host.host_write(1, static_cast<uint8_t>(i & 0xFF));
+            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
             host_writes.store(i + 1, std::memory_order_release);
         }
     });
 
+    int r1_reads = 0;
     for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
 
-        auto reads = shared.counters.r1_h2p_reads.load(std::memory_order_relaxed);
+        // Count R1 data reads by observing the CPU bus
+        if (cpu.cpu().abus.w == 0xFEF9 && cpu.cpu().read) {
+            r1_reads++;
+        }
+
         auto writes = host_writes.load(std::memory_order_acquire);
-        if (reads > static_cast<uint64_t>(writes)) {
+        if (r1_reads > writes) {
             host_thread.join();
-            FAIL("Tick " << i << ": R1 reads (" << reads
+            FAIL("Tick " << i << ": R1 reads (" << r1_reads
                  << ") > host writes (" << writes << ")");
         }
     }

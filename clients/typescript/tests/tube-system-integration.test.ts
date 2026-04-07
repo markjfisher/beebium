@@ -1,5 +1,5 @@
 /**
- * Integration tests for CoupledSystem.
+ * Integration tests for TubeSystem.
  *
  * Launches a Tube-enabled server (host + parasite) and tests
  * coupled execution, predicate-based stopping, and timeout behaviour.
@@ -9,7 +9,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import { Beebium } from "../src/client.js";
-import { CoupledSystem } from "../src/coupled.js";
+import { TubeSystem } from "../src/tube-system.js";
 import { screenContains, type ReadFn } from "../src/screen.js";
 import { ServerProcess } from "../src/server-process.js";
 
@@ -33,7 +33,7 @@ afterEach(async () => {
 async function launchTubeServer(): Promise<Beebium> {
     const host = await Beebium.launch({
         args: [
-            "--tube", "65C02-3MHz",
+            "--tube-65c02",
             "--fdc", "acorn-1770",
             "--sideways", `14:rom:${DFS_ROM_FILEPATH}`,
         ],
@@ -50,10 +50,10 @@ function readFn(bbc: Beebium): ReadFn {
 }
 
 // =========================================================================
-// CoupledSystem
+// TubeSystem
 // =========================================================================
 
-describe("CoupledSystem", () => {
+describe("TubeSystem", () => {
     it("should create from host and connect to parasite", async () => {
         const host = await launchTubeServer();
         try {
@@ -64,7 +64,7 @@ describe("CoupledSystem", () => {
             );
             expect(found).toBe(true);
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
             const parasite = coupled.getParasite();
             expect(parasite).toBeDefined();
 
@@ -86,7 +86,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
 
             // Run coupled until we see "BASIC" on screen (it should
             // already be there from the Tube banner screen).
@@ -110,7 +110,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
 
             // Predicate that never matches
             const result = await coupled.runUntil(
@@ -133,7 +133,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
             const parasite = coupled.getParasite();
 
             await coupled.runUntil(async () => false, 0.5);
@@ -155,7 +155,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
             const parasite = coupled.getParasite();
 
             const hostCyclesBefore = (await host.debugger.getState()).cycleCount;
@@ -185,7 +185,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
             const parasite = coupled.getParasite();
 
             await coupled.run();
@@ -311,7 +311,7 @@ describe("CoupledSystem", () => {
                 10,
             );
 
-            const coupled = await CoupledSystem.fromHost(host);
+            const coupled = await TubeSystem.fromHost(host);
             const parasite = coupled.getParasite();
 
             // Test that a cycle-budget breakpoint on the parasite fires.

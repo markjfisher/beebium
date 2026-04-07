@@ -77,7 +77,6 @@ jobs:
             build/src/server/beebium-model-b
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
-            build/src/server/beebium-tube-65C02-3MHz
             build/src/server/presets/
           retention-days: 7
 
@@ -150,7 +149,6 @@ jobs:
             build/src/server/beebium-model-b
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
-            build/src/server/beebium-tube-65C02-3MHz
             build/src/server/presets/
           retention-days: 7
 
@@ -187,7 +185,6 @@ jobs:
           name: beebium-server-linux
           path: |
             build/src/server/beebium-model-b
-            build/src/server/beebium-tube-65C02-3MHz
           retention-days: 7
 
   server-windows:
@@ -277,8 +274,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b* server-build/beebium-tube-*
-
+        run: chmod +x server-build/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -339,8 +335,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b* server-build/beebium-tube-*
-
+        run: chmod +x server-build/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -433,8 +428,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -471,8 +465,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -512,8 +505,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -579,8 +571,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-65C02-3MHz
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -642,8 +633,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -675,8 +665,7 @@ jobs:
           path: build/src/server
 
       - name: Make servers executable
-        run: chmod +x build/src/server/beebium-model-b build/src/server/beebium-tube-*
-
+        run: chmod +x build/src/server/beebium-model-b
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

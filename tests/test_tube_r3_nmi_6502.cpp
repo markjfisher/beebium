@@ -15,16 +15,13 @@
 // The host writes bytes through R3 (with M flag set to enable PNMI).
 // The parasite 6502 has a minimal NMI handler that reads R3 data and
 // stores it into a results buffer. This tests the full NMI-driven
-// transfer path: host_write -> shared memory -> PNMI -> NMI handler
-// -> parasite_read -> RAM, with concurrent execution.
+// transfer path: host_write -> PNMI -> NMI handler -> parasite_read
+// -> RAM, with concurrent execution.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -106,14 +103,11 @@ static void plant_r3_receiver(ParasiteMemoryMap& mem, uint8_t num_bytes) {
 // ============================================================================
 
 TEST_CASE("6502 R3 NMI transfer: single byte", "[tube][6502][r3]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r3_receiver(memory, 1);
     memory.read(0xFEF8);  // disable boot ROM
@@ -125,16 +119,15 @@ TEST_CASE("6502 R3 NMI transfer: single byte", "[tube][6502][r3]") {
     cpu.reset();
 
     // Host: enable M flag and write one R3 byte synchronously
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
-    host.host_write(5, 0x42);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(5, 0x42);
 
     // Verify R3 state before ticking
-    INFO("R3 H2P count: " << shared.r3_h2p.count.load());
-    INFO("control_flags: " << std::hex << static_cast<int>(shared.control_flags.load()));
-    INFO("pnmi_level: " << parasite_port.pnmi_level());
+    INFO("pnmi_level: " << tube.pnmi_level());
 
-    REQUIRE(shared.r3_h2p.count.load() == 1);
-    REQUIRE(parasite_port.pnmi_level() == true);
+    // R3 H2P should have data available (host status bit 6 should be 0 = full)
+    REQUIRE((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0);
+    REQUIRE(tube.pnmi_level() == true);
 
     for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
         cpu.tick();
@@ -148,14 +141,11 @@ TEST_CASE("6502 R3 NMI transfer: single byte", "[tube][6502][r3]") {
 TEST_CASE("6502 R3 NMI transfer: 2 bytes synchronous", "[tube][6502][r3]") {
     // Two bytes, no threads. Write byte 1, tick until NMI handler
     // processes it, write byte 2, tick until done.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r3_receiver(memory, 2);
     memory.read(0xFEF8);
@@ -166,11 +156,11 @@ TEST_CASE("6502 R3 NMI transfer: 2 bytes synchronous", "[tube][6502][r3]") {
     memory.ram(COUNTER_ZP) = 0;
     cpu.reset();
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
     // Write byte 1
-    host.host_write(5, 0xAA);
-    REQUIRE(parasite_port.pnmi_level() == true);
+    tube.host_write(5, 0xAA);
+    REQUIRE(tube.pnmi_level() == true);
 
     // Tick until NMI handler reads byte 1 (counter becomes 1)
     for (int i = 0; i < 100000 && memory.ram(COUNTER_ZP) < 1; ++i) {
@@ -180,7 +170,7 @@ TEST_CASE("6502 R3 NMI transfer: 2 bytes synchronous", "[tube][6502][r3]") {
     CHECK(memory.ram(RESULT_ADDR) == 0xAA);
 
     // Write byte 2
-    host.host_write(5, 0xBB);
+    tube.host_write(5, 0xBB);
 
     // Tick until NMI handler reads byte 2 (counter becomes 2)
     for (int i = 0; i < 100000 && memory.ram(COUNTER_ZP) < 2; ++i) {
@@ -191,14 +181,11 @@ TEST_CASE("6502 R3 NMI transfer: 2 bytes synchronous", "[tube][6502][r3]") {
 }
 
 TEST_CASE("6502 R3 NMI transfer: 200 bytes synchronous", "[tube][6502][r3]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r3_receiver(memory, NUM_BYTES);
@@ -210,11 +197,11 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes synchronous", "[tube][6502][r3]") {
     memory.ram(COUNTER_ZP) = 0;
     cpu.reset();
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
     // Write each byte then tick until consumed
     for (int byte_num = 0; byte_num < NUM_BYTES; ++byte_num) {
-        host.host_write(5, static_cast<uint8_t>(byte_num & 0xFF));
+        tube.host_write(5, static_cast<uint8_t>(byte_num & 0xFF));
         for (int t = 0; t < 100000 && memory.ram(COUNTER_ZP) <= byte_num; ++t) {
             cpu.tick();
         }
@@ -237,14 +224,11 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes synchronous", "[tube][6502][r3]") {
 }
 
 TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r3_receiver(memory, NUM_BYTES);
@@ -256,11 +240,12 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3]") {
     memory.ram(COUNTER_ZP) = 0;
     cpu.reset();
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            host.host_write(5, static_cast<uint8_t>(i & 0xFF));
+            while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
+            tube.host_write(5, static_cast<uint8_t>(i & 0xFF));
         }
     });
 
@@ -282,14 +267,11 @@ TEST_CASE("6502 R3 NMI transfer: in_nmi_handler is set during handler", "[tube][
     // and back to false after RTI.  This is the core invariant that the
     // pre-tfn detection fix ensures.
 
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r3_receiver(memory, 1);
     memory.read(0xFEF8);
@@ -301,9 +283,9 @@ TEST_CASE("6502 R3 NMI transfer: in_nmi_handler is set during handler", "[tube][
     cpu.reset();
 
     // Write one byte with M flag to trigger PNMI
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
-    host.host_write(5, 0x42);
-    REQUIRE(parasite_port.pnmi_level() == true);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(5, 0x42);
+    REQUIRE(tube.pnmi_level() == true);
 
     bool saw_nmi_handler_true = false;
     bool saw_nmi_handler_false_after_true = false;
@@ -328,14 +310,11 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes, repeated 50 times", "[tube][6502][r3
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r3_receiver(memory, NUM_BYTES);
         memory.read(0xFEF8);
@@ -347,11 +326,12 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes, repeated 50 times", "[tube][6502][r3
         cpu.reset();
 
         uint8_t base = static_cast<uint8_t>(iter * 11);
-        host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                host.host_write(5, static_cast<uint8_t>((base + i) & 0xFF));
+                while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
+                tube.host_write(5, static_cast<uint8_t>((base + i) & 0xFF));
             }
         });
 

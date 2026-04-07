@@ -14,7 +14,7 @@
 
 #include "InstructionTrace.hpp"
 #include "ParasiteMemoryMap.hpp"
-#include "TubeParasitePort.hpp"
+#include "TubeParasiteBackend.hpp"
 
 #include <6502/6502.h>
 #include <cstdint>
@@ -24,7 +24,7 @@ namespace beebium {
 // CPU wrapper for the 6502 second processor parasite.
 //
 // Wires a Rockwell 65C02 to the ParasiteMemoryMap for bus access and
-// routes interrupt lines from TubeParasitePort (PIRQ -> IRQ, PNMI -> NMI).
+// routes interrupt lines from the TubeParasiteBackend (PIRQ -> IRQ, PNMI -> NMI).
 //
 // The parasite CPU runs at 3 MHz with no bus stretching -- every tick
 // is a single CPU cycle with a memory access.
@@ -37,7 +37,7 @@ namespace beebium {
 
 class ParasiteCpu {
 public:
-    ParasiteCpu(ParasiteMemoryMap& memory, TubeParasitePort& tube_port);
+    ParasiteCpu(ParasiteMemoryMap& memory, TubeParasiteBackend& tube_port);
     ~ParasiteCpu();
 
     // Non-copyable (M6502 contains internal pointers)
@@ -89,7 +89,7 @@ private:
     static constexpr M6502_DeviceNMIFlags kPnmiMask = 1;
 
     ParasiteMemoryMap& memory_;
-    TubeParasitePort& tube_port_;
+    TubeParasiteBackend& tube_port_;
     M6502 cpu_;
     uint64_t cycle_count_ = 0;
 

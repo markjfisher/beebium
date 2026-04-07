@@ -22,7 +22,6 @@
 #include "Via6522.hpp"
 #include "VideoBinding.hpp"
 #include "econet/EconetConcepts.hpp"
-#include "tube/TubeShared.hpp"
 
 #include <6502/6502.h>
 #include <algorithm>
@@ -346,14 +345,6 @@ public:
             }
 
             step();
-
-            // Check cross-processor debugger stop signal
-            if (tube_shared_ &&
-                tube_shared_->debugger_stop_signal.load(std::memory_order_relaxed)) {
-                tube_shared_->debugger_stop_signal.store(false, std::memory_order_relaxed);
-                pause();
-                return;
-            }
         }
     }
 
@@ -392,9 +383,6 @@ public:
 
     void pause() {
         paused_.store(true);
-        if (tube_shared_) {
-            tube_shared_->bus_stretch_cancel.store(true, std::memory_order_release);
-        }
         ++sequence_;
     }
 
@@ -403,27 +391,12 @@ public:
             std::lock_guard<std::mutex> lock(debug_mutex_);
             paused_.store(false);
         }
-        if (tube_shared_) {
-            tube_shared_->bus_stretch_cancel.store(false, std::memory_order_release);
-            // Clear any stale cross-processor stop signal so we don't
-            // immediately re-stop on the first cycle of the new run.
-            tube_shared_->debugger_stop_signal.store(false, std::memory_order_release);
-        }
         debug_cv_.notify_all();
         ++sequence_;
     }
 
-    // Call before stepping cycles to ensure bus stretch cancel is cleared.
-    void prepare_for_step() {
-        if (tube_shared_) {
-            tube_shared_->bus_stretch_cancel.store(false, std::memory_order_release);
-        }
-    }
-
-    // Set optional TubeShared pointer for cross-processor debugger integration.
-    // Must be called after Tube installation but before the emulation loop starts.
-    void set_tube_shared(TubeShared* shared) { tube_shared_ = shared; }
-    TubeShared* tube_shared() const { return tube_shared_; }
+    // Call before stepping cycles (no-op now, retained for interface compatibility).
+    void prepare_for_step() {}
 
     // Wait until the emulation loop has exited run() after a pause.
     // Call from an RPC thread after pause() to ensure exclusive access.
@@ -559,7 +532,6 @@ private:
     std::atomic<bool> shutdown_requested_{false};  // For clean server shutdown
     std::atomic<bool> in_run_{false};              // True while run() is executing
     std::atomic<uint64_t> sequence_{0};  // Increments on any mutation
-    TubeShared* tube_shared_ = nullptr;  // Optional, for cross-processor debugger integration
 
     // Break key state (true when Break is held, CPU halted)
     bool in_reset_ = false;

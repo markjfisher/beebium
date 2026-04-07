@@ -14,8 +14,7 @@
 
 #include "ParasiteCpu.hpp"
 #include "ParasiteMemoryMap.hpp"
-#include "TubeParasitePort.hpp"
-#include "TubeShared.hpp"
+#include "TubeParasiteBackend.hpp"
 #include "../Types.hpp"
 
 #include <algorithm>
@@ -33,17 +32,11 @@ namespace beebium {
 
 // Parasite execution runner -- the emulation engine for a second processor.
 //
-// Owns the CPU, memory map, and Tube port, and provides an execution loop
-// with lifecycle handling via the TubeShared mailbox. This is the parasite's
-// analogue of Machine<Hardware> on the host side.
+// Owns the CPU, memory map, and Tube port, and provides an execution loop.
+// This is the parasite's analogue of Machine<Hardware> on the host side.
 //
-// The runner periodically polls the lifecycle mailbox for commands from the
-// host (reset, freeze, shutdown) and responds accordingly. It also supports
-// pause/resume for debugger integration, following the same pattern as the
-// host Machine's wait_if_paused()/request_shutdown().
-//
-// The mailbox is polled every `mailbox_poll_interval` cycles (default 1024)
-// to amortise the cost of the atomic load.
+// The runner supports pause/resume for debugger integration, following the
+// same pattern as the host Machine's wait_if_paused()/request_shutdown().
 //
 // This class is specific to the 6502 second processor family. Future
 // coprocessors (6809, Z80, 80186, 32016) would have their own runner
@@ -53,8 +46,10 @@ class ParasiteRunner {
 public:
     using Memory = ParasiteMemoryMap;
     using BreakpointHitCallback = std::function<void(const BreakpointEntry& bp, uint16_t pc)>;
-    // Construct with a pointer to the shared memory region and a 2 KB ROM image.
-    ParasiteRunner(TubeShared* shared, std::span<const uint8_t, 2048> rom);
+
+    // Construct with an external parasite backend and a 2 KB ROM image.
+    // The caller owns the backend and must keep it alive for the runner's lifetime.
+    ParasiteRunner(TubeParasiteBackend& backend, std::span<const uint8_t, 2048> rom);
     ~ParasiteRunner() = default;
 
     // Non-copyable (owns M6502 with internal pointers)
@@ -64,8 +59,8 @@ public:
     // Reset CPU, memory map, and Tube port. Clears cycle count.
     void reset();
 
-    // Execute for the given number of cycles, or until shutdown/freeze.
-    // Polls the lifecycle mailbox and checks pause state periodically.
+    // Execute for the given number of cycles, or until shutdown.
+    // Checks pause state periodically.
     void run(uint64_t cycles);
 
     // Execute one complete instruction. Returns the number of cycles taken.
@@ -179,8 +174,6 @@ public:
 
     void clear_watchpoint_entries() { watchpoint_entries_.clear(); }
 
-    TubeShared* tube_shared() const { return shared_; }
-
     // --- Component access ---
 
     M6502& cpu() { return cpu_.cpu(); }
@@ -192,25 +185,14 @@ public:
     ParasiteMemoryMap& memory_map() { return memory_; }
     const ParasiteMemoryMap& memory_map() const { return memory_; }
 
-    TubeParasitePort& tube_port() { return tube_port_; }
-    const TubeParasitePort& tube_port() const { return tube_port_; }
+    TubeParasiteBackend& tube_port() { return tube_port_; }
+    const TubeParasiteBackend& tube_port() const { return tube_port_; }
 
 private:
-    // How often to poll the lifecycle mailbox (in CPU cycles).
-    static constexpr uint64_t mailbox_poll_interval = 1024;
-
-    // Poll the lifecycle mailbox and act on any pending command.
-    // Returns true if execution should continue, false if it should stop.
-    bool poll_mailbox();
-
     // Block while paused. Returns false if shutdown was requested during wait.
     bool wait_if_paused();
 
-    // Block while frozen. Returns false if shutdown was requested.
-    bool wait_while_frozen();
-
-    TubeShared* shared_;
-    TubeParasitePort tube_port_;
+    TubeParasiteBackend& tube_port_;                     // reference to active port
     ParasiteMemoryMap memory_;
     ParasiteCpu cpu_;
 
