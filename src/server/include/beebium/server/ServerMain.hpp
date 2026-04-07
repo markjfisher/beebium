@@ -833,18 +833,25 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         builtin_manifests.push_back(std::move(m));
     }
 
+    // Normalise an extension CLI flag to lowercase for case-insensitive matching.
+    auto to_lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return s;
+    };
+
     // Scan plugin extension manifests so we can recognise --<cli-name> flags in the second pass
     std::vector<beebium::ExtensionManifest> scanned_manifests;
     std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
     for (const auto& m : builtin_manifests) {
-        cli_name_to_manifest["--" + std::string(m.effective_cli_name())] = &m;
+        cli_name_to_manifest[to_lower("--" + std::string(m.effective_cli_name()))] = &m;
     }
     if (!config.extension_dirpath.empty()) {
         beebium::PluginLoader scanner;
         scanned_manifests = scanner.scan_manifests(config.extension_dirpath);
         for (const auto& m : scanned_manifests) {
             std::string cli = std::string(m.effective_cli_name());
-            cli_name_to_manifest["--" + cli] = &m;
+            cli_name_to_manifest[to_lower("--" + cli)] = &m;
         }
     }
 
@@ -980,7 +987,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             continue;
         } else {
             // Check if this is an extension CLI flag (e.g. --acorn-scsi, --scsi-hdd)
-            auto manifest_it = cli_name_to_manifest.find(arg);
+            auto manifest_it = cli_name_to_manifest.find(to_lower(arg));
             if (manifest_it != cli_name_to_manifest.end()) {
                 const auto* manifest = manifest_it->second;
                 std::string arg_string;
