@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -52,10 +52,8 @@ class DiscMetadata:
 
     name: str
     sides: int  # 1 for SSD, 2 for DSD
-    tracks_per_side: int  # 40 or 80
-    sectors_per_track: int  # 10 for DFS
-    sector_size: int  # 256 for DFS
     write_protected: bool
+    format: str  # e.g. "SSD", "ADL", "HFE v3"
 
 
 @dataclass(frozen=True)
@@ -162,10 +160,8 @@ def _proto_metadata_to_disc_metadata(proto: disc_pb2.DiscMetadata) -> DiscMetada
     return DiscMetadata(
         name=proto.name,
         sides=proto.sides,
-        tracks_per_side=proto.tracks_per_side,
-        sectors_per_track=proto.sectors_per_track,
-        sector_size=proto.sector_size,
         write_protected=proto.write_protected,
+        format=proto.format,
     )
 
 

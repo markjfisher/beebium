@@ -15,6 +15,7 @@
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/PlatformSleep.hpp"
 #include "beebium/SleepQuantum.hpp"
+#include "beebium/server/RomPaths.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -126,37 +127,26 @@ bool SecondProcessor65C02Extension::load_rom(std::array<uint8_t, 2048>& rom) con
     // Check explicit config first.
     auto rom_config = config_value("rom");
     if (rom_config) {
-        std::filesystem::path rom_filepath(*rom_config);
-        std::ifstream file(rom_filepath, std::ios::binary);
+        std::ifstream file(std::filesystem::path(*rom_config), std::ios::binary);
         if (!file.good()) {
-            std::cerr << "Error: cannot open ROM file: " << rom_filepath << "\n";
+            std::cerr << "Error: cannot open ROM file: " << *rom_config << "\n";
             return false;
         }
         file.read(reinterpret_cast<char*>(rom.data()), 2048);
         return file.gcount() == 2048;
     }
 
-    // Search standard ROM locations.
-    auto exe_dirpath = std::filesystem::current_path();  // Fallback
-    // Try sibling "share" directory, then "roms" directory.
-    for (const auto& dir : {
-        exe_dirpath / "share" / "beebium" / "roms",
-        exe_dirpath / "roms",
-        std::filesystem::path("/usr/local/share/beebium/roms"),
-        std::filesystem::path("/usr/share/beebium/roms"),
-    }) {
-        auto filepath = dir / ROM_FILENAME;
-        if (std::filesystem::exists(filepath)) {
-            std::ifstream file(filepath, std::ios::binary);
-            if (file.good()) {
-                file.read(reinterpret_cast<char*>(rom.data()), 2048);
-                if (file.gcount() == 2048) return true;
-            }
-        }
+    // Use the server's ROM path resolution. The extension's CMakeLists
+    // copies the Tube client ROM to the build roms/ directory alongside
+    // the MOS and BASIC ROMs, so server::RomPaths::find_rom() finds it.
+    auto rom_filepath = server::RomPaths::find_rom(ROM_FILENAME);
+    std::ifstream file(rom_filepath, std::ios::binary);
+    if (!file.good()) {
+        std::cerr << "Error: Tube client ROM not found: " << ROM_FILENAME << "\n";
+        return false;
     }
-
-    std::cerr << "Error: Tube client ROM not found: " << ROM_FILENAME << "\n";
-    return false;
+    file.read(reinterpret_cast<char*>(rom.data()), 2048);
+    return file.gcount() == 2048;
 }
 
 std::vector<grpc::Service*> SecondProcessor65C02Extension::grpc_services()
