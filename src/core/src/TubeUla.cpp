@@ -70,13 +70,13 @@ void TubeUla::soft_reset()
     hirq_.store(false, std::memory_order_relaxed);
     pirq_.store(false, std::memory_order_relaxed);
     pnmi_level_.store(false, std::memory_order_relaxed);
-    prev_pnmi_.store(false, std::memory_order_relaxed);
+    prev_pnmi_ = false;
     pnmi_edge_.store(false, std::memory_order_relaxed);
 
     // Release fence so all relaxed stores are visible.
     std::atomic_thread_fence(std::memory_order_release);
 
-    update_interrupts();
+    update_host_interrupts(); update_parasite_interrupts();
 }
 
 // ---------------------------------------------------------------------------
@@ -144,8 +144,18 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from P-to-H register.
+        // When M is set (NMI transfer active) and the FIFO is empty,
+        // spin-wait for the parasite to write data. This prevents the
+        // host from reading stale zeros during timed transfer loops.
         uint16_t old_state = r3_p2h_.state.load(std::memory_order_acquire);
         uint8_t count = AtomicReg3::count_of(old_state);
+        if (count == 0 && (control_flags_.load(std::memory_order_acquire) & FLAG_M)) {
+            while (AtomicReg3::count_of(
+                    old_state = r3_p2h_.state.load(std::memory_order_acquire)) == 0) {
+                std::this_thread::yield();
+            }
+            count = AtomicReg3::count_of(old_state);
+        }
         if (count > 0) {
             uint8_t head = r3_p2h_.head.load(std::memory_order_relaxed);
             result = r3_p2h_.data[head].load(std::memory_order_acquire);
@@ -184,7 +194,7 @@ uint8_t TubeUla::host_read(uint8_t offset)
     }
     }
 
-    update_interrupts();
+    update_host_interrupts();
     return result;
 }
 
@@ -335,7 +345,7 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
     }
     }
 
-    update_interrupts();
+    update_host_interrupts();
 }
 
 // ---------------------------------------------------------------------------
@@ -445,7 +455,7 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
     }
     }
 
-    update_interrupts();
+    update_parasite_interrupts();
     return result;
 }
 
@@ -581,7 +591,7 @@ void TubeUla::parasite_write(uint8_t offset, uint8_t value)
     }
     }
 
-    update_interrupts();
+    update_parasite_interrupts();
 }
 
 // ---------------------------------------------------------------------------
@@ -600,7 +610,10 @@ bool TubeUla::pirq() const
 
 bool TubeUla::pnmi() const
 {
-    return pnmi_edge_.load(std::memory_order_acquire);
+    // Return the PNMI level. The M6502 in ParasiteCpu performs its own
+    // edge detection via pnmi_level(). The internal edge detector
+    // (prev_pnmi_/pnmi_edge_) is only updated from the parasite thread.
+    return pnmi_level_.load(std::memory_order_acquire);
 }
 
 bool TubeUla::pnmi_level() const
@@ -608,44 +621,72 @@ bool TubeUla::pnmi_level() const
     return pnmi_level_.load(std::memory_order_acquire);
 }
 
-void TubeUla::update_interrupts()
+void TubeUla::update_host_interrupts()
 {
+    // Called from host thread after host_read/host_write.
+    // Updates HIRQ (host's concern) and level-sensitive PIRQ/PNMI
+    // (which depend on state the host just changed, e.g. R1 H-to-P data).
+    // Does NOT update PNMI edge detection (parasite thread only).
     auto flags = control_flags_.load(std::memory_order_acquire);
 
-    // HIRQ: Q=1 AND R4 P-to-H has data available.
     hirq_.store((flags & FLAG_Q)
              && r4_p2h_.available.load(std::memory_order_acquire),
                 std::memory_order_release);
 
-    // PIRQ: (I=1 AND R1 H-to-P has data) OR (J=1 AND R4 H-to-P has data).
     pirq_.store(((flags & FLAG_I)
               && r1_h2p_.available.load(std::memory_order_acquire))
              || ((flags & FLAG_J)
               && r4_h2p_.available.load(std::memory_order_acquire)),
                 std::memory_order_release);
 
-    // PNMI level computation.
+    // Update PNMI level (but not edge detection -- that's parasite-only).
     bool new_pnmi = false;
     if (flags & FLAG_M) {
         uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
         auto h2p_st = r3_h2p_.state.load(std::memory_order_acquire);
         auto p2h_st = r3_p2h_.state.load(std::memory_order_acquire);
-        bool h2p_data = AtomicReg3::pending_of(h2p_st)
-                     || AtomicReg3::count_of(h2p_st) >= threshold;
-        bool p2h_space = !AtomicReg3::pending_of(p2h_st);
-        new_pnmi = h2p_data || p2h_space;
+        new_pnmi = (AtomicReg3::pending_of(h2p_st)
+                 || AtomicReg3::count_of(h2p_st) >= threshold)
+                || !AtomicReg3::pending_of(p2h_st);
+    }
+    pnmi_level_.store(new_pnmi, std::memory_order_release);
+}
+
+void TubeUla::update_parasite_interrupts()
+{
+    // Called from parasite thread after parasite_read/parasite_write.
+    // Updates PIRQ, PNMI level AND edge detection.
+    // Also updates HIRQ (which depends on state the parasite just changed,
+    // e.g. R4 P-to-H data written by the parasite).
+    auto flags = control_flags_.load(std::memory_order_acquire);
+
+    hirq_.store((flags & FLAG_Q)
+             && r4_p2h_.available.load(std::memory_order_acquire),
+                std::memory_order_release);
+
+    pirq_.store(((flags & FLAG_I)
+              && r1_h2p_.available.load(std::memory_order_acquire))
+             || ((flags & FLAG_J)
+              && r4_h2p_.available.load(std::memory_order_acquire)),
+                std::memory_order_release);
+
+    bool new_pnmi = false;
+    if (flags & FLAG_M) {
+        uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
+        auto h2p_st = r3_h2p_.state.load(std::memory_order_acquire);
+        auto p2h_st = r3_p2h_.state.load(std::memory_order_acquire);
+        new_pnmi = (AtomicReg3::pending_of(h2p_st)
+                 || AtomicReg3::count_of(h2p_st) >= threshold)
+                || !AtomicReg3::pending_of(p2h_st);
     }
 
-    // Edge detection: fire on 0-to-1 transition.
-    bool prev = prev_pnmi_.load(std::memory_order_acquire);
-    if (new_pnmi && !prev)
+    // Edge detection: only from parasite thread (prev_pnmi_ is not atomic).
+    if (new_pnmi && !prev_pnmi_)
         pnmi_edge_.store(true, std::memory_order_release);
-
-    // Clear edge when the level drops (cause removed).
     if (!new_pnmi)
         pnmi_edge_.store(false, std::memory_order_release);
 
-    prev_pnmi_.store(new_pnmi, std::memory_order_release);
+    prev_pnmi_ = new_pnmi;
     pnmi_level_.store(new_pnmi, std::memory_order_release);
 }
 

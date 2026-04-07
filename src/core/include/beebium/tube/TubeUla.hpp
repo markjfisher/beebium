@@ -98,14 +98,16 @@ public:
     bool stretched() const override { return false; }
 
     // Access the NMI edge detector state (parasite-local).
-    bool prev_pnmi() const { return prev_pnmi_.load(std::memory_order_acquire); }
+    bool prev_pnmi() const { return prev_pnmi_; }
 
 private:
     // Soft reset (T flag) -- clears all register data but preserves control flags.
     void soft_reset();
 
-    // Recompute interrupt outputs after any register access.
-    void update_interrupts();
+    // Recompute interrupt outputs.
+    // Split by thread ownership to avoid data races on edge detection state.
+    void update_host_interrupts();     // HIRQ only (called from host thread)
+    void update_parasite_interrupts(); // PIRQ + PNMI (called from parasite thread)
 
     // Control flag register (bits 0-5: Q, I, J, M, V, P).
     // Single writer (host thread).
@@ -172,7 +174,7 @@ private:
     std::atomic<bool> hirq_{false};
     std::atomic<bool> pirq_{false};
     std::atomic<bool> pnmi_level_{false};
-    std::atomic<bool> prev_pnmi_{false};  // PNMI edge detector state
+    bool prev_pnmi_ = false;   // PNMI edge detector (parasite thread only)
     std::atomic<bool> pnmi_edge_{false};
 };
 
