@@ -20,6 +20,7 @@
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
 #include "TestScratchRam.hpp"
+#include "SecondProcessor65C02Extension.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/SleepQuantum.hpp"
@@ -821,9 +822,23 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // Scan extension manifests so we can recognise --<cli-name> flags in the second pass
+    // Register built-in extension manifests so the CLI parser recognises them.
+    std::vector<beebium::ExtensionManifest> builtin_manifests;
+    {
+        beebium::ExtensionManifest m;
+        m.name = "acorn-65c02-coprocessor";
+        m.description = "Acorn 65C02 3 MHz second processor";
+        m.cli_name = "tube-65c02";
+        m.parameters.push_back({"rom", "filepath", "Path to 2KB Tube client ROM image", -1, false, ""});
+        builtin_manifests.push_back(std::move(m));
+    }
+
+    // Scan plugin extension manifests so we can recognise --<cli-name> flags in the second pass
     std::vector<beebium::ExtensionManifest> scanned_manifests;
     std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
+    for (const auto& m : builtin_manifests) {
+        cli_name_to_manifest["--" + std::string(m.effective_cli_name())] = &m;
+    }
     if (!config.extension_dirpath.empty()) {
         beebium::PluginLoader scanner;
         scanned_manifests = scanner.scan_manifests(config.extension_dirpath);
@@ -1531,37 +1546,48 @@ public:
                 extension_registry.register_extension(std::move(scratch_ram));
             }
 
-            // Load plugin extensions (from --<cli-name> flags)
+            // Load extensions (from --<cli-name> flags)
+            std::vector<beebium::ExtensionManifest> plugin_manifests;
             if (!config.extension_dirpath.empty()) {
                 std::cout << "Extension directory: " << config.extension_dirpath << "\n";
-                auto manifests = plugin_loader.scan_manifests(config.extension_dirpath);
-                for (auto& inst : config.extension_instances) {
-                    auto* manifest = beebium::PluginLoader::find_manifest(manifests, inst.name);
-                    if (!manifest) {
-                        std::cerr << "Error: Extension '" << inst.name
-                                  << "' not found in " << config.extension_dirpath << "\n";
-                        return ExitCode::CONFIG;
-                    }
-                    // Assign instance ID if not provided
-                    if (inst.config.find("id") == inst.config.end()) {
-                        inst.config["id"] = generate_uuid_v4();
-                    }
-                    std::cout << "Loading extension: " << inst.name;
-                    if (inst.config.count("id")) {
-                        std::cout << " (id=" << inst.config["id"] << ")";
-                    }
-                    std::cout << "\n";
-                    for (const auto& [key, value] : inst.config) {
-                        if (key != "id") {
-                            std::cout << "  " << key << "=" << value << "\n";
-                        }
-                    }
-                    plugin_loader.load_extension(*manifest, extension_registry,
-                                                  std::move(inst.config));
+                plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+            }
+            for (auto& inst : config.extension_instances) {
+                // Assign instance ID if not provided
+                if (inst.config.find("id") == inst.config.end()) {
+                    inst.config["id"] = generate_uuid_v4();
                 }
-            } else if (!config.extension_instances.empty()) {
-                std::cerr << "Error: Extension flags require --extension-dir\n";
-                return ExitCode::USAGE;
+                std::cout << "Loading extension: " << inst.name;
+                if (inst.config.count("id")) {
+                    std::cout << " (id=" << inst.config["id"] << ")";
+                }
+                std::cout << "\n";
+                for (const auto& [key, value] : inst.config) {
+                    if (key != "id") {
+                        std::cout << "  " << key << "=" << value << "\n";
+                    }
+                }
+
+                // Try built-in extensions first.
+                if (inst.name == "acorn-65c02-coprocessor") {
+                    auto ext = std::make_unique<beebium::SecondProcessor65C02Extension>();
+                    ext->set_config(std::move(inst.config));
+                    extension_registry.register_extension(std::move(ext));
+                    continue;
+                }
+
+                // Fall back to plugin loading.
+                auto* manifest = beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
+                if (!manifest) {
+                    std::cerr << "Error: Extension '" << inst.name << "' not found";
+                    if (!config.extension_dirpath.empty()) {
+                        std::cerr << " in " << config.extension_dirpath;
+                    }
+                    std::cerr << "\n";
+                    return ExitCode::CONFIG;
+                }
+                plugin_loader.load_extension(*manifest, extension_registry,
+                                              std::move(inst.config));
             }
 
             // Initialise extensions (dependency resolution + topological sort)
