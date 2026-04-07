@@ -52,16 +52,17 @@ TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") 
     REQUIRE(ext.running());
     REQUIRE(tube_socket.enabled());
 
-    // Wait for the boot banner to appear in the R1 FIFO.
-    // The parasite thread is running and writing the banner.
+    // Wait for the boot banner to fill the R1 FIFO (24 bytes).
+    // The parasite writes the banner character-by-character via OSWRCH,
+    // which takes ~100K cycles. Poll with peek (side-effect-free) until
+    // the runner has completed enough cycles for the full banner.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
-        uint8_t status = tube_socket.read(0);
-        if (status & TubeUla::DATA_AVAILABLE) break;
+        if (ext.runner()->cycle_count() >= 100000) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    uint8_t status = tube_socket.read(0);
+    uint8_t status = tube_socket.peek(0);
     REQUIRE((status & TubeUla::DATA_AVAILABLE) != 0);
 
     // Read the 24-byte banner through the host's TubeSocket interface.

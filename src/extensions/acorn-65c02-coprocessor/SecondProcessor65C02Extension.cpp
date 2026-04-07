@@ -57,7 +57,11 @@ void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
 
     // Create debugger service (wraps ParasiteRunner with the same
     // DebuggerControlServiceImpl template used by the host debugger).
+    // The adapter exposes it under the ParasiteDebuggerControl service
+    // name so it can coexist with the host's DebuggerControl on the
+    // same gRPC server.
     debugger_service_ = std::make_unique<service::DebuggerControlServiceImpl<ParasiteRunner>>(*runner_);
+    debugger_adapter_ = std::make_unique<ParasiteDebuggerAdapter>(*debugger_service_);
 
     // Start the parasite thread.
     running_.store(true, std::memory_order_release);
@@ -90,6 +94,7 @@ void SecondProcessor65C02Extension::shutdown()
     if (tube_socket_)
         tube_socket_->install_backend(nullptr);
 
+    debugger_adapter_.reset();
     debugger_service_.reset();
     pacing_clock_.reset();
     runner_.reset();
@@ -156,12 +161,8 @@ bool SecondProcessor65C02Extension::load_rom(std::array<uint8_t, 2048>& rom) con
 
 std::vector<grpc::Service*> SecondProcessor65C02Extension::grpc_services()
 {
-    // The parasite DebuggerService is not registered here because it uses
-    // the same DebuggerControl proto service name as the host. Registering
-    // both on the same gRPC server would cause the parasite to override the
-    // host. A separate ParasiteDebuggerControl proto service is needed.
-    // For now, the debugger_service_ member is used internally for
-    // breakpoint/watchpoint management and cross-processor stop.
+    if (debugger_adapter_)
+        return {debugger_adapter_.get()};
     return {};
 }
 

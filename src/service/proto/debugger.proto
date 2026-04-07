@@ -47,6 +47,39 @@ service DebuggerControl {
     rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
 }
 
+// Parasite (second processor) debugger service.
+// Same RPCs as DebuggerControl but registered under a distinct service name
+// so both can coexist on the same gRPC server.
+service ParasiteDebuggerControl {
+    rpc GetState(Empty) returns (ExecutionState);
+    rpc Run(Empty) returns (RunResponse);
+    rpc Stop(Empty) returns (StopResponse);
+    rpc Reset(Empty) returns (ResetResponse);
+    rpc StepInstruction(StepRequest) returns (StepResponse);
+    rpc StepCycle(StepRequest) returns (StepResponse);
+    rpc WatchExecutionState(WatchExecutionStateRequest)
+        returns (stream ExecutionStateEvent);
+    rpc ReadMemory(ReadMemoryRequest) returns (ReadMemoryResponse);
+    rpc WriteMemory(WriteMemoryRequest) returns (WriteMemoryResponse);
+    rpc PeekMemory(PeekMemoryRequest) returns (PeekMemoryResponse);
+    rpc GetMemoryRegions(GetMemoryRegionsRequest) returns (GetMemoryRegionsResponse);
+    rpc PeekRegion(RegionAccessRequest) returns (RegionAccessResponse);
+    rpc ReadRegion(RegionAccessRequest) returns (RegionAccessResponse);
+    rpc WriteRegion(WriteRegionRequest) returns (WriteRegionResponse);
+    rpc AddBreakpoint(AddBreakpointRequest) returns (AddBreakpointResponse);
+    rpc RemoveBreakpoint(RemoveBreakpointRequest) returns (RemoveBreakpointResponse);
+    rpc EnableBreakpoint(EnableBreakpointRequest) returns (EnableBreakpointResponse);
+    rpc ListBreakpoints(Empty) returns (ListBreakpointsResponse);
+    rpc ClearBreakpoints(Empty) returns (ClearBreakpointsResponse);
+    rpc AddWatchpoint(AddWatchpointRequest) returns (AddWatchpointResponse);
+    rpc RemoveWatchpoint(RemoveWatchpointRequest) returns (RemoveWatchpointResponse);
+    rpc EnableWatchpoint(EnableWatchpointRequest) returns (EnableWatchpointResponse);
+    rpc ListWatchpoints(Empty) returns (ListWatchpointsResponse);
+    rpc ClearWatchpoints(Empty) returns (ClearWatchpointsResponse);
+    rpc Get6502State(Get6502StateRequest) returns (Cpu6502State);
+    rpc Set6502State(Set6502StateRequest) returns (Set6502StateResponse);
+}
+
 // BBC Micro device state inspection.
 // Only available on the host; parasite returns UNIMPLEMENTED for all RPCs.
 service DeviceInspection {
