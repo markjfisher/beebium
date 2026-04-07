@@ -19,15 +19,12 @@
 //
 // Each test runs a 6502 program on the parasite that observes or reacts
 // to flag changes made by the host thread, verifying the cross-thread
-// interaction through the shared memory Tube model.
+// interaction through the TubeUla model.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -108,20 +105,17 @@ static void setup_cpu_basic(ParasiteMemoryMap& mem, ParasiteCpu& cpu) {
 // ============================================================================
 
 TEST_CASE("6502 control flags: parasite reads back host-set flags", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
-
-    // Set flags BEFORE starting the parasite so the sampler sees them.
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_M | TubeUla::FLAG_J);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_flag_sampler(memory, 1);
     setup_cpu_basic(memory, cpu);
+
+    // Set flags AFTER cpu.reset() (which calls tube.reset()) so they persist.
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_M | TubeUla::FLAG_J);
 
     for (int i = 0; i < 10000 && cpu.cpu().opcode_pc.w != 0x040F; ++i) {
         cpu.tick();
@@ -141,17 +135,7 @@ TEST_CASE("6502 control flags: set and clear individual flags", "[tube][6502][co
     // Verify each flag can be set and cleared independently.
     // The parasite reads R1 status after each host flag change.
 
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
-
-    auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
-
-    // We'll use a simpler approach: directly check the shared state
-    // after host writes, then have the parasite confirm by reading status.
+    TubeUla tube;
 
     // 6 flags to test: Q(0x01), I(0x02), J(0x04), M(0x08), V(0x10), P(0x20)
     constexpr uint8_t flags[] = {
@@ -163,45 +147,42 @@ TEST_CASE("6502 control flags: set and clear individual flags", "[tube][6502][co
         INFO("flag=$" << std::hex << static_cast<int>(flag));
 
         // Set the flag
-        host.host_write(0, TubeUla::FLAG_S | flag);
-        uint8_t after_set = shared.control_flags.load(std::memory_order_acquire);
+        tube.host_write(0, TubeUla::FLAG_S | flag);
+        uint8_t after_set = tube.control_flags();
         CHECK((after_set & flag) != 0);
 
         // Clear the flag
-        host.host_write(0, flag);  // S=0 means clear
-        uint8_t after_clear = shared.control_flags.load(std::memory_order_acquire);
+        tube.host_write(0, flag);  // S=0 means clear
+        uint8_t after_clear = tube.control_flags();
         CHECK((after_clear & flag) == 0);
     }
 }
 
 TEST_CASE("6502 control flags: set multiple flags then clear one", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    // Set I, J, and M simultaneously
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_J | TubeUla::FLAG_M);
-    uint8_t flags = shared.control_flags.load(std::memory_order_acquire);
+    auto rom = make_stub_rom(CODE_ADDR);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
+
+    plant_flag_sampler(memory, 1);
+    setup_cpu_basic(memory, cpu);
+
+    // Set I, J, and M simultaneously (after cpu.reset() which calls tube.reset())
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_J | TubeUla::FLAG_M);
+    uint8_t flags = tube.control_flags();
     CHECK((flags & TubeUla::FLAG_I) != 0);
     CHECK((flags & TubeUla::FLAG_J) != 0);
     CHECK((flags & TubeUla::FLAG_M) != 0);
 
     // Clear only J
-    host.host_write(0, TubeUla::FLAG_J);  // S=0, clear J
-    flags = shared.control_flags.load(std::memory_order_acquire);
+    tube.host_write(0, TubeUla::FLAG_J);  // S=0, clear J
+    flags = tube.control_flags();
     CHECK((flags & TubeUla::FLAG_I) != 0);  // still set
     CHECK((flags & TubeUla::FLAG_J) == 0);  // cleared
     CHECK((flags & TubeUla::FLAG_M) != 0);  // still set
 
     // Now verify the parasite sees I and M but not J
-    auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
-
-    plant_flag_sampler(memory, 1);
-    setup_cpu_basic(memory, cpu);
-
     for (int i = 0; i < 10000 && cpu.cpu().opcode_pc.w != 0x040F; ++i) {
         cpu.tick();
     }
@@ -218,33 +199,30 @@ TEST_CASE("6502 control flags: set multiple flags then clear one", "[tube][6502]
 // ============================================================================
 
 TEST_CASE("6502 control flags: soft reset clears all registers", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     // Set some flags and write data to registers
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_M);
-    host.host_write(1, 0xAA);  // R1 H2P
-    host.host_write(7, 0xBB);  // R4 H2P
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I | TubeUla::FLAG_M);
+    tube.host_write(1, 0xAA);  // R1 H2P
+    tube.host_write(7, 0xBB);  // R4 H2P
 
-    // Verify data is present
-    CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) == 1);
-    CHECK(shared.r4_h2p.ready.load(std::memory_order_acquire) == 1);
+    // Verify data is present via status registers
+    CHECK((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) == 0);  // R1 H2P full
+    CHECK((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0);  // R4 H2P full
 
     // Trigger soft reset via T flag
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_T);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_T);
 
     // Verify registers are cleared
-    CHECK(shared.r1_h2p.ready.load(std::memory_order_acquire) == 0);
-    CHECK(shared.r4_h2p.ready.load(std::memory_order_acquire) == 0);
-    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 0);
+    CHECK((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) != 0);  // R1 H2P empty
+    CHECK((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) != 0);  // R4 H2P empty
+    CHECK((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) != 0);  // R3 H2P empty
 
     // Note: T flag also ORs its bit into control_flags (T=0x40, but only
     // bits 5-0 are stored as flags).  The original flags (I, M) should
     // be preserved because soft_reset doesn't clear control_flags -- it
     // only clears the data registers.
-    uint8_t flags = shared.control_flags.load(std::memory_order_acquire);
+    uint8_t flags = tube.control_flags();
     CHECK((flags & TubeUla::FLAG_I) != 0);
     CHECK((flags & TubeUla::FLAG_M) != 0);
 }
@@ -255,48 +233,39 @@ TEST_CASE("6502 control flags: soft reset clears all registers", "[tube][6502][c
 
 TEST_CASE("6502 control flags: M=0 suppresses PNMI from R3", "[tube][6502][control]") {
     // With M=0, writing to R3 should NOT assert PNMI.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     // Do NOT set M flag
-    host.host_write(5, 0x42);  // write R3 data
+    tube.host_write(5, 0x42);  // write R3 data
 
     // PNMI should not be asserted
-    CHECK(parasite_port.pnmi_level() == false);
+    CHECK(tube.pnmi_level() == false);
 }
 
 TEST_CASE("6502 control flags: M=1 enables PNMI from R3", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     // Set M flag
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
-    host.host_write(5, 0x42);  // write R3 data
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(5, 0x42);  // write R3 data
 
     // PNMI should be asserted
-    CHECK(parasite_port.pnmi_level() == true);
+    CHECK(tube.pnmi_level() == true);
 }
 
 TEST_CASE("6502 control flags: clearing M mid-transfer suppresses further NMIs", "[tube][6502][control]") {
     // Start an NMI-driven R3 transfer with M=1, send a few bytes,
     // then clear M.  The parasite should stop receiving NMIs.
 
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     static constexpr uint16_t MAIN_ADDR = 0x0400;
     static constexpr uint16_t NMI_ADDR = 0x0300;
     static constexpr uint8_t COUNTER_ZP = 0x10;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR, 0x0000);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     // Main loop: spin forever (NMI handler does the work)
     // $0400: CLI
@@ -325,9 +294,9 @@ TEST_CASE("6502 control flags: clearing M mid-transfer suppresses further NMIs",
     cpu.reset();
 
     // Enable M and send 3 bytes
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
     for (int byte_num = 0; byte_num < 3; ++byte_num) {
-        host.host_write(5, static_cast<uint8_t>(byte_num));
+        tube.host_write(5, static_cast<uint8_t>(byte_num));
         for (int t = 0; t < 100000 && memory.ram(COUNTER_ZP) <= byte_num; ++t) {
             cpu.tick();
         }
@@ -335,13 +304,13 @@ TEST_CASE("6502 control flags: clearing M mid-transfer suppresses further NMIs",
     CHECK(memory.ram(COUNTER_ZP) == 3);
 
     // Clear M
-    host.host_write(0, TubeUla::FLAG_M);  // S=0, clear M
+    tube.host_write(0, TubeUla::FLAG_M);  // S=0, clear M
 
     // Write another byte to R3
-    host.host_write(5, 0xFF);
+    tube.host_write(5, 0xFF);
 
     // PNMI should NOT be asserted
-    CHECK(parasite_port.pnmi_level() == false);
+    CHECK(tube.pnmi_level() == false);
 
     // Run the parasite for a while -- counter should NOT increase
     for (int i = 0; i < 10000; ++i) {
@@ -355,46 +324,34 @@ TEST_CASE("6502 control flags: clearing M mid-transfer suppresses further NMIs",
 // ============================================================================
 
 TEST_CASE("6502 control flags: I=0 suppresses PIRQ from R1", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     // Write R1 data without setting I flag
-    host.host_write(1, 0x42);
-    CHECK(parasite_port.pirq() == false);
+    tube.host_write(1, 0x42);
+    CHECK(tube.pirq() == false);
 }
 
 TEST_CASE("6502 control flags: I=1 enables PIRQ from R1", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
-    host.host_write(1, 0x42);
-    CHECK(parasite_port.pirq() == true);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+    tube.host_write(1, 0x42);
+    CHECK(tube.pirq() == true);
 }
 
 TEST_CASE("6502 control flags: J=0 suppresses PIRQ from R4", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    host.host_write(7, 0x42);
-    CHECK(parasite_port.pirq() == false);
+    tube.host_write(7, 0x42);
+    CHECK(tube.pirq() == false);
 }
 
 TEST_CASE("6502 control flags: J=1 enables PIRQ from R4", "[tube][6502][control]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
-    host.host_write(7, 0x42);
-    CHECK(parasite_port.pirq() == true);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
+    tube.host_write(7, 0x42);
+    CHECK(tube.pirq() == true);
 }
 
 // ============================================================================
@@ -404,53 +361,43 @@ TEST_CASE("6502 control flags: J=1 enables PIRQ from R4", "[tube][6502][control]
 TEST_CASE("6502 control flags: V=0 R3 is 1-byte mode", "[tube][6502][control]") {
     // With V=0 (default), R3 H2P threshold is 1.  The host can write 1 byte
     // before the FIFO is full.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
     // Write 1 byte -- should succeed immediately
-    host.host_write(5, 0xAA);
-    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 1);
+    tube.host_write(5, 0xAA);
 
     // Host status should show R3 H2P full (bit 6 = 0)
-    uint8_t status = host.host_read(4);
+    uint8_t status = tube.host_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) == 0);
 }
 
 TEST_CASE("6502 control flags: V=1 R3 is 2-byte mode", "[tube][6502][control]") {
     // With V=1, R3 H2P threshold is 2.  The host can write 2 bytes
     // before the FIFO is full.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V | TubeUla::FLAG_M);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V | TubeUla::FLAG_M);
 
     // Write 2 bytes -- both should succeed immediately
-    host.host_write(5, 0xAA);
-    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 1);
-    host.host_write(5, 0xBB);
-    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 2);
+    tube.host_write(5, 0xAA);
+    // After 1 byte in 2-byte mode, should still have space
+    CHECK((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) != 0);
+    tube.host_write(5, 0xBB);
 
     // Host status should show R3 H2P full (bit 6 = 0)
-    uint8_t status = host.host_read(4);
+    uint8_t status = tube.host_read(4);
     CHECK((status & TubeUla::SPACE_AVAILABLE) == 0);
 }
 
 TEST_CASE("6502 control flags: V=1 R3 two-byte transfer with 6502", "[tube][6502][control]") {
     // Full two-byte mode transfer: host writes 2 bytes, parasite reads both.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     // Parasite: read two bytes from R3 into RAM
     // $0400: LDA $FEFD       ; read R3 data (byte 0)
@@ -468,11 +415,11 @@ TEST_CASE("6502 control flags: V=1 R3 two-byte transfer with 6502", "[tube][6502
     setup_cpu_basic(memory, cpu);
 
     // Set V=1 (two-byte mode) and M (for PNMI, though we poll here)
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_V);
 
     // Write 2 bytes -- both fit in the 2-slot FIFO
-    host.host_write(5, 0xAA);
-    host.host_write(5, 0xBB);
+    tube.host_write(5, 0xAA);
+    tube.host_write(5, 0xBB);
 
     for (int i = 0; i < 100000 && cpu.cpu().opcode_pc.w != 0x040C; ++i) {
         cpu.tick();
@@ -491,18 +438,15 @@ TEST_CASE("6502 control flags: enable I mid-transfer starts PIRQ delivery", "[tu
     // Set up the parasite first, then write R1 data with I=0, then set I=1
     // while the data is still pending.  The parasite should see PIRQ assert
     // and handle the byte via its IRQ handler.
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     static constexpr uint16_t MAIN = 0x0400;
     static constexpr uint16_t IRQ = 0x0300;
     static constexpr uint8_t CTR_ZP = 0x10;
 
     auto rom = make_stub_rom(MAIN, 0x0000, IRQ);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     // Main: CLI then poll counter until 1
     plant(memory, MAIN, {
@@ -532,12 +476,12 @@ TEST_CASE("6502 control flags: enable I mid-transfer starts PIRQ delivery", "[tu
     cpu.reset();
 
     // Write R1 data AFTER reset, without I flag -- no PIRQ yet
-    host.host_write(1, 0x42);
-    CHECK(parasite_port.pirq() == false);
+    tube.host_write(1, 0x42);
+    CHECK(tube.pirq() == false);
 
     // Now enable I -- PIRQ should fire because R1 H2P already has data
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
-    CHECK(parasite_port.pirq() == true);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+    CHECK(tube.pirq() == true);
 
     for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
         cpu.tick();

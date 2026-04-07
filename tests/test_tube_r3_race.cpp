@@ -12,22 +12,14 @@
 
 // Regression test for the R3 register race condition.
 //
-// The R3 2-byte register uses a shift-down design with a non-atomic
-// load-calculate-store on count. When the host writes (incrementing count)
-// and the parasite reads (decrementing count) concurrently, the last-writer
-// wins and one side's update is lost. This causes bytes to vanish from the
-// FIFO, leading to deadlocks in real Tube transfers (e.g. 256-byte blocks).
-//
-// This test streams bytes through R3 H-to-P using TubeHostPort::host_write
-// and TubeParasitePort::parasite_read on separate threads, verifying that
-// every byte arrives in order. A single lost byte causes the consumer to
-// hang, which the test detects via a timeout.
+// The R3 2-byte register uses a shift-down design. These tests stream bytes
+// through R3 H-to-P and P-to-H using host_write/host_read and
+// parasite_write/parasite_read on separate threads, verifying that every
+// byte arrives in order. A single lost byte causes the consumer to hang,
+// which the test detects via a timeout.
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <atomic>
@@ -39,37 +31,25 @@
 using namespace beebium;
 
 // ---------------------------------------------------------------------------
-// R3 H-to-P: host writes via TubeHostPort, parasite reads via TubeParasitePort
+// R3 H-to-P: host writes via host_write, parasite reads via parasite_read
 // ---------------------------------------------------------------------------
 
 TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
     // This test reproduces the race condition in the R3 shift register.
     // The host writes 256 bytes to R3 (offset 5) via host_write(), which
-    // uses bus stretching (spin while count >= 2). The parasite reads
+    // uses bus stretching (blocks while count >= 2). The parasite reads
     // R3 data (offset 5) via parasite_read(), which dequeues and shifts.
     //
-    // On the buggy implementation, the non-atomic load-store on count
-    // causes lost updates when both sides run concurrently. A lost byte
-    // means the parasite blocks forever waiting for data that was silently
-    // dropped.
+    // On a buggy implementation, lost updates would cause the parasite to
+    // block forever waiting for data that was silently dropped.
 
     constexpr int NUM_BYTES = 256;
     constexpr auto TIMEOUT = std::chrono::seconds(5);
 
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    // V=0 selects 1-byte threshold mode (the mode used by 256-byte block transfers).
-    // With threshold=1, each byte triggers DATA_AVAILABLE individually.
-    shared.control_flags.store(0, std::memory_order_release);
-
-    // Clear R3 H-to-P to a known empty state.
-    shared.r3_h2p.data[0].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
-
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite(&shared);
+    // Drain the dummy P-to-H byte that TubeUla::reset() seeds.
+    tube.host_read(5);
 
     std::vector<uint8_t> received;
     received.reserve(NUM_BYTES);
@@ -87,7 +67,7 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
         for (int i = 0; i < NUM_BYTES; ++i) {
             // Poll R3 status (offset 4) until DATA_AVAILABLE (bit 7).
             while (true) {
-                uint8_t status = parasite.parasite_read(4);
+                uint8_t status = tube.parasite_read(4);
                 if (status & TubeUla::DATA_AVAILABLE)
                     break;
 
@@ -99,18 +79,19 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
             }
 
             // Read R3 data (offset 5).
-            uint8_t byte = parasite.parasite_read(5);
+            uint8_t byte = tube.parasite_read(5);
             received.push_back(byte);
         }
 
         parasite_done.store(true, std::memory_order_release);
     });
 
-    // Host thread: write all bytes to R3 (offset 5). The bus stretching
-    // spin inside host_write blocks while count >= 2, so this naturally
-    // pushes bytes as fast as the parasite consumes them.
+    // Host thread: write all bytes to R3 (offset 5). Poll for space
+    // before each write, as TubeUla buffers at most one pending write
+    // rather than spin-waiting.
     for (int i = 0; i < NUM_BYTES; ++i) {
-        host.host_write(5, static_cast<uint8_t>(i));
+        while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
+        tube.host_write(5, static_cast<uint8_t>(i));
     }
 
     // Wait for the parasite to finish (or timeout).
@@ -120,8 +101,6 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
     if (parasite_timed_out.load(std::memory_order_acquire)) {
         INFO("Parasite timed out after receiving " << received.size()
              << " of " << NUM_BYTES << " bytes");
-        INFO("R3 H-to-P count: "
-             << static_cast<int>(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire))));
         FAIL("Parasite timed out -- likely a lost byte due to the R3 count race");
     }
 
@@ -131,8 +110,8 @@ TEST_CASE("R3 H-to-P concurrent transfer loses no bytes", "[tube][r3][race]") {
         CHECK(received[i] == static_cast<uint8_t>(i));
     }
 
-    // FIFO should be empty.
-    CHECK(TubeReg3::count_of(shared.r3_h2p.state.load(std::memory_order_acquire)) == 0);
+    // R3 H2P should have space available (empty).
+    CHECK((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) != 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,19 +122,10 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     constexpr int NUM_BYTES = 256;
     constexpr auto TIMEOUT = std::chrono::seconds(5);
 
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    // V=0 selects 1-byte threshold mode (the mode used by 256-byte block transfers).
-    shared.control_flags.store(0, std::memory_order_release);
-
-    // Clear R3 P-to-H (init places a dummy byte to prevent spurious PNMI).
-    shared.r3_p2h.data[0].store(0, std::memory_order_relaxed);
-    shared.r3_p2h.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_p2h.state.store(TubeReg3::pack(0, false), std::memory_order_release);
-
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite(&shared);
+    // Drain the dummy P-to-H byte that TubeUla::reset() seeds.
+    tube.host_read(5);
 
     std::vector<uint8_t> received;
     received.reserve(NUM_BYTES);
@@ -164,15 +134,9 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     // Parasite thread: write bytes to R3 P-to-H (offset 5) via parasite_write.
     std::thread parasite_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            // parasite_write to R3 spins internally if count >= 2 (enqueue_r3_p2h
-            // drops bytes if full, so we must poll).
-            while (true) {
-                uint8_t count = TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_acquire));
-                if (count < 2) {
-                    parasite.parasite_write(5, static_cast<uint8_t>(i));
-                    break;
-                }
-            }
+            // Poll R3 status (offset 4) until SPACE_AVAILABLE (bit 6).
+            while ((tube.parasite_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
+            tube.parasite_write(5, static_cast<uint8_t>(i));
         }
     });
 
@@ -182,7 +146,7 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     for (int i = 0; i < NUM_BYTES; ++i) {
         // Poll R3 status (offset 4) until DATA_AVAILABLE.
         while (true) {
-            uint8_t status = host.host_read(4);
+            uint8_t status = tube.host_read(4);
             if (status & TubeUla::DATA_AVAILABLE)
                 break;
 
@@ -195,7 +159,7 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
         if (host_timed_out.load(std::memory_order_acquire))
             break;
 
-        uint8_t byte = host.host_read(5);
+        uint8_t byte = tube.host_read(5);
         received.push_back(byte);
     }
 
@@ -204,8 +168,6 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
     if (host_timed_out.load(std::memory_order_acquire)) {
         INFO("Host timed out after receiving " << received.size()
              << " of " << NUM_BYTES << " bytes");
-        INFO("R3 P-to-H count: "
-             << static_cast<int>(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_acquire))));
         FAIL("Host timed out -- likely a lost byte due to the R3 count race");
     }
 
@@ -214,7 +176,8 @@ TEST_CASE("R3 P-to-H concurrent transfer loses no bytes", "[tube][r3][race]") {
         CHECK(received[i] == static_cast<uint8_t>(i));
     }
 
-    CHECK(TubeReg3::count_of(shared.r3_p2h.state.load(std::memory_order_acquire)) == 0);
+    // R3 P2H should be empty (no data available from host perspective).
+    CHECK((tube.host_peek(4) & TubeUla::DATA_AVAILABLE) == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,18 +190,10 @@ TEST_CASE("R3 H-to-P concurrent multi-block transfer", "[tube][r3][race]") {
     constexpr int TOTAL_BYTES = NUM_BLOCKS * BLOCK_SIZE;
     constexpr auto TIMEOUT = std::chrono::seconds(10);
 
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    // V=0 selects 1-byte threshold mode (the mode used by 256-byte block transfers).
-    shared.control_flags.store(0, std::memory_order_release);
-
-    shared.r3_h2p.data[0].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.data[1].store(0, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
-
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite(&shared);
+    // Drain the dummy P-to-H byte that TubeUla::reset() seeds.
+    tube.host_read(5);
 
     std::vector<uint8_t> received;
     received.reserve(TOTAL_BYTES);
@@ -249,7 +204,7 @@ TEST_CASE("R3 H-to-P concurrent multi-block transfer", "[tube][r3][race]") {
 
         for (int i = 0; i < TOTAL_BYTES; ++i) {
             while (true) {
-                uint8_t status = parasite.parasite_read(4);
+                uint8_t status = tube.parasite_read(4);
                 if (status & TubeUla::DATA_AVAILABLE)
                     break;
 
@@ -259,13 +214,14 @@ TEST_CASE("R3 H-to-P concurrent multi-block transfer", "[tube][r3][race]") {
                 }
             }
 
-            uint8_t byte = parasite.parasite_read(5);
+            uint8_t byte = tube.parasite_read(5);
             received.push_back(byte);
         }
     });
 
     for (int i = 0; i < TOTAL_BYTES; ++i) {
-        host.host_write(5, static_cast<uint8_t>(i & 0xFF));
+        while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
+        tube.host_write(5, static_cast<uint8_t>(i & 0xFF));
     }
 
     parasite_thread.join();

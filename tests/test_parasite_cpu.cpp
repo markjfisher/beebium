@@ -12,21 +12,20 @@
 
 // Tests for the parasite CPU wrapper.
 //
-// ParasiteCpu wires a Rockwell 65C02 to the ParasiteMemoryMap and TubeParasitePort,
+// ParasiteCpu wires a Rockwell 65C02 to the ParasiteMemoryMap and TubeUla,
 // routing bus access and interrupt lines. These tests verify:
 //   - CPU initialisation and reset
 //   - Instruction execution via tick() and step_instruction()
 //   - Memory read/write through the memory map
-//   - IRQ routing from TubeParasitePort::pirq()
-//   - NMI routing from TubeParasitePort::pnmi()
+//   - IRQ routing from TubeUla::pirq()
+//   - NMI routing from TubeUla::pnmi_level()
 //   - Boot mode interaction (CPU fetches reset vector from ROM)
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
+#include <beebium/tube/TubeUla.hpp>
 
 #include <array>
 #include <cstdint>
@@ -59,13 +58,11 @@ static std::array<uint8_t, 2048> make_nop_rom(uint16_t rom_entry = 0xF800) {
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu initialises with Rockwell 65C02 config", "[parasite][cpu]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
 
     CHECK(cpu.cycle_count() == 0);
     CHECK(cpu.cpu().config == &M6502_rockwell65c02_config);
@@ -76,13 +73,11 @@ TEST_CASE("ParasiteCpu initialises with Rockwell 65C02 config", "[parasite][cpu]
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu reset fetches reset vector from boot ROM", "[parasite][cpu][reset]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom(0xF800);
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     // After reset, step through the 7-cycle reset sequence
@@ -95,13 +90,11 @@ TEST_CASE("ParasiteCpu reset fetches reset vector from boot ROM", "[parasite][cp
 }
 
 TEST_CASE("ParasiteCpu reset with custom reset vector", "[parasite][cpu][reset]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom(0xF900);
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     uint64_t cycles = cpu.step_instruction();
@@ -110,13 +103,11 @@ TEST_CASE("ParasiteCpu reset with custom reset vector", "[parasite][cpu][reset]"
 }
 
 TEST_CASE("ParasiteCpu reset re-enters boot mode", "[parasite][cpu][reset]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     // Memory map should be in boot mode after reset
@@ -124,13 +115,11 @@ TEST_CASE("ParasiteCpu reset re-enters boot mode", "[parasite][cpu][reset]") {
 }
 
 TEST_CASE("ParasiteCpu reset clears cycle count", "[parasite][cpu][reset]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     // Execute some cycles
@@ -148,13 +137,11 @@ TEST_CASE("ParasiteCpu reset clears cycle count", "[parasite][cpu][reset]") {
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu step_instruction executes NOP", "[parasite][cpu][execution]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     // Reset sequence: 7 cycles
@@ -173,13 +160,11 @@ TEST_CASE("ParasiteCpu step_instruction executes NOP", "[parasite][cpu][executio
 }
 
 TEST_CASE("ParasiteCpu tick advances one cycle", "[parasite][cpu][execution]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.tick();
@@ -190,13 +175,11 @@ TEST_CASE("ParasiteCpu tick advances one cycle", "[parasite][cpu][execution]") {
 }
 
 TEST_CASE("ParasiteCpu run executes multiple cycles", "[parasite][cpu][execution]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.run(20);
@@ -204,16 +187,14 @@ TEST_CASE("ParasiteCpu run executes multiple cycles", "[parasite][cpu][execution
 }
 
 TEST_CASE("ParasiteCpu executes LDA immediate from ROM", "[parasite][cpu][execution]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Place LDA #$42 at &F800 (ROM offset 0)
     rom[0x000] = 0xA9;  // LDA #imm
     rom[0x001] = 0x42;
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset sequence (7 cycles)
@@ -223,9 +204,7 @@ TEST_CASE("ParasiteCpu executes LDA immediate from ROM", "[parasite][cpu][execut
 }
 
 TEST_CASE("ParasiteCpu executes STA/LDA in RAM", "[parasite][cpu][execution]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Place STA $1000 then LDA $1000 at &F800
     rom[0x000] = 0xA9;  // LDA #$55
@@ -238,9 +217,9 @@ TEST_CASE("ParasiteCpu executes STA/LDA in RAM", "[parasite][cpu][execution]") {
     rom[0x007] = 0xAD;  // LDA $1000
     rom[0x008] = 0x00;
     rom[0x009] = 0x10;
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
@@ -261,25 +240,22 @@ TEST_CASE("ParasiteCpu executes STA/LDA in RAM", "[parasite][cpu][execution]") {
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu routes PIRQ to CPU IRQ line", "[parasite][cpu][irq]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Program: CLI then loop with NOPs
     rom[0x000] = 0x58;  // CLI (enable interrupts)
     // Fill rest with NOP (already 0xEA)
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
     cpu.step_instruction();  // CLI (2)
 
     // Enable I flag (PIRQ from R1) and provide data
-    shared.control_flags.store(0x02, std::memory_order_release);  // I flag
-    shared.r1_h2p.value.store(0xAA, std::memory_order_relaxed);
-    shared.r1_h2p.ready.store(1, std::memory_order_release);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);  // set I flag
+    tube.host_write(1, 0xAA);                                 // write R1 H-to-P data
 
     // Execute a few NOPs -- IRQ should fire
     cpu.run(20);
@@ -289,28 +265,25 @@ TEST_CASE("ParasiteCpu routes PIRQ to CPU IRQ line", "[parasite][cpu][irq]") {
     // We just check that the interrupt was taken by verifying
     // the CPU visited the IRQ vector address.
     // With the I flag set and R1 data available, PIRQ should be active.
-    CHECK(port.pirq());
+    CHECK(tube.pirq());
 }
 
 TEST_CASE("ParasiteCpu no IRQ when interrupts disabled", "[parasite][cpu][irq]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Program: SEI then NOPs (interrupts disabled)
     rom[0x000] = 0x78;  // SEI
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
     cpu.step_instruction();  // SEI (2)
 
     // Enable PIRQ source
-    shared.control_flags.store(0x02, std::memory_order_release);
-    shared.r1_h2p.value.store(0xBB, std::memory_order_relaxed);
-    shared.r1_h2p.ready.store(1, std::memory_order_release);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);  // set I flag
+    tube.host_write(1, 0xBB);                                 // write R1 H-to-P data
 
     // Run some cycles -- CPU should just execute NOPs, no IRQ taken
     uint16_t pc_after_sei = cpu.cpu().pc.w;
@@ -338,44 +311,41 @@ TEST_CASE("ParasiteCpu no IRQ when interrupts disabled", "[parasite][cpu][irq]")
 //   The 6502 NMI is edge-triggered (fires on falling edge of /NMI, i.e.
 //   rising edge of the active-high PNMI level).
 //
-//   In the shared-memory model, ParasiteCpu passes pnmi_level() (the raw
-//   combinational output) to M6502_SetDeviceNMI every cycle. The M6502
-//   library handles edge detection internally. This ensures the CPU sees
-//   NMI immediately when the host writes R3 data, without waiting for
-//   the parasite to perform a register access.
+//   ParasiteCpu passes pnmi_level() (the raw combinational output) to
+//   M6502_SetDeviceNMI every cycle. The M6502 library handles edge
+//   detection internally. This ensures the CPU sees NMI immediately
+//   when the host writes R3 data, without waiting for the parasite to
+//   perform a register access.
 
 TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "[parasite][cpu][nmi]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
 
     // After reset, R3 P-to-H has the dummy byte (count=1), and R3 H-to-P
     // is empty. With M=0, PNMI level is false.
-    CHECK_FALSE(port.pnmi_level());
+    CHECK_FALSE(tube.pnmi_level());
 
     // Enable M flag. R3 P-to-H has the dummy byte (count=1), so P-to-H
     // space is NOT available. R3 H-to-P is empty, so H-to-P data is NOT
     // available. PNMI level should still be false.
-    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
-    CHECK_FALSE(port.pnmi_level());
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    CHECK_FALSE(tube.pnmi_level());
 
     // Execute a NOP to let the CPU sample the NMI line while it's low.
     // This establishes the baseline for edge detection.
     cpu.step_instruction();  // NOP (2)
 
-    // Now simulate the host depositing data into R3 H-to-P.
+    // Now deposit data into R3 H-to-P via the host interface.
     // This makes H-to-P data available, so PNMI goes high.
-    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
+    tube.host_write(5, 0x42);
 
-    CHECK(port.pnmi_level());
+    CHECK(tube.pnmi_level());
 
     // Run cycle-by-cycle until the NMI handler is entered. The 6502 finishes
     // the current instruction then takes 7 cycles for the NMI sequence.
@@ -392,8 +362,8 @@ TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "
     // Simulate the NMI handler consuming the R3 data, which deasserts PNMI.
     // Without this, RTI would immediately re-trigger NMI (correct behaviour
     // -- the condition is still asserted).
-    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
-    CHECK_FALSE(port.pnmi_level());
+    tube.parasite_read(5);  // consume the H-to-P data byte
+    CHECK_FALSE(tube.pnmi_level());
 
     // Run more cycles: the RTI at &F980 returns to the NOP stream.
     // With PNMI deasserted, no further NMIs fire. Allow enough cycles
@@ -408,23 +378,20 @@ TEST_CASE("ParasiteCpu PNMI: host R3 write triggers NMI during NOP execution", "
 }
 
 TEST_CASE("ParasiteCpu PNMI: not triggered when M flag is clear", "[parasite][cpu][nmi]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
 
-    // M flag is clear (default). Deposit R3 H-to-P data.
-    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
+    // M flag is clear (default). Deposit R3 H-to-P data via host interface.
+    tube.host_write(5, 0x42);
 
     // PNMI level should be false (M=0 disables PNMI).
-    CHECK_FALSE(port.pnmi_level());
+    CHECK_FALSE(tube.pnmi_level());
 
     // Run some NOPs -- NMI should NOT fire.
     uint16_t pc_before = cpu.cpu().pc.w;
@@ -437,13 +404,11 @@ TEST_CASE("ParasiteCpu PNMI: not triggered when M flag is clear", "[parasite][cp
 }
 
 TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
@@ -452,17 +417,17 @@ TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]")
     // With M=1, P-to-H space is NOT available (count >= threshold).
     // H-to-P data is NOT available (empty).
     // PNMI level should be false.
-    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
-    CHECK_FALSE(port.pnmi_level());
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    CHECK_FALSE(tube.pnmi_level());
 
     // Let CPU sample the low NMI level.
     cpu.step_instruction();  // NOP (2)
 
-    // Now simulate host consuming the dummy byte from P-to-H (decrementing count).
+    // Now consume the dummy byte from P-to-H via the host interface.
     // This makes P-to-H space available, so PNMI goes high.
-    shared.r3_p2h.state.store(TubeReg3::pack(0, false), std::memory_order_release);
+    tube.host_read(5);
 
-    CHECK(port.pnmi_level());
+    CHECK(tube.pnmi_level());
 
     // Run cycles -- NMI should fire.
     cpu.run(20);
@@ -472,50 +437,46 @@ TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]")
 }
 
 TEST_CASE("ParasiteCpu PNMI: second edge after level drops and rises", "[parasite][cpu][nmi]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
 
     // Set M flag, establish low PNMI baseline.
-    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
-    CHECK_FALSE(port.pnmi_level());
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
+    CHECK_FALSE(tube.pnmi_level());
     cpu.step_instruction();  // NOP -- CPU samples PNMI low
 
-    // First NMI: deposit R3 H-to-P data.
-    shared.r3_h2p.data[0].store(0x11, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
-    CHECK(port.pnmi_level());
+    // First NMI: deposit R3 H-to-P data via host interface.
+    tube.host_write(5, 0x11);
+    CHECK(tube.pnmi_level());
 
     // Run enough for NMI + RTI (7 + 6 = 13 cycles, give some margin).
     cpu.run(20);
 
     // PNMI level is still high (R3 H-to-P data not consumed).
-    CHECK(port.pnmi_level());
+    CHECK(tube.pnmi_level());
 
-    // Simulate parasite consuming the R3 H-to-P data (via a register access
-    // in the NMI handler, but here we manipulate shared state directly).
-    shared.r3_h2p.state.store(TubeReg3::pack(0, false), std::memory_order_release);
+    // Simulate parasite consuming the R3 H-to-P data.
+    tube.parasite_read(5);
 
-    // Also make P-to-H occupied so PNMI drops fully.
-    shared.r3_p2h.state.store(TubeReg3::pack(1, true), std::memory_order_release);
+    // Also make P-to-H occupied so PNMI drops fully. Write a byte to P-to-H
+    // via the parasite interface to fill it.
+    tube.parasite_write(5, 0x00);
 
     // PNMI level should now be false.
-    CHECK_FALSE(port.pnmi_level());
+    CHECK_FALSE(tube.pnmi_level());
 
     // Let CPU sample the low level for at least one cycle.
     cpu.step_instruction();  // NOP
 
-    // Second NMI: deposit new R3 H-to-P data.
-    shared.r3_h2p.data[0].store(0x22, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
-    CHECK(port.pnmi_level());
+    // Second NMI: deposit new R3 H-to-P data via host interface.
+    tube.host_write(5, 0x22);
+    CHECK(tube.pnmi_level());
 
     // Run -- second NMI should fire.
     cpu.run(20);
@@ -523,27 +484,24 @@ TEST_CASE("ParasiteCpu PNMI: second edge after level drops and rises", "[parasit
 }
 
 TEST_CASE("ParasiteCpu PNMI: NMI cannot be masked by SEI", "[parasite][cpu][nmi]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Program: SEI then NOPs
     rom[0x000] = 0x78;  // SEI
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     cpu.step_instruction();  // reset (7)
     cpu.step_instruction();  // SEI (2) -- interrupts disabled
 
     // Set M flag, establish low baseline.
-    shared.control_flags.store(TubeUla::FLAG_M, std::memory_order_release);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
     cpu.step_instruction();  // NOP -- CPU samples PNMI low
 
-    // Trigger PNMI.
-    shared.r3_h2p.data[0].store(0x42, std::memory_order_relaxed);
-    shared.r3_h2p.state.store(TubeReg3::pack(1, true), std::memory_order_release);
+    // Trigger PNMI by depositing R3 H-to-P data via host interface.
+    tube.host_write(5, 0x42);
 
     // Run -- NMI should fire despite SEI (NMI is non-maskable).
     cpu.run(20);
@@ -555,13 +513,11 @@ TEST_CASE("ParasiteCpu PNMI: NMI cannot be masked by SEI", "[parasite][cpu][nmi]
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu reads from boot ROM during reset sequence", "[parasite][cpu][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom(0xF850);
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
 
     // Boot mode should be active
@@ -578,17 +534,15 @@ TEST_CASE("ParasiteCpu reads from boot ROM during reset sequence", "[parasite][c
 }
 
 TEST_CASE("ParasiteCpu accessing Tube register terminates boot mode", "[parasite][cpu][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
     // Program at &F800: LDA $FEF8 (read Tube R1 status)
     rom[0x000] = 0xAD;  // LDA abs
     rom[0x001] = 0xF8;  // low byte
     rom[0x002] = 0xFE;  // high byte
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
     cpu.reset();
     REQUIRE(mem.boot_mode());
 
@@ -604,13 +558,11 @@ TEST_CASE("ParasiteCpu accessing Tube register terminates boot mode", "[parasite
 // ===========================================================================
 
 TEST_CASE("ParasiteCpu provides mutable and const CPU access", "[parasite][cpu]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_nop_rom();
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
-    ParasiteCpu cpu(mem, port);
+    ParasiteCpu cpu(mem, tube);
 
     // Mutable access
     cpu.cpu().a = 0x42;

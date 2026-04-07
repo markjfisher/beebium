@@ -24,9 +24,6 @@
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -146,23 +143,20 @@ static void setup_cpu(ParasiteMemoryMap& mem, ParasiteCpu& cpu) {
 // ============================================================================
 
 TEST_CASE("6502 PIRQ R1: single byte", "[tube][6502][pirq]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r1_irq_receiver(memory, 1);
     setup_cpu(memory, cpu);
 
     // Enable PIRQ from R1 (FLAG_I)
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
 
     // Write one byte -- PIRQ should fire
-    host.host_write(1, 0x42);
+    tube.host_write(1, 0x42);
 
     for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
         cpu.tick();
@@ -174,26 +168,24 @@ TEST_CASE("6502 PIRQ R1: single byte", "[tube][6502][pirq]") {
 }
 
 TEST_CASE("6502 PIRQ R1: 200 bytes threaded", "[tube][6502][pirq]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r1_irq_receiver(memory, NUM_BYTES);
     setup_cpu(memory, cpu);
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
 
-    // R1 H-to-P is a single-byte latch with bus stretching, so the host
-    // thread naturally blocks until the parasite reads each byte.
+    // R1 H-to-P is a single-byte latch. Poll for space before each write,
+    // as TubeUla buffers at most one pending write rather than spin-waiting.
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            host.host_write(1, static_cast<uint8_t>(i & 0xFF));
+            while ((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) == 0) {}
+            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
         }
     });
 
@@ -215,24 +207,22 @@ TEST_CASE("6502 PIRQ R1: 200 bytes, repeated 50 times", "[tube][6502][pirq]") {
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r1_irq_receiver(memory, NUM_BYTES);
         setup_cpu(memory, cpu);
 
-        host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                host.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
+                while ((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) == 0) {}
+                tube.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
             }
         });
 
@@ -259,22 +249,19 @@ TEST_CASE("6502 PIRQ R1: 200 bytes, repeated 50 times", "[tube][6502][pirq]") {
 // ============================================================================
 
 TEST_CASE("6502 PIRQ R4: single byte", "[tube][6502][pirq]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r4_irq_receiver(memory, 1);
     setup_cpu(memory, cpu);
 
     // Enable PIRQ from R4 (FLAG_J)
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
 
-    host.host_write(7, 0x42);
+    tube.host_write(7, 0x42);
 
     for (int i = 0; i < 500000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
         cpu.tick();
@@ -286,25 +273,24 @@ TEST_CASE("6502 PIRQ R4: single byte", "[tube][6502][pirq]") {
 }
 
 TEST_CASE("6502 PIRQ R4: 200 bytes threaded", "[tube][6502][pirq]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r4_irq_receiver(memory, NUM_BYTES);
     setup_cpu(memory, cpu);
 
-    host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
+    tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
 
-    // R4 H-to-P has bus stretching, so the host thread blocks naturally.
+    // R4 H-to-P: poll for space before each write, as TubeUla buffers
+    // at most one pending write rather than spin-waiting.
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            host.host_write(7, static_cast<uint8_t>(i & 0xFF));
+            while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
+            tube.host_write(7, static_cast<uint8_t>(i & 0xFF));
         }
     });
 
@@ -326,24 +312,22 @@ TEST_CASE("6502 PIRQ R4: 200 bytes, repeated 50 times", "[tube][6502][pirq]") {
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r4_irq_receiver(memory, NUM_BYTES);
         setup_cpu(memory, cpu);
 
-        host.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
+        tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                host.host_write(7, static_cast<uint8_t>((base + i) & 0xFF));
+                while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
+                tube.host_write(7, static_cast<uint8_t>((base + i) & 0xFF));
             }
         });
 

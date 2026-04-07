@@ -30,9 +30,6 @@
 
 #include <beebium/tube/ParasiteCpu.hpp>
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeHostPort.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -164,19 +161,16 @@ static void setup_cpu(ParasiteMemoryMap& mem, ParasiteCpu& cpu) {
 // ============================================================================
 
 TEST_CASE("6502 R2 H2P: single byte", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r2_reader(memory, 1);
     setup_cpu(memory, cpu);
 
-    host.host_write(3, 0x42);
+    tube.host_write(3, 0x42);
 
     for (int i = 0; i < 100000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
@@ -187,14 +181,11 @@ TEST_CASE("6502 R2 H2P: single byte", "[tube][6502][r2]") {
 }
 
 TEST_CASE("6502 R2 H2P: 200 bytes threaded", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r2_reader(memory, NUM_BYTES);
@@ -205,10 +196,10 @@ TEST_CASE("6502 R2 H2P: 200 bytes threaded", "[tube][6502][r2]") {
     // the latch and data is lost.
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            while (shared.r2_h2p.ready.load(std::memory_order_acquire) != 0) {
+            while ((tube.host_peek(2) & TubeUla::SPACE_AVAILABLE) == 0) {
                 // spin until parasite has consumed previous byte
             }
-            host.host_write(3, static_cast<uint8_t>(i & 0xFF));
+            tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
         }
     });
 
@@ -230,14 +221,11 @@ TEST_CASE("6502 R2 H2P: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(CODE_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r2_reader(memory, NUM_BYTES);
         setup_cpu(memory, cpu);
@@ -246,8 +234,8 @@ TEST_CASE("6502 R2 H2P: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                while (shared.r2_h2p.ready.load(std::memory_order_acquire) != 0) {}
-                host.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
+                while ((tube.host_peek(2) & TubeUla::SPACE_AVAILABLE) == 0) {}
+                tube.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
             }
         });
 
@@ -274,14 +262,11 @@ TEST_CASE("6502 R2 H2P: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 // ============================================================================
 
 TEST_CASE("6502 R2 P2H: single byte", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r2_writer(memory, 1);
     memory.ram(RESULT_ADDR) = 0x42;  // source data
@@ -293,18 +278,15 @@ TEST_CASE("6502 R2 P2H: single byte", "[tube][6502][r2]") {
     }
 
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
-    CHECK(host.host_read(3) == 0x42);
+    CHECK(tube.host_read(3) == 0x42);
 }
 
 TEST_CASE("6502 R2 P2H: 200 bytes threaded", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_BYTES = 200;
     plant_r2_writer(memory, NUM_BYTES);
@@ -321,10 +303,10 @@ TEST_CASE("6502 R2 P2H: 200 bytes threaded", "[tube][6502][r2]") {
     // to become available before reading, otherwise it reads stale data.
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_BYTES; ++i) {
-            while (shared.r2_p2h.ready.load(std::memory_order_acquire) == 0) {
+            while ((tube.host_peek(2) & TubeUla::DATA_AVAILABLE) == 0) {
                 // spin until parasite has written a byte
             }
-            received[i] = host.host_read(3);
+            received[i] = tube.host_read(3);
         }
     });
 
@@ -346,14 +328,11 @@ TEST_CASE("6502 R2 P2H: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(CODE_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r2_writer(memory, NUM_BYTES);
         uint8_t base = static_cast<uint8_t>(iter * 11);
@@ -366,8 +345,8 @@ TEST_CASE("6502 R2 P2H: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_BYTES; ++i) {
-                while (shared.r2_p2h.ready.load(std::memory_order_acquire) == 0) {}
-                received[i] = host.host_read(3);
+                while ((tube.host_peek(2) & TubeUla::DATA_AVAILABLE) == 0) {}
+                received[i] = tube.host_read(3);
             }
         });
 
@@ -394,20 +373,17 @@ TEST_CASE("6502 R2 P2H: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 // ============================================================================
 
 TEST_CASE("6502 R2 command/response: single round-trip", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     plant_r2_cmd_rsp(memory, 1);
     setup_cpu(memory, cpu);
 
     // Host sends command
-    host.host_write(3, 0x42);
+    tube.host_write(3, 0x42);
 
     // Run parasite until it halts
     for (int i = 0; i < 100000 && cpu.cpu().opcode_pc.w != CMD_RSP_HALT; ++i) {
@@ -415,18 +391,15 @@ TEST_CASE("6502 R2 command/response: single round-trip", "[tube][6502][r2]") {
     }
 
     REQUIRE(cpu.cpu().opcode_pc.w == CMD_RSP_HALT);
-    CHECK(host.host_read(3) == static_cast<uint8_t>(0x42 ^ 0xFF));
+    CHECK(tube.host_read(3) == static_cast<uint8_t>(0x42 ^ 0xFF));
 }
 
 TEST_CASE("6502 R2 command/response: 200 round-trips threaded", "[tube][6502][r2]") {
-    TubeShared shared;
-    shared.init();
-    TubeHostPort host(&shared);
-    TubeParasitePort parasite_port(&shared);
+    TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
-    ParasiteMemoryMap memory(parasite_port, rom);
-    ParasiteCpu cpu(memory, parasite_port);
+    ParasiteMemoryMap memory(tube, rom);
+    ParasiteCpu cpu(memory, tube);
 
     constexpr uint8_t NUM_CMDS = 200;
     plant_r2_cmd_rsp(memory, NUM_CMDS);
@@ -441,10 +414,10 @@ TEST_CASE("6502 R2 command/response: 200 round-trips threaded", "[tube][6502][r2
     // spinning needed.
     std::thread host_thread([&] {
         for (int i = 0; i < NUM_CMDS; ++i) {
-            host.host_write(3, static_cast<uint8_t>(i & 0xFF));
+            tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
             // Poll R2 status bit 7 (P-to-H data available) via proper Tube interface
-            while ((host.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
-            responses[i] = host.host_read(3);
+            while ((tube.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
+            responses[i] = tube.host_read(3);
         }
     });
 
@@ -467,14 +440,11 @@ TEST_CASE("6502 R2 command/response: 200 round-trips, repeated 50 times", "[tube
     constexpr int ITERATIONS = 50;
 
     for (int iter = 0; iter < ITERATIONS; ++iter) {
-        TubeShared shared;
-        shared.init();
-        TubeHostPort host(&shared);
-        TubeParasitePort parasite_port(&shared);
+        TubeUla tube;
 
         auto rom = make_stub_rom(CODE_ADDR);
-        ParasiteMemoryMap memory(parasite_port, rom);
-        ParasiteCpu cpu(memory, parasite_port);
+        ParasiteMemoryMap memory(tube, rom);
+        ParasiteCpu cpu(memory, tube);
 
         plant_r2_cmd_rsp(memory, NUM_CMDS);
         setup_cpu(memory, cpu);
@@ -484,9 +454,9 @@ TEST_CASE("6502 R2 command/response: 200 round-trips, repeated 50 times", "[tube
 
         std::thread host_thread([&] {
             for (int i = 0; i < NUM_CMDS; ++i) {
-                host.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
-                while ((host.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
-                responses[i] = host.host_read(3);
+                tube.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
+                while ((tube.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
+                responses[i] = tube.host_read(3);
             }
         });
 
