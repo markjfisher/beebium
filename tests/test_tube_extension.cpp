@@ -87,6 +87,43 @@ TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") 
     CHECK(!tube_socket.enabled());
 }
 
+TEST_CASE("65C02 extension: cross-processor stop via counterpart callback", "[tube][extension]") {
+    TubeSocket tube_socket;
+    ExtensionContext ctx(nullptr, nullptr, &tube_socket);
+
+    SecondProcessor65C02Extension ext;
+    ext.set_config({
+        {"id", "test-tube-xstop"},
+        {"rom", std::string(BEEBIUM_ROM_DIR) + "/acorn-tube-6502_1_10.rom"}
+    });
+    ext.init(ctx);
+    REQUIRE(ext.running());
+
+    // Wait for boot.
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (ext.runner()->cycle_count() >= 100000) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Simulate cross-processor stop: calling the parasite_pause_callback
+    // should pause the parasite runner.
+    REQUIRE(!ext.runner()->is_paused());
+    auto pause_cb = ext.parasite_pause_callback();
+    pause_cb();
+
+    // Give the runner time to observe the pause flag and stop.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(ext.runner()->is_paused());
+
+    // Resume and verify it continues.
+    ext.runner()->resume();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(!ext.runner()->is_paused());
+
+    ext.shutdown();
+}
+
 TEST_CASE("65C02 extension: shutdown is idempotent", "[tube][extension]") {
     TubeSocket tube_socket;
     ExtensionContext ctx(nullptr, nullptr, &tube_socket);

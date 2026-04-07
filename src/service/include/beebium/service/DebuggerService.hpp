@@ -240,7 +240,18 @@ private:
     void enqueue_event(StopReason reason, const WatchpointHitInfo& watchpoint_hit);
     void signal_counterpart_stop();
 
+public:
+    // Set a callback invoked when a breakpoint/watchpoint with
+    // stop_counterpart fires. The callback should pause the counterpart
+    // processor. Used by the Tube extension to coordinate host and parasite.
+    using CounterpartStopCallback = std::function<void()>;
+    void set_counterpart_stop_callback(CounterpartStopCallback cb) {
+        counterpart_stop_cb_ = std::move(cb);
+    }
+
+private:
     MachineType& machine_;
+    CounterpartStopCallback counterpart_stop_cb_;
     std::mutex mutex_;
     std::vector<BreakpointRecord> breakpoints_;
     std::atomic<uint32_t> next_breakpoint_id_{1};
@@ -1003,9 +1014,8 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::signal_counterpart_stop() {
-    // TODO: Implement counterpart stop signalling for in-process Tube extensions.
-    // Previously this set flags in cross-process shared memory; the in-process
-    // extension model will need a different mechanism.
+    if (counterpart_stop_cb_)
+        counterpart_stop_cb_();
 }
 
 template<typename MachineType>

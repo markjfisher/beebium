@@ -93,6 +93,11 @@ public:
     /// Access the TubeService (for host startup to set shared memory pointer).
     TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
 
+    /// Access the host DebuggerService (for wiring cross-processor stop).
+    DebuggerControlServiceImpl<MachineType>& debugger_service() {
+        return *impl_->debugger_control_service;
+    }
+
     /// Set the pacing clock for gRPC stats monitoring.
     void set_pacing_clock(PacingClock* clock) {
         if (impl_->system_service) {

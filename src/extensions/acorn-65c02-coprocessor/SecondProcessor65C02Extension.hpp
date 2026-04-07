@@ -69,10 +69,33 @@ public:
 
     std::vector<grpc::Service*> grpc_services() override;
 
+    // --- Cross-processor debugger coordination ---
+
+    // Wire the counterpart stop callbacks between host and parasite
+    // debugger services. Call after both debugger services exist.
+    // host_pause: callback to pause the host Machine.
+    void wire_counterpart_stop(std::function<void()> host_pause) {
+        // When parasite hits a breakpoint with stop_counterpart,
+        // pause the host.
+        if (debugger_service_)
+            debugger_service_->set_counterpart_stop_callback(std::move(host_pause));
+    }
+
+    // Get the callback that pauses the parasite.
+    // The host's DebuggerService should use this as its counterpart stop callback.
+    std::function<void()> parasite_pause_callback() {
+        return [this] {
+            if (runner_) runner_->pause();
+        };
+    }
+
     // --- Accessors ---
 
     TubeUla* tube_ula() { return tube_ula_.get(); }
     ParasiteRunner* runner() { return runner_.get(); }
+    service::DebuggerControlServiceImpl<ParasiteRunner>* debugger_service() {
+        return debugger_service_.get();
+    }
     bool running() const { return running_.load(std::memory_order_acquire); }
 
 private:

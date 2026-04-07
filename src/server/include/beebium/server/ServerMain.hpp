@@ -1683,6 +1683,22 @@ public:
             std::cout << "Listening on port " << server.port() << std::endl;
             std::cout << Memory::MACHINE_DISPLAY_NAME << " ready. Press Ctrl+C to stop." << std::endl;
 
+            // Wire cross-processor debugger stop for Tube extensions.
+            // When a breakpoint with stop_counterpart fires on one side,
+            // the callback pauses the other side.
+            for (auto* ext : extension_registry.extensions()) {
+                auto* tube_ext = dynamic_cast<beebium::SecondProcessor65C02Extension*>(ext);
+                if (tube_ext && tube_ext->running()) {
+                    // Host breakpoint → pause parasite
+                    server.debugger_service().set_counterpart_stop_callback(
+                        tube_ext->parasite_pause_callback());
+                    // Parasite breakpoint → pause host
+                    tube_ext->wire_counterpart_stop([&machine] {
+                        machine.pause();
+                    });
+                }
+            }
+
             // Handle wait mode
             handle_wait_mode(machine, config.wait_mode);
 
