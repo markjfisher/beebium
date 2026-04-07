@@ -601,6 +601,14 @@ target_compile_definitions(test_tube_end_to_end PRIVATE
 )
 catch_discover_tests(test_tube_end_to_end)
 
+# Tube in-process tests (ParasiteRunner backed by TubeUla, no shared memory)
+add_executable(test_tube_inprocess test_tube_inprocess.cpp)
+target_link_libraries(test_tube_inprocess PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_tube_inprocess PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_tube_inprocess)
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
