@@ -17,6 +17,7 @@
 #include "beebium/tube/TubeSocket.hpp"
 #include "beebium/tube/TubeUla.hpp"
 #include "beebium/PacingClock.hpp"
+#include "beebium/service/DebuggerService.hpp"
 
 #include <array>
 #include <atomic>
@@ -65,7 +66,7 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
-    std::vector<grpc::Service*> grpc_services() override { return {}; }
+    std::vector<grpc::Service*> grpc_services() override;
 
     // --- Accessors ---
 
@@ -80,6 +81,7 @@ private:
     std::unique_ptr<TubeUla> tube_ula_;
     std::unique_ptr<ParasiteRunner> runner_;
     std::unique_ptr<PacingClock> pacing_clock_;
+    std::unique_ptr<service::DebuggerControlServiceImpl<ParasiteRunner>> debugger_service_;
     std::thread parasite_thread_;
     std::atomic<bool> running_{false};
     TubeSocket* tube_socket_ = nullptr;  // non-owning, from ExtensionContext

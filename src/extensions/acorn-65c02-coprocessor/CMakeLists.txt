@@ -11,3 +11,9 @@ target_include_directories(beebium_ext_acorn_65c02
 target_link_libraries(beebium_ext_acorn_65c02
     PUBLIC beebium_core
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    target_link_libraries(beebium_ext_acorn_65c02
+        PUBLIC beebium_service
+    )
+endif()

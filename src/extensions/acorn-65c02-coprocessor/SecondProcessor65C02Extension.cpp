@@ -55,6 +55,10 @@ void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
     pacing_clock_ = std::make_unique<PacingClock>(
         pacing_config, quantum, std::move(sleeper));
 
+    // Create debugger service (wraps ParasiteRunner with the same
+    // DebuggerControlServiceImpl template used by the host debugger).
+    debugger_service_ = std::make_unique<service::DebuggerControlServiceImpl<ParasiteRunner>>(*runner_);
+
     // Start the parasite thread.
     running_.store(true, std::memory_order_release);
     parasite_thread_ = std::thread([this] { run_parasite(); });
@@ -86,6 +90,7 @@ void SecondProcessor65C02Extension::shutdown()
     if (tube_socket_)
         tube_socket_->install_backend(nullptr);
 
+    debugger_service_.reset();
     pacing_clock_.reset();
     runner_.reset();
     tube_ula_.reset();
@@ -147,6 +152,17 @@ bool SecondProcessor65C02Extension::load_rom(std::array<uint8_t, 2048>& rom) con
 
     std::cerr << "Error: Tube client ROM not found: " << ROM_FILENAME << "\n";
     return false;
+}
+
+std::vector<grpc::Service*> SecondProcessor65C02Extension::grpc_services()
+{
+    // The parasite DebuggerService is not registered here because it uses
+    // the same DebuggerControl proto service name as the host. Registering
+    // both on the same gRPC server would cause the parasite to override the
+    // host. A separate ParasiteDebuggerControl proto service is needed.
+    // For now, the debugger_service_ member is used internally for
+    // breakpoint/watchpoint management and cross-processor stop.
+    return {};
 }
 
 }  // namespace beebium
