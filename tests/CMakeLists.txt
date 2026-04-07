@@ -550,25 +550,10 @@ add_executable(test_tube_socket test_tube_socket.cpp)
 target_link_libraries(test_tube_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_tube_socket)
 
-# Tube shared memory layout tests
-add_executable(test_tube_shared test_tube_shared.cpp)
-target_link_libraries(test_tube_shared PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_shared)
-
-# Tube host port tests
-add_executable(test_tube_host_port test_tube_host_port.cpp)
-target_link_libraries(test_tube_host_port PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_host_port)
-
 # Parasite memory map tests (6502 second processor)
 add_executable(test_parasite_memory_map test_parasite_memory_map.cpp)
 target_link_libraries(test_parasite_memory_map PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_parasite_memory_map)
-
-# Tube parasite port tests
-add_executable(test_tube_parasite_port test_tube_parasite_port.cpp)
-target_link_libraries(test_tube_parasite_port PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_parasite_port)
 
 # Parasite CPU tests
 add_executable(test_parasite_cpu test_parasite_cpu.cpp)
@@ -587,19 +572,6 @@ target_compile_definitions(test_parasite_boot PRIVATE
     BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
 )
 catch_discover_tests(test_parasite_boot)
-
-# Tube POSIX shared memory manager tests
-add_executable(test_tube_shared_memory test_tube_shared_memory.cpp)
-target_link_libraries(test_tube_shared_memory PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_shared_memory)
-
-# Tube end-to-end tests (host + parasite via shared memory, real ROM)
-add_executable(test_tube_end_to_end test_tube_end_to_end.cpp)
-target_link_libraries(test_tube_end_to_end PRIVATE beebium_core Catch2::Catch2WithMain)
-target_compile_definitions(test_tube_end_to_end PRIVATE
-    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
-)
-catch_discover_tests(test_tube_end_to_end)
 
 # Tube in-process tests (ParasiteRunner backed by TubeUla, no shared memory)
 add_executable(test_tube_inprocess test_tube_inprocess.cpp)
@@ -631,18 +603,6 @@ target_compile_definitions(test_boot_tube PRIVATE
     BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
 )
 catch_discover_tests(test_boot_tube)
-
-# Tube shared memory cross-thread tests
-add_executable(test_tube_shared_threads test_tube_shared_threads.cpp)
-target_link_libraries(test_tube_shared_threads PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_tube_shared_threads)
-
-# Tube cross-process tests (fork-based, POSIX shared memory -- not available on Windows)
-if(NOT WIN32)
-    add_executable(test_tube_cross_process test_tube_cross_process.cpp)
-    target_link_libraries(test_tube_cross_process PRIVATE beebium_core Catch2::Catch2WithMain)
-    catch_discover_tests(test_tube_cross_process)
-endif()
 
 # Tube R1 transfer with real 65C02 CPU
 add_executable(test_tube_r1_6502 test_tube_r1_6502.cpp)
@@ -841,25 +801,6 @@ if(BEEBIUM_BUILD_SERVICE)
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
     )
     catch_discover_tests(test_grpc_econet)
-
-    # Tube service tests
-    add_executable(test_grpc_tube test_grpc_tube.cpp)
-    target_link_libraries(test_grpc_tube PRIVATE
-        beebium_service
-        Catch2::Catch2WithMain
-    )
-    target_compile_definitions(test_grpc_tube PRIVATE
-        BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
-    )
-    catch_discover_tests(test_grpc_tube)
-
-    # Parasite gRPC service tests
-    add_executable(test_parasite_grpc test_parasite_grpc.cpp)
-    target_link_libraries(test_parasite_grpc PRIVATE
-        beebium_service
-        Catch2::Catch2WithMain
-    )
-    catch_discover_tests(test_parasite_grpc)
 
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)

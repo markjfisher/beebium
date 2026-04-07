@@ -13,7 +13,6 @@
 #pragma once
 
 #include "TubeHostBackend.hpp"
-#include "TubeHostPort.hpp"
 #include "TubeUla.hpp"
 
 #include <cassert>
@@ -60,8 +59,7 @@ private:
 // TubeHostBackend. Three implementations exist:
 //
 //   EmptyTubeBackend  -- no second processor (reads return bus value)
-//   TubeUla           -- in-process model (Phase 1, for single-process testing)
-//   TubeHostPort      -- shared memory adapter (Phase 2, parasite in another process)
+//   TubeUla           -- in-process model (both host and parasite sides)
 //
 // The register offsets use 3 address bits (A0-A2), mirrored across &FEE0-&FEFF.
 // The hardware policy registers this with Mirror<0x07>.
@@ -78,14 +76,6 @@ public:
     // parasite_read are called directly on the TubeUla.
     void enable() {
         backend_ = std::make_unique<TubeUla>();
-    }
-
-    // Enable in shared memory mode: the host side is handled by a
-    // TubeHostPort that communicates with a parasite process via atomics
-    // in the TubeShared region. The caller is responsible for the lifetime
-    // of the TubeShared memory.
-    void enable(TubeShared* shared) {
-        backend_ = std::make_unique<TubeHostPort>(shared);
     }
 
     // Disable the Tube socket (detach second processor).
@@ -142,8 +132,7 @@ public:
 
     // Returns true if the last host access could not complete because
     // the target register was full (write) or empty (read). Only
-    // meaningful in in-process mode (TubeUla); the shared memory
-    // TubeHostPort uses spin-waits instead.
+    // meaningful in in-process mode (TubeUla).
     bool stretched() const {
         return active_backend()->stretched();
     }
@@ -173,20 +162,6 @@ public:
     }
     const TubeUla* tube_ula() const {
         return dynamic_cast<const TubeUla*>(backend_.get());
-    }
-
-    // Access the underlying TubeHostPort (only valid in shared memory mode).
-    // Returns nullptr if the socket is empty or in in-process mode.
-    TubeHostPort* tube_host_port() {
-        return dynamic_cast<TubeHostPort*>(backend_.get());
-    }
-    const TubeHostPort* tube_host_port() const {
-        return dynamic_cast<const TubeHostPort*>(backend_.get());
-    }
-
-    // Returns true if the socket is in shared memory mode.
-    bool shared_mode() const {
-        return dynamic_cast<TubeHostPort*>(backend_.get()) != nullptr;
     }
 
 private:

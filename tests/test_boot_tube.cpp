@@ -15,9 +15,9 @@
 // Integration test for BBC Model B boot with a 65C02 second processor.
 //
 // This is the full-stack integration test: a host Model B and a parasite
-// 65C02 share a TubeShared region, both run their real boot ROMs, and
-// the test verifies that the parasite's banner ("Acorn TUBE 6502 64K")
-// appears on the host's MODE 7 screen.
+// 65C02 share a TubeUla, both run their real boot ROMs, and the test
+// verifies that the parasite's banner ("Acorn TUBE 6502 64K") appears
+// on the host's MODE 7 screen.
 //
 // The boot sequence:
 //   1. Host resets, MOS starts initialisation
@@ -40,7 +40,7 @@
 
 #include <beebium/Machines.hpp>
 #include <beebium/tube/ParasiteRunner.hpp>
-#include <beebium/tube/TubeShared.hpp>
+#include <beebium/tube/TubeUla.hpp>
 
 #include <array>
 #include <cstdint>
@@ -119,19 +119,16 @@ void setup_tube_machine(ModelB& machine) {
 //      potentially changing the observable behaviour of timing-sensitive
 //      transfer protocols.
 //
-//   2. Bus stretching: TubeHostPort implements bus stretching as a
-//      spin-wait, which is correct for multi-process operation (the
-//      parasite runs on a separate thread) but would deadlock in this
-//      single-threaded test if the host ever writes to a full register
-//      before the parasite has a chance to drain it. The ratio must
+//   2. Bus stretching: the TubeUla handles back-pressure between the
+//      host and parasite. In this single-threaded test, the ratio must
 //      give the parasite enough instructions between host batches to
 //      keep up with the data flow. The 2:3 ratio is sufficient for the
 //      65C02 3 MHz second processor boot sequence.
 //
 // Note: the ratio is a property of the test harness, not of the Tube
 // protocol itself. In production the host and parasite run on separate
-// threads and bus stretching (spin-wait) handles back-pressure
-// regardless of clock ratio.
+// threads and bus stretching handles back-pressure regardless of clock
+// ratio.
 void interleaved_boot(ModelB& host, ParasiteRunner& parasite,
                       int rounds, int host_batch, int parasite_batch)
 {
@@ -157,29 +154,21 @@ TEST_CASE("Model B with 65C02 second processor boots with Tube banner",
     if (!tube_rom_available()) SKIP("Tube 6502 ROM not available");
     if (!dnfs_rom_available()) SKIP("DNFS ROM not available");
 
-    // --- Shared memory (in-process, stack allocated) ---
-    TubeShared shared;
-    shared.init();
-
     // --- Host setup ---
     ModelB machine;
     setup_tube_machine(machine);
 
-    // Enable Tube socket with shared memory BEFORE reset, so MOS sees it
-    machine.state().memory.tube_socket.enable(&shared);
+    // Enable Tube socket BEFORE reset, so MOS sees it
+    machine.state().memory.tube_socket.enable();
 
-    // Reset the host (this clears shared memory and sends a lifecycle
-    // Reset command via TubeHostPort::reset)
+    // Reset the host
     machine.reset();
-
-    // Clear the lifecycle Reset command -- we manage the parasite ourselves
-    shared.host_command.store(
-        static_cast<uint8_t>(TubeLifecycleCommand::None),
-        std::memory_order_release);
 
     // --- Parasite setup ---
     auto tube_rom = load_tube_rom();
-    ParasiteRunner parasite(&shared, tube_rom);
+    TubeUla* tube = machine.state().memory.tube_socket.tube_ula();
+    REQUIRE(tube != nullptr);
+    ParasiteRunner parasite(*tube, tube_rom);
     parasite.reset();
 
     // --- Interleaved boot ---
@@ -206,21 +195,16 @@ TEST_CASE("Model B with Tube shows 64K memory (not 32K)",
     if (!tube_rom_available()) SKIP("Tube 6502 ROM not available");
     if (!dnfs_rom_available()) SKIP("DNFS ROM not available");
 
-    TubeShared shared;
-    shared.init();
-
     ModelB machine;
     setup_tube_machine(machine);
 
-    machine.state().memory.tube_socket.enable(&shared);
+    machine.state().memory.tube_socket.enable();
     machine.reset();
 
-    shared.host_command.store(
-        static_cast<uint8_t>(TubeLifecycleCommand::None),
-        std::memory_order_release);
-
     auto tube_rom = load_tube_rom();
-    ParasiteRunner parasite(&shared, tube_rom);
+    TubeUla* tube = machine.state().memory.tube_socket.tube_ula();
+    REQUIRE(tube != nullptr);
+    ParasiteRunner parasite(*tube, tube_rom);
     parasite.reset();
 
     // 2:3 ratio approximates the 2 MHz host / 3 MHz parasite clock speeds.

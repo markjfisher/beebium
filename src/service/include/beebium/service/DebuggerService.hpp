@@ -16,7 +16,6 @@
 #include "debugger.grpc.pb.h"
 #include "beebium/MemoryRegion.hpp"
 #include "beebium/Types.hpp"
-#include "beebium/tube/TubeShared.hpp"
 #include <moodycamel/readerwriterqueue.h>
 #include <grpcpp/grpcpp.h>
 #include <algorithm>
@@ -1004,11 +1003,9 @@ void DebuggerControlServiceImpl<MachineType>::enqueue_event(
 
 template<typename MachineType>
 void DebuggerControlServiceImpl<MachineType>::signal_counterpart_stop() {
-    auto* shared = machine_.tube_shared();
-    if (shared) {
-        shared->debugger_stop_signal.store(true, std::memory_order_release);
-        shared->bus_stretch_cancel.store(true, std::memory_order_release);
-    }
+    // TODO: Implement counterpart stop signalling for in-process Tube extensions.
+    // Previously this set flags in cross-process shared memory; the in-process
+    // extension model will need a different mechanism.
 }
 
 template<typename MachineType>

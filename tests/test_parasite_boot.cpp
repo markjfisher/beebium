@@ -37,7 +37,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteRunner.hpp>
-#include <beebium/tube/TubeShared.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
@@ -87,10 +86,9 @@ TEST_CASE("Parasite boot: reset vector points to F800", "[parasite][boot][rom]")
 
 TEST_CASE("Parasite boot: starts in boot mode", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
 
     CHECK(runner.memory_map().boot_mode());
@@ -98,10 +96,9 @@ TEST_CASE("Parasite boot: starts in boot mode", "[parasite][boot][rom]") {
 
 TEST_CASE("Parasite boot: CPU begins at reset vector", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
 
     // Execute reset sequence (7 cycles)
@@ -117,10 +114,9 @@ TEST_CASE("Parasite boot: CPU begins at reset vector", "[parasite][boot][rom]") 
 
 TEST_CASE("Parasite boot: ROM copied to RAM", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -158,10 +154,9 @@ TEST_CASE("Parasite boot: ROM copied to RAM", "[parasite][boot][rom]") {
 
 TEST_CASE("Parasite boot: stub copied to page 1", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -181,10 +176,9 @@ TEST_CASE("Parasite boot: stub copied to page 1", "[parasite][boot][rom]") {
 
 TEST_CASE("Parasite boot: boot mode terminated by Tube register access", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -199,10 +193,9 @@ TEST_CASE("Parasite boot: boot mode terminated by Tube register access", "[paras
 
 TEST_CASE("Parasite boot: banner written to R1 P-to-H FIFO", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -220,19 +213,16 @@ TEST_CASE("Parasite boot: banner written to R1 P-to-H FIFO", "[parasite][boot][r
     };
     static_assert(sizeof(expected_banner) == 24);
 
-    // The FIFO should be full (24 bytes)
-    uint8_t count = shared.r1_p2h.count.load(std::memory_order_acquire);
-    CHECK(count == 24);
+    // Read the banner from the host side of the TubeUla
+    uint8_t status = tube.host_read(0);
+    CHECK((status & TubeUla::DATA_AVAILABLE) != 0);
 
-    // Verify FIFO contents by reading from head
-    uint8_t head = shared.r1_p2h.head.load(std::memory_order_acquire);
     for (int i = 0; i < 24; ++i) {
-        uint8_t fifo_byte = shared.r1_p2h.data[(head + i) % 24]
-            .load(std::memory_order_acquire);
+        uint8_t byte = tube.host_read(1);
         INFO("FIFO position: " << i
              << " expected: 0x" << std::hex << (int)expected_banner[i]
-             << " got: 0x" << (int)fifo_byte);
-        CHECK(fifo_byte == expected_banner[i]);
+             << " got: 0x" << (int)byte);
+        CHECK(byte == expected_banner[i]);
     }
 }
 
@@ -242,10 +232,9 @@ TEST_CASE("Parasite boot: banner written to R1 P-to-H FIFO", "[parasite][boot][r
 
 TEST_CASE("Parasite boot: JMP at F85D patched to CmdPrompt", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -266,10 +255,9 @@ TEST_CASE("Parasite boot: JMP at F85D patched to CmdPrompt", "[parasite][boot][r
 
 TEST_CASE("Parasite boot: CPU spins in WaitByte polling R2 status", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -294,10 +282,9 @@ TEST_CASE("Parasite boot: CPU spins in WaitByte polling R2 status", "[parasite][
 
 TEST_CASE("Parasite boot: MOS vectors installed at 0200", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 
@@ -328,10 +315,9 @@ TEST_CASE("Parasite boot: MOS vectors installed at 0200", "[parasite][boot][rom]
 
 TEST_CASE("Parasite boot: zero-page state after boot", "[parasite][boot][rom]") {
     auto rom = load_rom();
-    TubeShared shared;
-    shared.init();
+    TubeUla tube;
 
-    ParasiteRunner runner(&shared, rom);
+    ParasiteRunner runner(tube, rom);
     runner.reset();
     runner.run(BOOT_CYCLES);
 

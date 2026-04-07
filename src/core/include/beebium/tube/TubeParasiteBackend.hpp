@@ -18,9 +18,8 @@ namespace beebium {
 
 // Abstract interface for the parasite side of a Tube bridge.
 //
-// Both TubeParasitePort (shared-memory cross-process) and TubeUla
-// (in-process) implement this interface, allowing ParasiteMemoryMap,
-// ParasiteCpu, and ParasiteRunner to work with either backend.
+// TubeUla (in-process) implements this interface, allowing ParasiteMemoryMap,
+// ParasiteCpu, and ParasiteRunner to work with any backend.
 //
 // The interface covers:
 //   - Register read/write/peek for Tube offsets 0-7 (mirrored)

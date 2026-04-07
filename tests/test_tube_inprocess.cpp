@@ -10,16 +10,15 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// In-process Tube tests: ParasiteRunner backed by TubeUla (not TubeShared).
+// In-process Tube tests: ParasiteRunner backed by TubeUla.
 //
-// These tests validate the extension-based architecture where the host and
+// These tests validate the in-process architecture where the host and
 // parasite share a thread-safe TubeUla in the same process. The host accesses
 // TubeUla via host_read/host_write (as TubeSocket would), and the parasite
 // accesses it via parasite_read/parasite_write (through ParasiteRunner).
 //
 // The parasite runs the real Acorn Tube 6502 Client ROM, proving the in-process
-// data path works with real CPU execution -- the same validation as
-// test_tube_end_to_end.cpp but without shared memory or TubeHostPort.
+// data path works with real CPU execution.
 
 #include <catch2/catch_test_macros.hpp>
 

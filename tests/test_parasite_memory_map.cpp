@@ -24,8 +24,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/tube/ParasiteMemoryMap.hpp>
-#include <beebium/tube/TubeParasitePort.hpp>
-#include <beebium/tube/TubeShared.hpp>
+#include <beebium/tube/TubeUla.hpp>
 
 #include <array>
 #include <cstdint>
@@ -47,12 +46,10 @@ static std::array<uint8_t, 2048> make_test_rom() {
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap starts in boot mode", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     CHECK(mem.boot_mode());
 }
 
@@ -61,12 +58,10 @@ TEST_CASE("ParasiteMemoryMap starts in boot mode", "[parasite][memory]") {
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap RAM read/write in low memory", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     mem.write(0x0000, 0x42);
     CHECK(mem.read(0x0000) == 0x42);
@@ -79,12 +74,10 @@ TEST_CASE("ParasiteMemoryMap RAM read/write in low memory", "[parasite][memory]"
 }
 
 TEST_CASE("ParasiteMemoryMap RAM initialised to zero", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     CHECK(mem.read(0x0000) == 0x00);
     CHECK(mem.read(0x8000) == 0x00);
@@ -96,12 +89,10 @@ TEST_CASE("ParasiteMemoryMap RAM initialised to zero", "[parasite][memory]") {
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap boot mode: reads from ROM region return ROM data", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // &F800 maps to ROM offset 0
@@ -121,12 +112,10 @@ TEST_CASE("ParasiteMemoryMap boot mode: reads from ROM region return ROM data", 
 }
 
 TEST_CASE("ParasiteMemoryMap boot mode: writes to ROM region go to RAM", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // Write to an address in the ROM region
@@ -140,12 +129,10 @@ TEST_CASE("ParasiteMemoryMap boot mode: writes to ROM region go to RAM", "[paras
 }
 
 TEST_CASE("ParasiteMemoryMap boot mode: ROM copy pattern works", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // Simulate the boot ROM's self-copy: read from ROM, write back to same address.
@@ -177,16 +164,13 @@ TEST_CASE("ParasiteMemoryMap boot mode: ROM copy pattern works", "[parasite][mem
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap boot mode: Tube register read overrides ROM", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    // Pre-load a known value into a Tube H-to-P register
-    shared.r4_h2p.value.store(0x99, std::memory_order_relaxed);
-    shared.r4_h2p.ready.store(1, std::memory_order_release);
+    // Pre-load a known value into R4 H-to-P via the host side
+    tube.host_write(7, 0x99);
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // &FEFF = R4 data (offset 7). Reading should return Tube data, not ROM.
@@ -198,20 +182,19 @@ TEST_CASE("ParasiteMemoryMap boot mode: Tube register read overrides ROM", "[par
 }
 
 TEST_CASE("ParasiteMemoryMap boot mode: Tube register write overrides RAM", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // Write to R4 data (&FEFF, offset 7). Should go to Tube, not RAM.
     mem.write(0xFEFF, 0x55);
 
-    // Tube register should have the value
-    CHECK(shared.r4_p2h.ready.load(std::memory_order_acquire) == 1);
-    CHECK(shared.r4_p2h.value.load(std::memory_order_acquire) == 0x55);
+    // Tube register should have the value (host can read R4 P-to-H)
+    uint8_t r4_status = tube.host_read(6);
+    CHECK((r4_status & TubeUla::DATA_AVAILABLE) != 0);
+    CHECK(tube.host_read(7) == 0x55);
 
     // Boot mode should now be terminated
     CHECK_FALSE(mem.boot_mode());
@@ -222,12 +205,10 @@ TEST_CASE("ParasiteMemoryMap boot mode: Tube register write overrides RAM", "[pa
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap boot mode terminated by Tube read", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // Read R1 status (&FEF8, offset 0) -- the typical first Tube access
@@ -237,12 +218,10 @@ TEST_CASE("ParasiteMemoryMap boot mode terminated by Tube read", "[parasite][mem
 }
 
 TEST_CASE("ParasiteMemoryMap boot mode terminated by Tube write", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     // Write to R1 data (&FEF9, offset 1)
@@ -253,12 +232,10 @@ TEST_CASE("ParasiteMemoryMap boot mode terminated by Tube write", "[parasite][me
 
 TEST_CASE("ParasiteMemoryMap boot mode: all 8 Tube addresses terminate boot", "[parasite][memory][boot]") {
     for (uint16_t offset = 0; offset < 8; ++offset) {
-        TubeShared shared;
-        shared.init();
-        TubeParasitePort port(&shared);
+        TubeUla tube;
         auto rom = make_test_rom();
 
-        ParasiteMemoryMap mem(port, rom);
+        ParasiteMemoryMap mem(tube, rom);
         REQUIRE(mem.boot_mode());
 
         mem.read(0xFEF8 + offset);
@@ -267,12 +244,10 @@ TEST_CASE("ParasiteMemoryMap boot mode: all 8 Tube addresses terminate boot", "[
 }
 
 TEST_CASE("ParasiteMemoryMap boot mode cannot be re-entered", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     mem.read(0xFEF8);  // terminate boot mode
     REQUIRE_FALSE(mem.boot_mode());
 
@@ -287,12 +262,10 @@ TEST_CASE("ParasiteMemoryMap boot mode cannot be re-entered", "[parasite][memory
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap normal mode: ROM region reads from RAM", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     // Write to RAM while in boot mode
     mem.write(0xF800, 0xAA);
@@ -308,28 +281,24 @@ TEST_CASE("ParasiteMemoryMap normal mode: ROM region reads from RAM", "[parasite
 }
 
 TEST_CASE("ParasiteMemoryMap normal mode: Tube registers still active", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     mem.read(0xFEF8);  // end boot mode
     REQUIRE_FALSE(mem.boot_mode());
 
     // Write to Tube and verify it goes to the Tube, not RAM
     mem.write(0xFEFF, 0x77);  // R4 data
-    CHECK(shared.r4_p2h.ready.load(std::memory_order_acquire) == 1);
-    CHECK(shared.r4_p2h.value.load(std::memory_order_acquire) == 0x77);
+    CHECK((tube.host_read(6) & TubeUla::DATA_AVAILABLE) != 0);
+    CHECK(tube.host_read(7) == 0x77);
 }
 
 TEST_CASE("ParasiteMemoryMap normal mode: RAM behind Tube registers is not accessible", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     // Write to Tube register addresses while in boot mode (goes to Tube, not RAM)
     // First write some values to RAM at those addresses by going through
@@ -354,12 +323,10 @@ TEST_CASE("ParasiteMemoryMap normal mode: RAM behind Tube registers is not acces
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap reset re-enters boot mode", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     mem.read(0xFEF8);  // end boot mode
     REQUIRE_FALSE(mem.boot_mode());
 
@@ -371,12 +338,10 @@ TEST_CASE("ParasiteMemoryMap reset re-enters boot mode", "[parasite][memory]") {
 }
 
 TEST_CASE("ParasiteMemoryMap reset preserves RAM contents", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     // Write to low RAM
     mem.write(0x1000, 0x42);
@@ -393,12 +358,10 @@ TEST_CASE("ParasiteMemoryMap reset preserves RAM contents", "[parasite][memory]"
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap Tube register range is exactly &FEF8-&FEFF", "[parasite][memory]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
     auto rom = make_test_rom();
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
 
     // &FEF7 should be ROM in boot mode, not a Tube register
     uint8_t val = mem.read(0xFEF7);
@@ -413,16 +376,14 @@ TEST_CASE("ParasiteMemoryMap Tube register range is exactly &FEF8-&FEFF", "[para
 // ===========================================================================
 
 TEST_CASE("ParasiteMemoryMap boot mode: reset vector readable from ROM", "[parasite][memory][boot]") {
-    TubeShared shared;
-    shared.init();
-    TubeParasitePort port(&shared);
+    TubeUla tube;
 
     // Create a ROM with a known reset vector
     auto rom = make_test_rom();
     rom[0x7FC] = 0x00;  // reset vector low: &F800
     rom[0x7FD] = 0xF8;  // reset vector high
 
-    ParasiteMemoryMap mem(port, rom);
+    ParasiteMemoryMap mem(tube, rom);
     REQUIRE(mem.boot_mode());
 
     uint16_t reset_vector = mem.read(0xFFFC) | (mem.read(0xFFFD) << 8);

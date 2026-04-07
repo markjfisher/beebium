@@ -24,7 +24,7 @@ namespace beebium {
 // CPU wrapper for the 6502 second processor parasite.
 //
 // Wires a Rockwell 65C02 to the ParasiteMemoryMap for bus access and
-// routes interrupt lines from TubeParasitePort (PIRQ -> IRQ, PNMI -> NMI).
+// routes interrupt lines from the TubeParasiteBackend (PIRQ -> IRQ, PNMI -> NMI).
 //
 // The parasite CPU runs at 3 MHz with no bus stretching -- every tick
 // is a single CPU cycle with a memory access.

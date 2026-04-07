@@ -55,19 +55,11 @@ generate_bare_preset("model-b" "1981-12")
 generate_bare_preset("model-b-plus" "1985-06")
 generate_bare_preset("model-b-romram" "1984")
 
-# Tube parasite executables (standalone processes, not using ServerMain)
-add_executable(beebium-tube-65C02-3MHz main_tube_65C02_3MHz.cpp)
-target_link_libraries(beebium-tube-65C02-3MHz
-    PRIVATE
-        beebium_service  # For beebium_core + gRPC proto stubs
-)
-
 # Convenience target to build all server executables (add new models here)
 add_custom_target(beebium-servers DEPENDS
     beebium-model-b
     beebium-model-b-plus
     beebium-model-b-romram
-    beebium-tube-65C02-3MHz
 )
 
 # Copy ROMs to build output directory for development
@@ -110,7 +102,6 @@ add_custom_command(TARGET beebium-model-b-romram POST_BUILD
 
 # Install rules
 install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram
-    beebium-tube-65C02-3MHz
     RUNTIME DESTINATION bin
 )
 install(DIRECTORY ${BEEBIUM_ROM_DIR}/
