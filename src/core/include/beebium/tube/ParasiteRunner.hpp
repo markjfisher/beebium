@@ -20,13 +20,9 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <span>
-#include <thread>
 #include <vector>
 
 namespace beebium {
@@ -36,8 +32,8 @@ namespace beebium {
 // Owns the CPU, memory map, and Tube port, and provides an execution loop.
 // This is the parasite's analogue of Machine<Hardware> on the host side.
 //
-// The runner supports pause/resume for debugger integration, following the
-// same pattern as the host Machine's wait_if_paused()/request_shutdown().
+// The runner supports pause/resume for debugger integration. When paused,
+// TubeSocket::tick_parasite() skips ticking via the is_paused() check.
 //
 // This class is specific to the 6502 second processor family. Future
 // coprocessors (6809, Z80, 80186, 32016) would have their own runner
@@ -74,23 +70,15 @@ public:
 
     void pause();
     void resume();
-    bool is_paused() const override { return paused_.load(std::memory_order_acquire); }
+    bool is_paused() const override { return paused_; }
     void prepare_for_step() {} // No bus stretching on parasite side
 
-    // Wait until run() has exited after a pause.
-    void wait_until_idle() {
-        while (in_run_.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
-        }
-    }
-
-    // Request clean shutdown. Unblocks wait_if_paused() and freeze waits.
-    void request_shutdown();
-    bool shutdown_requested() const { return shutdown_requested_.load(std::memory_order_acquire); }
+    // Wait until run() has exited after a pause (no-op in single-threaded mode).
+    void wait_until_idle() {}
 
     // --- Sequence counter (increments on mutations, for change detection) ---
 
-    uint64_t sequence() const { return sequence_.load(std::memory_order_acquire); }
+    uint64_t sequence() const { return sequence_; }
 
     // --- CPU register accessors (debugger convenience) ---
 
@@ -193,9 +181,6 @@ public:
     const TubeParasiteBackend& tube_port() const { return tube_port_; }
 
 private:
-    // Block while paused. Returns false if shutdown was requested during wait.
-    bool wait_if_paused();
-
     TubeParasiteBackend& tube_port_;                     // reference to active port
     ParasiteMemoryMap memory_;
     ParasiteCpu cpu_;
@@ -203,15 +188,11 @@ private:
     // ROM image (kept for reset)
     std::array<uint8_t, 2048> rom_;
 
-    // Debugger pause state
-    mutable std::mutex pause_mutex_;
-    std::condition_variable pause_cv_;
-    std::atomic<bool> paused_{false};
-    std::atomic<bool> shutdown_requested_{false};
-    std::atomic<bool> in_run_{false};
+    // Debugger pause state (plain bool, single-threaded)
+    bool paused_ = false;
 
     // Sequence counter
-    std::atomic<uint64_t> sequence_{0};
+    uint64_t sequence_ = 0;
 
     // Breakpoint addresses (sorted, checked inline at instruction boundaries)
     std::vector<BreakpointEntry> breakpoint_entries_;

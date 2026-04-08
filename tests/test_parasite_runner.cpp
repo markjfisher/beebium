@@ -121,47 +121,16 @@ TEST_CASE("ParasiteRunner pause stops execution", "[parasite][runner][debug]") {
     runner.pause();
     CHECK(runner.is_paused());
 
-    // Run in a thread -- should block because paused
-    std::atomic<bool> run_completed{false};
-    std::thread t([&] {
-        runner.run(1000);
-        run_completed.store(true, std::memory_order_release);
-    });
+    // run() returns immediately when paused (single-threaded: no blocking)
+    auto cycle_before = runner.cycle_count();
+    runner.run(1000);
+    CHECK(runner.cycle_count() == cycle_before);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    CHECK_FALSE(run_completed.load(std::memory_order_acquire));
-
-    // Resume
+    // Resume and run
     runner.resume();
-    t.join();
-
-    CHECK(run_completed.load(std::memory_order_acquire));
     CHECK_FALSE(runner.is_paused());
-}
-
-TEST_CASE("ParasiteRunner shutdown unblocks pause", "[parasite][runner][debug]") {
-    TubeUla tube;
-    auto rom = make_nop_rom();
-
-    ParasiteRunner runner(tube, rom);
-    runner.reset();
-
-    runner.pause();
-
-    std::atomic<bool> run_completed{false};
-    std::thread t([&] {
-        runner.run(1000);
-        run_completed.store(true, std::memory_order_release);
-    });
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    // Shutdown should unblock the paused runner
-    runner.request_shutdown();
-    t.join();
-
-    CHECK(run_completed.load(std::memory_order_acquire));
-    CHECK(runner.shutdown_requested());
+    runner.run(1000);
+    CHECK(runner.cycle_count() > cycle_before);
 }
 
 // ===========================================================================
