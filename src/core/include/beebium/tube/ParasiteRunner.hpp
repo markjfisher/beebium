@@ -14,6 +14,7 @@
 
 #include "ParasiteCpu.hpp"
 #include "ParasiteMemoryMap.hpp"
+#include "ParasiteTickable.hpp"
 #include "TubeParasiteBackend.hpp"
 #include "../Types.hpp"
 
@@ -42,7 +43,7 @@ namespace beebium {
 // coprocessors (6809, Z80, 80186, 32016) would have their own runner
 // classes with different CPU and memory map types.
 
-class ParasiteRunner {
+class ParasiteRunner : public ParasiteTickable {
 public:
     using Memory = ParasiteMemoryMap;
     using BreakpointHitCallback = std::function<void(const BreakpointEntry& bp, uint16_t pc)>;
@@ -73,7 +74,7 @@ public:
 
     void pause();
     void resume();
-    bool is_paused() const { return paused_.load(std::memory_order_acquire); }
+    bool is_paused() const override { return paused_.load(std::memory_order_acquire); }
     void prepare_for_step() {} // No bus stretching on parasite side
 
     // Wait until run() has exited after a pause.
@@ -126,6 +127,9 @@ public:
     const ParasiteMemoryMap& memory() const { return memory_; }
 
     // --- Single-cycle step ---
+
+    // ParasiteTickable::tick() -- one parasite cycle, called by TubeSocket.
+    void tick() override { step(); }
 
     void step();
 

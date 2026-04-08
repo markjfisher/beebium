@@ -182,6 +182,25 @@ public:
 
     // Execute one CPU cycle
     void step() {
+        // Handle Tube bus stretch (host CPU halted, parasite + peripherals continue).
+        // When the host writes to a full Tube register, the Tube ULA holds the host
+        // CPU's clock until the parasite drains the register. During stretch, the
+        // parasite and all peripherals (VIAs, video, sound) continue running.
+        if (tube_stretch_active_) {
+            state_.memory.tube_socket.tick_parasite_stretch();
+            if (state_.memory.tube_socket.try_complete_tube_stretch()) {
+                tube_stretch_active_ = false;
+                // Fall through to normal step -- the deferred write completed,
+                // host CPU can now proceed with the next cycle.
+            } else {
+                // Host still stretched. Tick peripherals but not host CPU.
+                tick_stretch_cycle();
+                ++state_.cycle_count;
+                ++sequence_;
+                return;
+            }
+        }
+
         // Handle 1MHz bus stretch cycles.
         // During stretch, CPU is halted. VIAs have already been pre-ticked
         // by CpuBinding before the memory access, so we only tick video here.
@@ -193,10 +212,14 @@ public:
             return;
         }
 
+        // Tick parasite BEFORE host (B2 ordering).
+        // Parasite register writes are immediately visible to the host.
+        state_.memory.tube_socket.tick_parasite();
+
         // Pass current cycle to CpuBinding for 1MHz synchronization calculations
         cpu_binding_.set_current_cycle(state_.cycle_count);
 
-        // Tick CPU first - this may pre-tick VIAs for 1MHz synchronization
+        // Tick host CPU - this may pre-tick VIAs for 1MHz synchronization
         const bool is_rising = (state_.cycle_count & 1) != 0;
         if (is_rising) {
             cpu_binding_.tick_rising();
@@ -307,6 +330,11 @@ public:
             } else if (in_irq_handler_) {
                 in_irq_handler_ = false;
             }
+        }
+
+        // Check if the host's memory access triggered Tube bus stretching.
+        if (state_.memory.tube_socket.tube_stretched()) {
+            tube_stretch_active_ = true;
         }
 
         ++state_.cycle_count;
@@ -547,6 +575,7 @@ private:
     // by CpuBinding so we can continue ticking the others during stretch.
     uint8_t stretch_cycles_remaining_ = 0;
     uint8_t stretch_via_pre_tick_mask_ = 0;
+    bool tube_stretch_active_ = false;
 
     SystemClockType make_system_clock() {
         return make_clock(
