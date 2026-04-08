@@ -55,7 +55,7 @@ if(BEEBIUM_BUILD_SERVICE)
 
     target_link_libraries(beebium_ext_test_scratch_ram_plugin
         PRIVATE
-            beebium_core
+            beebium_extension_api
             beebium_ext_test_scratch_ram_proto
     )
 

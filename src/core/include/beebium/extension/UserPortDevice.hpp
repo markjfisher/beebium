@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_USER_PORT_DEVICE_HPP
 #define BEEBIUM_USER_PORT_DEVICE_HPP
 
+#include "Export.hpp"
+
 #include <cstdint>
 
 namespace beebium {
@@ -27,7 +29,7 @@ namespace beebium {
 // Only one UserPortDevice can be attached at a time (the User Port
 // has a single connector, unlike the 1 MHz bus which supports
 // daisy-chaining).
-struct UserPortDevice {
+struct BEEBIUM_EXT_API UserPortDevice {
     virtual ~UserPortDevice() = default;
 
     // Called when Port B output or DDR changes, and periodically on

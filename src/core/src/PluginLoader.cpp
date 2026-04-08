@@ -42,11 +42,17 @@ constexpr const char* kSharedLibSuffix = ".so";
 // Entry point function type
 using CreateExtensionFn = PeripheralExtension* (*)(const ExtensionManifest&);
 
-void* platform_dlopen(const std::filesystem::path& filepath) {
+// Load a shared library. When global=true, the library's symbols are made
+// available for subsequently loaded plugins to resolve against. This is
+// needed for provider plugins (e.g. acorn-scsi provides "scsi") whose
+// symbols are used by child plugins (e.g. scsi-hard-disc).
+void* platform_dlopen(const std::filesystem::path& filepath, bool global = false) {
 #ifdef _WIN32
+    (void)global;  // Windows DLLs always use explicit import/export
     return LoadLibraryW(filepath.c_str());
 #else
-    return dlopen(filepath.c_str(), RTLD_NOW | RTLD_LOCAL);
+    int flags = RTLD_NOW | (global ? RTLD_GLOBAL : RTLD_LOCAL);
+    return dlopen(filepath.c_str(), flags);
 #endif
 }
 
@@ -113,6 +119,15 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
     if (manifest.library_stem.empty()) {
         throw std::runtime_error(
             "Manifest missing 'library' field: " + manifest_filepath.string());
+    }
+
+    // Parse provides list (extension points this extension creates)
+    if (j.contains("provides") && j["provides"].is_array()) {
+        for (const auto& p : j["provides"]) {
+            if (p.is_string()) {
+                manifest.provides.push_back(p.get<std::string>());
+            }
+        }
     }
 
     // Parse parameter schema
@@ -192,8 +207,11 @@ void PluginLoader::load_extension(const ExtensionManifest& manifest,
         }
     }
 
-    // Load the shared library
-    void* handle = platform_dlopen(library_filepath);
+    // Load the shared library. Provider plugins (those with "provides" in
+    // their manifest) are loaded with RTLD_GLOBAL so child plugins can
+    // resolve their symbols at load time.
+    bool is_provider = !manifest.provides.empty();
+    void* handle = platform_dlopen(library_filepath, is_provider);
     if (!handle) {
         throw std::runtime_error(
             "Failed to load extension library '" + library_filepath.string()

@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXTENSION_USER_PORT_HPP
 #define BEEBIUM_EXTENSION_USER_PORT_HPP
 
+#include "Export.hpp"
 #include "UserPortDevice.hpp"
 
 #include <concepts>
@@ -32,7 +33,7 @@ class ViaPeripheral;
 //
 // Only one device can be attached at a time -- the User Port has a
 // single physical connector. Attempting to attach a second device throws.
-class UserPort {
+class BEEBIUM_EXT_API UserPort {
 public:
     explicit UserPort(Via6522& user_via);
     ~UserPort();

@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_EXTENSION_ONE_MHZ_BUS_DEVICE_HPP
 #define BEEBIUM_EXTENSION_ONE_MHZ_BUS_DEVICE_HPP
 
+#include "Export.hpp"
+
 #include <cstdint>
 
 namespace beebium {
@@ -22,7 +24,7 @@ namespace beebium {
 // The offset parameter is relative to 0xFC00 (the start of the FRED page),
 // matching the offset that MemoryMap's Region binding computes (addr - Base).
 // FRED occupies offsets 0x0000-0x00FF, JIM occupies 0x0100-0x01FF.
-struct OneMHzBusDevice {
+struct BEEBIUM_EXT_API OneMHzBusDevice {
     virtual ~OneMHzBusDevice() = default;
 
     virtual uint8_t read(uint16_t offset) = 0;

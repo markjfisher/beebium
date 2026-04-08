@@ -557,6 +557,17 @@ message TubeState {
 
     // Per-register transfer counters (bytes transferred since reset).
     TubeTransferCounters counters = 15;
+
+    // Protocol trace: last N register data events (ring buffer, oldest first).
+    // Each entry is a tag byte (register/direction/side) and a data byte.
+    repeated TubeTraceEntry trace = 16;
+    uint64 trace_total_count = 17;
+}
+
+// A single entry in the Tube protocol trace ring buffer.
+message TubeTraceEntry {
+    uint32 tag = 1;    // bits 7-4: register (1-4), bit 3: dir (0=H2P,1=P2H), bit 2: side (0=host,1=parasite)
+    uint32 value = 2;  // data byte
 }
 
 // Per-register byte transfer counters for Tube diagnostics.

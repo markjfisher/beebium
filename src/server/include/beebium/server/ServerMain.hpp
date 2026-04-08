@@ -46,6 +46,7 @@
 #include <arpa/inet.h>
 #endif
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -1559,6 +1560,20 @@ public:
                 std::cout << "Extension directory: " << config.extension_dirpath << "\n";
                 plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
             }
+            // Sort extension instances so providers (those with "provides" in
+            // their manifest) are loaded before consumers. This ensures
+            // RTLD_GLOBAL takes effect before child plugins try to resolve
+            // parent symbols. Uses stable_partition to preserve command-line
+            // order within each group.
+            std::stable_partition(
+                config.extension_instances.begin(),
+                config.extension_instances.end(),
+                [&plugin_manifests](const auto& inst) {
+                    auto* m = beebium::PluginLoader::find_manifest(
+                        plugin_manifests, inst.name);
+                    return m && !m->provides.empty();
+                });
+
             for (auto& inst : config.extension_instances) {
                 // Assign instance ID if not provided
                 if (inst.config.find("id") == inst.config.end()) {

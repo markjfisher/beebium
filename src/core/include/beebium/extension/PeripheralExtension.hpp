@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXTENSION_PERIPHERAL_EXTENSION_HPP
 #define BEEBIUM_EXTENSION_PERIPHERAL_EXTENSION_HPP
 
+#include "Export.hpp"
 #include "ExtensionManifest.hpp"
 
 #include <map>
@@ -44,7 +45,7 @@ class ExtensionContext;
 // The manifest is the single source of truth for extension metadata.
 // For dynamically loaded extensions it is read from manifest.json;
 // for built-in extensions it is constructed programmatically.
-class PeripheralExtension {
+class BEEBIUM_EXT_API PeripheralExtension {
 public:
     virtual ~PeripheralExtension() = default;
 

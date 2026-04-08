@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_EXTENSION_ARG_PARSER_HPP
 #define BEEBIUM_EXTENSION_ARG_PARSER_HPP
 
+#include "Export.hpp"
+
 #include <map>
 #include <string>
 #include <string_view>
@@ -53,13 +55,13 @@ struct ParseResult {
 //
 // Framework-managed parameters (id, label) are NOT part of the schema
 // and are handled separately by the caller.
-ParseResult parse_extension_args(
+BEEBIUM_EXT_API ParseResult parse_extension_args(
     std::string_view cli_name,
     std::string_view arg_string,
     const std::vector<ParameterSchema>& schema);
 
 // Split a colon-separated string, respecting '://' in URIs.
-std::vector<std::string> split_colon_args(std::string_view input);
+BEEBIUM_EXT_API std::vector<std::string> split_colon_args(std::string_view input);
 
 }  // namespace beebium
 

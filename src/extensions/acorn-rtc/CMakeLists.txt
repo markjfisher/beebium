@@ -71,7 +71,7 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(beebium_ext_acorn_rtc_plugin
         PRIVATE
             beebium_rtc_core
-            beebium_core
+            beebium_extension_api
             beebium_ext_acorn_rtc_proto
     )
 

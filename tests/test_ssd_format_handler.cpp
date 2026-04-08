@@ -288,6 +288,76 @@ TEST_CASE("Truncated SSD with partial track loads correctly", "[disc][ssd][trunc
     }
 }
 
+TEST_CASE("Sub-track truncated SSD loads with valid sectors on all tracks", "[disc][ssd][truncated]") {
+    SsdFormatHandler handler;
+    // 4 sectors = 1024 bytes (less than one full track of 2560 bytes).
+    // This is the size beebasm produces for a minimal disc image.
+    std::vector<uint8_t> data(1024);
+    // Fill with recognisable pattern
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+
+    auto result = handler.load(data, "/tmp/subtracks.ssd");
+    REQUIRE(result.success());
+
+    // Track 0: sectors 0-3 should have file data, sectors 4-9 zero-filled
+    {
+        TrackDecoder decoder(result.disc->track(false, 0));
+        auto sectors = decoder.find_sectors();
+        REQUIRE(sectors.size() == 10);
+
+        // Sectors with data
+        for (uint8_t s = 0; s < 4; ++s) {
+            CHECK(sectors[s].sector == s);
+            CHECK(sectors[s].has_data_field);
+            std::array<uint8_t, 256> buffer{};
+            decoder.read_sector_data(sectors[s], buffer);
+            CHECK(buffer[0] == static_cast<uint8_t>((s * 256) & 0xFF));
+        }
+
+        // Zero-filled sectors
+        for (uint8_t s = 4; s < 10; ++s) {
+            CHECK(sectors[s].sector == s);
+            CHECK(sectors[s].has_data_field);
+            std::array<uint8_t, 256> buffer{};
+            buffer.fill(0xFF);
+            decoder.read_sector_data(sectors[s], buffer);
+            for (int i = 0; i < 256; ++i) {
+                CHECK(buffer[i] == 0x00);
+            }
+        }
+    }
+
+    // Track 1: all 10 sectors should be zero-filled with valid ID fields
+    {
+        TrackDecoder decoder(result.disc->track(false, 1));
+        auto sectors = decoder.find_sectors();
+        REQUIRE(sectors.size() == 10);
+
+        for (uint8_t s = 0; s < 10; ++s) {
+            CHECK(sectors[s].track == 1);
+            CHECK(sectors[s].sector == s);
+            CHECK(sectors[s].has_data_field);
+            std::array<uint8_t, 256> buffer{};
+            buffer.fill(0xFF);
+            decoder.read_sector_data(sectors[s], buffer);
+            for (int i = 0; i < 256; ++i) {
+                CHECK(buffer[i] == 0x00);
+            }
+        }
+    }
+
+    // Track 79: should also have valid sectors
+    {
+        TrackDecoder decoder(result.disc->track(false, 79));
+        auto sectors = decoder.find_sectors();
+        REQUIRE(sectors.size() == 10);
+        CHECK(sectors[0].track == 79);
+        CHECK(sectors[0].has_data_field);
+    }
+}
+
 // =============================================================================
 // Registry Integration Tests
 // =============================================================================
