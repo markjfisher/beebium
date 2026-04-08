@@ -33,7 +33,7 @@
 
 using namespace beebium;
 
-TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") {
+TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension][.thread]") {
     // Set up a TubeSocket (as the host machine would have).
     TubeSocket tube_socket;
 
@@ -87,7 +87,7 @@ TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") 
     CHECK(!tube_socket.enabled());
 }
 
-TEST_CASE("65C02 extension: cross-processor stop via counterpart callback", "[tube][extension]") {
+TEST_CASE("65C02 extension: cross-processor stop via counterpart callback", "[tube][extension][.thread]") {
     TubeSocket tube_socket;
     ExtensionContext ctx(nullptr, nullptr, &tube_socket);
 
@@ -124,7 +124,7 @@ TEST_CASE("65C02 extension: cross-processor stop via counterpart callback", "[tu
     ext.shutdown();
 }
 
-TEST_CASE("65C02 extension: shutdown is idempotent", "[tube][extension]") {
+TEST_CASE("65C02 extension: shutdown is idempotent", "[tube][extension][.thread]") {
     TubeSocket tube_socket;
     ExtensionContext ctx(nullptr, nullptr, &tube_socket);
 

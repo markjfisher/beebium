@@ -27,7 +27,6 @@
 
 #include <array>
 #include <cstdint>
-#include <thread>
 
 using namespace beebium;
 
@@ -108,7 +107,7 @@ TEST_CASE("6502 R3 P2H: single byte", "[tube][6502][r3]") {
     CHECK(tube.host_read(5) == 0x42);
 }
 
-TEST_CASE("6502 R3 P2H: 200 bytes threaded", "[tube][6502][r3]") {
+TEST_CASE("6502 R3 P2H: 200 bytes interleaved", "[tube][6502][r3]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -124,19 +123,15 @@ TEST_CASE("6502 R3 P2H: 200 bytes threaded", "[tube][6502][r3]") {
 
     std::array<uint8_t, NUM_BYTES> received{};
 
-    // Host reads from R3 P-to-H.  Poll status bit 7 via Tube interface.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_read(4) & TubeUla::DATA_AVAILABLE) == 0) {}
-            received[i] = tube.host_read(5);
-        }
-    });
-
+    int host_read_idx = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
+        if (host_read_idx < NUM_BYTES && (tube.host_read(4) & TubeUla::DATA_AVAILABLE)) {
+            received[host_read_idx] = tube.host_read(5);
+            ++host_read_idx;
+        }
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -165,18 +160,15 @@ TEST_CASE("6502 R3 P2H: 200 bytes, repeated 50 times", "[tube][6502][r3]") {
 
         std::array<uint8_t, NUM_BYTES> received{};
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_read(4) & TubeUla::DATA_AVAILABLE) == 0) {}
-                received[i] = tube.host_read(5);
-            }
-        });
-
+        int host_read_idx = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
             cpu.tick();
+            if (host_read_idx < NUM_BYTES && (tube.host_read(4) & TubeUla::DATA_AVAILABLE)) {
+                received[host_read_idx] = tube.host_read(5);
+                ++host_read_idx;
+            }
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
         for (int i = 0; i < NUM_BYTES; ++i) {

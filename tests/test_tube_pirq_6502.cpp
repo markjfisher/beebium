@@ -28,7 +28,6 @@
 
 #include <array>
 #include <cstdint>
-#include <thread>
 
 using namespace beebium;
 
@@ -167,7 +166,7 @@ TEST_CASE("6502 PIRQ R1: single byte", "[tube][6502][pirq]") {
     CHECK(memory.ram(COUNTER_ZP) == 1);
 }
 
-TEST_CASE("6502 PIRQ R1: 200 bytes threaded", "[tube][6502][pirq]") {
+TEST_CASE("6502 PIRQ R1: 200 bytes interleaved", "[tube][6502][pirq]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
@@ -180,20 +179,15 @@ TEST_CASE("6502 PIRQ R1: 200 bytes threaded", "[tube][6502][pirq]") {
 
     tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
 
-    // R1 H-to-P is a single-byte latch. Poll for space before each write,
-    // as TubeUla buffers at most one pending write rather than spin-waiting.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) == 0) {}
-            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+        if (host_written < NUM_BYTES && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(1, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -219,18 +213,15 @@ TEST_CASE("6502 PIRQ R1: 200 bytes, repeated 50 times", "[tube][6502][pirq]") {
         tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_I);
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(0) & TubeUla::SPACE_AVAILABLE) == 0) {}
-                tube.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+            if (host_written < NUM_BYTES && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(1, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
         for (int i = 0; i < NUM_BYTES; ++i) {
@@ -272,7 +263,7 @@ TEST_CASE("6502 PIRQ R4: single byte", "[tube][6502][pirq]") {
     CHECK(memory.ram(COUNTER_ZP) == 1);
 }
 
-TEST_CASE("6502 PIRQ R4: 200 bytes threaded", "[tube][6502][pirq]") {
+TEST_CASE("6502 PIRQ R4: 200 bytes interleaved", "[tube][6502][pirq]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, IRQ_ADDR);
@@ -285,20 +276,15 @@ TEST_CASE("6502 PIRQ R4: 200 bytes threaded", "[tube][6502][pirq]") {
 
     tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
 
-    // R4 H-to-P: poll for space before each write, as TubeUla buffers
-    // at most one pending write rather than spin-waiting.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
-            tube.host_write(7, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+        if (host_written < NUM_BYTES && (tube.host_peek(6) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(7, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -324,18 +310,15 @@ TEST_CASE("6502 PIRQ R4: 200 bytes, repeated 50 times", "[tube][6502][pirq]") {
         tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_J);
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
-                tube.host_write(7, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+            if (host_written < NUM_BYTES && (tube.host_peek(6) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(7, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
         for (int i = 0; i < NUM_BYTES; ++i) {

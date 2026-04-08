@@ -13,9 +13,9 @@
 // In-process Tube tests: ParasiteRunner backed by TubeUla.
 //
 // These tests validate the in-process architecture where the host and
-// parasite share a thread-safe TubeUla in the same process. The host accesses
-// TubeUla via host_read/host_write (as TubeSocket would), and the parasite
-// accesses it via parasite_read/parasite_write (through ParasiteRunner).
+// parasite share a TubeUla in the same process. The host accesses TubeUla
+// via host_read/host_write (as TubeSocket would), and the parasite accesses
+// it via parasite_read/parasite_write (through ParasiteRunner).
 //
 // The parasite runs the real Acorn Tube 6502 Client ROM, proving the in-process
 // data path works with real CPU execution.
@@ -26,11 +26,9 @@
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <thread>
 
 #ifndef BEEBIUM_ROM_DIR
 #error "BEEBIUM_ROM_DIR must be defined"
@@ -93,27 +91,19 @@ TEST_CASE("In-process: host reads banner from R1 FIFO", "[tube][inprocess]") {
 }
 
 // ===========================================================================
-// Threaded: parasite runs in a separate thread, host reads banner
+// Sequential: host reads banner after parasite boot
 // ===========================================================================
 
-TEST_CASE("In-process threaded: host reads banner from concurrent parasite", "[tube][inprocess][thread]") {
+TEST_CASE("In-process: host reads banner after parasite boot", "[tube][inprocess]") {
     auto rom = load_rom();
     TubeUla tube;
     ParasiteRunner runner(tube, rom);
     runner.reset();
 
-    // Run parasite in a separate thread.
-    std::atomic<bool> done{false};
-    std::thread parasite_thread([&] {
-        runner.run(BOOT_CYCLES);
-        done.store(true, std::memory_order_release);
-    });
+    // Run parasite -- it writes the boot banner to R1 P-to-H FIFO.
+    runner.run(BOOT_CYCLES);
 
-    // Wait for the parasite to finish booting.
-    parasite_thread.join();
-    REQUIRE(done.load());
-
-    // Host reads banner via TubeUla -- same as single-threaded test.
+    // Host reads banner via TubeUla.
     uint8_t status = tube.host_read(0);
     CHECK((status & TubeUla::DATA_AVAILABLE) != 0);
 
@@ -133,49 +123,33 @@ TEST_CASE("In-process threaded: host reads banner from concurrent parasite", "[t
 }
 
 // ===========================================================================
-// Threaded: R2 handshake -- host delivers data while parasite runs
+// Sequential: R2 handshake with parasite
 // ===========================================================================
 
-TEST_CASE("In-process threaded: R2 handshake with concurrent parasite", "[tube][inprocess][thread]") {
+TEST_CASE("In-process: R2 handshake with parasite", "[tube][inprocess]") {
     auto rom = load_rom();
     TubeUla tube;
     ParasiteRunner runner(tube, rom);
     runner.reset();
 
-    // Run parasite in background -- it boots and then polls R2 for a command.
-    std::thread parasite_thread([&] {
-        // Boot phase: writes banner to R1
-        runner.run(BOOT_CYCLES);
-        // After boot, the Tube Client ROM waits for data in R2.
-        // It polls R2STAT for DATA_AVAILABLE, then reads the command byte.
-        // We give it more cycles to process the R2 data.
-        runner.run(500000);
-    });
+    // Boot phase
+    runner.run(BOOT_CYCLES);
 
-    // Wait for boot to complete (banner in R1).
-    // Poll R1 status until DATA_AVAILABLE is set.
-    for (int polls = 0; polls < 1000000; ++polls) {
-        uint8_t status = tube.host_read(0);
-        if (status & TubeUla::DATA_AVAILABLE) break;
-        std::this_thread::yield();
-    }
+    // Verify banner is available
     uint8_t status = tube.host_read(0);
     REQUIRE((status & TubeUla::DATA_AVAILABLE) != 0);
 
-    // Drain the banner.
+    // Drain the banner
     for (int i = 0; i < 24; ++i) {
         tube.host_read(1);
     }
 
-    // After draining the banner and NUL terminator, the ROM enters its
-    // main loop waiting for R2DATA. Verify R2 space is available.
-    // The R2 command byte will be consumed by the ROM's main loop.
-    // Write a dummy byte to R2 -- this proves the host->parasite path works.
-    tube.host_write(3, 0x00);  // Write to R2 data (OSRDCH command)
+    // Write a dummy byte to R2 (OSRDCH command)
+    tube.host_write(3, 0x00);
 
-    parasite_thread.join();
+    // Run parasite more to process the R2 data
+    runner.run(500000);
 
-    // If we got here without deadlock, the R2 handshake worked.
-    // The parasite consumed the R2 byte and continued executing.
+    // If we got here without hang, the R2 handshake worked.
     CHECK(true);
 }

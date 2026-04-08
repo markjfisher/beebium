@@ -14,8 +14,9 @@
 //
 // A small 6502 program polls R1 status and reads R1 data bytes,
 // storing them into a results buffer in parasite RAM. The host
-// writes bytes through TubeUla on a separate thread. After
-// the transfer, the results buffer is compared byte-by-byte.
+// writes bytes through TubeUla, interleaved with parasite CPU ticks
+// on a single thread. After the transfer, the results buffer is
+// compared byte-by-byte.
 //
 // This exercises the full path: ParasiteCpu::tick() -> memory_.read()
 // -> TubeUla::parasite_read(), including the per-tick pirq()/pnmi_level()
@@ -28,9 +29,7 @@
 #include <beebium/tube/TubeUla.hpp>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
-#include <thread>
 
 using namespace beebium;
 
@@ -110,30 +109,25 @@ TEST_CASE("6502 R1 polled read: single byte", "[tube][6502][r1]") {
 
     cpu.reset();
 
-    // Host writes one byte on a separate thread
-    std::thread host_thread([&] {
-        tube.host_write(1, 0x42);
-    });
+    // Host writes one byte (latch is empty, no flow control needed)
+    tube.host_write(1, 0x42);
 
-    // Run CPU until STP (or timeout)
+    // Run CPU until halt
     for (int i = 0; i < 100000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);  // reached halt loop
     CHECK(memory.ram(RESULT_ADDR) == 0x42);
 }
 
-TEST_CASE("6502 R1 polled read: 702 bytes across threads", "[tube][6502][r1]") {
+TEST_CASE("6502 R1 polled read: 200 bytes interleaved", "[tube][6502][r1]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
     ParasiteMemoryMap memory(tube, rom);
     ParasiteCpu cpu(memory, tube);
 
-    // For > 255 bytes we need a 16-bit counter. Use a simpler approach:
-    // read 200 bytes (fits in X register) and verify those.
     constexpr uint8_t NUM_BYTES = 200;
     plant_r1_reader(memory, NUM_BYTES);
     memory.read(0xFEF8);
@@ -141,17 +135,16 @@ TEST_CASE("6502 R1 polled read: 702 bytes across threads", "[tube][6502][r1]") {
     memory.ram(0xFFFD) = (CODE_ADDR >> 8) & 0xFF;
     cpu.reset();
 
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        if (host_written < NUM_BYTES
+            && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(1, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);  // reached halt loop
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -179,17 +172,16 @@ TEST_CASE("6502 R1 polled read: 200 bytes, repeated 50 times", "[tube][6502][r1]
 
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                tube.host_write(1, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+            if (host_written < NUM_BYTES
+                && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(1, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);  // reached halt loop
 
         for (int i = 0; i < NUM_BYTES; ++i) {
@@ -220,24 +212,18 @@ TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tu
     memory.ram(0xFFFD) = (CODE_ADDR >> 8) & 0xFF;
     cpu.reset();
 
-    // Track what the host has written
-    std::atomic<uint8_t> last_host_value{0};
-    std::atomic<int> host_write_count{0};
-
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            uint8_t val = static_cast<uint8_t>(i & 0xFF);
-            tube.host_write(1, val);
-            last_host_value.store(val, std::memory_order_release);
-            host_write_count.store(i + 1, std::memory_order_release);
-        }
-    });
-
+    int host_written = 0;
     int r1_reads = 0;
     int first_mismatch = -1;
     uint8_t mismatch_dbus = 0, mismatch_expected = 0;
 
     for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        if (host_written < NUM_BYTES
+            && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(1, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
+
         cpu.tick();
 
         // After tick: if the address bus was $FEF9 and it was a read,
@@ -254,8 +240,6 @@ TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tu
         }
     }
 
-    host_thread.join();
-
     if (first_mismatch >= 0) {
         FAIL("R1 read #" << first_mismatch
              << ": dbus=$" << std::hex << static_cast<int>(mismatch_dbus)
@@ -269,8 +253,8 @@ TEST_CASE("6502 R1 polled read: diagnostic -- check data bus at LDA $FEF9", "[tu
 
 TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube][6502][r1][diagnostic]") {
     // Checks whether the parasite's R1 read counter ever exceeds the
-    // host's write counter. If it does, the parasite consumed a byte
-    // that the host hadn't finished writing yet.
+    // host's write counter. In single-threaded mode this is guaranteed
+    // by construction, but we keep the test to verify the invariant.
 
     TubeUla tube;
 
@@ -285,17 +269,15 @@ TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube
     memory.ram(0xFFFD) = (CODE_ADDR >> 8) & 0xFF;
     cpu.reset();
 
-    std::atomic<int> host_writes{0};
-
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            tube.host_write(1, static_cast<uint8_t>(i & 0xFF));
-            host_writes.store(i + 1, std::memory_order_release);
-        }
-    });
-
+    int host_writes = 0;
     int r1_reads = 0;
     for (int i = 0; i < 5000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        if (host_writes < NUM_BYTES
+            && (tube.host_peek(0) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(1, static_cast<uint8_t>(host_writes & 0xFF));
+            ++host_writes;
+        }
+
         cpu.tick();
 
         // Count R1 data reads by observing the CPU bus
@@ -303,15 +285,12 @@ TEST_CASE("6502 R1 polled read: diagnostic -- read count vs write count", "[tube
             r1_reads++;
         }
 
-        auto writes = host_writes.load(std::memory_order_acquire);
-        if (r1_reads > writes) {
-            host_thread.join();
+        if (r1_reads > host_writes) {
             FAIL("Tick " << i << ": R1 reads (" << r1_reads
-                 << ") > host writes (" << writes << ")");
+                 << ") > host writes (" << host_writes << ")");
         }
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {

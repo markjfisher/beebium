@@ -30,7 +30,7 @@
 
 #include <array>
 #include <cstdint>
-#include <thread>
+
 
 using namespace beebium;
 
@@ -137,7 +137,7 @@ TEST_CASE("6502 R4 H2P: single byte", "[tube][6502][r4]") {
     CHECK(memory.ram(RESULT_ADDR) == 0x42);
 }
 
-TEST_CASE("6502 R4 H2P: 200 bytes threaded", "[tube][6502][r4]") {
+TEST_CASE("6502 R4 H2P: 200 bytes interleaved", "[tube][6502][r4]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -148,18 +148,15 @@ TEST_CASE("6502 R4 H2P: 200 bytes threaded", "[tube][6502][r4]") {
     plant_r4_reader(memory, NUM_BYTES);
     setup_cpu(memory, cpu);
 
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
-            tube.host_write(7, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        if (host_written < NUM_BYTES && (tube.host_peek(6) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(7, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -184,18 +181,15 @@ TEST_CASE("6502 R4 H2P: 200 bytes, repeated 50 times", "[tube][6502][r4]") {
 
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(6) & TubeUla::SPACE_AVAILABLE) == 0) {}
-                tube.host_write(7, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+            if (host_written < NUM_BYTES && (tube.host_peek(6) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(7, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
         for (int i = 0; i < NUM_BYTES; ++i) {
@@ -232,7 +226,7 @@ TEST_CASE("6502 R4 P2H: single byte", "[tube][6502][r4]") {
     CHECK(tube.host_read(7) == 0x42);
 }
 
-TEST_CASE("6502 R4 P2H: 200 bytes threaded", "[tube][6502][r4]") {
+TEST_CASE("6502 R4 P2H: 200 bytes interleaved", "[tube][6502][r4]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -251,18 +245,15 @@ TEST_CASE("6502 R4 P2H: 200 bytes threaded", "[tube][6502][r4]") {
 
     // R4 P-to-H: host must wait for data to appear before reading,
     // otherwise it reads stale latch contents.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(6) & TubeUla::DATA_AVAILABLE) == 0) {}
-            received[i] = tube.host_read(7);
-        }
-    });
-
+    int host_read_idx = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
+        if (host_read_idx < NUM_BYTES && (tube.host_peek(6) & TubeUla::DATA_AVAILABLE)) {
+            received[host_read_idx] = tube.host_read(7);
+            ++host_read_idx;
+        }
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -291,18 +282,15 @@ TEST_CASE("6502 R4 P2H: 200 bytes, repeated 50 times", "[tube][6502][r4]") {
 
         std::array<uint8_t, NUM_BYTES> received{};
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(6) & TubeUla::DATA_AVAILABLE) == 0) {}
-                received[i] = tube.host_read(7);
-            }
-        });
-
+        int host_read_idx = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
             cpu.tick();
+            if (host_read_idx < NUM_BYTES && (tube.host_peek(6) & TubeUla::DATA_AVAILABLE)) {
+                received[host_read_idx] = tube.host_read(7);
+                ++host_read_idx;
+            }
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
         for (int i = 0; i < NUM_BYTES; ++i) {
