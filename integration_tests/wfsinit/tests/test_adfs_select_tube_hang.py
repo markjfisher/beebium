@@ -200,14 +200,18 @@ def _dump_hang_diagnostics(bbc):
                 0x24: "R2 H2P para-rd",
                 0x28: "R2 P2H host-rd",
                 0x2C: "R2 P2H para-wr",
+                0x30: "R3 H2P host-wr",
+                0x34: "R3 H2P para-rd",
+                0x38: "R3 P2H host-rd",
+                0x3C: "R3 P2H para-wr",
                 0x40: "R4 H2P host-wr",
                 0x44: "R4 H2P para-rd",
                 0x48: "R4 P2H host-rd",
                 0x4C: "R4 P2H para-wr",
             }
-            # Show last 80 events
+            # Show last 200 events (more context for R3 transfers)
             entries = list(tube_resp.trace)
-            start_idx = max(0, len(entries) - 80)
+            start_idx = max(0, len(entries) - 200)
             for i, entry in enumerate(entries[start_idx:], start=start_idx):
                 name = tag_names.get(entry.tag, f"?{entry.tag:02X}")
                 lines.append(f"  [{i:4d}] {name:18s}  ${entry.value:02X}")
@@ -357,7 +361,7 @@ def test_osword_72_then_adfs_select_with_tube(
                 '140 cb%!11=512\n'
                 '150 A%=&72:X%=cb%:Y%=cb%DIV256:CALL &FFF1\n'
                 '160 PRINT"READ2:";cb%?0\n'
-                '170 PRINT"DONE"\n'
+                '170 PRINTCHR$(68)"ONE"\n'
             )
 
             for line in program.strip().split('\n'):
@@ -434,7 +438,7 @@ def test_osword_72_correct_cb_with_tube(
                 '40 cb%!11=512\n'
                 '50 A%=&72:X%=cb%:Y%=cb%DIV256:CALL &FFF1\n'
                 '60 PRINT"OK:";cb%?0\n'
-                '70 PRINT"DONE"\n'
+                '70 PRINTCHR$(68)"ONE"\n'
             )
 
             for line in program.strip().split('\n'):
@@ -598,7 +602,7 @@ def test_osword_72_scsi_read_with_tube(
                 '50 CALL &FFF1\n'
                 '60 IF cb%?0 THEN PRINT"ERR:";~cb%?0:GOTO80\n'
                 '70 PRINT"OK:";~buf%?0;" ";~buf%?1;" ";~buf%?2;" ";~buf%?3\n'
-                '80 PRINT"DONE"\n'
+                '80 PRINTCHR$(68)"ONE"\n'
             )
 
             for line in program.strip().split('\n'):
@@ -689,7 +693,7 @@ def test_osword_72_after_adfs_select_with_tube(
                 '70 CALL &FFF1\n'
                 '80 IF cb%?0 THEN PRINT"ERR:";~cb%?0:GOTO100\n'
                 '90 PRINT"OK:";~buf%?0;" ";~buf%?1;" ";~buf%?2;" ";~buf%?3\n'
-                '100 PRINT"DONE"\n'
+                '100 PRINTCHR$(68)"ONE"\n'
             )
 
             for line in program.strip().split('\n'):
@@ -817,7 +821,7 @@ def test_watchpoint_025f_tube_flag(
                 '60 PRINT"READ1:";cb%?0\n'
                 '70 A%=&8F:X%=&12:Y%=8:CALL &FFF4\n'
                 '80 PRINT"ADFS OK"\n'
-                '90 PRINT"DONE"\n'
+                '90 PRINTCHR$(68)"ONE"\n'
             )
 
             for line in program.strip().split('\n'):

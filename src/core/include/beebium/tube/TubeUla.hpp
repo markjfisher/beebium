@@ -155,8 +155,9 @@ private:
     // Interrupt output state.
     bool hirq_ = false;
     bool pirq_ = false;
-    bool pnmi_level_ = false;
-    bool prev_pnmi_ = false;   // PNMI edge detector
+    bool pnmi_condition_ = false;  // raw PNMI condition (always computed)
+    bool pnmi_level_ = false;      // M-gated NMI output
+    bool prev_pnmi_ = false;       // PNMI edge detector
     bool pnmi_edge_ = false;
 
     // Bus stretch state.

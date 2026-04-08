@@ -70,6 +70,7 @@ void TubeUla::soft_reset()
     // Interrupt state.
     hirq_ = false;
     pirq_ = false;
+    pnmi_condition_ = false;
     pnmi_level_ = false;
     prev_pnmi_ = false;
     pnmi_edge_ = false;
@@ -146,10 +147,12 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from P-to-H register.
-        // When M is set (NMI transfer active) and the FIFO is empty,
-        // defer via bus stretching rather than spin-waiting.
+        // Bus stretch when empty and a transfer mode is active (M or V flag set).
+        // M enables NMI-driven transfers; V enables two-byte (paired) transfers.
+        // Without either flag, reads from empty R3 return 0 without stretching
+        // (used for dummy BIT reads that drain stale data during setup).
         uint8_t count = r3_p2h_.count;
-        if (count == 0 && (control_flags_ & FLAG_M)) {
+        if (count == 0 && (control_flags_ & (FLAG_M | FLAG_V))) {
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_is_read_ = true;
@@ -164,6 +167,7 @@ uint8_t TubeUla::host_read(uint8_t offset)
             if (r3_p2h_.count == 0)
                 r3_p2h_.pending = false;
             ++counters_.r3_p2h_reads;
+            trace_event(0x38, result);  // R3 P2H host-read
         }
         break;
     }
@@ -185,6 +189,7 @@ uint8_t TubeUla::host_read(uint8_t offset)
             r4_p2h_.available = false;
             r4_p2h_.full = false;
             ++counters_.r4_p2h_reads;
+            trace_event(0x48, result);  // R4 P2H host-read
         }
         break;
     }
@@ -324,6 +329,7 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
         if (r3_h2p_.count >= threshold)
             r3_h2p_.pending = true;
         ++counters_.r3_h2p_writes;
+        trace_event(0x30, value);  // R3 H2P host-write
         break;
     }
 
@@ -405,16 +411,18 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
     }
 
     case 4: {
+        // R3 parasite status. Bit 7 reflects the PNMI condition (not just
+        // H2P data availability). This is how the Tube ULA hardware works:
+        // the parasite sees "data available" when PNMI would fire, which
+        // includes the "P2H drained" condition. This provides the
+        // synchronisation signal for type 6/7 paired transfers.
         result = 0x1F;
-        auto flags = control_flags_;
-        uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
-        bool h2p_data = r3_h2p_.pending || r3_h2p_.count >= threshold;
         bool p2h_space = !r3_p2h_.pending;
-        if (h2p_data)
+        if (pnmi_condition_)
             result |= DATA_AVAILABLE;
         if (p2h_space)
             result |= SPACE_AVAILABLE;
-        if (h2p_data || p2h_space)
+        if (pnmi_condition_ || p2h_space)
             result |= 0x20;  // N flag
         break;
     }
@@ -428,6 +436,7 @@ uint8_t TubeUla::parasite_read(uint8_t offset)
             if (r3_h2p_.count == 0)
                 r3_h2p_.pending = false;
             ++counters_.r3_h2p_reads;
+            trace_event(0x34, result);  // R3 H2P parasite-read
         }
         break;
     }
@@ -488,15 +497,12 @@ uint8_t TubeUla::parasite_peek(uint8_t offset) const
         break;
     case 4: {
         result = 0x1F;
-        auto flags = control_flags_;
-        uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
-        bool h2p_data = r3_h2p_.pending || r3_h2p_.count >= threshold;
         bool p2h_space = !r3_p2h_.pending;
-        if (h2p_data)
+        if (pnmi_condition_)
             result |= DATA_AVAILABLE;
         if (p2h_space)
             result |= SPACE_AVAILABLE;
-        if (h2p_data || p2h_space)
+        if (pnmi_condition_ || p2h_space)
             result |= 0x20;
         break;
     }
@@ -569,6 +575,7 @@ void TubeUla::parasite_write(uint8_t offset, uint8_t value)
             if (r3_p2h_.count >= threshold)
                 r3_p2h_.pending = true;
             ++counters_.r3_p2h_writes;
+            trace_event(0x3C, value);  // R3 P2H parasite-write
         }
         break;
     }
@@ -582,6 +589,7 @@ void TubeUla::parasite_write(uint8_t offset, uint8_t value)
         r4_p2h_.available = true;
         r4_p2h_.full = true;
         ++counters_.r4_p2h_writes;
+        trace_event(0x4C, value);  // R4 P2H parasite-write
         break;
     }
     }
@@ -622,12 +630,16 @@ void TubeUla::update_interrupts()
     pirq_ = ((flags & FLAG_I) && r1_h2p_.available)
           || ((flags & FLAG_J) && r4_h2p_.available);
 
-    bool new_pnmi = false;
-    if (flags & FLAG_M) {
-        uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
-        new_pnmi = (r3_h2p_.pending || r3_h2p_.count >= threshold)
-                || !r3_p2h_.pending;
-    }
+    // PNMI condition: always computed regardless of M flag.
+    // True when R3 H-to-P has data, OR R3 P-to-H is not pending (empty/drained).
+    // The parasite R3 status register bit 7 reflects this condition directly
+    // (as per the Tube ULA hardware -- see B2 reference).
+    uint8_t threshold = (flags & FLAG_V) ? 2 : 1;
+    pnmi_condition_ = (r3_h2p_.pending || r3_h2p_.count >= threshold)
+                    || !r3_p2h_.pending;
+
+    // M flag gates whether the PNMI condition reaches the NMI output pin.
+    bool new_pnmi = (flags & FLAG_M) ? pnmi_condition_ : false;
 
     if (new_pnmi && !prev_pnmi_)
         pnmi_edge_ = true;

@@ -111,7 +111,31 @@ public:
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
-        return active_backend()->host_read(static_cast<uint8_t>(offset));
+        auto* backend = active_backend();
+        uint8_t result = backend->host_read(static_cast<uint8_t>(offset));
+
+        // Handle read-side bus stretching inline. When the Tube ULA
+        // stretches a read (e.g. host reads empty R3 P-to-H during a
+        // transfer), the real hardware holds the host clock until data
+        // arrives. We emulate this by ticking the parasite until the
+        // stretch clears, then retrying the read with actual data.
+        // Deferred reads don't work because the CPU would consume the
+        // placeholder return value before the stretch resolves.
+        while (backend->stretched()) {
+            if (parasite_ && !parasite_->is_paused()) {
+                parasite_->tick();
+            } else {
+                break;  // No parasite available -- can't resolve
+            }
+            auto* ula = tube_ula();
+            if (ula && ula->try_complete_stretch()) {
+                // Data available -- re-read for the correct value
+                result = backend->host_read(static_cast<uint8_t>(offset));
+                if (!backend->stretched()) break;
+            }
+        }
+
+        return result;
     }
 
     // Side-effect-free read for debugger inspection.

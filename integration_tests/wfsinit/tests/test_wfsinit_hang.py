@@ -204,6 +204,39 @@ def _dump_diagnostics(bbc, scsi_events):
     except Exception as e:
         lines.append(f"  [Tube ULA state unavailable: {e}]")
 
+    # 4b. Tube protocol trace
+    try:
+        from beebium._proto import debugger_pb2, debugger_pb2_grpc
+        stub = debugger_pb2_grpc.DeviceInspectionStub(
+            grpc.insecure_channel(bbc.target)
+        )
+        tube_resp = stub.GetTubeState(debugger_pb2.GetTubeStateRequest())
+        if tube_resp.trace:
+            tag_names = {
+                0x20: "R2 H2P host-wr",
+                0x24: "R2 H2P para-rd",
+                0x28: "R2 P2H host-rd",
+                0x2C: "R2 P2H para-wr",
+                0x30: "R3 H2P host-wr",
+                0x34: "R3 H2P para-rd",
+                0x38: "R3 P2H host-rd",
+                0x3C: "R3 P2H para-wr",
+                0x40: "R4 H2P host-wr",
+                0x44: "R4 H2P para-rd",
+                0x48: "R4 P2H host-rd",
+                0x4C: "R4 P2H para-wr",
+            }
+            lines.append("")
+            lines.append(f"--- TUBE TRACE (last {len(tube_resp.trace)} of "
+                          f"{tube_resp.trace_total_count} events) ---")
+            entries = list(tube_resp.trace)
+            start_idx = max(0, len(entries) - 200)
+            for i, entry in enumerate(entries[start_idx:], start=start_idx):
+                name = tag_names.get(entry.tag, f"?{entry.tag:02X}")
+                lines.append(f"  [{i:4d}] {name:18s}  ${entry.value:02X}")
+    except Exception as e:
+        lines.append(f"  [Tube trace unavailable: {e}]")
+
     # 5. SCSI bus status
     try:
         scsi_channel = grpc.insecure_channel(bbc.target)
