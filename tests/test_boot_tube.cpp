@@ -33,8 +33,8 @@
 // detecting Tube hardware. Without a ROM that claims this call, the
 // Tube presence flag is never set, and MOS ignores the Tube.
 //
-// Host and parasite are interleaved on the same thread, stepping in
-// chunks that approximate the 2 MHz / 3 MHz clock ratio.
+// The parasite is installed on the TubeSocket and ticked automatically
+// by Machine::step() at a 3:2 clock ratio (3 MHz parasite / 2 MHz host).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -108,40 +108,6 @@ void setup_tube_machine(ModelB& machine) {
     machine.memory().load_sideways_rom(13, dnfs.data(), dnfs.size());
 }
 
-// Interleave host and parasite execution on a single thread.
-//
-// The host_batch:parasite_batch ratio approximates the real clock ratio
-// between the two processors (e.g. 2:3 for a 2 MHz host and 3 MHz
-// parasite). This ratio is necessary for two reasons:
-//
-//   1. Realism: the parasite runs faster than the host in real hardware.
-//      A 1:1 ratio would under-clock the parasite relative to the host,
-//      potentially changing the observable behaviour of timing-sensitive
-//      transfer protocols.
-//
-//   2. Bus stretching: the TubeUla handles back-pressure between the
-//      host and parasite. In this single-threaded test, the ratio must
-//      give the parasite enough instructions between host batches to
-//      keep up with the data flow. The 2:3 ratio is sufficient for the
-//      65C02 3 MHz second processor boot sequence.
-//
-// Note: the ratio is a property of the test harness, not of the Tube
-// protocol itself. In production the host and parasite run on separate
-// threads and bus stretching handles back-pressure regardless of clock
-// ratio.
-void interleaved_boot(ModelB& host, ParasiteRunner& parasite,
-                      int rounds, int host_batch, int parasite_batch)
-{
-    for (int round = 0; round < rounds; ++round) {
-        for (int i = 0; i < host_batch; ++i) {
-            host.step_instruction();
-        }
-        for (int i = 0; i < parasite_batch; ++i) {
-            parasite.step_instruction();
-        }
-    }
-}
-
 }  // namespace
 
 // =============================================================================
@@ -171,10 +137,14 @@ TEST_CASE("Model B with 65C02 second processor boots with Tube banner",
     ParasiteRunner parasite(*tube, tube_rom);
     parasite.reset();
 
-    // --- Interleaved boot ---
-    // 2:3 ratio approximates the 2 MHz host / 3 MHz parasite clock speeds.
-    // See interleaved_boot() comment for why this ratio matters.
-    interleaved_boot(machine, parasite, 5000000, 2, 3);
+    // Install parasite for single-threaded ticking from Machine::step().
+    // The 3:2 clock ratio gives the parasite 1.5 cycles per host cycle.
+    machine.state().memory.tube_socket.install_parasite(&parasite);
+    machine.state().memory.tube_socket.set_parasite_clock_ratio(3, 2);
+
+    // --- Boot ---
+    // Machine::step() now ticks the parasite automatically via TubeSocket.
+    machine.run(30'000'000);
 
     // --- Verify screen ---
     INFO("Screen:\n" << dump_screen(machine));
@@ -207,8 +177,10 @@ TEST_CASE("Model B with Tube shows 64K memory (not 32K)",
     ParasiteRunner parasite(*tube, tube_rom);
     parasite.reset();
 
-    // 2:3 ratio approximates the 2 MHz host / 3 MHz parasite clock speeds.
-    interleaved_boot(machine, parasite, 5000000, 2, 3);
+    machine.state().memory.tube_socket.install_parasite(&parasite);
+    machine.state().memory.tube_socket.set_parasite_clock_ratio(3, 2);
+
+    machine.run(30'000'000);
 
     INFO("Screen:\n" << dump_screen(machine));
 
