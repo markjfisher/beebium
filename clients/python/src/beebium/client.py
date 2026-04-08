@@ -404,6 +404,11 @@ class Beebium:
         clock_hz = self.system.clock_speed_hz or 2_000_000
         total_budget = int(emulated_seconds * clock_hz)
         chunk_cycles = int(chunk_seconds * clock_hz)
+
+        # Stop if running -- we need to set up the first breakpoint
+        # before execution resumes.
+        self.debugger.ensure_stopped()
+
         start_cycles = self.debugger.cycle_count
         deadline_cycles = start_cycles + total_budget
 
@@ -417,7 +422,7 @@ class Beebium:
                     0x0000, end_address=0x10000,
                     condition=f"cycles >= {chunk_target}",
                 ):
-                    self.debugger.run()
+                    self.debugger.ensure_running()
                     self.debugger.wait_for_stop()
 
                 if predicate():

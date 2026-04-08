@@ -27,7 +27,6 @@ import pytest
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains, read_mode7_screen
-from beebium.tube_system import TubeSystem
 
 
 @pytest.fixture(scope="function")
@@ -61,13 +60,11 @@ def bbc_with_tube(beebium_roms_dirpath: Path, mos_filepath: Path, basic_filepath
             ],
             startup_timeout=20.0,
         ) as instance:
-            # Wait for Tube banner and BASIC prompt in real-time.
-            system = TubeSystem.from_host(instance)
-            ok = system.run_until(
+            # Wait for Tube banner and BASIC prompt.
+            ok = instance.run_until_or_timeout(
                 lambda: screen_contains(instance.memory, ">"),
                 emulated_seconds=30.0,
             )
-            system.close()
             if not ok:
                 pytest.fail("Boot did not reach BASIC prompt with Tube")
             yield instance
