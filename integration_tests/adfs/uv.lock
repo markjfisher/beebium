@@ -3,6 +3,17 @@ revision = 1
 requires-python = ">=3.12"
 
 [[package]]
+name = "adfs-disc-tools"
+version = "0.1.0"
+source = { editable = "../../scripts/adfs-disc-tools" }
+dependencies = [
+    { name = "click" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "click", specifier = ">=8.0.0" }]
+
+[[package]]
 name = "beebium"
 version = "0.1.0"
 source = { editable = "../../clients/python" }
@@ -28,6 +39,7 @@ name = "beebium-adfs-tests"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "adfs-disc-tools" },
     { name = "beebium" },
     { name = "oaknut-dfs" },
     { name = "pytest" },
@@ -36,6 +48,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adfs-disc-tools", editable = "../../scripts/adfs-disc-tools" },
     { name = "beebium", editable = "../../clients/python" },
     { name = "oaknut-dfs" },
     { name = "pytest", specifier = ">=7.0.0" },

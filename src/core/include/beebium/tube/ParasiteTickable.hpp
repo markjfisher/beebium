@@ -1,0 +1,32 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+#pragma once
+
+namespace beebium {
+
+// Minimal interface for a parasite processor that can be ticked from
+// Machine::step(). Implemented by ParasiteRunner; used by TubeSocket
+// to drive the parasite in the single-threaded interleaved model.
+class ParasiteTickable {
+public:
+    virtual ~ParasiteTickable() = default;
+
+    // Execute one parasite CPU cycle.
+    virtual void tick() = 0;
+
+    // Returns true if the debugger has paused this processor.
+    // TubeSocket skips ticking when paused.
+    virtual bool is_paused() const = 0;
+};
+
+}  // namespace beebium

@@ -22,7 +22,6 @@ from pathlib import Path
 import grpc
 
 from beebium.client import Beebium
-from beebium.tube_system import TubeSystem
 from beebium.disassemble import disassemble
 from beebium.exceptions import BeebiumError
 from beebium.screen import dump_screen, screen_contains
@@ -52,9 +51,10 @@ def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                          chunk_seconds: float = 1.0):
     """Run the emulator until predicate() returns True or a cycle budget expires.
 
-    Creates a TubeSystem from the host, running both host and parasite
-    at their natural rates. The predicate is evaluated periodically via
-    peek (side-effect-free) without stopping either processor.
+    In the single-threaded Tube model, running the host automatically
+    ticks the parasite via Machine::step(). The predicate is evaluated
+    periodically via peek (side-effect-free) while the machine is stopped
+    between chunks.
 
     Args:
         bbc: The Beebium instance.
@@ -65,12 +65,8 @@ def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
     Returns:
         True if the predicate was satisfied, False on timeout.
     """
-    system = TubeSystem.from_host(bbc)
-    try:
-        return system.run_until(predicate, emulated_seconds,
-                                chunk_seconds=chunk_seconds)
-    finally:
-        system.close()
+    return bbc.run_until_or_timeout(
+        predicate, emulated_seconds, chunk_seconds=chunk_seconds)
 
 
 def disassemble_region(memory, start: int, length: int) -> list[str]:

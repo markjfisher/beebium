@@ -14,8 +14,8 @@
 //
 // These tests create the extension, provide it with a TubeSocket via
 // ExtensionContext, and verify that the parasite boots and communicates
-// with the host through the TubeUla bridge -- all in-process with the
-// parasite running in its own thread.
+// with the host through the TubeUla bridge. The parasite is ticked
+// via TubeSocket::tick_parasite() in the single-threaded model.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -24,14 +24,24 @@
 #include <beebium/tube/TubeSocket.hpp>
 #include <beebium/tube/TubeUla.hpp>
 
-#include <chrono>
-#include <thread>
+#include <cstdint>
 
 #ifndef BEEBIUM_ROM_DIR
 #error "BEEBIUM_ROM_DIR must be defined"
 #endif
 
 using namespace beebium;
+
+// Tick the parasite via the TubeSocket until the target cycle count is reached
+// or the tick limit is exceeded. Each tick_parasite() call produces 1 or 2
+// parasite cycles (3:2 fractional accumulator).
+static void tick_parasite_until(TubeSocket& socket, ParasiteRunner& runner,
+                                uint64_t target_cycles, int max_ticks = 200000)
+{
+    for (int i = 0; i < max_ticks && runner.cycle_count() < target_cycles; ++i) {
+        socket.tick_parasite();
+    }
+}
 
 TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") {
     // Set up a TubeSocket (as the host machine would have).
@@ -47,20 +57,15 @@ TEST_CASE("65C02 extension: boots and produces R1 banner", "[tube][extension]") 
         {"rom", std::string(BEEBIUM_ROM_DIR) + "/acorn-tube-6502_1_10.rom"}
     });
 
-    // Initialise -- this starts the parasite thread.
+    // Initialise -- installs parasite for single-threaded ticking.
     ext.init(ctx);
     REQUIRE(ext.running());
     REQUIRE(tube_socket.enabled());
 
-    // Wait for the boot banner to fill the R1 FIFO (24 bytes).
-    // The parasite writes the banner character-by-character via OSWRCH,
-    // which takes ~100K cycles. Poll with peek (side-effect-free) until
-    // the runner has completed enough cycles for the full banner.
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (ext.runner()->cycle_count() >= 100000) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    // Tick the parasite until it has completed enough cycles for the boot
+    // banner (the parasite writes 24 bytes to the R1 P-to-H FIFO via OSWRCH,
+    // which takes ~100K parasite cycles).
+    tick_parasite_until(tube_socket, *ext.runner(), 100000);
 
     uint8_t status = tube_socket.peek(0);
     REQUIRE((status & TubeUla::DATA_AVAILABLE) != 0);
@@ -99,27 +104,30 @@ TEST_CASE("65C02 extension: cross-processor stop via counterpart callback", "[tu
     ext.init(ctx);
     REQUIRE(ext.running());
 
-    // Wait for boot.
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (ext.runner()->cycle_count() >= 100000) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+    // Boot the parasite.
+    tick_parasite_until(tube_socket, *ext.runner(), 100000);
 
     // Simulate cross-processor stop: calling the parasite_pause_callback
     // should pause the parasite runner.
     REQUIRE(!ext.runner()->is_paused());
     auto pause_cb = ext.parasite_pause_callback();
     pause_cb();
-
-    // Give the runner time to observe the pause flag and stop.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK(ext.runner()->is_paused());
 
-    // Resume and verify it continues.
+    // Ticking while paused should be a no-op.
+    auto cycles_before = ext.runner()->cycle_count();
+    for (int i = 0; i < 1000; ++i) {
+        tube_socket.tick_parasite();
+    }
+    CHECK(ext.runner()->cycle_count() == cycles_before);
+
+    // Resume and verify ticking resumes.
     ext.runner()->resume();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     CHECK(!ext.runner()->is_paused());
+    for (int i = 0; i < 1000; ++i) {
+        tube_socket.tick_parasite();
+    }
+    CHECK(ext.runner()->cycle_count() > cycles_before);
 
     ext.shutdown();
 }

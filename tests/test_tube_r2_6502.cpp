@@ -25,6 +25,9 @@
 // Parasite-to-Host: parasite polls R2 status ($FEFA) bit 6 then writes R2
 // data ($FEFB).  Host waits for r2_p2h.ready != 0 (parasite has written),
 // then reads R2 data (offset 3).
+//
+// Host-side operations are interleaved with parasite CPU ticks in a single
+// thread, checking Tube status flags each iteration to decide when to act.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -34,7 +37,6 @@
 
 #include <array>
 #include <cstdint>
-#include <thread>
 
 using namespace beebium;
 
@@ -180,7 +182,7 @@ TEST_CASE("6502 R2 H2P: single byte", "[tube][6502][r2]") {
     CHECK(memory.ram(RESULT_ADDR) == 0x42);
 }
 
-TEST_CASE("6502 R2 H2P: 200 bytes threaded", "[tube][6502][r2]") {
+TEST_CASE("6502 R2 H2P: 200 bytes interleaved", "[tube][6502][r2]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -194,20 +196,15 @@ TEST_CASE("6502 R2 H2P: 200 bytes threaded", "[tube][6502][r2]") {
     // R2 has no bus stretching -- the host must wait for the parasite to
     // consume each byte before writing the next, otherwise it overwrites
     // the latch and data is lost.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(2) & TubeUla::SPACE_AVAILABLE) == 0) {
-                // spin until parasite has consumed previous byte
-            }
-            tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+        if (host_written < NUM_BYTES && (tube.host_peek(2) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(3, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -232,18 +229,15 @@ TEST_CASE("6502 R2 H2P: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 
         uint8_t base = static_cast<uint8_t>(iter * 11);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(2) & TubeUla::SPACE_AVAILABLE) == 0) {}
-                tube.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
+            if (host_written < NUM_BYTES && (tube.host_peek(2) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(3, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
         for (int i = 0; i < NUM_BYTES; ++i) {
@@ -281,7 +275,7 @@ TEST_CASE("6502 R2 P2H: single byte", "[tube][6502][r2]") {
     CHECK(tube.host_read(3) == 0x42);
 }
 
-TEST_CASE("6502 R2 P2H: 200 bytes threaded", "[tube][6502][r2]") {
+TEST_CASE("6502 R2 P2H: 200 bytes interleaved", "[tube][6502][r2]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -301,20 +295,15 @@ TEST_CASE("6502 R2 P2H: 200 bytes threaded", "[tube][6502][r2]") {
 
     // R2 P-to-H has no bus stretching -- the host must wait for data
     // to become available before reading, otherwise it reads stale data.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(2) & TubeUla::DATA_AVAILABLE) == 0) {
-                // spin until parasite has written a byte
-            }
-            received[i] = tube.host_read(3);
-        }
-    });
-
+    int host_read_idx = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
         cpu.tick();
+        if (host_read_idx < NUM_BYTES && (tube.host_peek(2) & TubeUla::DATA_AVAILABLE)) {
+            received[host_read_idx] = tube.host_read(3);
+            ++host_read_idx;
+        }
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -343,18 +332,15 @@ TEST_CASE("6502 R2 P2H: 200 bytes, repeated 50 times", "[tube][6502][r2]") {
 
         std::array<uint8_t, NUM_BYTES> received{};
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(2) & TubeUla::DATA_AVAILABLE) == 0) {}
-                received[i] = tube.host_read(3);
-            }
-        });
-
+        int host_read_idx = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0412; ++i) {
             cpu.tick();
+            if (host_read_idx < NUM_BYTES && (tube.host_peek(2) & TubeUla::DATA_AVAILABLE)) {
+                received[host_read_idx] = tube.host_read(3);
+                ++host_read_idx;
+            }
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0412);
 
         for (int i = 0; i < NUM_BYTES; ++i) {
@@ -394,7 +380,7 @@ TEST_CASE("6502 R2 command/response: single round-trip", "[tube][6502][r2]") {
     CHECK(tube.host_read(3) == static_cast<uint8_t>(0x42 ^ 0xFF));
 }
 
-TEST_CASE("6502 R2 command/response: 200 round-trips threaded", "[tube][6502][r2]") {
+TEST_CASE("6502 R2 command/response: 200 round-trips interleaved", "[tube][6502][r2]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(CODE_ADDR);
@@ -407,25 +393,26 @@ TEST_CASE("6502 R2 command/response: 200 round-trips threaded", "[tube][6502][r2
 
     std::array<uint8_t, NUM_CMDS> responses{};
 
-    // Host thread: send command, poll for response, read it.
+    // Host state machine: send command, poll for response, read it.
     // The request/response protocol provides natural flow control --
     // the host waits for the response before sending the next command,
-    // so the latch is always empty when we write.  No ready-flag
-    // spinning needed.
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_CMDS; ++i) {
-            tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
-            // Poll R2 status bit 7 (P-to-H data available) via proper Tube interface
-            while ((tube.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
-            responses[i] = tube.host_read(3);
-        }
-    });
-
+    // so the latch is always empty when we write.
+    int cmd_idx = 0;
+    bool waiting_for_response = false;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != CMD_RSP_HALT; ++i) {
+        if (cmd_idx < NUM_CMDS) {
+            if (!waiting_for_response) {
+                tube.host_write(3, static_cast<uint8_t>(cmd_idx & 0xFF));
+                waiting_for_response = true;
+            } else if (tube.host_read(2) & TubeUla::DATA_AVAILABLE) {
+                responses[cmd_idx] = tube.host_read(3);
+                ++cmd_idx;
+                waiting_for_response = false;
+            }
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == CMD_RSP_HALT);
 
     for (int i = 0; i < NUM_CMDS; ++i) {
@@ -452,19 +439,22 @@ TEST_CASE("6502 R2 command/response: 200 round-trips, repeated 50 times", "[tube
         uint8_t base = static_cast<uint8_t>(iter * 11);
         std::array<uint8_t, NUM_CMDS> responses{};
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_CMDS; ++i) {
-                tube.host_write(3, static_cast<uint8_t>((base + i) & 0xFF));
-                while ((tube.host_read(2) & TubeUla::DATA_AVAILABLE) == 0) {}
-                responses[i] = tube.host_read(3);
-            }
-        });
-
+        int cmd_idx = 0;
+        bool waiting_for_response = false;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != CMD_RSP_HALT; ++i) {
+            if (cmd_idx < NUM_CMDS) {
+                if (!waiting_for_response) {
+                    tube.host_write(3, static_cast<uint8_t>((base + cmd_idx) & 0xFF));
+                    waiting_for_response = true;
+                } else if (tube.host_read(2) & TubeUla::DATA_AVAILABLE) {
+                    responses[cmd_idx] = tube.host_read(3);
+                    ++cmd_idx;
+                    waiting_for_response = false;
+                }
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == CMD_RSP_HALT);
 
         for (int i = 0; i < NUM_CMDS; ++i) {

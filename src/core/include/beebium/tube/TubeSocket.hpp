@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "ParasiteTickable.hpp"
 #include "TubeHostBackend.hpp"
 #include "TubeUla.hpp"
 
@@ -110,7 +111,31 @@ public:
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
-        return active_backend()->host_read(static_cast<uint8_t>(offset));
+        auto* backend = active_backend();
+        uint8_t result = backend->host_read(static_cast<uint8_t>(offset));
+
+        // Handle read-side bus stretching inline. When the Tube ULA
+        // stretches a read (e.g. host reads empty R3 P-to-H during a
+        // transfer), the real hardware holds the host clock until data
+        // arrives. We emulate this by ticking the parasite until the
+        // stretch clears, then retrying the read with actual data.
+        // Deferred reads don't work because the CPU would consume the
+        // placeholder return value before the stretch resolves.
+        while (backend->stretched()) {
+            if (parasite_ && !parasite_->is_paused()) {
+                parasite_->tick();
+            } else {
+                break;  // No parasite available -- can't resolve
+            }
+            auto* ula = tube_ula();
+            if (ula && ula->try_complete_stretch()) {
+                // Data available -- re-read for the correct value
+                result = backend->host_read(static_cast<uint8_t>(offset));
+                if (!backend->stretched()) break;
+            }
+        }
+
+        return result;
     }
 
     // Side-effect-free read for debugger inspection.
@@ -153,14 +178,67 @@ public:
         active_backend()->reset();
     }
 
+    // --- Parasite management (single-threaded interleaved ticking) ---
+
+    // Install a parasite runner for single-threaded ticking from Machine::step().
+    // The caller (extension) owns the runner's lifetime.
+    void install_parasite(ParasiteTickable* runner) {
+        parasite_ = runner;
+    }
+
+    void remove_parasite() { parasite_ = nullptr; }
+
+    // Configure clock ratio: numerator/denominator = parasite/host.
+    // For 3 MHz parasite with 2 MHz host: set_parasite_clock_ratio(3, 2).
+    void set_parasite_clock_ratio(uint8_t numerator, uint8_t denominator) {
+        parasite_clock_num_ = numerator;
+        parasite_clock_den_ = denominator;
+        parasite_phase_ = 0;
+    }
+
+    // Tick the parasite CPU. Called from Machine::step() before the host CPU tick.
+    // Uses a fractional accumulator for the clock ratio.
+    void tick_parasite() {
+        if (!parasite_ || parasite_->is_paused()) return;
+
+        parasite_phase_ += parasite_clock_num_;
+        while (parasite_phase_ >= parasite_clock_den_) {
+            parasite_phase_ -= parasite_clock_den_;
+            parasite_->tick();
+        }
+    }
+
+    // Tick the parasite during Tube bus stretch (host CPU halted).
+    // Identical to tick_parasite() but called from the stretch path.
+    void tick_parasite_stretch() {
+        tick_parasite();
+    }
+
+    // Check if the host is Tube bus-stretched.
+    bool tube_stretched() const {
+        return active_backend()->stretched();
+    }
+
+    // Attempt to complete a pending stretch operation.
+    // Returns true if the stretch cleared (or was not active).
+    bool try_complete_tube_stretch() {
+        auto* ula = tube_ula();
+        return ula ? ula->try_complete_stretch() : true;
+    }
+
     // --- Accessors ---
 
-    // Access the underlying TubeUla (only valid in in-process mode).
-    // Returns nullptr if the socket is empty or in shared memory mode.
+    // Access the underlying TubeUla.
+    // Checks the installed (extension-owned) backend first, then the owned
+    // backend. Returns nullptr if neither is a TubeUla.
     TubeUla* tube_ula() {
+        if (installed_backend_)
+            return dynamic_cast<TubeUla*>(installed_backend_);
         return dynamic_cast<TubeUla*>(backend_.get());
     }
     const TubeUla* tube_ula() const {
+        if (installed_backend_)
+            return dynamic_cast<const TubeUla*>(installed_backend_);
         return dynamic_cast<const TubeUla*>(backend_.get());
     }
 
@@ -177,6 +255,12 @@ private:
     std::unique_ptr<TubeHostBackend> backend_;  // owned backend (empty or legacy)
     TubeHostBackend* installed_backend_ = nullptr;  // non-owning, extension-owned
     const uint8_t* last_bus_value_ptr_ = nullptr;
+
+    // Parasite ticking state (single-threaded interleaved model)
+    ParasiteTickable* parasite_ = nullptr;
+    uint8_t parasite_phase_ = 0;
+    uint8_t parasite_clock_num_ = 3;  // 3 MHz default
+    uint8_t parasite_clock_den_ = 2;  // 2 MHz host
 };
 
 }  // namespace beebium

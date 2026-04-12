@@ -16,37 +16,31 @@
 #include "beebium/tube/ParasiteRunner.hpp"
 #include "beebium/tube/TubeSocket.hpp"
 #include "beebium/tube/TubeUla.hpp"
-#include "beebium/PacingClock.hpp"
 #include "beebium/service/DebuggerService.hpp"
 #include "ParasiteDebuggerAdapter.hpp"
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <string_view>
-#include <thread>
 
 namespace beebium {
 
 // Acorn 65C02 3 MHz second processor, implemented as a Peripheral Extension.
 //
 // Owns everything on the parasite side of the Tube cable:
-//   - TubeUla (thread-safe bridging hardware)
+//   - TubeUla (register bridge)
 //   - ParasiteRunner (CPU, memory map, boot ROM, breakpoints)
-//   - Execution thread (parasite runs asynchronously)
-//   - PacingClock (3 MHz parasite pacing)
 //
 // The TubeUla is installed into the host's TubeSocket as the backend.
-// Host register access goes through TubeUla::host_read/host_write from the
-// host thread; parasite register access goes through TubeUla::parasite_read/
-// parasite_write from the extension's thread. The mutex in TubeUla serialises
-// concurrent access.
+// The ParasiteRunner is installed as a ParasiteTickable so that
+// Machine::step() ticks the parasite in the single-threaded interleaved
+// model. The clock ratio is 3:2 (3 MHz parasite, 2 MHz host).
 //
 // Lifecycle:
-//   init()     -- load ROM, create components, install backend, start thread
-//   shutdown() -- stop thread, uninstall backend
+//   init()     -- load ROM, create components, install backend + parasite
+//   shutdown() -- remove parasite, uninstall backend
 
 class SecondProcessor65C02Extension : public PeripheralExtension {
 public:
@@ -96,19 +90,15 @@ public:
     service::DebuggerControlServiceImpl<ParasiteRunner>* debugger_service() {
         return debugger_service_.get();
     }
-    bool running() const { return running_.load(std::memory_order_acquire); }
+    bool running() const { return runner_ != nullptr; }
 
 private:
-    void run_parasite();
     bool load_rom(std::array<uint8_t, 2048>& rom) const;
 
     std::unique_ptr<TubeUla> tube_ula_;
     std::unique_ptr<ParasiteRunner> runner_;
-    std::unique_ptr<PacingClock> pacing_clock_;
     std::unique_ptr<service::DebuggerControlServiceImpl<ParasiteRunner>> debugger_service_;
     std::unique_ptr<ParasiteDebuggerAdapter> debugger_adapter_;
-    std::thread parasite_thread_;
-    std::atomic<bool> running_{false};
     TubeSocket* tube_socket_ = nullptr;  // non-owning, from ExtensionContext
 };
 

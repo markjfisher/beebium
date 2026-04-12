@@ -26,7 +26,6 @@
 
 #include <array>
 #include <cstdint>
-#include <thread>
 
 using namespace beebium;
 
@@ -223,7 +222,7 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes synchronous", "[tube][6502][r3]") {
     }
 }
 
-TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3]") {
+TEST_CASE("6502 R3 NMI transfer: 200 bytes interleaved", "[tube][6502][r3]") {
     TubeUla tube;
 
     auto rom = make_stub_rom(MAIN_ADDR, NMI_ADDR);
@@ -242,18 +241,15 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes threaded", "[tube][6502][r3]") {
 
     tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
-    std::thread host_thread([&] {
-        for (int i = 0; i < NUM_BYTES; ++i) {
-            while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
-            tube.host_write(5, static_cast<uint8_t>(i & 0xFF));
-        }
-    });
-
+    int host_written = 0;
     for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+        if (host_written < NUM_BYTES && (tube.host_peek(4) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(5, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
         cpu.tick();
     }
 
-    host_thread.join();
     REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
     for (int i = 0; i < NUM_BYTES; ++i) {
@@ -328,18 +324,15 @@ TEST_CASE("6502 R3 NMI transfer: 200 bytes, repeated 50 times", "[tube][6502][r3
         uint8_t base = static_cast<uint8_t>(iter * 11);
         tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
-        std::thread host_thread([&] {
-            for (int i = 0; i < NUM_BYTES; ++i) {
-                while ((tube.host_peek(4) & TubeUla::SPACE_AVAILABLE) == 0) {}
-                tube.host_write(5, static_cast<uint8_t>((base + i) & 0xFF));
-            }
-        });
-
+        int host_written = 0;
         for (int i = 0; i < 10000000 && cpu.cpu().opcode_pc.w != 0x0407; ++i) {
+            if (host_written < NUM_BYTES && (tube.host_peek(4) & TubeUla::SPACE_AVAILABLE)) {
+                tube.host_write(5, static_cast<uint8_t>((base + host_written) & 0xFF));
+                ++host_written;
+            }
             cpu.tick();
         }
 
-        host_thread.join();
         REQUIRE(cpu.cpu().opcode_pc.w == 0x0407);
 
         for (int i = 0; i < NUM_BYTES; ++i) {

@@ -13,8 +13,6 @@
 #include "SecondProcessor65C02Extension.hpp"
 
 #include "beebium/extension/ExtensionContext.hpp"
-#include "beebium/PlatformSleep.hpp"
-#include "beebium/SleepQuantum.hpp"
 #include "beebium/server/RomPaths.hpp"
 
 #include <filesystem>
@@ -22,8 +20,6 @@
 #include <iostream>
 
 namespace beebium {
-
-static constexpr uint64_t PARASITE_CLOCK_HZ = 3'000'000;
 
 void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
 {
@@ -45,16 +41,9 @@ void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
     // Install the TubeUla as the host-side backend.
     tube_socket_->install_backend(tube_ula_.get());
 
-    // Create pacing clock.
-    PlatformSleep sleeper;
-    auto quantum = measure_sleep_quantum(sleeper);
-    PacingConfig pacing_config{
-        .base_clock_hz = PARASITE_CLOCK_HZ,
-        .pacing_hz = 200,
-        .speed_multiplier = 1.0
-    };
-    pacing_clock_ = std::make_unique<PacingClock>(
-        pacing_config, quantum, std::move(sleeper));
+    // Install the runner for single-threaded ticking from Machine::step().
+    tube_socket_->install_parasite(runner_.get());
+    tube_socket_->set_parasite_clock_ratio(3, 2);  // 3 MHz / 2 MHz
 
     // Create debugger service (wraps ParasiteRunner with the same
     // DebuggerControlServiceImpl template used by the host debugger).
@@ -64,60 +53,24 @@ void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
     debugger_service_ = std::make_unique<service::DebuggerControlServiceImpl<ParasiteRunner>>(*runner_);
     debugger_adapter_ = std::make_unique<ParasiteDebuggerAdapter>(*debugger_service_);
 
-    // Start the parasite thread.
-    running_.store(true, std::memory_order_release);
-    parasite_thread_ = std::thread([this] { run_parasite(); });
-
-    std::cout << "  65C02 coprocessor started at "
-              << PARASITE_CLOCK_HZ / 1'000'000 << " MHz\n";
+    std::cout << "  65C02 coprocessor (3 MHz, single-threaded)\n";
 }
 
 void SecondProcessor65C02Extension::shutdown()
 {
-    if (!running_.exchange(false, std::memory_order_acq_rel))
+    if (!runner_)
         return;
 
-    // Signal the runner to stop and unblock the pacing wait.
-    if (runner_)
-        runner_->request_shutdown();
-    if (pacing_clock_)
-        pacing_clock_->request_stop();
-
-    // Join the thread.
-    if (parasite_thread_.joinable())
-        parasite_thread_.join();
-
-    // Stop the pacing timer thread.
-    if (pacing_clock_)
-        pacing_clock_->stop();
-
-    // Uninstall backend from host.
-    if (tube_socket_)
+    // Remove parasite from host ticking.
+    if (tube_socket_) {
+        tube_socket_->remove_parasite();
         tube_socket_->install_backend(nullptr);
+    }
 
     debugger_adapter_.reset();
     debugger_service_.reset();
-    pacing_clock_.reset();
     runner_.reset();
     tube_ula_.reset();
-}
-
-void SecondProcessor65C02Extension::run_parasite()
-{
-    pacing_clock_->start();
-
-    while (running_.load(std::memory_order_acquire) &&
-           !runner_->shutdown_requested())
-    {
-        pacing_clock_->wait_for_tick();
-        if (!running_.load(std::memory_order_acquire))
-            break;
-        uint64_t cycles = pacing_clock_->cycles_for_next_tick();
-        runner_->run(cycles);
-        pacing_clock_->report_cycles(runner_->cycle_count());
-    }
-
-    // Stop pacing before thread exits, not after.
 }
 
 bool SecondProcessor65C02Extension::load_rom(std::array<uint8_t, 2048>& rom) const

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adfs-disc-tools"
+version = "0.1.0"
+description = "Create blank pre-formatted ADFS hard disc images for BBC Micro emulators"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    { name = "Robert Smallshire", email = "robert@smallshire.org.uk" }
+]
+dependencies = [
+    "click>=8.0.0",
+]
+
+[project.scripts]
+adfs-disc-tools = "adfs_disc_tools.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adfs_disc_tools"]

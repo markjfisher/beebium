@@ -14,8 +14,6 @@
 
 #include <beebium/tube/TubeUla.hpp>
 
-#include <atomic>
-#include <thread>
 #include <vector>
 
 using namespace beebium;
@@ -1091,98 +1089,73 @@ TEST_CASE("Register access mirroring", "[tube][addressing]") {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// Thread safety: concurrent host and parasite access
+// Interleaved host/parasite access
 //////////////////////////////////////////////////////////////////////////////
 
-TEST_CASE("TubeUla concurrent R2 handshake", "[tube][thread]") {
-    // R2 is a simple 1-byte latch in each direction, making it a good
-    // candidate for testing concurrent access without bus stretching.
+TEST_CASE("TubeUla R2 handshake interleaved", "[tube]") {
     TubeUla tube;
     constexpr int num_transfers = 1000;
-    std::atomic<bool> start{false};
-    std::atomic<int> host_received{0};
-    std::atomic<int> parasite_received{0};
+    int host_received = 0;
+    int parasite_received = 0;
+    int parasite_write_idx = 0;
+    bool parasite_waiting_reply = false;
+    int host_read_idx = 0;
 
-    // Parasite thread: write to R2 P-to-H, read from R2 H-to-P.
-    std::thread parasite_thread([&] {
-        while (!start.load(std::memory_order_acquire)) {}
-        for (int i = 0; i < num_transfers; ++i) {
-            // Write a byte to host via R2.
-            tube.parasite_write(3, static_cast<uint8_t>(i & 0xFF));
-            // Poll for host's reply via R2.
-            for (int polls = 0; polls < 100000; ++polls) {
-                uint8_t status = tube.parasite_read(2);
-                if (status & TubeUla::DATA_AVAILABLE) {
-                    tube.parasite_read(3);
-                    parasite_received.fetch_add(1, std::memory_order_relaxed);
-                    break;
-                }
-                std::this_thread::yield();
+    for (int tick = 0; tick < 100000 && (host_received < num_transfers || parasite_received < num_transfers); ++tick) {
+        // Parasite side: write a byte to P2H, then wait for H2P reply
+        if (!parasite_waiting_reply && parasite_write_idx < num_transfers) {
+            tube.parasite_write(3, static_cast<uint8_t>(parasite_write_idx & 0xFF));
+            parasite_waiting_reply = true;
+        }
+        if (parasite_waiting_reply) {
+            uint8_t status = tube.parasite_read(2);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                tube.parasite_read(3);
+                ++parasite_received;
+                ++parasite_write_idx;
+                parasite_waiting_reply = false;
             }
         }
-    });
 
-    // Host thread: read from R2 P-to-H, write to R2 H-to-P.
-    start.store(true, std::memory_order_release);
-    for (int i = 0; i < num_transfers; ++i) {
-        // Poll for parasite's byte via R2.
-        for (int polls = 0; polls < 100000; ++polls) {
+        // Host side: read from P2H, then reply on H2P
+        if (host_read_idx < num_transfers) {
             uint8_t status = tube.host_read(2);
             if (status & TubeUla::DATA_AVAILABLE) {
                 tube.host_read(3);
-                host_received.fetch_add(1, std::memory_order_relaxed);
-                break;
+                ++host_received;
+                tube.host_write(3, static_cast<uint8_t>(host_read_idx & 0xFF));
+                ++host_read_idx;
             }
-            std::this_thread::yield();
         }
-        // Reply to parasite via R2.
-        tube.host_write(3, static_cast<uint8_t>(i & 0xFF));
     }
-
-    parasite_thread.join();
-    CHECK(host_received.load() == num_transfers);
-    CHECK(parasite_received.load() == num_transfers);
+    CHECK(host_received == num_transfers);
+    CHECK(parasite_received == num_transfers);
 }
 
-TEST_CASE("TubeUla concurrent R1 FIFO transfer", "[tube][thread]") {
-    // R1 P-to-H is a 24-byte FIFO. Transfer a large number of bytes
-    // concurrently to verify no data loss or corruption.
+TEST_CASE("TubeUla R1 FIFO transfer interleaved", "[tube]") {
     TubeUla tube;
     constexpr int num_bytes = 5000;
-    std::atomic<bool> start{false};
     std::vector<uint8_t> received;
     received.reserve(num_bytes);
 
-    // Parasite thread: write bytes into R1 P-to-H FIFO.
-    std::thread parasite_thread([&] {
-        while (!start.load(std::memory_order_acquire)) {}
-        for (int i = 0; i < num_bytes; ++i) {
-            // Poll until FIFO has space.
-            for (int polls = 0; polls < 1000000; ++polls) {
-                uint8_t status = tube.parasite_read(0);
-                if (status & TubeUla::SPACE_AVAILABLE) {
-                    tube.parasite_write(1, static_cast<uint8_t>(i & 0xFF));
-                    break;
-                }
-                std::this_thread::yield();
+    int parasite_written = 0;
+    for (int tick = 0; tick < 1000000 && static_cast<int>(received.size()) < num_bytes; ++tick) {
+        // Parasite writes to R1 P2H FIFO
+        if (parasite_written < num_bytes) {
+            uint8_t status = tube.parasite_read(0);
+            if (status & TubeUla::SPACE_AVAILABLE) {
+                tube.parasite_write(1, static_cast<uint8_t>(parasite_written & 0xFF));
+                ++parasite_written;
             }
         }
-    });
-
-    // Host thread: read bytes from R1 P-to-H FIFO.
-    start.store(true, std::memory_order_release);
-    for (int i = 0; i < num_bytes; ++i) {
-        for (int polls = 0; polls < 1000000; ++polls) {
+        // Host reads from R1 P2H FIFO
+        {
             uint8_t status = tube.host_read(0);
             if (status & TubeUla::DATA_AVAILABLE) {
                 received.push_back(tube.host_read(1));
-                break;
             }
-            std::this_thread::yield();
         }
     }
-
-    parasite_thread.join();
     REQUIRE(received.size() == num_bytes);
     for (int i = 0; i < num_bytes; ++i) {
         INFO("byte " << i);
@@ -1190,42 +1163,30 @@ TEST_CASE("TubeUla concurrent R1 FIFO transfer", "[tube][thread]") {
     }
 }
 
-TEST_CASE("TubeUla concurrent R3 NMI-style transfer", "[tube][thread]") {
-    // R3 H-to-P in 1-byte mode with M=1 (NMI enabled). The host writes
-    // bytes and the parasite reads them driven by PNMI, verifying
-    // concurrent access to the 2-byte R3 FIFO and interrupt outputs.
+TEST_CASE("TubeUla R3 NMI-style transfer interleaved", "[tube]") {
     TubeUla tube;
     constexpr int num_bytes = 2000;
-    std::atomic<bool> start{false};
     std::vector<uint8_t> received;
     received.reserve(num_bytes);
 
-    // Enable M flag (PNMI from R3).
     tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
 
-    // Parasite thread: poll pnmi_level and read R3 data.
-    std::thread parasite_thread([&] {
-        while (!start.load(std::memory_order_acquire)) {}
-        for (int i = 0; i < num_bytes; ++i) {
-            for (int polls = 0; polls < 1000000; ++polls) {
-                uint8_t status = tube.parasite_read(4);
-                if (status & TubeUla::DATA_AVAILABLE) {
-                    received.push_back(tube.parasite_read(5));
-                    break;
-                }
-                std::this_thread::yield();
+    int host_written = 0;
+    for (int tick = 0; tick < 10000000 && static_cast<int>(received.size()) < num_bytes; ++tick) {
+        // Host writes to R3 H2P (check space first -- no spin-wait)
+        if (host_written < num_bytes
+            && (tube.host_peek(4) & TubeUla::SPACE_AVAILABLE)) {
+            tube.host_write(5, static_cast<uint8_t>(host_written & 0xFF));
+            ++host_written;
+        }
+        // Parasite reads from R3 H2P
+        {
+            uint8_t status = tube.parasite_read(4);
+            if (status & TubeUla::DATA_AVAILABLE) {
+                received.push_back(tube.parasite_read(5));
             }
         }
-    });
-
-    // Host thread: write bytes to R3 H-to-P.
-    // host_write spin-waits internally if the FIFO is full.
-    start.store(true, std::memory_order_release);
-    for (int i = 0; i < num_bytes; ++i) {
-        tube.host_write(5, static_cast<uint8_t>(i & 0xFF));
     }
-
-    parasite_thread.join();
     REQUIRE(received.size() == num_bytes);
     for (int i = 0; i < num_bytes; ++i) {
         INFO("byte " << i);

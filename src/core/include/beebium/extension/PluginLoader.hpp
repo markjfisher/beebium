@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXTENSION_PLUGIN_LOADER_HPP
 #define BEEBIUM_EXTENSION_PLUGIN_LOADER_HPP
 
+#include "Export.hpp"
 #include "ExtensionManifest.hpp"
 #include "ExtensionRegistry.hpp"
 #include "PeripheralExtension.hpp"
@@ -30,7 +31,7 @@ namespace beebium {
 // Plugin loading is opt-in: scan_manifests() enumerates available
 // extensions without loading any code; load_extension() loads a
 // specific extension by manifest.
-class PluginLoader {
+class BEEBIUM_EXT_API PluginLoader {
 public:
     ~PluginLoader();
 

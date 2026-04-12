@@ -12,6 +12,7 @@ authors = [
     { name = "Robert Smallshire", email = "robert@smallshire.org.uk" }
 ]
 dependencies = [
+    "adfs-disc-tools",
     "beebium",
     "oaknut-dfs",
     "pytest>=7.0.0",
@@ -22,6 +23,7 @@ dependencies = [
 packages = ["src/adfs_test_support"]
 
 [tool.uv.sources]
+adfs-disc-tools = { path = "../../scripts/adfs-disc-tools", editable = true }
 beebium = { path = "../../clients/python", editable = true }
 
 [[tool.uv.index]]

@@ -16,7 +16,6 @@
 #include "TubeParasiteBackend.hpp"
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 
 namespace beebium {
@@ -28,12 +27,10 @@ namespace beebium {
 // in-process testing and as the register bridge in the extension-based
 // coprocessor architecture.
 //
-// Thread safety: lock-free. All register fields are atomic with
-// acquire/release ordering. Each register direction follows the SPSC
-// (single-producer, single-consumer) pattern:
-//   - H-to-P: host writes (producer), parasite reads (consumer)
-//   - P-to-H: parasite writes (producer), host reads (consumer)
-// No mutex is needed. Bus stretching uses atomic spin-waits.
+// All access is single-threaded. The host and parasite sides are driven
+// from the same thread via interleaved clock ticking. Bus stretching is
+// used to stall the host CPU when a register is full, deferring the
+// write until the parasite has drained the register.
 //
 // The host and parasite sides see different views of the same registers:
 // different status bits, different read/write targets. The caller selects
@@ -85,17 +82,21 @@ public:
 
     // Read control flags (bits 0-5: Q, I, J, M, V, P).
     uint8_t control_flags() const {
-        return control_flags_.load(std::memory_order_acquire);
+        return control_flags_;
     }
 
     // Test whether the parasite reset line is currently asserted.
     bool parasite_reset_active() const {
-        return (control_flags_.load(std::memory_order_acquire) & FLAG_P) != 0;
+        return (control_flags_ & FLAG_P) != 0;
     }
 
-    // Bus stretching: host_write spin-waits when a register is full, so
-    // stretched() always returns false (the write completes before returning).
-    bool stretched() const override { return false; }
+    // Bus stretching: returns true while the host CPU should be stalled
+    // waiting for a register to drain.
+    bool stretched() const override { return host_stretched_; }
+
+    // Attempt to complete a pending bus stretch operation.
+    // Returns true if the stretch cleared (or was not active).
+    bool try_complete_stretch();
 
     // Access the NMI edge detector state (parasite-local).
     bool prev_pnmi() const { return prev_pnmi_; }
@@ -104,78 +105,148 @@ private:
     // Soft reset (T flag) -- clears all register data but preserves control flags.
     void soft_reset();
 
-    // Recompute interrupt outputs.
-    // Split by thread ownership to avoid data races on edge detection state.
-    void update_host_interrupts();     // HIRQ only (called from host thread)
-    void update_parasite_interrupts(); // PIRQ + PNMI (called from parasite thread)
+    // Recompute interrupt outputs (HIRQ, PIRQ, PNMI).
+    void update_interrupts();
 
     // Control flag register (bits 0-5: Q, I, J, M, V, P).
-    // Single writer (host thread).
-    std::atomic<uint8_t> control_flags_{0};
+    uint8_t control_flags_ = 0;
 
-    // Atomic latch: 1-byte data with ready/full flags.
+    // Latch: 1-byte data with ready/full flags.
     // Used for R1 H-to-P, R2 both directions, R4 both directions.
-    // Producer stores data (relaxed) then sets ready+full (release).
-    // Consumer loads ready (acquire), loads data (relaxed), clears (release).
-    struct AtomicLatch {
-        std::atomic<uint8_t> data{0};
-        std::atomic<bool> available{false};  // data waiting for consumer
-        std::atomic<bool> full{false};       // producer cannot write
+    struct Latch {
+        uint8_t data = 0;
+        bool available = false;  // data waiting for consumer
+        bool full = false;       // producer cannot write
     };
 
-    // Atomic SPSC ring buffer (24 bytes, for R1 P-to-H).
-    struct AtomicFifo24 {
-        std::array<std::atomic<uint8_t>, 24> data{};
-        std::atomic<uint8_t> head{0};   // consumer reads here
-        std::atomic<uint8_t> tail{0};   // producer writes here
-        std::atomic<uint8_t> count{0};  // modified by both via fetch_add/fetch_sub
+    // FIFO ring buffer (24 bytes, for R1 P-to-H).
+    struct Fifo24 {
+        std::array<uint8_t, 24> data{};
+        uint8_t head = 0;   // consumer reads here
+        uint8_t tail = 0;   // producer writes here
+        uint8_t count = 0;
     };
 
-    // Atomic 2-slot register (for R3, each direction).
-    // Count and pending flag packed into atomic<uint16_t> -- see TubeShared.hpp
-    // TubeReg3 for the pack/unpack helpers (not reused here to avoid the
-    // dependency, but the same bit layout applies).
-    struct AtomicReg3 {
-        std::array<std::atomic<uint8_t>, 2> data{};
-        std::atomic<uint8_t> head{0};
-        std::atomic<uint8_t> tail{0};
-        // Packed: low byte = count (0-2), high byte = pending flag (0 or 1).
-        std::atomic<uint16_t> state{0};
-
-        static constexpr uint16_t pack(uint8_t count, bool pending) {
-            return static_cast<uint16_t>(count)
-                 | (static_cast<uint16_t>(pending ? 1 : 0) << 8);
-        }
-        static constexpr uint8_t count_of(uint16_t s) {
-            return static_cast<uint8_t>(s & 0xFF);
-        }
-        static constexpr bool pending_of(uint16_t s) {
-            return (s >> 8) != 0;
-        }
+    // 2-slot register (for R3, each direction).
+    struct Reg3 {
+        std::array<uint8_t, 2> data{};
+        uint8_t head = 0;
+        uint8_t tail = 0;
+        uint8_t count = 0;
+        bool pending = false;
     };
 
     // Register 1: H-to-P is a 1-byte latch; P-to-H is a 24-byte FIFO.
-    AtomicLatch r1_h2p_;
-    AtomicFifo24 r1_p2h_;
+    Latch r1_h2p_;
+    Fifo24 r1_p2h_;
 
     // Register 2: 1-byte latch in each direction.
-    AtomicLatch r2_h2p_;
-    AtomicLatch r2_p2h_;
+    Latch r2_h2p_;
+    Latch r2_p2h_;
 
     // Register 3: 2-byte FIFO in each direction.
-    AtomicReg3 r3_h2p_;
-    AtomicReg3 r3_p2h_;
+    Reg3 r3_h2p_;
+    Reg3 r3_p2h_;
 
     // Register 4: 1-byte latch in each direction.
-    AtomicLatch r4_h2p_;
-    AtomicLatch r4_p2h_;
+    Latch r4_h2p_;
+    Latch r4_p2h_;
 
-    // Interrupt output state (lock-free, updated by update_interrupts()).
-    std::atomic<bool> hirq_{false};
-    std::atomic<bool> pirq_{false};
-    std::atomic<bool> pnmi_level_{false};
-    bool prev_pnmi_ = false;   // PNMI edge detector (parasite thread only)
-    std::atomic<bool> pnmi_edge_{false};
+    // Interrupt output state.
+    bool hirq_ = false;
+    bool pirq_ = false;
+    bool pnmi_condition_ = false;  // raw PNMI condition (always computed)
+    bool pnmi_level_ = false;      // M-gated NMI output
+    bool prev_pnmi_ = false;       // PNMI edge detector
+    bool pnmi_edge_ = false;
+
+    // Bus stretch state.
+    bool host_stretched_ = false;
+    uint8_t pending_offset_ = 0;
+    uint8_t pending_value_ = 0;
+    bool pending_is_read_ = false;
+
+public:
+    // Transfer counters: count every byte written/read on each register direction.
+    // Incremented on every host_read/host_write/parasite_read/parasite_write that
+    // transfers data.  Not reset by soft_reset (T flag) so they accumulate across
+    // the session.  Reset only by hard reset.
+    struct TransferCounters {
+        uint64_t r1_h2p_writes = 0;
+        uint64_t r1_h2p_reads = 0;
+        uint64_t r2_h2p_writes = 0;
+        uint64_t r2_h2p_reads = 0;
+        uint64_t r3_h2p_writes = 0;
+        uint64_t r3_h2p_reads = 0;
+        uint64_t r4_h2p_writes = 0;
+        uint64_t r4_h2p_reads = 0;
+        uint64_t r1_p2h_writes = 0;
+        uint64_t r1_p2h_reads = 0;
+        uint64_t r2_p2h_writes = 0;
+        uint64_t r2_p2h_reads = 0;
+        uint64_t r3_p2h_writes = 0;
+        uint64_t r3_p2h_reads = 0;
+        uint64_t r4_p2h_writes = 0;
+        uint64_t r4_p2h_reads = 0;
+
+        void reset() {
+            r1_h2p_writes = 0;
+            r1_h2p_reads = 0;
+            r2_h2p_writes = 0;
+            r2_h2p_reads = 0;
+            r3_h2p_writes = 0;
+            r3_h2p_reads = 0;
+            r4_h2p_writes = 0;
+            r4_h2p_reads = 0;
+            r1_p2h_writes = 0;
+            r1_p2h_reads = 0;
+            r2_p2h_writes = 0;
+            r2_p2h_reads = 0;
+            r3_p2h_writes = 0;
+            r3_p2h_reads = 0;
+            r4_p2h_writes = 0;
+            r4_p2h_reads = 0;
+        }
+    };
+
+    const TransferCounters& counters() const { return counters_; }
+
+    // Protocol trace: ring buffer of register data read/write events.
+    // Records the last N data bytes transferred on each register, with
+    // direction and register info encoded in the tag byte.
+    // Tag encoding: bits 7-4 = register (1-4), bit 3 = direction (0=H2P, 1=P2H),
+    //               bit 2 = side (0=host access, 1=parasite access).
+    static constexpr size_t TRACE_SIZE = 1024;
+    struct TraceEntry {
+        uint8_t tag;    // register + direction + side
+        uint8_t value;  // data byte
+    };
+
+    // Snapshot the trace buffer. Returns entries oldest-first.
+    size_t trace_snapshot(TraceEntry* out, size_t max_entries) const {
+        size_t pos = trace_pos_;
+        size_t count = std::min(trace_count_, max_entries);
+        count = std::min(count, TRACE_SIZE);
+        size_t start = (pos >= count) ? pos - count : TRACE_SIZE - (count - pos);
+        for (size_t i = 0; i < count; ++i) {
+            out[i] = trace_[(start + i) % TRACE_SIZE];
+        }
+        return count;
+    }
+
+    size_t trace_count() const { return trace_count_; }
+
+private:
+    void trace_event(uint8_t tag, uint8_t value) {
+        trace_[trace_pos_] = {tag, value};
+        trace_pos_ = (trace_pos_ + 1) % TRACE_SIZE;
+        ++trace_count_;
+    }
+
+    TransferCounters counters_;
+    std::array<TraceEntry, TRACE_SIZE> trace_{};
+    size_t trace_pos_ = 0;
+    size_t trace_count_ = 0;
 };
 
 }  // namespace beebium

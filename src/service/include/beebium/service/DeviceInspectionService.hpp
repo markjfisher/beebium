@@ -170,6 +170,38 @@ inline void fill_tube_state_from_ula(const TubeUla& ula, TubeState* response) {
     irq->set_pnmi_level(ula.pnmi());
     irq->set_pnmi_edge(ula.pnmi());
 
+    // Transfer counters.
+    auto& c = ula.counters();
+    auto* tc = response->mutable_counters();
+    tc->set_r1_h2p_writes(c.r1_h2p_writes);
+    tc->set_r1_h2p_reads(c.r1_h2p_reads);
+    tc->set_r2_h2p_writes(c.r2_h2p_writes);
+    tc->set_r2_h2p_reads(c.r2_h2p_reads);
+    tc->set_r3_h2p_writes(c.r3_h2p_writes);
+    tc->set_r3_h2p_reads(c.r3_h2p_reads);
+    tc->set_r4_h2p_writes(c.r4_h2p_writes);
+    tc->set_r4_h2p_reads(c.r4_h2p_reads);
+    tc->set_r1_p2h_writes(c.r1_p2h_writes);
+    tc->set_r1_p2h_reads(c.r1_p2h_reads);
+    tc->set_r2_p2h_writes(c.r2_p2h_writes);
+    tc->set_r2_p2h_reads(c.r2_p2h_reads);
+    tc->set_r3_p2h_writes(c.r3_p2h_writes);
+    tc->set_r3_p2h_reads(c.r3_p2h_reads);
+    tc->set_r4_p2h_writes(c.r4_p2h_writes);
+    tc->set_r4_p2h_reads(c.r4_p2h_reads);
+
+    // Protocol trace.
+    {
+        std::array<TubeUla::TraceEntry, TubeUla::TRACE_SIZE> buf;
+        size_t count = ula.trace_snapshot(buf.data(), buf.size());
+        for (size_t i = 0; i < count; ++i) {
+            auto* entry = response->add_trace();
+            entry->set_tag(buf[i].tag);
+            entry->set_value(buf[i].value);
+        }
+        response->set_trace_total_count(ula.trace_count());
+    }
+
     // Bus stretching.
     response->set_host_stretched(ula.stretched());
     response->set_enabled(true);

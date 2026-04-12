@@ -13,14 +13,12 @@
 #ifndef BEEBIUM_EXTENSION_ONE_MHZ_BUS_PORT_HPP
 #define BEEBIUM_EXTENSION_ONE_MHZ_BUS_PORT_HPP
 
+#include "Export.hpp"
 #include "OneMHzBusDevice.hpp"
 
-#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstdint>
-#include <stdexcept>
-#include <string>
 #include <vector>
 
 namespace beebium {
@@ -33,7 +31,7 @@ namespace beebium {
 // and silently ignore writes.
 //
 // Replaces the former FredJimRegion stub in hardware policy classes.
-class OneMHzBusPort {
+class BEEBIUM_EXT_API OneMHzBusPort {
 public:
     static constexpr uint16_t kSize = 512;  // 0xFC00-0xFDFF
 
@@ -62,39 +60,11 @@ public:
     // Register a device for a contiguous range of offsets [base, end] inclusive.
     // Offsets are relative to 0xFC00.
     // Throws std::runtime_error if any address in the range is already claimed.
-    void claim_addresses(uint16_t base, uint16_t end, OneMHzBusDevice& device) {
-        if (base > end || end >= kSize) {
-            throw std::runtime_error(
-                "OneMHzBusPort: invalid address range 0x"
-                + to_hex(base) + "-0x" + to_hex(end));
-        }
-
-        for (uint16_t offset = base; offset <= end; ++offset) {
-            if (device_map_[offset] != nullptr) {
-                throw std::runtime_error(
-                    "OneMHzBusPort: address 0x" + to_hex(offset)
-                    + " already claimed");
-            }
-        }
-
-        for (uint16_t offset = base; offset <= end; ++offset) {
-            device_map_[offset] = &device;
-        }
-
-        if (std::find(tickable_devices_.begin(), tickable_devices_.end(), &device)
-                == tickable_devices_.end()) {
-            tickable_devices_.push_back(&device);
-        }
-    }
+    void claim_addresses(uint16_t base, uint16_t end, OneMHzBusDevice& device);
 
     // Tick all registered devices (called at 1 MHz from poll_nmi).
     // Invalidates the IRQ cache since device state may have changed.
-    void tick() {
-        for (auto* dev : tickable_devices_) {
-            dev->tick();
-        }
-        irq_dirty_ = true;
-    }
+    void tick();
 
     // Query whether any device has claimed the given offset.
     bool is_claimed(uint16_t offset) const {
@@ -106,27 +76,9 @@ public:
     // Used by the IrqAggregator to include 1 MHz bus IRQs.
     // Caches the result between tick() calls to avoid redundant virtual
     // dispatch at 2 MHz when tick() only runs at 1 MHz.
-    bool irq_pending() const {
-        if (irq_dirty_) {
-            cached_irq_ = false;
-            for (auto* dev : tickable_devices_) {
-                if (dev->irq_pending()) {
-                    cached_irq_ = true;
-                    break;
-                }
-            }
-            irq_dirty_ = false;
-        }
-        return cached_irq_;
-    }
+    bool irq_pending() const;
 
 private:
-    static std::string to_hex(uint16_t value) {
-        char buf[8];
-        std::snprintf(buf, sizeof(buf), "%04X", value);
-        return buf;
-    }
-
     std::array<OneMHzBusDevice*, kSize> device_map_;
     std::vector<OneMHzBusDevice*> tickable_devices_;
     mutable bool cached_irq_ = false;

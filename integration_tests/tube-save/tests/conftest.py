@@ -25,7 +25,6 @@ import pytest
 from oaknut_dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
-from beebium.tube_system import TubeSystem
 from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains, dump_screen
 
@@ -47,13 +46,9 @@ PROGRAMS_DIRPATH = Path(__file__).parent.parent / "programs"
 
 def run_until_or_timeout(bbc: Beebium, predicate, emulated_seconds: float,
                          chunk_seconds: float = 1.0) -> bool:
-    """Run host+parasite until predicate is met or timeout."""
-    system = TubeSystem.from_host(bbc)
-    try:
-        return system.run_until(predicate, emulated_seconds,
-                                chunk_seconds=chunk_seconds)
-    finally:
-        system.close()
+    """Run until predicate is met or timeout."""
+    return bbc.run_until_or_timeout(
+        predicate, emulated_seconds, chunk_seconds=chunk_seconds)
 
 
 # ---- Session-scope fixtures ----

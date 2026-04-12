@@ -13,8 +13,10 @@ target_include_directories(beebium_scsi_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# Plugin builds link against the extension API shared library only.
+# Built-in (static) builds link against beebium_core via their own targets.
 target_link_libraries(beebium_scsi_core
-    PUBLIC beebium_core
+    PUBLIC beebium_extension_api
 )
 
 # Full extension with gRPC service (depends on service layer)
@@ -58,6 +60,7 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(beebium_ext_acorn_scsi
         PUBLIC
             beebium_scsi_core
+            beebium_core
             beebium_ext_acorn_scsi_proto
     )
 

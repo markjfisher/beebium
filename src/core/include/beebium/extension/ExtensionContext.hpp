@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXTENSION_CONTEXT_HPP
 #define BEEBIUM_EXTENSION_CONTEXT_HPP
 
+#include "Export.hpp"
 #include "OneMHzBusPort.hpp"
 #include "PeripheralExtension.hpp"
 #include "UserPort.hpp"
@@ -31,7 +32,7 @@ namespace beebium {
 //
 // Port handles are accessed via get<PortType>().
 // Extension providers are accessed via provider(extension_point_name).
-class ExtensionContext {
+class BEEBIUM_EXT_API ExtensionContext {
 public:
     explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr,
                              UserPort* user_port = nullptr,
@@ -84,39 +85,20 @@ public:
     // The dependency resolver guarantees the provider is initialised before
     // any extension that attaches_to the same extension point.
     // Returns nullptr if no provider is registered for the given name.
-    PeripheralExtension* provider(std::string_view extension_point) const {
-        auto it = providers_.find(std::string(extension_point));
-        if (it != providers_.end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
+    PeripheralExtension* provider(std::string_view extension_point) const;
 
     // Qualified provider lookup: find the provider of an extension point
     // that has a specific instance ID. For the case of multiple adapters
     // providing the same extension point (e.g. two SCSI adapters both
     // providing "scsi"), the child specifies which parent via its id.
     PeripheralExtension* provider(std::string_view extension_point,
-                                   std::string_view instance_id) const {
-        auto key = std::string(extension_point) + ":" + std::string(instance_id);
-        auto it = providers_.find(key);
-        if (it != providers_.end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
+                                   std::string_view instance_id) const;
 
     // Register an initialised extension as the provider of a named extension
     // point. Called by ExtensionRegistry after each extension's init().
     // Registers under both the bare name and (if the extension has an id)
     // a qualified "name:id" key for multi-provider resolution.
-    void register_provider(std::string_view extension_point, PeripheralExtension* ext) {
-        providers_[std::string(extension_point)] = ext;
-        auto ext_id = ext->id();
-        if (!ext_id.empty()) {
-            providers_[std::string(extension_point) + ":" + std::string(ext_id)] = ext;
-        }
-    }
+    void register_provider(std::string_view extension_point, PeripheralExtension* ext);
 
 private:
     OneMHzBusPort* one_mhz_bus_port_;

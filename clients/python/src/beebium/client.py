@@ -213,7 +213,8 @@ class Beebium:
     def cpu(self) -> CPU:
         """Access 6502 CPU registers."""
         if self._cpu is None:
-            self._cpu = CPU(self._connection.debugger_stub)
+            stub = self._debugger_stub_override or self._connection.debugger_stub
+            self._cpu = CPU(stub)
         return self._cpu
 
     @property
@@ -234,7 +235,8 @@ class Beebium:
     def memory(self) -> Memory:
         """Access memory read/write with subscript notation."""
         if self._memory is None:
-            self._memory = Memory(self._connection.debugger_stub)
+            stub = self._debugger_stub_override or self._connection.debugger_stub
+            self._memory = Memory(stub)
         return self._memory
 
     @property
@@ -415,7 +417,7 @@ class Beebium:
                     0x0000, end_address=0x10000,
                     condition=f"cycles >= {chunk_target}",
                 ):
-                    self.debugger.run()
+                    self.debugger.ensure_running()
                     self.debugger.wait_for_stop()
 
                 if predicate():
