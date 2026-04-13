@@ -77,6 +77,8 @@ void TubeUla::soft_reset()
 
     // Bus stretch state.
     host_stretched_ = false;
+    completed_read_result_ = 0;
+    completed_read_pending_ = false;
 
     update_interrupts();
 }
@@ -678,8 +680,12 @@ bool TubeUla::try_complete_stretch()
     // Condition cleared -- perform the deferred operation.
     if (pending_is_read_) {
         // For R3 P-to-H deferred read: the data is now available.
-        // The actual read will happen on the next host_read() call
-        // (the host CPU re-executes the read cycle).
+        // Perform the read and store the result for the caller to
+        // patch into cpu.dbus.
+        host_stretched_ = false;  // Clear before re-read to prevent re-entry
+        completed_read_result_ = host_read(pending_offset_);
+        completed_read_pending_ = true;
+        return true;
     } else {
         // Re-execute the deferred write.
         host_stretched_ = false;  // Prevent re-entry

@@ -114,27 +114,16 @@ public:
         auto* backend = active_backend();
         uint8_t result = backend->host_read(static_cast<uint8_t>(offset));
 
-        // Handle read-side bus stretching inline. When the Tube ULA
-        // stretches a read (e.g. host reads empty R3 P-to-H during a
-        // transfer), the real hardware holds the host clock until data
-        // arrives. We emulate this by ticking the parasite until the
-        // stretch clears, then retrying the read with actual data.
-        // Deferred reads don't work because the CPU would consume the
-        // placeholder return value before the stretch resolves.
-        while (backend->stretched()) {
-            if (parasite_ && !parasite_->is_paused()) {
-                parasite_->tick();
-                ++read_stretch_parasite_ticks_;
-            } else {
-                break;  // No parasite available -- can't resolve
-            }
-            auto* ula = tube_ula();
-            if (ula && ula->try_complete_stretch()) {
-                // Data available -- re-read for the correct value
-                result = backend->host_read(static_cast<uint8_t>(offset));
-                if (!backend->stretched()) break;
-            }
-        }
+        // Read-side bus stretching is handled by Machine::step().
+        // When the Tube ULA stretches a read (e.g. host reads empty R3
+        // P-to-H during a transfer), host_read() returns a placeholder
+        // and sets the stretched flag. Machine::step() then enters the
+        // same stretch path used for write stretches: ticking the
+        // parasite and all peripherals, incrementing cycle_count, and
+        // retrying until the stretch clears. When it does,
+        // try_complete_tube_stretch() performs the deferred read and
+        // stores the result, which Machine::step() patches into cpu.dbus
+        // before the CPU's next cycle consumes it.
 
         return result;
     }
@@ -225,6 +214,21 @@ public:
     bool try_complete_tube_stretch() {
         auto* ula = tube_ula();
         return ula ? ula->try_complete_stretch() : true;
+    }
+
+    // --- Deferred read stretch result ---
+
+    // After a read stretch completes (try_complete_tube_stretch() returns
+    // true), check whether the completed stretch was a read. If so,
+    // retrieve the result to patch into cpu.dbus.
+    bool has_completed_read_stretch() const {
+        auto* ula = tube_ula();
+        return ula && ula->has_completed_read();
+    }
+
+    uint8_t take_completed_read_result() {
+        auto* ula = tube_ula();
+        return ula ? ula->take_completed_read_result() : 0;
     }
 
     // --- Accessors ---

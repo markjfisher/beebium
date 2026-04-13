@@ -190,7 +190,14 @@ public:
             state_.memory.tube_socket.tick_parasite_stretch();
             if (state_.memory.tube_socket.try_complete_tube_stretch()) {
                 tube_stretch_active_ = false;
-                // Fall through to normal step -- the deferred write completed,
+                // If this was a read stretch (e.g. host read empty R3 P-to-H),
+                // the deferred read has been performed by try_complete_stretch().
+                // Patch cpu.dbus with the actual value so the CPU's next cycle
+                // consumes the correct data instead of the placeholder.
+                if (state_.memory.tube_socket.has_completed_read_stretch()) {
+                    state_.cpu.dbus = state_.memory.tube_socket.take_completed_read_result();
+                }
+                // Fall through to normal step -- the deferred operation completed,
                 // host CPU can now proceed with the next cycle.
             } else {
                 // Host still stretched. Tick peripherals but not host CPU.
@@ -615,6 +622,20 @@ private:
             }
             if (!(stretch_via_pre_tick_mask_ & CpuBindingType::kPreTickUserVia)) {
                 state_.memory.user_via.tick_falling();
+            }
+        }
+
+        // Tick Econet ADLC during stretch cycles.
+        // The ADLC is a 2MHz device and must be clocked even when the host
+        // CPU is halted for Tube or 1MHz bus stretch. Without this, the
+        // byte trickle timer stalls and receive_frame() is never called,
+        // causing systematic packet loss when a Tube second processor is
+        // fitted.
+        if constexpr (HasEconetSocket<MemoryPolicy>) {
+            if (is_rising) {
+                state_.memory.econet_socket.tick_rising();
+            } else {
+                state_.memory.econet_socket.tick_falling();
             }
         }
 
