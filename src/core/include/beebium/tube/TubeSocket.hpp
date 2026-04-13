@@ -124,6 +124,7 @@ public:
         while (backend->stretched()) {
             if (parasite_ && !parasite_->is_paused()) {
                 parasite_->tick();
+                ++read_stretch_parasite_ticks_;
             } else {
                 break;  // No parasite available -- can't resolve
             }
@@ -261,6 +262,15 @@ private:
     uint8_t parasite_phase_ = 0;
     uint8_t parasite_clock_num_ = 3;  // 3 MHz default
     uint8_t parasite_clock_den_ = 2;  // 2 MHz host
+
+    // Diagnostic: parasite ticks consumed by the inline read stretch loop.
+    // These ticks happen INSIDE a single host CPU cycle (no cycle_count
+    // increment, no peripheral ticking). High values indicate the loop
+    // is consuming wall-clock time without advancing the host clock.
+    uint64_t read_stretch_parasite_ticks_ = 0;
+
+public:
+    uint64_t read_stretch_parasite_ticks() const { return read_stretch_parasite_ticks_; }
 };
 
 }  // namespace beebium

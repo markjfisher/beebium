@@ -62,6 +62,19 @@ class EconetStatus:
     peer_count: int
     adlc: AdlcStatus | None
     handshake: HandshakeStatus | None
+    tick_count: int = 0
+    cr1_0x82_write_count: int = 0
+    rx_frames_received_count: int = 0
+    rx_blocked_by_reset_count: int = 0
+    scout_ack_generated_count: int = 0
+    tx_frames_from_beeb_count: int = 0
+    unexpected_tx_reset_count: int = 0
+    tx_from_idle_count: int = 0
+    max_handshake_timer_seen: int = 0
+    watchdog_timeout_count: int = 0
+    send_stage_log: str = ""
+    ticks_with_timer_active: int = 0
+    read_stretch_parasite_ticks: int = 0
 
 
 @dataclass(frozen=True)
@@ -149,6 +162,19 @@ class Econet:
             peer_count=response.peer_count,
             adlc=adlc,
             handshake=handshake,
+            tick_count=response.tick_count,
+            cr1_0x82_write_count=response.cr1_0x82_write_count,
+            rx_frames_received_count=response.rx_frames_received_count,
+            rx_blocked_by_reset_count=response.rx_blocked_by_reset_count,
+            scout_ack_generated_count=response.scout_ack_generated_count,
+            tx_frames_from_beeb_count=response.tx_frames_from_beeb_count,
+            unexpected_tx_reset_count=response.unexpected_tx_reset_count,
+            tx_from_idle_count=response.tx_from_idle_count,
+            max_handshake_timer_seen=response.max_handshake_timer_seen,
+            watchdog_timeout_count=response.watchdog_timeout_count,
+            send_stage_log=response.send_stage_log,
+            ticks_with_timer_active=response.ticks_with_timer_active,
+            read_stretch_parasite_ticks=response.read_stretch_parasite_ticks,
         )
 
     @property

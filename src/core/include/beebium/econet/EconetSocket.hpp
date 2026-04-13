@@ -171,6 +171,7 @@ public:
     // the unique_ptr dereference on every 2MHz NMI poll.
     void tick_rising() {
         if (enabled_) {
+            ++tick_count_;
             if (handshake_) handshake_->tick();
             if (adlc_) {
                 adlc_->tick_rising();
@@ -211,6 +212,60 @@ public:
     const NetworkBackend* backend() const { return backend_.get(); }
     bool aun_mode() const { return handshake_ != nullptr; }
 
+    uint64_t tick_count() const { return tick_count_; }
+
+    // Diagnostic: how many times has nmi_tx_complete written CR1=&82?
+    uint32_t cr1_0x82_write_count() const {
+        return adlc_ ? adlc_->cr1_0x82_write_count() : 0;
+    }
+
+    // Diagnostic: how many frames has the ADLC received from the backend?
+    uint32_t rx_frames_received_count() const {
+        return adlc_ ? adlc_->rx_frames_received_count() : 0;
+    }
+
+    // Diagnostic: how many times was rx_process_byte blocked by RX_RESET?
+    uint32_t rx_blocked_by_reset_count() const {
+        return adlc_ ? adlc_->rx_blocked_by_reset_count() : 0;
+    }
+
+    // Diagnostic: FourWayHandshake counters
+    uint32_t scout_ack_generated_count() const {
+        return handshake_ ? handshake_->scout_ack_generated_count() : 0;
+    }
+    uint32_t tx_frames_from_beeb_count() const {
+        return handshake_ ? handshake_->tx_frames_from_beeb_count() : 0;
+    }
+    uint32_t unexpected_tx_reset_count() const {
+        return handshake_ ? handshake_->unexpected_tx_reset_count() : 0;
+    }
+    uint32_t tx_from_idle_count() const {
+        return handshake_ ? handshake_->tx_from_idle_count() : 0;
+    }
+    int max_handshake_timer_seen() const {
+        return handshake_ ? handshake_->max_handshake_timer_seen() : 0;
+    }
+    uint32_t watchdog_timeout_count() const {
+        return handshake_ ? handshake_->watchdog_timeout_count() : 0;
+    }
+    uint64_t ticks_with_timer_active() const {
+        return handshake_ ? handshake_->ticks_with_timer_active() : 0;
+    }
+
+    // Diagnostic: stages at each send_frame call
+    std::string send_stage_log_string() const {
+        if (!handshake_) return "N/A";
+        const char* names[] = {"Idle","ScoutSent","ScoutAckRcvd","DataSent",
+            "WaitForIdle","ScoutRcvd","ScoutAckSent","DataRcvd","ImmSent","ImmRcvd"};
+        std::string result;
+        for (uint32_t i = 0; i < handshake_->send_stage_log_count(); ++i) {
+            if (i > 0) result += ",";
+            int idx = static_cast<int>(handshake_->send_stage_log()[i]);
+            result += (idx >= 0 && idx < 10) ? names[idx] : "?";
+        }
+        return result;
+    }
+
 private:
     std::unique_ptr<NetworkBackend> backend_;
     std::unique_ptr<FourWayHandshake> handshake_;
@@ -220,6 +275,7 @@ private:
     bool cached_adlc_irq_ = false;
     bool nmi_enable_ff_ = false;
     const uint8_t* last_bus_value_ptr_ = nullptr;
+    uint64_t tick_count_ = 0;
 };
 
 }  // namespace beebium

@@ -69,6 +69,29 @@ message GetEconetStatusResponse {
 
     // Four-way handshake state (populated when AUN mode active).
     HandshakeStatus handshake = 11;
+
+    // Diagnostic: total tick_rising() calls since boot.
+    uint64 tick_count = 12;
+
+    // Diagnostic: count of CR1=&82 writes (nmi_tx_complete indicator).
+    uint32 cr1_0x82_write_count = 13;
+
+    // Diagnostic: count of frames received by ADLC from backend.
+    uint32 rx_frames_received_count = 14;
+
+    // Diagnostic: count of rx_process_byte calls blocked by RX_RESET.
+    uint32 rx_blocked_by_reset_count = 15;
+
+    // Diagnostic: FourWayHandshake counters
+    uint32 scout_ack_generated_count = 16;
+    uint32 tx_frames_from_beeb_count = 17;
+    uint32 unexpected_tx_reset_count = 18;
+    uint32 tx_from_idle_count = 19;
+    int32 max_handshake_timer_seen = 20;
+    uint32 watchdog_timeout_count = 21;
+    string send_stage_log = 22;
+    uint64 ticks_with_timer_active = 23;
+    uint64 read_stretch_parasite_ticks = 24;
 }
 
 message AdlcStatus {

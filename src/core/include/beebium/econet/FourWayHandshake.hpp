@@ -87,6 +87,11 @@ public:
     // Called by the ADLC when a complete frame has been assembled.
     // The frame is a RawFrame with data containing Econet frame bytes.
     void send_frame(const NetworkFrame& frame) override {
+        ++tx_frames_from_beeb_count_;
+        // Record stage at each send_frame call (circular buffer of last 8)
+        if (send_stage_log_count_ < 8) {
+            send_stage_log_[send_stage_log_count_++] = stage_;
+        }
         const auto& data = frame.data;
         switch (stage_) {
             case Stage::Idle:
@@ -105,7 +110,8 @@ public:
                 handle_tx_immediate_reply(data);
                 break;
             default:
-                // Unexpected TX in this state — reset
+                // Unexpected TX in this state -- reset
+                ++unexpected_tx_reset_count_;
                 reset_handshake();
                 break;
         }
@@ -175,7 +181,11 @@ public:
     // --- Timer tick (called once per 2MHz rising edge) ---
 
     void tick() {
+        if (handshake_timer_ > max_handshake_timer_seen_) {
+            max_handshake_timer_seen_ = handshake_timer_;
+        }
         if (handshake_timer_ > 0) {
+            ++ticks_with_timer_active_;
             if (--handshake_timer_ == 0) {
                 on_handshake_timeout();
             }
@@ -214,6 +224,27 @@ public:
     Stage stage() const { return stage_; }
     bool flag_fill_active() const { return flag_fill_active_; }
 
+    // Diagnostic: counts scout ack timer fires (fake ack enqueued)
+    uint32_t scout_ack_generated_count() const { return scout_ack_generated_count_; }
+
+    // Diagnostic: counts TX frames received from the Beeb (send_frame calls)
+    uint32_t tx_frames_from_beeb_count() const { return tx_frames_from_beeb_count_; }
+
+    // Diagnostic: counts handshake resets from unexpected TX in wrong state
+    uint32_t unexpected_tx_reset_count() const { return unexpected_tx_reset_count_; }
+
+    // Diagnostic: counts send_frame calls that reached handle_tx_from_idle
+    uint32_t tx_from_idle_count() const { return tx_from_idle_count_; }
+
+    // Diagnostic: highest handshake_timer_ value observed (should be 5000 if armed)
+    int max_handshake_timer_seen() const { return max_handshake_timer_seen_; }
+    uint32_t watchdog_timeout_count() const { return watchdog_timeout_count_; }
+    uint64_t ticks_with_timer_active() const { return ticks_with_timer_active_; }
+
+    // Diagnostic: stages at each send_frame call (up to 8)
+    const Stage* send_stage_log() const { return send_stage_log_; }
+    uint32_t send_stage_log_count() const { return send_stage_log_count_; }
+
     // Number of extra scout payload bytes for a given control byte value.
     static int scout_payload_size(uint8_t ctrl) {
         switch (ctrl & CTRL_FUNCTION_MASK) {
@@ -229,6 +260,7 @@ private:
 
     // First TX frame from Idle: classify as scout, broadcast, or immediate.
     void handle_tx_from_idle(const std::vector<uint8_t>& data) {
+        ++tx_from_idle_count_;
         if (data.size() < 4) return;  // Malformed — too short for addressing
 
         uint8_t dest_stn = data[FRAME_DEST_STN];
@@ -347,6 +379,7 @@ private:
         nf.src_net = saved_dest_net_;
         backend_.send_frame(nf);
         clear_flag_fill();
+        watchdog_timer_ = 0;  // Cancel watchdog -- handshake completed normally
         stage_ = Stage::WaitForIdle;
     }
 
@@ -399,6 +432,7 @@ private:
                         saved_dest_stn_, saved_dest_net_    // src of ack = them
                     });
                     clear_flag_fill();
+                    watchdog_timer_ = 0;  // Cancel watchdog -- handshake completing
                     stage_ = Stage::WaitForIdle;
                     return true;
                 }
@@ -513,6 +547,7 @@ private:
                     saved_src_stn_, saved_src_net_,
                     saved_dest_stn_, saved_dest_net_
                 });
+                ++scout_ack_generated_count_;
                 clear_flag_fill();
                 stage_ = Stage::ScoutAckReceived;
                 break;
@@ -555,10 +590,7 @@ private:
     }
 
     void on_watchdog_timeout() {
-        // Safety reset: if any stage gets stuck beyond the watchdog period,
-        // force-reset to Idle. The handshake timer handles normal timeouts
-        // (scout ack, data delivery, final ack); the watchdog catches
-        // unexpected stalls.
+        ++watchdog_timeout_count_;
         reset_handshake();
     }
 
@@ -582,7 +614,9 @@ private:
         saved_port_ = port;
     }
 
-    void arm_scout_timer() { handshake_timer_ = SCOUT_ACK_TIMEOUT; }
+    void arm_scout_timer() {
+        handshake_timer_ = SCOUT_ACK_TIMEOUT;
+    }
     void arm_final_ack_timer() { handshake_timer_ = FINAL_ACK_TIMEOUT; }
     void arm_watchdog() { watchdog_timer_ = WATCHDOG_TIMEOUT; }
 
@@ -618,6 +652,17 @@ private:
     int flag_fill_timer_ = 0;
     int idle_cooldown_ = 0;
     bool flag_fill_active_ = false;
+
+    // Diagnostic counters
+    uint32_t scout_ack_generated_count_ = 0;
+    uint32_t tx_frames_from_beeb_count_ = 0;
+    uint32_t unexpected_tx_reset_count_ = 0;
+    uint32_t tx_from_idle_count_ = 0;
+    int max_handshake_timer_seen_ = 0;
+    uint32_t watchdog_timeout_count_ = 0;
+    Stage send_stage_log_[8] = {};
+    uint32_t send_stage_log_count_ = 0;
+    uint64_t ticks_with_timer_active_ = 0;
 
     // Saved state for the current handshake transaction
     std::vector<uint8_t> saved_scout_;       // TX path: saved scout frame

@@ -262,6 +262,19 @@ public:
     uint8_t sr1() const { return sr1_; }
     uint8_t sr2() const { return sr2_; }
 
+    // Diagnostic: count of CR1 writes where value == &82 (TX_RESET | RIE).
+    uint32_t cr1_0x82_write_count() const { return cr1_0x82_write_count_; }
+
+    // Diagnostic: count of frames successfully received from backend via
+    // rx_process_byte() → receive_frame(). If 0 after a TX attempt where
+    // nmi_tx_complete ran, the fake scout ack was never delivered.
+    uint32_t rx_frames_received_count() const { return rx_frames_received_count_; }
+
+    // Diagnostic: count of rx_process_byte() calls that were blocked by
+    // RX_RESET being asserted. High count suggests RX_RESET is re-asserted
+    // after nmi_tx_complete clears it.
+    uint32_t rx_blocked_by_reset_count() const { return rx_blocked_by_reset_count_; }
+
     // Access frame field state (for test inspection)
     FrameField tx_frame_field() const { return tx_frame_field_; }
     FrameField rx_frame_field() const { return rx_frame_field_; }
@@ -371,6 +384,9 @@ private:
     }
 
     void write_cr1(uint8_t value) {
+        // Diagnostic: track nmi_tx_complete writes
+        if (value == 0x82) ++cr1_0x82_write_count_;
+
         // TX Reset
         if (value & CR1_TX_RESET) {
             clear_tx_fifo();
@@ -622,7 +638,10 @@ private:
     // RX: If FIFO has space and no FV blocking, push from rx_frame_buffer_.
     // Called periodically by the byte trickle timer.
     void rx_process_byte() {
-        if (cr1_ & CR1_RX_RESET) return;
+        if (cr1_ & CR1_RX_RESET) {
+            ++rx_blocked_by_reset_count_;
+            return;
+        }
 
         // If FV is set, don't push more data until it's cleared
         if (fv_stored_) return;
@@ -639,6 +658,7 @@ private:
                 rx_frame_buffer_ = std::move(frame->data);
                 rx_buffer_index_ = 0;
                 rx_frame_field_ = FrameField::Idle;
+                ++rx_frames_received_count_;
             } else {
                 return;  // Nothing to receive
             }
@@ -1010,6 +1030,11 @@ private:
 
     // IRQ output
     bool irq_output_ = false;
+
+    // Diagnostic counters
+    uint32_t cr1_0x82_write_count_ = 0;
+    uint32_t rx_frames_received_count_ = 0;
+    uint32_t rx_blocked_by_reset_count_ = 0;
 
     // Stored status latches (cleared by CPU via Clear Rx/Tx Status)
     bool fd_stored_ = false;     // SR1: Flag Detected
