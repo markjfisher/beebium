@@ -109,6 +109,10 @@ public:
     // Access the NMI edge detector state (parasite-local).
     bool prev_pnmi() const { return prev_pnmi_; }
 
+    // Diagnostic accessors for current stretch state
+    uint8_t pending_offset() const { return pending_offset_; }
+    bool pending_is_read() const { return pending_is_read_; }
+
 private:
     // Soft reset (T flag) -- clears all register data but preserves control flags.
     void soft_reset();

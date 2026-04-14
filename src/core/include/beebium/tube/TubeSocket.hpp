@@ -178,6 +178,11 @@ public:
 
     void remove_parasite() { parasite_ = nullptr; }
 
+    // Diagnostic: parasite PC for stretch deadlock investigation
+    uint16_t diag_parasite_pc() const {
+        return parasite_ ? parasite_->diag_pc() : 0xFFFF;
+    }
+
     // Configure clock ratio: numerator/denominator = parasite/host.
     // For 3 MHz parasite with 2 MHz host: set_parasite_clock_ratio(3, 2).
     void set_parasite_clock_ratio(uint8_t numerator, uint8_t denominator) {

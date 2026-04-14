@@ -201,6 +201,26 @@ public:
                 // host CPU can now proceed with the next cycle.
             } else {
                 // Host still stretched. Tick peripherals but not host CPU.
+                // Diagnostic: log the stretch register/direction periodically
+                if constexpr (HasEconetSocket<MemoryPolicy>) {
+                    auto* da = state_.memory.econet_socket.adlc();
+                    if (da && da->rx_frames_received_count() >= 4) {
+                        static uint64_t s_first = 0;
+                        static uint64_t s_count = 0;
+                        if (s_count == 0) s_first = state_.cycle_count;
+                        uint64_t since = state_.cycle_count - s_first;
+                        if (since == 0 || since == 1000 || since == 10000 || since == 100000 || since == 400000) {
+                            auto* ula = state_.memory.tube_socket.tube_ula();
+                            uint16_t pc = state_.memory.tube_socket.diag_parasite_pc();
+                            fprintf(stderr, "[STRETCH-INFO+%llu] tube_ula offset=%u, is_read=%d, parasite_pc=0x%04X\n",
+                                    since,
+                                    ula ? ula->pending_offset() : 99,
+                                    ula ? (ula->pending_is_read() ? 1 : 0) : -1,
+                                    pc);
+                        }
+                        ++s_count;
+                    }
+                }
                 tick_stretch_cycle();
                 ++state_.cycle_count;
                 ++sequence_;
@@ -317,6 +337,25 @@ public:
         // (socket enabled, NMI flip-flop set, ADLC IRQ active), NMI is asserted.
         if constexpr (HasEconetSocket<MemoryPolicy>) {
             uint8_t econet_nmi = state_.memory.econet_socket.nmi_pending() ? 1 : 0;
+            // Periodic state dump after frame 4 to see what's happening
+            auto* da = state_.memory.econet_socket.adlc();
+            if (da && da->rx_frames_received_count() >= 4) {
+                static uint64_t sample_count = 0;
+                static uint64_t first_tick = 0;
+                if (sample_count == 0) first_tick = state_.cycle_count;
+                uint64_t ticks_since = state_.cycle_count - first_tick;
+                // Dump at specific times: 0, 1000, 10000, 100000, 500000
+                if (ticks_since == 0 || ticks_since == 1000 || ticks_since == 10000 ||
+                    ticks_since == 100000 || ticks_since == 500000) {
+                    fprintf(stderr, "[DUMP tick+%llu] nmi_pending=%d, ff=%d, irq=%d, dev_nmi=0x%02X, nmi_flags=0x%02X, in_nmi=%d\n",
+                            ticks_since, econet_nmi,
+                            state_.memory.econet_socket.nmi_enable_ff() ? 1 : 0,
+                            da->irq_output() ? 1 : 0,
+                            state_.cpu.device_nmi_flags, state_.cpu.nmi_flags,
+                            in_nmi_handler_ ? 1 : 0);
+                }
+                ++sample_count;
+            }
             M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
         }
 
@@ -326,6 +365,18 @@ public:
         if (state_.cpu.read == M6502ReadType_Interrupt) {
             if (state_.cpu.nmi_flags != 0) {
                 in_nmi_handler_ = true;
+                // Diagnostic: log NMI entries after frame 4 arrives
+                if constexpr (HasEconetSocket<MemoryPolicy>) {
+                    auto* da = state_.memory.econet_socket.adlc();
+                    if (da && da->rx_frames_received_count() >= 4) {
+                        static int nmi_after_f4 = 0;
+                        if (nmi_after_f4 < 20) {
+                            fprintf(stderr, "[NMI-ENTRY #%d after frame4] nmi_flags=0x%02X, dev_nmi=0x%02X\n",
+                                    nmi_after_f4, state_.cpu.nmi_flags, state_.cpu.device_nmi_flags);
+                            ++nmi_after_f4;
+                        }
+                    }
+                }
             } else {
                 in_irq_handler_ = true;
             }
@@ -625,12 +676,13 @@ private:
             }
         }
 
-        // Tick Econet ADLC during stretch cycles.
-        // The ADLC is a 2MHz device and must be clocked even when the host
-        // CPU is halted for Tube or 1MHz bus stretch. Without this, the
-        // byte trickle timer stalls and receive_frame() is never called,
-        // causing systematic packet loss when a Tube second processor is
-        // fitted.
+        // Tick Econet during stretch cycles. Both the FourWayHandshake
+        // (network-layer protocol timers) and the ADLC (byte trickle)
+        // must advance so that incoming frames can be received even when
+        // the host CPU is halted by Tube or 1MHz bus stretch. The ADLC
+        // handles FIFO-full conditions by stalling the byte trickle
+        // (retrying on the next tick) rather than discarding bytes,
+        // which prevents overrun during long stretch periods.
         if constexpr (HasEconetSocket<MemoryPolicy>) {
             if (is_rising) {
                 state_.memory.econet_socket.tick_rising();
@@ -651,6 +703,24 @@ private:
         // Econet NMI during stretch cycles
         if constexpr (HasEconetSocket<MemoryPolicy>) {
             uint8_t econet_nmi = state_.memory.econet_socket.nmi_pending() ? 1 : 0;
+            // Diagnostic: periodic state dump in stretch path
+            auto* da2 = state_.memory.econet_socket.adlc();
+            if (da2 && da2->rx_frames_received_count() >= 4) {
+                static uint64_t stretch_first_tick = 0;
+                static uint64_t stretch_sample = 0;
+                if (stretch_sample == 0) stretch_first_tick = state_.cycle_count;
+                uint64_t ticks_since = state_.cycle_count - stretch_first_tick;
+                if (ticks_since == 0 || ticks_since == 1000 || ticks_since == 10000 ||
+                    ticks_since == 100000 || ticks_since == 400000) {
+                    fprintf(stderr, "[STRETCH+%llu] nmi_pending=%d, ff=%d, irq=%d, dev_nmi=0x%02X, nmi_flags=0x%02X, rx_fifo_empty=%d\n",
+                            ticks_since, econet_nmi,
+                            state_.memory.econet_socket.nmi_enable_ff() ? 1 : 0,
+                            da2->irq_output() ? 1 : 0,
+                            state_.cpu.device_nmi_flags, state_.cpu.nmi_flags,
+                            da2->rx_fifo_empty() ? 1 : 0);
+                }
+                ++stretch_sample;
+            }
             M6502_SetDeviceNMI(&state_.cpu, kEconetNmiDeviceMask, econet_nmi);
         }
     }

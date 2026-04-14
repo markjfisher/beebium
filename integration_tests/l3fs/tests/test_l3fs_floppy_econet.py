@@ -370,12 +370,16 @@ def test_l3fs_floppy_client_login(
                             data = proc.stderr.read(1048576)  # 1 MB
                             if data:
                                 text = data.decode("utf-8", errors="replace")
-                                aun_lines = [l for l in text.splitlines() if "AUN" in l]
-                                print(f"\n{label} AUN trace ({len(aun_lines)} lines, {len(data)} bytes stderr):")
-                                for l in aun_lines[:50]:
+                                all_lines = text.splitlines()
+                                diag_lines = [l for l in all_lines if any(
+                                    t in l for t in ("[NMI-ENTRY", "[STUCK", "[DUMP", "[STRETCH+", "[STRETCH-INFO"))]
+                                aun_lines = [l for l in all_lines if "AUN" in l]
+                                print(f"\n{label} diagnostics ({len(diag_lines)} lines):")
+                                for l in diag_lines[:30]:
                                     print(f"  {l}")
-                                if len(aun_lines) > 50:
-                                    print(f"  ... ({len(aun_lines) - 50} more lines)")
+                                print(f"{label} AUN trace ({len(aun_lines)} lines, {len(data)} bytes stderr):")
+                                for l in aun_lines[:20]:
+                                    print(f"  {l}")
                             else:
                                 print(f"\n{label} stderr: empty")
                         except Exception as e:
