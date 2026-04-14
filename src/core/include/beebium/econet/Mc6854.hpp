@@ -665,15 +665,8 @@ private:
         }
 
         // Don't push if FIFO is full
-        // Stall the byte trickle when FIFO is full rather than discarding.
-        // On real hardware, OVRN would be set and the byte lost. In the
-        // AUN model, bytes come from a software queue and can wait. This
-        // prevents data loss when the CPU is halted during Tube or 1MHz
-        // bus stretch: the FIFO fills with early bytes, the trickle
-        // stalls, and when the CPU resumes and drains the FIFO via NMI,
-        // remaining bytes (including the frame-terminating last byte
-        // needed for FV) flow in naturally.
         if (rx_fifo_full()) {
+            ovrn_stored_ = true;
             return;
         }
 

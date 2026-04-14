@@ -45,7 +45,18 @@ void TubeUla::soft_reset()
     r2_p2h_.available = false;
     r2_p2h_.full = false;
 
-    // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI.
+    // R3: clear FIFOs. P-to-H gets two dummy bytes to satisfy the 2-byte
+    // "flush" read the ANFS ROM performs during Tube Transfer setup for
+    // transfer types with the V (two-byte) control bit set (types 0 and 2).
+    // ANFS at BF39 (tube_transfer_setup) does:
+    //   BIT &FEE5   ; R3 P->H flush read 1
+    //   BIT &FEE5   ; R3 P->H flush read 2
+    // with V=1 in the Tube control register, which in our model causes an
+    // empty-R3 host read to stretch. One dummy byte is not enough (the
+    // second read would stretch); the parasite's transfer_wait_sync loop
+    // then hangs forever because the host cannot reach the subsequent R4
+    // sync write. Two dummy bytes satisfies both flush reads without
+    // asserting spurious PNMI (pending=true keeps !r3_p2h_.pending false).
     r3_h2p_.data[0] = 0;
     r3_h2p_.data[1] = 0;
     r3_h2p_.head = 0;
@@ -55,8 +66,8 @@ void TubeUla::soft_reset()
     r3_p2h_.data[0] = 0;
     r3_p2h_.data[1] = 0;
     r3_p2h_.head = 0;
-    r3_p2h_.tail = 1;
-    r3_p2h_.count = 1;
+    r3_p2h_.tail = 0;  // both slots occupied: tail wraps to start
+    r3_p2h_.count = 2;
     r3_p2h_.pending = true;
 
     // R4: clear latches.
