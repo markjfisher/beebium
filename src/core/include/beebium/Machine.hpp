@@ -190,15 +190,8 @@ public:
             state_.memory.tube_socket.tick_parasite_stretch();
             if (state_.memory.tube_socket.try_complete_tube_stretch()) {
                 tube_stretch_active_ = false;
-                // If this was a read stretch (e.g. host read empty R3 P-to-H),
-                // the deferred read has been performed by try_complete_stretch().
-                // Patch cpu.dbus with the actual value so the CPU's next cycle
-                // consumes the correct data instead of the placeholder.
-                if (state_.memory.tube_socket.has_completed_read_stretch()) {
-                    state_.cpu.dbus = state_.memory.tube_socket.take_completed_read_result();
-                }
-                // Fall through to normal step -- the deferred operation completed,
-                // host CPU can now proceed with the next cycle.
+                // Fall through to normal step -- the deferred write has been
+                // replayed, host CPU can now proceed with the next cycle.
             } else {
                 // Host still stretched. Tick peripherals but not host CPU.
                 // Diagnostic: log the stretch register/direction periodically
@@ -212,10 +205,9 @@ public:
                         if (since == 0 || since == 1000 || since == 10000 || since == 100000 || since == 400000) {
                             auto* ula = state_.memory.tube_socket.tube_ula();
                             uint16_t pc = state_.memory.tube_socket.diag_parasite_pc();
-                            fprintf(stderr, "[STRETCH-INFO+%llu] tube_ula offset=%u, is_read=%d, parasite_pc=0x%04X\n",
+                            fprintf(stderr, "[STRETCH-INFO+%llu] tube_ula offset=%u (write stretch), parasite_pc=0x%04X\n",
                                     since,
                                     ula ? ula->pending_offset() : 99,
-                                    ula ? (ula->pending_is_read() ? 1 : 0) : -1,
                                     pc);
                         }
                         ++s_count;

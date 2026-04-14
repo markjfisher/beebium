@@ -111,21 +111,11 @@ public:
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
-        auto* backend = active_backend();
-        uint8_t result = backend->host_read(static_cast<uint8_t>(offset));
-
-        // Read-side bus stretching is handled by Machine::step().
-        // When the Tube ULA stretches a read (e.g. host reads empty R3
-        // P-to-H during a transfer), host_read() returns a placeholder
-        // and sets the stretched flag. Machine::step() then enters the
-        // same stretch path used for write stretches: ticking the
-        // parasite and all peripherals, incrementing cycle_count, and
-        // retrying until the stretch clears. When it does,
-        // try_complete_tube_stretch() performs the deferred read and
-        // stores the result, which Machine::step() patches into cpu.dbus
-        // before the CPU's next cycle consumes it.
-
-        return result;
+        // Reads complete immediately. The Tube ULA does not generate
+        // read-side bus stretches: an empty R3 P-to-H returns stale
+        // latch data, matching real hardware (and B2, BeebEm, jsbeeb,
+        // and B-Em). Only writes to full registers can stretch.
+        return active_backend()->host_read(static_cast<uint8_t>(offset));
     }
 
     // Side-effect-free read for debugger inspection.
@@ -219,21 +209,6 @@ public:
     bool try_complete_tube_stretch() {
         auto* ula = tube_ula();
         return ula ? ula->try_complete_stretch() : true;
-    }
-
-    // --- Deferred read stretch result ---
-
-    // After a read stretch completes (try_complete_tube_stretch() returns
-    // true), check whether the completed stretch was a read. If so,
-    // retrieve the result to patch into cpu.dbus.
-    bool has_completed_read_stretch() const {
-        auto* ula = tube_ula();
-        return ula && ula->has_completed_read();
-    }
-
-    uint8_t take_completed_read_result() {
-        auto* ula = tube_ula();
-        return ula ? ula->take_completed_read_result() : 0;
     }
 
     // --- Accessors ---

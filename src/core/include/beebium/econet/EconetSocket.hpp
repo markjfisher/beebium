@@ -187,18 +187,6 @@ public:
         }
     }
 
-    // Tick only the network-layer handshake timers (scout ack, watchdog,
-    // cooldown). Called during CPU bus stretch when the host clock is
-    // halted. The ADLC byte trickle timer does NOT advance because the
-    // MC6854's E clock is derived from the host CPU clock -- when the
-    // Tube ULA or 1MHz bus controller halts the CPU, the ADLC halts too.
-    void tick_handshake_only() {
-        if (enabled_ && handshake_) {
-            ++tick_count_;
-            handshake_->tick();
-        }
-    }
-
     // --- Reset ---
 
     void reset() {

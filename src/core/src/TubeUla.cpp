@@ -79,8 +79,6 @@ void TubeUla::soft_reset()
 
     // Bus stretch state.
     host_stretched_ = false;
-    completed_read_result_ = 0;
-    completed_read_pending_ = false;
 
     update_interrupts();
 }
@@ -286,7 +284,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -319,7 +316,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -343,7 +339,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -658,16 +653,14 @@ bool TubeUla::try_complete_stretch()
 {
     if (!host_stretched_) return true;
 
+    // Write stretches only. R3/R4/R1 reads do not stretch in this model;
+    // the ULA returns stale/latched data immediately, matching hardware.
     switch (pending_offset_) {
     case 1:
         if (r1_h2p_.full) return false;
         break;
     case 5:
-        if (pending_is_read_) {
-            if (r3_p2h_.count == 0) return false;
-        } else {
-            if (r3_h2p_.count >= 2) return false;
-        }
+        if (r3_h2p_.count >= 2) return false;
         break;
     case 7:
         if (r4_h2p_.full) return false;
@@ -676,23 +669,9 @@ bool TubeUla::try_complete_stretch()
         break;
     }
 
-    // Condition cleared -- perform the deferred operation.
-    if (pending_is_read_) {
-        // For R3 P-to-H deferred read: the data is now available.
-        // Perform the read and store the result for the caller to
-        // patch into cpu.dbus.
-        host_stretched_ = false;  // Clear before re-read to prevent re-entry
-        completed_read_result_ = host_read(pending_offset_);
-        completed_read_pending_ = true;
-        return true;
-    } else {
-        // Re-execute the deferred write.
-        host_stretched_ = false;  // Prevent re-entry
-        host_write(pending_offset_, pending_value_);
-        return true;
-    }
-
-    host_stretched_ = false;
+    // Condition cleared -- replay the deferred write.
+    host_stretched_ = false;  // Prevent re-entry
+    host_write(pending_offset_, pending_value_);
     return true;
 }
 
