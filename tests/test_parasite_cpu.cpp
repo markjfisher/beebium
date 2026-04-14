@@ -413,10 +413,9 @@ TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]")
 
     cpu.step_instruction();  // reset (7)
 
-    // After reset, R3 P-to-H has two dummy bytes (count=2). This satisfies
-    // the 2-byte flush ANFS performs during Tube Transfer setup (type 0/2).
-    // With M=1 and V=0 (1-byte mode, threshold=1), P-to-H is NOT space
-    // available (count >= threshold). H-to-P data is NOT available (empty).
+    // After reset, R3 P-to-H has dummy byte (count=1).
+    // With M=1, P-to-H space is NOT available (count >= threshold).
+    // H-to-P data is NOT available (empty).
     // PNMI level should be false.
     tube.host_write(0, TubeUla::FLAG_S | TubeUla::FLAG_M);
     CHECK_FALSE(tube.pnmi_level());
@@ -424,9 +423,8 @@ TEST_CASE("ParasiteCpu PNMI: P-to-H space triggers NMI", "[parasite][cpu][nmi]")
     // Let CPU sample the low NMI level.
     cpu.step_instruction();  // NOP (2)
 
-    // Drain both dummy bytes from P-to-H via the host interface.
-    // With count=0, P-to-H space is available, so PNMI goes high.
-    tube.host_read(5);
+    // Now consume the dummy byte from P-to-H via the host interface.
+    // This makes P-to-H space available, so PNMI goes high.
     tube.host_read(5);
 
     CHECK(tube.pnmi_level());

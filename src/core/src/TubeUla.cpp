@@ -45,18 +45,9 @@ void TubeUla::soft_reset()
     r2_p2h_.available = false;
     r2_p2h_.full = false;
 
-    // R3: clear FIFOs. P-to-H gets two dummy bytes to satisfy the 2-byte
-    // "flush" read the ANFS ROM performs during Tube Transfer setup for
-    // transfer types with the V (two-byte) control bit set (types 0 and 2).
-    // ANFS at BF39 (tube_transfer_setup) does:
-    //   BIT &FEE5   ; R3 P->H flush read 1
-    //   BIT &FEE5   ; R3 P->H flush read 2
-    // with V=1 in the Tube control register, which in our model causes an
-    // empty-R3 host read to stretch. One dummy byte is not enough (the
-    // second read would stretch); the parasite's transfer_wait_sync loop
-    // then hangs forever because the host cannot reach the subsequent R4
-    // sync write. Two dummy bytes satisfies both flush reads without
-    // asserting spurious PNMI (pending=true keeps !r3_p2h_.pending false).
+    // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI
+    // on reset (matches the initial state documented in B2, BeebEm, jsbeeb
+    // and B-Em).
     r3_h2p_.data[0] = 0;
     r3_h2p_.data[1] = 0;
     r3_h2p_.head = 0;
@@ -66,8 +57,8 @@ void TubeUla::soft_reset()
     r3_p2h_.data[0] = 0;
     r3_p2h_.data[1] = 0;
     r3_p2h_.head = 0;
-    r3_p2h_.tail = 0;  // both slots occupied: tail wraps to start
-    r3_p2h_.count = 2;
+    r3_p2h_.tail = 1;
+    r3_p2h_.count = 1;
     r3_p2h_.pending = true;
 
     // R4: clear latches.
@@ -160,19 +151,16 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from P-to-H register.
-        // Bus stretch when empty and a transfer mode is active (M or V flag set).
-        // M enables NMI-driven transfers; V enables two-byte (paired) transfers.
-        // Without either flag, reads from empty R3 return 0 without stretching
-        // (used for dummy BIT reads that drain stale data during setup).
-        uint8_t count = r3_p2h_.count;
-        if (count == 0 && (control_flags_ & (FLAG_M | FLAG_V))) {
-            host_stretched_ = true;
-            pending_offset_ = offset & 7;
-            pending_is_read_ = true;
-            update_interrupts();
-            return 0;
-        }
-        if (count > 0) {
+        // When the FIFO is empty, return stale data without stretching.
+        // This matches real hardware (and B2, BeebEm, jsbeeb, B-Em): the
+        // Tube ULA does not implement any wait mechanism for empty R3
+        // reads. Software coordinates timing via NMI-driven handshaking,
+        // not bus stretches. In particular, ANFS's tube_transfer_setup
+        // performs two "flush" reads of R3 P-to-H (BIT &FEE5) during
+        // transfer initialisation, with the V flag set; these must
+        // complete without blocking even when the parasite hasn't yet
+        // written any bytes.
+        if (r3_p2h_.count > 0) {
             uint8_t head = r3_p2h_.head;
             result = r3_p2h_.data[head];
             r3_p2h_.head = head ^ 1;
