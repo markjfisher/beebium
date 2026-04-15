@@ -88,6 +88,18 @@ oracle/public
 /docs/manuals_text/
 /docs/datasheets/
 /discs/games/
+/discs/l3fs/
+
+# Local scratch directory
+/tmp/
+
+# L3FS SCSI hard disc images -- regenerated on demand by the oaknut
+# `disc` tool from Acorn distribution sources. The committed
+# tests/assets/scsi/L3FS-KL.adl floppy is the only checked-in image.
+/tests/assets/scsi/l3fs.dat
+/tests/assets/scsi/l3fs.dsc
+/tests/assets/scsi/l3fs-blank-20mb.dat
+/tests/assets/scsi/l3fs-blank-20mb.dsc
 
 disassembly/*
 !disassembly/*.py
