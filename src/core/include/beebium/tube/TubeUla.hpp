@@ -15,7 +15,9 @@
 #include "TubeHostBackend.hpp"
 #include "TubeParasiteBackend.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace beebium {
