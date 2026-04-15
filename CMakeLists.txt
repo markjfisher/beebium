@@ -94,7 +94,7 @@ if(BEEBIUM_BUILD_TESTS)
     # (STATUS_DLL_NOT_FOUND). PRE_TEST runs discovery at `ctest` invocation
     # instead, by which time the DLLs are in place.
     if(WIN32)
-        set(CMAKE_CATCH_DISCOVER_TESTS_DEFAULT_DISCOVERY_MODE "PRE_TEST")
+        set(CMAKE_CATCH_DISCOVER_TESTS_DISCOVERY_MODE "PRE_TEST")
     endif()
 endif()
 
