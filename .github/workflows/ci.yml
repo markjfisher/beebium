@@ -185,6 +185,7 @@ jobs:
           name: beebium-server-linux
           path: |
             build/src/server/beebium-model-b
+            build/lib/libbeebium_extension_api.so
           retention-days: 7
 
   server-windows:
@@ -421,11 +422,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgrpc++-dev protobuf-compiler
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-linux
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -564,11 +568,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgrpc++-dev
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-linux
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
