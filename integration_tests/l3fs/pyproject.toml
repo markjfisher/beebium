@@ -17,6 +17,9 @@ dependencies = [
     "protobuf>=4.0.0",
     "pytest>=7.0.0",
     "pytest-timeout>=2.0.0",
+    # `disc` CLI is used by the SCSI fixture to build the L3FS hard disc
+    # image on demand from FS3v126.ssd.
+    "oaknut>=10.0.5",
 ]
 
 [tool.hatch.build.targets.wheel]

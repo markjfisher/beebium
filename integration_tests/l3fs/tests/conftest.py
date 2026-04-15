@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +37,11 @@ REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
 # Pre-built disc image assets.
 SCSI_ASSETS_DIRPATH = REPO_ROOT / "tests" / "assets" / "scsi"
+DISCS_ASSETS_DIRPATH = REPO_ROOT / "tests" / "assets" / "discs"
+
+# Source SSD floppy image containing the L3FS v1.26 binary, used to build
+# the SCSI hard disc image on demand via the oaknut `disc` CLI.
+FS3V126_SSD = DISCS_ASSETS_DIRPATH / "FS3v126.ssd"
 
 
 def pytest_collection_modifyitems(config, items):
@@ -131,22 +137,94 @@ def adfs_filepath(roms_dirpath):
 # ---- Function-scope fixtures ----
 
 
+def _run_disc(*args, cwd=None, input=None):
+    """Invoke the oaknut `disc` CLI via its console script."""
+    result = subprocess.run(
+        ["disc", *args],
+        cwd=cwd,
+        input=input,
+        capture_output=True,
+        text=isinstance(input, str) or input is None,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"`disc {' '.join(str(a) for a in args)}` failed "
+            f"(exit {result.returncode}):\n"
+            f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+    return result
+
+
 @pytest.fixture
 def l3fs_scsi_filepath(tmp_path):
-    """Copy the L3FS SCSI image to tmp_path for safe modification.
+    """Build a fresh L3FS SCSI hard disc image in tmp_path.
 
-    The file server writes to the disc during operation, so we must
-    not modify the source asset. Both .dat and .dsc files are required.
+    Each test gets a freshly-built disc so file-server writes from one
+    test do not contaminate the next. The disc is constructed on the
+    fly using the oaknut `disc` CLI (a dependency of this test
+    project) from the L3FS v1.26 binary in tests/assets/discs/.
+
+    Returns the path to the .dat file; the matching .dsc descriptor is
+    created alongside it.
+
+    Build steps (matching the recipe in
+    docs/level-3-file-server-setup.md):
+
+    1.  Create a 10 MB ADFS hard disc image titled "Server".
+    2.  Copy $.FS3v126 from the source SSD into the new image.
+    3.  Write an !BOOT file that does *ADFS then *RUN $.FS3v126.
+    4.  Set the boot option to EXEC.
+    5.  Initialise an AFS partition on the disc:
+          - disc name "L3DATA"
+          - one user "USER1" with a 2 MB quota
+          - omit the default "Welcome" user
+          - emplace the standard Library and Library1 directories.
+
+    The standard SYST and BOOT users are created automatically.
     """
-    src_dat = SCSI_ASSETS_DIRPATH / "l3fs.dat"
-    src_dsc = SCSI_ASSETS_DIRPATH / "l3fs.dsc"
-    if not src_dat.exists():
-        pytest.skip(f"L3FS SCSI image not found: {src_dat}")
-    if not src_dsc.exists():
-        pytest.skip(f"L3FS geometry descriptor not found: {src_dsc}")
+    if not FS3V126_SSD.exists():
+        pytest.skip(
+            f"L3FS source floppy not found: {FS3V126_SSD}. "
+            "Add the FS3v126.ssd L3FS v1.26 binary to tests/assets/discs/."
+        )
 
-    dst_dat = tmp_path / "l3fs.dat"
-    dst_dsc = tmp_path / "l3fs.dsc"
-    shutil.copy2(src_dat, dst_dat)
-    shutil.copy2(src_dsc, dst_dsc)
-    return dst_dat
+    dat = tmp_path / "l3fs.dat"
+    src_ssd = tmp_path / "FS3v126.ssd"
+    shutil.copy2(FS3V126_SSD, src_ssd)
+
+    # 1. Create a 10 MB ADFS-formatted hard disc.
+    _run_disc(
+        "create", str(dat),
+        "--format", "adfs-hard",
+        "--capacity", "10MB",
+        "--title", "Server",
+    )
+
+    # 2. Copy the file-server binary onto the new disc.
+    _run_disc(
+        "cp",
+        f"{src_ssd}:$.FS3v126",
+        f"{dat}:$.FS3v126",
+    )
+
+    # 3. Write the !BOOT file (binary input -- bytes, not text).
+    _run_disc(
+        "put", str(dat), "$.!BOOT", "-",
+        input=b"*ADFS\r*RUN $.FS3v126\r",
+    )
+
+    # 4. Set the disc boot option to EXEC.
+    _run_disc("opt", str(dat), "EXEC")
+
+    # 5. Initialise the AFS partition with the standard layout.
+    _run_disc(
+        "afs-init", str(dat),
+        "--disc-name", "L3DATA",
+        "--user", "USER1:2MB",
+        "--omit-user", "Welcome",
+        "--emplace", "Library",
+        "--emplace", "Library1",
+    )
+
+    return dat
