@@ -279,6 +279,20 @@ if(NOT WIN32)
     catch_discover_tests(test_piconet_hardware_network)
 endif()
 
+# PTY-bridged FakePiconetDevice integration tests (parity with the
+# in-process integration suite, exercising PosixSerialPort end-to-end).
+# POSIX-only.
+if(NOT WIN32)
+    add_executable(test_piconet_pty_integration
+        test_piconet_pty_integration.cpp
+        piconet/FakePiconetDevice.cpp
+        piconet/FakePiconetDeviceOnPty.cpp
+        piconet/PtyPair.cpp)
+    target_link_libraries(test_piconet_pty_integration PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_pty_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_pty_integration)
+endif()
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
