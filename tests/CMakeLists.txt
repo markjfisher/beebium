@@ -244,6 +244,16 @@ if(NOT WIN32)
     catch_discover_tests(test_posix_serial_port)
 endif()
 
+# Piconet hardware contract tests (gated on BEEBIUM_PICONET_DEVICE env var).
+# Skipped without a real Piconet device; when run, asserts that the
+# firmware's behaviour matches piconet_protocol's expectations -- the
+# fidelity anchor for FakePiconetDevice. SAFE WITHOUT A REAL ECONET WIRE.
+if(NOT WIN32)
+    add_executable(test_piconet_hardware test_piconet_hardware.cpp)
+    target_link_libraries(test_piconet_hardware PRIVATE beebium_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_hardware)
+endif()
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
