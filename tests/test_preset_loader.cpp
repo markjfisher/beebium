@@ -328,6 +328,107 @@ TEST_CASE("load_preset: econet no network (null port)", "[preset][load_preset][e
     REQUIRE_FALSE(result.config->econet->aun_port.has_value());
 }
 
+TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econet][piconet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_piconet.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Econet via Piconet",
+            "econet": {
+                "station": 32,
+                "piconet": { "device_path": "/dev/tty.usbmodem101" }
+            }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE(result.success());
+    REQUIRE(result.config->econet.has_value());
+    CHECK(result.config->econet->station == 32);
+    REQUIRE(result.config->econet->piconet.has_value());
+    CHECK(result.config->econet->piconet->device_path == "/dev/tty.usbmodem101");
+    CHECK_FALSE(result.config->econet->aun_port_set);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: piconet and aun_port together is a load error",
+          "[preset][load_preset][econet][piconet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_both.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Both",
+            "econet": {
+                "station": 32,
+                "aun_port": 32768,
+                "piconet": { "device_path": "/dev/tty.usbmodem101" }
+            }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    CHECK(result.error.find("piconet") != std::string::npos);
+    CHECK(result.error.find("aun_port") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: piconet without device_path is a load error",
+          "[preset][load_preset][econet][piconet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_no_devpath.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Bad Piconet",
+            "econet": { "station": 32, "piconet": {} }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    CHECK(result.error.find("device_path") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: piconet with empty device_path is a load error",
+          "[preset][load_preset][econet][piconet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_empty_devpath.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Empty Piconet path",
+            "econet": { "station": 32, "piconet": { "device_path": "" } }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    CHECK(result.error.find("empty") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: piconet section must be an object",
+          "[preset][load_preset][econet][piconet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_bad_piconet.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "Bad Piconet",
+            "econet": { "station": 32, "piconet": "/dev/tty.usbmodem101" }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    CHECK(result.error.find("object") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
 TEST_CASE("load_preset: econet with storage", "[preset][load_preset][econet]") {
     std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_storage.preset.beebium";
     {

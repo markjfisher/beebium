@@ -756,6 +756,10 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
 
         if (econet.aun_port_set) {
             config.aun_port = econet.aun_port;  // may be nullopt (no network)
+            config.aun_port_explicit = true;
+        }
+        if (econet.piconet) {
+            config.piconet_device_path = econet.piconet->device_path;
         }
     }
 

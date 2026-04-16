@@ -32,11 +32,18 @@ struct PresetStorageConfig {
     std::optional<std::string> cassette_image_uri;
 };
 
+// Preset Piconet (USB Econet device) sub-configuration. Mutually
+// exclusive with the AUN UDP transport.
+struct PresetPiconetConfig {
+    std::string device_path;  // e.g. /dev/tty.usbmodem101
+};
+
 // Preset Econet configuration
 struct PresetEconetConfig {
     int station;                          // 1-254
     std::optional<uint16_t> aun_port;     // port number, or nullopt = no network
     bool aun_port_set = false;            // true if "aun_port" key was present (distinguishes absent from null)
+    std::optional<PresetPiconetConfig> piconet;  // present means "use Piconet"; mutually exclusive with aun_port
 };
 
 // Top-level preset configuration
@@ -200,6 +207,31 @@ inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_se
         } else {
             return {std::nullopt, "Econet 'aun_port' must be an integer or null"};
         }
+    }
+
+    // Piconet (optional). Mutually exclusive with aun_port -- both presents
+    // is a load error.
+    if (econet_json.contains("piconet")) {
+        if (econet.aun_port_set) {
+            return {std::nullopt,
+                    "Econet 'piconet' and 'aun_port' are mutually exclusive"};
+        }
+        const auto& piconet_json = econet_json["piconet"];
+        if (!piconet_json.is_object()) {
+            return {std::nullopt, "Econet 'piconet' must be an object"};
+        }
+        if (!piconet_json.contains("device_path")) {
+            return {std::nullopt, "Econet 'piconet' requires a 'device_path' field"};
+        }
+        if (!piconet_json["device_path"].is_string()) {
+            return {std::nullopt, "Econet 'piconet.device_path' must be a string"};
+        }
+        PresetPiconetConfig piconet;
+        piconet.device_path = piconet_json["device_path"].get<std::string>();
+        if (piconet.device_path.empty()) {
+            return {std::nullopt, "Econet 'piconet.device_path' must not be empty"};
+        }
+        econet.piconet = std::move(piconet);
     }
 
     // Unknown keys silently ignored for forward compatibility
