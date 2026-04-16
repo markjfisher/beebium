@@ -92,6 +92,14 @@ message GetEconetStatusResponse {
     string send_stage_log = 22;
     uint64 ticks_with_timer_active = 23;
     uint64 read_stretch_parasite_ticks = 24;
+
+    // Populated only when the active backend is PiconetBackend.
+    PiconetStatus piconet = 25;
+}
+
+message PiconetStatus {
+    string device_path = 1;   // POSIX device path (e.g. /dev/tty.usbmodem101)
+    bool serial_open = 2;     // True if the SerialPort fd is currently open
 }
 
 message AdlcStatus {
