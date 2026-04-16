@@ -262,6 +262,14 @@ target_link_libraries(test_piconet_fake_device PRIVATE beebium_core Catch2::Catc
 target_include_directories(test_piconet_fake_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 catch_discover_tests(test_piconet_fake_device)
 
+# Piconet integration: full FourWayHandshake -> PiconetBackend -> FakePiconetDevice stack.
+add_executable(test_piconet_integration
+    test_piconet_integration.cpp
+    piconet/FakePiconetDevice.cpp)
+target_link_libraries(test_piconet_integration PRIVATE beebium_core Catch2::Catch2WithMain)
+target_include_directories(test_piconet_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+catch_discover_tests(test_piconet_integration)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
