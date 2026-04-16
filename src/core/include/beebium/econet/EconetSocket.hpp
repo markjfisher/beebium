@@ -82,12 +82,19 @@ public:
 
     bool enabled() const { return enabled_; }
 
-    // Set the station ID without touching the ADLC or backend.
+    // Set the station ID without touching the ADLC. Notifies the backend
+    // via on_station_id_changed so backends carrying their own station
+    // state (e.g. PiconetBackend, where the Piconet device must be told
+    // via SET_STATION) can stay in sync.
+    //
     // On the Model B this is equivalent to changing the 8 address links.
     // Takes effect on the next read of &FE18 (i.e. on Ctrl-Break when
     // the NFS ROM re-reads the station number).
     void set_station_id(uint8_t station_id) {
         station_id_ = station_id;
+        if (backend_) {
+            backend_->on_station_id_changed(station_id);
+        }
     }
 
     // Set pointer to the MemoryMap's last_bus_value for open bus emulation

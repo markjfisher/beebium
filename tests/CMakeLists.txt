@@ -194,6 +194,11 @@ add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_econet_socket)
 
+# NetworkBackend station-change hook tests
+add_executable(test_network_backend_station_change test_network_backend_station_change.cpp)
+target_link_libraries(test_network_backend_station_change PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_network_backend_station_change)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)

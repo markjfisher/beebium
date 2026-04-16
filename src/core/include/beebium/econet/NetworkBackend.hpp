@@ -85,6 +85,15 @@ public:
     // these gaps. The ADLC uses this to suppress Rx Idle (SR2 INACTIVE)
     // during inter-frame handshake gaps.
     virtual bool is_expecting_frame() const { return false; }
+
+    // Notify the backend that EconetSocket's station ID has changed. The
+    // initial station ID is communicated via the backend's constructor or
+    // configuration, NOT via this hook -- enable() does not call it. Backends
+    // for which station identity is invisible (AunBackend, TestBackend)
+    // ignore this. Backends with their own station-bearing apparatus
+    // (PiconetBackend, where the Piconet device must be told via SET_STATION)
+    // override to propagate.
+    virtual void on_station_id_changed(uint8_t /*new_station_id*/) {}
 };
 
 }  // namespace beebium
