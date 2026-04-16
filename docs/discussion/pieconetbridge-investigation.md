@@ -83,22 +83,99 @@ fires for our scouts. With kernel printk verbosity maxed out
 `extralogs` flag enabled (`-e` passed to the bridge), `dmesg` shows
 zero entries during a test run.
 
-## The interpretation
+## The interpretation (revised after reading PiEconetBridge source)
 
-- The wire-level signaling is good (econet-monitor sees frames; LEDs flicker).
-- The kernel module receives the frames in raw mode (econet-monitor delivers them).
-- The kernel module does NOT deliver them via its AUN-mode receive
-  path (irq_read line 1616 doesn't log; bridge sees nothing).
-- So: when the bridge puts the kernel module into AUN mode, frames
-  with `dest=0.254` and `src=0.32` are being silently dropped before
-  they reach the user-space bridge.
+The original "kernel doesn't see our frames" diagnosis was based on
+dmesg silence. **That signal is meaningless for this question.** Source
+review of `module/econet-gpio-module.c` shows that EVERY diagnostic
+`printk` in the AUN-mode RX classification path (lines 1514-1618 of
+econet-gpio-module.c, including the "AUN: Scout received from %d.%d
+... Acknowledging." line) is wrapped in `#ifdef ECONET_GPIO_DEBUG_AUN`.
+The production kernel module is not compiled with that flag. Setting
+`extralogs` (the runtime `-e` flag) does NOT enable these prints --
+they're compile-time guarded. dmesg silence during our test means the
+debug build wasn't used; nothing more.
+
+A second misleading observation: `econet-monitor` shows our frames,
+which we read as "the kernel sees them." But `econet-monitor` (line
+195) explicitly turns OFF AUN mode (`ioctl(fd, ECONETGPIO_IOC_AUNMODE,
+0)`) before reading. So econet-monitor proves only that **raw mode**
+delivers frames -- it tells us nothing about whether the AUN-mode
+receive path is processing them.
 
 The bridge's startup message `Sender net is 0 for Wire device net 1.
-Unable to find sender net.` is suspicious -- it's the only place the
-bridge mentions net 0 handling. Possibly related: when the bridge
-configures the kernel module's station set, frames with `srcnet=0`
-may be filtered out as "no recognised sender net" before
-classification reaches the scout-detection path.
+Unable to find sender net. Not sending bridge reset.` (econet-hpbridge.c
+line 1836) is a red herring. It fires when the bridge wants to
+broadcast a bridge-reset announcement at startup but has no other
+networks to announce; it's benign and unrelated to per-frame routing.
+
+### What the source actually tells us
+
+1. **The kernel itself sends scout-acks** (lines 1652-1666). When
+   `aun_mode == 1` and a 6-byte frame arrives whose destination is in
+   the station bitmap, the kernel transitions to `EA_R_WRITEFIRSTACK`
+   and writes a 4-byte ack with inverted addressing
+   (`dst = our_src`, `src = our_dst`) immediately. The user-space
+   bridge sees nothing until the scout-ack has been sent and the data
+   packet has arrived. So the bridge's user-space log being silent
+   during our tests proves nothing about whether scout-acks were
+   attempted.
+
+2. **The station bitmap should include `(0, 254)`**.
+   `eb_setclr_single_wire_host` (econet-hpbridge.c lines 7357-7398)
+   translates `net` to `0` if it matches the wire's configured net
+   before setting the bitmap entry. So `FILESERVER ON 1.254` with
+   `WIRE NET 1` results in bitmap entry `(0, 254)` being set, and our
+   scout to `0.254` should pass the `ECONET_DEV_STATION(0, 254)`
+   check at kernel module line 1415.
+
+3. **`stations_initial` is reset on every bridge reset**
+   (econet-hpbridge.c line 2088), and the kernel bitmap is
+   re-pushed via `ECONETGPIO_IOC_SET_STATIONS`. So the post-restart
+   "Station set updated" message twice in dmesg is the bridge
+   re-establishing its baseline -- both times push the same baseline
+   bitmap including `(0, 254)`.
+
+4. **The frame-length check is satisfied** (kernel module line 1601):
+   our scout is exactly 6 bytes (4 address + ctrl + port), so the
+   "expecting Scout and this wasn't" path is NOT taken.
+
+5. **The expected ack format matches Piconet's `_wait_ack` precisely**:
+   Piconet expects `_wait_ack(254, 0, 32, 0)` -- src=254, src_net=0,
+   dst=32, dst_net=0. The kernel constructs exactly that (lines
+   1454-1457).
+
+### So why is it failing?
+
+If our scout reaches the kernel's irq_read in AUN mode, AND passes
+the station bitmap check, the kernel SHOULD send an ack that
+Piconet's `_wait_ack` accepts. Yet we get NO_SCOUT_ACK reliably. The
+remaining hypotheses, in order of likelihood:
+
+a. **The kernel never enters its AUN-mode irq_read path for our
+   scouts.** Even though `aun_mode == 1` and the bitmap is correct,
+   maybe an earlier guard (line 1969 -- the early-out abort during
+   reception) is firing. Worth instrumenting.
+
+b. **The kernel sends the ack but the wire transaction times out.**
+   The kernel needs to: receive scout IRQ, process state, set up ack,
+   switch ADLC to write, send 4 bytes, receive frame-complete IRQ.
+   Piconet's `TIMEOUT_WAIT_ACK_MS = 200`. Generous, but if the bridge
+   is using all 4 cores on something else, it could miss the deadline.
+
+c. **The kernel's ack goes out but is corrupted at the wire layer**
+   for some reason specific to the Piconet's ADLC behaviour. Hard to
+   verify without an oscilloscope.
+
+d. **There's a state-machine constraint we haven't found** -- e.g.
+   the kernel rejects scouts when it's mid-transaction with another
+   peer, or after a previous failed handshake left the state machine
+   in an unexpected state. Bridge-restart didn't clear it, so it
+   would have to be a per-Piconet quirk.
+
+(a) is the cheapest to investigate -- a one-line patch to the kernel
+module to log unconditionally at line 1415 and 1969 would
+definitively answer "did the AUN-mode path see this frame at all?".
 
 ## Why a real BBC works in the same setup
 
@@ -124,36 +201,50 @@ Differences between the BBC and the Piconet that may matter:
 
 ## Where to dig next time
 
-When PiEconetBridge investigation resumes:
+When PiEconetBridge investigation resumes, in priority order:
 
-1. **Run with the BBC at station 221 and the Piconet on the wire
-   simultaneously** and compare bridge logs frame-by-frame. The
-   BBC is a known-working peer in this exact setup. Differences
-   in how the bridge logs/processes BBC traffic vs Piconet traffic
-   should isolate the behaviour quickly. Test variants:
-   - BBC quiet, Piconet sends TX to fileserver (1.254): same as
-     today's failing case, but with the BBC providing baseline.
-   - BBC loads a file from fileserver, Piconet quiet: confirm the
-     bridge still works for known clients.
-   - BBC loads a file, Piconet sends TX in the middle: see if the
-     bridge's having-acked-the-BBC state changes how it handles
-     Piconet frames.
-   - Piconet sends TX to the BBC at 221 (instead of the fileserver
-     at 254): the BBC's NFS ROM should scout-ack any TX addressed
-     to it. This bypasses the bridge entirely on the response path.
-2. Read `econet-gpio-module.c` around lines 1450-1620 to map the
-   AUN-mode receive classification: where exactly an inbound frame
-   with `srcnet=0, dstnet=0, dst=254` gets dropped vs delivered.
-3. Read `econet-hpbridge.c` for "Sender net" handling to understand
-   what the startup log message implies about per-frame source-net
-   resolution.
-4. Trace what `Station set updated` actually configures in the
-   kernel module -- the message fires twice at startup (suggests
-   two separate ioctl calls). Find the corresponding kernel
-   handler.
-5. Try forcing srcnet=1 on the wire by patching the Piconet firmware
-   temporarily (one-line change to econet.c lines 164, 174) and see
-   if it changes the bridge's behaviour.
+1. **The decisive test: TX from Piconet to the BBC at 221**
+   when both are on the wire. The BBC's NFS ROM should scout-ack any
+   TX addressed to it -- this bypasses the bridge entirely on the
+   response path. If this succeeds, we've definitively proven Piconet
+   can complete a four-way handshake against an Acorn-compatible
+   peer; the bridge issue becomes pure investigation rather than a
+   blocker. If it ALSO fails, we know the issue is electrical or
+   wire-protocol-specific to Piconet vs Acorn ADLC, not a bridge
+   thing.
+
+2. **Compare BBC vs Piconet traffic with `econet-monitor`** running
+   side-by-side. With the bridge stopped and `econet-monitor`
+   capturing in raw mode:
+   - BBC issues `*I AM 0.254 SYST` (or similar fileserver
+     interaction). Capture the scout-ack the bridge sends back to
+     the BBC. Note exact byte layout.
+   - Piconet sends an equivalent scout. Compare what comes back (or
+     doesn't).
+
+3. **Patch the kernel module to log unconditionally** at the AUN-
+   mode RX entry points. Two lines (1415 in `econet_irq_read` and
+   1969 in `econet_process_rx`) need to be moved out of their
+   `#ifdef ECONET_GPIO_DEBUG_AUN` blocks (or have unconditional
+   `printk(KERN_INFO ...)` lines added). This will definitively
+   tell us whether our scouts reach the AUN-mode path. Alternative:
+   rebuild the kernel module with `-DECONET_GPIO_DEBUG_AUN` and
+   replace the running module.
+
+4. **Try forcing srcnet=1 on the wire** by patching the Piconet
+   firmware temporarily (one-line change to `board/src/econet.c`
+   lines 164 and 174 to use `1` instead of the hardcoded `0`).
+   If that changes the bridge's behaviour, the bridge has a
+   sender-net dependency we missed.
+
+5. **Test against the BBC's recently-used station number (221)**
+   for our station instead of 32. Unlikely to matter, but rules
+   out per-station bridge state.
+
+6. **Read `econet_irq_write`** (kernel module around 1140-1220) to
+   understand whether the kernel's scout-ack TX has any conditional
+   guards that could silently drop it (e.g. CTS handling, line-busy
+   detection).
 
 ## Related upstream-Piconet observation
 
