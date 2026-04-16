@@ -304,6 +304,90 @@ TEST_CASE("parse_start_arguments: implicit start (no subcommand)", "[cli][parse_
 }
 
 // ============================================================================
+// Econet transport selection (--piconet vs --aun-port mutual exclusion)
+// ============================================================================
+
+TEST_CASE("parse_start_arguments: --piconet sets device path",
+          "[cli][parse_start_arguments][piconet]") {
+    ArgvHelper args{"beebium", "start", "--piconet", "/dev/tty.usbmodem101"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(config.piconet_device_path.has_value());
+    CHECK(*config.piconet_device_path == "/dev/tty.usbmodem101");
+}
+
+TEST_CASE("parse_start_arguments: --piconet with empty value returns USAGE",
+          "[cli][parse_start_arguments][piconet]") {
+    ArgvHelper args{"beebium", "start", "--piconet", ""};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE(result.has_value());
+    CHECK(*result == ExitCode::USAGE);
+}
+
+TEST_CASE("parse_start_arguments: bare --aun-port marks aun_port_explicit",
+          "[cli][parse_start_arguments][piconet]") {
+    // The default value of aun_port is non-empty (AUN_DEFAULT_PORT) so we
+    // need a sentinel to know whether the user actually said --aun-port.
+    ServerConfig<MachineType> default_config;
+    CHECK_FALSE(default_config.aun_port_explicit);
+
+    ArgvHelper args{"beebium", "start", "--aun-port", "32768"};
+    ServerConfig<MachineType> config;
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(config.aun_port_explicit);
+}
+
+TEST_CASE("validate_config: --piconet alone is valid",
+          "[cli][validate_config][piconet]") {
+    ServerConfig<MachineType> config;
+    config.piconet_device_path = "/dev/tty.usbmodem101";
+    auto err = validate_config<MachineType>(config);
+    CHECK_FALSE(err.has_value());
+}
+
+TEST_CASE("validate_config: --aun-port alone is valid (regression)",
+          "[cli][validate_config][piconet]") {
+    ServerConfig<MachineType> config;
+    config.aun_port = 32768;
+    config.aun_port_explicit = true;
+    auto err = validate_config<MachineType>(config);
+    CHECK_FALSE(err.has_value());
+}
+
+TEST_CASE("validate_config: --piconet and explicit --aun-port together fail",
+          "[cli][validate_config][piconet]") {
+    ServerConfig<MachineType> config;
+    config.piconet_device_path = "/dev/tty.usbmodem101";
+    config.aun_port = 32768;
+    config.aun_port_explicit = true;
+
+    auto err = validate_config<MachineType>(config);
+    REQUIRE(err.has_value());
+    CHECK(err->find("--piconet") != std::string::npos);
+    CHECK(err->find("--aun-port") != std::string::npos);
+}
+
+TEST_CASE("validate_config: --piconet with default aun_port (not explicit) is valid",
+          "[cli][validate_config][piconet]") {
+    // The default ServerConfig has aun_port = AUN_DEFAULT_PORT but
+    // aun_port_explicit = false. Adding --piconet should NOT trigger
+    // mutual-exclusion error -- the user did not actually request AUN.
+    ServerConfig<MachineType> config;
+    config.piconet_device_path = "/dev/tty.usbmodem101";
+    // aun_port retains default; aun_port_explicit stays false.
+    auto err = validate_config<MachineType>(config);
+    CHECK_FALSE(err.has_value());
+}
+
+// ============================================================================
 // dispatch_subcommand() tests
 // ============================================================================
 

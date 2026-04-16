@@ -30,7 +30,9 @@
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/AunBackend.hpp"
+#include "beebium/econet/PiconetBackend.hpp"
 #include "beebium/econet/TestBackend.hpp"
+#include "beebium/econet/piconet/PosixSerialPort.hpp"
 #include "beebium/tube/TubeConcepts.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/PresetLoader.hpp"
@@ -571,7 +573,10 @@ struct ServerConfig {
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
     std::optional<uint16_t> aun_port = beebium::AUN_DEFAULT_PORT;  // nullopt = no network
+    bool aun_port_explicit = false;                   // true if --aun-port was given on the CLI
+                                                      // (distinguishes default value from user choice)
     std::vector<AunMapEntry> aun_maps;
+    std::optional<std::string> piconet_device_path;   // empty = no Piconet; mutually exclusive with aun_port
 
     // Startup options (keyboard links)
     // -1 means not set; we use int to detect if user specified a value
@@ -646,7 +651,10 @@ void print_usage(const char* program_name) {
                   << "  --aun-port <port|none>   AUN UDP port (default: "
                   << beebium::AUN_DEFAULT_PORT << ", none = no network)\n"
                   << "  --aun-map <net.stn:ip[:port]>\n"
-                  << "                           Map Econet address to IP (repeatable)\n";
+                  << "                           Map Econet address to IP (repeatable)\n"
+                  << "  --piconet <device-path>  Use a Piconet USB device as the Econet transport\n"
+                  << "                           (e.g. /dev/tty.usbmodem101). Mutually exclusive\n"
+                  << "                           with --aun-port.\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -945,6 +953,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--aun-port" && i + 1 < argc) {
             std::string port_str = argv[++i];
+            config.aun_port_explicit = true;
             if (port_str == "none") {
                 config.aun_port = std::nullopt;
             } else {
@@ -954,6 +963,12 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                     std::cerr << "Error: " << e.what() << "\n";
                     return ExitCode::USAGE;
                 }
+            }
+        } else if (arg == "--piconet" && i + 1 < argc) {
+            config.piconet_device_path = argv[++i];
+            if (config.piconet_device_path->empty()) {
+                std::cerr << "Error: --piconet requires a device path\n";
+                return ExitCode::USAGE;
             }
         } else if (arg == "--aun-map" && i + 1 < argc) {
             try {
@@ -1025,6 +1040,13 @@ std::optional<std::string> validate_config(const ServerConfig<MachineType>& conf
     // --links is mutually exclusive with semantic options
     if (config.raw_links >= 0 && (config.screen_mode_set || config.auto_boot_set)) {
         return "--links cannot be combined with --screen-mode or --auto-boot";
+    }
+
+    // Econet transports are mutually exclusive. The default value of
+    // aun_port is non-empty (AUN_DEFAULT_PORT), so we can only treat it
+    // as a conflict if the user explicitly set it on the CLI.
+    if (config.piconet_device_path.has_value() && config.aun_port_explicit) {
+        return "--piconet and --aun-port are mutually exclusive";
     }
 
     return std::nullopt;  // Valid
@@ -1161,7 +1183,28 @@ std::optional<int> install_econet(MachineType& machine, const ServerConfig<Machi
         if (config.station_number >= 1) {
             auto station = static_cast<uint8_t>(config.station_number);
 
-            if (config.aun_port.has_value()) {
+            if (config.piconet_device_path.has_value()) {
+                // Piconet USB transport: open the device and bridge to a real
+                // Econet wire. Mutually exclusive with AUN; the validate_config
+                // step has already ensured that.
+                const auto& device_path = *config.piconet_device_path;
+                auto serial = std::make_unique<beebium::piconet::PosixSerialPort>(device_path);
+                if (!serial->is_open()) {
+                    std::cerr << "Error: Failed to open Piconet device "
+                              << device_path << "\n";
+                    return 1;
+                }
+                auto backend = std::make_unique<beebium::PiconetBackend>(
+                    beebium::piconet::PiconetConfig{device_path, station},
+                    std::move(serial));
+
+                std::cout << "Econet station " << config.station_number
+                          << " via Piconet at " << device_path << "\n";
+
+                machine.state().memory.econet_socket.enable(
+                    station, std::move(backend),
+                    true);  // aun_mode = true (FourWayHandshake active)
+            } else if (config.aun_port.has_value()) {
                 // AUN networking enabled: create UDP socket
                 auto backend = std::make_unique<beebium::AunBackend>(
                     0,  // local net (always 0 for now)
