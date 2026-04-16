@@ -78,6 +78,7 @@ jobs:
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
+            build/lib/libbeebium_extension_api.dylib
           retention-days: 7
 
   server-macos-x86_64:
@@ -150,6 +151,7 @@ jobs:
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
+            build/lib/libbeebium_extension_api.dylib
           retention-days: 7
 
   server-linux:
@@ -232,6 +234,10 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      - name: Copy extension API DLL to test directory
+        run: |
+          Copy-Item "build\src\server\Release\beebium_extension_api.dll" -Destination "build\tests\Release\" -Force
 
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
@@ -462,11 +468,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-arm64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -502,11 +511,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-x86_64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -633,11 +645,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-arm64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -665,11 +680,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-x86_64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
