@@ -270,6 +270,15 @@ target_link_libraries(test_piconet_integration PRIVATE beebium_core Catch2::Catc
 target_include_directories(test_piconet_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 catch_discover_tests(test_piconet_integration)
 
+# Network-required Piconet hardware contract tests (gated on
+# BEEBIUM_PICONET_DEVICE and BEEBIUM_PICONET_NETWORK_AVAILABLE).
+# REQUIRES: Piconet attached to a real Econet wire with at least one peer.
+if(NOT WIN32)
+    add_executable(test_piconet_hardware_network test_piconet_hardware_network.cpp)
+    target_link_libraries(test_piconet_hardware_network PRIVATE beebium_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_hardware_network)
+endif()
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
