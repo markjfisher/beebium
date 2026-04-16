@@ -86,6 +86,19 @@ class MockGetEconetStatusResponse:
         peer_count=0,
         adlc=None,
         handshake=None,
+        tick_count=0,
+        cr1_0x82_write_count=0,
+        rx_frames_received_count=0,
+        rx_blocked_by_reset_count=0,
+        scout_ack_generated_count=0,
+        tx_frames_from_beeb_count=0,
+        unexpected_tx_reset_count=0,
+        tx_from_idle_count=0,
+        max_handshake_timer_seen=0,
+        watchdog_timeout_count=0,
+        send_stage_log="",
+        ticks_with_timer_active=0,
+        read_stretch_parasite_ticks=0,
     ):
         self.has_econet_socket = has_econet_socket
         self.enabled = enabled
@@ -96,6 +109,19 @@ class MockGetEconetStatusResponse:
         self.peer_count = peer_count
         self.adlc = adlc
         self.handshake = handshake
+        self.tick_count = tick_count
+        self.cr1_0x82_write_count = cr1_0x82_write_count
+        self.rx_frames_received_count = rx_frames_received_count
+        self.rx_blocked_by_reset_count = rx_blocked_by_reset_count
+        self.scout_ack_generated_count = scout_ack_generated_count
+        self.tx_frames_from_beeb_count = tx_frames_from_beeb_count
+        self.unexpected_tx_reset_count = unexpected_tx_reset_count
+        self.tx_from_idle_count = tx_from_idle_count
+        self.max_handshake_timer_seen = max_handshake_timer_seen
+        self.watchdog_timeout_count = watchdog_timeout_count
+        self.send_stage_log = send_stage_log
+        self.ticks_with_timer_active = ticks_with_timer_active
+        self.read_stretch_parasite_ticks = read_stretch_parasite_ticks
         self._has_adlc = adlc is not None
         self._has_handshake = handshake is not None
 

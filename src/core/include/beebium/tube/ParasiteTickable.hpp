@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace beebium {
 
 // Minimal interface for a parasite processor that can be ticked from
@@ -27,6 +29,10 @@ public:
     // Returns true if the debugger has paused this processor.
     // TubeSocket skips ticking when paused.
     virtual bool is_paused() const = 0;
+
+    // Diagnostic: current parasite PC for stretch deadlock investigation.
+    // Default returns 0xFFFF (sentinel) for implementations that don't override.
+    virtual uint16_t diag_pc() const { return 0xFFFF; }
 };
 
 }  // namespace beebium

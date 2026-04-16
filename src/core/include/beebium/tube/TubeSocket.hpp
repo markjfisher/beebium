@@ -111,31 +111,11 @@ public:
     // --- MemoryMappedDevice interface ---
 
     uint8_t read(uint16_t offset) {
-        auto* backend = active_backend();
-        uint8_t result = backend->host_read(static_cast<uint8_t>(offset));
-
-        // Handle read-side bus stretching inline. When the Tube ULA
-        // stretches a read (e.g. host reads empty R3 P-to-H during a
-        // transfer), the real hardware holds the host clock until data
-        // arrives. We emulate this by ticking the parasite until the
-        // stretch clears, then retrying the read with actual data.
-        // Deferred reads don't work because the CPU would consume the
-        // placeholder return value before the stretch resolves.
-        while (backend->stretched()) {
-            if (parasite_ && !parasite_->is_paused()) {
-                parasite_->tick();
-            } else {
-                break;  // No parasite available -- can't resolve
-            }
-            auto* ula = tube_ula();
-            if (ula && ula->try_complete_stretch()) {
-                // Data available -- re-read for the correct value
-                result = backend->host_read(static_cast<uint8_t>(offset));
-                if (!backend->stretched()) break;
-            }
-        }
-
-        return result;
+        // Reads complete immediately. The Tube ULA does not generate
+        // read-side bus stretches: an empty R3 P-to-H returns stale
+        // latch data, matching real hardware (and B2, BeebEm, jsbeeb,
+        // and B-Em). Only writes to full registers can stretch.
+        return active_backend()->host_read(static_cast<uint8_t>(offset));
     }
 
     // Side-effect-free read for debugger inspection.
@@ -187,6 +167,11 @@ public:
     }
 
     void remove_parasite() { parasite_ = nullptr; }
+
+    // Diagnostic: parasite PC for stretch deadlock investigation
+    uint16_t diag_parasite_pc() const {
+        return parasite_ ? parasite_->diag_pc() : 0xFFFF;
+    }
 
     // Configure clock ratio: numerator/denominator = parasite/host.
     // For 3 MHz parasite with 2 MHz host: set_parasite_clock_ratio(3, 2).
@@ -261,6 +246,15 @@ private:
     uint8_t parasite_phase_ = 0;
     uint8_t parasite_clock_num_ = 3;  // 3 MHz default
     uint8_t parasite_clock_den_ = 2;  // 2 MHz host
+
+    // Diagnostic: parasite ticks consumed by the inline read stretch loop.
+    // These ticks happen INSIDE a single host CPU cycle (no cycle_count
+    // increment, no peripheral ticking). High values indicate the loop
+    // is consuming wall-clock time without advancing the host clock.
+    uint64_t read_stretch_parasite_ticks_ = 0;
+
+public:
+    uint64_t read_stretch_parasite_ticks() const { return read_stretch_parasite_ticks_; }
 };
 
 }  // namespace beebium

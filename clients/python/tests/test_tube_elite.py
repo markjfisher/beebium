@@ -124,15 +124,19 @@ class TestTubeEliteBoot:
     """Test booting 6502 Second Processor Elite via the Tube."""
 
     def test_tube_enabled(self, bbc_tube: Beebium) -> None:
-        """Verify Tube hardware is enabled and parasite is connected."""
+        """Verify Tube hardware is enabled.
+
+        Only checks host-side status. In the single-process Tube
+        architecture the parasite runs inside the same server, so
+        parasite_connected / parasite_type / parasite_grpc_address
+        fields (retained on GetTubeStatusResponse for compatibility)
+        are no longer populated by the server. The test_tube_banner
+        test below is the functional check that the parasite is
+        actually running.
+        """
         status = bbc_tube.tube.status
         assert status.has_tube_socket, "Machine should have a Tube socket"
         assert status.enabled, "Tube should be enabled"
-        assert status.parasite_connected, "Parasite should be connected"
-        assert "65C02" in status.parasite_type, (
-            f"Expected 65C02 parasite, got {status.parasite_type!r}"
-        )
-        assert status.parasite_grpc_address, "Parasite should have registered gRPC address"
 
     def test_tube_banner(self, bbc_tube: Beebium) -> None:
         """After boot, screen should show the Tube banner."""

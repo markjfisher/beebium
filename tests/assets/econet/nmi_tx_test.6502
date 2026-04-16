@@ -1,0 +1,89 @@
+\ nmi_tx_test.6502
+\ NMI handler uses INTOFF at entry and INTON before RTI
+
+nmi_count       = &72
+main_loop_count = &73
+tx_byte_index   = &74
+tx_mode         = &75
+tx_done         = &76
+tx_complete_sr1 = &77
+
+station_id      = &FE18
+video_ula       = &FE20
+adlc_cr1        = &FEA0
+adlc_cr2        = &FEA1
+adlc_tx         = &FEA2
+
+\ --- Main program at &0400 ---
+ORG &0400
+.main_start
+    LDA #0
+    STA nmi_count
+    STA main_loop_count
+    STA tx_byte_index
+    STA tx_mode
+    STA tx_done
+    STA tx_complete_sr1
+    LDA station_id          \ INTOFF
+    LDA #&E7
+    STA adlc_cr2
+    LDA #&44
+    STA adlc_cr1
+    LDA video_ula           \ INTON
+.spin
+    INC main_loop_count
+    JMP spin
+.main_end
+
+SAVE "nmi_tx_main", main_start, main_end, main_start
+
+\ --- NMI handler at &0D00 ---
+ORG &0D00
+.nmi_start
+    PHA
+    TXA
+    PHA
+    LDA station_id          \ INTOFF
+    INC nmi_count
+    LDA tx_mode
+    BNE tx_complete
+
+    LDA adlc_cr1            \ Read SR1
+    LDX tx_byte_index
+    CPX #4
+    BCS last_byte_sent
+    LDA scout_data, X
+    STA adlc_tx
+    INX
+    CPX #4
+    BCS done_writing
+    LDA scout_data, X
+    STA adlc_tx
+    INX
+.done_writing
+    STX tx_byte_index
+    JMP nmi_exit
+.last_byte_sent
+    LDA #1
+    STA tx_mode
+    LDA #&3F
+    STA adlc_cr2
+    JMP nmi_exit
+.tx_complete
+    LDA adlc_cr1
+    STA tx_complete_sr1
+    LDA #&82
+    STA adlc_cr1
+    LDA #&FF
+    STA tx_done
+.nmi_exit
+    LDA video_ula           \ INTON
+    PLA
+    TAX
+    PLA
+    RTI
+.scout_data
+    EQUB &DD, &00, &FE, &00
+.nmi_end
+
+SAVE "nmi_tx_nmi", nmi_start, nmi_end, nmi_start

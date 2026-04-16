@@ -78,6 +78,7 @@ jobs:
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
+            build/lib/libbeebium_extension_api.dylib
           retention-days: 7
 
   server-macos-x86_64:
@@ -150,6 +151,7 @@ jobs:
             build/src/server/beebium-model-b-plus
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
+            build/lib/libbeebium_extension_api.dylib
           retention-days: 7
 
   server-linux:
@@ -185,6 +187,7 @@ jobs:
           name: beebium-server-linux
           path: |
             build/src/server/beebium-model-b
+            build/lib/libbeebium_extension_api.so
           retention-days: 7
 
   server-windows:
@@ -232,6 +235,10 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: Copy extension API DLL to test directory
+        run: |
+          Copy-Item "build\src\server\Release\beebium_extension_api.dll" -Destination "build\tests\Release\" -Force
+
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
@@ -274,7 +281,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b*
+        run: chmod +x server-build/src/server/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -285,7 +292,7 @@ jobs:
       - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
         env:
-          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build/src/server
           BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
@@ -335,7 +342,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b*
+        run: chmod +x server-build/src/server/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -346,7 +353,7 @@ jobs:
       - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
         env:
-          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build/src/server
           BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
@@ -421,11 +428,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgrpc++-dev protobuf-compiler
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-linux
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -458,11 +468,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-arm64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -498,11 +511,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-x86_64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -564,11 +580,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgrpc++-dev
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.so).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-linux
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -626,11 +645,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-arm64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b
@@ -658,11 +680,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Extract at 'build/' so the artifact's src/server/ and lib/
+      # entries land in the same relative layout the server's build-time
+      # RPATH expects (see build/lib/libbeebium_extension_api.dylib).
       - name: Download server binary
         uses: actions/download-artifact@v4
         with:
           name: beebium-server-macos-x86_64
-          path: build/src/server
+          path: build
 
       - name: Make servers executable
         run: chmod +x build/src/server/beebium-model-b

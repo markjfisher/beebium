@@ -45,7 +45,9 @@ void TubeUla::soft_reset()
     r2_p2h_.available = false;
     r2_p2h_.full = false;
 
-    // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI.
+    // R3: clear FIFOs. P-to-H gets one dummy byte to prevent spurious PNMI
+    // on reset (matches the initial state documented in B2, BeebEm, jsbeeb
+    // and B-Em).
     r3_h2p_.data[0] = 0;
     r3_h2p_.data[1] = 0;
     r3_h2p_.head = 0;
@@ -147,19 +149,16 @@ uint8_t TubeUla::host_read(uint8_t offset)
 
     case 5: {
         // R3 data: read from P-to-H register.
-        // Bus stretch when empty and a transfer mode is active (M or V flag set).
-        // M enables NMI-driven transfers; V enables two-byte (paired) transfers.
-        // Without either flag, reads from empty R3 return 0 without stretching
-        // (used for dummy BIT reads that drain stale data during setup).
-        uint8_t count = r3_p2h_.count;
-        if (count == 0 && (control_flags_ & (FLAG_M | FLAG_V))) {
-            host_stretched_ = true;
-            pending_offset_ = offset & 7;
-            pending_is_read_ = true;
-            update_interrupts();
-            return 0;
-        }
-        if (count > 0) {
+        // When the FIFO is empty, return stale data without stretching.
+        // This matches real hardware (and B2, BeebEm, jsbeeb, B-Em): the
+        // Tube ULA does not implement any wait mechanism for empty R3
+        // reads. Software coordinates timing via NMI-driven handshaking,
+        // not bus stretches. In particular, ANFS's tube_transfer_setup
+        // performs two "flush" reads of R3 P-to-H (BIT &FEE5) during
+        // transfer initialisation, with the V flag set; these must
+        // complete without blocking even when the parasite hasn't yet
+        // written any bytes.
+        if (r3_p2h_.count > 0) {
             uint8_t head = r3_p2h_.head;
             result = r3_p2h_.data[head];
             r3_p2h_.head = head ^ 1;
@@ -285,7 +284,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -318,7 +316,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -342,7 +339,6 @@ void TubeUla::host_write(uint8_t offset, uint8_t value)
             host_stretched_ = true;
             pending_offset_ = offset & 7;
             pending_value_ = value;
-            pending_is_read_ = false;
             update_interrupts();
             return;
         }
@@ -657,16 +653,14 @@ bool TubeUla::try_complete_stretch()
 {
     if (!host_stretched_) return true;
 
+    // Write stretches only. R3/R4/R1 reads do not stretch in this model;
+    // the ULA returns stale/latched data immediately, matching hardware.
     switch (pending_offset_) {
     case 1:
         if (r1_h2p_.full) return false;
         break;
     case 5:
-        if (pending_is_read_) {
-            if (r3_p2h_.count == 0) return false;
-        } else {
-            if (r3_h2p_.count >= 2) return false;
-        }
+        if (r3_h2p_.count >= 2) return false;
         break;
     case 7:
         if (r4_h2p_.full) return false;
@@ -675,19 +669,9 @@ bool TubeUla::try_complete_stretch()
         break;
     }
 
-    // Condition cleared -- perform the deferred operation.
-    if (pending_is_read_) {
-        // For R3 P-to-H deferred read: the data is now available.
-        // The actual read will happen on the next host_read() call
-        // (the host CPU re-executes the read cycle).
-    } else {
-        // Re-execute the deferred write.
-        host_stretched_ = false;  // Prevent re-entry
-        host_write(pending_offset_, pending_value_);
-        return true;
-    }
-
-    host_stretched_ = false;
+    // Condition cleared -- replay the deferred write.
+    host_stretched_ = false;  // Prevent re-entry
+    host_write(pending_offset_, pending_value_);
     return true;
 }
 

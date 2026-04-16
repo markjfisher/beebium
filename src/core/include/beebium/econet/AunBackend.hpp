@@ -121,6 +121,9 @@ private:
     std::unordered_map<uint16_t, std::pair<uint32_t, uint16_t>> forward_map_;
     std::unordered_map<uint64_t, std::pair<uint8_t, uint8_t>> reverse_map_;
 
+    // Packet trace flag -- set once at construction from BEEBIUM_AUN_TRACE env var.
+    bool trace_ = false;
+
     // Reusable receive buffer (avoids allocation per receive_frame call).
     std::array<uint8_t, 2048> recv_buffer_;
 

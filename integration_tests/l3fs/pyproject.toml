@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beebium-l3fs-tests"
+version = "0.1.0"
+description = "Level 3 File Server Econet integration tests for the Beebium BBC Micro emulator"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    { name = "Robert Smallshire", email = "robert@smallshire.org.uk" }
+]
+dependencies = [
+    "beebium",
+    "grpcio>=1.60.0",
+    "protobuf>=4.0.0",
+    "pytest>=7.0.0",
+    "pytest-timeout>=2.0.0",
+    # `disc` CLI is used by the SCSI fixture to build the L3FS hard disc
+    # image on demand from FS3v126.ssd. 10.2.0 bundles the Library.adl
+    # and Library1.adl images required by `disc afs-init --emplace`.
+    "oaknut>=10.2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/l3fs_test_support"]
+
+[tool.uv.sources]
+beebium = { path = "../../clients/python", editable = true }
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: long-running tests requiring external resources (ROMs, disc images)",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true

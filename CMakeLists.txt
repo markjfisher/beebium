@@ -85,6 +85,17 @@ if(BEEBIUM_BUILD_TESTS)
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
     include(CTest)
     include(Catch)
+
+    # Defer Catch2's test discovery from build time to ctest time on Windows.
+    # The default POST_BUILD mode runs each test executable once during the
+    # build to enumerate test cases, but that happens BEFORE vcpkg's
+    # applocal.ps1 has copied the required DLLs (protobuf, grpc, absl, ...)
+    # next to the .exe, so discovery fails with exit code 0xc0000135
+    # (STATUS_DLL_NOT_FOUND). PRE_TEST runs discovery at `ctest` invocation
+    # instead, by which time the DLLs are in place.
+    if(WIN32)
+        set(CMAKE_CATCH_DISCOVER_TESTS_DISCOVERY_MODE "PRE_TEST")
+    endif()
 endif()
 
 # gRPC Service Layer

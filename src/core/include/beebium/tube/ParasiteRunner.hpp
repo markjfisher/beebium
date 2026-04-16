@@ -71,6 +71,7 @@ public:
     void pause();
     void resume();
     bool is_paused() const override { return paused_; }
+    uint16_t diag_pc() const override { return cpu_.cpu().opcode_pc.w; }
     void prepare_for_step() {} // No bus stretching on parasite side
 
     // Wait until run() has exited after a pause (no-op in single-threaded mode).

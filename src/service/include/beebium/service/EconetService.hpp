@@ -152,6 +152,22 @@ public:
                 hs_status->set_flag_fill_active(hs->flag_fill_active());
             }
 
+            // Diagnostic counters
+            response->set_tick_count(econet.tick_count());
+            response->set_cr1_0x82_write_count(econet.cr1_0x82_write_count());
+            response->set_rx_frames_received_count(econet.rx_frames_received_count());
+            response->set_rx_blocked_by_reset_count(econet.rx_blocked_by_reset_count());
+            response->set_scout_ack_generated_count(econet.scout_ack_generated_count());
+            response->set_tx_frames_from_beeb_count(econet.tx_frames_from_beeb_count());
+            response->set_unexpected_tx_reset_count(econet.unexpected_tx_reset_count());
+            response->set_tx_from_idle_count(econet.tx_from_idle_count());
+            response->set_max_handshake_timer_seen(econet.max_handshake_timer_seen());
+            response->set_watchdog_timeout_count(econet.watchdog_timeout_count());
+            response->set_send_stage_log(econet.send_stage_log_string());
+            response->set_ticks_with_timer_active(econet.ticks_with_timer_active());
+            response->set_read_stretch_parasite_ticks(
+                machine_.memory().tube_socket.read_stretch_parasite_ticks());
+
             return grpc::Status::OK;
         }
     }

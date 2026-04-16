@@ -16,6 +16,11 @@ add_executable(test_6502_dead_cycles test_6502_dead_cycles.cpp)
 target_link_libraries(test_6502_dead_cycles PRIVATE 6502_lib Catch2::Catch2WithMain)
 catch_discover_tests(test_6502_dead_cycles)
 
+# 6502 NMI edge detection with concurrent sources (no Beebium core dependency)
+add_executable(test_6502_nmi_concurrent_sources test_6502_nmi_concurrent_sources.cpp)
+target_link_libraries(test_6502_nmi_concurrent_sources PRIVATE 6502_lib Catch2::Catch2WithMain)
+catch_discover_tests(test_6502_nmi_concurrent_sources)
+
 # Memory tests
 add_executable(test_memory test_memory.cpp)
 target_link_libraries(test_memory PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -188,6 +193,16 @@ catch_discover_tests(test_mc6854)
 add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_econet_socket)
+
+# Econet TX complete NMI tests
+add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
+target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_econet_tx_complete_nmi)
+
+# Econet NMI delivery chain tests (full Machine + 6502)
+add_executable(test_econet_nmi_delivery test_econet_nmi_delivery.cpp)
+target_link_libraries(test_econet_nmi_delivery PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_econet_nmi_delivery)
 
 # Four-way handshake (AUN mode) tests
 add_executable(test_four_way_handshake test_four_way_handshake.cpp)
@@ -402,6 +417,15 @@ target_compile_definitions(test_boot_econet PRIVATE
     BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
 )
 catch_discover_tests(test_boot_econet)
+
+# Econet TX with/without Tube integration test
+add_executable(test_econet_tx_with_tube test_econet_tx_with_tube.cpp)
+target_link_libraries(test_econet_tx_with_tube PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_econet_tx_with_tube PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ROM_DIR="${BEEBIUM_TEST_ROM_DIR}"
+)
+catch_discover_tests(test_econet_tx_with_tube)
 
 # Econet file server integration tests (discretionary — need BEEBIUM_FILESERVER env var)
 add_executable(test_econet_fileserver test_econet_fileserver.cpp)

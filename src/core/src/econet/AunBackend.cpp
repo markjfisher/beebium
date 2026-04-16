@@ -12,6 +12,7 @@
 
 #include <beebium/econet/AunBackend.hpp>
 
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -72,7 +73,8 @@ std::string socket_error_string() {
 }  // anonymous namespace
 
 AunBackend::AunBackend(uint8_t local_net, uint8_t local_stn, uint16_t local_port)
-    : local_port_(local_port), local_net_(local_net), local_stn_(local_stn) {
+    : local_port_(local_port), local_net_(local_net), local_stn_(local_stn)
+    , trace_(std::getenv("BEEBIUM_AUN_TRACE") != nullptr) {
 
 #ifdef _WIN32
     ensure_winsock_initialized();
@@ -186,6 +188,13 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
                          sizeof(dest_addr));
     if (sent < 0) {
         std::cerr << "AunBackend: sendto() failed: " << socket_error_string() << "\n";
+    } else if (trace_) {
+        std::cerr << "AUN TX: type=" << static_cast<int>(frame.type)
+                  << " port=" << static_cast<int>(frame.port)
+                  << " ctrl=" << static_cast<int>(frame.control_byte)
+                  << " " << static_cast<int>(frame.src_net) << "." << static_cast<int>(frame.src_stn)
+                  << " -> " << static_cast<int>(frame.dest_net) << "." << static_cast<int>(frame.dest_stn)
+                  << " data=" << frame.data.size() << "B\n";
     }
 }
 
@@ -253,6 +262,15 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     result.frame.dest_stn = local_stn_;
 
     last_received_handle_ = result.handle;
+
+    if (trace_) {
+        std::cerr << "AUN RX: type=" << static_cast<int>(result.frame.type)
+                  << " port=" << static_cast<int>(result.frame.port)
+                  << " ctrl=" << static_cast<int>(result.frame.control_byte)
+                  << " " << static_cast<int>(result.frame.src_net) << "." << static_cast<int>(result.frame.src_stn)
+                  << " -> " << static_cast<int>(result.frame.dest_net) << "." << static_cast<int>(result.frame.dest_stn)
+                  << " data=" << result.frame.data.size() << "B\n";
+    }
 
     return std::move(result.frame);
 }

@@ -30,7 +30,19 @@ set_target_properties(beebium_extension_api PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
     MACOSX_RPATH ON
-    # Place the dylib alongside the server executables for easy discovery
+    # On Linux/macOS, place the shared object in build/lib/. The server
+    # executables have an RPATH (or @rpath on macOS) pointing here.
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
+
+# Windows has no RPATH mechanism: DLLs are searched only in the directory
+# of the loading executable (and on PATH/system dirs). Override
+# RUNTIME_OUTPUT_DIRECTORY to place beebium_extension_api.dll directly
+# alongside the server executables so they can load it without manual
+# PATH setup or a deployment copy step.
+if(WIN32)
+    set_target_properties(beebium_extension_api PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/server"
+    )
+endif()
