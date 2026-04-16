@@ -237,6 +237,13 @@ target_link_libraries(test_piconet_backend_lifecycle PRIVATE beebium_core Catch2
 target_include_directories(test_piconet_backend_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 catch_discover_tests(test_piconet_backend_lifecycle)
 
+# POSIX serial port wrapper (production SerialPort implementation)
+if(NOT WIN32)
+    add_executable(test_posix_serial_port test_posix_serial_port.cpp)
+    target_link_libraries(test_posix_serial_port PRIVATE beebium_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_posix_serial_port)
+endif()
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
