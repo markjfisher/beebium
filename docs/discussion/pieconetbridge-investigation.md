@@ -126,21 +126,34 @@ Differences between the BBC and the Piconet that may matter:
 
 When PiEconetBridge investigation resumes:
 
-1. Read `econet-gpio-module.c` around lines 1450-1620 to map the
+1. **Run with the BBC at station 221 and the Piconet on the wire
+   simultaneously** and compare bridge logs frame-by-frame. The
+   BBC is a known-working peer in this exact setup. Differences
+   in how the bridge logs/processes BBC traffic vs Piconet traffic
+   should isolate the behaviour quickly. Test variants:
+   - BBC quiet, Piconet sends TX to fileserver (1.254): same as
+     today's failing case, but with the BBC providing baseline.
+   - BBC loads a file from fileserver, Piconet quiet: confirm the
+     bridge still works for known clients.
+   - BBC loads a file, Piconet sends TX in the middle: see if the
+     bridge's having-acked-the-BBC state changes how it handles
+     Piconet frames.
+   - Piconet sends TX to the BBC at 221 (instead of the fileserver
+     at 254): the BBC's NFS ROM should scout-ack any TX addressed
+     to it. This bypasses the bridge entirely on the response path.
+2. Read `econet-gpio-module.c` around lines 1450-1620 to map the
    AUN-mode receive classification: where exactly an inbound frame
    with `srcnet=0, dstnet=0, dst=254` gets dropped vs delivered.
-2. Read `econet-hpbridge.c` for "Sender net" handling to understand
+3. Read `econet-hpbridge.c` for "Sender net" handling to understand
    what the startup log message implies about per-frame source-net
    resolution.
-3. Trace what `Station set updated` actually configures in the
+4. Trace what `Station set updated` actually configures in the
    kernel module -- the message fires twice at startup (suggests
    two separate ioctl calls). Find the corresponding kernel
    handler.
-4. Try forcing srcnet=1 on the wire by patching the Piconet firmware
+5. Try forcing srcnet=1 on the wire by patching the Piconet firmware
    temporarily (one-line change to econet.c lines 164, 174) and see
    if it changes the bridge's behaviour.
-5. Run with the BBC and Piconet on the wire simultaneously and
-   compare bridge logs frame-by-frame.
 
 ## Related upstream-Piconet observation
 
