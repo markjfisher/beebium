@@ -205,11 +205,21 @@ TEST_CASE("Piconet network: TX to a station that does not exist returns NO_SCOUT
 }
 
 TEST_CASE("Piconet network: TX to the fileserver completes the wire handshake",
-          "[piconet-hardware-network][needs-verified-wire]") {
-    // Requires: clock present on the wire, Piconet and PiEconetBridge on
-    // the same segment, terminators in place, and a peer that scout-acks
-    // unicast to its address. Tagged separately so it can be excluded
-    // when the wire setup hasn't been verified end-to-end.
+          "[piconet-hardware-network][needs-station-registered]") {
+    // Requires: BEEBIUM_PICONET_OUR_STATION must be a station that the
+    // peer (e.g. PiEconetBridge) is configured to know about. PiEconetBridge
+    // filters incoming frames at the kernel-module level by its station
+    // set; scouts from unknown source stations are dropped before the
+    // user-space bridge sees them, so the peer cannot scout-ack us.
+    //
+    // To enable this test against PiEconetBridge, add an entry to
+    // /etc/econet-gpio/econet-hpbridge.cfg for the station you'll use,
+    // e.g. EXPOSE STATION 1.32 ON PORT *:32769 (or the right syntax for
+    // your bridge version), then restart econet-hpbridge.
+    //
+    // Tagged [needs-station-registered] so it can be excluded by default
+    // when the bridge-side configuration isn't known to include the test
+    // station.
     if (!network_tests_enabled()) {
         SKIP("network not available");
     }
@@ -238,9 +248,11 @@ TEST_CASE("Piconet network: TX to the fileserver completes the wire handshake",
                                                 std::chrono::seconds(2));
     REQUIRE(result.has_value());
     INFO("Got TX_RESULT " << static_cast<int>(result->result));
-    // The peer is on the wire, so we must NOT see NO_SCOUT_ACK.
-    // NO_SCOUT_ACK here usually indicates a wire-level problem (no clock,
-    // termination, or physical connectivity) rather than a protocol bug.
+    // The peer is on the wire and knows our station, so we must NOT see
+    // NO_SCOUT_ACK. If NO_SCOUT_ACK fires here, the most likely cause is
+    // that BEEBIUM_PICONET_OUR_STATION is not registered in the bridge's
+    // station set (PiEconetBridge filters unknown sources before
+    // user-space sees them).
     CHECK(result->result != TxResult::NoScoutAck);
     // Anything else is acceptable: OK, NO_DATA_ACK (peer rejected the
     // payload), TIMEOUT (unlikely but tolerable). LINE_JAMMED would
