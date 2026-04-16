@@ -209,6 +209,11 @@ add_executable(test_piconet_base64 test_piconet_base64.cpp)
 target_link_libraries(test_piconet_base64 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_piconet_base64)
 
+# Piconet protocol library: command formatters
+add_executable(test_piconet_commands test_piconet_commands.cpp)
+target_link_libraries(test_piconet_commands PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_piconet_commands)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
