@@ -37,7 +37,11 @@ Wired make_backend() {
     auto mock_owner = std::make_unique<MockPiconetSerial>();
     auto* mock = mock_owner.get();
     auto backend = std::make_unique<PiconetBackend>(
-        PiconetConfig{"/dev/null"}, std::move(mock_owner));
+        PiconetConfig{"/dev/null", /*initial_station=*/0x02}, std::move(mock_owner));
+    // The constructor sends SET_STATION + SET_MODE LISTEN; tests in this
+    // file are concerned with what send_frame() does on top of that, so
+    // discard the construction-time writes from the mock's history.
+    mock->clear_writes();
     return {mock, std::move(backend)};
 }
 
@@ -61,10 +65,12 @@ NetworkFrame make_unicast(std::uint8_t dest_stn, std::uint8_t dest_net,
 TEST_CASE("PiconetBackend: send_frame(Unicast, FILES ctrl) issues TX without scout-extra",
           "[piconet][backend][tx]") {
     auto w = make_backend();
-    // Standard fileserver call: ctrl=0x80 (FILES), port=0x99, no scout-extra
-    // bytes. FourWayHandshake's nf.data is just the data-frame payload.
+    // Standard fileserver call: ctrl function code 0x00 (FILES). NFS uses
+    // wire ctrl=0x80 (high bit + function code 0); FourWayHandshake stores
+    // it post-mask as 0x00. PiconetBackend ORs the high bit back on for
+    // the wire, producing decimal 128.
     const std::vector<std::uint8_t> payload{0xAA, 0xBB, 0xCC, 0xDD};
-    w.backend->send_frame(make_unicast(0x32, 0, 0x80, 0x99, payload));
+    w.backend->send_frame(make_unicast(0x32, 0, /*ctrl=*/0x00, 0x99, payload));
 
     REQUIRE(w.mock->write_count() == 1);
     const std::string expected =
@@ -74,14 +80,14 @@ TEST_CASE("PiconetBackend: send_frame(Unicast, FILES ctrl) issues TX without sco
 
 TEST_CASE("PiconetBackend: send_frame(Unicast, USERPROC ctrl) splits scout-extra from data",
           "[piconet][backend][tx]") {
-    // ctrl=0x84 (USERPROC) carries 4 scout-extra bytes per FourWayHandshake.
-    // FourWayHandshake packs nf.data as [4 scout-extra bytes][data payload].
+    // CTRL_USERPROC = 0x04 (post-mask) carries 4 scout-extra bytes per
+    // FourWayHandshake::scout_payload_size. Wire byte is 0x84 (= decimal 132).
     auto w = make_backend();
     const std::vector<std::uint8_t> nf_data{
         0x11, 0x22, 0x33, 0x44,  // scout extra (4 bytes for USERPROC)
         0xDE, 0xAD, 0xBE, 0xEF   // data payload
     };
-    w.backend->send_frame(make_unicast(254, 0, 0x84, 0, nf_data));
+    w.backend->send_frame(make_unicast(254, 0, /*ctrl=*/0x04, 0, nf_data));
 
     REQUIRE(w.mock->write_count() == 1);
     const std::vector<std::uint8_t> expected_scout{0x11, 0x22, 0x33, 0x44};
@@ -95,12 +101,13 @@ TEST_CASE("PiconetBackend: send_frame(Unicast, USERPROC ctrl) splits scout-extra
 TEST_CASE("PiconetBackend: send_frame(Unicast, POKE ctrl) splits 8 scout-extra bytes",
           "[piconet][backend][tx]") {
     auto w = make_backend();
-    // ctrl=0x82 (POKE) carries 8 scout-extra bytes.
+    // CTRL_POKE = 0x02 (post-mask) carries 8 scout-extra bytes. Wire byte
+    // is 0x82 (= decimal 130).
     const std::vector<std::uint8_t> nf_data{
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,  // scout extra
         0xFF, 0xFE  // data payload
     };
-    w.backend->send_frame(make_unicast(1, 0, 0x82, 0, nf_data));
+    w.backend->send_frame(make_unicast(1, 0, /*ctrl=*/0x02, 0, nf_data));
 
     REQUIRE(w.mock->write_count() == 1);
     const std::vector<std::uint8_t> expected_scout{
@@ -124,7 +131,7 @@ TEST_CASE("PiconetBackend: send_frame(Broadcast) prepends ctrl and port to data"
     f.type = FrameType::Broadcast;
     f.dest_stn = 0xFF;
     f.dest_net = 0xFF;
-    f.control_byte = 0x82;
+    f.control_byte = 0x02;  // Post-mask -- PiconetBackend ORs 0x80 for the wire.
     f.port = 0x9C;
     f.data = {0xCA, 0xFE, 0xBA, 0xBE};
 
@@ -139,13 +146,14 @@ TEST_CASE("PiconetBackend: send_frame(Broadcast) prepends ctrl and port to data"
 TEST_CASE("PiconetBackend: send_frame(Immediate) issues TX with port 0 and no scout-extra",
           "[piconet][backend][tx]") {
     auto w = make_backend();
-    // Outbound immediate, e.g. ctrl=0x88 (MachinePeek). nf.data is the
-    // immediate operation's payload (typically empty for MachinePeek).
+    // Outbound immediate, e.g. MachinePeek. The wire ctrl byte is 0x88
+    // (high bit + function code 0x08); FourWayHandshake stores the
+    // post-mask 0x08, and PiconetBackend ORs the high bit back on.
     NetworkFrame f;
     f.type = FrameType::Immediate;
     f.dest_stn = 5;
     f.dest_net = 0;
-    f.control_byte = 0x88;
+    f.control_byte = 0x08;  // Post-mask MachinePeek; wire becomes 0x88 (decimal 136).
     f.port = 0;  // Immediates always port 0
     f.data = {};
 

@@ -12,6 +12,9 @@
 
 #pragma once
 
+#include "beebium/econet/piconet/Constants.hpp"
+
+#include <cstdint>
 #include <string>
 
 namespace beebium::piconet {
@@ -21,7 +24,8 @@ namespace beebium::piconet {
 // ServerMain and PresetLoader can reference the type without pulling in
 // PiconetBackend's heavier transitive includes (thread, atomic, termios).
 struct PiconetConfig {
-    std::string device_path;  // POSIX device path, e.g. /dev/tty.usbmodem101
+    std::string  device_path;                       // POSIX device path, e.g. /dev/tty.usbmodem101
+    std::uint8_t initial_station = DEFAULT_STATION; // Station to send to the device at startup
 };
 
 }  // namespace beebium::piconet

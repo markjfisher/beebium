@@ -16,8 +16,12 @@
 #include "beebium/econet/piconet/PiconetConfig.hpp"
 #include "beebium/econet/piconet/SerialPort.hpp"
 
+#include <moodycamel/readerwriterqueue.h>
+
+#include <atomic>
 #include <memory>
 #include <optional>
+#include <thread>
 
 namespace beebium {
 
@@ -26,20 +30,21 @@ namespace beebium {
 // FourWayHandshake decorator must be active because Piconet's wire-level
 // four-way handshake is opaque to the host (frames in/out are atomic).
 //
-// Phase 3 scope: TX path only. send_frame() formats Piconet commands and
-// writes them to the SerialPort. receive_frame() returns nullopt; the
-// reader thread, RX path, station-change propagation, and lifecycle are
-// added in phase 4.
-//
-// Threading contract (per docs/discussion/piconet-feasibility.md): writes
-// to SerialPort happen only on the emulation thread (send_frame and the
-// future on_station_id_changed). The reader thread, when added in phase 4,
-// only reads. No internal mutex.
+// Threading model: a dedicated reader thread drains the SerialPort,
+// accumulates bytes into a line buffer, parses complete event lines, and
+// pushes the resulting NetworkFrames onto a lock-free ReaderWriterQueue.
+// The emulation thread drains the queue via receive_frame(). All writes
+// to the SerialPort happen on the emulation thread (send_frame and
+// on_station_id_changed) per the threading contract documented in
+// SerialPort.hpp -- no internal mutex.
 class PiconetBackend : public NetworkBackend {
 public:
-    // Constructor is dependency-injected with a SerialPort, so tests can
-    // pass in MockPiconetSerial / FakePiconetDevice / PtySerialPort while
-    // production code passes in PosixSerialPort.
+    // Constructor opens the SerialPort, sends SET_STATION + SET_MODE LISTEN,
+    // and starts the reader thread. Failures during startup mark the
+    // backend disconnected (is_connected() returns false) but do not throw,
+    // matching AunBackend's behaviour. The destructor signals shutdown,
+    // closes the serial port (which unblocks the reader's timed read), and
+    // joins the reader thread.
     PiconetBackend(piconet::PiconetConfig config,
                    std::unique_ptr<piconet::SerialPort> serial);
 
@@ -47,21 +52,32 @@ public:
 
     void send_frame(const NetworkFrame& frame) override;
 
-    // Phase 4 will replace this with a real implementation.
-    std::optional<NetworkFrame> receive_frame() override {
-        return std::nullopt;
-    }
+    // Non-blocking. Returns the next NetworkFrame from the reader thread's
+    // queue, or nullopt if empty.
+    std::optional<NetworkFrame> receive_frame() override;
 
     bool is_connected() const override {
         return serial_ && serial_->is_open();
     }
 
+    // EconetSocket calls this when the BBC's station latch changes; we
+    // re-issue SET_STATION to keep the Piconet device in sync. Per the
+    // threading contract this is invoked on the emulation thread, so it
+    // shares the SerialPort write path with send_frame().
+    void on_station_id_changed(std::uint8_t new_station_id) override;
+
     // Accessor for diagnostics / gRPC introspection.
     const piconet::PiconetConfig& config() const { return config_; }
 
 private:
+    void reader_loop();
+
     piconet::PiconetConfig config_;
     std::unique_ptr<piconet::SerialPort> serial_;
+
+    moodycamel::ReaderWriterQueue<NetworkFrame> rx_queue_{64};
+    std::atomic<bool> shutdown_{false};
+    std::thread reader_thread_;
 };
 
 }  // namespace beebium

@@ -225,6 +225,18 @@ target_link_libraries(test_piconet_backend_tx PRIVATE beebium_core Catch2::Catch
 target_include_directories(test_piconet_backend_tx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 catch_discover_tests(test_piconet_backend_tx)
 
+# PiconetBackend RX path (reader thread, line buffering, event dispatch)
+add_executable(test_piconet_backend_rx test_piconet_backend_rx.cpp)
+target_link_libraries(test_piconet_backend_rx PRIVATE beebium_core Catch2::Catch2WithMain)
+target_include_directories(test_piconet_backend_rx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+catch_discover_tests(test_piconet_backend_rx)
+
+# PiconetBackend lifecycle (constructor handshake, station sync, destructor join)
+add_executable(test_piconet_backend_lifecycle test_piconet_backend_lifecycle.cpp)
+target_link_libraries(test_piconet_backend_lifecycle PRIVATE beebium_core Catch2::Catch2WithMain)
+target_include_directories(test_piconet_backend_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+catch_discover_tests(test_piconet_backend_lifecycle)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
