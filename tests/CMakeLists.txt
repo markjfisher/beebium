@@ -219,6 +219,12 @@ add_executable(test_piconet_events test_piconet_events.cpp)
 target_link_libraries(test_piconet_events PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_piconet_events)
 
+# PiconetBackend TX path against MockPiconetSerial
+add_executable(test_piconet_backend_tx test_piconet_backend_tx.cpp)
+target_link_libraries(test_piconet_backend_tx PRIVATE beebium_core Catch2::Catch2WithMain)
+target_include_directories(test_piconet_backend_tx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+catch_discover_tests(test_piconet_backend_tx)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)

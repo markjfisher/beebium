@@ -15,6 +15,7 @@ add_library(beebium_core STATIC
     src/econet/AunBackend.cpp
     src/econet/piconet/Base64.cpp
     src/econet/piconet/Events.cpp
+    src/econet/piconet/PiconetBackend.cpp
     src/econet/piconet/TxResult.cpp
     src/TubeUla.cpp
     src/ParasiteCpu.cpp
