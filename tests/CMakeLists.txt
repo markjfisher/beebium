@@ -214,6 +214,11 @@ add_executable(test_piconet_commands test_piconet_commands.cpp)
 target_link_libraries(test_piconet_commands PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_piconet_commands)
 
+# Piconet protocol library: event parser
+add_executable(test_piconet_events test_piconet_events.cpp)
+target_link_libraries(test_piconet_events PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_piconet_events)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
