@@ -281,7 +281,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b*
+        run: chmod +x server-build/src/server/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -292,7 +292,7 @@ jobs:
       - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
         env:
-          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build/src/server
           BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
@@ -342,7 +342,7 @@ jobs:
           path: server-build
 
       - name: Make servers executable
-        run: chmod +x server-build/beebium-model-b*
+        run: chmod +x server-build/src/server/beebium-model-b*
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -353,7 +353,7 @@ jobs:
       - name: Build client with embedded servers
         working-directory: clients/macos/Beebium
         env:
-          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build
+          BEEBIUM_SERVERS_BUILD_DIR: ${{ github.workspace }}/server-build/src/server
           BEEBIUM_ROMS_DIR: ${{ github.workspace }}/roms
         run: |
           xcodebuild build \
