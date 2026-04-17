@@ -205,21 +205,17 @@ TEST_CASE("Piconet network: TX to a station that does not exist returns NO_SCOUT
 }
 
 TEST_CASE("Piconet network: TX to the fileserver completes the wire handshake",
-          "[piconet-hardware-network][needs-station-registered]") {
-    // Requires: BEEBIUM_PICONET_OUR_STATION must be a station that the
-    // peer (e.g. PiEconetBridge) is configured to know about. PiEconetBridge
-    // filters incoming frames at the kernel-module level by its station
-    // set; scouts from unknown source stations are dropped before the
-    // user-space bridge sees them, so the peer cannot scout-ack us.
+          "[piconet-hardware-network]") {
+    // Validates the full four-way handshake (scout, scout-ack, data,
+    // data-ack) against a real peer station. With PiEconetBridge running
+    // a fileserver on the configured peer station (default 254), this
+    // exercises the entire Piconet stack end-to-end.
     //
-    // To enable this test against PiEconetBridge, add an entry to
-    // /etc/econet-gpio/econet-hpbridge.cfg for the station you'll use,
-    // e.g. EXPOSE STATION 1.32 ON PORT *:32769 (or the right syntax for
-    // your bridge version), then restart econet-hpbridge.
-    //
-    // Tagged [needs-station-registered] so it can be excluded by default
-    // when the bridge-side configuration isn't known to include the test
-    // station.
+    // Note: PiEconetBridge has a wedging behaviour (cause not pinned down
+    // -- see docs/discussion/pieconetbridge-investigation.md) that
+    // periodically stops it scout-acking. If this test fails reliably
+    // against a peer that should be live, restart the bridge with
+    // `sudo systemctl restart econet-hpbridge` on the napier host.
     if (!network_tests_enabled()) {
         SKIP("network not available");
     }

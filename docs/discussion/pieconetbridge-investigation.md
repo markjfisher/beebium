@@ -199,6 +199,34 @@ Differences between the BBC and the Piconet that may matter:
    triggered by traffic patterns the BBC produces and the Piconet
    doesn't.
 
+## Update 2026-04-17: integration works after bridge restart
+
+When we returned to the rig with a real BBC at station 221 logged into the
+fileserver, the picture became clearer:
+
+- **The full four-way handshake against the real fileserver works
+  reliably** when the bridge is in a clean state. After
+  `sudo systemctl restart econet-hpbridge`, six consecutive isolated
+  runs of the `TX to fileserver` test passed (17 assertions each).
+- This is the integration-level validation we'd been missing. We now
+  know Piconet's `_wait_ack` strict-validation accepts real-bridge
+  scout-acks, the data-ack phase completes within timing, and the
+  TX_RESULT OK propagates back through PiconetBackend's reader.
+- The previous flakiness was bridge-side wedging, not a Beebium or
+  Piconet defect. The bridge enters a state (after time or some
+  triggering condition we haven't pinned down) where it stops
+  scout-acking our station's frames; a restart clears it.
+- **TX from Piconet to the BBC at 221 still fails** with NO_SCOUT_ACK
+  -- but this is **expected** behaviour, not a bug. A BBC's NFS ROM
+  only scout-acks frames addressed to ports it's actively listening
+  on. Port 0x99 (the fileserver-request port) is one a BBC SENDS on,
+  not a port it listens for. To test BBC-as-peer we would need a
+  port the BBC listens on (notify, immediate operations).
+
+The bridge-wedging investigation can be reopened later if it becomes
+operationally important, but it no longer blocks Beebium's Piconet
+integration story.
+
 ## Where to dig next time
 
 When PiEconetBridge investigation resumes, in priority order:
