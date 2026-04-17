@@ -12,6 +12,7 @@
 
 #include "AunBridgePiconetDevice.hpp"
 
+#include "PiconetWireFormat.hpp"
 #include "beebium/econet/FourWayHandshake.hpp"
 #include "beebium/econet/piconet/Base64.hpp"
 #include "beebium/econet/piconet/Constants.hpp"
@@ -26,41 +27,6 @@ namespace {
 
 constexpr std::uint8_t WIRE_CTRL_HIGH_BIT = 0x80;
 constexpr std::uint8_t CTRL_FUNCTION_MASK = 0x7F;
-
-std::string hex2(std::uint8_t value) {
-    static constexpr char digits[] = "0123456789abcdef";
-    char buf[3] = { digits[(value >> 4) & 0xF], digits[value & 0xF], 0 };
-    return std::string(buf, 2);
-}
-
-std::vector<std::uint8_t> build_scout_wire(std::uint8_t dest_stn, std::uint8_t dest_net,
-                                           std::uint8_t src_stn,  std::uint8_t src_net,
-                                           std::uint8_t ctrl,     std::uint8_t port,
-                                           const std::uint8_t* extra, std::size_t extra_len) {
-    std::vector<std::uint8_t> out;
-    out.reserve(6 + extra_len);
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.push_back(static_cast<std::uint8_t>(ctrl | WIRE_CTRL_HIGH_BIT));
-    out.push_back(port);
-    out.insert(out.end(), extra, extra + extra_len);
-    return out;
-}
-
-std::vector<std::uint8_t> build_data_wire(std::uint8_t dest_stn, std::uint8_t dest_net,
-                                          std::uint8_t src_stn,  std::uint8_t src_net,
-                                          const std::uint8_t* payload, std::size_t payload_len) {
-    std::vector<std::uint8_t> out;
-    out.reserve(4 + payload_len);
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.insert(out.end(), payload, payload + payload_len);
-    return out;
-}
 
 }  // namespace
 

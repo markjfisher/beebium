@@ -12,60 +12,13 @@
 
 #include "FakePiconetDevice.hpp"
 
+#include "PiconetWireFormat.hpp"
 #include "beebium/econet/piconet/Base64.hpp"
 #include "beebium/econet/piconet/Constants.hpp"
-#include "beebium/econet/piconet/Events.hpp"
 
 #include <algorithm>
-#include <variant>
 
 namespace beebium::piconet::test {
-
-namespace {
-
-// Format a wire scout: [dest_stn, dest_net, src_stn, src_net, ctrl, port, scout_extra...].
-// The ctrl byte gets the wire high bit set (the firmware does this on the
-// real wire; mirroring keeps RX_TRANSMIT events shaped exactly like the
-// real device emits them).
-std::vector<std::uint8_t> build_scout_wire(std::uint8_t dest_stn, std::uint8_t dest_net,
-                                           std::uint8_t src_stn,  std::uint8_t src_net,
-                                           std::uint8_t ctrl,     std::uint8_t port,
-                                           const std::vector<std::uint8_t>& scout_extra) {
-    std::vector<std::uint8_t> out;
-    out.reserve(6 + scout_extra.size());
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.push_back(static_cast<std::uint8_t>(ctrl | 0x80));  // wire high bit
-    out.push_back(port);
-    out.insert(out.end(), scout_extra.begin(), scout_extra.end());
-    return out;
-}
-
-// Format a wire data frame: [dest_stn, dest_net, src_stn, src_net, payload...].
-std::vector<std::uint8_t> build_data_wire(std::uint8_t dest_stn, std::uint8_t dest_net,
-                                          std::uint8_t src_stn,  std::uint8_t src_net,
-                                          const std::vector<std::uint8_t>& payload) {
-    std::vector<std::uint8_t> out;
-    out.reserve(4 + payload.size());
-    out.push_back(dest_stn);
-    out.push_back(dest_net);
-    out.push_back(src_stn);
-    out.push_back(src_net);
-    out.insert(out.end(), payload.begin(), payload.end());
-    return out;
-}
-
-// Convert a uint8 to its 2-digit lowercase hex representation
-// (matching the firmware's printf "%02x" for SR1).
-std::string hex2(std::uint8_t value) {
-    static constexpr char digits[] = "0123456789abcdef";
-    char buf[3] = { digits[(value >> 4) & 0xF], digits[value & 0xF], 0 };
-    return std::string(buf, 2);
-}
-
-}  // namespace
 
 FakePiconetDevice::FakePiconetDevice() = default;
 
@@ -219,8 +172,10 @@ void FakePiconetDevice::inject_inbound_unicast_to(std::uint8_t dest_stn, std::ui
     }
 
     auto scout_wire = build_scout_wire(dest_stn, dest_net, src_stn, src_net,
-                                       ctrl, port, scout_extra);
-    auto data_wire  = build_data_wire(dest_stn, dest_net, src_stn, src_net, data);
+                                       ctrl, port,
+                                       scout_extra.data(), scout_extra.size());
+    auto data_wire  = build_data_wire(dest_stn, dest_net, src_stn, src_net,
+                                      data.data(), data.size());
     enqueue_event_locked("RX_TRANSMIT " + encode_base64(scout_wire) + " " +
                          encode_base64(data_wire));
 }
@@ -260,9 +215,10 @@ void FakePiconetDevice::inject_inbound_immediate(std::uint8_t src_stn, std::uint
 
     auto scout_wire = build_scout_wire(station_, /*dest_net=*/0,
                                        src_stn, src_net, ctrl, /*port=*/0,
-                                       /*scout_extra=*/{});
+                                       /*extra_ptr=*/nullptr, /*extra_len=*/0);
     auto data_wire  = build_data_wire(station_, /*dest_net=*/0,
-                                      src_stn, src_net, data);
+                                      src_stn, src_net,
+                                      data.data(), data.size());
     enqueue_event_locked("RX_IMMEDIATE " + encode_base64(scout_wire) + " " +
                          encode_base64(data_wire));
 }
