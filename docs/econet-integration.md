@@ -2,18 +2,18 @@
 
 This document captures the work programme for integrating Econet/AUN features across the Beebium stack: presets, gRPC, service discovery, Python client, and macOS client.
 
-The Econet/AUN networking core (MC68B54 ADLC emulation, EconetSocket, AunBackend, FourWayHandshake) is working and has been tested against a real Acorn Level 3 Fileserver running in BeebEm via AUN. This document plans the remaining work to expose these capabilities through the standard Beebium interfaces.
+The Econet/AUN networking core (MC68B54 ADLC emulation, EconetSocket, FourWayHandshake) supports three transport backends: `AunBackend` (UDP/IP), `PiconetBackend` (USB-attached Piconet device on a real Econet wire), and `TestBackend` (in-process test double). It has been validated end-to-end against a real BBC Microcomputer talking via real Econet to a Beebium-emulated Level 3 File Server, and against a real Acorn Level 3 Fileserver running in BeebEm via AUN. This document plans the remaining work to expose these capabilities through the standard Beebium interfaces.
 
 ## Phases
 
-| Phase | Summary | Depends on |
-|-------|---------|------------|
-| 0 | Update `docs/networking.md` to match implementation | — |
-| 1 | Preset integration (JSON format, schema, apply) | — |
-| 2 | gRPC proto + C++ service | — |
-| 3 | Service discovery metadata | Phase 2 |
-| 4 | Python client | Phase 2 |
-| 5 | macOS client | Phase 2 |
+| Phase | Summary | Status | Depends on |
+|-------|---------|--------|------------|
+| 0 | Update `docs/networking.md` to match implementation | **Done** | — |
+| 1 | Preset integration (JSON format, schema, apply) | **Done** (AUN + Piconet) | — |
+| 2 | gRPC proto + C++ service | Partial — status surfaces both AUN and Piconet; full read/write API still pending | — |
+| 3 | Service discovery metadata | Pending | Phase 2 |
+| 4 | Python client | Pending | Phase 2 |
+| 5 | macOS client | Pending | Phase 2 |
 
 Phases 1 and 2 are independent and can be done in either order. Phases 3-5 all depend on the proto definition from Phase 2. Phase 0 is a documentation prerequisite that should be done first.
 
@@ -49,45 +49,52 @@ These decisions were made during planning and inform all phases:
 
 ---
 
-## Phase 0: Documentation Update
+## Phase 0: Documentation Update — Done
 
-Review and update `docs/networking.md` to match the current implementation. The document was written during research and initial development; some sections are now out of date.
+Networking documentation in `docs/networking.md` was reviewed and updated as part of the piconet branch. Three transport backends (`AunBackend`, `PiconetBackend`, `TestBackend`) are now documented with selection guidance, mutual-exclusion rules, and pointers to design and limitation docs.
 
 ---
 
-## Phase 1: Preset Integration
+## Phase 1: Preset Integration — Done
 
-Currently Econet is configured exclusively via CLI arguments (`--station`, `--aun-port`, `--aun-map`). This phase adds Econet to the preset file format.
+The preset file format supports Econet as of the piconet branch. Two transports are supported, mutually exclusive within a single `econet` section.
 
-### Preset JSON format
+### Preset JSON format — AUN
 
 ```json
 {
   "econet": {
     "station": 5,
-    "aun": {
-      "port": 32768,
-      "peers": [
-        { "net": 0, "stn": 254, "ip": "127.0.0.1", "port": 32768 }
-      ]
-    }
+    "aun_port": 32768
   }
 }
 ```
 
+### Preset JSON format — Piconet
+
+```json
+{
+  "econet": {
+    "station": 32,
+    "piconet": { "device_path": "/dev/tty.usbmodem101" }
+  }
+}
+```
+
+`aun_port` and `piconet` are mutually exclusive — `PresetLoader::parse_econet_section` rejects both being present in the same `econet` block. CLI arguments override preset values; combining a preset's `aun_port` with a CLI `--piconet` is a validation error at startup.
+
 ### Key files
 
-- `src/server/include/beebium/server/PresetLoader.hpp` — add `PresetEconetConfig` struct, `parse_econet_section()`
-- `src/server/include/beebium/server/ServerMain.hpp` — extend `apply_preset()`, extend `describe-preset-schema`
-- `tests/test_preset_loader.cpp` — Econet preset parsing tests
-
-### Merge semantics
-
-CLI arguments override preset values, matching the existing storage preset pattern. Peer lists from preset and CLI are merged (not replaced).
+- `src/server/include/beebium/server/PresetLoader.hpp` — `PresetEconetConfig`, `PresetPiconetConfig`, `parse_econet_section()`
+- `src/server/include/beebium/server/ServerMain.hpp` — `apply_preset()` propagates both backends; `validate_config()` enforces mutual exclusion
+- `tests/test_preset_loader.cpp` — Econet preset parsing tests including the AUN/Piconet co-presence error case
+- `tests/test_cli.cpp` — CLI validation tests for `--piconet` / `--aun-port` mutual exclusion
 
 ---
 
 ## Phase 2: gRPC Service
+
+**Status:** `GetEconetStatus` is implemented, including both AUN and Piconet backend-specific fields (the response carries an `aun_port` / `peer_count` block when the backend is `AunBackend`, and a `PiconetStatus` sub-message with `device_path` and `serial_open` when the backend is `PiconetBackend`). The full read/write surface (`EnableEconet`, `DisableEconet`, `AddPeer`, etc.) and `SubscribeEconetEvents` are still pending.
 
 ### Core library prerequisites
 
@@ -96,6 +103,7 @@ Before the gRPC service can be implemented, these accessors are needed:
 - `EconetSocket::backend()` — returns `NetworkBackend*` for peer management
 - `EconetSocket::aun_mode()` — query whether AUN mode is active
 - `AunBackend::list_peers()` — enumerate the peer table (returns `vector<PeerInfo>`)
+- `PiconetBackend::config()` — exposes the device path for status reporting (already in place)
 
 ### Proto outline
 
