@@ -1,6 +1,6 @@
 # Econet and AUN Networking Support
 
-This document covers the design, research, and implementation of Econet and AUN (Acorn Universal Networking) support in Beebium. The core networking implementation (MC68B54 ADLC emulation, EconetSocket, AunBackend, FourWayHandshake) is complete and has been tested against a real Acorn Level 3 Fileserver running in BeebEm via AUN. See `docs/econet-integration.md` for the remaining integration work (presets, gRPC, service discovery, clients).
+This document covers the design, research, and implementation of Econet and AUN (Acorn Universal Networking) support in Beebium. The core networking implementation (MC68B54 ADLC emulation, EconetSocket, FourWayHandshake) is complete with three transport backends — `AunBackend` (UDP/IP), `PiconetBackend` (USB to real Econet wire), and `TestBackend` (in-process test double). It has been validated end-to-end with a real BBC Microcomputer talking via real Econet to a Beebium-emulated Level 3 File Server. See `docs/econet-integration.md` for the remaining integration work (presets, gRPC, service discovery, clients).
 
 ## Overview
 
@@ -8,12 +8,42 @@ Econet is Acorn's local area networking system, introduced in 1981. It connects 
 
 AUN (Acorn Universal Networking) encapsulates Econet protocols over TCP/IP, originally developed for RISC OS but now used to bridge vintage Econet hardware with modern networks.
 
+[Piconet](https://github.com/jprayner/piconet) is a USB device that exposes a genuine MC68B54 ADLC connected to a real Econet socket, controlled via a text protocol over USB-CDC. Beebium's `PiconetBackend` lets an emulated BBC participate in a physical Econet network, indistinguishable at the protocol level from a real Acorn machine.
+
 ### Goals for Beebium
 
 1. **Emulate the MC68B54 ADLC** at the hardware level — **Done.** Cycle-accurate on the E-clock domain, with PSE, stored/present status, and full register semantics. See `Mc6854.hpp`.
 2. **Support AUN protocol** for network connectivity — **Done.** `AunBackend` handles UDP transport; `FourWayHandshake` bridges AUN's two-way protocol to the four-way handshake that NFS ROMs expect.
-3. **Enable connectivity with Pi Econet Bridge** for access to real Econet networks — **Untested.** The AUN implementation should be compatible but has not been tested with a Pi Econet Bridge. Tested successfully with BeebEm as an AUN peer.
+3. **Enable connectivity with real Econet hardware** via the Piconet USB device — **Done.** `PiconetBackend` drives a real Piconet on `/dev/tty.usbmodem*`. Validated against a PiEconetBridge-hosted fileserver over a real Econet wire, and end-to-end against a real BBC Microcomputer talking to a Beebium-hosted Level 3 File Server. See `docs/discussion/piconet-feasibility.md` for the design and `docs/discussion/piconet-upstream-issues.md` for upstream-side findings.
 4. **Support NFS/ANFS ROMs** for file server access — **Done.** NFS 3.34 works correctly, including boot messages, `*I AM`, `*CAT`, `*DATE`, and file operations against a real Acorn Level 3 Fileserver.
+
+## Network Transport Backends
+
+Beebium decouples the emulated ADLC from the underlying transport via the `NetworkBackend` abstraction (`src/core/include/beebium/econet/NetworkBackend.hpp`). Three implementations live in the core today, selected at server startup:
+
+| Backend | CLI flag | Transport | Use case |
+|---|---|---|---|
+| `AunBackend` | `--aun-port <n>` (default port 32768) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
+| `PiconetBackend` | `--piconet <device-path>` | USB-CDC serial to a Piconet board | Talk to real BBCs / Acorn fileservers / printers over a real Econet wire |
+| `TestBackend` | (not exposed; selected automatically by `--aun-port none`) | In-process; no I/O | Hardware fitted, no transport — NFS ROM sees "No Clock". Also the test double for unit tests. |
+
+**Mutual exclusion:** `--piconet` and `--aun-port` cannot both be specified. The choice of transport is established at server startup; runtime swapping is not supported.
+
+**Configuration via preset JSON** mirrors the CLI: the `econet` section accepts either `aun_port` *or* a `piconet` sub-object with a `device_path` field. Co-presence is a load-time error.
+
+### `FourWayHandshake` is always in the path
+
+All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = true` is the default for production use). Econet's wire protocol is a four-way handshake (scout / scout-ack / data / data-ack). AUN's UDP protocol is two-way (Unicast / Ack). Even Piconet is *atomic* from the host's perspective — the firmware completes the wire handshake before reporting the result. `FourWayHandshake` synthesises the missing scout-ack and final-ack frames locally so the NFS ROM sees the timing it expects regardless of the transport underneath.
+
+### When to use which
+
+- **Other Beebium emulators on the same host or LAN:** `AunBackend` with explicit peer maps. Self-contained, hermetic, no extra hardware.
+- **A real BBC, Acorn fileserver, or other Econet peripheral:** `PiconetBackend` with a Piconet device on the wire. The wire's clock generator and termination must be present (the Piconet is a participant, not a clock source).
+- **Testing only:** `TestBackend` (or the test fakes `MockPiconetSerial`, `FakePiconetDevice`, `FakePiconetDeviceOnPty`, `AunBridgePiconetDevice` in `tests/piconet/`). The Piconet integration's test stack is described in `docs/discussion/piconet-feasibility.md` ("Testing Strategy" section).
+
+### Background: known gaps
+
+`PiconetBackend` does not support **inbound immediate operations other than MachinePeek** — the firmware's host-driven REPLY path was abandoned upstream and Piconet handles MachinePeek inline with a canned response. Standard fileserver and printer traffic is unaffected. Documented in detail in `docs/discussion/piconet-feasibility.md` ("Immediate Operations Limitation").
 
 ## Hardware Architecture
 
