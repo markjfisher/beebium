@@ -39,7 +39,13 @@ DFS 2.26 and ANFS 4.18 ROMs. ANFS contains the same Tube Host Code as DNFS.
 
 ## Command Line
 
-A working command line for running the L3FS:
+The L3FS can be reached over either Econet transport: AUN/UDP for hermetic
+testing on a single host, or Piconet on a real Econet wire for use with
+real BBC Microcomputers.
+
+### Variant A: AUN/UDP (loopback testing)
+
+A working command line for running the L3FS reachable over AUN:
 
 ```bash
 ./beebium-model-b-romram \
@@ -62,6 +68,48 @@ A working command line for running the L3FS:
 The `--aun-map` entries map Econet station addresses to IP:port pairs. For
 loopback testing, each station uses port `10000 + station_number` by
 convention.
+
+### Variant B: Piconet on a real Econet wire
+
+To make the L3FS reachable from a real BBC Microcomputer (or any other
+Acorn-compatible station) on a physical Econet network, swap the AUN flags
+for `--piconet`:
+
+```bash
+./beebium-model-b-romram \
+  --sideways 9:rom:roms/acorn-anfs_4_18.rom \
+  --sideways 10:rom:roms/acorn-adfs_1_30.rom \
+  --sideways 11:rom:roms/acorn-dfs_2_26.rom \
+  --fdc acorn-1770 \
+  --floppy 0:path/to/FS3v126.ssd \
+  --acorn-scsi \
+  --scsi-hdd 0:path/to/scsi-l3fs.dat \
+  --station 250 \
+  --piconet /dev/tty.usbmodem101 \
+  --machine-name "L3FS-via-Piconet" \
+  --acorn-rtc layout=7bit-year-in-r7 \
+  --tube 65C02-3MHz \
+  --advertise
+```
+
+Notes specific to the Piconet variant:
+
+- **Pick a station number that's free on the wire.** The conventional FS
+  station 254 may collide with another fileserver on the same wire (for
+  example, a PiEconetBridge-hosted fileserver). Use `*STATIONS` from a real
+  BBC to confirm the chosen number is free before launching.
+- **`--piconet` and `--aun-port` are mutually exclusive.** The Beebium server
+  validates this at startup; combining them is a configuration error.
+- **Wire infrastructure must be in place:** clock generator on the wire,
+  termination at both ends, and the Piconet attached via its standard Econet
+  socket. See `docs/networking.md` and `docs/discussion/piconet-feasibility.md`
+  for design background.
+- **From the BBC, log in with:** `*I AM 0.<station> SYST` (using the L3FS
+  station number from the command line). Followed by `*PASS "" <password>`
+  on first contact, then the usual L3FS commands (`*CAT`, `*LCAT`, etc.).
+- **Validated end-to-end** with a real BBC Microcomputer at station 221
+  reaching a Beebium-emulated L3FS at station 250 via real Econet over a
+  Piconet on `/dev/tty.usbmodem101`.
 
 **Note:** `--scsi-hdd` requires the `.dat` image file, not the `.dsc`
 geometry sidecar. Passing the `.dsc` by mistake results in a "Broken
