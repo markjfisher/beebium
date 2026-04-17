@@ -31,6 +31,7 @@
 #include "beebium/econet/piconet/Mode.hpp"
 
 #include "piconet/AunBridgePiconetDevice.hpp"
+#include "piconet/BorrowedSerialPort.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -42,6 +43,7 @@
 using namespace beebium;
 using namespace beebium::piconet;
 using beebium::piconet::test::AunBridgePiconetDevice;
+using beebium::piconet::test::BorrowedSerialPort;
 
 namespace {
 
@@ -106,30 +108,16 @@ PeerPair make_peer_pair(std::uint8_t a_stn = 32, std::uint8_t b_stn = 254) {
     p.a_bridge->add_peer(0, b_stn, loopback_ip(), p.b_bridge->local_port());
     p.b_bridge->add_peer(0, a_stn, loopback_ip(), p.a_bridge->local_port());
 
-    // PiconetBackend takes ownership of the SerialPort; we keep raw
-    // pointers via the unique_ptrs above for test inspection. Move
-    // bridges into a local that survives just long enough to wrap...
-    // Actually we want the bridges to outlive the backends, so the
-    // backend must NOT own the bridge. We need a tiny adapter that
-    // borrows the bridge non-owningly.
-    //
-    // The cleanest approach: keep the bridge unique_ptr in PeerPair and
-    // pass a "non-owning SerialPort" wrapper to PiconetBackend.
-    struct Borrow : SerialPort {
-        SerialPort* inner;
-        explicit Borrow(SerialPort* i) : inner(i) {}
-        ReadResult read(std::span<std::uint8_t> b) override { return inner->read(b); }
-        WriteResult write(std::span<const std::uint8_t> b) override { return inner->write(b); }
-        bool is_open() const override { return inner->is_open(); }
-        void close() override { /* delegate? no -- bridge owns lifecycle */ }
-    };
-
+    // The PeerPair owns each AunBridgePiconetDevice via unique_ptr; the
+    // PiconetBackends borrow them via BorrowedSerialPort so the bridges
+    // can outlive the backends if a test needs to inspect or reuse them
+    // after the backends are destroyed.
     p.a_backend = std::make_unique<PiconetBackend>(
         PiconetConfig{"<aun-bridge-A>", a_stn},
-        std::make_unique<Borrow>(p.a_bridge.get()));
+        std::make_unique<BorrowedSerialPort>(p.a_bridge.get()));
     p.b_backend = std::make_unique<PiconetBackend>(
         PiconetConfig{"<aun-bridge-B>", b_stn},
-        std::make_unique<Borrow>(p.b_bridge.get()));
+        std::make_unique<BorrowedSerialPort>(p.b_bridge.get()));
 
     return p;
 }
