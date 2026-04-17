@@ -112,7 +112,7 @@ Disc controller types for `--fdc`:
 - `acorn-1770` - Acorn WD1770 controller
 - `none` - Leave socket empty (no disc)
 
-#### Network
+#### gRPC Server
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -126,6 +126,45 @@ Listening on port 54321
 ```
 
 Scripts can parse the `Listening on port <N>` line to discover the allocated port.
+
+#### Econet
+
+Three transport backends are available, selected at startup. `--piconet` and `--aun-port` are mutually exclusive.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--station <1-254>` | (omitted = no Econet) | Econet station number; presence enables Econet hardware |
+| `--aun-port <port\|none>` | 32768 | AUN UDP port (the default backend). `none` keeps the hardware fitted but disconnects the transport (NFS sees "No Clock"). |
+| `--aun-map <net.stn:ip[:port]>` | — | Map an Econet address to an IP endpoint (repeatable, for the AUN backend's peer table). |
+| `--piconet <device-path>` | — | Use a Piconet USB device as the Econet transport (e.g. `/dev/tty.usbmodem101`). Mutually exclusive with `--aun-port`. |
+
+**Backend selection:**
+
+- **`--aun-port` (default):** Talk to other AUN-speaking peers (other Beebium instances, BeebEm, PiEconetBridge) over UDP/IP. Combine with `--aun-map` entries to populate the peer table.
+- **`--piconet <path>`:** Talk to real BBCs / Acorn fileservers / printers / etc. over a real Econet wire via the [Piconet](https://github.com/jprayner/piconet) USB device. The wire's clock generator and termination must be present; the Piconet is a participant on the wire, not a clock source.
+- **`--aun-port none`:** Hardware fitted, no transport. Useful for testing the NFS ROM's "No Clock" path or for keeping a station number reserved without networking.
+- **No `--station`:** Econet hardware not fitted at all. The `&FE18` station ID register returns 0x00 (open bus); NFS ROM detects no Econet.
+
+**Examples:**
+
+```bash
+# Two Beebium instances on loopback (default ports collide; use --aun-port 0 for ephemeral)
+beebium-model-b --station 32 --aun-port 32768 \
+  --aun-map 0.254:127.0.0.1:32769
+
+beebium-model-b --station 254 --aun-port 32769 \
+  --aun-map 0.32:127.0.0.1:32768
+
+# Talk to real Econet via Piconet
+beebium-model-b --station 250 --piconet /dev/tty.usbmodem101
+
+# Econet board fitted but unplugged
+beebium-model-b --station 32 --aun-port none
+```
+
+The same options can be set in a preset file via `econet.aun_port` / `econet.aun_map` or `econet.piconet.device_path`. CLI arguments override preset values; combining a preset's `aun_port` with a CLI `--piconet` is a startup validation error.
+
+See `docs/networking.md` for the architecture and `docs/discussion/piconet-feasibility.md` for the Piconet design.
 
 #### Startup Control
 
