@@ -251,7 +251,10 @@ endif()
 if(NOT WIN32)
     add_executable(test_piconet_hardware test_piconet_hardware.cpp)
     target_link_libraries(test_piconet_hardware PRIVATE beebium_core Catch2::Catch2WithMain)
-    catch_discover_tests(test_piconet_hardware)
+    # Every test in this binary calls SKIP() when BEEBIUM_PICONET_DEVICE
+    # is unset. Catch2 returns exit code 4 ("no tests ran") in that case,
+    # which ctest interprets as failure unless we pass through this flag.
+    catch_discover_tests(test_piconet_hardware EXTRA_ARGS --allow-running-no-tests)
 endif()
 
 # FakePiconetDevice unit tests (behavioural model of Piconet firmware).
@@ -276,7 +279,8 @@ catch_discover_tests(test_piconet_integration)
 if(NOT WIN32)
     add_executable(test_piconet_hardware_network test_piconet_hardware_network.cpp)
     target_link_libraries(test_piconet_hardware_network PRIVATE beebium_core Catch2::Catch2WithMain)
-    catch_discover_tests(test_piconet_hardware_network)
+    # SKIP-on-missing-env-var pattern; see test_piconet_hardware above.
+    catch_discover_tests(test_piconet_hardware_network EXTRA_ARGS --allow-running-no-tests)
 endif()
 
 # PTY-bridged FakePiconetDevice integration tests (parity with the
