@@ -293,6 +293,16 @@ if(NOT WIN32)
     catch_discover_tests(test_piconet_pty_integration)
 endif()
 
+# AUN-bridged Piconet test: two Beebium-style stacks peered on UDP
+# loopback, with no real hardware involved. Closes out the testing-
+# strategy story (Phase 8 of docs/discussion/piconet-feasibility.md).
+add_executable(test_piconet_aun_bridge
+    test_piconet_aun_bridge.cpp
+    piconet/AunBridgePiconetDevice.cpp)
+target_link_libraries(test_piconet_aun_bridge PRIVATE beebium_core Catch2::Catch2WithMain)
+target_include_directories(test_piconet_aun_bridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+catch_discover_tests(test_piconet_aun_bridge)
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
