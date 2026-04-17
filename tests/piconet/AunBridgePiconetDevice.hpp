@@ -59,7 +59,6 @@
 #include "beebium/econet/AunBackend.hpp"
 #include "beebium/econet/piconet/Mode.hpp"
 #include "beebium/econet/piconet/SerialPort.hpp"
-#include "beebium/econet/piconet/TxResult.hpp"
 
 #include <atomic>
 #include <cstdint>

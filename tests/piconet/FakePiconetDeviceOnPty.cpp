@@ -18,7 +18,6 @@
 #include <cerrno>
 #include <cstdint>
 #include <fcntl.h>
-#include <iostream>
 #include <span>
 #include <sys/select.h>
 #include <unistd.h>
