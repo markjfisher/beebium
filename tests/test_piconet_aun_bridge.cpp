@@ -21,6 +21,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #ifdef _WIN32
+// NOMINMAX prevents <windows.h> (pulled in by winsock2.h) from defining
+// `min` and `max` as macros that collide with std::min / std::max used
+// inside FourWayHandshake.hpp. WIN32_LEAN_AND_MEAN cuts other unrelated
+// macros that have caused issues elsewhere.
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #else
 #include <netinet/in.h>
@@ -81,7 +87,8 @@ std::optional<NetworkFrame> wait_for_handshake_frame(
     return std::nullopt;
 }
 
-constexpr std::uint32_t loopback_ip() {
+// Note: not constexpr -- htonl on MSVC is not a constant expression.
+inline std::uint32_t loopback_ip() {
     return htonl(INADDR_LOOPBACK);
 }
 
