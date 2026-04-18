@@ -1188,6 +1188,17 @@ std::optional<int> install_econet(MachineType& machine, const ServerConfig<Machi
             auto station = static_cast<uint8_t>(config.station_number);
 
             if (config.piconet_device_path.has_value()) {
+#ifdef _WIN32
+                // PosixSerialPort is POSIX-only. A Win32SerialPort
+                // implementation is not yet written, so --piconet is
+                // unavailable on Windows builds. Refuse the option with
+                // a clear message rather than silently fall through to
+                // AUN (the user explicitly asked for Piconet).
+                std::cerr << "Error: --piconet is not supported on this Windows build "
+                             "(no Win32SerialPort implementation yet). Use --aun-port "
+                             "instead.\n";
+                return 1;
+#else
                 // Piconet USB transport: open the device and bridge to a real
                 // Econet wire. Mutually exclusive with AUN; the validate_config
                 // step has already ensured that.
@@ -1208,6 +1219,7 @@ std::optional<int> install_econet(MachineType& machine, const ServerConfig<Machi
                 machine.state().memory.econet_socket.enable(
                     station, std::move(backend),
                     true);  // aun_mode = true (FourWayHandshake active)
+#endif
             } else if (config.aun_port.has_value()) {
                 // AUN networking enabled: create UDP socket
                 auto backend = std::make_unique<beebium::AunBackend>(
