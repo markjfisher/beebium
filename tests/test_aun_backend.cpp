@@ -33,28 +33,27 @@ uint32_t loopback_ip() {
     return htonl(INADDR_LOOPBACK);
 }
 
-// Ephemeral ports to avoid conflicts with real services.
-// If bind fails (port in use), tests SKIP rather than FAIL.
-constexpr uint16_t PORT_A = 42001;
-constexpr uint16_t PORT_B = 42002;
-
 // Helper: create two backends peered to each other on loopback.
+// Uses OS-assigned ephemeral ports (local_port=0) so concurrent test
+// processes don't fight over a fixed port number. With SO_REUSEADDR set
+// inside AunBackend, fixed ports would let parallel tests bind the same
+// port simultaneously on Windows and scatter datagrams across processes.
 struct LoopbackPair {
-    std::unique_ptr<AunBackend> a;  // Station 1 on PORT_A
-    std::unique_ptr<AunBackend> b;  // Station 254 on PORT_B
+    std::unique_ptr<AunBackend> a;  // Station 1
+    std::unique_ptr<AunBackend> b;  // Station 254
     bool ready = false;
 
-    LoopbackPair(uint16_t port_a = PORT_A, uint16_t port_b = PORT_B) {
-        a = std::make_unique<AunBackend>(0, 1, port_a);
-        b = std::make_unique<AunBackend>(0, 254, port_b);
+    LoopbackPair() {
+        a = std::make_unique<AunBackend>(0, 1, 0);
+        b = std::make_unique<AunBackend>(0, 254, 0);
 
         if (!a->is_connected() || !b->is_connected()) {
-            return;  // Port conflict — caller should SKIP
+            return;  // Bind failure (rare with port 0) -- caller should SKIP
         }
 
-        // Peer each other on loopback.
-        a->add_peer(0, 254, loopback_ip(), port_b);
-        b->add_peer(0, 1, loopback_ip(), port_a);
+        // Peer each other on loopback using each side's OS-assigned port.
+        a->add_peer(0, 254, loopback_ip(), b->local_port());
+        b->add_peer(0, 1, loopback_ip(), a->local_port());
         ready = true;
     }
 };
@@ -83,28 +82,23 @@ std::optional<NetworkFrame> receive_with_timeout(
 // Construction
 // =============================================================================
 
-TEST_CASE("AunBackend: construction with valid port succeeds", "[econet][aun][backend]") {
-    AunBackend backend(0, 1, PORT_A);
-    if (!backend.is_connected()) {
-        SKIP("Port " << PORT_A << " unavailable");
-    }
-    CHECK(backend.is_connected());
-    CHECK(backend.local_port() == PORT_A);
+TEST_CASE("AunBackend: construction with OS-assigned port succeeds", "[econet][aun][backend]") {
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
+    CHECK(backend.local_port() != 0);
 }
 
 TEST_CASE("AunBackend: duplicate port binding fails gracefully", "[econet][aun][backend]") {
-    AunBackend first(0, 1, PORT_A);
-    if (!first.is_connected()) {
-        SKIP("Port " << PORT_A << " unavailable");
-    }
+    // Bind the first backend to an OS-chosen port, then attempt a second
+    // bind on that same port. SO_REUSEADDR makes this platform-dependent
+    // (it may succeed on Windows/Linux, fail elsewhere); the test asserts
+    // only that neither call crashes and the first stays connected.
+    AunBackend first(0, 1, 0);
+    REQUIRE(first.is_connected());
 
-    // Second backend on same port — should fail to bind.
-    // Note: SO_REUSEADDR allows this on some platforms, so we test behaviour
-    // rather than asserting failure.
-    AunBackend second(0, 2, PORT_A);
-    // If both connected, that's platform-dependent (SO_REUSEADDR) — not an error.
-    // Just verify neither crashed.
+    AunBackend second(0, 2, first.local_port());
     CHECK(first.is_connected());
+    (void)second;
 }
 
 // =============================================================================
@@ -112,15 +106,15 @@ TEST_CASE("AunBackend: duplicate port binding fails gracefully", "[econet][aun][
 // =============================================================================
 
 TEST_CASE("AunBackend: add and remove peers", "[econet][aun][backend]") {
-    AunBackend backend(0, 1, PORT_A);
-    if (!backend.is_connected()) SKIP("Port unavailable");
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
 
     CHECK(backend.peer_count() == 0);
 
-    backend.add_peer(0, 254, loopback_ip(), PORT_B);
+    backend.add_peer(0, 254, loopback_ip(), 40001);
     CHECK(backend.peer_count() == 1);
 
-    backend.add_peer(0, 253, loopback_ip(), PORT_B + 1);
+    backend.add_peer(0, 253, loopback_ip(), 40002);
     CHECK(backend.peer_count() == 2);
 
     backend.remove_peer(0, 254);
@@ -131,8 +125,8 @@ TEST_CASE("AunBackend: add and remove peers", "[econet][aun][backend]") {
 }
 
 TEST_CASE("AunBackend: remove non-existent peer is harmless", "[econet][aun][backend]") {
-    AunBackend backend(0, 1, PORT_A);
-    if (!backend.is_connected()) SKIP("Port unavailable");
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
 
     backend.remove_peer(0, 99);  // Should not crash
     CHECK(backend.peer_count() == 0);
@@ -143,8 +137,8 @@ TEST_CASE("AunBackend: remove non-existent peer is harmless", "[econet][aun][bac
 // =============================================================================
 
 TEST_CASE("AunBackend: receive_frame returns nullopt when no data", "[econet][aun][backend]") {
-    AunBackend backend(0, 1, PORT_A);
-    if (!backend.is_connected()) SKIP("Port unavailable");
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
 
     CHECK_FALSE(backend.receive_frame().has_value());
 }
@@ -292,10 +286,10 @@ TEST_CASE("AunBackend: broadcast is received by peer", "[econet][aun][backend]")
 // =============================================================================
 
 TEST_CASE("AunBackend: send to unknown peer drops silently", "[econet][aun][backend]") {
-    AunBackend backend(0, 1, PORT_A);
-    if (!backend.is_connected()) SKIP("Port unavailable");
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
 
-    // No peers added — should not crash.
+    // No peers added -- should not crash.
     NetworkFrame frame;
     frame.type = FrameType::Unicast;
     frame.dest_net = 0;
@@ -310,13 +304,14 @@ TEST_CASE("AunBackend: send to unknown peer drops silently", "[econet][aun][back
 // =============================================================================
 
 TEST_CASE("AunBackend: receive from unknown peer is discarded", "[econet][aun][backend]") {
-    // Create two backends but don't peer B→A (A is unknown to B).
-    auto a = std::make_unique<AunBackend>(0, 1, PORT_A);
-    auto b = std::make_unique<AunBackend>(0, 254, PORT_B);
-    if (!a->is_connected() || !b->is_connected()) SKIP("Ports unavailable");
+    // Create two backends but don't peer B->A (A is unknown to B).
+    auto a = std::make_unique<AunBackend>(0, 1, 0);
+    auto b = std::make_unique<AunBackend>(0, 254, 0);
+    REQUIRE(a->is_connected());
+    REQUIRE(b->is_connected());
 
     // A knows B, but B does NOT know A.
-    a->add_peer(0, 254, loopback_ip(), PORT_B);
+    a->add_peer(0, 254, loopback_ip(), b->local_port());
 
     NetworkFrame frame;
     frame.type = FrameType::Unicast;
@@ -327,7 +322,7 @@ TEST_CASE("AunBackend: receive from unknown peer is discarded", "[econet][aun][b
     a->send_frame(frame);
     brief_pause();
 
-    // B should discard the packet — sender not in peer table.
+    // B should discard the packet -- sender not in peer table.
     auto received = b->receive_frame();
     CHECK_FALSE(received.has_value());
 }
@@ -484,8 +479,18 @@ TEST_CASE("AunBackend: port 0 binds to an ephemeral port",
 
 TEST_CASE("AunBackend: local_port returns specified port when non-zero",
           "[aun_backend][port]") {
-    AunBackend backend(0, 1, 44001);
-
-    REQUIRE(backend.is_connected());
-    REQUIRE(backend.local_port() == 44001);
+    // Pick a port the OS just told us is free to minimise conflicts with
+    // other test processes. The window between probe and rebind is tiny
+    // but nonzero; if it fails, SKIP rather than flake.
+    uint16_t probed_port;
+    {
+        AunBackend probe(0, 1, 0);
+        REQUIRE(probe.is_connected());
+        probed_port = probe.local_port();
+    }
+    AunBackend backend(0, 1, probed_port);
+    if (!backend.is_connected()) {
+        SKIP("Port " << probed_port << " was reused before we could rebind");
+    }
+    REQUIRE(backend.local_port() == probed_port);
 }
