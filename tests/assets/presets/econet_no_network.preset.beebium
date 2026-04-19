@@ -1,1 +1,1 @@
-{ "name": "Econet No Network", "econet": { "station": 10, "aun_port": null } }
+{ "name": "Econet No Network", "econet": { "station": 10, "transport": { "name": "aun", "parameters": { "port": "none" } } } }

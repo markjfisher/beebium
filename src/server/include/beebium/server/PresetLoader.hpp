@@ -33,17 +33,24 @@ struct PresetStorageConfig {
 };
 
 // Preset Piconet (USB Econet device) sub-configuration. Mutually
-// exclusive with the AUN UDP transport.
+// exclusive with the transport object. Phase 3 will fold this into
+// the generic transport object once Piconet ships as a plugin.
 struct PresetPiconetConfig {
     std::string device_path;  // e.g. /dev/tty.usbmodem101
+};
+
+// Generic Econet transport sub-configuration: names a transport
+// extension and carries its parameters as a flat key/value map.
+struct PresetTransportConfig {
+    std::string name;                            // e.g. "aun"
+    std::map<std::string, std::string> parameters;
 };
 
 // Preset Econet configuration
 struct PresetEconetConfig {
     int station;                          // 1-254
-    std::optional<uint16_t> aun_port;     // port number, or nullopt = no network
-    bool aun_port_set = false;            // true if "aun_port" key was present (distinguishes absent from null)
-    std::optional<PresetPiconetConfig> piconet;  // present means "use Piconet"; mutually exclusive with aun_port
+    std::optional<PresetTransportConfig> transport;  // present means "use this transport"
+    std::optional<PresetPiconetConfig> piconet;      // legacy; mutually exclusive with transport (until phase 3)
 };
 
 // Top-level preset configuration
@@ -197,24 +204,39 @@ inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_se
                               std::to_string(econet.station)};
     }
 
-    // AUN port (optional)
-    if (econet_json.contains("aun_port")) {
-        econet.aun_port_set = true;
-        if (econet_json["aun_port"].is_null()) {
-            econet.aun_port = std::nullopt;  // Explicit no-network
-        } else if (econet_json["aun_port"].is_number_integer()) {
-            econet.aun_port = econet_json["aun_port"].get<uint16_t>();
-        } else {
-            return {std::nullopt, "Econet 'aun_port' must be an integer or null"};
+    // Transport (optional): { name: "<extension-name>", parameters: {...} }
+    if (econet_json.contains("transport")) {
+        const auto& transport_json = econet_json["transport"];
+        if (!transport_json.is_object()) {
+            return {std::nullopt, "Econet 'transport' must be an object"};
         }
+        if (!transport_json.contains("name") || !transport_json["name"].is_string()) {
+            return {std::nullopt, "Econet 'transport' requires a string 'name' field"};
+        }
+        PresetTransportConfig transport;
+        transport.name = transport_json["name"].get<std::string>();
+        if (transport.name.empty()) {
+            return {std::nullopt, "Econet 'transport.name' must not be empty"};
+        }
+        if (transport_json.contains("parameters") && transport_json["parameters"].is_object()) {
+            for (auto& [key, value] : transport_json["parameters"].items()) {
+                if (value.is_string()) {
+                    transport.parameters[key] = value.get<std::string>();
+                } else if (value.is_number_integer()) {
+                    transport.parameters[key] = std::to_string(value.get<int64_t>());
+                } else if (value.is_boolean()) {
+                    transport.parameters[key] = value.get<bool>() ? "true" : "false";
+                }
+            }
+        }
+        econet.transport = std::move(transport);
     }
 
-    // Piconet (optional). Mutually exclusive with aun_port -- both presents
-    // is a load error.
+    // Piconet (optional). Mutually exclusive with transport.
     if (econet_json.contains("piconet")) {
-        if (econet.aun_port_set) {
+        if (econet.transport) {
             return {std::nullopt,
-                    "Econet 'piconet' and 'aun_port' are mutually exclusive"};
+                    "Econet 'piconet' and 'transport' are mutually exclusive"};
         }
         const auto& piconet_json = econet_json["piconet"];
         if (!piconet_json.is_object()) {

@@ -304,28 +304,30 @@ TEST_CASE("load_preset: econet station only", "[preset][load_preset][econet]") {
     REQUIRE(result.success());
     REQUIRE(result.config->econet.has_value());
     REQUIRE(result.config->econet->station == 42);
-    REQUIRE_FALSE(result.config->econet->aun_port_set);
+    REQUIRE_FALSE(result.config->econet->transport.has_value());
 }
 
-TEST_CASE("load_preset: econet with explicit port", "[preset][load_preset][econet]") {
+TEST_CASE("load_preset: econet with AUN transport", "[preset][load_preset][econet]") {
     auto result = load_preset(presets_dirpath() / "econet_with_port.preset.beebium");
 
     REQUIRE(result.success());
     REQUIRE(result.config->econet.has_value());
     REQUIRE(result.config->econet->station == 5);
-    REQUIRE(result.config->econet->aun_port_set);
-    REQUIRE(result.config->econet->aun_port.has_value());
-    REQUIRE(*result.config->econet->aun_port == 12345);
+    REQUIRE(result.config->econet->transport.has_value());
+    REQUIRE(result.config->econet->transport->name == "aun");
+    REQUIRE(result.config->econet->transport->parameters.at("port") == "12345");
 }
 
-TEST_CASE("load_preset: econet no network (null port)", "[preset][load_preset][econet]") {
+TEST_CASE("load_preset: econet AUN with port=none disables network",
+          "[preset][load_preset][econet]") {
     auto result = load_preset(presets_dirpath() / "econet_no_network.preset.beebium");
 
     REQUIRE(result.success());
     REQUIRE(result.config->econet.has_value());
     REQUIRE(result.config->econet->station == 10);
-    REQUIRE(result.config->econet->aun_port_set);
-    REQUIRE_FALSE(result.config->econet->aun_port.has_value());
+    REQUIRE(result.config->econet->transport.has_value());
+    REQUIRE(result.config->econet->transport->name == "aun");
+    REQUIRE(result.config->econet->transport->parameters.at("port") == "none");
 }
 
 TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econet][piconet]") {
@@ -347,12 +349,12 @@ TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econ
     CHECK(result.config->econet->station == 32);
     REQUIRE(result.config->econet->piconet.has_value());
     CHECK(result.config->econet->piconet->device_path == "/dev/tty.usbmodem101");
-    CHECK_FALSE(result.config->econet->aun_port_set);
+    CHECK_FALSE(result.config->econet->transport.has_value());
 
     std::filesystem::remove(temp_filepath);
 }
 
-TEST_CASE("load_preset: piconet and aun_port together is a load error",
+TEST_CASE("load_preset: piconet and transport together is a load error",
           "[preset][load_preset][econet][piconet]") {
     std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_both.preset.beebium";
     {
@@ -361,7 +363,7 @@ TEST_CASE("load_preset: piconet and aun_port together is a load error",
             "name": "Both",
             "econet": {
                 "station": 32,
-                "aun_port": 32768,
+                "transport": { "name": "aun", "parameters": { "port": "32768" } },
                 "piconet": { "device_path": "/dev/tty.usbmodem101" }
             }
         })";
@@ -370,7 +372,7 @@ TEST_CASE("load_preset: piconet and aun_port together is a load error",
     auto result = load_preset(temp_filepath);
     REQUIRE_FALSE(result.success());
     CHECK(result.error.find("piconet") != std::string::npos);
-    CHECK(result.error.find("aun_port") != std::string::npos);
+    CHECK(result.error.find("transport") != std::string::npos);
 
     std::filesystem::remove(temp_filepath);
 }
@@ -531,8 +533,8 @@ TEST_CASE("PresetEconetConfig: default state", "[preset][PresetEconetConfig]") {
     PresetEconetConfig econet{};
 
     REQUIRE(econet.station == 0);
-    REQUIRE_FALSE(econet.aun_port.has_value());
-    REQUIRE_FALSE(econet.aun_port_set);
+    REQUIRE_FALSE(econet.transport.has_value());
+    REQUIRE_FALSE(econet.piconet.has_value());
 }
 
 TEST_CASE("PresetConfig: econet default state", "[preset][PresetConfig]") {

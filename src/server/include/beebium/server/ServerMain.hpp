@@ -323,60 +323,6 @@ inline std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) 
     return {static_cast<uint8_t>(drive), filepath_or_url};
 }
 
-// Parsed AUN map entry: maps Econet address to IP endpoint.
-struct AunMapEntry {
-    uint8_t net;
-    uint8_t stn;
-    uint32_t ip_addr;    // network byte order
-    uint16_t port;       // host byte order
-};
-
-// Parse an --aun-map argument: net.stn:ip[:port]
-// Throws std::runtime_error on invalid input.
-inline AunMapEntry parse_aun_map_arg(const std::string& arg) {
-    auto dot_pos = arg.find('.');
-    if (dot_pos == std::string::npos || dot_pos == 0) {
-        throw std::runtime_error("Invalid --aun-map: " + arg + " (expected net.stn:ip[:port])");
-    }
-
-    auto first_colon = arg.find(':', dot_pos);
-    if (first_colon == std::string::npos) {
-        throw std::runtime_error("Invalid --aun-map: " + arg + " (expected net.stn:ip[:port])");
-    }
-
-    int net = parse_int(arg.substr(0, dot_pos), "--aun-map net");
-    int stn = parse_int(arg.substr(dot_pos + 1, first_colon - dot_pos - 1), "--aun-map stn");
-
-    if (net < 0 || net > 255) {
-        throw std::runtime_error("Invalid --aun-map net: must be 0-255");
-    }
-    if (stn < 0 || stn > 254) {
-        throw std::runtime_error("Invalid --aun-map stn: must be 0-254 (255 is broadcast)");
-    }
-
-    // Parse ip[:port]
-    auto second_colon = arg.find(':', first_colon + 1);
-    std::string ip_str;
-    uint16_t port = beebium::AUN_DEFAULT_PORT;
-    if (second_colon != std::string::npos) {
-        ip_str = arg.substr(first_colon + 1, second_colon - first_colon - 1);
-        port = static_cast<uint16_t>(parse_int(arg.substr(second_colon + 1), "--aun-map port"));
-    } else {
-        ip_str = arg.substr(first_colon + 1);
-    }
-
-    if (ip_str.empty()) {
-        throw std::runtime_error("Invalid --aun-map: " + arg + " (IP address required)");
-    }
-
-    uint32_t ip_addr;
-    if (::inet_pton(AF_INET, ip_str.c_str(), &ip_addr) != 1) {
-        throw std::runtime_error("Invalid --aun-map IP address: " + ip_str);
-    }
-
-    return {static_cast<uint8_t>(net), static_cast<uint8_t>(stn), ip_addr, port};
-}
-
 // Sentinel values to mark slots that should not have default ROMs loaded
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
 constexpr const char* RAM_SLOT_MARKER = "\x01RAM\x01";
@@ -574,11 +520,14 @@ struct ServerConfig {
 
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
-    std::optional<uint16_t> aun_port = beebium::AUN_DEFAULT_PORT;  // nullopt = no network
-    bool aun_port_explicit = false;                   // true if --aun-port was given on the CLI
-                                                      // (distinguishes default value from user choice)
-    std::vector<AunMapEntry> aun_maps;
-    std::optional<std::string> piconet_device_path;   // empty = no Piconet; mutually exclusive with aun_port
+    std::optional<std::string> piconet_device_path;   // empty = no Piconet; mutually exclusive with --aun
+                                                      // (Phase 3 will move Piconet to a plugin extension and
+                                                      // remove this field.)
+    // AUN UDP transport is selected via --aun port=...:map=... which the
+    // CLI parser routes through the generic extension dispatch into an
+    // AunEconetTransportExtension instance. There is no aun_port field
+    // on ServerConfig any more; the port lives in the extension's
+    // config map.
 
     // Startup options (keyboard links)
     // -1 means not set; we use int to detect if user specified a value
@@ -650,13 +599,15 @@ void print_usage(const char* program_name) {
 
     if constexpr (HasEconetSocket<Memory>) {
         std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n"
-                  << "  --aun-port <port|none>   AUN UDP port (default: "
-                  << beebium::AUN_DEFAULT_PORT << ", none = no network)\n"
-                  << "  --aun-map <net.stn:ip[:port]>\n"
-                  << "                           Map Econet address to IP (repeatable)\n"
+                  << "  --aun [port=<n>][:map=<net.stn;ip;port>]...\n"
+                  << "                           AUN UDP transport (default: port="
+                  << beebium::AUN_DEFAULT_PORT << ").\n"
+                  << "                           port=none disables the network.\n"
+                  << "                           map= entries are repeatable; the inner\n"
+                  << "                           separator is ';' (not ':').\n"
                   << "  --piconet <device-path>  Use a Piconet USB device as the Econet transport\n"
                   << "                           (e.g. /dev/tty.usbmodem101). Mutually exclusive\n"
-                  << "                           with --aun-port.\n";
+                  << "                           with --aun.\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -756,11 +707,18 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
         const auto& econet = *preset.econet;
         config.station_number = econet.station;
 
-        if (econet.aun_port_set) {
-            config.aun_port = econet.aun_port;  // may be nullopt (no network)
-            config.aun_port_explicit = true;
+        // Transport: convert preset.econet.transport (if present) into an
+        // ExtensionInstance so it flows through the same dispatch as a
+        // CLI --aun ... or --<plugin> ... flag.
+        if (econet.transport) {
+            typename ServerConfig<MachineType>::ExtensionInstance inst;
+            inst.name = econet.transport->name;
+            inst.config = econet.transport->parameters;
+            config.extension_instances.push_back(std::move(inst));
         }
+
         if (econet.piconet) {
+            // Legacy: Piconet still goes via the old path until phase 3.
             config.piconet_device_path = econet.piconet->device_path;
         }
     }
@@ -950,32 +908,10 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: --station must be 1-254\n";
                 return ExitCode::USAGE;
             }
-        } else if (arg == "--aun-port" && i + 1 < argc) {
-            std::string port_str = argv[++i];
-            config.aun_port_explicit = true;
-            if (port_str == "none") {
-                config.aun_port = std::nullopt;
-            } else {
-                try {
-                    config.aun_port = static_cast<uint16_t>(parse_int(port_str, "--aun-port"));
-                } catch (const std::runtime_error& e) {
-                    std::cerr << "Error: " << e.what() << "\n";
-                    return ExitCode::USAGE;
-                }
-            }
         } else if (arg == "--piconet" && i + 1 < argc) {
             config.piconet_device_path = argv[++i];
             if (config.piconet_device_path->empty()) {
                 std::cerr << "Error: --piconet requires a device path\n";
-                return ExitCode::USAGE;
-            }
-        } else if (arg == "--aun-map" && i + 1 < argc) {
-            try {
-                std::string value = argv[++i];
-                complete_colon_arg(value, i, argc, argv);
-                config.aun_maps.push_back(parse_aun_map_arg(value));
-            } catch (const std::runtime_error& e) {
-                std::cerr << "Error: " << e.what() << "\n";
                 return ExitCode::USAGE;
             }
         } else if (arg == "--provenance-type" && i + 1 < argc) {
@@ -1041,12 +977,11 @@ std::optional<std::string> validate_config(const ServerConfig<MachineType>& conf
         return "--links cannot be combined with --screen-mode or --auto-boot";
     }
 
-    // Econet transports are mutually exclusive. The default value of
-    // aun_port is non-empty (AUN_DEFAULT_PORT), so we can only treat it
-    // as a conflict if the user explicitly set it on the CLI.
-    if (config.piconet_device_path.has_value() && config.aun_port_explicit) {
-        return "--piconet and --aun-port are mutually exclusive";
-    }
+    // Econet transports are mutually exclusive. With AUN now driven via
+    // the extension instance machinery, --aun mutex with --piconet is
+    // enforced at install_econet time (where both the transport
+    // registry and config.piconet_device_path are visible). validate_config
+    // can't see the transport registry.
 
     return std::nullopt;  // Valid
 }
@@ -1231,13 +1166,13 @@ std::optional<int> install_econet(MachineType& machine,
                 // a clear message rather than silently fall through to
                 // AUN (the user explicitly asked for Piconet).
                 std::cerr << "Error: --piconet is not supported on this Windows build "
-                             "(no Win32SerialPort implementation yet). Use --aun-port "
+                             "(no Win32SerialPort implementation yet). Use --aun "
                              "instead.\n";
                 return 1;
 #else
                 // Piconet USB transport: open the device and bridge to a real
-                // Econet wire. Mutually exclusive with AUN; the validate_config
-                // step has already ensured that.
+                // Econet wire. Phase 3 will move this into a proper
+                // EconetTransportExtension plugin; for now it stays inline.
                 const auto& device_path = *config.piconet_device_path;
                 auto serial = std::make_unique<beebium::piconet::PosixSerialPort>(device_path);
                 if (!serial->is_open()) {
@@ -1256,32 +1191,10 @@ std::optional<int> install_econet(MachineType& machine,
                     station, std::move(backend),
                     true);  // aun_mode = true (FourWayHandshake active)
 #endif
-            } else if (config.aun_port.has_value()) {
-                // AUN networking enabled: create UDP socket
-                auto backend = std::make_unique<beebium::AunBackend>(
-                    0,  // local net (always 0 for now)
-                    station,
-                    config.aun_port.value());
-
-                if (!backend->is_connected()) {
-                    std::cerr << "Error: Failed to bind AUN socket to port "
-                              << config.aun_port.value() << "\n";
-                    return 1;
-                }
-
-                for (const auto& entry : config.aun_maps) {
-                    backend->add_peer(entry.net, entry.stn, entry.ip_addr, entry.port);
-                }
-
-                std::cout << "Econet station " << config.station_number
-                          << " on UDP port " << backend->local_port()
-                          << " (" << config.aun_maps.size() << " peers)\n";
-
-                machine.state().memory.econet_socket.enable(
-                    station, std::move(backend),
-                    true);  // aun_mode = true (FourWayHandshake active)
             } else {
-                // --aun-port none: Econet hardware fitted, no network connection
+                // No transport configured: Econet hardware fitted but no
+                // network connection. The ADLC reports "no clock" so the
+                // NFS ROM behaves as if the cable is unplugged.
                 auto backend = std::make_unique<beebium::TestBackend>();
                 backend->set_connected(false);
                 machine.state().memory.econet_socket.enable(
@@ -1289,7 +1202,7 @@ std::optional<int> install_econet(MachineType& machine,
                     true);  // aun_mode = true (FourWayHandshake wraps disconnected backend)
 
                 std::cout << "Econet station " << config.station_number
-                          << " (no network)\n";
+                          << " (no network -- pass --aun port=N to enable AUN)\n";
             }
         }
     } else if (config.station_number >= 1) {

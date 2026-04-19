@@ -304,8 +304,13 @@ TEST_CASE("parse_start_arguments: implicit start (no subcommand)", "[cli][parse_
 }
 
 // ============================================================================
-// Econet transport selection (--piconet vs --aun-port mutual exclusion)
+// Econet transport selection
 // ============================================================================
+//
+// AUN is now driven via the extension instance machinery (--aun port=...)
+// rather than the legacy --aun-port / --aun-map flags. The CLI tests below
+// only exercise the surface that ServerConfig still tracks directly:
+// --piconet (legacy until phase 3) and the extension-instance dispatch.
 
 TEST_CASE("parse_start_arguments: --piconet sets device path",
           "[cli][parse_start_arguments][piconet]") {
@@ -330,59 +335,10 @@ TEST_CASE("parse_start_arguments: --piconet with empty value returns USAGE",
     CHECK(*result == ExitCode::USAGE);
 }
 
-TEST_CASE("parse_start_arguments: bare --aun-port marks aun_port_explicit",
-          "[cli][parse_start_arguments][piconet]") {
-    // The default value of aun_port is non-empty (AUN_DEFAULT_PORT) so we
-    // need a sentinel to know whether the user actually said --aun-port.
-    ServerConfig<MachineType> default_config;
-    CHECK_FALSE(default_config.aun_port_explicit);
-
-    ArgvHelper args{"beebium", "start", "--aun-port", "32768"};
-    ServerConfig<MachineType> config;
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    CHECK(config.aun_port_explicit);
-}
-
 TEST_CASE("validate_config: --piconet alone is valid",
           "[cli][validate_config][piconet]") {
     ServerConfig<MachineType> config;
     config.piconet_device_path = "/dev/tty.usbmodem101";
-    auto err = validate_config<MachineType>(config);
-    CHECK_FALSE(err.has_value());
-}
-
-TEST_CASE("validate_config: --aun-port alone is valid (regression)",
-          "[cli][validate_config][piconet]") {
-    ServerConfig<MachineType> config;
-    config.aun_port = 32768;
-    config.aun_port_explicit = true;
-    auto err = validate_config<MachineType>(config);
-    CHECK_FALSE(err.has_value());
-}
-
-TEST_CASE("validate_config: --piconet and explicit --aun-port together fail",
-          "[cli][validate_config][piconet]") {
-    ServerConfig<MachineType> config;
-    config.piconet_device_path = "/dev/tty.usbmodem101";
-    config.aun_port = 32768;
-    config.aun_port_explicit = true;
-
-    auto err = validate_config<MachineType>(config);
-    REQUIRE(err.has_value());
-    CHECK(err->find("--piconet") != std::string::npos);
-    CHECK(err->find("--aun-port") != std::string::npos);
-}
-
-TEST_CASE("validate_config: --piconet with default aun_port (not explicit) is valid",
-          "[cli][validate_config][piconet]") {
-    // The default ServerConfig has aun_port = AUN_DEFAULT_PORT but
-    // aun_port_explicit = false. Adding --piconet should NOT trigger
-    // mutual-exclusion error -- the user did not actually request AUN.
-    ServerConfig<MachineType> config;
-    config.piconet_device_path = "/dev/tty.usbmodem101";
-    // aun_port retains default; aun_port_explicit stays false.
     auto err = validate_config<MachineType>(config);
     CHECK_FALSE(err.has_value());
 }
@@ -2017,143 +1973,97 @@ TEST_CASE("parse_start_arguments: default station_number is -1", "[cli][parse_st
     REQUIRE(config.station_number == -1);
 }
 
-TEST_CASE("parse_start_arguments: --aun-port sets aun_port", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-port", "42001"};
+// AUN is now selected via the generic extension dispatch:
+//
+//   --aun port=42001:map=0.254;127.0.0.1;32768
+//
+// parse_start_arguments turns that into one ExtensionInstance with
+// name="aun" and a config map. The actual binding/peer-table setup is
+// delegated to AunEconetTransportExtension::create_backend, exercised
+// in test_aun_econet_transport_extension.cpp.
+
+namespace {
+const typename ServerConfig<MachineType>::ExtensionInstance*
+find_extension_instance(const ServerConfig<MachineType>& config,
+                        std::string_view name) {
+    for (const auto& inst : config.extension_instances) {
+        if (inst.name == name) return &inst;
+    }
+    return nullptr;
+}
+}
+
+TEST_CASE("parse_start_arguments: --aun port=42001 produces aun extension instance",
+          "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun", "port=42001"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
 
     REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_port == 42001);
+    auto* inst = find_extension_instance(config, "aun");
+    REQUIRE(inst != nullptr);
+    REQUIRE(inst->config.at("port") == "42001");
 }
 
-TEST_CASE("parse_start_arguments: --aun-port accepts hex", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-port", "0x8000"};
+TEST_CASE("parse_start_arguments: --aun port=none stores 'none' in extension config",
+          "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun", "port=none"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
 
     REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_port == 32768);
+    auto* inst = find_extension_instance(config, "aun");
+    REQUIRE(inst != nullptr);
+    REQUIRE(inst->config.at("port") == "none");
 }
 
-TEST_CASE("parse_start_arguments: default aun_port is AUN_DEFAULT_PORT", "[cli][parse_start_arguments][econet]") {
+TEST_CASE("parse_start_arguments: --aun map= is repeatable and accumulates",
+          "[cli][parse_start_arguments][econet]") {
+    ArgvHelper args{"beebium", "start", "--aun",
+                    "port=42001:map=0.254;192.168.1.10;32768:map=0.1;192.168.1.20;42002"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    auto* inst = find_extension_instance(config, "aun");
+    REQUIRE(inst != nullptr);
+    REQUIRE(inst->config.at("port") == "42001");
+    // List parameters are joined with ',' by the extension arg parser.
+    REQUIRE(inst->config.at("map") ==
+            "0.254;192.168.1.10;32768,0.1;192.168.1.20;42002");
+}
+
+TEST_CASE("parse_start_arguments: default has no aun extension instance",
+          "[cli][parse_start_arguments][econet]") {
+    // With the cutover, just specifying --station no longer auto-enables
+    // AUN. The user must explicitly say --aun to bind a UDP socket.
     ArgvHelper args{"beebium", "start"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
 
     REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_port == beebium::AUN_DEFAULT_PORT);
+    REQUIRE(find_extension_instance(config, "aun") == nullptr);
 }
 
-TEST_CASE("parse_start_arguments: --aun-map with default port", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:192.168.1.10"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_maps.size() == 1);
-    CHECK(config.aun_maps[0].net == 0);
-    CHECK(config.aun_maps[0].stn == 254);
-    CHECK(config.aun_maps[0].port == beebium::AUN_DEFAULT_PORT);
-}
-
-TEST_CASE("parse_start_arguments: --aun-map with explicit port", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:192.168.1.10:42001"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_maps.size() == 1);
-    CHECK(config.aun_maps[0].net == 0);
-    CHECK(config.aun_maps[0].stn == 254);
-    CHECK(config.aun_maps[0].port == 42001);
-}
-
-TEST_CASE("parse_start_arguments: multiple --aun-map entries accumulate", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start",
-                    "--aun-map", "0.254:192.168.1.10",
-                    "--aun-map", "0.1:192.168.1.20:42002"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_maps.size() == 2);
-    CHECK(config.aun_maps[0].stn == 254);
-    CHECK(config.aun_maps[1].stn == 1);
-    CHECK(config.aun_maps[1].port == 42002);
-}
-
-TEST_CASE("parse_start_arguments: --aun-map missing dot returns USAGE", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-map", "254:192.168.1.10"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE(result.has_value());
-    REQUIRE(*result == ExitCode::USAGE);
-}
-
-TEST_CASE("parse_start_arguments: --aun-map missing colon returns USAGE", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-map", "0.254"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE(result.has_value());
-    REQUIRE(*result == ExitCode::USAGE);
-}
-
-TEST_CASE("parse_start_arguments: --aun-map invalid IP returns USAGE", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-map", "0.254:not.an.ip"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE(result.has_value());
-    REQUIRE(*result == ExitCode::USAGE);
-}
-
-TEST_CASE("parse_start_arguments: --aun-port none sets aun_port to nullopt", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start", "--aun-port", "none"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE_FALSE(config.aun_port.has_value());
-}
-
-TEST_CASE("parse_start_arguments: --aun-port has_value by default", "[cli][parse_start_arguments][econet]") {
-    ArgvHelper args{"beebium", "start"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.aun_port.has_value());
-    REQUIRE(config.aun_port.value() == beebium::AUN_DEFAULT_PORT);
-}
-
-TEST_CASE("parse_start_arguments: all Econet options combined", "[cli][parse_start_arguments][econet]") {
+TEST_CASE("parse_start_arguments: --aun and --station combined",
+          "[cli][parse_start_arguments][econet]") {
     ArgvHelper args{"beebium", "start",
                     "--station", "1",
-                    "--aun-port", "42001",
-                    "--aun-map", "0.254:127.0.0.1"};
+                    "--aun", "port=42001:map=0.254;127.0.0.1;32768"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
 
     REQUIRE_FALSE(result.has_value());
     REQUIRE(config.station_number == 1);
-    REQUIRE(config.aun_port == 42001);
-    REQUIRE(config.aun_maps.size() == 1);
-    CHECK(config.aun_maps[0].net == 0);
-    CHECK(config.aun_maps[0].stn == 254);
+    auto* inst = find_extension_instance(config, "aun");
+    REQUIRE(inst != nullptr);
+    REQUIRE(inst->config.at("port") == "42001");
+    REQUIRE(inst->config.at("map") == "0.254;127.0.0.1;32768");
 }
 
 // ============================================================================

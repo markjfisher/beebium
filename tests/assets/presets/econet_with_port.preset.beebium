@@ -1,1 +1,1 @@
-{ "name": "Econet With Port", "econet": { "station": 5, "aun_port": 12345 } }
+{ "name": "Econet With Port", "econet": { "station": 5, "transport": { "name": "aun", "parameters": { "port": "12345" } } } }
