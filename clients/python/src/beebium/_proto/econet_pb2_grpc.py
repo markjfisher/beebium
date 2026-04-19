@@ -70,26 +70,6 @@ class EconetServiceStub(object):
                 request_serializer=econet__pb2.SetStationIdRequest.SerializeToString,
                 response_deserializer=econet__pb2.SetStationIdResponse.FromString,
                 _registered_method=True)
-        self.SetConnected = channel.unary_unary(
-                '/beebium.EconetService/SetConnected',
-                request_serializer=econet__pb2.SetConnectedRequest.SerializeToString,
-                response_deserializer=econet__pb2.SetConnectedResponse.FromString,
-                _registered_method=True)
-        self.AddPeer = channel.unary_unary(
-                '/beebium.EconetService/AddPeer',
-                request_serializer=econet__pb2.AddPeerRequest.SerializeToString,
-                response_deserializer=econet__pb2.AddPeerResponse.FromString,
-                _registered_method=True)
-        self.RemovePeer = channel.unary_unary(
-                '/beebium.EconetService/RemovePeer',
-                request_serializer=econet__pb2.RemovePeerRequest.SerializeToString,
-                response_deserializer=econet__pb2.RemovePeerResponse.FromString,
-                _registered_method=True)
-        self.ListPeers = channel.unary_unary(
-                '/beebium.EconetService/ListPeers',
-                request_serializer=econet__pb2.ListPeersRequest.SerializeToString,
-                response_deserializer=econet__pb2.ListPeersResponse.FromString,
-                _registered_method=True)
         self.SubscribeEconetEvents = channel.unary_stream(
                 '/beebium.EconetService/SubscribeEconetEvents',
                 request_serializer=econet__pb2.SubscribeEconetEventsRequest.SerializeToString,
@@ -132,34 +112,6 @@ class EconetServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SetConnected(self, request, context):
-        """Connect or disconnect the network cable (takes effect immediately).
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def AddPeer(self, request, context):
-        """Add an Econet address <-> UDP endpoint peer mapping.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def RemovePeer(self, request, context):
-        """Remove a peer mapping by Econet address.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def ListPeers(self, request, context):
-        """Enumerate all configured AUN peers.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def SubscribeEconetEvents(self, request, context):
         """Stream Econet events (frame activity, handshake changes, connection state).
         Reserved for future implementation.
@@ -190,26 +142,6 @@ def add_EconetServiceServicer_to_server(servicer, server):
                     servicer.SetStationId,
                     request_deserializer=econet__pb2.SetStationIdRequest.FromString,
                     response_serializer=econet__pb2.SetStationIdResponse.SerializeToString,
-            ),
-            'SetConnected': grpc.unary_unary_rpc_method_handler(
-                    servicer.SetConnected,
-                    request_deserializer=econet__pb2.SetConnectedRequest.FromString,
-                    response_serializer=econet__pb2.SetConnectedResponse.SerializeToString,
-            ),
-            'AddPeer': grpc.unary_unary_rpc_method_handler(
-                    servicer.AddPeer,
-                    request_deserializer=econet__pb2.AddPeerRequest.FromString,
-                    response_serializer=econet__pb2.AddPeerResponse.SerializeToString,
-            ),
-            'RemovePeer': grpc.unary_unary_rpc_method_handler(
-                    servicer.RemovePeer,
-                    request_deserializer=econet__pb2.RemovePeerRequest.FromString,
-                    response_serializer=econet__pb2.RemovePeerResponse.SerializeToString,
-            ),
-            'ListPeers': grpc.unary_unary_rpc_method_handler(
-                    servicer.ListPeers,
-                    request_deserializer=econet__pb2.ListPeersRequest.FromString,
-                    response_serializer=econet__pb2.ListPeersResponse.SerializeToString,
             ),
             'SubscribeEconetEvents': grpc.unary_stream_rpc_method_handler(
                     servicer.SubscribeEconetEvents,
@@ -329,114 +261,6 @@ class EconetService(object):
             '/beebium.EconetService/SetStationId',
             econet__pb2.SetStationIdRequest.SerializeToString,
             econet__pb2.SetStationIdResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SetConnected(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.EconetService/SetConnected',
-            econet__pb2.SetConnectedRequest.SerializeToString,
-            econet__pb2.SetConnectedResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def AddPeer(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.EconetService/AddPeer',
-            econet__pb2.AddPeerRequest.SerializeToString,
-            econet__pb2.AddPeerResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RemovePeer(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.EconetService/RemovePeer',
-            econet__pb2.RemovePeerRequest.SerializeToString,
-            econet__pb2.RemovePeerResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def ListPeers(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.EconetService/ListPeers',
-            econet__pb2.ListPeersRequest.SerializeToString,
-            econet__pb2.ListPeersResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -19,23 +19,19 @@ service EconetService {
     // Set the station ID (takes effect on next machine reset).
     rpc SetStationId(SetStationIdRequest) returns (SetStationIdResponse);
 
-    // DEPRECATED: AUN-specific. Prefer AunService.SetConnected
-    // (defined in src/extensions/aun/aun.proto).
-    rpc SetConnected(SetConnectedRequest) returns (SetConnectedResponse);
-
-    // DEPRECATED: AUN-specific. Prefer AunService.AddPeer.
-    rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
-
-    // DEPRECATED: AUN-specific. Prefer AunService.RemovePeer.
-    rpc RemovePeer(RemovePeerRequest) returns (RemovePeerResponse);
-
-    // DEPRECATED: AUN-specific. Prefer AunService.ListPeers.
-    rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
-
     // Stream Econet events (frame activity, handshake changes, connection state).
     // Reserved for future implementation.
     rpc SubscribeEconetEvents(SubscribeEconetEventsRequest) returns (stream EconetEvent);
 }
+
+// Note: The four AUN-specific RPCs (SetConnected, AddPeer, RemovePeer,
+// ListPeers) and their messages (SetConnectedRequest/Response,
+// AddPeerRequest/Response, RemovePeerRequest/Response,
+// ListPeersRequest/Response, EconetPeer) used to live here. They moved
+// to AunService in src/extensions/aun/aun.proto so EconetService can
+// stay transport-agnostic. AUN status fields (aun_port, peer_count) on
+// GetEconetStatusResponse below are likewise gone -- consult
+// AunService.GetStatus for them.
 
 // --- Status ---
 
@@ -56,14 +52,16 @@ message GetEconetStatusResponse {
     // True if AUN mode is active (FourWayHandshake present).
     bool aun_mode = 4;
 
-    // True if network link is active (UDP socket bound and connected).
+    // True if network link is active (e.g. UDP socket bound + cable
+    // not "unplugged" via AunService.SetConnected for AUN, or USB
+    // device responsive for Piconet). Set from the backend's generic
+    // is_connected().
     bool connected = 5;
 
-    // Local AUN UDP port (0 if not in AUN mode or disabled).
-    uint32 aun_port = 6;
-
-    // Number of configured AUN peers.
-    uint32 peer_count = 7;
+    // Field 6 (aun_port) and field 7 (peer_count) were removed; AUN
+    // status now lives on AunService.GetStatus.
+    reserved 6, 7;
+    reserved "aun_port", "peer_count";
 
     // MC6854 ADLC register state (populated when enabled).
     AdlcStatus adlc = 10;
@@ -94,13 +92,10 @@ message GetEconetStatusResponse {
     uint64 ticks_with_timer_active = 23;
     uint64 read_stretch_parasite_ticks = 24;
 
-    // Populated only when the active backend is PiconetBackend.
-    PiconetStatus piconet = 25;
-}
-
-message PiconetStatus {
-    string device_path = 1;   // POSIX device path (e.g. /dev/tty.usbmodem101)
-    bool serial_open = 2;     // True if the SerialPort fd is currently open
+    // Field 25 (piconet) was removed; Piconet status now lives on
+    // PiconetService.GetStatus (in src/extensions/piconet/piconet_service.proto).
+    reserved 25;
+    reserved "piconet";
 }
 
 message AdlcStatus {
@@ -171,63 +166,13 @@ message SetStationIdResponse {
     string error = 2;
 }
 
-// --- Network Cable ---
-
-message SetConnectedRequest {
-    // True to connect (plug in cable), false to disconnect (unplug cable).
-    bool connected = 1;
-}
-
-message SetConnectedResponse {
-    bool success = 1;
-    string error = 2;
-}
-
-// --- Peer Management ---
-
-message AddPeerRequest {
-    // Econet network number (0-127).
-    uint32 net = 1;
-
-    // Econet station number (1-254).
-    uint32 stn = 2;
-
-    // Dotted-quad IP address (e.g. "192.168.1.100").
-    string ip_address = 3;
-
-    // UDP port (0 = use AUN default 32768).
-    uint32 port = 4;
-}
-
-message AddPeerResponse {
-    bool success = 1;
-    string error = 2;
-}
-
-message RemovePeerRequest {
-    uint32 net = 1;
-    uint32 stn = 2;
-}
-
-message RemovePeerResponse {
-    bool success = 1;
-    string error = 2;
-}
-
-message ListPeersRequest {
-    // Empty - returns all peers.
-}
-
-message ListPeersResponse {
-    repeated EconetPeer peers = 1;
-}
-
-message EconetPeer {
-    uint32 net = 1;
-    uint32 stn = 2;
-    string ip_address = 3;
-    uint32 port = 4;
-}
+// --- Network Cable + Peer Management ---
+//
+// The SetConnected/AddPeer/RemovePeer/ListPeers RPCs and their
+// messages (SetConnectedRequest/Response, AddPeerRequest/Response,
+// RemovePeerRequest/Response, ListPeersRequest/Response, EconetPeer)
+// moved to AunService in src/extensions/aun/aun.proto. They were
+// always AUN-specific; their new home is the AUN extension's service.
 
 // --- Event Streaming (reserved for future implementation) ---
 

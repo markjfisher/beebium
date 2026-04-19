@@ -10,7 +10,17 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Econet/AUN networking management for the beebium client."""
+"""Transport-agnostic Econet hardware management for the beebium client.
+
+Transport-specific operations (peer table, cable plug, status query)
+live on the relevant transport service:
+
+  - AUN: see ``beebium.aun.Aun`` (wraps AunService)
+  - Piconet: see ``beebium.piconet.Piconet`` (wraps PiconetService)
+
+Use ``Beebium.transport`` (``EconetTransport``) to discover which one
+is active.
+"""
 
 from __future__ import annotations
 
@@ -51,15 +61,18 @@ class HandshakeStatus:
 
 @dataclass(frozen=True)
 class EconetStatus:
-    """Econet hardware status."""
+    """Transport-agnostic Econet hardware status.
+
+    For AUN-specific status (port, peer count) use
+    ``beebium.aun.Aun.status``. For Piconet-specific status (device
+    path, serial open) use ``beebium.piconet.Piconet.status``.
+    """
 
     has_econet_socket: bool
     enabled: bool
     station_id: int
     aun_mode: bool
     connected: bool
-    aun_port: int
-    peer_count: int
     adlc: AdlcStatus | None
     handshake: HandshakeStatus | None
     tick_count: int = 0
@@ -77,33 +90,29 @@ class EconetStatus:
     read_stretch_parasite_ticks: int = 0
 
 
-@dataclass(frozen=True)
-class PeerInfo:
-    """AUN peer mapping."""
-
-    net: int
-    stn: int
-    ip_address: str
-    port: int
-
-
 class Econet:
-    """Econet/AUN networking management.
+    """Transport-agnostic Econet hardware management.
 
-    Provides access to Econet hardware configuration, status queries,
-    and AUN peer management.
+    Provides access to Econet hardware fitting / removal, station ID,
+    and the transport-agnostic status query (ADLC registers, handshake
+    state, frame counters).
+
+    Transport-specific operations (peer table, cable plug, port info)
+    live on a separate client class -- see ``beebium.aun.Aun`` and
+    ``beebium.piconet.Piconet``.
 
     Usage:
-        # Enable Econet with station ID 254
+        # Enable Econet with station ID 254 (binds an AUN socket)
         port = bbc.econet.enable(station_id=254)
-        print(f"AUN port: {port}")
 
-        # Add a peer
-        bbc.econet.add_peer(net=0, stn=1, ip_address="192.168.1.100")
+        # Discover which transport is active
+        active = bbc.transport.active
+        if active and active.name == "aun":
+            bbc.aun.add_peer(net=0, stn=1, ip_address="192.168.1.100")
 
-        # Check status
+        # Check the generic status
         status = bbc.econet.status
-        print(f"Station {status.station_id}, peers: {status.peer_count}")
+        print(f"Station {status.station_id}, enabled={status.enabled}")
 
         # Disable
         bbc.econet.disable()
@@ -158,8 +167,6 @@ class Econet:
             station_id=response.station_id,
             aun_mode=response.aun_mode,
             connected=response.connected,
-            aun_port=response.aun_port,
-            peer_count=response.peer_count,
             adlc=adlc,
             handshake=handshake,
             tick_count=response.tick_count,
@@ -186,21 +193,6 @@ class Econet:
     def station_id(self) -> int:
         """Station number (1-254, 0 if disabled)."""
         return self.status.station_id
-
-    @property
-    def peers(self) -> list[PeerInfo]:
-        """List all configured AUN peers."""
-        request = econet_pb2.ListPeersRequest()
-        response = self._stub.ListPeers(request)
-        return [
-            PeerInfo(
-                net=peer.net,
-                stn=peer.stn,
-                ip_address=peer.ip_address,
-                port=peer.port,
-            )
-            for peer in response.peers
-        ]
 
     def enable(
         self,
@@ -249,24 +241,6 @@ class Econet:
         if not response.success:
             raise EconetError(response.error)
 
-    def set_connected(self, connected: bool) -> None:
-        """Connect or disconnect the network cable.
-
-        Simulates plugging/unplugging the Econet cable. Takes effect
-        immediately — DCD and CTS update on the next ADLC tick.
-
-        Args:
-            connected: True to connect, False to disconnect.
-
-        Raises:
-            EconetError: If the operation fails (e.g. Econet not enabled,
-                or not in AUN mode).
-        """
-        request = econet_pb2.SetConnectedRequest(connected=connected)
-        response = self._stub.SetConnected(request)
-        if not response.success:
-            raise EconetError(response.error)
-
     def disable(self) -> None:
         """Remove Econet hardware (disable station, close AUN socket).
 
@@ -278,45 +252,3 @@ class Econet:
         if not response.success:
             raise EconetError(response.error)
 
-    def add_peer(
-        self,
-        net: int,
-        stn: int,
-        ip_address: str,
-        port: int = 0,
-    ) -> None:
-        """Add an Econet address to UDP endpoint peer mapping.
-
-        Args:
-            net: Econet network number (0-127).
-            stn: Econet station number (1-254).
-            ip_address: Dotted-quad IP address.
-            port: UDP port (0 = use AUN default 32768).
-
-        Raises:
-            EconetError: If the operation fails.
-        """
-        request = econet_pb2.AddPeerRequest(
-            net=net,
-            stn=stn,
-            ip_address=ip_address,
-            port=port,
-        )
-        response = self._stub.AddPeer(request)
-        if not response.success:
-            raise EconetError(response.error)
-
-    def remove_peer(self, net: int, stn: int) -> None:
-        """Remove a peer mapping by Econet address.
-
-        Args:
-            net: Econet network number (0-127).
-            stn: Econet station number (1-254).
-
-        Raises:
-            EconetError: If the operation fails.
-        """
-        request = econet_pb2.RemovePeerRequest(net=net, stn=stn)
-        response = self._stub.RemovePeer(request)
-        if not response.success:
-            raise EconetError(response.error)

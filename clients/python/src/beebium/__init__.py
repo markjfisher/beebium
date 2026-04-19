@@ -27,13 +27,15 @@ Usage:
         bbc.keyboard.press_return()
 """
 
+from beebium.aun import AunStatus, PeerInfo
 from beebium.client import Beebium
 from beebium.econet import (
     AdlcStatus,
     EconetStatus,
     HandshakeStatus,
-    PeerInfo,
 )
+from beebium.econet_transport import TransportInfo
+from beebium.piconet import PiconetStatus
 from beebium.exceptions import (
     BeebiumError,
     ConnectionError,
@@ -65,6 +67,7 @@ DEFAULT_GRPC_PORT = 0xBEEB
 __all__ = [
     "AdlcStatus",
     "AdvertisementState",
+    "AunStatus",
     "Beebium",
     "BeebiumError",
     "ConnectionError",
@@ -77,6 +80,7 @@ __all__ = [
     "MachineIdentity",
     "MemoryAccessError",
     "PeerInfo",
+    "PiconetStatus",
     "Provenance",
     "ServerNotFoundError",
     "ServerStartupError",
@@ -86,5 +90,6 @@ __all__ = [
     "ShutdownMode",
     "ShutdownResponse",
     "TimeoutError",
+    "TransportInfo",
     "__version__",
 ]

@@ -17,10 +17,13 @@ from __future__ import annotations
 import grpc
 
 from beebium._proto import (
+    aun_pb2_grpc,
     debugger_pb2_grpc,
     disc_pb2_grpc,
     econet_pb2_grpc,
+    econet_transport_pb2_grpc,
     keyboard_pb2_grpc,
+    piconet_service_pb2_grpc,
     system_pb2_grpc,
     tube_pb2_grpc,
     video_pb2_grpc,
@@ -51,6 +54,9 @@ class Connection:
         self._device_inspection_stub: debugger_pb2_grpc.DeviceInspectionStub | None = None
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
+        self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
+        self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
+        self._piconet_stub: piconet_service_pb2_grpc.PiconetServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
@@ -79,6 +85,9 @@ class Connection:
         self._device_inspection_stub = debugger_pb2_grpc.DeviceInspectionStub(self._channel)
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
+        self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
+        self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
+        self._piconet_stub = piconet_service_pb2_grpc.PiconetServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
@@ -144,6 +153,27 @@ class Connection:
         return self._econet_stub
 
     @property
+    def econet_transport_stub(self) -> econet_transport_pb2_grpc.EconetTransportServiceStub:
+        """The EconetTransportService stub (transport discovery)."""
+        if self._econet_transport_stub is None:
+            raise ConnectionError("Not connected")
+        return self._econet_transport_stub
+
+    @property
+    def aun_stub(self) -> aun_pb2_grpc.AunServiceStub:
+        """The AunService stub (AUN-specific operations)."""
+        if self._aun_stub is None:
+            raise ConnectionError("Not connected")
+        return self._aun_stub
+
+    @property
+    def piconet_stub(self) -> piconet_service_pb2_grpc.PiconetServiceStub:
+        """The PiconetService stub (Piconet-specific operations)."""
+        if self._piconet_stub is None:
+            raise ConnectionError("Not connected")
+        return self._piconet_stub
+
+    @property
     def parasite_debugger_stub(self) -> debugger_pb2_grpc.ParasiteDebuggerControlStub:
         """The ParasiteDebuggerControl service stub."""
         if self._parasite_debugger_stub is None:
@@ -167,6 +197,9 @@ class Connection:
             self._device_inspection_stub = None
             self._disc_stub = None
             self._econet_stub = None
+            self._econet_transport_stub = None
+            self._aun_stub = None
+            self._piconet_stub = None
             self._keyboard_stub = None
             self._system_stub = None
             self._tube_stub = None

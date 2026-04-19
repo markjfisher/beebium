@@ -1,0 +1,96 @@
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+#
+# This file is part of Beebium.
+#
+# Beebium is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. Beebium is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License along with Beebium.
+# If not, see <https://www.gnu.org/licenses/>.
+
+"""Unit tests for the EconetTransport client wrapper."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from beebium.econet_transport import EconetTransport, TransportInfo
+
+
+class MockTransport:
+    def __init__(self, name, description, active):
+        self.name = name
+        self.description = description
+        self.active = active
+
+
+class MockListResponse:
+    def __init__(self, transports=None):
+        self.transports = transports if transports is not None else []
+
+
+class MockGetActiveResponse:
+    def __init__(self, active=None):
+        self._active = active
+
+    def HasField(self, name):  # noqa: N802 (proto API)
+        return name == "active" and self._active is not None
+
+    @property
+    def active(self):
+        return self._active
+
+
+@pytest.fixture
+def mock_stub():
+    stub = MagicMock()
+    stub.ListTransports.return_value = MockListResponse()
+    stub.GetActiveTransport.return_value = MockGetActiveResponse()
+    return stub
+
+
+@pytest.fixture
+def transport(mock_stub):
+    return EconetTransport(mock_stub)
+
+
+def test_list_empty(transport):
+    assert transport.list() == []
+
+
+def test_list_returns_active_aun(mock_stub, transport):
+    mock_stub.ListTransports.return_value = MockListResponse(
+        transports=[MockTransport("aun", "AUN UDP transport", True)]
+    )
+    transports = transport.list()
+    assert len(transports) == 1
+    assert isinstance(transports[0], TransportInfo)
+    assert transports[0].name == "aun"
+    assert transports[0].active is True
+
+
+def test_active_none_when_unset(transport):
+    assert transport.active is None
+
+
+def test_active_returns_aun(mock_stub, transport):
+    mock_stub.GetActiveTransport.return_value = MockGetActiveResponse(
+        active=MockTransport("aun", "AUN UDP transport", True)
+    )
+    active = transport.active
+    assert active is not None
+    assert active.name == "aun"
+    assert active.active is True
+
+
+def test_active_returns_piconet(mock_stub, transport):
+    mock_stub.GetActiveTransport.return_value = MockGetActiveResponse(
+        active=MockTransport("piconet", "Piconet USB-CDC bridge", True)
+    )
+    active = transport.active
+    assert active is not None
+    assert active.name == "piconet"

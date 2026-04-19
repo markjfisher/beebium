@@ -21,7 +21,6 @@ from beebium.econet import (
     Econet,
     EconetStatus,
     HandshakeStatus,
-    PeerInfo,
 )
 from beebium.exceptions import EconetError
 
@@ -82,8 +81,6 @@ class MockGetEconetStatusResponse:
         station_id=0,
         aun_mode=False,
         connected=False,
-        aun_port=0,
-        peer_count=0,
         adlc=None,
         handshake=None,
         tick_count=0,
@@ -105,8 +102,6 @@ class MockGetEconetStatusResponse:
         self.station_id = station_id
         self.aun_mode = aun_mode
         self.connected = connected
-        self.aun_port = aun_port
-        self.peer_count = peer_count
         self.adlc = adlc
         self.handshake = handshake
         self.tick_count = tick_count
@@ -150,53 +145,12 @@ class MockDisableEconetResponse:
         self.error = error
 
 
-class MockAddPeerResponse:
-    """Mock AddPeer response."""
-
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
-class MockRemovePeerResponse:
-    """Mock RemovePeer response."""
-
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
 class MockSetStationIdResponse:
     """Mock SetStationId response."""
 
     def __init__(self, success=True, error=""):
         self.success = success
         self.error = error
-
-
-class MockSetConnectedResponse:
-    """Mock SetConnected response."""
-
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
-class MockEconetPeer:
-    """Mock EconetPeer from proto."""
-
-    def __init__(self, net=0, stn=254, ip_address="127.0.0.1", port=32768):
-        self.net = net
-        self.stn = stn
-        self.ip_address = ip_address
-        self.port = port
-
-
-class MockListPeersResponse:
-    """Mock ListPeers response."""
-
-    def __init__(self, peers=None):
-        self.peers = peers if peers is not None else []
 
 
 @pytest.fixture
@@ -207,10 +161,6 @@ def mock_stub():
     stub.EnableEconet.return_value = MockEnableEconetResponse()
     stub.DisableEconet.return_value = MockDisableEconetResponse()
     stub.SetStationId.return_value = MockSetStationIdResponse()
-    stub.SetConnected.return_value = MockSetConnectedResponse()
-    stub.AddPeer.return_value = MockAddPeerResponse()
-    stub.RemovePeer.return_value = MockRemovePeerResponse()
-    stub.ListPeers.return_value = MockListPeersResponse()
     return stub
 
 
@@ -232,8 +182,6 @@ class TestEconetStatus:
         assert status.station_id == 0
         assert status.aun_mode is False
         assert status.connected is False
-        assert status.aun_port == 0
-        assert status.peer_count == 0
         assert status.adlc is None
         assert status.handshake is None
 
@@ -244,8 +192,6 @@ class TestEconetStatus:
             station_id=254,
             aun_mode=True,
             connected=True,
-            aun_port=32768,
-            peer_count=3,
             adlc=MockAdlcStatus(
                 cr1=0x40,
                 sr1=0x01,
@@ -399,107 +345,6 @@ class TestSetStationId:
         assert request.station_id == 123
 
 
-class TestSetConnected:
-    """Tests for the set_connected method."""
-
-    def test_set_connected_true(self, mock_stub, econet):
-        """set_connected(True) succeeds and passes arg."""
-        econet.set_connected(True)
-        mock_stub.SetConnected.assert_called_once()
-        request = mock_stub.SetConnected.call_args[0][0]
-        assert request.connected is True
-
-    def test_set_connected_false(self, mock_stub, econet):
-        """set_connected(False) succeeds and passes arg."""
-        econet.set_connected(False)
-        request = mock_stub.SetConnected.call_args[0][0]
-        assert request.connected is False
-
-    def test_set_connected_failure_raises(self, mock_stub, econet):
-        """set_connected raises EconetError on failure."""
-        mock_stub.SetConnected.return_value = MockSetConnectedResponse(
-            success=False, error="Econet is not in AUN mode"
-        )
-        with pytest.raises(EconetError, match="Econet is not in AUN mode"):
-            econet.set_connected(True)
-
-
-class TestAddPeer:
-    """Tests for the add_peer method."""
-
-    def test_add_peer(self, mock_stub, econet):
-        """add_peer passes args to stub."""
-        econet.add_peer(net=1, stn=254, ip_address="192.168.1.100", port=32768)
-        mock_stub.AddPeer.assert_called_once()
-        request = mock_stub.AddPeer.call_args[0][0]
-        assert request.net == 1
-        assert request.stn == 254
-        assert request.ip_address == "192.168.1.100"
-        assert request.port == 32768
-
-    def test_add_peer_default_port(self, mock_stub, econet):
-        """add_peer defaults port to 0."""
-        econet.add_peer(net=0, stn=1, ip_address="10.0.0.1")
-        request = mock_stub.AddPeer.call_args[0][0]
-        assert request.port == 0
-
-    def test_add_peer_failure_raises(self, mock_stub, econet):
-        """add_peer raises EconetError on failure."""
-        mock_stub.AddPeer.return_value = MockAddPeerResponse(
-            success=False, error="Invalid station number"
-        )
-        with pytest.raises(EconetError, match="Invalid station number"):
-            econet.add_peer(net=0, stn=0, ip_address="127.0.0.1")
-
-
-class TestRemovePeer:
-    """Tests for the remove_peer method."""
-
-    def test_remove_peer(self, mock_stub, econet):
-        """remove_peer passes args to stub."""
-        econet.remove_peer(net=1, stn=254)
-        mock_stub.RemovePeer.assert_called_once()
-        request = mock_stub.RemovePeer.call_args[0][0]
-        assert request.net == 1
-        assert request.stn == 254
-
-    def test_remove_peer_failure_raises(self, mock_stub, econet):
-        """remove_peer raises EconetError on failure."""
-        mock_stub.RemovePeer.return_value = MockRemovePeerResponse(
-            success=False, error="Peer not found"
-        )
-        with pytest.raises(EconetError, match="Peer not found"):
-            econet.remove_peer(net=0, stn=99)
-
-
-class TestPeers:
-    """Tests for the peers property."""
-
-    def test_peers_empty(self, econet):
-        """peers returns empty list when no peers configured."""
-        assert econet.peers == []
-
-    def test_peers_populated(self, mock_stub, econet):
-        """peers returns list of PeerInfo."""
-        mock_stub.ListPeers.return_value = MockListPeersResponse(
-            peers=[
-                MockEconetPeer(net=0, stn=1, ip_address="192.168.1.1", port=32768),
-                MockEconetPeer(net=1, stn=254, ip_address="10.0.0.100", port=9999),
-            ]
-        )
-        peers = econet.peers
-        assert len(peers) == 2
-        assert isinstance(peers[0], PeerInfo)
-        assert peers[0].net == 0
-        assert peers[0].stn == 1
-        assert peers[0].ip_address == "192.168.1.1"
-        assert peers[0].port == 32768
-        assert peers[1].net == 1
-        assert peers[1].stn == 254
-        assert peers[1].ip_address == "10.0.0.100"
-        assert peers[1].port == 9999
-
-
 class TestDataclasses:
     """Tests for dataclass properties."""
 
@@ -511,19 +356,11 @@ class TestDataclasses:
             station_id=0,
             aun_mode=False,
             connected=False,
-            aun_port=0,
-            peer_count=0,
             adlc=None,
             handshake=None,
         )
         with pytest.raises(AttributeError):
             status.enabled = True
-
-    def test_peer_info_is_frozen(self):
-        """PeerInfo is immutable."""
-        peer = PeerInfo(net=0, stn=1, ip_address="127.0.0.1", port=32768)
-        with pytest.raises(AttributeError):
-            peer.stn = 2
 
     def test_adlc_status_is_frozen(self):
         """AdlcStatus is immutable."""
@@ -545,14 +382,3 @@ class TestDataclasses:
         with pytest.raises(AttributeError):
             hs.stage = "scout"
 
-    def test_peer_info_equality(self):
-        """Two PeerInfo with same values are equal."""
-        p1 = PeerInfo(net=0, stn=1, ip_address="127.0.0.1", port=32768)
-        p2 = PeerInfo(net=0, stn=1, ip_address="127.0.0.1", port=32768)
-        assert p1 == p2
-
-    def test_peer_info_inequality(self):
-        """PeerInfo with different values are not equal."""
-        p1 = PeerInfo(net=0, stn=1, ip_address="127.0.0.1", port=32768)
-        p2 = PeerInfo(net=0, stn=2, ip_address="127.0.0.1", port=32768)
-        assert p1 != p2

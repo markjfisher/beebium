@@ -29,7 +29,10 @@ from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
 from beebium.disc import Disc
+from beebium.aun import Aun
 from beebium.econet import Econet
+from beebium.econet_transport import EconetTransport
+from beebium.piconet import Piconet
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
 from beebium.memory import Memory
@@ -97,6 +100,9 @@ class Beebium:
         self._system: System | None = None
         self._disc: Disc | None = None
         self._econet: Econet | None = None
+        self._econet_transport: EconetTransport | None = None
+        self._aun: Aun | None = None
+        self._piconet: Piconet | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
 
@@ -314,10 +320,46 @@ class Beebium:
 
     @property
     def econet(self) -> Econet:
-        """Access Econet networking management."""
+        """Access transport-agnostic Econet hardware management.
+
+        Use :attr:`transport` to discover which Econet transport is
+        active, then drive transport-specific operations through
+        :attr:`aun` or :attr:`piconet`.
+        """
         if self._econet is None:
             self._econet = Econet(self._connection.econet_stub)
         return self._econet
+
+    @property
+    def transport(self) -> EconetTransport:
+        """Discover which Econet transport extension is active."""
+        if self._econet_transport is None:
+            self._econet_transport = EconetTransport(
+                self._connection.econet_transport_stub
+            )
+        return self._econet_transport
+
+    @property
+    def aun(self) -> Aun:
+        """Access AUN-specific Econet operations.
+
+        Only meaningful when ``transport.active.name == "aun"``.
+        Calling AUN methods when AUN isn't the active transport
+        returns an error.
+        """
+        if self._aun is None:
+            self._aun = Aun(self._connection.aun_stub)
+        return self._aun
+
+    @property
+    def piconet(self) -> Piconet:
+        """Access Piconet-specific operations.
+
+        Only meaningful when ``transport.active.name == "piconet"``.
+        """
+        if self._piconet is None:
+            self._piconet = Piconet(self._connection.piconet_stub)
+        return self._piconet
 
     @property
     def tube(self) -> Tube:
