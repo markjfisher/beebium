@@ -959,6 +959,16 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_aun_service)
 
+    # EconetTransportService discovery tests
+    add_executable(test_grpc_econet_transport_service
+        test_grpc_econet_transport_service.cpp)
+    target_link_libraries(test_grpc_econet_transport_service PRIVATE
+        beebium_service
+        beebium_ext_aun
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_econet_transport_service)
+
     # Piconet service tests (POSIX-only -- the plugin only builds on POSIX
     # and the test fixture uses a PTY-backed FakePiconetDevice).
     if(NOT WIN32)

@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package beebium;
+
+// Transport-agnostic discovery service: tells clients which Econet
+// transport extension is currently active on this server. Lets a
+// client decide whether to use AunService, PiconetService, or some
+// future transport-specific service without having to probe via
+// trial-and-error or read transport-specific fields off other RPCs.
+//
+// Modelled on PeripheralExtensionService.ListExtensions for
+// peripheral extensions; this is the equivalent for econet
+// transports.
+service EconetTransportService {
+    // List all econet transports known to this server, with an "active"
+    // flag indicating which (if any) is currently producing the
+    // NetworkBackend behind EconetSocket. For BBC Micro / Master /
+    // Master Compact machines at most one transport is active; future
+    // multi-ADLC machine types (e.g. Acorn Econet Bridge) may have
+    // multiple actives.
+    rpc ListTransports(ListTransportsRequest) returns (ListTransportsResponse);
+
+    // Convenience: return the single active transport, or an empty
+    // response if no transport is configured. Equivalent to filtering
+    // ListTransports for active=true and assuming at most one result.
+    rpc GetActiveTransport(GetActiveTransportRequest)
+        returns (GetActiveTransportResponse);
+}
+
+message EconetTransport {
+    // Canonical extension name (e.g. "aun", "piconet"). Identifies
+    // both the transport and the gRPC service the client should use
+    // for transport-specific operations:
+    //   "aun"     -> AunService (src/extensions/aun/aun.proto)
+    //   "piconet" -> PiconetService (src/extensions/piconet/piconet_service.proto)
+    string name = 1;
+
+    // Human-readable description from the extension manifest.
+    string description = 2;
+
+    // True if this transport is the one currently producing the
+    // backend behind EconetSocket. False means the extension is
+    // available but not active (or not loaded at all).
+    bool active = 3;
+}
+
+message ListTransportsRequest {
+    // Empty.
+}
+
+message ListTransportsResponse {
+    // Currently this returns only the loaded transport extensions
+    // (one entry per extension passed via --aun / --piconet etc.).
+    // Future expansion could include "available but not loaded"
+    // entries -- transports the server knows about but the user
+    // didn't select. The "active" flag distinguishes the operational
+    // one in either case.
+    repeated EconetTransport transports = 1;
+}
+
+message GetActiveTransportRequest {
+    // Empty.
+}
+
+message GetActiveTransportResponse {
+    // Empty when no transport is active (Econet hardware fitted but
+    // no --aun / --piconet etc. given).
+    EconetTransport active = 1;
+}

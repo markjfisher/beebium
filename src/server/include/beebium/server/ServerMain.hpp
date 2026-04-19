@@ -15,6 +15,7 @@
 
 #include "BuiltinExtensions.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
+#include "beebium/service/EconetTransportService.hpp"
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
@@ -1687,19 +1688,25 @@ public:
                 std::cout << "\n";
             }
 
-            // Create core discovery service for frontends to enumerate extensions
+            // Create core discovery services for frontends to enumerate
+            // extensions. PeripheralExtensionService lists peripheral
+            // extensions; EconetTransportService lists econet transport
+            // extensions and identifies which is active.
             beebium::service::PeripheralExtensionServiceImpl peripheral_extension_service(
                 extension_registry);
+            beebium::service::EconetTransportServiceImpl econet_transport_service(
+                transport_registry);
 
             // Collect all extension-provided services plus the discovery
-            // service. Both peripheral and transport extensions can
-            // contribute services; AunService comes via the transport
-            // registry.
+            // services. Both peripheral and transport extensions can
+            // contribute services; AunService / PiconetService come via
+            // the transport registry's grpc_services hook.
             auto extension_services = extension_registry.collect_grpc_services();
             for (auto* svc : transport_registry.collect_grpc_services()) {
                 extension_services.push_back(svc);
             }
             extension_services.push_back(&peripheral_extension_service);
+            extension_services.push_back(&econet_transport_service);
 
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";
