@@ -14,6 +14,7 @@
 #define BEEBIUM_SERVER_SERVER_MAIN_HPP
 
 #include "BuiltinExtensions.hpp"
+#include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
@@ -1173,13 +1174,54 @@ std::optional<int> install_disc_controller(MachineType& machine, const ServerCon
 
 // Install Econet hardware for machines with Econet sockets.
 // Returns exit code on error, nullopt on success.
+//
+// transport_registry is populated by start() from any econet-transport
+// extension instances; if it contains a transport, install_econet uses
+// it in preference to the legacy --aun-port / --piconet flags. Phase 2
+// keeps the legacy paths working as a transitional measure; phase 3
+// removes them.
 template<typename MachineType>
-std::optional<int> install_econet(MachineType& machine, const ServerConfig<MachineType>& config) {
+std::optional<int> install_econet(MachineType& machine,
+                                   const ServerConfig<MachineType>& config,
+                                   beebium::EconetTransportRegistry& transport_registry) {
     using Memory = typename MachineType::Memory;
 
     if constexpr (HasEconetSocket<Memory>) {
         if (config.station_number >= 1) {
             auto station = static_cast<uint8_t>(config.station_number);
+
+            // Prefer an econet-transport extension if one was configured.
+            // BBC machine policy: at most one transport. (Future Acorn
+            // Econet Bridge machine type would relax this.)
+            if (!transport_registry.empty()) {
+                if (transport_registry.size() > 1) {
+                    std::cerr << "Error: BBC machines support at most one Econet "
+                                 "transport (got " << transport_registry.size() << ").\n";
+                    return 1;
+                }
+                auto& transport = *transport_registry.extensions().front();
+                auto backend = transport.create_backend(station);
+                if (backend) {
+                    std::cout << "Econet station " << config.station_number
+                              << " via transport extension '"
+                              << transport.name() << "'\n";
+                    machine.state().memory.econet_socket.enable(
+                        station, std::move(backend),
+                        true);  // FourWayHandshake active
+                } else {
+                    // Transport configured but unavailable (e.g. port=none,
+                    // bind failed): install a disconnected TestBackend so
+                    // the ADLC reports "no clock" cleanly.
+                    auto stub = std::make_unique<beebium::TestBackend>();
+                    stub->set_connected(false);
+                    machine.state().memory.econet_socket.enable(
+                        station, std::move(stub), true);
+                    std::cout << "Econet station " << config.station_number
+                              << " (transport '" << transport.name()
+                              << "' configured but unavailable -- no network)\n";
+                }
+                return std::nullopt;
+            }
 
             if (config.piconet_device_path.has_value()) {
 #ifdef _WIN32
@@ -1565,8 +1607,52 @@ public:
                 return *exit_code;
             }
 
+            // Build the Econet transport registry from any econet-transport
+            // extension instances. Done before install_econet so the
+            // transport is ready when the machine first reads the ADLC.
+            // Transport-extension instances are removed from
+            // config.extension_instances; the later peripheral-extension
+            // load loop only sees peripherals.
+            beebium::EconetTransportRegistry transport_registry;
+            {
+                std::vector<typename ServerConfig<MachineType>::ExtensionInstance> remaining;
+                remaining.reserve(config.extension_instances.size());
+                for (auto& inst : config.extension_instances) {
+                    const auto* entry = beebium::builtin_extensions::find(inst.name);
+                    if (entry && entry->manifest.extension_kind == "econet-transport") {
+                        if (inst.config.find("id") == inst.config.end()) {
+                            inst.config["id"] = generate_uuid_v4();
+                        }
+                        std::cout << "Loading transport: " << entry->manifest.name
+                                  << " (id=" << inst.config["id"] << ")\n";
+                        for (const auto& [k, v] : inst.config) {
+                            if (k != "id") {
+                                std::cout << "  " << k << "=" << v << "\n";
+                            }
+                        }
+                        auto loaded = entry->factory();
+                        loaded->set_manifest(entry->manifest);
+                        loaded->set_config(std::move(inst.config));
+                        auto* transport = dynamic_cast<beebium::EconetTransportExtension*>(
+                            loaded.get());
+                        if (!transport) {
+                            std::cerr << "Error: built-in '" << entry->manifest.name
+                                      << "' has extension_kind=econet-transport but is "
+                                         "not an EconetTransportExtension instance.\n";
+                            return 1;
+                        }
+                        (void)loaded.release();
+                        transport_registry.add(
+                            std::unique_ptr<beebium::EconetTransportExtension>(transport));
+                    } else {
+                        remaining.push_back(std::move(inst));
+                    }
+                }
+                config.extension_instances = std::move(remaining);
+            }
+
             // Install Econet hardware
-            if (auto exit_code = install_econet(machine, config)) {
+            if (auto exit_code = install_econet(machine, config, transport_registry)) {
                 return *exit_code;
             }
 
@@ -2989,7 +3075,11 @@ public:
             if (auto exit_code = install_disc_controller(machine, config)) {
                 return *exit_code;
             }
-            if (auto exit_code = install_econet(machine, config)) {
+            // Screenshot capture uses no extensions; pass an empty
+            // transport registry so install_econet falls back to legacy
+            // --aun-port / --piconet handling (typically neither is set).
+            beebium::EconetTransportRegistry transport_registry;
+            if (auto exit_code = install_econet(machine, config, transport_registry)) {
                 return *exit_code;
             }
             if (auto exit_code = load_disc_images(machine, config)) {

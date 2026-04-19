@@ -23,6 +23,7 @@
 // vector returned by entries().
 
 #include "SecondProcessor65C02Extension.hpp"
+#include "beebium/econet/aun/AunEconetTransportExtension.hpp"
 #include "beebium/extension/Extension.hpp"
 #include "beebium/extension/ExtensionManifest.hpp"
 
@@ -54,7 +55,28 @@ inline std::vector<Entry> make_entries() {
             {"rom", "filepath", "Path to 2KB Tube client ROM image",
              -1, false, false, ""});
         result.push_back({std::move(m),
-                          [] { return std::make_unique<SecondProcessor65C02Extension>(); }});
+                          [] { return std::unique_ptr<Extension>(
+                              new SecondProcessor65C02Extension()); }});
+    }
+
+    // AUN UDP econet transport.
+    {
+        ExtensionManifest m;
+        m.name = "aun";
+        m.description = "AUN (Acorn Universal Networking) UDP econet transport";
+        m.cli_name = "aun";
+        m.extension_kind = "econet-transport";
+        m.parameters.push_back(
+            {"port", "string",
+             "UDP port to bind (decimal, or 'none' to disable)",
+             -1, false, false, "32768"});
+        m.parameters.push_back(
+            {"map", "string",
+             "Peer entry 'net.stn;ip;port' (repeatable)",
+             -1, false, /*is_list=*/true, ""});
+        result.push_back({std::move(m),
+                          [] { return std::unique_ptr<Extension>(
+                              new AunEconetTransportExtension()); }});
     }
 
     return result;
