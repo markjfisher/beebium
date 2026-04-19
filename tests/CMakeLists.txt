@@ -969,6 +969,14 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_econet_transport_service)
 
+    # ExtensionUiService schema round-trip tests (no server needed)
+    add_executable(test_extension_ui_proto test_extension_ui_proto.cpp)
+    target_link_libraries(test_extension_ui_proto PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_extension_ui_proto)
+
     # Piconet service tests (POSIX-only -- the plugin only builds on POSIX
     # and the test fixture uses a PTY-backed FakePiconetDevice).
     if(NOT WIN32)

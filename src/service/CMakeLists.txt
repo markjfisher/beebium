@@ -14,6 +14,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/econet_transport.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/tube.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/peripheral_extension.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/extension_ui.proto
 )
 
 # Output directories for generated code

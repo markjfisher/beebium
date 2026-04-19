@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package beebium;
+
+// Extension UI framework: a small, server-driven UI vocabulary that lets
+// any extension (peripheral, econet transport, future kinds) describe a
+// control panel as a typed tree of Controls. Frontends render the tree
+// natively and post user actions back through Dispatch.
+//
+// Design notes: docs/discussion/extension-ui-architecture.md
+//
+// The model is server-driven (Phoenix-LiveView style): the server holds
+// the extension's state and computes a View; the client is a thin
+// renderer with no business state. All user actions route through one
+// Dispatch RPC -- there are no per-control RPCs.
+service ExtensionUiService {
+    // Open a long-lived stream of View updates for one extension. The
+    // server pushes a fresh View whenever the extension's state changes
+    // (the first View is delivered immediately on subscription). The
+    // stream ends with NOT_FOUND if the named extension does not exist
+    // (or is unloaded mid-session).
+    rpc SubscribeView(SubscribeViewRequest) returns (stream View);
+
+    // Post a user action back to the server. The server validates the
+    // request (extension exists, control id is known for the current
+    // view revision, payload type matches the control type, revision is
+    // current) and then runs the extension's handle_event. The result of
+    // the action is observable on the SubscribeView stream as a new
+    // View, not in the response.
+    rpc Dispatch(DispatchRequest) returns (DispatchResponse);
+}
+
+// --- View envelope ---
+
+message SubscribeViewRequest {
+    // Canonical extension name (e.g. "piconet", "aun") -- matches the
+    // 'name' field on EconetTransportService.EconetTransport and the
+    // equivalent on PeripheralExtensionService.
+    string extension_name = 1;
+}
+
+message View {
+    // Echoed back so clients can route updates by extension if they
+    // multiplex several streams onto one handler.
+    string extension_name = 1;
+
+    // Monotonic per-extension counter, bumped before each push. Clients
+    // must echo this in DispatchRequest so the server can reject stale
+    // events that target a control the server has already replaced.
+    uint64 view_revision = 2;
+
+    // Root of the control tree. By convention this is a Group, but any
+    // single Control is valid (e.g. a single Label for an extension that
+    // has nothing interactive to expose).
+    Control root = 3;
+}
+
+// --- Controls ---
+//
+// Seven primitives, deliberately small. Together with nested Groups
+// they cover the panels we have today (Piconet, AUN) and are expected to
+// cover ~90% of any future extension. Stretching the alphabet should
+// hurt slightly each time -- that's the forcing function for keeping it
+// small.
+
+message Control {
+    // Stable id assigned by the extension. Used by Dispatch to address
+    // the control and by clients to patch widgets in place across pushes
+    // (instead of rebuilding the panel each time).
+    string id = 1;
+
+    oneof control {
+        Label     label      = 2;
+        Indicator indicator  = 3;
+        Toggle    toggle     = 4;
+        Button    button     = 5;
+        Choice    choice     = 6;
+        TextInput text_input = 7;
+        Group     group      = 8;
+    }
+}
+
+// Read-only text. Frontends render as a static label.
+message Label {
+    string text = 1;
+}
+
+// Read-only state badge. The 'state' field is semantic -- the frontend
+// chooses how to render it (colour, icon, accessibility hint) per its
+// platform conventions. The 'text' field is a short caption shown next
+// to the indicator.
+message Indicator {
+    enum State {
+        UNKNOWN = 0;
+        OK = 1;
+        WARN = 2;
+        ERROR = 3;
+    }
+    State state = 1;
+    string text = 2;
+}
+
+// Bool. Dispatch payload: bool_value.
+message Toggle {
+    string label = 1;
+    bool value = 2;
+}
+
+// Fire-only command. Dispatch payload: none (oneof unset).
+message Button {
+    string label = 1;
+    bool enabled = 2;
+}
+
+// Enum with a fixed set of options. Dispatch payload: index_value
+// (zero-based index into 'options').
+message Choice {
+    string label = 1;
+    repeated string options = 2;
+    uint32 selected_index = 3;
+}
+
+// Free-form string. Dispatch payload: string_value. Frontends decide
+// dispatch timing (per-keystroke vs on-blur); the protocol does not
+// constrain that.
+message TextInput {
+    string label = 1;
+    string value = 2;
+    string placeholder = 3;
+}
+
+// Structural primitive: an ordered sequence of child Controls with an
+// optional label. Renderers display children in their toolkit's natural
+// vertical flow; nested Groups produce nested sections.
+message Group {
+    // Absent (oneof not set) means an unlabelled group; renderers should
+    // not render a heading. Present-but-empty means an empty heading,
+    // which is usually a mistake -- prefer to omit the field entirely.
+    optional string label = 1;
+    repeated Control controls = 2;
+}
+
+// --- Dispatch ---
+
+message DispatchRequest {
+    // Which extension the event targets (matches View.extension_name).
+    string extension_name = 1;
+
+    // Which control inside that extension's view (matches Control.id).
+    string control_id = 2;
+
+    // The view_revision the client was looking at when it generated the
+    // event. The server rejects events with a stale revision so that a
+    // client cannot act on a control that the server has already
+    // replaced in the next pushed View.
+    uint64 view_revision = 3;
+
+    // Typed payload, chosen to match the target Control's type:
+    //   Toggle    -> bool_value
+    //   TextInput -> string_value
+    //   Choice    -> index_value
+    //   Button    -> none (leave the oneof unset)
+    //
+    // Validation: the server rejects requests whose payload variant
+    // does not match the addressed control's type.
+    oneof payload {
+        bool   bool_value   = 4;
+        string string_value = 5;
+        uint32 index_value  = 6;
+    }
+}
+
+message DispatchResponse {
+    // True if the event was accepted and handle_event ran. False means
+    // the request was rejected by the validation gauntlet -- 'error'
+    // describes why (stale event, unknown control, payload-type
+    // mismatch, unknown extension).
+    bool   accepted = 1;
+    string error    = 2;
+}
