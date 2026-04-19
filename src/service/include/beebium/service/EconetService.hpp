@@ -304,6 +304,12 @@ public:
         }
     }
 
+    // DEPRECATED: AUN-specific. New clients should use AunService.SetConnected
+    // (defined in src/extensions/aun/aun.proto). The implementation here
+    // dynamic_casts to AunBackend; the AunService implementation gets the
+    // same backend cleanly via AunEconetTransportExtension::backend(). The
+    // duplicate will be removed once the Python and macOS Swift clients
+    // migrate to AunService.
     grpc::Status SetConnected(
         grpc::ServerContext* context,
         const SetConnectedRequest* request,
@@ -340,6 +346,7 @@ public:
         }
     }
 
+    // DEPRECATED: AUN-specific. Prefer AunService.AddPeer.
     grpc::Status AddPeer(
         grpc::ServerContext* context,
         const AddPeerRequest* request,
@@ -393,6 +400,7 @@ public:
         }
     }
 
+    // DEPRECATED: AUN-specific. Prefer AunService.RemovePeer.
     grpc::Status RemovePeer(
         grpc::ServerContext* context,
         const RemovePeerRequest* request,
@@ -432,6 +440,7 @@ public:
         }
     }
 
+    // DEPRECATED: AUN-specific. Prefer AunService.ListPeers.
     grpc::Status ListPeers(
         grpc::ServerContext* context,
         const ListPeersRequest* request,

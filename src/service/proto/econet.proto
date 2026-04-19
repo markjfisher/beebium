@@ -19,16 +19,17 @@ service EconetService {
     // Set the station ID (takes effect on next machine reset).
     rpc SetStationId(SetStationIdRequest) returns (SetStationIdResponse);
 
-    // Connect or disconnect the network cable (takes effect immediately).
+    // DEPRECATED: AUN-specific. Prefer AunService.SetConnected
+    // (defined in src/extensions/aun/aun.proto).
     rpc SetConnected(SetConnectedRequest) returns (SetConnectedResponse);
 
-    // Add an Econet address <-> UDP endpoint peer mapping.
+    // DEPRECATED: AUN-specific. Prefer AunService.AddPeer.
     rpc AddPeer(AddPeerRequest) returns (AddPeerResponse);
 
-    // Remove a peer mapping by Econet address.
+    // DEPRECATED: AUN-specific. Prefer AunService.RemovePeer.
     rpc RemovePeer(RemovePeerRequest) returns (RemovePeerResponse);
 
-    // Enumerate all configured AUN peers.
+    // DEPRECATED: AUN-specific. Prefer AunService.ListPeers.
     rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
 
     // Stream Econet events (frame activity, handshake changes, connection state).

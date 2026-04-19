@@ -950,6 +950,15 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_econet)
 
+    # AUN service tests (the AUN-specific RPCs that used to live on EconetService)
+    add_executable(test_grpc_aun_service test_grpc_aun_service.cpp)
+    target_link_libraries(test_grpc_aun_service PRIVATE
+        beebium_service
+        beebium_ext_aun
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_aun_service)
+
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)
     target_link_libraries(test_grpc_system PRIVATE
