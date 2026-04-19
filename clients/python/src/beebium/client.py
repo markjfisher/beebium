@@ -32,6 +32,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.extension_ui import ExtensionUi
 from beebium.piconet import Piconet
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
@@ -103,6 +104,7 @@ class Beebium:
         self._econet_transport: EconetTransport | None = None
         self._aun: Aun | None = None
         self._piconet: Piconet | None = None
+        self._extension_ui: ExtensionUi | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
 
@@ -360,6 +362,19 @@ class Beebium:
         if self._piconet is None:
             self._piconet = Piconet(self._connection.piconet_stub)
         return self._piconet
+
+    @property
+    def extension_ui(self) -> ExtensionUi:
+        """Access the server-driven Extension UI framework.
+
+        Each loaded extension may declare a control panel via its
+        ``ExtensionUi`` hook on the server side; this property exposes
+        the gRPC SubscribeView / Dispatch path. See
+        ``docs/discussion/extension-ui-architecture.md``.
+        """
+        if self._extension_ui is None:
+            self._extension_ui = ExtensionUi(self._connection.extension_ui_stub)
+        return self._extension_ui
 
     @property
     def tube(self) -> Tube:

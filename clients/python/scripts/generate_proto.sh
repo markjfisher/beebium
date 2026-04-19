@@ -18,6 +18,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROTO_DIR="${SCRIPT_DIR}/../../../src/service/proto"
 EXTENSIONS_DIR="${SCRIPT_DIR}/../../../src/extensions"
+EXTENSION_API_PROTO_DIR="${SCRIPT_DIR}/../../../src/core/extension-api/proto"
 OUT_DIR="${SCRIPT_DIR}/../src/beebium/_proto"
 
 # Ensure output directory exists
@@ -25,11 +26,13 @@ mkdir -p "$OUT_DIR"
 
 echo "Generating protobuf code from $PROTO_DIR (and extension protos) to $OUT_DIR..."
 
-# Service-layer protos under src/service/proto and extension protos
-# under src/extensions/<name>/. Both are passed in one protoc
-# invocation so cross-file imports (none today, but possible) resolve.
+# Service-layer protos under src/service/proto, extension-api protos
+# under src/core/extension-api/proto, and extension protos under
+# src/extensions/<name>/. All passed in one protoc invocation so
+# cross-file imports (none today, but possible) resolve.
 python -m grpc_tools.protoc \
     -I "$PROTO_DIR" \
+    -I "$EXTENSION_API_PROTO_DIR" \
     -I "$EXTENSIONS_DIR/aun" \
     -I "$EXTENSIONS_DIR/piconet" \
     --python_out="$OUT_DIR" \
@@ -42,6 +45,7 @@ python -m grpc_tools.protoc \
     "$PROTO_DIR/disc.proto" \
     "$PROTO_DIR/econet.proto" \
     "$PROTO_DIR/econet_transport.proto" \
+    "$EXTENSION_API_PROTO_DIR/extension_ui.proto" \
     "$EXTENSIONS_DIR/aun/aun.proto" \
     "$EXTENSIONS_DIR/piconet/piconet_service.proto"
 
