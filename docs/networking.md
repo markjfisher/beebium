@@ -1,6 +1,6 @@
 # Econet and AUN Networking Support
 
-This document covers the design, research, and implementation of Econet and AUN (Acorn Universal Networking) support in Beebium. The core networking implementation (MC68B54 ADLC emulation, EconetSocket, FourWayHandshake) is complete with three transport backends — `AunBackend` (UDP/IP), `PiconetBackend` (USB to real Econet wire), and `TestBackend` (in-process test double). It has been validated end-to-end with a real BBC Microcomputer talking via real Econet to a Beebium-emulated Level 3 File Server. See `docs/econet-integration.md` for the remaining integration work (presets, gRPC, service discovery, clients).
+This document covers the design, research, and implementation of Econet and AUN (Acorn Universal Networking) support in Beebium. The core networking implementation (MC68B54 ADLC emulation, EconetSocket, FourWayHandshake) is complete, with the wire-side transport pluggable through the `EconetTransportExtension` extension point: AUN ships as a built-in extension, Piconet as a discoverable plugin, and `TestBackend` as the in-process test double. The architecture has been validated end-to-end with a real BBC Microcomputer talking via real Econet to a Beebium-emulated Level 3 File Server. See `docs/econet-integration.md` for the remaining integration work (presets, gRPC, service discovery, clients).
 
 ## Overview
 
@@ -19,17 +19,37 @@ AUN (Acorn Universal Networking) encapsulates Econet protocols over TCP/IP, orig
 
 ## Network Transport Backends
 
-Beebium decouples the emulated ADLC from the underlying transport via the `NetworkBackend` abstraction (`src/core/include/beebium/econet/NetworkBackend.hpp`). Three implementations live in the core today, selected at server startup:
+Beebium decouples the emulated ADLC from the underlying transport via the `NetworkBackend` abstraction (`src/core/include/beebium/econet/NetworkBackend.hpp`). Concrete backends are produced by `EconetTransportExtension` instances (`src/core/include/beebium/extension/EconetTransportExtension.hpp`) — see "Econet Transport Extensions" below for the extension-point design.
 
 | Backend | CLI flag | Transport | Use case |
 |---|---|---|---|
-| `AunBackend` | `--aun-port <n>` (default port 32768) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
-| `PiconetBackend` | `--piconet <device-path>` | USB-CDC serial to a Piconet board | Talk to real BBCs / Acorn fileservers / printers over a real Econet wire |
-| `TestBackend` | (not exposed; selected automatically by `--aun-port none`) | In-process; no I/O | Hardware fitted, no transport — NFS ROM sees "No Clock". Also the test double for unit tests. |
+| `AunBackend` (built-in `aun` extension) | `--aun [port=<n>][:map=<net.stn;ip;port>]...` (default `port=32768`) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
+| `PiconetBackend` (`piconet` plugin extension) | `--piconet device_path=<path>` | USB-CDC serial to a Piconet board | Talk to real BBCs / Acorn fileservers / printers over a real Econet wire (POSIX-only) |
+| `TestBackend` | selected automatically by `--aun port=none` or by passing `--station <n>` with no transport flag | In-process; no I/O | Hardware fitted, no transport — NFS ROM sees "No Clock". Also the test double for unit tests. |
 
-**Mutual exclusion:** `--piconet` and `--aun-port` cannot both be specified. The choice of transport is established at server startup; runtime swapping is not supported.
+**Mutual exclusion:** `--piconet` and `--aun` cannot both be specified. The choice of transport is established at server startup; runtime swapping is not supported. BBC Micro / Master / Master Compact machines accept at most one transport. (The transport registry is intentionally non-singleton so future machine types like the Acorn Econet Bridge — two memory-mapped ADLCs — could hold two; per-machine cardinality is enforced at machine-setup time.)
 
-**Configuration via preset JSON** mirrors the CLI: the `econet` section accepts either `aun_port` *or* a `piconet` sub-object with a `device_path` field. Co-presence is a load-time error.
+**Configuration via preset JSON** mirrors the CLI through a single `econet.transport` object that names the transport extension and carries its parameters:
+
+```json
+"econet": {
+  "station": 32,
+  "transport": {
+    "name": "aun",
+    "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+  }
+}
+```
+
+`name` selects the extension (`aun` or `piconet`); `parameters` is a flat key/value map. The legacy preset keys `econet.aun_port`, `econet.aun_map`, and `econet.piconet.device_path` were removed; presets that still use them fail to load with a message pointing at the new shape.
+
+### Inner separators in `--aun map=`
+
+The extension argument parser tokenises `--<extension> a:b:c` on `:`, which conflicts with the obvious `0.254:127.0.0.1:32768` peer-map format. To avoid backslash-escaping, AUN's `map=` parameter uses `;` as the inner separator: `map=0.254;127.0.0.1;32768`. Repeated `map=` tokens accumulate (the `is_list` schema flag) so multiple peers can be specified on one CLI invocation:
+
+```
+--aun port=32768:map=0.254;127.0.0.1;32769:map=0.253;127.0.0.1;32770
+```
 
 ### `FourWayHandshake` is always in the path
 
@@ -44,6 +64,62 @@ All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = 
 ### Background: known gaps
 
 `PiconetBackend` does not support **inbound immediate operations other than MachinePeek** — the firmware's host-driven REPLY path was abandoned upstream and Piconet handles MachinePeek inline with a canned response. Standard fileserver and printer traffic is unaffected. Documented in detail in `docs/discussion/piconet-feasibility.md` ("Immediate Operations Limitation").
+
+## Econet Transport Extensions
+
+Beebium's transports are *extensions*, dispatched through the same machinery that handles peripheral extensions (acorn-rtc, acorn-scsi, etc.). The split between built-in and plugin extensions and the C++ class hierarchy that supports it:
+
+- `Extension` (`src/core/include/beebium/extension/Extension.hpp`) — common base. Holds the manifest and instance config; provides `name()`, `description()`, `id()`, `label()`, `config_value()`. No lifecycle methods.
+- `EconetTransportExtension : Extension` (`src/core/include/beebium/extension/EconetTransportExtension.hpp`) — the transport extension-point interface. Three virtual hooks:
+  - `std::unique_ptr<NetworkBackend> create_backend(uint8_t station)` — produce the wire-side backend.
+  - `void on_station_id_changed(uint8_t)` — propagate gRPC `SetStationId` updates to transports that need to inform a downstream device (Piconet's `SET_STATION` command).
+  - `std::vector<grpc::Service*> grpc_services()` — optional gRPC services the transport contributes (AUN extension exposes `AunService` here).
+- `PeripheralExtension : Extension` — the parallel base for hardware-port peripherals (1MHz bus, User VIA, Tube). Unchanged by the transport refactor; lifecycle is `attaches_to / provides / init(ExtensionContext&) / shutdown / grpc_services`.
+
+### Built-in vs plugin
+
+Each extension is either compiled into the server (built-in) or loaded from an on-disk shared library at startup (plugin). A small registry table at `src/server/include/beebium/server/BuiltinExtensions.hpp` lists the built-in extensions (manifest + factory function); the same `--<cli-name>` dispatch resolves built-ins first and falls back to scanned plugin manifests.
+
+| Extension | Kind | Lives in | Loaded from |
+|---|---|---|---|
+| `aun` (AUN UDP) | built-in | `src/extensions/aun/` | linked into `beebium-model-b` etc. |
+| `piconet` (USB-CDC bridge) | plugin | `src/extensions/piconet/` | `<extension-dir>/piconet/piconet.{so,dylib}` + `manifest.json`, POSIX-only |
+| `acorn-65c02-coprocessor` (Tube) | built-in | `src/extensions/acorn-65c02-coprocessor/` | linked into the server |
+| `acorn-scsi`, `acorn-rtc`, `scsi-hard-disc`, `test-scratch-ram` | plugins | `src/extensions/<name>/` | dlopen'd from the extension directory |
+
+### Manifest
+
+Every extension carries a manifest declaring its CLI name, parameter schema, and `extension_kind` (`"peripheral"` or `"econet-transport"`). For plugin extensions the manifest is a `manifest.json` file alongside the shared library; for built-ins it's constructed programmatically in `BuiltinExtensions::entries()`. Example for the AUN built-in:
+
+```json
+{
+  "name": "aun",
+  "description": "AUN (Acorn Universal Networking) UDP econet transport",
+  "cli": "aun",
+  "extension_kind": "econet-transport",
+  "parameters": [
+    {"key": "port", "type": "string",
+     "description": "UDP port to bind (decimal, or 'none' to disable)",
+     "default_value": "32768"},
+    {"key": "map", "type": "string", "is_list": true,
+     "description": "Peer entry 'net.stn;ip;port' (repeatable)"}
+  ]
+}
+```
+
+The CLI parser uses `cli_name` to recognise `--aun ...`; the parameter schema drives validation of the colon-separated argument string. `parameters[*].is_list = true` accumulates repeated `key=value` tokens (joined with `,` in the parsed config map).
+
+### Lifecycle
+
+For an econet-transport extension the order is:
+
+1. `ServerMain` parses CLI flags, building a list of `ExtensionInstance{name, config}` records.
+2. Plugin manifests are scanned from the extension directory.
+3. The `EconetTransportRegistry` is populated by walking the instance list — entries whose manifest `extension_kind == "econet-transport"` are constructed (via `BuiltinExtensions::find()` for built-ins or `PluginLoader::load_extension()` for plugins) and added to the registry. This happens **before `machine.reset()`** so the BBC's reset routine sees a configured ADLC.
+4. `install_econet` queries the registry: if it holds a transport, it calls `transport->create_backend(station)` and hands the result to `EconetSocket::enable()`. Otherwise an internally-disconnected `TestBackend` is installed (NFS sees "No Clock").
+5. After the gRPC server starts, the transport registry's `collect_grpc_services()` contributes its services (e.g. `AunService`) alongside the peripheral extensions' services.
+
+The same code path serves both built-in (AUN) and plugin (Piconet) transports — the only difference is whether `BuiltinExtensions::find()` or `PluginLoader::load_extension()` constructs the instance.
 
 ## Hardware Architecture
 
@@ -1307,24 +1383,24 @@ The flag fill and idle detection are also in `FourWayHandshake` (via `is_receivi
    - No configuration needed for same-subnet peers
 
 3. **Explicit address mapping** (for cross-subnet / bridge)
-   - `--aun-map <net.stn:ip[:port]>` for explicit mappings
+   - `--aun map=<net.stn;ip;port>` (repeatable) for explicit mappings
    - Static mappings take precedence over discovered peers
 
 4. **Pi Econet Bridge compatibility**
-   - `--aun-bridge <ip:port>` for bridge connectivity
+   - A future transport extension would expose this; nothing built yet
    - Test with actual bridge hardware
    - Handle bridge-specific behaviors
    - Bridge provides access to real Econet stations
 
-**Items 1 and 3 are implemented.** Item 2 (local subnet discovery) is **not implemented** — all peer mappings are currently explicit via `--aun-map`. Item 4 (Pi Econet Bridge) is **untested** — the AUN implementation should be compatible but `--aun-bridge` has not been added as a CLI option. The port in `--aun-map` defaults to 32768 if omitted.
+**Items 1 and 3 are implemented.** Item 2 (local subnet discovery) is **not implemented** — all peer mappings are currently explicit via `--aun map=...`. Item 4 (Pi Econet Bridge) is **untested** — the AUN implementation should be compatible but no dedicated extension exists yet. The port in a `map=` entry must be specified explicitly (no default).
 
 ### Partially Complete: Configuration and Integration (originally Phase 4)
 
-1. **Command-line options** — **Done** (except `--aun-bridge`):
+1. **Command-line options** — **Done**:
    - `--station <n>` - Enable Econet hardware and set station number (no flag = no Econet)
-   - `--aun-map <net.stn:ip[:port]>` - Explicit station-to-IP mapping (repeatable)
-   - `--aun-port <port>` - Local UDP port (default 32768)
-   - ~~`--aun-bridge <ip:port>`~~ - Not yet implemented
+   - `--aun [port=<n>][:map=<net.stn;ip;port>]...` - AUN UDP transport with explicit station-to-IP mappings
+   - `--piconet device_path=<path>` - Piconet USB-CDC bridge to a real Econet wire
+   - The legacy `--aun-port`, `--aun-map`, and bare `--piconet <path>` flags have been removed; both transports flow through the generic extension dispatch (see "Econet Transport Extensions" above).
 
 2. **Frontend integration** — **Not yet done.** Planned as part of the broader Econet integration work programme (see `docs/econet-integration.md`):
    - Preset integration (JSON format)
@@ -1502,11 +1578,11 @@ All of these routines are in `disassembly/nfs_334_v2_96dc_9fff_adlc_nmi_handlers
 
 2. ~~**Clock detection**~~ **Resolved.** DCD (SR2b5) reflects `!backend.is_connected()`: high when disconnected (no clock), low when connected. CTS reflects `!(backend.is_connected() && CR2b7_RTS)`. The NFS ROM polls DCD during boot and reports "No Clock" when DCD is high. This is implemented and verified — see `test_boot_econet.cpp` for "No Clock" boot test.
 
-3. **Multi-network support**: The current implementation supports arbitrary network numbers via `--aun-map net.stn:ip[:port]` where `net` can be 0-255. Network number 0 is the default for local networks. MASSAGENETS (bit-7 translation) is not implemented. Sufficient for current needs.
+3. **Multi-network support**: The current implementation supports arbitrary network numbers via `--aun map=net.stn;ip;port` where `net` can be 0-255. Network number 0 is the default for local networks. MASSAGENETS (bit-7 translation) is not implemented. Sufficient for current needs.
 
 4. ~~**ROM licensing**~~ **Resolved.** The original copyright holder (Acorn Computers) is defunct. While the ROMs are technically still under copyright, there is no entity to enforce it. Widespread retro-computing community practice (distribution via mdfs.net, stardot.org.uk, etc.) demonstrates essentially zero risk. Beebium does not currently bundle NFS/ANFS ROMs but could do so if convenient.
 
-5. ~~**Broadcast announcement format**~~ **Deferred.** Local subnet discovery was not implemented. All peer mappings are currently explicit via `--aun-map`. May be revisited in a future phase.
+5. ~~**Broadcast announcement format**~~ **Deferred.** Local subnet discovery was not implemented. All peer mappings are currently explicit via `--aun map=...`. May be revisited in a future phase.
 
 6. **Self-send prevention**: Not explicitly handled. The AunBackend will send packets to any configured peer address, including one that maps to the local station. In practice this hasn't caused problems because Beebium instances use different UDP ports.
 
@@ -1532,7 +1608,7 @@ beebium-model-b                  # No Econet hardware fitted
 This mirrors physical hardware — you either have the Econet interface fitted or you don't. The NFS ROM auto-detects hardware presence and behaves accordingly.
 
 **Peer configuration:**
-Currently all peer mappings are explicit via `--aun-map`. Local subnet discovery was planned but not implemented.
+Currently all peer mappings are explicit via `--aun map=...`. Local subnet discovery was planned but not implemented.
 
 **Future enhancements:**
 - Preset integration (JSON format) for Econet configuration — see `docs/econet-integration.md`
@@ -1551,7 +1627,7 @@ Currently all peer mappings are explicit via `--aun-map`. Local subnet discovery
 #   0 101 127.0.0.1 10101
 
 # Beebium workstation connecting to BeebEm file server
-beebium-model-b --station 101 --aun-port 10101 --aun-map 0.254:127.0.0.1:32768
+beebium-model-b --station 101 --aun port=10101:map=0.254;127.0.0.1;32768
 
 # On the workstation:
 # *NET
@@ -1562,16 +1638,16 @@ beebium-model-b --station 101 --aun-port 10101 --aun-map 0.254:127.0.0.1:32768
 **Two Beebium instances on the same machine:**
 ```bash
 # Terminal 1: File server (station 254, port 32768)
-beebium-model-b --station 254 --aun-port 32768 --aun-map 0.1:127.0.0.1:32769
+beebium-model-b --station 254 --aun port=32768:map=0.1;127.0.0.1;32769
 
 # Terminal 2: Workstation (station 1, port 32769)
-beebium-model-b --station 1 --aun-port 32769 --aun-map 0.254:127.0.0.1:32768
+beebium-model-b --station 1 --aun port=32769:map=0.254;127.0.0.1;32768
 ```
 
 **Cross-subnet with explicit mapping:**
 ```bash
 # Workstation connecting to a remote file server
-beebium-model-b --station 1 --aun-map 0.254:192.168.2.50:32768
+beebium-model-b --station 1 --aun map=0.254;192.168.2.50;32768
 ```
 
 **No Econet (DFS only):**

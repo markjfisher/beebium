@@ -57,17 +57,17 @@ A working command line for running the L3FS reachable over AUN:
   --acorn-scsi \
   --scsi-hdd 0:path/to/scsi-l3fs.dat \
   --station 254 \
-  --aun-port 10254 \
-  --aun-map 0.221:127.0.0.1:10221 \
+  --aun port=10254:map=0.221;127.0.0.1;10221 \
   --machine-name "L3FS" \
   --acorn-rtc layout=7bit-year-in-r7 \
-  --tube 65C02-3MHz \
+  --tube-65c02 \
   --advertise
 ```
 
-The `--aun-map` entries map Econet station addresses to IP:port pairs. For
-loopback testing, each station uses port `10000 + station_number` by
-convention.
+The `map=` entries map Econet station addresses to IP:port pairs. The
+inner separator is `;` (not `:`) because the extension argument parser
+tokenises on `:`. For loopback testing, each station uses port `10000
++ station_number` by convention.
 
 ### Variant B: Piconet on a real Econet wire
 
@@ -85,10 +85,10 @@ for `--piconet`:
   --acorn-scsi \
   --scsi-hdd 0:path/to/scsi-l3fs.dat \
   --station 250 \
-  --piconet /dev/tty.usbmodem101 \
+  --piconet device_path=/dev/tty.usbmodem101 \
   --machine-name "L3FS-via-Piconet" \
   --acorn-rtc layout=7bit-year-in-r7 \
-  --tube 65C02-3MHz \
+  --tube-65c02 \
   --advertise
 ```
 
@@ -98,8 +98,9 @@ Notes specific to the Piconet variant:
   station 254 may collide with another fileserver on the same wire (for
   example, a PiEconetBridge-hosted fileserver). Use `*STATIONS` from a real
   BBC to confirm the chosen number is free before launching.
-- **`--piconet` and `--aun-port` are mutually exclusive.** The Beebium server
-  validates this at startup; combining them is a configuration error.
+- **`--piconet` and `--aun` are mutually exclusive.** Both are Econet
+  transport extensions; BBC machine variants accept at most one. The
+  Beebium server enforces this at startup.
 - **Wire infrastructure must be in place:** clock generator on the wire,
   termination at both ends, and the Piconet attached via its standard Econet
   socket. See `docs/networking.md` and `docs/discussion/piconet-feasibility.md`
@@ -391,8 +392,8 @@ The end goal is a test harness that:
 
 1. Constructs a fresh L3FS SCSI disc image (Approach 1)
 2. Launches a Beebium file server instance with the configuration above
-3. Launches one or more Beebium client instances with `--station N --aun-port
-   10N --aun-map 0.254:127.0.0.1:10254`
+3. Launches one or more Beebium client instances with `--station N
+   --aun port=10N:map=0.254;127.0.0.1;10254`
 4. Waits for the file server to reach "Starting - Ready"
 5. On client stations, exercises Econet operations: `*I AM`, `*CAT`, file
    load/save, `*NOTIFY`, `*REMOTE`

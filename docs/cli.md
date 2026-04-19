@@ -129,40 +129,66 @@ Scripts can parse the `Listening on port <N>` line to discover the allocated por
 
 #### Econet
 
-Three transport backends are available, selected at startup. `--piconet` and `--aun-port` are mutually exclusive.
+Both AUN and Piconet are Econet *transport extensions* dispatched
+through the same generic CLI mechanism that drives peripheral
+extensions like `--acorn-rtc`. AUN is a built-in extension; Piconet
+ships as a discoverable plugin under `src/extensions/piconet/`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--station <1-254>` | (omitted = no Econet) | Econet station number; presence enables Econet hardware |
-| `--aun-port <port\|none>` | 32768 | AUN UDP port (the default backend). `none` keeps the hardware fitted but disconnects the transport (NFS sees "No Clock"). |
-| `--aun-map <net.stn:ip[:port]>` | — | Map an Econet address to an IP endpoint (repeatable, for the AUN backend's peer table). |
-| `--piconet <device-path>` | — | Use a Piconet USB device as the Econet transport (e.g. `/dev/tty.usbmodem101`). Mutually exclusive with `--aun-port`. |
+| `--station <1-254>` | (omitted = no Econet) | Econet station number; presence enables Econet hardware. Without a transport extension the ADLC reports "No Clock". |
+| `--aun [port=<n>][:map=<net.stn;ip;port>]...` | — | AUN UDP transport. `port` defaults to 32768; `port=none` disables the network. `map=` is repeatable; the inner separator is `;` (not `:`) so the CLI parser can tokenise the value cleanly. |
+| `--piconet device_path=<path>` | — | Piconet USB-CDC bridge to a real Econet wire (POSIX-only). Mutually exclusive with `--aun`. |
 
-**Backend selection:**
+**Transport selection:**
 
-- **`--aun-port` (default):** Talk to other AUN-speaking peers (other Beebium instances, BeebEm, PiEconetBridge) over UDP/IP. Combine with `--aun-map` entries to populate the peer table.
-- **`--piconet <path>`:** Talk to real BBCs / Acorn fileservers / printers / etc. over a real Econet wire via the [Piconet](https://github.com/jprayner/piconet) USB device. The wire's clock generator and termination must be present; the Piconet is a participant on the wire, not a clock source.
-- **`--aun-port none`:** Hardware fitted, no transport. Useful for testing the NFS ROM's "No Clock" path or for keeping a station number reserved without networking.
+- **`--aun port=<n>`:** Talk to other AUN-speaking peers (other Beebium instances, BeebEm, PiEconetBridge) over UDP/IP. Combine with one or more `map=` entries to populate the peer table.
+- **`--piconet device_path=<path>`:** Talk to real BBCs / Acorn fileservers / printers / etc. over a real Econet wire via the [Piconet](https://github.com/jprayner/piconet) USB device. The wire's clock generator and termination must be present; the Piconet is a participant on the wire, not a clock source.
+- **`--aun port=none`:** Hardware fitted, no transport. Useful for testing the NFS ROM's "No Clock" path or for keeping a station number reserved without networking.
+- **No transport flag (just `--station`):** Econet hardware fitted but no transport configured — the ADLC sees no carrier (DCD high). Identical to the `port=none` case.
 - **No `--station`:** Econet hardware not fitted at all. The `&FE18` station ID register returns 0x00 (open bus); NFS ROM detects no Econet.
 
 **Examples:**
 
 ```bash
-# Two Beebium instances on loopback (default ports collide; use --aun-port 0 for ephemeral)
-beebium-model-b --station 32 --aun-port 32768 \
-  --aun-map 0.254:127.0.0.1:32769
+# Two Beebium instances on loopback
+beebium-model-b --station 32 --aun port=32768:map=0.254;127.0.0.1;32769
 
-beebium-model-b --station 254 --aun-port 32769 \
-  --aun-map 0.32:127.0.0.1:32768
+beebium-model-b --station 254 --aun port=32769:map=0.32;127.0.0.1;32768
 
 # Talk to real Econet via Piconet
-beebium-model-b --station 250 --piconet /dev/tty.usbmodem101
+beebium-model-b --station 250 --piconet device_path=/dev/tty.usbmodem101
 
-# Econet board fitted but unplugged
-beebium-model-b --station 32 --aun-port none
+# Econet board fitted but no transport configured
+beebium-model-b --station 32 --aun port=none
+# (or just: beebium-model-b --station 32)
 ```
 
-The same options can be set in a preset file via `econet.aun_port` / `econet.aun_map` or `econet.piconet.device_path`. CLI arguments override preset values; combining a preset's `aun_port` with a CLI `--piconet` is a startup validation error.
+Both transports are configured in presets via the generic
+`econet.transport` object:
+
+```json
+"econet": {
+  "station": 32,
+  "transport": {
+    "name": "aun",
+    "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+  }
+}
+```
+
+The `name` field selects the transport extension (`aun` or `piconet`);
+`parameters` is a flat key/value map that becomes the extension's
+config. CLI arguments override preset values; specifying both
+`--aun ...` and `--piconet ...` (whether on the CLI or via a preset)
+is rejected as "BBC machines support at most one Econet transport."
+
+**Migration from older flags:** the legacy `--aun-port`,
+`--aun-map`, and bare `--piconet <path>` flags have been removed,
+along with the matching preset keys (`econet.aun_port`,
+`econet.aun_map`, `econet.piconet.device_path`). Update preset files
+to the `transport` shape above; presets that still use the old keys
+fail to load with a message pointing at the new form.
 
 See `docs/networking.md` for the architecture and `docs/discussion/piconet-feasibility.md` for the Piconet design.
 

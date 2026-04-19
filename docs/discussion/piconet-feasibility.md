@@ -434,6 +434,19 @@ Reconnection could be handled by periodic reconnect attempts in the I/O thread, 
 
 ## Future Direction: Econet Transport Extensions
 
+> **Status (2026-04 update):** Implemented on the
+> `econet-transport-extensions` branch. AUN ships as a built-in
+> extension at `src/extensions/aun/`; Piconet ships as a discoverable
+> plugin at `src/extensions/piconet/`. The extension-point interface
+> is `EconetTransportExtension` in
+> `src/core/include/beebium/extension/EconetTransportExtension.hpp`,
+> with `EconetTransportRegistry` as a deliberately unconstrained
+> ordered container (so the future Acorn Econet Bridge machine type
+> with two ADLCs is not foreclosed). The configuration surface
+> realised below is the actual current CLI / preset shape. See
+> `docs/networking.md` "Econet Transport Extensions" for the
+> as-built design.
+
 The initial Piconet implementation lives in core alongside `AunBackend`, but this is not the long-term shape. Building specific transport knowledge (USB-CDC serial protocols, Pico firmware quirks, future Pi Econet HAT GPIO/SPI dialects) into the core is the wrong place for it. The right place is a dedicated Econet Transport extension point, modelled on the existing Peripheral Extension framework but with its own identity.
 
 ### Extension Point Shape

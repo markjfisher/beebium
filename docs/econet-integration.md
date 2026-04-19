@@ -31,7 +31,7 @@ These decisions were made during planning and inform all phases:
 
 - **Observable backend decorator for frame events**: Frame observation uses a decorator in the backend chain (`FourWayHandshake -> ObservableBackend -> AunBackend`) rather than modifying the `NetworkBackend` interface. This follows the existing decorator pattern.
 
-- **Peer resolution must be an abstraction, not just static config**: The current `--aun-map` mechanism requires users to know IP addresses and ports up front, which is at odds with modern networking (DHCP, dynamic IPs, mDNS). The `AunBackend` already has the right runtime mutation API (`add_peer`/`remove_peer`), but the architecture must ensure this is accessible to multiple peer sources — not just CLI args and gRPC calls. Considerations:
+- **Peer resolution must be an abstraction, not just static config**: The current `--aun map=...` mechanism requires users to know IP addresses and ports up front, which is at odds with modern networking (DHCP, dynamic IPs, mDNS). The `AunBackend` already has the right runtime mutation API (`add_peer`/`remove_peer`), but the architecture must ensure this is accessible to multiple peer sources — not just CLI args and gRPC calls. Considerations:
 
   - **`AunBackend` peer table as the single source of truth**: All peer sources (CLI, presets, gRPC, future discovery) converge on `add_peer`/`remove_peer`. This is already the case and should remain so.
 
@@ -57,7 +57,7 @@ Networking documentation in `docs/networking.md` was reviewed and updated as par
 
 ## Phase 1: Preset Integration — Done
 
-The preset file format supports Econet as of the piconet branch. Two transports are supported, mutually exclusive within a single `econet` section.
+Both transports are configured via a single `econet.transport` object that names the transport extension and carries its parameters as a flat key/value map. The `econet-transport-extensions` branch unified what was previously separate per-backend keys.
 
 ### Preset JSON format — AUN
 
@@ -65,7 +65,10 @@ The preset file format supports Econet as of the piconet branch. Two transports 
 {
   "econet": {
     "station": 5,
-    "aun_port": 32768
+    "transport": {
+      "name": "aun",
+      "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+    }
   }
 }
 ```
@@ -76,25 +79,32 @@ The preset file format supports Econet as of the piconet branch. Two transports 
 {
   "econet": {
     "station": 32,
-    "piconet": { "device_path": "/dev/tty.usbmodem101" }
+    "transport": {
+      "name": "piconet",
+      "parameters": { "device_path": "/dev/tty.usbmodem101" }
+    }
   }
 }
 ```
 
-`aun_port` and `piconet` are mutually exclusive — `PresetLoader::parse_econet_section` rejects both being present in the same `econet` block. CLI arguments override preset values; combining a preset's `aun_port` with a CLI `--piconet` is a validation error at startup.
+The `name` field selects the transport extension (`aun`, `piconet`, or any future extension). `parameters` is the same key/value map the CLI populates from `--<extension> key=value:key=value`. Only one `transport` is permitted per `econet` block on BBC machine variants; per-machine cardinality is enforced at machine-setup time, not in the preset loader.
+
+The legacy preset keys `econet.aun_port`, `econet.aun_map`, and `econet.piconet.device_path` were removed; presets that still use them fail to load with a message pointing at the new shape.
 
 ### Key files
 
-- `src/server/include/beebium/server/PresetLoader.hpp` — `PresetEconetConfig`, `PresetPiconetConfig`, `parse_econet_section()`
-- `src/server/include/beebium/server/ServerMain.hpp` — `apply_preset()` propagates both backends; `validate_config()` enforces mutual exclusion
-- `tests/test_preset_loader.cpp` — Econet preset parsing tests including the AUN/Piconet co-presence error case
-- `tests/test_cli.cpp` — CLI validation tests for `--piconet` / `--aun-port` mutual exclusion
+- `src/server/include/beebium/server/PresetLoader.hpp` — `PresetEconetConfig`, `PresetTransportConfig`, `parse_econet_section()`
+- `src/server/include/beebium/server/ServerMain.hpp` — `apply_preset()` converts a preset transport into an `ExtensionInstance`; the early-pass transport-registry filter then routes it through the same dispatch as the CLI
+- `tests/test_preset_loader.cpp` — Econet preset parsing tests including legacy-shape rejection
+- `tests/test_cli.cpp` — CLI parsing tests for `--aun port=...` and `--piconet device_path=...`
 
 ---
 
 ## Phase 2: gRPC Service
 
-**Status:** `GetEconetStatus` is implemented, including both AUN and Piconet backend-specific fields (the response carries an `aun_port` / `peer_count` block when the backend is `AunBackend`, and a `PiconetStatus` sub-message with `device_path` and `serial_open` when the backend is `PiconetBackend`). The full read/write surface (`EnableEconet`, `DisableEconet`, `AddPeer`, etc.) and `SubscribeEconetEvents` are still pending.
+**Status:** `EconetService` is implemented, with transport-agnostic operations (`GetEconetStatus`, `EnableEconet`, `DisableEconet`, `SetStationId`, `SubscribeEconetEvents`). AUN-specific RPCs — `SetConnected`, `AddPeer`, `RemovePeer`, `ListPeers`, plus a richer `GetStatus` — live on the new `AunService` (`src/extensions/aun/aun.proto`), contributed by the AUN extension's `grpc_services()` hook so they only appear when AUN is the active transport.
+
+Both EconetService.* AUN methods and the new AunService.* methods exist concurrently for backward compatibility; the EconetService duplicates carry `DEPRECATED` comments and will be removed in a follow-up coordinated with Python and macOS Swift client updates.
 
 ### Core library prerequisites
 
@@ -152,22 +162,31 @@ When Econet is enabled: `econet_station=N`
 
 ## Phase 4: Python Client
 
+The Python client splits along the same line as the gRPC services: an
+`Econet` wrapper around the transport-agnostic `EconetService`, and an
+`Aun` wrapper around the AUN-specific `AunService`. Other transports
+(Piconet) would get their own wrappers if/when transport-specific
+RPCs are added.
+
 ### Wrapper class outline
 
 ```python
-class Econet:
-    status -> EconetStatus
+class Econet:                              # wraps EconetService
+    status -> EconetStatus                 # generic: enabled, station_id, ADLC
     is_enabled -> bool
     station_id -> int
-    peers -> list[PeerInfo]
-
-    enable(station_id, aun_port, aun_mode)
+    enable(station_id, aun_mode)           # transport-agnostic
     disable()
-    add_peer(net, station, ip_address, port)
-    remove_peer(net, station)
-
     events() -> Iterator[EconetEvent]
     start_background_events(callback) -> EventStreamHandle
+
+
+class Aun:                                  # wraps AunService
+    status -> AunStatus                     # AUN-specific: port, peers, link
+    peers -> list[PeerInfo]
+    set_connected(connected: bool)
+    add_peer(net, station, ip_address, port)
+    remove_peer(net, station)
 ```
 
 ### Key files
