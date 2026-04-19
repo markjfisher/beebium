@@ -23,6 +23,8 @@
 
 namespace beebium {
 
+class ExtensionUi;  // forward decl; defined in ExtensionUi.hpp
+
 // Common base for all extension-point types. Holds manifest, instance
 // config, and identity accessors. No lifecycle methods -- those belong
 // on the derived extension-point classes (PeripheralExtension,
@@ -83,6 +85,14 @@ public:
 
     // Human-readable description (from manifest).
     std::string_view description() const { return manifest_.description; }
+
+    // Optional UI hook for the Extension UI framework. Returns nullptr
+    // by default (extension exposes no UI). Concrete extensions that
+    // want to surface a control panel in frontends override this and
+    // return a stable pointer to their ExtensionUi implementation. The
+    // returned pointer must outlive the Extension instance; typically
+    // the implementation is a member of the concrete extension class.
+    virtual ExtensionUi* ui() { return nullptr; }
 
 protected:
     ExtensionManifest manifest_;

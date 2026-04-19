@@ -16,6 +16,7 @@
 #include "BuiltinExtensions.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
+#include "beebium/service/ExtensionUiService.hpp"
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
@@ -1691,11 +1692,16 @@ public:
             // Create core discovery services for frontends to enumerate
             // extensions. PeripheralExtensionService lists peripheral
             // extensions; EconetTransportService lists econet transport
-            // extensions and identifies which is active.
+            // extensions and identifies which is active. ExtensionUiService
+            // exposes the server-driven UI tree of any extension that has
+            // an ExtensionUi -- it reads from both registries so a single
+            // SubscribeView call can target a peripheral or a transport.
             beebium::service::PeripheralExtensionServiceImpl peripheral_extension_service(
                 extension_registry);
             beebium::service::EconetTransportServiceImpl econet_transport_service(
                 transport_registry);
+            beebium::service::ExtensionUiServiceImpl extension_ui_service(
+                transport_registry, extension_registry);
 
             // Collect all extension-provided services plus the discovery
             // services. Both peripheral and transport extensions can
@@ -1707,6 +1713,7 @@ public:
             }
             extension_services.push_back(&peripheral_extension_service);
             extension_services.push_back(&econet_transport_service);
+            extension_services.push_back(&extension_ui_service);
 
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";

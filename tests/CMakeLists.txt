@@ -977,6 +977,15 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_extension_ui_proto)
 
+    # ExtensionUiService end-to-end tests with a fake extension
+    add_executable(test_grpc_extension_ui_service
+        test_grpc_extension_ui_service.cpp)
+    target_link_libraries(test_grpc_extension_ui_service PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_extension_ui_service)
+
     # Piconet service tests (POSIX-only -- the plugin only builds on POSIX
     # and the test fixture uses a PTY-backed FakePiconetDevice).
     if(NOT WIN32)
