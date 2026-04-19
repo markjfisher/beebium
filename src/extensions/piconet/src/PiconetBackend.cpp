@@ -148,6 +148,7 @@ PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
     // operation will observe the failure.
     write_to_serial(*serial_, piconet::format_set_station(config_.initial_station));
     write_to_serial(*serial_, piconet::format_set_mode(piconet::Mode::Listen));
+    current_mode_.store(piconet::Mode::Listen, std::memory_order_release);
 
     reader_thread_ = std::thread([this] { reader_loop(); });
 }
@@ -350,6 +351,14 @@ void PiconetBackend::on_station_id_changed(std::uint8_t new_station_id) {
     }
     config_.initial_station = new_station_id;  // Keep config in sync for diagnostics.
     write_to_serial(*serial_, piconet::format_set_station(new_station_id));
+}
+
+void PiconetBackend::set_mode(piconet::Mode mode) {
+    if (!serial_ || !serial_->is_open()) {
+        return;
+    }
+    write_to_serial(*serial_, piconet::format_set_mode(mode));
+    current_mode_.store(mode, std::memory_order_release);
 }
 
 }  // namespace beebium

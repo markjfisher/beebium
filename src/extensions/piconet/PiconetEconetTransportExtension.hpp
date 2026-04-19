@@ -21,6 +21,7 @@
 // equivalent preset entry), and create_backend() opens the device
 // and constructs a PiconetBackend wrapping it.
 
+#include "PiconetUi.hpp"
 #include "beebium/econet/PiconetBackend.hpp"
 #include "beebium/extension/EconetTransportExtension.hpp"
 
@@ -56,12 +57,19 @@ public:
     // The server collects this and registers it with gRPC.
     std::vector<grpc::Service*> grpc_services() override;
 
-    // Non-owning accessor used by PiconetService.
+    // Non-owning accessor used by PiconetService and PiconetUi.
     PiconetBackend* backend() { return backend_; }
+    const PiconetBackend* backend() const { return backend_; }
+
+    // ExtensionUi hook: returns a stable pointer to the per-extension
+    // PiconetUi. The framework reads from the View tree it produces and
+    // dispatches validated events into its handle_event.
+    ExtensionUi* ui() override { return &ui_; }
 
 private:
     PiconetBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
     std::unique_ptr<PiconetServiceImpl> service_;
+    PiconetUi ui_{*this};
 };
 
 }  // namespace beebium

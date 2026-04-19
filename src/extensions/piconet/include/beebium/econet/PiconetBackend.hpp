@@ -13,6 +13,7 @@
 #pragma once
 
 #include "beebium/econet/NetworkBackend.hpp"
+#include "beebium/econet/piconet/Mode.hpp"
 #include "beebium/econet/piconet/PiconetConfig.hpp"
 #include "beebium/econet/piconet/SerialPort.hpp"
 
@@ -66,6 +67,24 @@ public:
     // shares the SerialPort write path with send_frame().
     void on_station_id_changed(std::uint8_t new_station_id) override;
 
+    // Switch the firmware between SET_MODE STOP / LISTEN / MONITOR.
+    // Caches the new mode so mode() can report it without round-tripping
+    // the device. Per the SerialPort threading contract this must be
+    // called from the emulation thread (or the test driver thread that
+    // owns the write path); ExtensionUi::handle_event invocations are
+    // serialised by the gRPC server, so PiconetUi calls this from the
+    // gRPC handler thread -- safe because the gRPC handler is the only
+    // other writer for tests, and in production the emulator never
+    // touches set_mode().
+    void set_mode(piconet::Mode mode);
+
+    // Last mode set via set_mode() (or the constructor's initial LISTEN).
+    // Atomic so PiconetUi::build_view, called on the gRPC server thread,
+    // can read it safely while another thread might be calling set_mode.
+    piconet::Mode mode() const noexcept {
+        return current_mode_.load(std::memory_order_acquire);
+    }
+
     // Accessor for diagnostics / gRPC introspection.
     const piconet::PiconetConfig& config() const { return config_; }
 
@@ -77,6 +96,7 @@ private:
 
     moodycamel::ReaderWriterQueue<NetworkFrame> rx_queue_{64};
     std::atomic<bool> shutdown_{false};
+    std::atomic<piconet::Mode> current_mode_{piconet::Mode::Stop};
     std::thread reader_thread_;
 };
 

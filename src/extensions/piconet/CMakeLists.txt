@@ -36,6 +36,7 @@ set_target_properties(beebium_piconet_core PROPERTIES
 # is part of the build. The proto file is in the same directory.
 set(PICONET_PLUGIN_SOURCES
     PiconetEconetTransportExtension.cpp
+    PiconetUi.cpp
     plugin_entry.cpp
 )
 

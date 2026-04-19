@@ -1004,6 +1004,26 @@ if(BEEBIUM_BUILD_SERVICE)
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
         catch_discover_tests(test_grpc_piconet_service)
+
+        # PiconetUi unit tests (build_view shape + handle_event SET_MODE
+        # round-trip via FakePiconetDevice). Same fixture infrastructure
+        # as test_grpc_piconet_service.
+        add_executable(test_piconet_ui
+            test_piconet_ui.cpp
+            piconet/FakePiconetDevice.cpp
+            piconet/FakePiconetDeviceOnPty.cpp
+            piconet/PtyPair.cpp)
+        target_link_libraries(test_piconet_ui PRIVATE
+            beebium_ext_piconet_plugin
+            beebium_piconet_core
+            beebium_extension_api
+            beebium_extension_ui_proto
+            Catch2::Catch2WithMain
+        )
+        target_include_directories(test_piconet_ui PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
+        catch_discover_tests(test_piconet_ui)
     endif()
 
     # System service tests
