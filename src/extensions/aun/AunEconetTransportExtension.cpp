@@ -14,6 +14,10 @@
 
 #include "beebium/econet/AunPacket.hpp"
 
+#ifdef BEEBIUM_BUILD_SERVICE
+#include "AunService.hpp"
+#endif
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -168,7 +172,22 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
         backend->add_peer(p.net, p.stn, p.ip_addr_net_byte_order, p.port);
     }
 
+    backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
     return backend;
+}
+
+AunEconetTransportExtension::AunEconetTransportExtension() = default;
+AunEconetTransportExtension::~AunEconetTransportExtension() = default;
+
+std::vector<grpc::Service*> AunEconetTransportExtension::grpc_services() {
+#ifdef BEEBIUM_BUILD_SERVICE
+    if (!service_) {
+        service_ = std::make_unique<AunServiceImpl>(*this);
+    }
+    return {service_.get()};
+#else
+    return {};
+#endif
 }
 
 }  // namespace beebium

@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package beebium;
+
+// AUN-specific service. Lives alongside the AunEconetTransportExtension
+// in src/extensions/aun/ and is registered via the extension's
+// grpc_services() hook so the gRPC server only exposes it when AUN is
+// the active transport.
+//
+// EconetService remains the place for transport-agnostic Econet RPCs
+// (status, station ID, enable/disable). Anything that only makes sense
+// for AUN (peer table management, AUN-port reporting, the cable-plug
+// simulation that drives DCD) lives here.
+service AunService {
+    // Connect or disconnect the simulated network cable. While
+    // disconnected the ADLC sees DCD high (no carrier).
+    rpc SetConnected(AunSetConnectedRequest) returns (AunSetConnectedResponse);
+
+    // Add an Econet address <-> UDP endpoint peer mapping.
+    rpc AddPeer(AunAddPeerRequest) returns (AunAddPeerResponse);
+
+    // Remove a peer mapping by Econet address.
+    rpc RemovePeer(AunRemovePeerRequest) returns (AunRemovePeerResponse);
+
+    // Enumerate all configured peers.
+    rpc ListPeers(AunListPeersRequest) returns (AunListPeersResponse);
+
+    // Read the current AUN backend status (port, peer count, link state).
+    rpc GetStatus(AunGetStatusRequest) returns (AunGetStatusResponse);
+}
+
+// --- Status ---
+
+message AunGetStatusRequest {
+    // Empty.
+}
+
+message AunGetStatusResponse {
+    // True if the AUN UDP socket is bound and the cable is connected.
+    bool connected = 1;
+
+    // The local UDP port the AUN backend is bound to (0 if none).
+    uint32 local_port = 2;
+
+    // Number of peers configured in the peer table.
+    uint32 peer_count = 3;
+}
+
+// --- Cable plug ---
+
+message AunSetConnectedRequest {
+    // True to plug in the cable, false to unplug it.
+    bool connected = 1;
+}
+
+message AunSetConnectedResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// --- Peer table ---
+
+message AunAddPeerRequest {
+    // Econet network number (0-127).
+    uint32 net = 1;
+
+    // Econet station number (1-254).
+    uint32 stn = 2;
+
+    // Dotted-quad IP address (e.g. "192.168.1.100").
+    string ip_address = 3;
+
+    // UDP port (0 = use AUN default 32768).
+    uint32 port = 4;
+}
+
+message AunAddPeerResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message AunRemovePeerRequest {
+    uint32 net = 1;
+    uint32 stn = 2;
+}
+
+message AunRemovePeerResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message AunListPeersRequest {
+    // Empty.
+}
+
+message AunListPeersResponse {
+    repeated AunPeer peers = 1;
+}
+
+message AunPeer {
+    uint32 net = 1;
+    uint32 stn = 2;
+    string ip_address = 3;
+    uint32 port = 4;
+}

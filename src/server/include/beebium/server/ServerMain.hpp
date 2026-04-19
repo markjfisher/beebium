@@ -1691,8 +1691,14 @@ public:
             beebium::service::PeripheralExtensionServiceImpl peripheral_extension_service(
                 extension_registry);
 
-            // Collect all extension-provided services plus the discovery service
+            // Collect all extension-provided services plus the discovery
+            // service. Both peripheral and transport extensions can
+            // contribute services; AunService comes via the transport
+            // registry.
             auto extension_services = extension_registry.collect_grpc_services();
+            for (auto* svc : transport_registry.collect_grpc_services()) {
+                extension_services.push_back(svc);
+            }
             extension_services.push_back(&peripheral_extension_service);
 
             // Start gRPC server

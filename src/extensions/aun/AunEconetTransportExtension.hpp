@@ -40,7 +40,11 @@
 #include <string>
 #include <vector>
 
+namespace grpc { class Service; }
+
 namespace beebium {
+
+class AunServiceImpl;  // forward; defined when service is built
 
 class AunEconetTransportExtension : public EconetTransportExtension {
 public:
@@ -52,14 +56,31 @@ public:
         std::uint16_t port;
     };
 
-    AunEconetTransportExtension() = default;
+    AunEconetTransportExtension();
+    ~AunEconetTransportExtension() override;
 
     // Construct an AunBackend from the current config. Returns nullptr if
     // port=none (network disabled) or if the underlying socket bind
     // fails. The caller (ServerMain) treats nullptr as "AUN configured
     // but transport unavailable" -- the EconetSocket is still constructed
     // in disconnected state.
+    //
+    // The constructed backend is also stashed as a non-owning pointer so
+    // AunService can manipulate it. The owning unique_ptr is handed off
+    // to EconetSocket; the extension does not extend the backend's
+    // lifetime and the raw pointer becomes dangling once the machine
+    // shuts down (which only happens at process exit).
     std::unique_ptr<NetworkBackend> create_backend(std::uint8_t station) override;
+
+    // Returns the AunService bound to this extension's backend. The
+    // server collects this and registers it with gRPC.
+    std::vector<grpc::Service*> grpc_services() override;
+
+    // Non-owning pointer to the AunBackend we constructed. Returns
+    // nullptr before create_backend has run or if construction failed
+    // (port=none, bind error). AunService consults this to find its
+    // backend on each RPC.
+    AunBackend* backend() { return backend_; }
 
     // Helpers exposed for unit testing -- these are pure functions of the
     // config map and don't touch sockets.
@@ -72,6 +93,10 @@ public:
     // "net;ip;port" entries). Returns the parsed list; entries that
     // can't be parsed are dropped with a warning to stderr.
     static std::vector<PeerSpec> parse_map(const std::string& value);
+
+private:
+    AunBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
+    std::unique_ptr<AunServiceImpl> service_;  // lazily constructed
 };
 
 }  // namespace beebium
