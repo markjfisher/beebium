@@ -14,12 +14,10 @@
 #define BEEBIUM_EXTENSION_PERIPHERAL_EXTENSION_HPP
 
 #include "Export.hpp"
+#include "Extension.hpp"
 #include "ExtensionManifest.hpp"
 
-#include <map>
-#include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -36,62 +34,15 @@ namespace beebium {
 
 class ExtensionContext;
 
-// Base class for all peripheral extensions. Handles identity, dependencies,
-// lifecycle, and gRPC service registration. I/O methods are NOT on this class
-// -- each extension point type defines its own device callback interface
-// (OneMHzBusDevice, UserPortDevice, etc.) which extensions implement via
-// composition rather than inheritance.
-//
-// The manifest is the single source of truth for extension metadata.
-// For dynamically loaded extensions it is read from manifest.json;
-// for built-in extensions it is constructed programmatically.
-class BEEBIUM_EXT_API PeripheralExtension {
+// Base class for peripheral extensions: extensions that plug into a host
+// machine's hardware port (1MHz bus, User VIA, Tube, etc.). Identity
+// (manifest, config, name, id, label) is inherited from Extension; this
+// class adds the port-attaching lifecycle. I/O methods are NOT on this
+// class -- each extension point type defines its own device callback
+// interface (OneMHzBusDevice, UserPortDevice, etc.) which extensions
+// implement via composition rather than inheritance.
+class BEEBIUM_EXT_API PeripheralExtension : public Extension {
 public:
-    virtual ~PeripheralExtension() = default;
-
-    // Set the manifest (called by the framework before init).
-    void set_manifest(ExtensionManifest manifest) { manifest_ = std::move(manifest); }
-
-    // Access the manifest.
-    const ExtensionManifest& manifest() const { return manifest_; }
-
-    // Set instance configuration (called by the framework before init).
-    // Config is parsed from CLI arguments or preset files.
-    void set_config(std::map<std::string, std::string> config) { config_ = std::move(config); }
-
-    // Access a single config value by key.
-    std::optional<std::string_view> config_value(std::string_view key) const {
-        auto it = config_.find(std::string(key));
-        if (it != config_.end()) {
-            return std::string_view(it->second);
-        }
-        return std::nullopt;
-    }
-
-    // Access all config values.
-    const std::map<std::string, std::string>& config() const { return config_; }
-
-    // Instance ID (from config["id"] or empty if not yet assigned).
-    std::string_view id() const {
-        auto it = config_.find("id");
-        return (it != config_.end()) ? std::string_view(it->second) : std::string_view{};
-    }
-
-    // Display label (from config["label"], falls back to id).
-    std::string_view label() const {
-        auto it = config_.find("label");
-        if (it != config_.end() && !it->second.empty()) {
-            return std::string_view(it->second);
-        }
-        return id();
-    }
-
-    // Extension name (default reads from manifest; can be overridden).
-    virtual std::string_view name() const { return manifest_.name; }
-
-    // Human-readable description (from manifest).
-    std::string_view description() const { return manifest_.description; }
-
     // Extension points this extension requires (e.g. {"1mhz-bus"}).
     virtual std::span<const std::string_view> attaches_to() const = 0;
 
@@ -109,10 +60,6 @@ public:
     // Zero or more gRPC services for client interaction.
     // Collected after init() and registered with the gRPC ServerBuilder.
     virtual std::vector<grpc::Service*> grpc_services() { return {}; }
-
-protected:
-    ExtensionManifest manifest_;
-    std::map<std::string, std::string> config_;
 };
 
 }  // namespace beebium
