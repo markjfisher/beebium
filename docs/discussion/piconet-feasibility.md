@@ -136,13 +136,13 @@ The NFS ROM expects step-by-step handshake progression through the ADLC. Piconet
 
 A `PiconetBackend` would operate in `aun_mode=true`, sitting behind `FourWayHandshake` just as `AunBackend` does. The `NetworkFrame` types (`Unicast`, `Ack`, `Broadcast`, `Immediate`, `ImmReply`) map cleanly to Piconet's command/event vocabulary:
 
-| NetworkFrame type | Piconet TX command | Piconet RX event |
-|---|---|---|
-| `Unicast` | `TX` | `RX_TRANSMIT` |
-| `Ack` | (implicit in `TX_RESULT OK`) | (implicit in handshake) |
-| `Broadcast` | `BCAST` | `RX_BROADCAST` |
-| `Immediate` | `TX` (port 0) | `RX_IMMEDIATE` (MachinePeek only — see below) |
-| `ImmReply` | — (no host-driven in-handshake reply) | — |
+| NetworkFrame type | Piconet TX command                    | Piconet RX event                              |
+|-------------------|---------------------------------------|-----------------------------------------------|
+| `Unicast`         | `TX`                                  | `RX_TRANSMIT`                                 |
+| `Ack`             | (implicit in `TX_RESULT OK`)          | (implicit in handshake)                       |
+| `Broadcast`       | `BCAST`                               | `RX_BROADCAST`                                |
+| `Immediate`       | `TX` (port 0)                         | `RX_IMMEDIATE` (MachinePeek only — see below) |
+| `ImmReply`        | — (no host-driven in-handshake reply) | —                                             |
 
 The `Immediate`/`ImmReply` mapping is not symmetric. Inbound immediate operations other than MachinePeek cannot be serviced by a host-generated reply — see [Immediate Operations Limitation](#immediate-operations-limitation).
 
@@ -237,26 +237,26 @@ Piconet communicates over USB CDC serial using a text-based, newline-delimited p
 
 ### Commands (host → device)
 
-| Command | Description |
-|---|---|
-| `SET_MODE STOP` | Disable Econet activity |
-| `SET_MODE LISTEN` | Normal operation: respond to addressed frames |
-| `SET_MODE MONITOR` | Promiscuous: capture all traffic |
-| `SET_STATION <n>` | Set this device's Econet station number |
-| `TX <destStn> <destNet> <scoutB64> <dataB64>` | Transmit with four-way handshake |
-| `BCAST <destNet> <dataB64>` | Broadcast (fire-and-forget) |
-| `STATUS` | Query device state |
+| Command                                       | Description                                   |
+|-----------------------------------------------|-----------------------------------------------|
+| `SET_MODE STOP`                               | Disable Econet activity                       |
+| `SET_MODE LISTEN`                             | Normal operation: respond to addressed frames |
+| `SET_MODE MONITOR`                            | Promiscuous: capture all traffic              |
+| `SET_STATION <n>`                             | Set this device's Econet station number       |
+| `TX <destStn> <destNet> <scoutB64> <dataB64>` | Transmit with four-way handshake              |
+| `BCAST <destNet> <dataB64>`                   | Broadcast (fire-and-forget)                   |
+| `STATUS`                                      | Query device state                            |
 
 ### Events (device → host)
 
-| Event | Description |
-|---|---|
+| Event                              | Description                              |
+|------------------------------------|------------------------------------------|
 | `RX_TRANSMIT <scoutB64> <dataB64>` | Received a unicast (handshake completed) |
-| `RX_BROADCAST <dataB64>` | Received a broadcast |
-| `RX_IMMEDIATE <dataB64>` | Received an immediate operation |
-| `MONITOR <dataB64>` | Traffic capture (MONITOR mode only) |
-| `TX_RESULT <code>` | Result of a TX or BCAST command |
-| `ERROR <message>` | Device error |
+| `RX_BROADCAST <dataB64>`           | Received a broadcast                     |
+| `RX_IMMEDIATE <dataB64>`           | Received an immediate operation          |
+| `MONITOR <dataB64>`                | Traffic capture (MONITOR mode only)      |
+| `TX_RESULT <code>`                 | Result of a TX or BCAST command          |
+| `ERROR <message>`                  | Device error                             |
 
 ### TX_RESULT Codes
 
