@@ -38,6 +38,10 @@ class EconetStatusResponse;  // forward decl; defined in econet.proto
 // extensions, one per ADLC -- nothing here precludes that.
 class BEEBIUM_EXT_API EconetTransportExtension : public Extension {
 public:
+    // Out-of-line destructor anchors the vtable in beebium_extension_api
+    // (required by MSVC for dllimport-decorated polymorphic classes).
+    ~EconetTransportExtension() override;
+
     // Construct the backend. Called once per machine after extension
     // config is set, before EconetSocket::enable(). Returns nullptr on
     // construction failure (e.g. socket bind failed, device unavailable);
@@ -47,13 +51,15 @@ public:
     // Forward station-ID changes (e.g. from gRPC SetStationId) so the
     // transport can update any of its own bookkeeping. Default no-op;
     // transports that need to push the change to a downstream device
-    // (Piconet's SET_STATION command) override.
-    virtual void on_station_id_changed(uint8_t /*new_station_id*/) {}
+    // (Piconet's SET_STATION command) override. Defined out-of-line in
+    // EconetTransportExtension.cpp.
+    virtual void on_station_id_changed(uint8_t new_station_id);
 
     // Zero or more gRPC services for client interaction
     // (e.g. AUN-specific peer-list RPCs). Collected after backend
-    // construction and registered with the gRPC ServerBuilder.
-    virtual std::vector<grpc::Service*> grpc_services() { return {}; }
+    // construction and registered with the gRPC ServerBuilder. Defined
+    // out-of-line in EconetTransportExtension.cpp.
+    virtual std::vector<grpc::Service*> grpc_services();
 };
 
 }  // namespace beebium

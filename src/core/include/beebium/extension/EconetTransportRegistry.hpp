@@ -32,6 +32,9 @@ namespace beebium {
 class BEEBIUM_EXT_API EconetTransportRegistry {
 public:
     EconetTransportRegistry() = default;
+    // Out-of-line destructor anchors the registry's symbols in
+    // beebium_extension_api on MSVC.
+    ~EconetTransportRegistry();
     EconetTransportRegistry(const EconetTransportRegistry&) = delete;
     EconetTransportRegistry& operator=(const EconetTransportRegistry&) = delete;
 
