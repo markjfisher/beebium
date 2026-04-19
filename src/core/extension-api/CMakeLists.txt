@@ -42,8 +42,24 @@ set_target_properties(beebium_extension_api PROPERTIES
 # RUNTIME_OUTPUT_DIRECTORY to place beebium_extension_api.dll directly
 # alongside the server executables so they can load it without manual
 # PATH setup or a deployment copy step.
+#
+# Test executables live in build/tests/$<CONFIG>/ and also link
+# beebium_core (which PUBLIC-links beebium_extension_api), so they
+# need a sibling copy of the DLL to load at runtime. A post-build
+# custom command copies the DLL into the tests directory so ctest
+# (including catch_discover_tests, which invokes each test exe to
+# enumerate cases) can load them. This matches the existing
+# copy-alongside-server arrangement above for deployment targets.
 if(WIN32)
     set_target_properties(beebium_extension_api PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/server"
+    )
+    add_custom_command(TARGET beebium_extension_api POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:beebium_extension_api>
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/"
+        COMMENT "Copying beebium_extension_api.dll to tests/$<CONFIG> for runtime loading"
     )
 endif()
