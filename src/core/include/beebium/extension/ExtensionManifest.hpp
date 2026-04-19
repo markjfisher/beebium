@@ -31,6 +31,7 @@ struct BEEBIUM_EXT_API ExtensionManifest {
     std::string description;      // human-readable description
     std::string library_stem;     // shared library filename stem (platform adds suffix)
     std::string cli_name;         // short CLI alias (e.g. "scsi-hdd"); defaults to name
+    std::string extension_kind = "peripheral";  // "peripheral" | "econet-transport"
     std::filesystem::path manifest_dirpath;  // directory containing manifest.json (empty for built-in)
     std::vector<ParameterSchema> parameters; // parameter schema for CLI/preset/gRPC
     std::vector<std::string> provides;       // extension points this extension creates (e.g. ["scsi"])
