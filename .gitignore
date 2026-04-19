@@ -17,6 +17,22 @@ compile_commands.json
 CTestTestfile.cmake
 Testing/
 _deps/
+DartConfiguration.tcl
+
+# catch_discover_tests writes <target>-<hash>_include.cmake plus a
+# matching *_tests.cmake into the binary dir; ignore in case they
+# leak into the source tree from an accidental in-source build.
+*_include.cmake
+*_tests.cmake
+
+# Generated 6502 sources / generator binary -- correctly produced
+# under build/ but ignore in case of an accidental in-source build.
+/src/6502/6502_internal.inl
+/src/6502/third_party/b2/6502_gen
+
+# Generated preset bundles -- correctly produced under
+# build/src/server/presets/.
+/src/server/presets/
 
 # Compiled objects and libraries
 *.o
