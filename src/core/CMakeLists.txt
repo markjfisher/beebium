@@ -14,11 +14,6 @@ add_library(beebium_core STATIC
     src/disc/formats/HfeFormatHandler.cpp
     src/econet/AunBackend.cpp
     src/econet/aun/AunEconetTransportExtension.cpp
-    src/econet/piconet/Base64.cpp
-    src/econet/piconet/Events.cpp
-    src/econet/piconet/PiconetBackend.cpp
-    src/econet/piconet/PosixSerialPort.cpp
-    src/econet/piconet/TxResult.cpp
     src/TubeUla.cpp
     src/ParasiteCpu.cpp
     src/ParasiteRunner.cpp

@@ -32,9 +32,7 @@
 #include "beebium/disc/DiscConcepts.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/AunBackend.hpp"
-#include "beebium/econet/PiconetBackend.hpp"
 #include "beebium/econet/TestBackend.hpp"
-#include "beebium/econet/piconet/PosixSerialPort.hpp"
 #include "beebium/tube/TubeConcepts.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/server/PresetLoader.hpp"
@@ -520,14 +518,15 @@ struct ServerConfig {
 
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
-    std::optional<std::string> piconet_device_path;   // empty = no Piconet; mutually exclusive with --aun
-                                                      // (Phase 3 will move Piconet to a plugin extension and
-                                                      // remove this field.)
-    // AUN UDP transport is selected via --aun port=...:map=... which the
-    // CLI parser routes through the generic extension dispatch into an
-    // AunEconetTransportExtension instance. There is no aun_port field
-    // on ServerConfig any more; the port lives in the extension's
-    // config map.
+    // Both AUN (built-in) and Piconet (plugin) are selected via the
+    // generic extension dispatch:
+    //
+    //   --aun     port=...:map=...
+    //   --piconet device_path=/dev/ttyX
+    //
+    // ServerConfig has no transport-specific fields; the values live
+    // in the relevant ExtensionInstance::config map and are consumed
+    // by the corresponding EconetTransportExtension::create_backend.
 
     // Startup options (keyboard links)
     // -1 means not set; we use int to detect if user specified a value
@@ -605,9 +604,10 @@ void print_usage(const char* program_name) {
                   << "                           port=none disables the network.\n"
                   << "                           map= entries are repeatable; the inner\n"
                   << "                           separator is ';' (not ':').\n"
-                  << "  --piconet <device-path>  Use a Piconet USB device as the Econet transport\n"
-                  << "                           (e.g. /dev/tty.usbmodem101). Mutually exclusive\n"
-                  << "                           with --aun.\n";
+                  << "  --piconet device_path=/dev/ttyX\n"
+                  << "                           Piconet USB-CDC bridge to a real Econet wire\n"
+                  << "                           (POSIX-only; provided by the piconet plugin).\n"
+                  << "                           Mutually exclusive with --aun.\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -709,17 +709,13 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
 
         // Transport: convert preset.econet.transport (if present) into an
         // ExtensionInstance so it flows through the same dispatch as a
-        // CLI --aun ... or --<plugin> ... flag.
+        // CLI --aun ... or --piconet ... flag. AUN is built-in; Piconet
+        // is a plugin; the dispatcher routes by name.
         if (econet.transport) {
             typename ServerConfig<MachineType>::ExtensionInstance inst;
             inst.name = econet.transport->name;
             inst.config = econet.transport->parameters;
             config.extension_instances.push_back(std::move(inst));
-        }
-
-        if (econet.piconet) {
-            // Legacy: Piconet still goes via the old path until phase 3.
-            config.piconet_device_path = econet.piconet->device_path;
         }
     }
 
@@ -908,12 +904,6 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: --station must be 1-254\n";
                 return ExitCode::USAGE;
             }
-        } else if (arg == "--piconet" && i + 1 < argc) {
-            config.piconet_device_path = argv[++i];
-            if (config.piconet_device_path->empty()) {
-                std::cerr << "Error: --piconet requires a device path\n";
-                return ExitCode::USAGE;
-            }
         } else if (arg == "--provenance-type" && i + 1 < argc) {
             config.provenance_type = argv[++i];
         } else if (arg == "--provenance-uuid" && i + 1 < argc) {
@@ -977,11 +967,9 @@ std::optional<std::string> validate_config(const ServerConfig<MachineType>& conf
         return "--links cannot be combined with --screen-mode or --auto-boot";
     }
 
-    // Econet transports are mutually exclusive. With AUN now driven via
-    // the extension instance machinery, --aun mutex with --piconet is
-    // enforced at install_econet time (where both the transport
-    // registry and config.piconet_device_path are visible). validate_config
-    // can't see the transport registry.
+    // Econet transports are mutually exclusive. Both AUN and Piconet
+    // are now extension instances; mutex enforcement lives in
+    // install_econet (which sees the EconetTransportRegistry).
 
     return std::nullopt;  // Valid
 }
@@ -1158,52 +1146,17 @@ std::optional<int> install_econet(MachineType& machine,
                 return std::nullopt;
             }
 
-            if (config.piconet_device_path.has_value()) {
-#ifdef _WIN32
-                // PosixSerialPort is POSIX-only. A Win32SerialPort
-                // implementation is not yet written, so --piconet is
-                // unavailable on Windows builds. Refuse the option with
-                // a clear message rather than silently fall through to
-                // AUN (the user explicitly asked for Piconet).
-                std::cerr << "Error: --piconet is not supported on this Windows build "
-                             "(no Win32SerialPort implementation yet). Use --aun "
-                             "instead.\n";
-                return 1;
-#else
-                // Piconet USB transport: open the device and bridge to a real
-                // Econet wire. Phase 3 will move this into a proper
-                // EconetTransportExtension plugin; for now it stays inline.
-                const auto& device_path = *config.piconet_device_path;
-                auto serial = std::make_unique<beebium::piconet::PosixSerialPort>(device_path);
-                if (!serial->is_open()) {
-                    std::cerr << "Error: Failed to open Piconet device "
-                              << device_path << "\n";
-                    return 1;
-                }
-                auto backend = std::make_unique<beebium::PiconetBackend>(
-                    beebium::piconet::PiconetConfig{device_path, station},
-                    std::move(serial));
+            // No transport configured: Econet hardware fitted but no
+            // network connection. The ADLC reports "no clock" so the
+            // NFS ROM behaves as if the cable is unplugged.
+            auto backend = std::make_unique<beebium::TestBackend>();
+            backend->set_connected(false);
+            machine.state().memory.econet_socket.enable(
+                station, std::move(backend),
+                true);  // aun_mode = true (FourWayHandshake wraps disconnected backend)
 
-                std::cout << "Econet station " << config.station_number
-                          << " via Piconet at " << device_path << "\n";
-
-                machine.state().memory.econet_socket.enable(
-                    station, std::move(backend),
-                    true);  // aun_mode = true (FourWayHandshake active)
-#endif
-            } else {
-                // No transport configured: Econet hardware fitted but no
-                // network connection. The ADLC reports "no clock" so the
-                // NFS ROM behaves as if the cable is unplugged.
-                auto backend = std::make_unique<beebium::TestBackend>();
-                backend->set_connected(false);
-                machine.state().memory.econet_socket.enable(
-                    station, std::move(backend),
-                    true);  // aun_mode = true (FourWayHandshake wraps disconnected backend)
-
-                std::cout << "Econet station " << config.station_number
-                          << " (no network -- pass --aun port=N to enable AUN)\n";
-            }
+            std::cout << "Econet station " << config.station_number
+                      << " (no network -- pass --aun port=N or --piconet device_path=... to enable a transport)\n";
         }
     } else if (config.station_number >= 1) {
         std::cerr << "Warning: --station option ignored (machine has no Econet socket)\n";
@@ -1520,6 +1473,17 @@ public:
                 return *exit_code;
             }
 
+            // Plugin manifests have to be scanned now (not later in the
+            // peripheral setup) because econet-transport plugins like
+            // piconet need to be constructed before install_econet so
+            // their backend is ready when the machine reads the ADLC.
+            beebium::PluginLoader plugin_loader;
+            std::vector<beebium::ExtensionManifest> plugin_manifests;
+            if (!config.extension_dirpath.empty()) {
+                std::cout << "Extension directory: " << config.extension_dirpath << "\n";
+                plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+            }
+
             // Build the Econet transport registry from any econet-transport
             // extension instances. Done before install_econet so the
             // transport is ready when the machine first reads the ADLC.
@@ -1531,35 +1495,48 @@ public:
                 std::vector<typename ServerConfig<MachineType>::ExtensionInstance> remaining;
                 remaining.reserve(config.extension_instances.size());
                 for (auto& inst : config.extension_instances) {
+                    // Locate the manifest: built-ins first, then scanned plugins.
                     const auto* entry = beebium::builtin_extensions::find(inst.name);
-                    if (entry && entry->manifest.extension_kind == "econet-transport") {
-                        if (inst.config.find("id") == inst.config.end()) {
-                            inst.config["id"] = generate_uuid_v4();
+                    const beebium::ExtensionManifest* manifest =
+                        entry ? &entry->manifest
+                              : beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
+
+                    if (!manifest || manifest->extension_kind != "econet-transport") {
+                        remaining.push_back(std::move(inst));
+                        continue;
+                    }
+
+                    if (inst.config.find("id") == inst.config.end()) {
+                        inst.config["id"] = generate_uuid_v4();
+                    }
+                    std::cout << "Loading transport: " << manifest->name
+                              << " (id=" << inst.config["id"] << ")\n";
+                    for (const auto& [k, v] : inst.config) {
+                        if (k != "id") {
+                            std::cout << "  " << k << "=" << v << "\n";
                         }
-                        std::cout << "Loading transport: " << entry->manifest.name
-                                  << " (id=" << inst.config["id"] << ")\n";
-                        for (const auto& [k, v] : inst.config) {
-                            if (k != "id") {
-                                std::cout << "  " << k << "=" << v << "\n";
-                            }
-                        }
-                        auto loaded = entry->factory();
+                    }
+
+                    std::unique_ptr<beebium::Extension> loaded;
+                    if (entry) {
+                        loaded = entry->factory();
                         loaded->set_manifest(entry->manifest);
                         loaded->set_config(std::move(inst.config));
-                        auto* transport = dynamic_cast<beebium::EconetTransportExtension*>(
-                            loaded.get());
-                        if (!transport) {
-                            std::cerr << "Error: built-in '" << entry->manifest.name
-                                      << "' has extension_kind=econet-transport but is "
-                                         "not an EconetTransportExtension instance.\n";
-                            return 1;
-                        }
-                        (void)loaded.release();
-                        transport_registry.add(
-                            std::unique_ptr<beebium::EconetTransportExtension>(transport));
                     } else {
-                        remaining.push_back(std::move(inst));
+                        loaded = plugin_loader.load_extension(*manifest, std::move(inst.config));
                     }
+
+                    auto* transport = dynamic_cast<beebium::EconetTransportExtension*>(
+                        loaded.get());
+                    if (!transport) {
+                        std::cerr << "Error: extension '" << manifest->name
+                                  << "' has extension_kind=econet-transport but is "
+                                     "not an EconetTransportExtension instance.\n";
+                        return 1;
+                    }
+                    (void)loaded.release();
+                    transport_registry.add(
+                        std::unique_ptr<beebium::EconetTransportExtension>(transport));
                 }
                 config.extension_instances = std::move(remaining);
             }
@@ -1586,8 +1563,9 @@ public:
             // Reset machine
             machine.reset();
 
-            // Set up peripheral extension registry
-            beebium::PluginLoader plugin_loader;
+            // Set up peripheral extension registry. plugin_loader and
+            // plugin_manifests already exist from the earlier scan that
+            // populated the transport registry.
             beebium::ExtensionRegistry extension_registry;
             if constexpr (beebium::HasOneMHzBus<Memory>) {
                 extension_registry.register_extension_point("1mhz-bus");
@@ -1606,12 +1584,9 @@ public:
                 extension_registry.register_extension(std::move(scratch_ram));
             }
 
-            // Load extensions (from --<cli-name> flags)
-            std::vector<beebium::ExtensionManifest> plugin_manifests;
-            if (!config.extension_dirpath.empty()) {
-                std::cout << "Extension directory: " << config.extension_dirpath << "\n";
-                plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
-            }
+            // Load extensions (from --<cli-name> flags). plugin_loader and
+            // plugin_manifests were already populated above (so the
+            // transport registry could be built before machine.reset()).
             // Sort extension instances so providers (those with "provides" in
             // their manifest) are loaded before consumers. This ensures
             // RTLD_GLOBAL takes effect before child plugins try to resolve
@@ -2989,8 +2964,9 @@ public:
                 return *exit_code;
             }
             // Screenshot capture uses no extensions; pass an empty
-            // transport registry so install_econet falls back to legacy
-            // --aun-port / --piconet handling (typically neither is set).
+            // transport registry. install_econet sees no transports and
+            // installs a disconnected stub backend (matching the
+            // "Econet hardware fitted but no network" case).
             beebium::EconetTransportRegistry transport_registry;
             if (auto exit_code = install_econet(machine, config, transport_registry)) {
                 return *exit_code;

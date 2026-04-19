@@ -214,100 +214,98 @@ add_executable(test_network_backend_station_change test_network_backend_station_
 target_link_libraries(test_network_backend_station_change PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_network_backend_station_change)
 
-# Piconet protocol library: TX_RESULT enum and parser
-add_executable(test_piconet_tx_result test_piconet_tx_result.cpp)
-target_link_libraries(test_piconet_tx_result PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_piconet_tx_result)
-
-# Piconet protocol library: base64 encoder/decoder
-add_executable(test_piconet_base64 test_piconet_base64.cpp)
-target_link_libraries(test_piconet_base64 PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_piconet_base64)
-
-# Piconet protocol library: command formatters
-add_executable(test_piconet_commands test_piconet_commands.cpp)
-target_link_libraries(test_piconet_commands PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_piconet_commands)
-
-# Piconet protocol library: event parser
-add_executable(test_piconet_events test_piconet_events.cpp)
-target_link_libraries(test_piconet_events PRIVATE beebium_core Catch2::Catch2WithMain)
-catch_discover_tests(test_piconet_events)
-
-# PiconetBackend TX path against MockPiconetSerial
-add_executable(test_piconet_backend_tx test_piconet_backend_tx.cpp)
-target_link_libraries(test_piconet_backend_tx PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_backend_tx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_backend_tx)
-
-# PiconetBackend RX path (reader thread, line buffering, event dispatch)
-add_executable(test_piconet_backend_rx test_piconet_backend_rx.cpp)
-target_link_libraries(test_piconet_backend_rx PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_backend_rx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_backend_rx)
-
-# PiconetBackend lifecycle (constructor handshake, station sync, destructor join)
-add_executable(test_piconet_backend_lifecycle test_piconet_backend_lifecycle.cpp)
-target_link_libraries(test_piconet_backend_lifecycle PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_backend_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_backend_lifecycle)
-
-# POSIX serial port wrapper (production SerialPort implementation)
+# Piconet tests are POSIX-only: the Piconet plugin extension lives in
+# src/extensions/piconet/ and provides beebium_piconet_core PUBLIC
+# with the same include paths (beebium/econet/PiconetBackend.hpp etc.)
+# that tests have always used. On Windows there is no serial-port
+# implementation so the plugin (and its tests) are skipped.
 if(NOT WIN32)
+    # Piconet protocol library: TX_RESULT enum and parser
+    add_executable(test_piconet_tx_result test_piconet_tx_result.cpp)
+    target_link_libraries(test_piconet_tx_result PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_tx_result)
+
+    # Piconet protocol library: base64 encoder/decoder
+    add_executable(test_piconet_base64 test_piconet_base64.cpp)
+    target_link_libraries(test_piconet_base64 PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_base64)
+
+    # Piconet protocol library: command formatters
+    add_executable(test_piconet_commands test_piconet_commands.cpp)
+    target_link_libraries(test_piconet_commands PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_commands)
+
+    # Piconet protocol library: event parser
+    add_executable(test_piconet_events test_piconet_events.cpp)
+    target_link_libraries(test_piconet_events PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_piconet_events)
+
+    # PiconetBackend TX path against MockPiconetSerial
+    add_executable(test_piconet_backend_tx test_piconet_backend_tx.cpp)
+    target_link_libraries(test_piconet_backend_tx PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_backend_tx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_backend_tx)
+
+    # PiconetBackend RX path (reader thread, line buffering, event dispatch)
+    add_executable(test_piconet_backend_rx test_piconet_backend_rx.cpp)
+    target_link_libraries(test_piconet_backend_rx PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_backend_rx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_backend_rx)
+
+    # PiconetBackend lifecycle (constructor handshake, station sync, destructor join)
+    add_executable(test_piconet_backend_lifecycle test_piconet_backend_lifecycle.cpp)
+    target_link_libraries(test_piconet_backend_lifecycle PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_backend_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_backend_lifecycle)
+
+    # POSIX serial port wrapper (production SerialPort implementation)
     add_executable(test_posix_serial_port test_posix_serial_port.cpp)
-    target_link_libraries(test_posix_serial_port PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_link_libraries(test_posix_serial_port PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
     catch_discover_tests(test_posix_serial_port)
-endif()
 
-# Piconet hardware contract tests (gated on BEEBIUM_PICONET_DEVICE env var).
-# Skipped without a real Piconet device; when run, asserts that the
-# firmware's behaviour matches piconet_protocol's expectations -- the
-# fidelity anchor for FakePiconetDevice. SAFE WITHOUT A REAL ECONET WIRE.
-if(NOT WIN32)
+    # Piconet hardware contract tests (gated on BEEBIUM_PICONET_DEVICE env var).
+    # Skipped without a real Piconet device; when run, asserts that the
+    # firmware's behaviour matches piconet_protocol's expectations -- the
+    # fidelity anchor for FakePiconetDevice. SAFE WITHOUT A REAL ECONET WIRE.
     add_executable(test_piconet_hardware test_piconet_hardware.cpp)
-    target_link_libraries(test_piconet_hardware PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_link_libraries(test_piconet_hardware PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
     # Every test in this binary calls SKIP() when BEEBIUM_PICONET_DEVICE
     # is unset. Catch2 returns exit code 4 ("no tests ran") in that case,
     # which ctest interprets as failure unless we pass through this flag.
     catch_discover_tests(test_piconet_hardware EXTRA_ARGS --allow-running-no-tests)
-endif()
 
-# FakePiconetDevice unit tests (behavioural model of Piconet firmware).
-add_executable(test_piconet_fake_device
-    test_piconet_fake_device.cpp
-    piconet/FakePiconetDevice.cpp)
-target_link_libraries(test_piconet_fake_device PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_fake_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_fake_device)
+    # FakePiconetDevice unit tests (behavioural model of Piconet firmware).
+    add_executable(test_piconet_fake_device
+        test_piconet_fake_device.cpp
+        piconet/FakePiconetDevice.cpp)
+    target_link_libraries(test_piconet_fake_device PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_fake_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_fake_device)
 
-# Piconet integration: full FourWayHandshake -> PiconetBackend -> FakePiconetDevice stack.
-add_executable(test_piconet_integration
-    test_piconet_integration.cpp
-    piconet/FakePiconetDevice.cpp)
-target_link_libraries(test_piconet_integration PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_integration)
+    # Piconet integration: full FourWayHandshake -> PiconetBackend -> FakePiconetDevice stack.
+    add_executable(test_piconet_integration
+        test_piconet_integration.cpp
+        piconet/FakePiconetDevice.cpp)
+    target_link_libraries(test_piconet_integration PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_integration)
 
-# Network-required Piconet hardware contract tests (gated on
-# BEEBIUM_PICONET_DEVICE and BEEBIUM_PICONET_NETWORK_AVAILABLE).
-# REQUIRES: Piconet attached to a real Econet wire with at least one peer.
-if(NOT WIN32)
+    # Network-required Piconet hardware contract tests (gated on
+    # BEEBIUM_PICONET_DEVICE and BEEBIUM_PICONET_NETWORK_AVAILABLE).
+    # REQUIRES: Piconet attached to a real Econet wire with at least one peer.
     add_executable(test_piconet_hardware_network test_piconet_hardware_network.cpp)
-    target_link_libraries(test_piconet_hardware_network PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_link_libraries(test_piconet_hardware_network PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
     # SKIP-on-missing-env-var pattern; see test_piconet_hardware above.
     catch_discover_tests(test_piconet_hardware_network EXTRA_ARGS --allow-running-no-tests)
-endif()
 
-# PTY-bridged FakePiconetDevice integration tests (parity with the
-# in-process integration suite, exercising PosixSerialPort end-to-end).
-# POSIX-only.
-if(NOT WIN32)
+    # PTY-bridged FakePiconetDevice integration tests (parity with the
+    # in-process integration suite, exercising PosixSerialPort end-to-end).
     add_executable(test_piconet_pty_integration
         test_piconet_pty_integration.cpp
         piconet/FakePiconetDevice.cpp
         piconet/FakePiconetDeviceOnPty.cpp
         piconet/PtyPair.cpp)
-    target_link_libraries(test_piconet_pty_integration PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_link_libraries(test_piconet_pty_integration PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
     target_include_directories(test_piconet_pty_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     catch_discover_tests(test_piconet_pty_integration)
 endif()
@@ -315,12 +313,14 @@ endif()
 # AUN-bridged Piconet test: two Beebium-style stacks peered on UDP
 # loopback, with no real hardware involved. Closes out the testing-
 # strategy story (Phase 8 of docs/discussion/piconet-feasibility.md).
-add_executable(test_piconet_aun_bridge
-    test_piconet_aun_bridge.cpp
-    piconet/AunBridgePiconetDevice.cpp)
-target_link_libraries(test_piconet_aun_bridge PRIVATE beebium_core Catch2::Catch2WithMain)
-target_include_directories(test_piconet_aun_bridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-catch_discover_tests(test_piconet_aun_bridge)
+if(NOT WIN32)
+    add_executable(test_piconet_aun_bridge
+        test_piconet_aun_bridge.cpp
+        piconet/AunBridgePiconetDevice.cpp)
+    target_link_libraries(test_piconet_aun_bridge PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_piconet_aun_bridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_piconet_aun_bridge)
+endif()
 
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)

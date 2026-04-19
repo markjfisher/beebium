@@ -307,41 +307,11 @@ TEST_CASE("parse_start_arguments: implicit start (no subcommand)", "[cli][parse_
 // Econet transport selection
 // ============================================================================
 //
-// AUN is now driven via the extension instance machinery (--aun port=...)
-// rather than the legacy --aun-port / --aun-map flags. The CLI tests below
-// only exercise the surface that ServerConfig still tracks directly:
-// --piconet (legacy until phase 3) and the extension-instance dispatch.
-
-TEST_CASE("parse_start_arguments: --piconet sets device path",
-          "[cli][parse_start_arguments][piconet]") {
-    ArgvHelper args{"beebium", "start", "--piconet", "/dev/tty.usbmodem101"};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE_FALSE(result.has_value());
-    REQUIRE(config.piconet_device_path.has_value());
-    CHECK(*config.piconet_device_path == "/dev/tty.usbmodem101");
-}
-
-TEST_CASE("parse_start_arguments: --piconet with empty value returns USAGE",
-          "[cli][parse_start_arguments][piconet]") {
-    ArgvHelper args{"beebium", "start", "--piconet", ""};
-    ServerConfig<MachineType> config;
-
-    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
-
-    REQUIRE(result.has_value());
-    CHECK(*result == ExitCode::USAGE);
-}
-
-TEST_CASE("validate_config: --piconet alone is valid",
-          "[cli][validate_config][piconet]") {
-    ServerConfig<MachineType> config;
-    config.piconet_device_path = "/dev/tty.usbmodem101";
-    auto err = validate_config<MachineType>(config);
-    CHECK_FALSE(err.has_value());
-}
+// Both AUN (built-in) and Piconet (plugin) are now extension instances
+// dispatched via the generic --<extension-name> machinery. There are
+// no transport-specific fields on ServerConfig any more; the parser
+// tests below check that the relevant ExtensionInstance is constructed
+// with the right config map.
 
 // ============================================================================
 // dispatch_subcommand() tests

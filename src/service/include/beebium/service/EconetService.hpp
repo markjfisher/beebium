@@ -18,7 +18,6 @@
 #include "beebium/econet/EconetSocket.hpp"
 #include "beebium/econet/AunBackend.hpp"
 #include "beebium/econet/AunPacket.hpp"
-#include "beebium/econet/PiconetBackend.hpp"
 #include "beebium/econet/TestBackend.hpp"
 #include "beebium/econet/Mc6854.hpp"
 #include "beebium/econet/FourWayHandshake.hpp"
@@ -117,17 +116,16 @@ public:
             response->set_station_id(econet.station_id());
             response->set_aun_mode(econet.aun_mode());
 
-            // Backend-specific info: AUN, Piconet, or generic.
+            // Backend-specific info: AUN-only (kept here as a stop-gap;
+            // phase 4 will move this into AunService and have transport
+            // extensions populate their own status block via a virtual
+            // hook). The Piconet branch was removed when Piconet moved
+            // out of core into a plugin; Piconet status will return via
+            // the same generic mechanism phase 4 introduces.
             if (auto* aun = dynamic_cast<AunBackend*>(econet.backend())) {
                 response->set_connected(aun->is_connected());
                 response->set_aun_port(aun->local_port());
                 response->set_peer_count(static_cast<uint32_t>(aun->peer_count()));
-            } else if (auto* piconet =
-                         dynamic_cast<PiconetBackend*>(econet.backend())) {
-                response->set_connected(piconet->is_connected());
-                auto* status = response->mutable_piconet();
-                status->set_device_path(piconet->config().device_path);
-                status->set_serial_open(piconet->is_connected());
             } else if (econet.backend()) {
                 response->set_connected(econet.backend()->is_connected());
             }

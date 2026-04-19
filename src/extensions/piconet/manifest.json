@@ -1,0 +1,15 @@
+{
+    "name": "piconet",
+    "description": "Piconet USB-CDC bridge to a real Econet network",
+    "library": "piconet",
+    "cli": "piconet",
+    "extension_kind": "econet-transport",
+    "parameters": [
+        {
+            "key": "device_path",
+            "type": "filepath",
+            "description": "Serial device path (e.g. /dev/tty.usbmodem101)",
+            "required": true
+        }
+    ]
+}

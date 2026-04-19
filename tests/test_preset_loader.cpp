@@ -330,7 +330,8 @@ TEST_CASE("load_preset: econet AUN with port=none disables network",
     REQUIRE(result.config->econet->transport->parameters.at("port") == "none");
 }
 
-TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econet][piconet]") {
+TEST_CASE("load_preset: econet with piconet via transport object",
+          "[preset][load_preset][econet][piconet]") {
     std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_piconet.preset.beebium";
     {
         std::ofstream file(temp_filepath);
@@ -338,7 +339,10 @@ TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econ
             "name": "Econet via Piconet",
             "econet": {
                 "station": 32,
-                "piconet": { "device_path": "/dev/tty.usbmodem101" }
+                "transport": {
+                    "name": "piconet",
+                    "parameters": { "device_path": "/dev/tty.usbmodem101" }
+                }
             }
         })";
     }
@@ -347,23 +351,23 @@ TEST_CASE("load_preset: econet with piconet device", "[preset][load_preset][econ
     REQUIRE(result.success());
     REQUIRE(result.config->econet.has_value());
     CHECK(result.config->econet->station == 32);
-    REQUIRE(result.config->econet->piconet.has_value());
-    CHECK(result.config->econet->piconet->device_path == "/dev/tty.usbmodem101");
-    CHECK_FALSE(result.config->econet->transport.has_value());
+    REQUIRE(result.config->econet->transport.has_value());
+    CHECK(result.config->econet->transport->name == "piconet");
+    CHECK(result.config->econet->transport->parameters.at("device_path")
+          == "/dev/tty.usbmodem101");
 
     std::filesystem::remove(temp_filepath);
 }
 
-TEST_CASE("load_preset: piconet and transport together is a load error",
+TEST_CASE("load_preset: legacy piconet object is rejected with migration hint",
           "[preset][load_preset][econet][piconet]") {
-    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_both.preset.beebium";
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_legacy_piconet.preset.beebium";
     {
         std::ofstream file(temp_filepath);
         file << R"({
-            "name": "Both",
+            "name": "Legacy Piconet",
             "econet": {
                 "station": 32,
-                "transport": { "name": "aun", "parameters": { "port": "32768" } },
                 "piconet": { "device_path": "/dev/tty.usbmodem101" }
             }
         })";
@@ -377,56 +381,21 @@ TEST_CASE("load_preset: piconet and transport together is a load error",
     std::filesystem::remove(temp_filepath);
 }
 
-TEST_CASE("load_preset: piconet without device_path is a load error",
-          "[preset][load_preset][econet][piconet]") {
-    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_no_devpath.preset.beebium";
+TEST_CASE("load_preset: legacy aun_port is rejected with migration hint",
+          "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_legacy_aun_port.preset.beebium";
     {
         std::ofstream file(temp_filepath);
         file << R"({
-            "name": "Bad Piconet",
-            "econet": { "station": 32, "piconet": {} }
+            "name": "Legacy AUN port",
+            "econet": { "station": 32, "aun_port": 32768 }
         })";
     }
 
     auto result = load_preset(temp_filepath);
     REQUIRE_FALSE(result.success());
-    CHECK(result.error.find("device_path") != std::string::npos);
-
-    std::filesystem::remove(temp_filepath);
-}
-
-TEST_CASE("load_preset: piconet with empty device_path is a load error",
-          "[preset][load_preset][econet][piconet]") {
-    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_empty_devpath.preset.beebium";
-    {
-        std::ofstream file(temp_filepath);
-        file << R"({
-            "name": "Empty Piconet path",
-            "econet": { "station": 32, "piconet": { "device_path": "" } }
-        })";
-    }
-
-    auto result = load_preset(temp_filepath);
-    REQUIRE_FALSE(result.success());
-    CHECK(result.error.find("empty") != std::string::npos);
-
-    std::filesystem::remove(temp_filepath);
-}
-
-TEST_CASE("load_preset: piconet section must be an object",
-          "[preset][load_preset][econet][piconet]") {
-    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_bad_piconet.preset.beebium";
-    {
-        std::ofstream file(temp_filepath);
-        file << R"({
-            "name": "Bad Piconet",
-            "econet": { "station": 32, "piconet": "/dev/tty.usbmodem101" }
-        })";
-    }
-
-    auto result = load_preset(temp_filepath);
-    REQUIRE_FALSE(result.success());
-    CHECK(result.error.find("object") != std::string::npos);
+    CHECK(result.error.find("aun_port") != std::string::npos);
+    CHECK(result.error.find("transport") != std::string::npos);
 
     std::filesystem::remove(temp_filepath);
 }
@@ -534,7 +503,6 @@ TEST_CASE("PresetEconetConfig: default state", "[preset][PresetEconetConfig]") {
 
     REQUIRE(econet.station == 0);
     REQUIRE_FALSE(econet.transport.has_value());
-    REQUIRE_FALSE(econet.piconet.has_value());
 }
 
 TEST_CASE("PresetConfig: econet default state", "[preset][PresetConfig]") {

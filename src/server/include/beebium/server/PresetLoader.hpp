@@ -32,25 +32,19 @@ struct PresetStorageConfig {
     std::optional<std::string> cassette_image_uri;
 };
 
-// Preset Piconet (USB Econet device) sub-configuration. Mutually
-// exclusive with the transport object. Phase 3 will fold this into
-// the generic transport object once Piconet ships as a plugin.
-struct PresetPiconetConfig {
-    std::string device_path;  // e.g. /dev/tty.usbmodem101
-};
-
 // Generic Econet transport sub-configuration: names a transport
-// extension and carries its parameters as a flat key/value map.
+// extension (built-in or plugin) and carries its parameters as a flat
+// key/value map. AUN, Piconet, and any future transport flow through
+// this single shape.
 struct PresetTransportConfig {
-    std::string name;                            // e.g. "aun"
+    std::string name;                            // e.g. "aun" or "piconet"
     std::map<std::string, std::string> parameters;
 };
 
 // Preset Econet configuration
 struct PresetEconetConfig {
-    int station;                          // 1-254
+    int station;                                     // 1-254
     std::optional<PresetTransportConfig> transport;  // present means "use this transport"
-    std::optional<PresetPiconetConfig> piconet;      // legacy; mutually exclusive with transport (until phase 3)
 };
 
 // Top-level preset configuration
@@ -232,28 +226,18 @@ inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_se
         econet.transport = std::move(transport);
     }
 
-    // Piconet (optional). Mutually exclusive with transport.
+    // Reject the legacy preset shape with a helpful error so users
+    // migrating from older presets aren't left puzzled.
     if (econet_json.contains("piconet")) {
-        if (econet.transport) {
-            return {std::nullopt,
-                    "Econet 'piconet' and 'transport' are mutually exclusive"};
-        }
-        const auto& piconet_json = econet_json["piconet"];
-        if (!piconet_json.is_object()) {
-            return {std::nullopt, "Econet 'piconet' must be an object"};
-        }
-        if (!piconet_json.contains("device_path")) {
-            return {std::nullopt, "Econet 'piconet' requires a 'device_path' field"};
-        }
-        if (!piconet_json["device_path"].is_string()) {
-            return {std::nullopt, "Econet 'piconet.device_path' must be a string"};
-        }
-        PresetPiconetConfig piconet;
-        piconet.device_path = piconet_json["device_path"].get<std::string>();
-        if (piconet.device_path.empty()) {
-            return {std::nullopt, "Econet 'piconet.device_path' must not be empty"};
-        }
-        econet.piconet = std::move(piconet);
+        return {std::nullopt,
+                "Econet 'piconet' is no longer accepted in presets; use "
+                "'transport': { 'name': 'piconet', 'parameters': "
+                "{ 'device_path': '/dev/ttyX' } }"};
+    }
+    if (econet_json.contains("aun_port")) {
+        return {std::nullopt,
+                "Econet 'aun_port' is no longer accepted in presets; use "
+                "'transport': { 'name': 'aun', 'parameters': { 'port': 'N' } }"};
     }
 
     // Unknown keys silently ignored for forward compatibility
