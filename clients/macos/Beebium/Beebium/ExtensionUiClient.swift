@@ -1,0 +1,161 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+import Foundation
+import GRPC
+import SwiftUI
+
+/// Typed payload for an Extension UI dispatch event. Each variant maps
+/// to one of the proto DispatchRequest oneof fields (or to "no payload"
+/// for fire-only Buttons).
+enum ExtensionDispatchPayload: Sendable {
+    case none           // Button (no payload)
+    case bool(Bool)     // Toggle
+    case string(String) // TextInput
+    case index(UInt32)  // Choice
+}
+
+/// Client for the server-driven Extension UI framework.
+///
+/// One client subscribes to multiple per-extension View streams (keyed
+/// by extension name) and exposes the latest View for each as an
+/// observable property. Dispatch is unary: the server validates and
+/// runs the event, and the resulting state change appears as the next
+/// pushed View on the SubscribeView stream.
+@MainActor
+final class ExtensionUiClient: ObservableObject, Disconnectable {
+    /// Latest View for each subscribed extension, keyed by extension name.
+    /// Becomes nil for an extension when its stream ends with NOT_FOUND.
+    @Published private(set) var views: [String: Beebium_View] = [:]
+
+    /// Per-extension error message (e.g. "extension not found", network drop).
+    @Published private(set) var errors: [String: String] = [:]
+
+    private var client: Beebium_ExtensionUiServiceNIOClient?
+    private var subscriptionTasks: [String: Task<Void, Never>] = [:]
+
+    /// Connect to the server using an existing gRPC channel. After this
+    /// the caller can `subscribe(to:)` for each extension whose UI it
+    /// wants to display.
+    func connect(channel: GRPCChannel) {
+        client = Beebium_ExtensionUiServiceNIOClient(channel: channel)
+    }
+
+    /// Disconnect: cancel every active subscription and drop state.
+    func disconnect() {
+        for task in subscriptionTasks.values {
+            task.cancel()
+        }
+        subscriptionTasks.removeAll()
+        client = nil
+        views.removeAll()
+        errors.removeAll()
+    }
+
+    /// Open a server-stream of View updates for the given extension.
+    /// Idempotent: calling subscribe twice for the same extension is a
+    /// no-op (the existing stream stays open). Streams that end (server
+    /// disconnect, NOT_FOUND for a missing extension) clear the View
+    /// entry and record an error message.
+    func subscribe(to extensionName: String) {
+        guard subscriptionTasks[extensionName] == nil else { return }
+        guard let client = client else { return }
+
+        var request = Beebium_SubscribeViewRequest()
+        request.extensionName = extensionName
+
+        let task = Task<Void, Never> { [weak self] in
+            guard let self = self else { return }
+            await self.runSubscription(extensionName: extensionName,
+                                       request: request,
+                                       client: client)
+        }
+        subscriptionTasks[extensionName] = task
+    }
+
+    /// Cancel a single extension's subscription and drop its View.
+    func unsubscribe(from extensionName: String) {
+        subscriptionTasks[extensionName]?.cancel()
+        subscriptionTasks.removeValue(forKey: extensionName)
+        views.removeValue(forKey: extensionName)
+        errors.removeValue(forKey: extensionName)
+    }
+
+    /// Send a Dispatch event to the server. Returns whether the
+    /// framework's validation gauntlet accepted the request; the actual
+    /// state change shows up on the SubscribeView stream as the next
+    /// pushed View, not in this return value.
+    @discardableResult
+    func dispatch(extension extensionName: String,
+                  controlId: String,
+                  viewRevision: UInt64,
+                  payload: ExtensionDispatchPayload) async -> Bool {
+        guard let client = client else { return false }
+
+        var request = Beebium_DispatchRequest()
+        request.extensionName = extensionName
+        request.controlID = controlId
+        request.viewRevision = viewRevision
+        switch payload {
+        case .none:
+            break  // leave the oneof unset (Button)
+        case .bool(let value):
+            request.boolValue = value
+        case .string(let value):
+            request.stringValue = value
+        case .index(let value):
+            request.indexValue = value
+        }
+
+        do {
+            let response = try await client.dispatch(request).response.get()
+            if !response.accepted {
+                NSLog("[ExtensionUiClient] dispatch rejected (%@/%@): %@",
+                      extensionName, controlId, response.error)
+            }
+            return response.accepted
+        } catch {
+            NSLog("[ExtensionUiClient] dispatch error (%@/%@): %@",
+                  extensionName, controlId, error.localizedDescription)
+            return false
+        }
+    }
+
+    // MARK: - Private
+
+    private func runSubscription(extensionName: String,
+                                 request: Beebium_SubscribeViewRequest,
+                                 client: Beebium_ExtensionUiServiceNIOClient) async {
+        let call = client.subscribeView(request) { [weak self] view in
+            Task { @MainActor [weak self] in
+                self?.views[view.extensionName] = view
+                self?.errors.removeValue(forKey: view.extensionName)
+            }
+        }
+
+        do {
+            _ = try await call.status.get()
+            // Stream ended cleanly (e.g. server cancelled). Drop the
+            // cached view so the UI stops showing stale data.
+            await MainActor.run { [weak self] in
+                self?.views.removeValue(forKey: extensionName)
+                self?.subscriptionTasks.removeValue(forKey: extensionName)
+            }
+        } catch {
+            await MainActor.run { [weak self] in
+                self?.views.removeValue(forKey: extensionName)
+                self?.errors[extensionName] = error.localizedDescription
+                self?.subscriptionTasks.removeValue(forKey: extensionName)
+            }
+        }
+    }
+}

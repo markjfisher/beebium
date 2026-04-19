@@ -54,6 +54,7 @@
 		8248344928EA9782B944178F /* SidebarMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992C39260909EB85C84D2C20 /* SidebarMode.swift */; };
 		82E5C63F1FAF9D28F87F09BA /* MachinePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28ED949DB593C8353954F7B1 /* MachinePreset.swift */; };
 		8BDB7D234471A8C37A8B027C /* econet.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2624275BB5D5286D790AF3 /* econet.grpc.swift */; };
+		8C6EF54139165E4D6F07941C /* ExtensionPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */; };
 		8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */ = {isa = PBXBuildFile; fileRef = 69144892FD8EBDC0F0D9230E /* video.proto */; };
 		8E648F53A0DD1B04A0E1F08E /* StorageModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */; };
 		94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6041795434C164F849A27B /* KeyInput.swift */; };
@@ -82,6 +83,7 @@
 		D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */; };
 		D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */; };
 		D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */; };
+		D9718E6F6B0170B2E3BDDD45 /* extension_ui.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */; };
 		DD38D6EB9C3CC2182169F801 /* Disconnectable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */; };
 		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
@@ -90,6 +92,7 @@
 		E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */; };
 		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
 		EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */ = {isa = PBXBuildFile; fileRef = DFB1414298AE8F8261138293 /* keyboard.proto */; };
+		EE2E16B800D75FA4C460895A /* ExtensionUiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3295FC427F5DC583E764C83B /* ExtensionUiClient.swift */; };
 		EEC1DCADCCF584AB8BC8DD01 /* ConnectionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0380D979784116B4110F8904 /* ConnectionRegistry.swift */; };
 		EED3FE1B2C84F875665FC6FE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C5792BABD709C954B706793 /* Metal.framework */; };
 		EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */; };
@@ -97,7 +100,9 @@
 		F44ED1692215ABF5CE928E87 /* indicator.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 831E41582E1F4F7358C624E8 /* indicator.pb.swift */; };
 		F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */; };
 		F619A0248AEA6D3F17D0EBA9 /* GRPC in Frameworks */ = {isa = PBXBuildFile; productRef = 4C97A19D18727CB09CD95712 /* GRPC */; };
+		F8DB66D575799986E3C664C3 /* ExtensionViewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */; };
 		F8E43B3F7BBA3554BE190043 /* MacKeyCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8502E9114AB10B2200A2F6F9 /* MacKeyCode.swift */; };
+		FB8C371C9D4C748FE2604B15 /* extension_ui.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C19550BD759DAA9DFA9A015 /* extension_ui.pb.swift */; };
 		FFED4839C8FA82EBD68D55E8 /* SidebarModeToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */; };
 /* End PBXBuildFile section */
 
@@ -118,14 +123,17 @@
 		0787829BB8681E1354B9C585 /* BeebiumTouchBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumTouchBarManager.swift; sourceTree = "<group>"; };
 		08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClient.swift; sourceTree = "<group>"; };
 		0A9849250F602C15283E458A /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+		0C19550BD759DAA9DFA9A015 /* extension_ui.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extension_ui.pb.swift; sourceTree = "<group>"; };
 		0FA112A053333004DAE316F9 /* BeebiumTouchBarLEDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumTouchBarLEDs.swift; sourceTree = "<group>"; };
 		1031975F4050BF5875549DFA /* FileCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCommands.swift; sourceTree = "<group>"; };
 		2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.grpc.swift; sourceTree = "<group>"; };
 		21F63FE0D5862D2315B5AFDC /* BeebiumSvgGlyphRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumSvgGlyphRenderer.swift; sourceTree = "<group>"; };
+		22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extension_ui.grpc.swift; sourceTree = "<group>"; };
 		25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerView.swift; sourceTree = "<group>"; };
 		28ED949DB593C8353954F7B1 /* MachinePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinePreset.swift; sourceTree = "<group>"; };
 		2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindow.swift; sourceTree = "<group>"; };
 		2CE550723A13DFA9A20EB302 /* IndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorView.swift; sourceTree = "<group>"; };
+		3295FC427F5DC583E764C83B /* ExtensionUiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUiClient.swift; sourceTree = "<group>"; };
 		38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClientTests.swift; sourceTree = "<group>"; };
 		3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardClient.swift; sourceTree = "<group>"; };
 		3C410D45C0D56B52B7405B54 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
@@ -167,6 +175,7 @@
 		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
 		992C39260909EB85C84D2C20 /* SidebarMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMode.swift; sourceTree = "<group>"; };
+		9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionViewRenderer.swift; sourceTree = "<group>"; };
 		9DE8C83B31D707C9E30C491D /* AVFAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFAudio.framework; path = System/Library/Frameworks/AVFAudio.framework; sourceTree = SDKROOT; };
 		9E27CCAEA2B3295D30B7E900 /* KeyboardMappingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMappingManager.swift; sourceTree = "<group>"; };
 		9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachineManagerTests.swift; sourceTree = "<group>"; };
@@ -196,6 +205,7 @@
 		E2FF930B029ECBBAE243C4D0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
 		E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.pb.swift; sourceTree = "<group>"; };
+		EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPanelView.swift; sourceTree = "<group>"; };
 		F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageModeView.swift; sourceTree = "<group>"; };
 		F8C4007152A43F9E94FB30A5 /* system.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = system.pb.swift; sourceTree = "<group>"; };
 		F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorClient.swift; sourceTree = "<group>"; };
@@ -255,6 +265,8 @@
 				92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */,
 				5B2624275BB5D5286D790AF3 /* econet.grpc.swift */,
 				D969BBA00E4077B69BBCACAF /* econet.pb.swift */,
+				22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */,
+				0C19550BD759DAA9DFA9A015 /* extension_ui.pb.swift */,
 				03C4898953F0003B85113EC0 /* indicator.grpc.swift */,
 				831E41582E1F4F7358C624E8 /* indicator.pb.swift */,
 				2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */,
@@ -351,6 +363,9 @@
 				D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */,
 				CA006204A482FCD8B77F7549 /* EconetClient.swift */,
 				A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */,
+				EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */,
+				3295FC427F5DC583E764C83B /* ExtensionUiClient.swift */,
+				9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */,
 				1031975F4050BF5875549DFA /* FileCommands.swift */,
 				C432ADD4B509CA5A4D3462C0 /* FocusedDialogKeys.swift */,
 				F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */,
@@ -565,6 +580,9 @@
 				AEFDACA93EC7747DF05C2447 /* DiscoveryClient.swift in Sources */,
 				23F3E03B298F6AB8A9B9924E /* EconetClient.swift in Sources */,
 				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
+				8C6EF54139165E4D6F07941C /* ExtensionPanelView.swift in Sources */,
+				EE2E16B800D75FA4C460895A /* ExtensionUiClient.swift in Sources */,
+				F8DB66D575799986E3C664C3 /* ExtensionViewRenderer.swift in Sources */,
 				4DD0F4094D0E603CFF35DF6C /* FileCommands.swift in Sources */,
 				162D791FD0BE2D5F6E75CB72 /* FloppyDriveConfigView.swift in Sources */,
 				B41DE38A258D6C2E68314C5D /* FocusedDialogKeys.swift in Sources */,
@@ -606,6 +624,8 @@
 				EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */,
 				8BDB7D234471A8C37A8B027C /* econet.grpc.swift in Sources */,
 				47FD133746DA2EEA77B73EDC /* econet.pb.swift in Sources */,
+				D9718E6F6B0170B2E3BDDD45 /* extension_ui.grpc.swift in Sources */,
+				FB8C371C9D4C748FE2604B15 /* extension_ui.pb.swift in Sources */,
 				44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */,
 				F44ED1692215ABF5CE928E87 /* indicator.pb.swift in Sources */,
 				D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */,

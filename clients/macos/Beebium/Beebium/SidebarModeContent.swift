@@ -39,6 +39,7 @@ struct SidebarModeContent: View {
     @ObservedObject var audioClient: AudioClient
     @ObservedObject var audioMixerState: AudioMixerState
     @ObservedObject var econetClient: EconetClient
+    @ObservedObject var extensionUiClient: ExtensionUiClient
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,7 +61,9 @@ struct SidebarModeContent: View {
             case .coprocessor:
                 CoprocessorModeView()
             case .network:
-                NetworkModeView(econetClient: econetClient, keyboardMappingManager: keyboardMappingManager)
+                NetworkModeView(econetClient: econetClient,
+                                keyboardMappingManager: keyboardMappingManager,
+                                extensionUiClient: extensionUiClient)
             }
         }
     }
@@ -255,6 +258,7 @@ struct CoprocessorModeView: View {
 struct NetworkModeView: View {
     @ObservedObject var econetClient: EconetClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
+    @ObservedObject var extensionUiClient: ExtensionUiClient
     @State private var showStationIdPopover = false
 
     var body: some View {
@@ -324,6 +328,20 @@ struct NetworkModeView: View {
                     .padding(.horizontal, 12)
 
                 peersSection
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                // Server-driven UI for the active econet transport
+                // extension. Renders nothing until the extension is
+                // loaded and a View has streamed in. Stage 6 deletes
+                // the hardcoded statusSection / peersSection above
+                // and lets the AUN extension drive its own panel
+                // through this same path.
+                Divider()
+                    .padding(.horizontal, 12)
+
+                ExtensionPanelView(client: extensionUiClient,
+                                   extensionName: "piconet")
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             }
@@ -551,7 +569,8 @@ struct SidebarModeContent_Previews: PreviewProvider {
             keyboardMappingManager: KeyboardMappingManager(),
             audioClient: AudioClient(),
             audioMixerState: AudioMixerState(),
-            econetClient: EconetClient()
+            econetClient: EconetClient(),
+            extensionUiClient: ExtensionUiClient()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))
