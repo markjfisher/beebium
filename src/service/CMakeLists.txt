@@ -14,8 +14,11 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/econet_transport.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/tube.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/peripheral_extension.proto
-    ${CMAKE_CURRENT_SOURCE_DIR}/proto/extension_ui.proto
 )
+# Note: extension_ui.proto lives under src/core/extension-api/proto/ and
+# is compiled into beebium_extension_api so plugins (and the server's
+# ExtensionUiServiceImpl) all see the same proto descriptors via the
+# shared library. See src/core/extension-api/CMakeLists.txt.
 
 # Output directories for generated code
 set(PROTO_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
