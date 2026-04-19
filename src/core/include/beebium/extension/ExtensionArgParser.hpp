@@ -29,6 +29,9 @@ struct ParameterSchema {
     std::string description;
     int position = -1;          // -1 = keyword-only; 0, 1, 2, ... = positional order
     bool required = false;
+    bool is_list = false;       // true: repeated key=value tokens accumulate
+                                // (joined with ',' in the parsed config map);
+                                // false: a repeated key is a parse error.
     std::string default_value;  // empty = no default
 };
 

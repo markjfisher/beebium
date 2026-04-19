@@ -171,11 +171,11 @@ ParseResult parse_extension_args(
                            + "' (valid parameters: " + format_valid_keys(schema) + ")");
             }
 
-            if (result.config.count(key)) {
+            const auto* param = it->second;
+
+            if (result.config.count(key) && !param->is_list) {
                 return err("parameter '" + key + "' specified twice");
             }
-
-            const auto* param = it->second;
 
             // If positional, must be in the right slot
             if (param->position >= 0) {
@@ -188,7 +188,14 @@ ParseResult parse_extension_args(
                 positional_index++;
             }
 
-            result.config[key] = std::move(value);
+            // List params: accumulate by joining with ','. Extensions split
+            // on the comma when consuming the value.
+            if (param->is_list && result.config.count(key)) {
+                result.config[key] += ",";
+                result.config[key] += value;
+            } else {
+                result.config[key] = std::move(value);
+            }
 
         } else {
             // Positional argument

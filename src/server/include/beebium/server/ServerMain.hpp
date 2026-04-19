@@ -842,7 +842,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         m.name = "acorn-65c02-coprocessor";
         m.description = "Acorn 65C02 3 MHz second processor";
         m.cli_name = "tube-65c02";
-        m.parameters.push_back({"rom", "filepath", "Path to 2KB Tube client ROM image", -1, false, ""});
+        m.parameters.push_back({"rom", "filepath", "Path to 2KB Tube client ROM image", -1, false, false, ""});
         builtin_manifests.push_back(std::move(m));
     }
 

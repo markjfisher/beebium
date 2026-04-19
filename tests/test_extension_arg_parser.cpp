@@ -21,19 +21,19 @@ namespace {
 
 // scsi-hdd schema: scsi-id (pos 0, int, default 0), image (pos 1, filepath)
 const std::vector<ParameterSchema> kScsiHddSchema = {
-    {"scsi-id", "integer", "SCSI target ID (0-7)", 0, false, "0"},
-    {"image", "filepath", "Path to DAT disc image file", 1, false, ""},
-    {"adapter-id", "string", "ID of SCSI adapter to attach to", -1, false, ""},
+    {"scsi-id", "integer", "SCSI target ID (0-7)", 0, false, false, "0"},
+    {"image", "filepath", "Path to DAT disc image file", 1, false, false, ""},
+    {"adapter-id", "string", "ID of SCSI adapter to attach to", -1, false, false, ""},
 };
 
 // Simple schema: one required string
 const std::vector<ParameterSchema> kRequiredSchema = {
-    {"name", "string", "Device name", 0, true, ""},
+    {"name", "string", "Device name", 0, true, false, ""},
 };
 
 // Boolean schema
 const std::vector<ParameterSchema> kBoolSchema = {
-    {"enabled", "boolean", "Enable feature", 0, false, "true"},
+    {"enabled", "boolean", "Enable feature", 0, false, false, "true"},
 };
 
 // Empty schema (no parameters)
@@ -321,9 +321,41 @@ TEST_CASE("boolean type accepts true/false/1/0", "[extension][arg-parser]") {
 
 TEST_CASE("integer accepts negative numbers", "[extension][arg-parser]") {
     std::vector<ParameterSchema> schema = {
-        {"offset", "integer", "Byte offset", 0, false, ""},
+        {"offset", "integer", "Byte offset", 0, false, false, ""},
     };
     auto result = parse_extension_args("test", "-100", schema);
     REQUIRE(result.ok);
     REQUIRE(result.config["offset"] == "-100");
+}
+
+TEST_CASE("list parameter accumulates repeated key=value tokens",
+          "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"map", "string", "Peer map entries", -1, false, /*is_list=*/true, ""},
+    };
+    auto result = parse_extension_args(
+        "aun", "map=a;b;c:map=d;e;f:map=g;h;i", schema);
+    REQUIRE(result.ok);
+    // List values are joined with ',' so the extension can split internally.
+    REQUIRE(result.config["map"] == "a;b;c,d;e;f,g;h;i");
+}
+
+TEST_CASE("list parameter accepts a single occurrence",
+          "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"map", "string", "Peer map entries", -1, false, /*is_list=*/true, ""},
+    };
+    auto result = parse_extension_args("aun", "map=only-one", schema);
+    REQUIRE(result.ok);
+    REQUIRE(result.config["map"] == "only-one");
+}
+
+TEST_CASE("non-list parameter still rejects duplicates",
+          "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"name", "string", "Device name", -1, false, false, ""},
+    };
+    auto result = parse_extension_args("test", "name=a:name=b", schema);
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.error.find("specified twice") != std::string::npos);
 }
