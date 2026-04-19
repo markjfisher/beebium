@@ -15,10 +15,17 @@
 #include "beebium/econet/piconet/PiconetConfig.hpp"
 #include "beebium/econet/piconet/PosixSerialPort.hpp"
 
+#ifdef BEEBIUM_BUILD_SERVICE
+#include "PiconetService.hpp"
+#endif
+
 #include <iostream>
 #include <string>
 
 namespace beebium {
+
+PiconetEconetTransportExtension::PiconetEconetTransportExtension() = default;
+PiconetEconetTransportExtension::~PiconetEconetTransportExtension() = default;
 
 std::unique_ptr<NetworkBackend>
 PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
@@ -35,9 +42,22 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
         return nullptr;
     }
 
-    return std::make_unique<PiconetBackend>(
+    auto backend = std::make_unique<PiconetBackend>(
         piconet::PiconetConfig{path, station},
         std::move(serial));
+    backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
+    return backend;
+}
+
+std::vector<grpc::Service*> PiconetEconetTransportExtension::grpc_services() {
+#ifdef BEEBIUM_BUILD_SERVICE
+    if (!service_) {
+        service_ = std::make_unique<PiconetServiceImpl>(*this);
+    }
+    return {service_.get()};
+#else
+    return {};
+#endif
 }
 
 }  // namespace beebium

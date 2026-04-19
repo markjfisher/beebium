@@ -959,6 +959,26 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_aun_service)
 
+    # Piconet service tests (POSIX-only -- the plugin only builds on POSIX
+    # and the test fixture uses a PTY-backed FakePiconetDevice).
+    if(NOT WIN32)
+        add_executable(test_grpc_piconet_service
+            test_grpc_piconet_service.cpp
+            piconet/FakePiconetDevice.cpp
+            piconet/FakePiconetDeviceOnPty.cpp
+            piconet/PtyPair.cpp)
+        target_link_libraries(test_grpc_piconet_service PRIVATE
+            beebium_service
+            beebium_ext_piconet_plugin
+            beebium_piconet_core
+            Catch2::Catch2WithMain
+        )
+        target_include_directories(test_grpc_piconet_service PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
+        catch_discover_tests(test_grpc_piconet_service)
+    endif()
+
     # System service tests
     add_executable(test_grpc_system test_grpc_system.cpp)
     target_link_libraries(test_grpc_system PRIVATE

@@ -32,12 +32,29 @@ set_target_properties(beebium_piconet_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# The shared-library plugin: links the protocol core and the
-# EconetTransportExtension wrapper, exports beebium_create_extension.
-add_library(beebium_ext_piconet_plugin SHARED
+# gRPC service. Compiled into the plugin only when the service layer
+# is part of the build. The proto file is in the same directory.
+set(PICONET_PLUGIN_SOURCES
     PiconetEconetTransportExtension.cpp
     plugin_entry.cpp
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    beebium_compile_proto(
+        TARGET beebium_ext_piconet_plugin
+        PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/piconet_service.proto
+        PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    list(APPEND PICONET_PLUGIN_SOURCES
+        PiconetService.cpp
+        ${beebium_ext_piconet_plugin_PROTO_SRCS}
+        ${beebium_ext_piconet_plugin_GRPC_SRCS}
+    )
+endif()
+
+# The shared-library plugin: links the protocol core and the
+# EconetTransportExtension wrapper, exports beebium_create_extension.
+add_library(beebium_ext_piconet_plugin SHARED ${PICONET_PLUGIN_SOURCES})
 
 target_include_directories(beebium_ext_piconet_plugin
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -48,6 +65,22 @@ target_link_libraries(beebium_ext_piconet_plugin
         beebium_piconet_core
         beebium_extension_api
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    # PUBLIC for the proto OUT_DIR so test targets that link this
+    # shared library can include the generated piconet_service.pb.h
+    # / .grpc.pb.h. Without PUBLIC the generated headers are private
+    # to the plugin and tests can't compile against the service stubs.
+    target_include_directories(beebium_ext_piconet_plugin
+        PUBLIC ${beebium_ext_piconet_plugin_OUT_DIR}
+    )
+    target_compile_definitions(beebium_ext_piconet_plugin PRIVATE BEEBIUM_BUILD_SERVICE)
+    target_link_libraries(beebium_ext_piconet_plugin
+        PUBLIC
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
+endif()
 
 set_target_properties(beebium_ext_piconet_plugin PROPERTIES
     PREFIX ""

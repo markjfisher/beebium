@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package beebium;
+
+// Piconet-specific service. Lives alongside PiconetEconetTransportExtension
+// in src/extensions/piconet/ and is registered via the extension's
+// grpc_services() hook so the gRPC server only exposes it when Piconet
+// is the active transport.
+//
+// EconetService remains the place for transport-agnostic Econet RPCs
+// (status, station ID, enable/disable). Anything that only makes sense
+// for Piconet (the USB serial bridge to a real Econet wire) lives here.
+//
+// Initial scope is intentionally minimal -- just enough for a user
+// to confirm "yes, my Piconet is plugged in, and it's on /dev/X".
+// Once the service exists it can grow without further architectural
+// work; expansion possibilities are listed at the bottom of this file.
+
+service PiconetService {
+    // Read the current Piconet adapter state. Returns immediately;
+    // does not touch the serial wire.
+    rpc GetStatus(PiconetGetStatusRequest) returns (PiconetGetStatusResponse);
+}
+
+// --- Status ---
+
+message PiconetGetStatusRequest {
+    // Empty.
+}
+
+message PiconetGetStatusResponse {
+    // The serial device path the Piconet is configured to use, e.g.
+    // "/dev/tty.usbmodem101". Set at startup from the
+    // --piconet device_path=... CLI argument or preset value.
+    string device_path = 1;
+
+    // True if the SerialPort is currently open. On POSIX this means
+    // the file descriptor is valid; if the user yanks the USB cable
+    // mid-run this transitions to false. False on startup means the
+    // device couldn't be opened (e.g. wrong path, not plugged in).
+    //
+    // This says nothing about whether a real Econet wire is connected
+    // to the Piconet adapter, only whether the host-side USB CDC
+    // endpoint is responsive. See "Future RPCs" below for clock /
+    // wire-activity detection.
+    bool serial_open = 2;
+}
+
+// =============================================================================
+// Future RPCs (not implemented yet -- listed so the design intent isn't lost)
+// =============================================================================
+//
+// The Piconet firmware exposes more state than this initial service
+// surfaces. As concrete user needs arise, the PiconetService can grow
+// to include the following without breaking existing clients:
+//
+// PiconetGetStatusResponse extensions (cheap -- just reader-thread state):
+//   - firmware_version { major, minor, patch } from the firmware's STATUS
+//     event captured at startup
+//   - station number currently set in the firmware
+//   - mode (STOP, LISTEN, MONITOR)
+//   - last_tx_result (OK, NO_SCOUT_ACK, NO_DATA_ACK, LINE_JAMMED, ...)
+//   - last_error free-form message from the most recent ERROR event
+//   - counters: tx_sent, tx_ok, tx_failed, rx_unicast, rx_broadcast,
+//     rx_errors, parse_errors -- updated by the reader thread
+//   - seconds_since_last_activity -- steady_clock since last RX or TX
+//
+// rpc PollHardware(PiconetPollHardwareRequest)
+//     returns (PiconetPollHardwareResponse);
+//   Synchronously issues STATUS to the firmware, awaits the reply (with
+//   a short timeout), and returns the freshly-read SR1 byte. The
+//   convenient interpretation of SR1b3 (Flag Detected) is
+//   "Econet wire clock is present"; surface it as a separate boolean
+//   field so callers don't have to know ADLC bit layouts. Useful for
+//   users wondering "is the cable plugged in at the wire end?". Needs
+//   reply-correlation plumbing in the reader thread (next STATUS event
+//   wakes the pending RPC).
+//
+// rpc SetMode(PiconetSetModeRequest) returns (PiconetSetModeResponse);
+//   Switch the firmware between STOP / LISTEN / MONITOR. MONITOR is
+//   useful with the next RPC.
+//
+// rpc SubscribeMonitorFrames(PiconetSubscribeMonitorFramesRequest)
+//     returns (stream PiconetMonitorFrame);
+//   Server-streaming RPC delivering every wire frame the firmware sees
+//   while in MONITOR mode (a promiscuous tap). Useful for protocol-level
+//   debugging / wire snooping.
+//
+// rpc SubscribeEvents(PiconetSubscribeEventsRequest)
+//     returns (stream PiconetEvent);
+//   Live stream of TX_RESULT / ERROR events for power-user debugging
+//   GUIs. Lower priority than the above.
