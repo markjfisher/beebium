@@ -13,7 +13,6 @@ add_library(beebium_core STATIC
     src/disc/formats/AdfsFormatHandler.cpp
     src/disc/formats/HfeFormatHandler.cpp
     src/econet/AunBackend.cpp
-    src/econet/aun/AunEconetTransportExtension.cpp
     src/TubeUla.cpp
     src/ParasiteCpu.cpp
     src/ParasiteRunner.cpp

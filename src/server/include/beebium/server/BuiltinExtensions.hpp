@@ -22,8 +22,8 @@
 // Adding a new built-in extension means appending one entry to the
 // vector returned by entries().
 
+#include "AunEconetTransportExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
-#include "beebium/econet/aun/AunEconetTransportExtension.hpp"
 #include "beebium/extension/Extension.hpp"
 #include "beebium/extension/ExtensionManifest.hpp"
 

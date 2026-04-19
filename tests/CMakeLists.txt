@@ -63,7 +63,7 @@ catch_discover_tests(test_econet_transport_registry)
 
 # AunEconetTransportExtension tests
 add_executable(test_aun_econet_transport_extension test_aun_econet_transport_extension.cpp)
-target_link_libraries(test_aun_econet_transport_extension PRIVATE beebium_core Catch2::Catch2WithMain)
+target_link_libraries(test_aun_econet_transport_extension PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
 catch_discover_tests(test_aun_econet_transport_extension)
 
 # SCSI ADFS protocol compatibility tests (fast, no boot required)
@@ -970,6 +970,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_service
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
+        beebium_ext_aun
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain
@@ -989,6 +990,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_service
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
+        beebium_ext_aun
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain

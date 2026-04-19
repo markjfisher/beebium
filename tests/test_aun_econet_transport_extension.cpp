@@ -18,7 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <beebium/econet/AunBackend.hpp>
-#include <beebium/econet/aun/AunEconetTransportExtension.hpp>
+#include "AunEconetTransportExtension.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN

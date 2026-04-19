@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include "beebium/econet/aun/AunEconetTransportExtension.hpp"
+#include "AunEconetTransportExtension.hpp"
 
 #include "beebium/econet/AunPacket.hpp"
 

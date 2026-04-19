@@ -36,6 +36,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             beebium_service
             beebium_ext_test_scratch_ram
             beebium_ext_acorn_65c02
+            beebium_ext_aun
             nlohmann_json::nlohmann_json
             stb_image_write
     )
