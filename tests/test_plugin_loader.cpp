@@ -14,6 +14,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/extension/PluginLoader.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/ExtensionRegistry.hpp>
@@ -82,7 +83,11 @@ TEST_CASE("PluginLoader load_extension loads and registers extension",
     beebium::ExtensionRegistry registry;
     registry.register_extension_point("1mhz-bus");
 
-    loader.load_extension(*manifest, registry);
+    auto loaded = loader.load_extension(*manifest);
+    auto* peripheral = dynamic_cast<beebium::PeripheralExtension*>(loaded.get());
+    REQUIRE(peripheral != nullptr);
+    (void)loaded.release();
+    registry.register_extension(std::unique_ptr<beebium::PeripheralExtension>(peripheral));
     REQUIRE(registry.extension_count() == 1);
 
     beebium::OneMHzBusPort port;
@@ -115,7 +120,11 @@ TEST_CASE("PluginLoader loaded extension provides gRPC services",
 
     beebium::ExtensionRegistry registry;
     registry.register_extension_point("1mhz-bus");
-    loader.load_extension(*manifest, registry);
+    auto loaded = loader.load_extension(*manifest);
+    auto* peripheral = dynamic_cast<beebium::PeripheralExtension*>(loaded.get());
+    REQUIRE(peripheral != nullptr);
+    (void)loaded.release();
+    registry.register_extension(std::unique_ptr<beebium::PeripheralExtension>(peripheral));
 
     beebium::OneMHzBusPort port;
     beebium::ExtensionContext ctx(&port);

@@ -1667,8 +1667,26 @@ public:
                     std::cerr << "\n";
                     return ExitCode::CONFIG;
                 }
-                plugin_loader.load_extension(*manifest, extension_registry,
-                                              std::move(inst.config));
+                auto loaded = plugin_loader.load_extension(*manifest, std::move(inst.config));
+                // Dispatch by extension_kind. Phase 1 supports peripherals only;
+                // EconetTransportExtension dispatch lands in phase 2.
+                if (manifest->extension_kind == "peripheral") {
+                    auto* peripheral = dynamic_cast<beebium::PeripheralExtension*>(loaded.get());
+                    if (!peripheral) {
+                        std::cerr << "Error: Extension '" << inst.name
+                                  << "' has extension_kind=peripheral but is not a "
+                                     "PeripheralExtension instance.\n";
+                        return ExitCode::CONFIG;
+                    }
+                    (void)loaded.release();
+                    extension_registry.register_extension(
+                        std::unique_ptr<beebium::PeripheralExtension>(peripheral));
+                } else {
+                    std::cerr << "Error: Extension '" << inst.name
+                              << "' has unsupported extension_kind '"
+                              << manifest->extension_kind << "'.\n";
+                    return ExitCode::CONFIG;
+                }
             }
 
             // Initialise extensions (dependency resolution + topological sort)

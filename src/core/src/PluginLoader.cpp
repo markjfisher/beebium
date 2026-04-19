@@ -40,7 +40,7 @@ constexpr const char* kSharedLibSuffix = ".so";
 #endif
 
 // Entry point function type
-using CreateExtensionFn = PeripheralExtension* (*)(const ExtensionManifest&);
+using CreateExtensionFn = Extension* (*)(const ExtensionManifest&);
 
 // Load a shared library. When global=true, the library's symbols are made
 // available for subsequently loaded plugins to resolve against. This is
@@ -192,9 +192,9 @@ std::vector<ExtensionManifest> PluginLoader::scan_manifests(
     return manifests;
 }
 
-void PluginLoader::load_extension(const ExtensionManifest& manifest,
-                                   ExtensionRegistry& registry,
-                                   std::map<std::string, std::string> config) {
+std::unique_ptr<Extension> PluginLoader::load_extension(
+        const ExtensionManifest& manifest,
+        std::map<std::string, std::string> config) {
     // Build library path
     std::string library_filename = manifest.library_stem + kSharedLibSuffix;
     auto library_filepath = manifest.manifest_dirpath / library_filename;
@@ -231,23 +231,25 @@ void PluginLoader::load_extension(const ExtensionManifest& manifest,
     }
 
     // Create the extension, passing the manifest
-    PeripheralExtension* ext = create_fn(manifest);
+    Extension* ext = create_fn(manifest);
     if (!ext) {
         platform_dlclose(handle);
         throw std::runtime_error(
             "beebium_create_extension() returned null for '" + manifest.name + "'");
     }
 
-    // Set config before registration (config is available during init())
+    // Set config before returning (config is available during init()).
     if (!config.empty()) {
         ext->set_config(std::move(config));
     }
 
-    // Register with the registry (transfers ownership)
-    registry.register_extension(std::unique_ptr<PeripheralExtension>(ext));
-
-    // Track the loaded library for cleanup
+    // Track the loaded library for cleanup.
     loaded_plugins_.push_back({handle, manifest.name});
+
+    // Caller takes ownership and is responsible for downcasting to the
+    // appropriate extension-point base (PeripheralExtension,
+    // EconetTransportExtension, etc.) per manifest.extension_kind.
+    return std::unique_ptr<Extension>(ext);
 }
 
 const ExtensionManifest* PluginLoader::find_manifest(

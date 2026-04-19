@@ -11,12 +11,13 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include "AcornRtcExtension.hpp"
+#include <beebium/extension/Extension.hpp>
 #include <beebium/extension/ExtensionManifest.hpp>
 
 extern "C" {
 
 BEEBIUM_PLUGIN_EXPORT
-beebium::PeripheralExtension* beebium_create_extension(const beebium::ExtensionManifest& manifest) {
+beebium::Extension* beebium_create_extension(const beebium::ExtensionManifest& manifest) {
     auto* ext = new beebium::AcornRtcExtension();
     ext->set_manifest(manifest);
     return ext;
