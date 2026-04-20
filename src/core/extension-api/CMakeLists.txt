@@ -61,6 +61,15 @@ set_target_properties(beebium_extension_ui_proto PROPERTIES
     MACOSX_RPATH ON
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    # MSVC requires every symbol exported from a DLL to be marked
+    # __declspec(dllexport) at the source level, which the
+    # protobuf-generated code does not do. WINDOWS_EXPORT_ALL_SYMBOLS
+    # makes CMake auto-generate an export table covering every public
+    # symbol -- equivalent to GCC/Clang's default visibility, which is
+    # what we already get on Linux/macOS. Without this the .lib import
+    # library is empty (or absent) and beebium_extension_api fails to
+    # link with LNK1181.
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(WIN32)
