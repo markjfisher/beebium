@@ -89,7 +89,7 @@ private:
 
 }  // namespace
 
-TEST_CASE("PiconetUi build_view produces Group(Label, Indicator, Toggle)",
+TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Toggle",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
@@ -123,6 +123,48 @@ TEST_CASE("PiconetUi build_view produces Group(Label, Indicator, Toggle)",
     // Constructor put the firmware in LISTEN, so the toggle should reflect
     // 'enabled'.
     REQUIRE(toggle.toggle().value() == true);
+}
+
+TEST_CASE("PiconetUi build_view (no backend) hides Toggle and surfaces OS error",
+          "[piconet][ui]") {
+    // Construct an extension whose create_backend will fail at the
+    // POSIX open() because the device path doesn't exist. This is the
+    // realistic "user got the path wrong / device unplugged at startup"
+    // case that motivated the polish.
+    beebium::PiconetEconetTransportExtension ext;
+    ext.set_config({{"device_path", "/dev/does-not-exist-piconet"}});
+    auto backend = ext.create_backend(/*station=*/1);
+    REQUIRE(backend == nullptr);
+    REQUIRE_FALSE(ext.open_error_message().empty());
+
+    auto* ui = ext.ui();
+    REQUIRE(ui != nullptr);
+
+    beebium::View view;
+    ui->build_view(&view);
+
+    const auto& root = view.root();
+    REQUIRE(root.control_case() == beebium::Control::kGroup);
+    // Two controls only -- Label + Indicator. Toggle suppressed because
+    // there is no backend to drive.
+    REQUIRE(root.group().controls_size() == 2);
+
+    const auto& label = root.group().controls(0);
+    REQUIRE(label.id() == "device_path");
+    REQUIRE(label.control_case() == beebium::Control::kLabel);
+    REQUIRE(label.label().text() == "Device: /dev/does-not-exist-piconet");
+
+    const auto& indicator = root.group().controls(1);
+    REQUIRE(indicator.id() == "connected");
+    REQUIRE(indicator.control_case() == beebium::Control::kIndicator);
+    REQUIRE(indicator.indicator().state() == beebium::Indicator_State_ERROR);
+    // The exact strerror text varies by platform, but it should contain
+    // some recognisable substring of the OS-level diagnosis. macOS and
+    // Linux both produce "No such file or directory" for ENOENT.
+    REQUIRE(indicator.indicator().text().find("Cannot open device") !=
+            std::string::npos);
+    REQUIRE(indicator.indicator().text().find("No such file") !=
+            std::string::npos);
 }
 
 TEST_CASE("PiconetUi mode_toggle false dispatches SET_MODE STOP",

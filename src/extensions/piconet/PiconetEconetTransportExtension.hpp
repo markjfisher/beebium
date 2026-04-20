@@ -61,6 +61,13 @@ public:
     PiconetBackend* backend() { return backend_; }
     const PiconetBackend* backend() const { return backend_; }
 
+    // Empty unless create_backend has been called and failed at the
+    // device-open step. PiconetUi reads this to surface a human-readable
+    // OS-level diagnosis ("No such file or directory", "Permission
+    // denied", etc) on the Indicator's text field, rather than just
+    // showing the generic "Adapter offline".
+    const std::string& open_error_message() const { return open_error_message_; }
+
     // ExtensionUi hook: returns a stable pointer to the per-extension
     // PiconetUi. The framework reads from the View tree it produces and
     // dispatches validated events into its handle_event.
@@ -68,6 +75,7 @@ public:
 
 private:
     PiconetBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
+    std::string open_error_message_;
     std::unique_ptr<PiconetServiceImpl> service_;
     PiconetUi ui_{*this};
 };

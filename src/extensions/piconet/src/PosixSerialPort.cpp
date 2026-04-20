@@ -67,8 +67,13 @@ PosixSerialPort::PosixSerialPort(const std::string& device_path)
     : device_path_(device_path) {
     int fd = ::open(device_path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) {
+        // Capture the errno text into open_error_ before anything else
+        // can clobber errno, so PiconetEconetTransportExtension (and
+        // ultimately PiconetUi via the Indicator) can surface the
+        // diagnosis to the user.
+        open_error_ = std::strerror(errno);
         std::cerr << "PosixSerialPort: open(" << device_path
-                  << ") failed: " << std::strerror(errno) << "\n";
+                  << ") failed: " << open_error_ << "\n";
         return;
     }
     configure_tty(fd, device_path);

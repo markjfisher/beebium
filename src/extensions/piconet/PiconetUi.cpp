@@ -49,7 +49,10 @@ void PiconetUi::build_view(View* out) const {
         control->mutable_label()->set_text(std::move(text));
     }
 
-    // Indicator: serial_->is_open() drives OK / ERROR.
+    // Indicator: serial_->is_open() drives OK / ERROR. When the adapter
+    // is offline because the underlying open() failed, surface the OS
+    // error text so the user can act on it (wrong path, permissions,
+    // device unplugged) rather than just seeing a generic message.
     {
         auto* control = group->add_controls();
         control->set_id(CONTROL_CONNECTED);
@@ -58,19 +61,32 @@ void PiconetUi::build_view(View* out) const {
         const bool open = backend && backend->is_connected();
         indicator->set_state(open ? Indicator_State_OK
                                   : Indicator_State_ERROR);
-        indicator->set_text(open ? "Adapter responsive"
-                                 : "Adapter offline");
+        if (open) {
+            indicator->set_text("Adapter responsive");
+        } else if (!ext_.open_error_message().empty()) {
+            indicator->set_text("Cannot open device: " +
+                                ext_.open_error_message());
+        } else {
+            // Backend was constructed and then died (or was never asked
+            // to construct). Without an OS errno we can't be more
+            // specific than this.
+            indicator->set_text("Adapter offline");
+        }
     }
 
-    // Toggle: LISTEN <-> STOP. Reads the cached mode, so the displayed
-    // value reflects the last mode actually written to the firmware.
-    {
+    // Toggle: LISTEN <-> STOP. Only emitted when there's a live backend.
+    // With no backend there's nothing to control, so showing the toggle
+    // would be a misleading affordance -- clicks would be no-ops because
+    // handle_event has no firmware to drive. Hiding the control entirely
+    // makes the panel an honest readout of "here's what we know, nothing
+    // to do until the device comes back". A future Reconnect button
+    // would slot in here.
+    if (auto* backend = ext_.backend()) {
         auto* control = group->add_controls();
         control->set_id(CONTROL_MODE_TOGGLE);
         auto* toggle = control->mutable_toggle();
         toggle->set_label("Enabled");
-        const PiconetBackend* backend = ext_.backend();
-        const bool listening = backend && backend->mode() == piconet::Mode::Listen;
+        const bool listening = backend->mode() == piconet::Mode::Listen;
         toggle->set_value(listening);
     }
 }

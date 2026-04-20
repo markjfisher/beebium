@@ -53,8 +53,15 @@ public:
 
     const std::string& device_path() const { return device_path_; }
 
+    // Empty when the open succeeded; otherwise the strerror() text for
+    // the errno set by the failing open() syscall (e.g. "No such file
+    // or directory", "Permission denied"). Useful for surfacing a
+    // human-readable diagnosis through the Extension UI Indicator.
+    std::string_view open_error() const noexcept { return open_error_; }
+
 private:
     std::string device_path_;
+    std::string open_error_;
     // Atomic so that the reader thread observing close() (called from the
     // emulation thread / destructor) sees the transition consistently
     // without needing a mutex. Reads/writes use the value at call time;

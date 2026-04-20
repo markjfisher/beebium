@@ -32,13 +32,22 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     auto device_path = config_value("device_path");
     if (!device_path || device_path->empty()) {
         std::cerr << "Piconet extension: missing required parameter 'device_path'\n";
+        open_error_message_ = "missing 'device_path' parameter";
         return nullptr;
     }
 
     std::string path(*device_path);
     auto serial = std::make_unique<piconet::PosixSerialPort>(path);
     if (!serial->is_open()) {
-        std::cerr << "Piconet extension: failed to open device " << path << "\n";
+        // Capture the OS-level error from PosixSerialPort so PiconetUi
+        // can surface it on the Indicator. Falls back to a generic
+        // message if the serial port didn't record one (shouldn't
+        // happen in practice -- open() always sets errno on failure).
+        auto why = serial->open_error();
+        open_error_message_ = why.empty() ? std::string("unknown error")
+                                          : std::string(why);
+        std::cerr << "Piconet extension: failed to open device " << path
+                  << ": " << open_error_message_ << "\n";
         return nullptr;
     }
 
@@ -46,6 +55,7 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
         piconet::PiconetConfig{path, station},
         std::move(serial));
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
+    open_error_message_.clear();
     return backend;
 }
 
