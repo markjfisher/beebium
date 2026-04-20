@@ -43,17 +43,34 @@ final class EconetClient: ObservableObject, Disconnectable {
 
     private var client: Beebium_EconetServiceNIOClient?
     private var fetchTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
+
+    // Polling interval for the status-refresh background task. The
+    // transport-agnostic header (Connection state, Station id, etc.)
+    // doesn't otherwise hear about state changes that originate from
+    // the AUN/Piconet panels' Dispatch path, since those mutate
+    // AunBackend / PiconetBackend directly without going through
+    // EconetService. 500ms is well below human perception for a
+    // connection-state readout but cheap enough not to matter.
+    //
+    // This is a workaround. The clean fix is a server-streamed
+    // WatchEconetStatus RPC; see project_econet_status_streaming.md
+    // for the deferred plan.
+    private static let pollInterval: Duration = .milliseconds(500)
 
     func connect(channel: GRPCChannel) {
         client = Beebium_EconetServiceNIOClient(channel: channel)
-        fetchTask = Task { [weak self] in
+        fetchTask = Task<Void, Never> { [weak self] in
             await self?.fetchStatusAndPeers()
+            await self?.startPolling()
         }
     }
 
     func disconnect() {
         fetchTask?.cancel()
         fetchTask = nil
+        pollTask?.cancel()
+        pollTask = nil
         client = nil
         isLoaded = false
         hasEconetSocket = false
@@ -156,6 +173,24 @@ final class EconetClient: ObservableObject, Disconnectable {
             }
         } catch {
             NSLog("[EconetClient] Failed to list peers: %@", error.localizedDescription)
+        }
+    }
+
+    // Background polling loop: re-runs refreshStatus() every
+    // pollInterval until the task is cancelled (in disconnect()) or
+    // the sleep is interrupted by cancellation. Started after the
+    // initial fetchStatusAndPeers() succeeds so we don't fire two
+    // refreshes back-to-back on startup.
+    private func startPolling() async {
+        pollTask = Task<Void, Never> { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: EconetClient.pollInterval)
+                } catch {
+                    return  // cancelled mid-sleep
+                }
+                await self?.refreshStatus()
+            }
         }
     }
 

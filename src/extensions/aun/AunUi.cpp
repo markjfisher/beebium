@@ -29,8 +29,10 @@ namespace beebium {
 
 namespace {
 
-constexpr const char* CONTROL_PEERS_GROUP   = "peers_group";
-constexpr const char* CONTROL_NO_PEERS      = "no_peers";
+constexpr const char* CONTROL_CONNECT_ACTION = "connect_action";
+constexpr const char* CONTROL_UDP_PORT       = "udp_port";
+constexpr const char* CONTROL_PEERS_GROUP    = "peers_group";
+constexpr const char* CONTROL_NO_PEERS       = "no_peers";
 
 // Format an IPv4 address (in network byte order, as carried in PeerInfo)
 // to dotted-quad. Mirrors the helper in EconetService.hpp's anonymous
@@ -69,16 +71,43 @@ void AunUi::build_view(View* out) const {
     auto* root_group = root->mutable_group();
     root_group->set_label("AUN");
 
-    // Slice 1: peers list only. Slice 2 will prepend a Connect/Disconnect
-    // Button and a "Listening on UDP port N" Label here.
+    AunBackend* backend = ext_.backend();
+
+    // Connect / Disconnect action. Single Button whose label flips
+    // with the current connection state -- state lives on the
+    // transport-agnostic Connection row in NetworkModeView header
+    // (driven by EconetService.GetEconetStatus.connected); this
+    // button is purely the action affordance for AUN's
+    // software-toggleable cable. Stable id "connect_action" so the
+    // renderer patches the label in place rather than rebuilding the
+    // widget. Suppressed when there's no backend -- no firmware to
+    // toggle, and Piconet's connectedness isn't user-actionable
+    // either, so the precedent is "no Button when no backend".
+    if (backend) {
+        auto* control = root_group->add_controls();
+        control->set_id(CONTROL_CONNECT_ACTION);
+        auto* button = control->mutable_button();
+        button->set_label(backend->is_connected() ? "Disconnect" : "Connect");
+        button->set_enabled(true);
+    }
+
+    // Listening port readout. Only AUN exposes a UDP port; this fits
+    // nowhere in the transport-agnostic header. Suppressed when there's
+    // no backend (port=none or bind failed) -- nothing to report.
+    if (backend) {
+        auto* control = root_group->add_controls();
+        control->set_id(CONTROL_UDP_PORT);
+        control->mutable_label()->set_text(
+            "Listening on UDP port " + std::to_string(backend->local_port()));
+    }
+
+    // Peers list (slice 1).
     auto* peers_control = root_group->add_controls();
     peers_control->set_id(CONTROL_PEERS_GROUP);
     auto* peers_group = peers_control->mutable_group();
     peers_group->set_label("Peers");
 
-    AunBackend* backend = ext_.backend();
     if (!backend) {
-        // Either port=none or socket bind failed. Nothing to list.
         auto* no_peers = peers_group->add_controls();
         no_peers->set_id(CONTROL_NO_PEERS);
         no_peers->mutable_label()->set_text("AUN backend unavailable");
@@ -104,10 +133,19 @@ void AunUi::build_view(View* out) const {
     }
 }
 
-void AunUi::handle_event(const DispatchRequest& /*request*/) {
-    // No interactive controls in Slice 1 -- the panel is read-only.
-    // Slice 2 will handle the Connect/Disconnect button; Slice 3 the
-    // Add Peer form.
+void AunUi::handle_event(const DispatchRequest& request) {
+    // The framework has already validated extension/control/payload;
+    // dispatch on control_id alone. Unknown ids reach here only if a
+    // future control was added without a matching branch -- silent
+    // ignore is the correct fallback (no backend effect).
+    if (request.control_id() == CONTROL_CONNECT_ACTION) {
+        if (auto* backend = ext_.backend()) {
+            backend->set_connected(!backend->is_connected());
+            mark_dirty();
+        }
+    }
+    // Slice 3 will add the Add Peer button + TextInput-form-state
+    // dispatch handlers here.
 }
 
 }  // namespace beebium

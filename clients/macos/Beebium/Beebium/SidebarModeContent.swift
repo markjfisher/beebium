@@ -350,52 +350,27 @@ struct NetworkModeView: View {
 
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Connection")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    if econetClient.aunMode {
-                        Image(systemName: "circle.fill")
-                            .font(.system(size: 8))
-                            .foregroundColor(econetClient.connected ? .green : .secondary)
-                        Text(econetClient.connected ? "Connected" : "Disconnected")
-                            .fontWeight(.medium)
-                    } else {
-                        Text("No network")
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                if econetClient.aunMode {
-                    HStack {
-                        Spacer()
-                        if econetClient.connected {
-                            Button("Disconnect") {
-                                Task {
-                                    let result = await econetClient.disconnectNetwork()
-                                    if case .failure(let error) = result {
-                                        NSLog("[NetworkModeView] Disconnect failed: %@",
-                                              error.localizedDescription)
-                                    }
-                                }
-                            }
-                            .controlSize(.small)
-                        } else {
-                            Button("Connect") {
-                                Task {
-                                    let result = await econetClient.connectNetwork()
-                                    if case .failure(let error) = result {
-                                        NSLog("[NetworkModeView] Connect failed: %@",
-                                              error.localizedDescription)
-                                    }
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                }
+            // Transport-agnostic connection state. Driven by
+            // EconetService.GetEconetStatus.connected which reflects
+            // whatever the active transport's backend reports
+            // (AunBackend's cable simulation for AUN; the serial
+            // port's is_open() for Piconet). The previous aunMode
+            // gate that hid this state for non-AUN transports was
+            // dishonest -- a Piconet backend with the device
+            // unplugged is just as "disconnected" as an AUN backend
+            // with the cable virtually unplugged. The action button
+            // (Connect/Disconnect for AUN, future Reconnect for
+            // Piconet) lives in the per-transport panel below the
+            // header, where it belongs.
+            HStack {
+                Text("Connection")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 8))
+                    .foregroundColor(econetClient.connected ? .green : .secondary)
+                Text(econetClient.connected ? "Connected" : "Disconnected")
+                    .fontWeight(.medium)
             }
 
             HStack {
@@ -422,15 +397,12 @@ struct NetworkModeView: View {
                 }
             }
 
-            if econetClient.connected && econetClient.aunPort > 0 {
-                HStack {
-                    Text("AUN Port")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(verbatim: String(econetClient.aunPort))
-                        .fontWeight(.medium)
-                }
-            }
+            // The Connect/Disconnect button + AUN Port row lived
+            // here previously. Both are AUN-specific concerns and
+            // now live in the AUN panel below (rendered via
+            // ExtensionPanelView). The transport-agnostic header
+            // shows only what every Econet machine has: link state
+            // and station number.
         }
     }
 
