@@ -16,7 +16,7 @@ export { Keyboard, type KeyboardState } from "./keyboard.js";
 export { Video, type VideoConfig, type Frame } from "./video.js";
 export { System, type Provenance, type MachineIdentity, type ServerStatusEvent, type ShutdownResponse, type ShutdownConditionStatus, type AdvertisementState, ServerStatus, ShutdownMode } from "./system.js";
 export { Disc, Drive, type DiscMetadata, type DriveStatus, type DiscControllerStatus, type DiscEvent, type DiscControllerInfo, DriveState, DiscEventType } from "./disc.js";
-export { Econet, type EconetStatus, type AdlcStatus, type HandshakeStatus, type PeerInfo } from "./econet.js";
+export { Econet, type EconetStatus, type AdlcStatus, type HandshakeStatus } from "./econet.js";
 export { Tube, type TubeStatus } from "./tube.js";
 export { Via, ViaId, type ViaState } from "./via.js";
 export { Crtc, type CrtcState } from "./crtc.js";

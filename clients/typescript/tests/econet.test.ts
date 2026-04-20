@@ -27,8 +27,6 @@ describe("Econet", () => {
                     stationId: 100,
                     aunMode: true,
                     connected: true,
-                    aunPort: 32768,
-                    peerCount: 5,
                     adlc: {
                         cr1: 0x01,
                         cr2: 0x02,
@@ -60,8 +58,6 @@ describe("Econet", () => {
             expect(status.stationId).toBe(100);
             expect(status.aunMode).toBe(true);
             expect(status.connected).toBe(true);
-            expect(status.aunPort).toBe(32768);
-            expect(status.peerCount).toBe(5);
 
             expect(status.adlc).toBeDefined();
             expect(status.adlc!.cr1).toBe(0x01);
@@ -84,8 +80,6 @@ describe("Econet", () => {
                     stationId: 0,
                     aunMode: false,
                     connected: false,
-                    aunPort: 0,
-                    peerCount: 0,
                     adlc: undefined,
                     handshake: undefined,
                 }),
@@ -164,61 +158,10 @@ describe("Econet", () => {
         });
     });
 
-    describe("addPeer", () => {
-        it("sends correct fields", async () => {
-            const stub = createMockStub({
-                addPeer: () => ({ success: true, error: "" }),
-            });
-            const econet = new Econet(stub as any);
-            await econet.addPeer(0, 254, "192.168.1.100", 32768);
-            expect(stub.addPeer).toHaveBeenCalledWith(
-                { net: 0, stn: 254, ipAddress: "192.168.1.100", port: 32768 },
-                expect.any(Function),
-            );
-        });
-
-        it("defaults port to 0", async () => {
-            const stub = createMockStub({
-                addPeer: () => ({ success: true, error: "" }),
-            });
-            const econet = new Econet(stub as any);
-            await econet.addPeer(1, 100, "10.0.0.1");
-            expect(stub.addPeer).toHaveBeenCalledWith(
-                { net: 1, stn: 100, ipAddress: "10.0.0.1", port: 0 },
-                expect.any(Function),
-            );
-        });
-
-        it("throws EconetError on failure", async () => {
-            const stub = createMockStub({
-                addPeer: () => ({ success: false, error: "duplicate" }),
-            });
-            const econet = new Econet(stub as any);
-            await expect(econet.addPeer(0, 1, "1.2.3.4")).rejects.toThrow(EconetError);
-        });
-    });
-
-    describe("removePeer", () => {
-        it("sends correct fields", async () => {
-            const stub = createMockStub({
-                removePeer: () => ({ success: true, error: "" }),
-            });
-            const econet = new Econet(stub as any);
-            await econet.removePeer(0, 254);
-            expect(stub.removePeer).toHaveBeenCalledWith(
-                { net: 0, stn: 254 },
-                expect.any(Function),
-            );
-        });
-
-        it("throws EconetError on failure", async () => {
-            const stub = createMockStub({
-                removePeer: () => ({ success: false, error: "not found" }),
-            });
-            const econet = new Econet(stub as any);
-            await expect(econet.removePeer(0, 1)).rejects.toThrow(EconetError);
-        });
-    });
+    // addPeer / removePeer cases removed: those RPCs moved from
+    // EconetService to AunService in the prior branch and the TS
+    // client does not yet have an AunService wrapper. See
+    // project_typescript_client_cutover.md in project memory.
 
     describe("convenience methods", () => {
         it("isEnabled delegates to getStatus", async () => {
@@ -229,8 +172,6 @@ describe("Econet", () => {
                     stationId: 100,
                     aunMode: true,
                     connected: true,
-                    aunPort: 32768,
-                    peerCount: 0,
                     adlc: undefined,
                     handshake: undefined,
                 }),
@@ -247,8 +188,6 @@ describe("Econet", () => {
                     stationId: 42,
                     aunMode: false,
                     connected: false,
-                    aunPort: 0,
-                    peerCount: 0,
                     adlc: undefined,
                     handshake: undefined,
                 }),

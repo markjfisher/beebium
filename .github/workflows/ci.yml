@@ -39,7 +39,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          vcpkgGitCommitId: '77df67cfff9c12ccfdb52284e07c87c75092f723'
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
@@ -112,7 +112,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          vcpkgGitCommitId: '77df67cfff9c12ccfdb52284e07c87c75092f723'
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
@@ -216,7 +216,7 @@ jobs:
       - name: Setup vcpkg and install dependencies
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '6d332a018c433fad20822ff4b536e4ccdc3413bd'
+          vcpkgGitCommitId: '77df67cfff9c12ccfdb52284e07c87c75092f723'
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
