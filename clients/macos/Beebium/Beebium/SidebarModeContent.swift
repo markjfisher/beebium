@@ -327,18 +327,16 @@ struct NetworkModeView: View {
                 Divider()
                     .padding(.horizontal, 12)
 
-                peersSection
+                // Per-transport panels driven by ExtensionUiService.
+                // At most one of these will produce content per BBC
+                // machine (transports are mutually exclusive); the
+                // other collapses to zero height. Slice 1 wires the
+                // AUN peer list; later slices extend the AUN panel
+                // with the Connect button + UDP port label.
+                ExtensionPanelView(client: extensionUiClient,
+                                   extensionName: "aun")
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-
-                // Server-driven UI for the active econet transport
-                // extension. Renders nothing until the extension is
-                // loaded and a View has streamed in. Stage 6 deletes
-                // the hardcoded statusSection / peersSection above
-                // and lets the AUN extension drive its own panel
-                // through this same path.
-                Divider()
-                    .padding(.horizontal, 12)
 
                 ExtensionPanelView(client: extensionUiClient,
                                    extensionName: "piconet")
@@ -436,34 +434,11 @@ struct NetworkModeView: View {
         }
     }
 
-    // MARK: - Peers Section
-
-    private var peersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Peer Stations (\(econetClient.peers.count))")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            if econetClient.peers.isEmpty {
-                Text("No peer stations configured")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 4)
-            } else {
-                ForEach(Array(econetClient.peers.enumerated()), id: \.offset) { _, peer in
-                    HStack {
-                        Text(verbatim: "\(peer.net).\(peer.stn)")
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 50, alignment: .leading)
-                        Text(verbatim: "\(peer.ipAddress):\(peer.port)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                }
-            }
-        }
-    }
+    // Peers Section deleted: AUN's peer list is now rendered by
+    // ExtensionPanelView(extensionName: "aun") via AunUi (server-driven).
+    // The peer-table state continues to be reachable through
+    // econetClient.peers for any code that still needs the typed view;
+    // see feedback_extension_multi_api.md.
 }
 
 /// Popover for editing the Econet station ID

@@ -32,6 +32,7 @@
 //                                   The accumulated value is a
 //                                   comma-separated list.
 
+#include "AunUi.hpp"
 #include "beebium/econet/AunBackend.hpp"
 #include "beebium/extension/EconetTransportExtension.hpp"
 
@@ -79,8 +80,14 @@ public:
     // Non-owning pointer to the AunBackend we constructed. Returns
     // nullptr before create_backend has run or if construction failed
     // (port=none, bind error). AunService consults this to find its
-    // backend on each RPC.
+    // backend on each RPC; AunUi reads from it to populate the View.
     AunBackend* backend() { return backend_; }
+    const AunBackend* backend() const { return backend_; }
+
+    // ExtensionUi hook: returns a stable pointer to the per-extension
+    // AunUi. The framework reads its View tree and dispatches validated
+    // events into its handle_event.
+    ExtensionUi* ui() override { return &ui_; }
 
     // Helpers exposed for unit testing -- these are pure functions of the
     // config map and don't touch sockets.
@@ -97,6 +104,7 @@ public:
 private:
     AunBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
     std::unique_ptr<AunServiceImpl> service_;  // lazily constructed
+    AunUi ui_{*this};
 };
 
 }  // namespace beebium

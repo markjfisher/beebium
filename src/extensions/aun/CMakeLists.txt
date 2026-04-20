@@ -10,7 +10,10 @@
 # AUN-specific RPCs (peer table management, cable plug, port status)
 # that used to live on EconetService and required dynamic_cast.
 
-set(AUN_SOURCES AunEconetTransportExtension.cpp)
+set(AUN_SOURCES
+    AunEconetTransportExtension.cpp
+    AunUi.cpp
+)
 
 if(BEEBIUM_BUILD_SERVICE)
     beebium_compile_proto(

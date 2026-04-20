@@ -91,7 +91,10 @@ AunEconetTransportExtension::parse_map(const std::string& value) {
         auto fields = split_on(entry, ';');
         if (fields.size() != 3) {
             std::cerr << "AUN extension: malformed map entry '" << entry
-                      << "' (expected net;ip;port) -- skipping\n";
+                      << "' (expected [net.]stn;ip;port -- e.g. "
+                         "0.254;127.0.0.1;32768; remember to quote the "
+                         "argument so the shell does not split on ';') "
+                         "-- skipping\n";
             continue;
         }
 

@@ -959,6 +959,16 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_aun_service)
 
+    # AunUi unit tests (build_view shape against varying peer-table state)
+    add_executable(test_aun_ui test_aun_ui.cpp)
+    target_link_libraries(test_aun_ui PRIVATE
+        beebium_ext_aun
+        beebium_extension_api
+        beebium_extension_ui_proto
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_aun_ui)
+
     # EconetTransportService discovery tests
     add_executable(test_grpc_econet_transport_service
         test_grpc_econet_transport_service.cpp)
