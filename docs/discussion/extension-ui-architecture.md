@@ -4,7 +4,13 @@ A server-driven, message-passing approach to giving extensions
 symmetric reach into every Beebium frontend (macOS / Windows / Linux /
 web / Python diagnostics) without per-frontend code per extension.
 
-Status: Design proposal. Not committed to implementation.
+Status: Implemented on the `extension-ui-framework` branch (2026-04-20).
+The framework spine, Piconet pilot, AUN migration, Python client, and
+macOS Swift client all landed; manual end-to-end verification on macOS
+confirmed the round-trip behaviour for both transports. See
+[Implementation Notes](#implementation-notes) at the bottom of this
+document for what got built, what was deferred, and where the design
+deviated from the proposal.
 
 ---
 
@@ -384,3 +390,128 @@ Architecture is proven when:
    as the extension is loaded.
 
 If all four hold, ship it.
+
+## Implementation Notes
+
+Brief walkthrough of where the as-built implementation matches the
+design and where it deviates. Written 2026-04-20 after the
+`extension-ui-framework` branch landed all stages and slices below.
+
+### What was built (matches the design)
+
+- **Schema** — `src/core/extension-api/proto/extension_ui.proto`. Seven
+  control primitives (Label, Indicator, Toggle, Button, Choice,
+  TextInput, Group), `View` envelope with monotonic `view_revision`,
+  `ExtensionUiService` with `SubscribeView` (server-stream) and
+  `Dispatch` (unary). Compiled into a dedicated shared library
+  `beebium_extension_ui_proto` so plugins, the server, and tests all
+  resolve the same proto descriptors from one .so without registration
+  conflicts.
+- **Server framework** — `ExtensionUi` abstract base in
+  `beebium_extension_api`; `Extension::ui()` virtual returning
+  `nullptr` by default; `ExtensionUiServiceImpl` in the service layer
+  with a poll-loop `SubscribeView` modelled on
+  `IndicatorService::Subscribe` and a Dispatch validation gauntlet
+  (extension exists, control id is known for the current view,
+  payload variant matches, view revision is current). `mark_dirty()`
+  is the bump-revision signal extensions invoke to push a new View.
+- **Piconet pilot** — `PiconetUi` in the piconet plugin: device-path
+  Label, USB-state Indicator, Enable/Disable Button (was Toggle in
+  the original design — see deviations below). Stable per-control
+  ids; SwiftUI patches widgets in place across pushes.
+- **AUN migration** — `AunUi` in the AUN built-in extension: the
+  Connect/Disconnect Button, "Listening on UDP port N" Label, peers
+  list. Hardcoded SwiftUI for these in `NetworkModeView` deleted; the
+  transport-agnostic header (Connection state, Econet Station + edit
+  popover) stays hardcoded in NetworkModeView since those are
+  transport-agnostic concerns.
+- **Python client** — `clients/python/src/beebium/extension_ui.py`
+  with dataclass mirrors of every control type, `subscribe_view`
+  iterator, `start_background_subscription` daemon-thread pattern,
+  type-dispatched `dispatch(payload=bool|str|int|None)`.
+- **macOS Swift client** — `ExtensionUiClient` (Disconnectable,
+  callback-stream pattern), `ExtensionViewRenderer` (recursive
+  Control → SwiftUI walker), `ExtensionPanelView` (per-extension
+  subscription wrapper). Renderer integrated into the Network
+  sidebar's existing `NetworkModeView`.
+
+### Where the design deviated
+
+- **Piconet's `Enabled` Toggle became a Button.** The design originally
+  used a Toggle ("Enabled" on/off) for the LISTEN/STOP firmware mode.
+  This worked functionally but produced an inconsistent UX across the
+  two transports — AUN used a Connect/Disconnect Button for the same
+  conceptual job. Switched to a Button("Disable"/"Enable") for
+  symmetry. Captured the principle in the
+  `feedback_state_vs_action_controls.md` memory: prefer Indicator +
+  Button over Toggle when state can change for reasons beyond user
+  intent.
+
+- **`PiconetBackend::is_connected()` is now mode-aware.** Originally it
+  returned just `serial_->is_open()` — the USB physical-layer state.
+  Field testing showed the Network sidebar's "Connected" state row
+  stayed green even when the user had disabled the transport via the
+  Toggle/Button. Changed to `is_serial_open() && mode == LISTEN` so
+  both transports' `is_connected()` answer the same user-meaningful
+  question ("is the BBC actually in two-way comms with the wire?").
+  PiconetUi's Indicator continues to use a separate `is_serial_open()`
+  accessor for "is the adapter physically there", distinguishing
+  "muted via STOP" (Indicator green, header grey) from "USB unplugged"
+  (Indicator red, header grey).
+
+- **Async state changes need per-extension callbacks, not just
+  `mark_dirty()`.** The framework's poll loop only sees revision
+  changes, and the only way to bump the revision is a synchronous
+  `mark_dirty()` call. When state changes async (Piconet's reader
+  thread closing the serial port on hot-unplug), the extension needs
+  a way to notify its UI from a different thread. Solved per-extension
+  by adding an `on_async_state_change` callback to `PiconetBackend`'s
+  constructor that `PiconetEconetTransportExtension` wires to
+  `ui_.mark_dirty()`. The framework-level question of "should there
+  be a generic async-update mechanism" is left open as a future
+  refactor — see deferrals below.
+
+- **The transport-agnostic header had to be polled, not pushed.** The
+  Connection state row in `NetworkModeView` reads from
+  `EconetService.GetEconetStatus.connected`. After the AUN
+  Connect/Disconnect button moved into `AunUi` (Slice 2 of Stage 6),
+  the Dispatch path no longer goes through `EconetClient`, so the
+  header stayed stale on connection toggles. Added a 500 ms
+  `refreshStatus()` poll in `EconetClient` as a workaround. The
+  proper fix — a `WatchEconetStatus` server-streamed RPC — is
+  deferred and tracked separately.
+
+- **AUN map separator `;` requires shell quoting.** The original
+  Phase 2 design chose `;` as the inner field separator inside `--aun
+  map=net.stn;ip;port` because `:` was already taken for k=v pairs.
+  The shell interprets `;` as a command separator unless the argument
+  is quoted. The error message in the AUN parser was sharpened to
+  mention this gotcha; the deeper fix (refactor `is_list` arg-parser
+  to free `,` as the inner separator) is deferred.
+
+### What was deferred
+
+Tracked in project memory; brief summary here.
+
+- **Add Peer / Remove Peer form on the AUN panel.** Designed (TextInput
+  × 3 + Button + per-row Remove) but not built. Future direction is
+  the Dynamic Station Configuration Protocol plus mDNS/Bonjour
+  auto-discovery, not manual peer management.
+- **`Toggle.enabled` schema field.** Considered for the no-backend
+  state but rejected in favour of suppressing the control entirely.
+  Worth revisiting if a future use case needs visible-but-disabled
+  controls.
+- **Reconnect button + USB device discovery for Piconet.** Hot-unplug
+  *detection* works; hot-attach does not. See
+  `docs/discussion/piconet-device-discovery.md` for the design.
+- **Server-streamed `WatchEconetStatus`** to replace the macOS
+  client's 500 ms polling workaround. Modelled on
+  `IndicatorService::Subscribe`'s server-side push pattern.
+- **Generic async-update mechanism in the framework.** Each extension
+  currently wires its own callback from backend to UI. If two or
+  three extensions converge on the same pattern, factor it then.
+- **Toggle-based vs Button-based action symmetry across all
+  extensions.** No new principle to enforce; the existing
+  `feedback_state_vs_action_controls.md` guidance is sufficient.
+- **View diffing.** Pushes are full-tree today. If push payloads grow
+  enough to matter, switch to a LiveView-style diff. Premature today.

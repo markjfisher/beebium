@@ -137,7 +137,7 @@ ships as a discoverable plugin under `src/extensions/piconet/`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--station <1-254>` | (omitted = no Econet) | Econet station number; presence enables Econet hardware. Without a transport extension the ADLC reports "No Clock". |
-| `--aun [port=<n>][:map=<net.stn;ip;port>]...` | — | AUN UDP transport. `port` defaults to 32768; `port=none` disables the network. `map=` is repeatable; the inner separator is `;` (not `:`) so the CLI parser can tokenise the value cleanly. |
+| `--aun [port=<n>][:map=<net.stn;ip;port>]...` | — | AUN UDP transport. `port` defaults to 32768; `port=none` disables the network. `map=` is repeatable; the inner separator is `;` (not `:`) so the CLI parser can tokenise the value cleanly. **Quote the whole argument** when using `map=` because `;` is a shell metacharacter — without quoting the shell splits the line and only the first field reaches Beebium. See [networking.md](networking.md#inner-separators-in---aun-map) for details. |
 | `--piconet device_path=<path>` | — | Piconet USB-CDC bridge to a real Econet wire (POSIX-only). Mutually exclusive with `--aun`. |
 
 **Transport selection:**

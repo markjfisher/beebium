@@ -51,6 +51,20 @@ The extension argument parser tokenises `--<extension> a:b:c` on `:`, which conf
 --aun port=32768:map=0.254;127.0.0.1;32769:map=0.253;127.0.0.1;32770
 ```
 
+**Important:** `;` is a shell command separator. Quote the entire `--aun` argument when it includes any `map=`, otherwise the shell splits the line at the first `;` and only `port=32768:map=0.254` reaches Beebium:
+
+```bash
+# Wrong -- shell eats everything after the first ';'
+beebium-model-b --station 32 --aun port=32768:map=0.254;127.0.0.1;32768
+
+# Right
+beebium-model-b --station 32 --aun "port=32768:map=0.254;127.0.0.1;32768"
+```
+
+The error message ("malformed map entry '0.254' (expected [net.]stn;ip;port -- e.g. 0.254;127.0.0.1;32768; remember to quote the argument so the shell does not split on ';')") surfaces this when it happens.
+
+A future refactor of the `is_list` arg-parser would let `,` serve as the inner separator (no shell quoting needed); deferred for now since adding that without breaking the existing list-accumulation semantics requires plumbing changes across every `is_list` consumer.
+
 ### `FourWayHandshake` is always in the path
 
 All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = true` is the default for production use). Econet's wire protocol is a four-way handshake (scout / scout-ack / data / data-ack). AUN's UDP protocol is two-way (Unicast / Ack). Even Piconet is *atomic* from the host's perspective — the firmware completes the wire handshake before reporting the result. `FourWayHandshake` synthesises the missing scout-ack and final-ack frames locally so the NFS ROM sees the timing it expects regardless of the transport underneath.
@@ -120,6 +134,33 @@ For an econet-transport extension the order is:
 5. After the gRPC server starts, the transport registry's `collect_grpc_services()` contributes its services (e.g. `AunService`) alongside the peripheral extensions' services.
 
 The same code path serves both built-in (AUN) and plugin (Piconet) transports — the only difference is whether `BuiltinExtensions::find()` or `PluginLoader::load_extension()` constructs the instance.
+
+### Network sidebar (macOS GUI)
+
+The macOS frontend's Network sidebar (sidebar mode 8) is split into a transport-agnostic header and a per-transport panel. The split mirrors the architectural distinction between concerns common to every Econet transport (link state, station number) and concerns specific to one transport (AUN's UDP port and peer table; Piconet's USB device and firmware mode).
+
+**Transport-agnostic header** (hardcoded SwiftUI in `NetworkModeView`, driven by `EconetService.GetEconetStatus`):
+
+- **Connection** — "Connected" / "Disconnected", driven by `EconetService.GetEconetStatus.connected`. For AUN this reflects the cable-simulation state (toggled via the panel's Connect/Disconnect button); for Piconet it reflects `is_serial_open() && mode == LISTEN`. Same row, same widget, same meaning across transports — "is the BBC actually in two-way comms with the wire?"
+- **Econet Station** — current station number with a pencil-edit affordance opening a popover (`SetStationId` via `EconetService`). Transport-agnostic.
+
+**Per-transport panel** (server-pushed `View` rendered by `ExtensionPanelView`, driven by whichever transport extension is active):
+
+- **AUN** (`AunUi`):
+  - `Connect` / `Disconnect` Button — toggles `AunBackend::set_connected`. Label flips with the current state.
+  - `Listening on UDP port N` Label.
+  - `Peers` group — one Label per configured peer (`net.stn  ip:port`), or "No peer stations configured" when empty.
+
+- **Piconet** (`PiconetUi`):
+  - Device path Label (`Device: /dev/tty.usbmodem...`).
+  - Indicator — "Adapter responsive" (green) when the USB serial port is open; "Cannot open device: <errno>" (red) if the open failed at startup; "Adapter offline" (red) after a successful open followed by hot-unplug.
+  - `Enable` / `Disable` Button — toggles the firmware between LISTEN and STOP. Suppressed when the serial port is closed (no firmware to drive).
+
+The transport panel is rendered through the **Extension UI framework** (see [`docs/discussion/extension-ui-architecture.md`](discussion/extension-ui-architecture.md)). The framework streams a typed control tree from the server to the client; the macOS renderer walks the tree once per push and produces native widgets. Adding a control to the AUN or Piconet panel requires server-side code only — the macOS app needs no changes to surface a new control type that's already in the seven-control vocabulary.
+
+The transport panel does not provide manual peer management for AUN. The Add/Remove peer affordance was designed but not built — the long-term direction is centralised station assignment via DSCP plus mDNS/Bonjour peer discovery (see `docs/discussion/dynamic-station-config-protocol.md`). Scripts can still manipulate peers via `AunService.AddPeer` / `RemovePeer` / `SetConnected` / `ListPeers` (typed RPCs that stay in place — see `feedback_extension_multi_api.md` in project memory for the principle that extensions can expose multiple APIs for different audiences).
+
+When the device is unplugged mid-session, Piconet correctly transitions to the offline state but does not auto-reconnect when the device returns. Re-attachment is tracked in [`docs/discussion/piconet-device-discovery.md`](discussion/piconet-device-discovery.md) for a future focused branch.
 
 ## Hardware Architecture
 
