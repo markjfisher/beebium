@@ -17,7 +17,13 @@
 #include "beebium/econet/piconet/Constants.hpp"
 #include "beebium/econet/piconet/Events.hpp"
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 #include <array>
+#include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -128,9 +134,11 @@ NetworkFrame make_ack() {
 }  // namespace
 
 PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
-                               std::unique_ptr<piconet::SerialPort> serial)
+                               std::unique_ptr<piconet::SerialPort> serial,
+                               std::function<void()> on_async_state_change)
     : config_(std::move(config)),
-      serial_(std::move(serial)) {
+      serial_(std::move(serial)),
+      on_async_state_change_(std::move(on_async_state_change)) {
     if (trace_enabled()) {
         std::cerr << "PiconetBackend: constructed for device " << config_.device_path
                   << " station=" << static_cast<unsigned>(config_.initial_station) << "\n";
@@ -170,14 +178,69 @@ void PiconetBackend::reader_loop() {
     std::string line_buffer;
     std::array<std::uint8_t, 512> buf{};
 
+    // Periodically check the device path still exists; USB hot-unplug
+    // (yanking the cable mid-session) makes /dev/tty.usbmodem* disappear
+    // but does not necessarily produce a read error if the firmware is
+    // silent (e.g. SET_MODE STOP) and the read sits in select() with
+    // nothing to do. The stat() poll catches that case; the read-error
+    // branch below catches the case where a read was in flight when the
+    // device went away. Both paths close the serial port so is_open()
+    // and is_connected() flip to false promptly.
+    auto last_stat = std::chrono::steady_clock::now();
+    constexpr auto STAT_INTERVAL = std::chrono::seconds(1);
+
     while (!shutdown_.load(std::memory_order_relaxed)) {
         auto result = serial_->read({buf.data(), buf.size()});
         if (result.error) {
-            // Serial closed or hangup: exit the loop. is_open() will return
-            // false, propagating to is_connected().
+            // Serial closed or hangup -- could be intentional (close()
+            // from emulation thread / destructor) or device hot-unplug.
+            // Either way close the fd so is_open() reflects reality
+            // promptly. close() is atomic and idempotent.
+            if (trace_enabled()) {
+                std::cerr << "PiconetBackend: read error on "
+                          << config_.device_path
+                          << " -- closing serial port\n";
+            }
+            serial_->close();
+            // Notify the UI hook so the Extension UI framework knows
+            // to push a fresh View. Without this the Indicator and
+            // button stay frozen at their last-pushed state, even
+            // though is_serial_open() now reads false. Skipped on the
+            // intentional-shutdown path because the destructor's
+            // close() races us; the resulting double-call is harmless
+            // but the mark_dirty() in shutdown context is pointless.
+            if (on_async_state_change_ &&
+                !shutdown_.load(std::memory_order_relaxed)) {
+                on_async_state_change_();
+            }
             return;
         }
         if (result.would_block) {
+            // Idle tick: if the device path has disappeared, treat as
+            // hot-unplug. POSIX-only -- on Windows the equivalent
+            // would be GetFileAttributes / a CM_Notify_Register ack
+            // when Win32SerialPort lands.
+#ifndef _WIN32
+            auto now = std::chrono::steady_clock::now();
+            if (now - last_stat >= STAT_INTERVAL) {
+                last_stat = now;
+                struct stat st;
+                if (::stat(config_.device_path.c_str(), &st) != 0 &&
+                    (errno == ENOENT || errno == ENODEV)) {
+                    if (trace_enabled()) {
+                        std::cerr << "PiconetBackend: device path "
+                                  << config_.device_path
+                                  << " no longer exists -- treating as hot-unplug\n";
+                    }
+                    serial_->close();
+                    if (on_async_state_change_ &&
+                        !shutdown_.load(std::memory_order_relaxed)) {
+                        on_async_state_change_();
+                    }
+                    return;
+                }
+            }
+#endif
             continue;
         }
 

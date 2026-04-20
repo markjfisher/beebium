@@ -20,6 +20,7 @@
 #include <moodycamel/readerwriterqueue.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -46,8 +47,18 @@ public:
     // matching AunBackend's behaviour. The destructor signals shutdown,
     // closes the serial port (which unblocks the reader's timed read), and
     // joins the reader thread.
+    //
+    // on_async_state_change is invoked by the reader thread whenever
+    // PiconetBackend's externally-observable state changes for reasons
+    // other than a synchronous call from the emulation thread (today:
+    // hot-unplug detection, serial read errors that close the port).
+    // PiconetEconetTransportExtension wires this to PiconetUi::mark_dirty()
+    // so the Extension UI framework knows to push a fresh View. If null,
+    // the callback is simply not invoked. Must be thread-safe -- it runs
+    // on the reader thread.
     PiconetBackend(piconet::PiconetConfig config,
-                   std::unique_ptr<piconet::SerialPort> serial);
+                   std::unique_ptr<piconet::SerialPort> serial,
+                   std::function<void()> on_async_state_change = nullptr);
 
     ~PiconetBackend() override;
 
@@ -57,7 +68,26 @@ public:
     // queue, or nullopt if empty.
     std::optional<NetworkFrame> receive_frame() override;
 
+    // NetworkBackend interface: "is the BBC actually in two-way comms with
+    // the wire?" -- requires both the USB-CDC link to the adapter to be
+    // open AND the firmware to be in LISTEN mode. STOP-mode means the
+    // Pico is silently dropping all traffic, so functionally we are not
+    // connected. Symmetric with AunBackend's "did the user simulate
+    // unplugging the cable" semantics; both transports' is_connected()
+    // now answers the same user-meaningful question, which lets the
+    // Network sidebar's Connection state row be transport-agnostic.
     bool is_connected() const override {
+        return is_serial_open() &&
+               current_mode_.load(std::memory_order_acquire) == piconet::Mode::Listen;
+    }
+
+    // USB-level connection: is the serial port open and the adapter
+    // physically reachable? Independent of firmware mode. Used by
+    // PiconetService.GetStatus.serial_open (reports physical-layer
+    // health) and PiconetUi's Indicator (distinguishes "USB unplugged"
+    // from "muted via STOP mode" -- both produce zero traffic but for
+    // different reasons the user can act on differently).
+    bool is_serial_open() const noexcept {
         return serial_ && serial_->is_open();
     }
 
@@ -97,6 +127,7 @@ private:
     moodycamel::ReaderWriterQueue<NetworkFrame> rx_queue_{64};
     std::atomic<bool> shutdown_{false};
     std::atomic<piconet::Mode> current_mode_{piconet::Mode::Stop};
+    std::function<void()> on_async_state_change_;
     std::thread reader_thread_;
 };
 

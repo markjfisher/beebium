@@ -33,7 +33,12 @@ grpc::Status PiconetServiceImpl::GetStatus(
         return grpc::Status::OK;
     }
     response->set_device_path(backend->config().device_path);
-    response->set_serial_open(backend->is_connected());
+    // serial_open is the proto-level USB physical-layer state -- whether
+    // the adapter is reachable at all. Distinct from is_connected()
+    // which now also requires firmware mode == LISTEN. The proto field
+    // documents the former; consumers querying GetStatus expect the
+    // physical-layer answer (is the device there).
+    response->set_serial_open(backend->is_serial_open());
     return grpc::Status::OK;
 }
 

@@ -81,6 +81,24 @@ public:
         return fake_->device().mode() == mode;
     }
 
+    // Simulate USB hot-unplug by destroying the fake (closes the PTY
+    // master), which causes the slave fd PiconetBackend holds to see
+    // EOF/HUP on the next read. PiconetBackend's reader thread then
+    // closes its serial port, flipping is_serial_open() to false.
+    void simulate_hot_unplug() { fake_.reset(); }
+
+    // Block until is_serial_open() returns false, up to 3 seconds.
+    // Used after simulate_hot_unplug() to wait for the reader thread
+    // to react. Returns true if observed, false on timeout.
+    bool wait_for_serial_close() {
+        auto deadline = std::chrono::steady_clock::now() + 3s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (!backend().is_serial_open()) return true;
+            std::this_thread::sleep_for(20ms);
+        }
+        return !backend().is_serial_open();
+    }
+
 private:
     std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnPty> fake_;
     std::unique_ptr<beebium::PiconetEconetTransportExtension> ext_;
@@ -89,7 +107,7 @@ private:
 
 }  // namespace
 
-TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Toggle",
+TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Button",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
@@ -116,16 +134,16 @@ TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Togg
     REQUIRE(indicator.indicator().state() == beebium::Indicator_State_OK);
     REQUIRE(indicator.indicator().text() == "Adapter responsive");
 
-    const auto& toggle = root.group().controls(2);
-    REQUIRE(toggle.id() == "mode_toggle");
-    REQUIRE(toggle.control_case() == beebium::Control::kToggle);
-    REQUIRE(toggle.toggle().label() == "Enabled");
-    // Constructor put the firmware in LISTEN, so the toggle should reflect
-    // 'enabled'.
-    REQUIRE(toggle.toggle().value() == true);
+    const auto& button = root.group().controls(2);
+    REQUIRE(button.id() == "enable_action");
+    REQUIRE(button.control_case() == beebium::Control::kButton);
+    REQUIRE(button.button().enabled());
+    // Constructor put the firmware in LISTEN, so the action that the
+    // user can take next is "Disable" (mute).
+    REQUIRE(button.button().label() == "Disable");
 }
 
-TEST_CASE("PiconetUi build_view (no backend) hides Toggle and surfaces OS error",
+TEST_CASE("PiconetUi build_view (no backend) hides Button and surfaces OS error",
           "[piconet][ui]") {
     // Construct an extension whose create_backend will fail at the
     // POSIX open() because the device path doesn't exist. This is the
@@ -145,8 +163,8 @@ TEST_CASE("PiconetUi build_view (no backend) hides Toggle and surfaces OS error"
 
     const auto& root = view.root();
     REQUIRE(root.control_case() == beebium::Control::kGroup);
-    // Two controls only -- Label + Indicator. Toggle suppressed because
-    // there is no backend to drive.
+    // Two controls only -- Label + Indicator. Enable button suppressed
+    // because there is no backend to drive.
     REQUIRE(root.group().controls_size() == 2);
 
     const auto& label = root.group().controls(0);
@@ -167,74 +185,114 @@ TEST_CASE("PiconetUi build_view (no backend) hides Toggle and surfaces OS error"
             std::string::npos);
 }
 
-TEST_CASE("PiconetUi mode_toggle false dispatches SET_MODE STOP",
+TEST_CASE("PiconetUi enable_action toggles mode between LISTEN and STOP",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
     REQUIRE(ui != nullptr);
+
+    // Constructor leaves us in LISTEN; first dispatch should mute.
+    REQUIRE(fixture.backend().mode() == beebium::piconet::Mode::Listen);
 
     beebium::DispatchRequest req;
     req.set_extension_name("piconet");
-    req.set_control_id("mode_toggle");
+    req.set_control_id("enable_action");
     req.set_view_revision(ui->current_revision());
-    req.set_bool_value(false);
+    // Buttons take no payload.
 
     ui->handle_event(req);
     REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
-    REQUIRE(fixture.backend().mode() == beebium::piconet::Mode::Stop);
+
+    // Second dispatch should re-enable.
+    req.set_view_revision(ui->current_revision());
+    ui->handle_event(req);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Listen));
 }
 
-TEST_CASE("PiconetUi mode_toggle true dispatches SET_MODE LISTEN",
+TEST_CASE("PiconetUi enable_action label flips with the cached mode",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
-    REQUIRE(ui != nullptr);
 
-    // Start from STOP so we observe a real LISTEN transition.
+    // After SET_MODE STOP, the next View should show Enable as the
+    // available action.
     fixture.backend().set_mode(beebium::piconet::Mode::Stop);
     REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
 
-    beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
-    req.set_control_id("mode_toggle");
-    req.set_view_revision(ui->current_revision());
-    req.set_bool_value(true);
-
-    ui->handle_event(req);
-    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Listen));
-    REQUIRE(fixture.backend().mode() == beebium::piconet::Mode::Listen);
+    beebium::View view;
+    ui->build_view(&view);
+    const auto& button = view.root().group().controls(2);
+    REQUIRE(button.id() == "enable_action");
+    REQUIRE(button.button().label() == "Enable");
 }
 
-TEST_CASE("PiconetUi mode_toggle dispatch bumps the view revision",
+TEST_CASE("PiconetUi enable_action dispatch bumps the view revision",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
-    REQUIRE(ui != nullptr);
-
     auto initial = ui->current_revision();
 
     beebium::DispatchRequest req;
     req.set_extension_name("piconet");
-    req.set_control_id("mode_toggle");
+    req.set_control_id("enable_action");
     req.set_view_revision(initial);
-    req.set_bool_value(false);
 
     ui->handle_event(req);
     REQUIRE(ui->current_revision() > initial);
 }
 
-TEST_CASE("PiconetUi build_view reflects the latest set_mode",
+TEST_CASE("PiconetBackend is_connected requires both serial open AND mode LISTEN",
+          "[piconet][ui]") {
+    PiconetUiFixture fixture;
+    REQUIRE(fixture.backend().is_serial_open());
+    // Constructor leaves us in LISTEN with serial open -> connected.
+    REQUIRE(fixture.backend().is_connected());
+
+    fixture.backend().set_mode(beebium::piconet::Mode::Stop);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
+    // Serial still open, but mode != Listen, so not "connected" in the
+    // user-meaningful sense (BBC is muted from the wire).
+    REQUIRE(fixture.backend().is_serial_open());
+    REQUIRE_FALSE(fixture.backend().is_connected());
+
+    fixture.backend().set_mode(beebium::piconet::Mode::Listen);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Listen));
+    REQUIRE(fixture.backend().is_connected());
+}
+
+TEST_CASE("PiconetBackend hot-unplug closes serial and updates the UI",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
-    REQUIRE(ui != nullptr);
+    REQUIRE(fixture.backend().is_serial_open());
+    REQUIRE(fixture.backend().is_connected());
+    const auto pre_unplug_revision = ui->current_revision();
 
-    fixture.backend().set_mode(beebium::piconet::Mode::Stop);
+    // Yank the cable: destroying the fake closes the PTY master, the
+    // slave PiconetBackend holds sees EOF on the next read, the reader
+    // thread closes the serial port and exits.
+    fixture.simulate_hot_unplug();
+    REQUIRE(fixture.wait_for_serial_close());
+    REQUIRE_FALSE(fixture.backend().is_serial_open());
+    REQUIRE_FALSE(fixture.backend().is_connected());
 
+    // The reader thread fires the on_async_state_change callback after
+    // closing the serial port; PiconetEconetTransportExtension wires
+    // it to ui_.mark_dirty(). Without this the framework's poll loop
+    // would never push a new View and the panel would stay frozen
+    // showing "Adapter responsive" + Disable button forever.
+    REQUIRE(ui->current_revision() > pre_unplug_revision);
+
+    // The Indicator now reads as ERROR with the "Adapter offline"
+    // text (no recorded open_error_message because the open did
+    // succeed initially -- the adapter went away later).
     beebium::View view;
     ui->build_view(&view);
+    const auto& indicator = view.root().group().controls(1);
+    REQUIRE(indicator.id() == "connected");
+    REQUIRE(indicator.indicator().state() == beebium::Indicator_State_ERROR);
+    REQUIRE(indicator.indicator().text() == "Adapter offline");
 
-    const auto& toggle = view.root().group().controls(2);
-    REQUIRE(toggle.id() == "mode_toggle");
-    REQUIRE(toggle.toggle().value() == false);
+    // The Enable button is suppressed -- nothing to drive any more.
+    REQUIRE(view.root().group().controls_size() == 2);
 }

@@ -51,9 +51,17 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
         return nullptr;
     }
 
+    // Wire the backend's async-state-change hook to the UI's
+    // mark_dirty(). Without this the panel View stays frozen across
+    // hot-unplug events -- the reader thread closes the serial port
+    // but the framework's poll loop only sees a revision change when
+    // mark_dirty() is called. Captures `this` because the extension
+    // owns both ui_ and the backend (via the unique_ptr handed to
+    // EconetSocket); the callback's lifetime is bounded by both.
     auto backend = std::make_unique<PiconetBackend>(
         piconet::PiconetConfig{path, station},
-        std::move(serial));
+        std::move(serial),
+        [this]{ ui_.mark_dirty(); });
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
     open_error_message_.clear();
     return backend;
