@@ -141,6 +141,7 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
             param.description = p.value("description", "");
             param.position = p.value("position", -1);
             param.required = p.value("required", false);
+            param.is_list = p.value("is_list", false);
             param.default_value = p.value("default", "");
             if (!param.key.empty()) {
                 manifest.parameters.push_back(std::move(param));

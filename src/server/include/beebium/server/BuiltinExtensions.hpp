@@ -14,13 +14,16 @@
 #define BEEBIUM_SERVER_BUILTIN_EXTENSIONS_HPP
 
 // Built-in extensions: extensions compiled directly into the server
-// rather than loaded from an on-disk plugin. The CLI/preset machinery
-// treats them identically to plugin extensions: each contributes a
-// manifest (so its --<cli-name> flag is recognised) and a factory that
-// constructs the concrete Extension instance on demand.
+// rather than loaded from an on-disk plugin.
 //
-// Adding a new built-in extension means appending one entry to the
-// vector returned by entries().
+// Anything that *could* be a plugin should be. Entries here describe
+// extensions that the server has link-time knowledge of -- typically
+// because ServerMain reaches into their type via dynamic_cast or
+// because they PUBLIC-link libraries (like beebium_service) that
+// cannot safely coexist with plugin copies. A cleaner plugin ABI (for
+// example, a virtual-interface adapter for cross-processor debugger
+// wiring) would unblock converting the remaining built-ins to plugins;
+// see the acorn-65c02-coprocessor notes below.
 
 #include "AunEconetTransportExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
@@ -45,6 +48,14 @@ inline std::vector<Entry> make_entries() {
     std::vector<Entry> result;
 
     // Acorn 65C02 3 MHz second processor (Tube co-processor).
+    //
+    // Built-in rather than a plugin because ServerMain does
+    // dynamic_cast<SecondProcessor65C02Extension*> on the loaded
+    // extension to wire cross-processor debugger callbacks, and the
+    // extension's inline non-virtual integration methods
+    // (running(), parasite_pause_callback(), wire_counterpart_stop())
+    // reach into private members that are not exposed through a
+    // cross-DLL virtual interface.
     {
         ExtensionManifest m;
         m.name = "acorn-65c02-coprocessor";
@@ -60,6 +71,15 @@ inline std::vector<Entry> make_entries() {
     }
 
     // AUN UDP econet transport.
+    //
+    // Built-in rather than a plugin primarily for CLI-test ergonomics:
+    // many parse_start_arguments tests use a synthetic argv
+    // (argv[0] = "beebium") which cannot auto-discover plugins via
+    // <exe-dir>/extensions/ lookup. Making AUN a plugin would need
+    // those tests to pre-populate an extension directory, which is a
+    // non-trivial refactor. A future test-side cleanup could unblock
+    // conversion -- the runtime auto-discovery is in place and would
+    // work identically for an AUN plugin.
     {
         ExtensionManifest m;
         m.name = "aun";

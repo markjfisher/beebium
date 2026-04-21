@@ -31,10 +31,18 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             BEEBIUM_VERSION="${PROJECT_VERSION}"
     )
 
+    # Most Beebium extensions ship as plugins, deployed via
+    # beebium_finalize_plugin() to <exe-dir>/extensions/<name>/, and
+    # loaded at runtime through PluginLoader. Plugin targets are
+    # aggregated into beebium-servers (the convenience target below)
+    # so a single build invocation produces a complete extension tree.
+    #
+    # The two built-in exceptions (acorn-65c02-coprocessor and aun)
+    # are statically linked. See BuiltinExtensions.hpp for their
+    # rationale and what would be required to convert each to a plugin.
     target_link_libraries(${TARGET_NAME}
         PRIVATE
             beebium_service
-            beebium_ext_test_scratch_ram
             beebium_ext_acorn_65c02
             beebium_ext_aun
             nlohmann_json::nlohmann_json
@@ -57,12 +65,26 @@ generate_bare_preset("model-b" "1981-12")
 generate_bare_preset("model-b-plus" "1985-06")
 generate_bare_preset("model-b-romram" "1984")
 
-# Convenience target to build all server executables (add new models here)
-add_custom_target(beebium-servers DEPENDS
+# Convenience target to build all server executables and their bundled
+# extension plugins. Plugins are loaded at runtime from
+# <exe-dir>/extensions/<name>/ via beebium_finalize_plugin() post-build
+# deployment, not linked, so we list them here to ensure a complete
+# build in one invocation.
+set(BEEBIUM_SERVERS_DEPS
     beebium-model-b
     beebium-model-b-plus
     beebium-model-b-romram
 )
+if(BEEBIUM_BUILD_SERVICE)
+    list(APPEND BEEBIUM_SERVERS_DEPS
+        beebium_ext_acorn_rtc_plugin
+        beebium_ext_acorn_scsi_plugin
+        beebium_ext_piconet_plugin
+        beebium_ext_scsi_hard_disc_plugin
+        beebium_ext_test_scratch_ram_plugin
+    )
+endif()
+add_custom_target(beebium-servers DEPENDS ${BEEBIUM_SERVERS_DEPS})
 
 # Copy ROMs to build output directory for development
 set(ROM_OUTPUT_DIR "${CMAKE_BINARY_DIR}/roms")

@@ -23,7 +23,6 @@
 #include "beebium/extension/OneMHzBusPort.hpp"
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
-#include "TestScratchRam.hpp"
 #include "SecondProcessor65C02Extension.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/PacingClock.hpp"
@@ -1584,12 +1583,11 @@ public:
                 extension_registry.register_extension_point("tube");
             }
 
-            // Register built-in extensions (assign auto-generated ids)
-            {
-                auto scratch_ram = beebium::TestScratchRam::create();
-                scratch_ram->set_config({{"id", generate_uuid_v4()}});
-                extension_registry.register_extension(std::move(scratch_ram));
-            }
+            // Note: extensions are loaded below from --<cli-name> flags
+            // via the plugin path. test-scratch-ram used to be
+            // unconditionally auto-registered here as a built-in; it is
+            // now a plugin and users opt in via --test-scratch-ram on
+            // the CLI (or via a preset that lists it).
 
             // Load extensions (from --<cli-name> flags). plugin_loader and
             // plugin_manifests were already populated above (so the

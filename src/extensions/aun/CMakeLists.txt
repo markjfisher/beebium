@@ -1,9 +1,14 @@
 # AUN UDP Econet transport (built-in extension).
 #
-# Mirrors the acorn-65c02-coprocessor pattern: a static library that the
-# server links in directly. There is no on-disk plugin SHARED library
-# because AUN ships built-in -- the user gets it without configuring
-# an extension directory.
+# Builds as a STATIC library linked directly into the server. The
+# rationale for keeping AUN built-in rather than converting it to a
+# plugin is primarily CLI-test ergonomics: many tests invoke
+# parse_start_arguments with a synthetic argv (argv[0] = "beebium")
+# that cannot auto-discover plugins via exe-parent/extensions, so
+# --aun needs to be recognised without a plugin dir. A future
+# test-side refactor could let CLI tests point at a plugin dir and
+# unblock converting AUN; until then, AUN remains in
+# BuiltinExtensions::entries() alongside acorn-65c02-coprocessor.
 #
 # When the service layer is being built, also compiles aun.proto and
 # the AunService implementation. The service is the gRPC home for
