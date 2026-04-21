@@ -36,25 +36,35 @@ struct ExtensionViewRenderer: View {
         renderControl(control)
     }
 
-    @ViewBuilder
-    private func renderControl(_ control: Beebium_Control) -> some View {
+    // Returns AnyView (type-erased) rather than `some View` because
+    // this function is recursive (the .group branch calls back into
+    // renderControl for each child). A recursive @ViewBuilder switch
+    // returning seven different concrete View types triggers a
+    // swift-frontend SIGILL deep inside ReplaceOpaqueTypesWithUnderlyingTypes
+    // when whole-module optimisation is enabled (Release builds);
+    // Debug builds with -Onone never substitute opaque types and do
+    // not hit the bug. The cost of AnyView's type erasure is
+    // negligible for a control tree of tens of nodes, and SwiftUI
+    // still keeps stable widget identity via the .id(control.id)
+    // modifier on each leaf.
+    private func renderControl(_ control: Beebium_Control) -> AnyView {
         switch control.control {
         case .label(let label):
-            renderLabel(id: control.id, label: label)
+            return AnyView(renderLabel(id: control.id, label: label))
         case .indicator(let indicator):
-            renderIndicator(id: control.id, indicator: indicator)
+            return AnyView(renderIndicator(id: control.id, indicator: indicator))
         case .toggle(let toggle):
-            renderToggle(id: control.id, toggle: toggle)
+            return AnyView(renderToggle(id: control.id, toggle: toggle))
         case .button(let button):
-            renderButton(id: control.id, button: button)
+            return AnyView(renderButton(id: control.id, button: button))
         case .choice(let choice):
-            renderChoice(id: control.id, choice: choice)
+            return AnyView(renderChoice(id: control.id, choice: choice))
         case .textInput(let textInput):
-            renderTextInput(id: control.id, textInput: textInput)
+            return AnyView(renderTextInput(id: control.id, textInput: textInput))
         case .group(let group):
-            renderGroup(id: control.id, group: group)
+            return AnyView(renderGroup(id: control.id, group: group))
         case .none:
-            EmptyView()
+            return AnyView(EmptyView())
         }
     }
 

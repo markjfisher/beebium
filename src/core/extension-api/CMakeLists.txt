@@ -45,7 +45,32 @@ add_custom_command(
     COMMENT "Generating gRPC/Protobuf sources for extension_ui.proto"
 )
 
-add_library(beebium_extension_ui_proto SHARED ${EXT_UI_PROTO_SRCS})
+# SHARED on POSIX, STATIC on Windows. The reason for SHARED at all is
+# to keep a single copy of proto descriptors and class definitions in
+# the process when an out-of-tree plugin (currently just Piconet on
+# POSIX) loaded via dlopen also needs to use these types: two copies
+# of the same proto registered into protobuf's global descriptor pool
+# can abort. On Windows the Piconet plugin doesn't build (there is no
+# Win32SerialPort yet), so no plugins are dlopen'd at runtime and
+# there's no second consumer to share with. STATIC on Windows
+# sidesteps two MSVC pain points: protobuf-generated code has no
+# __declspec(dllexport) annotations (so a SHARED build leaves the
+# import .lib empty / absent and beebium_extension_api fails to link
+# with LNK1181), and the proto-generated _DefaultTypeInternal data
+# globals can't be resolved across DLL boundaries without proper
+# dllimport markings on the consumer side.
+#
+# *** This is a contingent choice. *** It assumes Piconet remains
+# Windows-unsupported. When Win32SerialPort lands (and with it a
+# Windows piconet plugin), this split must be revisited -- the
+# proper Windows-friendly fix is protoc's dllexport_decl option
+# combined with a generate_export_header()-style macro. Full
+# write-up at docs/discussion/win32-piconet-gap.md.
+if(WIN32)
+    add_library(beebium_extension_ui_proto STATIC ${EXT_UI_PROTO_SRCS})
+else()
+    add_library(beebium_extension_ui_proto SHARED ${EXT_UI_PROTO_SRCS})
+endif()
 
 target_include_directories(beebium_extension_ui_proto PUBLIC
     ${EXT_UI_PROTO_OUT_DIR}
@@ -61,30 +86,8 @@ set_target_properties(beebium_extension_ui_proto PROPERTIES
     MACOSX_RPATH ON
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    # MSVC requires every symbol exported from a DLL to be marked
-    # __declspec(dllexport) at the source level, which the
-    # protobuf-generated code does not do. WINDOWS_EXPORT_ALL_SYMBOLS
-    # makes CMake auto-generate an export table covering every public
-    # symbol -- equivalent to GCC/Clang's default visibility, which is
-    # what we already get on Linux/macOS. Without this the .lib import
-    # library is empty (or absent) and beebium_extension_api fails to
-    # link with LNK1181.
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    POSITION_INDEPENDENT_CODE ON
 )
-
-if(WIN32)
-    set_target_properties(beebium_extension_ui_proto PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/server"
-    )
-    add_custom_command(TARGET beebium_extension_ui_proto POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:beebium_extension_ui_proto>
-            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/"
-        COMMENT "Copying beebium_extension_ui_proto.dll to tests/$<CONFIG> for runtime loading"
-    )
-endif()
 
 # Suppress warnings in generated proto/gRPC code.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
