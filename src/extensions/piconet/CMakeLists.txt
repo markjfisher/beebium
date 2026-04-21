@@ -96,27 +96,4 @@ set_target_properties(beebium_ext_piconet_plugin PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS TRUE
 )
 
-add_custom_command(TARGET beebium_ext_piconet_plugin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-        $<TARGET_FILE_DIR:beebium_ext_piconet_plugin>/manifest.json
-    COMMENT "Copying manifest.json for piconet plugin"
-)
-
-# On Windows there is no RPATH. Integration tests that LoadLibrary the
-# piconet plugin need both piconet.dll and its manifest.json alongside
-# the test executable. Mirrors the beebium_extension_api.dll copy in
-# src/core/extension-api/CMakeLists.txt.
-if(WIN32)
-    add_custom_command(TARGET beebium_ext_piconet_plugin POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:beebium_ext_piconet_plugin>
-            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/manifest.json"
-        COMMENT "Copying piconet plugin (+manifest) to tests/$<CONFIG> for runtime loading"
-    )
-endif()
+beebium_finalize_plugin(TARGET beebium_ext_piconet_plugin NAME piconet)

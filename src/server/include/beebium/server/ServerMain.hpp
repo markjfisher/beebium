@@ -779,14 +779,19 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // If --extension-dir not specified, derive a default from the executable path.
-    // In a development build layout: executable is at build/src/server/<exe>,
-    // extensions are at build/src/extensions/<name>/
+    // If --extension-dir not specified, derive a default from the
+    // executable path: <exe-dir>/extensions/<plugin>/manifest.json.
+    // beebium_finalize_plugin() (cmake/BeebiumPlugin.cmake) post-build-
+    // copies every dynamic plugin to this layout so the same rule works
+    // on every platform and every build configuration -- including
+    // MSBuild / Xcode multi-config where the exe sits in a $(Configuration)
+    // subdirectory. The canonical install layout mirrors this: plugins
+    // ship alongside the server binary.
     if (config.extension_dirpath.empty()) {
         std::error_code ec;
         auto exe_path = std::filesystem::canonical(std::filesystem::path(argv[0]), ec);
         if (!ec) {
-            auto default_ext_dirpath = exe_path.parent_path().parent_path() / "extensions";
+            auto default_ext_dirpath = exe_path.parent_path() / "extensions";
             if (std::filesystem::exists(default_ext_dirpath)) {
                 config.extension_dirpath = default_ext_dirpath.string();
             }

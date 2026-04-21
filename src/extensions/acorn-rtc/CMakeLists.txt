@@ -80,10 +80,5 @@ if(BEEBIUM_BUILD_SERVICE)
         OUTPUT_NAME "acorn-rtc"
     )
 
-    add_custom_command(TARGET beebium_ext_acorn_rtc_plugin POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-            $<TARGET_FILE_DIR:beebium_ext_acorn_rtc_plugin>/manifest.json
-        COMMENT "Copying manifest.json for acorn-rtc plugin"
-    )
+    beebium_finalize_plugin(TARGET beebium_ext_acorn_rtc_plugin NAME acorn-rtc)
 endif()

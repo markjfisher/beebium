@@ -85,10 +85,5 @@ if(BEEBIUM_BUILD_SERVICE)
         OUTPUT_NAME "acorn-scsi"
     )
 
-    add_custom_command(TARGET beebium_ext_acorn_scsi_plugin POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-            $<TARGET_FILE_DIR:beebium_ext_acorn_scsi_plugin>/manifest.json
-        COMMENT "Copying manifest.json for acorn-scsi plugin"
-    )
+    beebium_finalize_plugin(TARGET beebium_ext_acorn_scsi_plugin NAME acorn-scsi)
 endif()

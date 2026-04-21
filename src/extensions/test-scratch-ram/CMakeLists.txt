@@ -64,11 +64,5 @@ if(BEEBIUM_BUILD_SERVICE)
         OUTPUT_NAME "test-scratch-ram"
     )
 
-    # Copy manifest.json alongside the shared library
-    add_custom_command(TARGET beebium_ext_test_scratch_ram_plugin POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
-            $<TARGET_FILE_DIR:beebium_ext_test_scratch_ram_plugin>/manifest.json
-        COMMENT "Copying manifest.json for test-scratch-ram plugin"
-    )
+    beebium_finalize_plugin(TARGET beebium_ext_test_scratch_ram_plugin NAME test-scratch-ram)
 endif()

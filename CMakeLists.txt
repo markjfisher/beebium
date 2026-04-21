@@ -163,6 +163,9 @@ if(BEEBIUM_BUILD_SERVICE)
     include(${CMAKE_SOURCE_DIR}/cmake/BeebiumProto.cmake)
 endif()
 
+# Plugin post-build deployment helper (beebium_finalize_plugin).
+include(${CMAKE_SOURCE_DIR}/cmake/BeebiumPlugin.cmake)
+
 # Third-party libraries
 add_subdirectory(third_party/stb)
 
