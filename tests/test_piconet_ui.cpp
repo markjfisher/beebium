@@ -99,6 +99,22 @@ public:
         return !backend().is_serial_open();
     }
 
+    // Block until ExtensionUi::current_revision() exceeds `before`,
+    // up to 1 second. Used after wait_for_serial_close() to give the
+    // reader thread's on_async_state_change callback a moment to fire
+    // -- close() and the callback are sequential in the same thread
+    // but not atomic from the test's perspective.
+    bool wait_for_revision_bump(std::uint64_t before) {
+        auto* ui = extension().ui();
+        if (!ui) return false;
+        auto deadline = std::chrono::steady_clock::now() + 1s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (ui->current_revision() > before) return true;
+            std::this_thread::sleep_for(5ms);
+        }
+        return ui->current_revision() > before;
+    }
+
 private:
     std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnPty> fake_;
     std::unique_ptr<beebium::PiconetEconetTransportExtension> ext_;
@@ -281,6 +297,15 @@ TEST_CASE("PiconetBackend hot-unplug closes serial and updates the UI",
     // it to ui_.mark_dirty(). Without this the framework's poll loop
     // would never push a new View and the panel would stay frozen
     // showing "Adapter responsive" + Disable button forever.
+    //
+    // close() and the callback are sequential in the reader thread but
+    // not atomic from the test's perspective: on a fast scheduler the
+    // test wakes up from wait_for_serial_close()'s 20ms poll between
+    // those two reader-thread calls, observes is_serial_open() == false
+    // already, and races into current_revision() before the callback
+    // has fired. Wait separately (with its own deadline) for the
+    // revision bump rather than asserting it synchronously.
+    REQUIRE(fixture.wait_for_revision_bump(pre_unplug_revision));
     REQUIRE(ui->current_revision() > pre_unplug_revision);
 
     // The Indicator now reads as ERROR with the "Adapter offline"
