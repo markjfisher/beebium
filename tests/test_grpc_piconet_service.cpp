@@ -24,7 +24,11 @@
 #include "beebium/Machines.hpp"
 #include "beebium/service/Server.hpp"
 
-#include "piconet/FakePiconetDeviceOnPty.hpp"
+#include "piconet/FakePiconetDeviceOnSerial.hpp"
+
+// NOTE: include above resolves to the PTY bridge on POSIX and the named-
+// pipe bridge on Windows -- the public API (is_open, slave_path, device)
+// is identical in both, so this test is platform-agnostic.
 
 #include "piconet_service.grpc.pb.h"
 
@@ -39,10 +43,10 @@ public:
     PiconetServiceFixture() {
         machine_.reset();
 
-        // FakePiconetDeviceOnPty owns its own PtyPair. The slave path
+        // FakePiconetDeviceOnSerial owns its own PtyPair. The slave path
         // looks like a /dev/pts/N to PiconetBackend; opening it
         // succeeds, so the extension's serial_open transitions to true.
-        fake_ = std::make_unique<beebium::piconet::test::FakePiconetDeviceOnPty>();
+        fake_ = std::make_unique<beebium::piconet::test::FakePiconetDeviceOnSerial>();
         REQUIRE(fake_->is_open());
 
         ext_ = std::make_unique<beebium::PiconetEconetTransportExtension>();
@@ -77,7 +81,7 @@ public:
 
 private:
     beebium::ModelB machine_;
-    std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnPty> fake_;
+    std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnSerial> fake_;
     std::unique_ptr<beebium::PiconetEconetTransportExtension> ext_;
     std::vector<grpc::Service*> services_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;

@@ -31,7 +31,10 @@
 
 #include "extension_ui.pb.h"
 
-#include "piconet/FakePiconetDeviceOnPty.hpp"
+#include "piconet/FakePiconetDeviceOnSerial.hpp"
+
+// NOTE: resolves to the PTY bridge on POSIX and the named-pipe bridge
+// on Windows. Public API is identical (is_open, slave_path, device).
 
 #include <chrono>
 #include <memory>
@@ -41,14 +44,15 @@ namespace {
 
 using namespace std::chrono_literals;
 
-// Spin up the extension wired to a PTY-backed FakePiconetDevice.
-// PiconetBackend opens the slave end via PosixSerialPort and starts its
+// Spin up the extension wired to a serial-bridged FakePiconetDevice
+// (PTY on POSIX, named pipe on Windows). PiconetBackend opens the
+// client side via PosixSerialPort / Win32SerialPort and starts its
 // reader thread; on construction it sends SET_STATION + SET_MODE LISTEN
-// which the fake records on its master end.
+// which the fake records on the server side.
 class PiconetUiFixture {
 public:
     PiconetUiFixture() {
-        fake_ = std::make_unique<beebium::piconet::test::FakePiconetDeviceOnPty>();
+        fake_ = std::make_unique<beebium::piconet::test::FakePiconetDeviceOnSerial>();
         REQUIRE(fake_->is_open());
 
         ext_ = std::make_unique<beebium::PiconetEconetTransportExtension>();
@@ -116,7 +120,7 @@ public:
     }
 
 private:
-    std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnPty> fake_;
+    std::unique_ptr<beebium::piconet::test::FakePiconetDeviceOnSerial> fake_;
     std::unique_ptr<beebium::PiconetEconetTransportExtension> ext_;
     std::unique_ptr<beebium::NetworkBackend> backend_owner_;
 };
@@ -192,13 +196,17 @@ TEST_CASE("PiconetUi build_view (no backend) hides Button and surfaces OS error"
     REQUIRE(indicator.id() == "connected");
     REQUIRE(indicator.control_case() == beebium::Control::kIndicator);
     REQUIRE(indicator.indicator().state() == beebium::Indicator_State_ERROR);
-    // The exact strerror text varies by platform, but it should contain
-    // some recognisable substring of the OS-level diagnosis. macOS and
-    // Linux both produce "No such file or directory" for ENOENT.
+    // The exact OS error text varies by platform: POSIX strerror(ENOENT)
+    // is "No such file or directory"; Windows FormatMessage for
+    // ERROR_PATH_NOT_FOUND / ERROR_FILE_NOT_FOUND is "The system cannot
+    // find the path specified." / "...file specified.". The test accepts
+    // any of these substrings so the assertion stays platform-neutral.
     REQUIRE(indicator.indicator().text().find("Cannot open device") !=
             std::string::npos);
-    REQUIRE(indicator.indicator().text().find("No such file") !=
-            std::string::npos);
+    const auto& text = indicator.indicator().text();
+    REQUIRE((text.find("No such file") != std::string::npos ||
+             text.find("cannot find the path") != std::string::npos ||
+             text.find("cannot find the file") != std::string::npos));
 }
 
 TEST_CASE("PiconetUi enable_action toggles mode between LISTEN and STOP",
