@@ -925,8 +925,13 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_core
         Catch2::Catch2WithMain
     )
+    # Point the test at the canonical deploy location populated by
+    # beebium_finalize_plugin() (<server-exe-dir>/extensions/<name>/),
+    # matching what the server's default --extension-dir discovery
+    # looks at. Uses a generator expression so multi-config generators
+    # (MSBuild, Xcode) resolve the right $(Configuration) subdirectory.
     target_compile_definitions(test_plugin_loader PRIVATE
-        BEEBIUM_PLUGIN_DIR="${CMAKE_BINARY_DIR}/src/extensions/test-scratch-ram"
+        BEEBIUM_PLUGIN_DIR="$<TARGET_FILE_DIR:beebium-model-b>/extensions/test-scratch-ram"
     )
     # Ensure the plugin is built before the test runs
     add_dependencies(test_plugin_loader beebium_ext_test_scratch_ram_plugin)
