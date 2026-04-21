@@ -1,14 +1,18 @@
 # Piconet USB-CDC Econet transport extension.
 #
-# POSIX-only: PosixSerialPort is the only SerialPort implementation
-# today. A Win32SerialPort would slot in here later.
+# beebium_piconet_core builds on every platform: POSIX picks up
+# PosixSerialPort.cpp; Windows picks up Win32SerialPort.cpp. The plugin
+# half below (beebium_ext_piconet_plugin) is activated on Windows in a
+# later commit on this branch, once the proto library's dllexport_decl
+# plumbing is in place -- see docs/discussion/win32-piconet-gap.md.
 if(WIN32)
-    message(STATUS "Skipping piconet extension on Windows (no Win32SerialPort)")
-    return()
+    set(PICONET_SERIAL_SRCS src/Win32SerialPort.cpp)
+else()
+    set(PICONET_SERIAL_SRCS src/PosixSerialPort.cpp)
 endif()
 
 # Core protocol library: Piconet USB-CDC protocol parsing/formatting,
-# the PiconetBackend, and the POSIX serial transport. PUBLIC headers
+# the PiconetBackend, and the platform serial transport. PUBLIC headers
 # under include/beebium/econet/{,piconet/} so test code that wants
 # direct access to PiconetBackend etc. can link against this and use
 # the same #include paths it always did.
@@ -16,7 +20,7 @@ add_library(beebium_piconet_core STATIC
     src/Base64.cpp
     src/Events.cpp
     src/PiconetBackend.cpp
-    src/PosixSerialPort.cpp
+    ${PICONET_SERIAL_SRCS}
     src/TxResult.cpp
 )
 
@@ -31,6 +35,19 @@ target_link_libraries(beebium_piconet_core
 set_target_properties(beebium_piconet_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
+
+# The Piconet plugin half (beebium_ext_piconet_plugin) depends on
+# beebium_extension_api, which transitively consumes proto types from
+# beebium_extension_ui_proto. On Windows that proto library is still
+# STATIC (see src/core/extension-api/CMakeLists.txt) and proto-generated
+# data globals carry no dllexport annotations, so the plugin DLL cannot
+# resolve them. The follow-up commit on this branch adds protoc's
+# dllexport_decl plumbing and flips the proto library to unconditional
+# SHARED; the early-out below is removed in the commit after that.
+if(WIN32)
+    message(STATUS "Piconet plugin deferred on Windows pending proto dllexport_decl")
+    return()
+endif()
 
 # gRPC service. Compiled into the plugin only when the service layer
 # is part of the build. The proto file is in the same directory.

@@ -322,6 +322,18 @@ if(NOT WIN32)
     catch_discover_tests(test_piconet_aun_bridge)
 endif()
 
+# Win32 serial port wrapper (production SerialPort implementation on
+# Windows). Exercises read/write/close semantics against a
+# CreateNamedPipe-backed helper that stands in for a real COM port.
+if(WIN32)
+    add_executable(test_win32_serial_port
+        test_win32_serial_port.cpp
+        piconet/Win32NamedPipePair.cpp)
+    target_link_libraries(test_win32_serial_port PRIVATE beebium_piconet_core Catch2::Catch2WithMain)
+    target_include_directories(test_win32_serial_port PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    catch_discover_tests(test_win32_serial_port)
+endif()
+
 # Econet TX complete NMI tests
 add_executable(test_econet_tx_complete_nmi test_econet_tx_complete_nmi.cpp)
 target_link_libraries(test_econet_tx_complete_nmi PRIVATE beebium_core Catch2::Catch2WithMain)
