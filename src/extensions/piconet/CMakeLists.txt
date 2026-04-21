@@ -1,10 +1,7 @@
 # Piconet USB-CDC Econet transport extension.
 #
-# beebium_piconet_core builds on every platform: POSIX picks up
-# PosixSerialPort.cpp; Windows picks up Win32SerialPort.cpp. The plugin
-# half below (beebium_ext_piconet_plugin) is activated on Windows in a
-# later commit on this branch, once the proto library's dllexport_decl
-# plumbing is in place -- see docs/discussion/win32-piconet-gap.md.
+# beebium_piconet_core and the plugin both build on every platform:
+# POSIX picks up PosixSerialPort.cpp, Windows picks up Win32SerialPort.cpp.
 if(WIN32)
     set(PICONET_SERIAL_SRCS src/Win32SerialPort.cpp)
 else()
@@ -35,19 +32,6 @@ target_link_libraries(beebium_piconet_core
 set_target_properties(beebium_piconet_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
-
-# The Piconet plugin half (beebium_ext_piconet_plugin) depends on
-# beebium_extension_api, which transitively consumes proto types from
-# beebium_extension_ui_proto. On Windows that proto library is still
-# STATIC (see src/core/extension-api/CMakeLists.txt) and proto-generated
-# data globals carry no dllexport annotations, so the plugin DLL cannot
-# resolve them. The follow-up commit on this branch adds protoc's
-# dllexport_decl plumbing and flips the proto library to unconditional
-# SHARED; the early-out below is removed in the commit after that.
-if(WIN32)
-    message(STATUS "Piconet plugin deferred on Windows pending proto dllexport_decl")
-    return()
-endif()
 
 # gRPC service. Compiled into the plugin only when the service layer
 # is part of the build. The proto file is in the same directory.
@@ -103,6 +87,13 @@ endif()
 set_target_properties(beebium_ext_piconet_plugin PROPERTIES
     PREFIX ""
     OUTPUT_NAME "piconet"
+    # On Windows, test binaries (test_grpc_piconet_service, test_piconet_ui)
+    # link against this plugin DLL and directly construct
+    # PiconetEconetTransportExtension. That class isn't annotated with
+    # __declspec(dllexport), so MSVC normally hides it from the import lib.
+    # Export all function symbols to give the tests access without having
+    # to sprinkle annotations through the plugin sources. No effect on POSIX.
+    WINDOWS_EXPORT_ALL_SYMBOLS TRUE
 )
 
 add_custom_command(TARGET beebium_ext_piconet_plugin POST_BUILD
@@ -111,3 +102,21 @@ add_custom_command(TARGET beebium_ext_piconet_plugin POST_BUILD
         $<TARGET_FILE_DIR:beebium_ext_piconet_plugin>/manifest.json
     COMMENT "Copying manifest.json for piconet plugin"
 )
+
+# On Windows there is no RPATH. Integration tests that LoadLibrary the
+# piconet plugin need both piconet.dll and its manifest.json alongside
+# the test executable. Mirrors the beebium_extension_api.dll copy in
+# src/core/extension-api/CMakeLists.txt.
+if(WIN32)
+    add_custom_command(TARGET beebium_ext_piconet_plugin POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:beebium_ext_piconet_plugin>
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/manifest.json"
+        COMMENT "Copying piconet plugin (+manifest) to tests/$<CONFIG> for runtime loading"
+    )
+endif()

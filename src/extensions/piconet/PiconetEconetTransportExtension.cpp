@@ -13,7 +13,12 @@
 #include "PiconetEconetTransportExtension.hpp"
 
 #include "beebium/econet/piconet/PiconetConfig.hpp"
+
+#ifdef _WIN32
+#include "beebium/econet/piconet/Win32SerialPort.hpp"
+#else
 #include "beebium/econet/piconet/PosixSerialPort.hpp"
+#endif
 
 #ifdef BEEBIUM_BUILD_SERVICE
 #include "PiconetService.hpp"
@@ -37,12 +42,17 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     }
 
     std::string path(*device_path);
+#ifdef _WIN32
+    auto serial = std::make_unique<piconet::Win32SerialPort>(path);
+#else
     auto serial = std::make_unique<piconet::PosixSerialPort>(path);
+#endif
     if (!serial->is_open()) {
-        // Capture the OS-level error from PosixSerialPort so PiconetUi
+        // Capture the OS-level error from the SerialPort so PiconetUi
         // can surface it on the Indicator. Falls back to a generic
         // message if the serial port didn't record one (shouldn't
-        // happen in practice -- open() always sets errno on failure).
+        // happen in practice -- open() / CreateFile() always sets an
+        // errno / GetLastError() on failure).
         auto why = serial->open_error();
         open_error_message_ = why.empty() ? std::string("unknown error")
                                           : std::string(why);

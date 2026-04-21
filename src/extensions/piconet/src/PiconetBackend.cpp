@@ -17,7 +17,11 @@
 #include "beebium/econet/piconet/Constants.hpp"
 #include "beebium/econet/piconet/Events.hpp"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #endif
 
@@ -217,13 +221,70 @@ void PiconetBackend::reader_loop() {
         }
         if (result.would_block) {
             // Idle tick: if the device path has disappeared, treat as
-            // hot-unplug. POSIX-only -- on Windows the equivalent
-            // would be GetFileAttributes / a CM_Notify_Register ack
-            // when Win32SerialPort lands.
-#ifndef _WIN32
+            // hot-unplug. Two implementations share the same outer
+            // shape (STAT_INTERVAL cadence, serial_->close() + async
+            // callback on detection) but use platform-specific device-
+            // existence checks.
             auto now = std::chrono::steady_clock::now();
             if (now - last_stat >= STAT_INTERVAL) {
                 last_stat = now;
+#ifdef _WIN32
+                // Extract the "COMn" portion from the configured device
+                // path. QueryDosDeviceW on the bare name returns the
+                // backing device-object path (e.g. \Device\USBSER000)
+                // while the USB-CDC adapter is plugged, and fails with
+                // ERROR_FILE_NOT_FOUND once it is unplugged. Skip the
+                // poll entirely for non-COM paths (named-pipe tests)
+                // so they don't get falsely flagged as unplugged.
+                std::string com_name;
+                {
+                    const std::string& path = config_.device_path;
+                    std::string_view sv(path);
+                    if (sv.size() >= 4 && sv[0] == '\\' && sv[1] == '\\' &&
+                        (sv[2] == '.' || sv[2] == '?') && sv[3] == '\\') {
+                        sv.remove_prefix(4);
+                    }
+                    bool looks_like_com = sv.size() >= 4 &&
+                        (sv[0] == 'C' || sv[0] == 'c') &&
+                        (sv[1] == 'O' || sv[1] == 'o') &&
+                        (sv[2] == 'M' || sv[2] == 'm');
+                    if (looks_like_com) {
+                        std::size_t digits_begin = 3;
+                        std::size_t digits_end = digits_begin;
+                        while (digits_end < sv.size() &&
+                               sv[digits_end] >= '0' && sv[digits_end] <= '9') {
+                            ++digits_end;
+                        }
+                        if (digits_end > digits_begin &&
+                            digits_end == sv.size()) {
+                            com_name.assign(sv.data(), sv.size());
+                        }
+                    }
+                }
+                if (!com_name.empty()) {
+                    std::wstring wide(com_name.size(), L'\0');
+                    for (std::size_t i = 0; i < com_name.size(); ++i) {
+                        wide[i] = static_cast<wchar_t>(com_name[i]);
+                    }
+                    std::array<wchar_t, MAX_PATH> target{};
+                    DWORD got = ::QueryDosDeviceW(
+                        wide.c_str(), target.data(),
+                        static_cast<DWORD>(target.size()));
+                    if (got == 0 && ::GetLastError() == ERROR_FILE_NOT_FOUND) {
+                        if (trace_enabled()) {
+                            std::cerr << "PiconetBackend: device path "
+                                      << config_.device_path
+                                      << " no longer resolves -- treating as hot-unplug\n";
+                        }
+                        serial_->close();
+                        if (on_async_state_change_ &&
+                            !shutdown_.load(std::memory_order_relaxed)) {
+                            on_async_state_change_();
+                        }
+                        return;
+                    }
+                }
+#else
                 struct stat st;
                 if (::stat(config_.device_path.c_str(), &st) != 0 &&
                     (errno == ENOENT || errno == ENODEV)) {
@@ -239,8 +300,8 @@ void PiconetBackend::reader_loop() {
                     }
                     return;
                 }
-            }
 #endif
+            }
             continue;
         }
 
