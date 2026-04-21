@@ -33,10 +33,24 @@ set(EXT_UI_PROTO_HDRS
     ${EXT_UI_PROTO_OUT_DIR}/extension_ui.grpc.pb.h
 )
 
+# protoc's dllexport_decl option stamps every generated message class
+# and its per-message static globals (default-instance, ClassDataFull,
+# descriptor-pool getter) with BEEBIUM_EXT_UI_PROTO_API. The macro is
+# defined by beebium/extension_ui_proto_export.h, force-included into
+# every translation unit that parses the generated headers via the
+# beebium_ext_ui_proto_export INTERFACE target below. Without
+# dllexport_decl on --cpp_out, the data globals are not exported from
+# beebium_extension_ui_proto.dll on Windows and consumers (server exes,
+# piconet plugin, test binaries) hit LNK2019 on the
+# _<Type>_default_instance_ symbols.
+#
+# grpc_cpp_plugin in the vcpkg / Homebrew versions we build against
+# does not accept dllexport_decl, so gRPC service-stub symbols go
+# through WINDOWS_EXPORT_ALL_SYMBOLS on the library target below.
 add_custom_command(
     OUTPUT ${EXT_UI_PROTO_SRCS} ${EXT_UI_PROTO_HDRS}
     COMMAND ${PROTOC_EXECUTABLE}
-        --cpp_out=${EXT_UI_PROTO_OUT_DIR}
+        --cpp_out=dllexport_decl=BEEBIUM_EXT_UI_PROTO_API:${EXT_UI_PROTO_OUT_DIR}
         --grpc_out=${EXT_UI_PROTO_OUT_DIR}
         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
         -I${CMAKE_CURRENT_SOURCE_DIR}/proto
@@ -45,32 +59,30 @@ add_custom_command(
     COMMENT "Generating gRPC/Protobuf sources for extension_ui.proto"
 )
 
-# SHARED on POSIX, STATIC on Windows. The reason for SHARED at all is
-# to keep a single copy of proto descriptors and class definitions in
-# the process when an out-of-tree plugin (currently just Piconet on
-# POSIX) loaded via dlopen also needs to use these types: two copies
-# of the same proto registered into protobuf's global descriptor pool
-# can abort. On Windows the Piconet plugin doesn't build (there is no
-# Win32SerialPort yet), so no plugins are dlopen'd at runtime and
-# there's no second consumer to share with. STATIC on Windows
-# sidesteps two MSVC pain points: protobuf-generated code has no
-# __declspec(dllexport) annotations (so a SHARED build leaves the
-# import .lib empty / absent and beebium_extension_api fails to link
-# with LNK1181), and the proto-generated _DefaultTypeInternal data
-# globals can't be resolved across DLL boundaries without proper
-# dllimport markings on the consumer side.
+# INTERFACE target: carries the force-include option and include
+# directory for extension_ui_proto_export.h. beebium_extension_ui_proto
+# PUBLIC-links it so every transitive consumer sees /FI (MSVC) or
+# -include (GCC/Clang) on its compile line and the BEEBIUM_EXT_UI_PROTO_API
+# macro is defined before the generated headers are parsed.
+add_library(beebium_ext_ui_proto_export INTERFACE)
+target_include_directories(beebium_ext_ui_proto_export INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_options(beebium_ext_ui_proto_export INTERFACE
+    $<$<CXX_COMPILER_ID:MSVC>:/FI beebium/extension_ui_proto_export.h>
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-include beebium/extension_ui_proto_export.h>
+)
+
+# Unconditional SHARED: one copy of proto descriptors and class
+# definitions per process. Without this, a dlopen'd / LoadLibrary'd
+# plugin (Piconet) that also consumes these types would register
+# duplicate descriptors into protobuf's global pool and abort on init
+# (seen on Windows with STATIC when piconet.dll loads alongside the
+# test binary's embedded copy).
 #
-# *** This is a contingent choice. *** It assumes Piconet remains
-# Windows-unsupported. When Win32SerialPort lands (and with it a
-# Windows piconet plugin), this split must be revisited -- the
-# proper Windows-friendly fix is protoc's dllexport_decl option
-# combined with a generate_export_header()-style macro. Full
-# write-up at docs/discussion/win32-piconet-gap.md.
-if(WIN32)
-    add_library(beebium_extension_ui_proto STATIC ${EXT_UI_PROTO_SRCS})
-else()
-    add_library(beebium_extension_ui_proto SHARED ${EXT_UI_PROTO_SRCS})
-endif()
+# History: this library was STATIC on Windows while Piconet was
+# POSIX-only; see docs/discussion/win32-piconet-gap.md.
+add_library(beebium_extension_ui_proto SHARED ${EXT_UI_PROTO_SRCS})
 
 target_include_directories(beebium_extension_ui_proto PUBLIC
     ${EXT_UI_PROTO_OUT_DIR}
@@ -78,6 +90,7 @@ target_include_directories(beebium_extension_ui_proto PUBLIC
 
 target_link_libraries(beebium_extension_ui_proto
     PUBLIC
+        beebium_ext_ui_proto_export
         gRPC::grpc++
         protobuf::libprotobuf
 )
@@ -87,7 +100,28 @@ set_target_properties(beebium_extension_ui_proto PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     POSITION_INDEPENDENT_CODE ON
+    # Covers the gRPC service-stub function symbols (grpc_cpp_plugin
+    # does not accept dllexport_decl). No effect on POSIX.
+    WINDOWS_EXPORT_ALL_SYMBOLS TRUE
 )
+
+# On Windows, place the DLL next to the server executables so the
+# loader finds it without manual PATH setup, and copy it into the
+# tests directory so catch_discover_tests can launch each test binary
+# at configure time. Mirrors the beebium_extension_api.dll arrangement.
+if(WIN32)
+    set_target_properties(beebium_extension_ui_proto PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/server"
+    )
+    add_custom_command(TARGET beebium_extension_ui_proto POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:beebium_extension_ui_proto>
+            "${CMAKE_BINARY_DIR}/tests/$<CONFIG>/"
+        COMMENT "Copying beebium_extension_ui_proto.dll to tests/$<CONFIG> for runtime loading"
+    )
+endif()
 
 # Suppress warnings in generated proto/gRPC code.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")

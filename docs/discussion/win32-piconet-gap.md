@@ -1,8 +1,8 @@
 # Win32 Serial I/O Capability Gap (Piconet on Windows)
 
-Beebium has no Windows implementation of its `SerialPort` abstraction, which means the Piconet Econet transport extension does not build on Windows. This document captures the gap, its current consequences for the Extension UI framework's build configuration, and what closing the gap would entail.
+Beebium had no Windows implementation of its `SerialPort` abstraction, which meant the Piconet Econet transport extension did not build on Windows. This document captured the gap, its contingent impact on the Extension UI framework's build configuration, and what closing the gap entailed.
 
-Status: Capability gap. Not committed to implementation.
+Status: Closed (2026-04-21). `Win32SerialPort` is in `src/extensions/piconet/src/Win32SerialPort.cpp`; the Piconet plugin builds and loads on Windows; `beebium_extension_ui_proto` is unconditionally SHARED via protoc's `dllexport_decl` + a force-included export header. Design content below is retained as history.
 
 ---
 
