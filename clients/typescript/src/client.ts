@@ -18,6 +18,10 @@ import { System } from "./system.js";
 import { Disc } from "./disc.js";
 import { Econet } from "./econet.js";
 import { Tube } from "./tube.js";
+import { Aun } from "./aun.js";
+import { Piconet } from "./piconet.js";
+import { EconetTransport } from "./econet_transport.js";
+import { ExtensionUi } from "./extension_ui.js";
 import { Via, ViaId } from "./via.js";
 import { Crtc } from "./crtc.js";
 import { VideoUla } from "./video-ula.js";
@@ -72,6 +76,10 @@ export class Beebium {
     private _disc?: Disc;
     private _econet?: Econet;
     private _tube?: Tube;
+    private _aun?: Aun;
+    private _piconet?: Piconet;
+    private _transport?: EconetTransport;
+    private _extensionUi?: ExtensionUi;
     private _systemVia?: Via;
     private _userVia?: Via;
     private _crtc?: Crtc;
@@ -232,6 +240,38 @@ export class Beebium {
             this._tube = new Tube(this.connection.tubeStub);
         }
         return this._tube;
+    }
+
+    /** Access AUN-specific Econet operations (peer table, cable plug, port status). */
+    get aun(): Aun {
+        if (this._aun === undefined) {
+            this._aun = new Aun(this.connection.aunStub);
+        }
+        return this._aun;
+    }
+
+    /** Access Piconet-specific operations (USB-CDC adapter status). */
+    get piconet(): Piconet {
+        if (this._piconet === undefined) {
+            this._piconet = new Piconet(this.connection.piconetStub);
+        }
+        return this._piconet;
+    }
+
+    /** Discover which Econet transport is active on the server. */
+    get transport(): EconetTransport {
+        if (this._transport === undefined) {
+            this._transport = new EconetTransport(this.connection.econetTransportStub);
+        }
+        return this._transport;
+    }
+
+    /** Access the server-driven Extension UI framework. */
+    get extensionUi(): ExtensionUi {
+        if (this._extensionUi === undefined) {
+            this._extensionUi = new ExtensionUi(this.connection.extensionUiStub);
+        }
+        return this._extensionUi;
     }
 
     /** Access System VIA (6522) state. */

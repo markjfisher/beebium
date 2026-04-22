@@ -13,6 +13,10 @@ import { VideoServiceClient } from "./generated/video.js";
 import { DiscServiceClient } from "./generated/disc.js";
 import { EconetServiceClient } from "./generated/econet.js";
 import { TubeServiceClient } from "./generated/tube.js";
+import { AunServiceClient } from "./generated/aun.js";
+import { PiconetServiceClient } from "./generated/piconet_service.js";
+import { EconetTransportServiceClient } from "./generated/econet_transport.js";
+import { ExtensionUiServiceClient } from "./generated/extension_ui.js";
 
 import type { DebuggerControlClient as DebuggerControlClientType } from "./generated/debugger.js";
 import type { ParasiteDebuggerControlClient as ParasiteDebuggerControlClientType } from "./generated/debugger.js";
@@ -23,6 +27,10 @@ import type { VideoServiceClient as VideoServiceClientType } from "./generated/v
 import type { DiscServiceClient as DiscServiceClientType } from "./generated/disc.js";
 import type { EconetServiceClient as EconetServiceClientType } from "./generated/econet.js";
 import type { TubeServiceClient as TubeServiceClientType } from "./generated/tube.js";
+import type { AunServiceClient as AunServiceClientType } from "./generated/aun.js";
+import type { PiconetServiceClient as PiconetServiceClientType } from "./generated/piconet_service.js";
+import type { EconetTransportServiceClient as EconetTransportServiceClientType } from "./generated/econet_transport.js";
+import type { ExtensionUiServiceClient as ExtensionUiServiceClientType } from "./generated/extension_ui.js";
 
 /**
  * Manages a gRPC connection to a Beebium emulator server.
@@ -44,6 +52,10 @@ export class Connection {
     private _discStub: DiscServiceClientType | null = null;
     private _econetStub: EconetServiceClientType | null = null;
     private _tubeStub: TubeServiceClientType | null = null;
+    private _aunStub: AunServiceClientType | null = null;
+    private _piconetStub: PiconetServiceClientType | null = null;
+    private _econetTransportStub: EconetTransportServiceClientType | null = null;
+    private _extensionUiStub: ExtensionUiServiceClientType | null = null;
 
     constructor(target: string) {
         this._target = target;
@@ -167,6 +179,50 @@ export class Connection {
         return this._tubeStub;
     }
 
+    get aunStub(): AunServiceClientType {
+        this.ensureOpen();
+        if (!this._aunStub) {
+            this._aunStub = new AunServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._aunStub;
+    }
+
+    get piconetStub(): PiconetServiceClientType {
+        this.ensureOpen();
+        if (!this._piconetStub) {
+            this._piconetStub = new PiconetServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._piconetStub;
+    }
+
+    get econetTransportStub(): EconetTransportServiceClientType {
+        this.ensureOpen();
+        if (!this._econetTransportStub) {
+            this._econetTransportStub = new EconetTransportServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._econetTransportStub;
+    }
+
+    get extensionUiStub(): ExtensionUiServiceClientType {
+        this.ensureOpen();
+        if (!this._extensionUiStub) {
+            this._extensionUiStub = new ExtensionUiServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._extensionUiStub;
+    }
+
     /**
      * Wait until the underlying channel is ready, or until the timeout expires.
      *
@@ -218,6 +274,10 @@ export class Connection {
             this._discStub,
             this._econetStub,
             this._tubeStub,
+            this._aunStub,
+            this._piconetStub,
+            this._econetTransportStub,
+            this._extensionUiStub,
         ];
 
         for (const stub of stubs) {
@@ -235,5 +295,9 @@ export class Connection {
         this._discStub = null;
         this._econetStub = null;
         this._tubeStub = null;
+        this._aunStub = null;
+        this._piconetStub = null;
+        this._econetTransportStub = null;
+        this._extensionUiStub = null;
     }
 }

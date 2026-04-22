@@ -18,6 +18,25 @@ export { System, type Provenance, type MachineIdentity, type ServerStatusEvent, 
 export { Disc, Drive, type DiscMetadata, type DriveStatus, type DiscControllerStatus, type DiscEvent, type DiscControllerInfo, DriveState, DiscEventType } from "./disc.js";
 export { Econet, type EconetStatus, type AdlcStatus, type HandshakeStatus } from "./econet.js";
 export { Tube, type TubeStatus } from "./tube.js";
+export { Aun, type AunStatus, type PeerInfo } from "./aun.js";
+export { Piconet, type PiconetStatus } from "./piconet.js";
+export { EconetTransport, type TransportInfo } from "./econet_transport.js";
+export {
+    ExtensionUi,
+    SubscriptionHandle,
+    IndicatorState,
+    ControlKind,
+    type Label,
+    type Indicator,
+    type Toggle,
+    type Button,
+    type Choice,
+    type TextInput,
+    type Group,
+    type Control,
+    type View,
+    type DispatchResult,
+} from "./extension_ui.js";
 export { Via, ViaId, type ViaState } from "./via.js";
 export { Crtc, type CrtcState } from "./crtc.js";
 export { VideoUla, type VideoUlaState } from "./video-ula.js";

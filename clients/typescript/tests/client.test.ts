@@ -44,6 +44,10 @@ describe("Beebium", () => {
             "sound",
             "tubeUla",
             "basic",
+            "aun",
+            "piconet",
+            "transport",
+            "extensionUi",
             "target",
         ];
 

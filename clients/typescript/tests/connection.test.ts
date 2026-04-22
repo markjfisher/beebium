@@ -74,4 +74,28 @@ describe("Connection", () => {
         conn.close();
         expect(() => conn.tubeStub).toThrow(ConnectionError);
     });
+
+    it("accessing aunStub after close() throws ConnectionError", () => {
+        const conn = new Connection("localhost:50051");
+        conn.close();
+        expect(() => conn.aunStub).toThrow(ConnectionError);
+    });
+
+    it("accessing piconetStub after close() throws ConnectionError", () => {
+        const conn = new Connection("localhost:50051");
+        conn.close();
+        expect(() => conn.piconetStub).toThrow(ConnectionError);
+    });
+
+    it("accessing econetTransportStub after close() throws ConnectionError", () => {
+        const conn = new Connection("localhost:50051");
+        conn.close();
+        expect(() => conn.econetTransportStub).toThrow(ConnectionError);
+    });
+
+    it("accessing extensionUiStub after close() throws ConnectionError", () => {
+        const conn = new Connection("localhost:50051");
+        conn.close();
+        expect(() => conn.extensionUiStub).toThrow(ConnectionError);
+    });
 });
