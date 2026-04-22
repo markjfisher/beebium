@@ -79,6 +79,21 @@ std::string type_description(std::string_view type) {
 
 }  // namespace
 
+void normalise_list_params(
+        std::map<std::string, std::string>& config,
+        std::map<std::string, std::vector<std::string>>& list_config,
+        const std::vector<ParameterSchema>& schema) {
+    for (const auto& p : schema) {
+        if (!p.is_list) continue;
+        auto cit = config.find(p.key);
+        if (cit == config.end()) continue;
+        if (list_config.find(p.key) == list_config.end()) {
+            list_config[p.key].push_back(std::move(cit->second));
+        }
+        config.erase(cit);
+    }
+}
+
 std::vector<std::string> split_colon_args(std::string_view input) {
     std::vector<std::string> tokens;
     if (input.empty()) return tokens;
@@ -114,7 +129,10 @@ ParseResult parse_extension_args(
     result.ok = true;
 
     auto err = [&](const std::string& msg) -> ParseResult {
-        return {false, {}, std::string("--") + std::string(cli_name) + ": " + msg};
+        ParseResult r;
+        r.ok = false;
+        r.error = std::string("--") + std::string(cli_name) + ": " + msg;
+        return r;
     };
 
     // Build lookup structures
@@ -173,7 +191,7 @@ ParseResult parse_extension_args(
 
             const auto* param = it->second;
 
-            if (result.config.count(key) && !param->is_list) {
+            if (!param->is_list && result.config.count(key)) {
                 return err("parameter '" + key + "' specified twice");
             }
 
@@ -188,11 +206,11 @@ ParseResult parse_extension_args(
                 positional_index++;
             }
 
-            // List params: accumulate by joining with ','. Extensions split
-            // on the comma when consuming the value.
-            if (param->is_list && result.config.count(key)) {
-                result.config[key] += ",";
-                result.config[key] += value;
+            // List params accumulate into list_config as opaque vector<string>;
+            // the parser does not inspect their contents. Scalar params go
+            // into config as before.
+            if (param->is_list) {
+                result.list_config[key].push_back(std::move(value));
             } else {
                 result.config[key] = std::move(value);
             }

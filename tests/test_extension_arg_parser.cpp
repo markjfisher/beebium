@@ -334,10 +334,12 @@ TEST_CASE("list parameter accumulates repeated key=value tokens",
         {"map", "string", "Peer map entries", -1, false, /*is_list=*/true, ""},
     };
     auto result = parse_extension_args(
-        "aun", "map=a;b;c:map=d;e;f:map=g;h;i", schema);
+        "aun", "map=alpha:map=beta:map=gamma", schema);
     REQUIRE(result.ok);
-    // List values are joined with ',' so the extension can split internally.
-    REQUIRE(result.config["map"] == "a;b;c,d;e;f,g;h;i");
+    // List values land in list_config as a vector of raw tokens; the
+    // parser does not inspect their contents.
+    REQUIRE(result.config.count("map") == 0);
+    REQUIRE(result.list_config["map"] == std::vector<std::string>{"alpha", "beta", "gamma"});
 }
 
 TEST_CASE("list parameter accepts a single occurrence",
@@ -347,7 +349,36 @@ TEST_CASE("list parameter accepts a single occurrence",
     };
     auto result = parse_extension_args("aun", "map=only-one", schema);
     REQUIRE(result.ok);
-    REQUIRE(result.config["map"] == "only-one");
+    REQUIRE(result.config.count("map") == 0);
+    REQUIRE(result.list_config["map"] == std::vector<std::string>{"only-one"});
+}
+
+TEST_CASE("list parameter preserves opaque tokens (no inner tokenising)",
+          "[extension][arg-parser]") {
+    // The parser must be neutral about inner separators; consumers pick
+    // their own. Tokens here contain commas, semicolons, and at-signs --
+    // all should survive verbatim.
+    std::vector<ParameterSchema> schema = {
+        {"map", "string", "Peer map entries", -1, false, /*is_list=*/true, ""},
+    };
+    auto result = parse_extension_args(
+        "aun", "map=0.254@127.0.0.1@32768:map=0.253,127.0.0.1,32769", schema);
+    REQUIRE(result.ok);
+    REQUIRE(result.list_config["map"] == std::vector<std::string>{
+        "0.254@127.0.0.1@32768", "0.253,127.0.0.1,32769"});
+}
+
+TEST_CASE("list and scalar params coexist", "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"port", "string", "Bind port", -1, false, false, "32768"},
+        {"map",  "string", "Peer entry", -1, false, /*is_list=*/true, ""},
+    };
+    auto result = parse_extension_args(
+        "aun", "port=9000:map=one:map=two", schema);
+    REQUIRE(result.ok);
+    REQUIRE(result.config.at("port") == "9000");
+    REQUIRE(result.config.count("map") == 0);
+    REQUIRE(result.list_config.at("map") == std::vector<std::string>{"one", "two"});
 }
 
 TEST_CASE("non-list parameter still rejects duplicates",
@@ -358,4 +389,32 @@ TEST_CASE("non-list parameter still rejects duplicates",
     auto result = parse_extension_args("test", "name=a:name=b", schema);
     REQUIRE_FALSE(result.ok);
     REQUIRE(result.error.find("specified twice") != std::string::npos);
+}
+
+TEST_CASE("normalise_list_params moves scalar into list_config as 1-element vector",
+          "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"port", "string", "Bind port", -1, false, false, "32768"},
+        {"map",  "string", "Peer entry", -1, false, /*is_list=*/true, ""},
+    };
+    std::map<std::string, std::string> config = {
+        {"port", "9000"}, {"map", "0.254@127.0.0.1@32768"}};
+    std::map<std::string, std::vector<std::string>> list_config;
+    normalise_list_params(config, list_config, schema);
+    REQUIRE(config.count("map") == 0);
+    REQUIRE(config.at("port") == "9000");
+    REQUIRE(list_config.at("map") == std::vector<std::string>{"0.254@127.0.0.1@32768"});
+}
+
+TEST_CASE("normalise_list_params: list_config form wins when both present",
+          "[extension][arg-parser]") {
+    std::vector<ParameterSchema> schema = {
+        {"map",  "string", "Peer entry", -1, false, /*is_list=*/true, ""},
+    };
+    std::map<std::string, std::string> config = {{"map", "from-scalar"}};
+    std::map<std::string, std::vector<std::string>> list_config = {
+        {"map", {"from-list"}}};
+    normalise_list_params(config, list_config, schema);
+    REQUIRE(config.count("map") == 0);
+    REQUIRE(list_config.at("map") == std::vector<std::string>{"from-list"});
 }

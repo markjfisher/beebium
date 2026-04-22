@@ -195,7 +195,8 @@ std::vector<ExtensionManifest> PluginLoader::scan_manifests(
 
 std::unique_ptr<Extension> PluginLoader::load_extension(
         const ExtensionManifest& manifest,
-        std::map<std::string, std::string> config) {
+        std::map<std::string, std::string> config,
+        std::map<std::string, std::vector<std::string>> list_config) {
     // Build library path
     std::string library_filename = manifest.library_stem + kSharedLibSuffix;
     auto library_filepath = manifest.manifest_dirpath / library_filename;
@@ -242,6 +243,9 @@ std::unique_ptr<Extension> PluginLoader::load_extension(
     // Set config before returning (config is available during init()).
     if (!config.empty()) {
         ext->set_config(std::move(config));
+    }
+    if (!list_config.empty()) {
+        ext->set_list_config(std::move(list_config));
     }
 
     // Track the loaded library for cleanup.

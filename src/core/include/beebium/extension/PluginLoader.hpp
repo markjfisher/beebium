@@ -50,8 +50,10 @@ public:
     // The caller is responsible for downcasting to the extension-point
     // type matching manifest.extension_kind and registering it with the
     // appropriate registry.
-    std::unique_ptr<Extension> load_extension(const ExtensionManifest& manifest,
-                                              std::map<std::string, std::string> config = {});
+    std::unique_ptr<Extension> load_extension(
+        const ExtensionManifest& manifest,
+        std::map<std::string, std::string> config = {},
+        std::map<std::string, std::vector<std::string>> list_config = {});
 
     // Find a manifest by name from a previously scanned list.
     static const ExtensionManifest* find_manifest(

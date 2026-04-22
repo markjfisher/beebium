@@ -21,6 +21,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace beebium::server {
 
@@ -36,9 +37,14 @@ struct PresetStorageConfig {
 // extension (built-in or plugin) and carries its parameters as a flat
 // key/value map. AUN, Piconet, and any future transport flow through
 // this single shape.
+//
+// is_list schema params may be given as a JSON array of strings; these
+// land in list_parameters. Scalar values land in parameters and are
+// normalised downstream against the manifest schema.
 struct PresetTransportConfig {
     std::string name;                            // e.g. "aun" or "piconet"
     std::map<std::string, std::string> parameters;
+    std::map<std::string, std::vector<std::string>> list_parameters;
 };
 
 // Preset Econet configuration
@@ -50,8 +56,9 @@ struct PresetEconetConfig {
 // Top-level preset configuration
 // Extension instance in a preset file
 struct PresetExtensionConfig {
-    std::string name;                           // canonical extension name
-    std::map<std::string, std::string> config;  // key-value configuration
+    std::string name;                                              // canonical extension name
+    std::map<std::string, std::string> config;                     // scalar key-value configuration
+    std::map<std::string, std::vector<std::string>> list_config;   // is_list params (JSON arrays)
 };
 
 struct PresetConfig {
@@ -220,6 +227,20 @@ inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_se
                     transport.parameters[key] = std::to_string(value.get<int64_t>());
                 } else if (value.is_boolean()) {
                     transport.parameters[key] = value.get<bool>() ? "true" : "false";
+                } else if (value.is_array()) {
+                    // Array form for is_list schema params. Schema validation
+                    // happens downstream; here we just collect string elements.
+                    std::vector<std::string> items;
+                    for (const auto& elt : value) {
+                        if (elt.is_string()) {
+                            items.push_back(elt.get<std::string>());
+                        } else if (elt.is_number_integer()) {
+                            items.push_back(std::to_string(elt.get<int64_t>()));
+                        } else if (elt.is_boolean()) {
+                            items.push_back(elt.get<bool>() ? "true" : "false");
+                        }
+                    }
+                    transport.list_parameters[key] = std::move(items);
                 }
             }
         }
@@ -332,6 +353,18 @@ inline PresetLoadResult load_preset(const std::filesystem::path& filepath) {
                         ext_config.config[key] = std::to_string(value.get<int64_t>());
                     } else if (value.is_boolean()) {
                         ext_config.config[key] = value.get<bool>() ? "true" : "false";
+                    } else if (value.is_array()) {
+                        std::vector<std::string> items;
+                        for (const auto& elt : value) {
+                            if (elt.is_string()) {
+                                items.push_back(elt.get<std::string>());
+                            } else if (elt.is_number_integer()) {
+                                items.push_back(std::to_string(elt.get<int64_t>()));
+                            } else if (elt.is_boolean()) {
+                                items.push_back(elt.get<bool>() ? "true" : "false");
+                            }
+                        }
+                        ext_config.list_config[key] = std::move(items);
                     }
                 }
             }

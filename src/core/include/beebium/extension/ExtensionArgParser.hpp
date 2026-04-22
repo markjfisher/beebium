@@ -30,15 +30,23 @@ struct ParameterSchema {
     int position = -1;          // -1 = keyword-only; 0, 1, 2, ... = positional order
     bool required = false;
     bool is_list = false;       // true: repeated key=value tokens accumulate
-                                // (joined with ',' in the parsed config map);
+                                // into ParseResult::list_config as a vector
+                                // of raw values (the parser does not tokenise
+                                // them -- each consumer picks its own inner
+                                // separator).
                                 // false: a repeated key is a parse error.
     std::string default_value;  // empty = no default
 };
 
 // Result of parsing extension arguments.
+//
+// Scalar (non-list) parameters land in `config` as key -> value.
+// List parameters land in `list_config` as key -> vector<value> and do not
+// appear in `config`.
 struct ParseResult {
     bool ok = false;
     std::map<std::string, std::string> config;
+    std::map<std::string, std::vector<std::string>> list_config;
     std::string error;          // populated when !ok
 };
 
@@ -65,6 +73,17 @@ BEEBIUM_EXT_API ParseResult parse_extension_args(
 
 // Split a colon-separated string, respecting '://' in URIs.
 BEEBIUM_EXT_API std::vector<std::string> split_colon_args(std::string_view input);
+
+// Move any key in `config` that names an is_list schema param into
+// `list_config` as a single-element vector (unless list_config already
+// has an entry for that key, in which case the scalar is dropped on the
+// floor -- list form wins). Used when is_list values may arrive via a
+// schema-unaware code path (e.g. preset loader reading a JSON string
+// value) that populated the scalar map.
+BEEBIUM_EXT_API void normalise_list_params(
+    std::map<std::string, std::string>& config,
+    std::map<std::string, std::vector<std::string>>& list_config,
+    const std::vector<ParameterSchema>& schema);
 
 }  // namespace beebium
 

@@ -330,6 +330,72 @@ TEST_CASE("load_preset: econet AUN with port=none disables network",
     REQUIRE(result.config->econet->transport->parameters.at("port") == "none");
 }
 
+TEST_CASE("load_preset: AUN map as JSON array lands in list_parameters",
+          "[preset][load_preset][econet]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_aun_map_array.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "AUN multi-peer",
+            "econet": {
+                "station": 32,
+                "transport": {
+                    "name": "aun",
+                    "parameters": {
+                        "port": "32768",
+                        "map": [
+                            "0.254@127.0.0.1@32769",
+                            "0.253@127.0.0.1@32770"
+                        ]
+                    }
+                }
+            }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE(result.success());
+    const auto& transport = *result.config->econet->transport;
+    CHECK(transport.parameters.at("port") == "32768");
+    CHECK(transport.parameters.count("map") == 0);
+    REQUIRE(transport.list_parameters.at("map") == std::vector<std::string>{
+        "0.254@127.0.0.1@32769", "0.253@127.0.0.1@32770"});
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: AUN map as single string stays as scalar parameter",
+          "[preset][load_preset][econet]") {
+    // Backwards-compatible single-peer preset form. Downstream
+    // normalisation (in ServerMain) will move this into list_config
+    // once the schema is known.
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_aun_map_string.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({
+            "name": "AUN single-peer",
+            "econet": {
+                "station": 32,
+                "transport": {
+                    "name": "aun",
+                    "parameters": {
+                        "port": "32768",
+                        "map": "0.254@127.0.0.1@32769"
+                    }
+                }
+            }
+        })";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE(result.success());
+    const auto& transport = *result.config->econet->transport;
+    CHECK(transport.parameters.at("map") == "0.254@127.0.0.1@32769");
+    CHECK(transport.list_parameters.count("map") == 0);
+
+    std::filesystem::remove(temp_filepath);
+}
+
 TEST_CASE("load_preset: econet with piconet via transport object",
           "[preset][load_preset][econet][piconet]") {
     std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "econet_piconet.preset.beebium";

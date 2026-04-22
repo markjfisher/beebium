@@ -137,7 +137,7 @@ ships as a discoverable plugin under `src/extensions/piconet/`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--station <1-254>` | (omitted = no Econet) | Econet station number; presence enables Econet hardware. Without a transport extension the ADLC reports "No Clock". |
-| `--aun [port=<n>][:map=<net.stn;ip;port>]...` | — | AUN UDP transport. `port` defaults to 32768; `port=none` disables the network. `map=` is repeatable; the inner separator is `;` (not `:`) so the CLI parser can tokenise the value cleanly. **Quote the whole argument** when using `map=` because `;` is a shell metacharacter — without quoting the shell splits the line and only the first field reaches Beebium. See [networking.md](networking.md#inner-separators-in---aun-map) for details. |
+| `--aun [port=<n>][:map=<net.stn@ip@port>]...` | — | AUN UDP transport. `port` defaults to 32768; `port=none` disables the network. `map=` is repeatable; the inner separator is `@` (shell-safe in every common shell, and non-colliding with the `.` inside IPv4 / `net.stn`). |
 | `--piconet device_path=<path>` | — | Piconet USB-CDC bridge to a real Econet wire (POSIX-only). Mutually exclusive with `--aun`. |
 
 **Transport selection:**
@@ -152,9 +152,9 @@ ships as a discoverable plugin under `src/extensions/piconet/`.
 
 ```bash
 # Two Beebium instances on loopback
-beebium-model-b --station 32 --aun port=32768:map=0.254;127.0.0.1;32769
+beebium-model-b --station 32 --aun port=32768:map=0.254@127.0.0.1@32769
 
-beebium-model-b --station 254 --aun port=32769:map=0.32;127.0.0.1;32768
+beebium-model-b --station 254 --aun port=32769:map=0.32@127.0.0.1@32768
 
 # Talk to real Econet via Piconet
 beebium-model-b --station 250 --piconet device_path=/dev/tty.usbmodem101
@@ -172,7 +172,7 @@ Both transports are configured in presets via the generic
   "station": 32,
   "transport": {
     "name": "aun",
-    "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+    "parameters": { "port": "32768", "map": "0.254@127.0.0.1@32769" }
   }
 }
 ```

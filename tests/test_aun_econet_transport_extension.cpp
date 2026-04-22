@@ -61,13 +61,15 @@ TEST_CASE("AunEconetTransportExtension::parse_port: invalid falls back to defaul
 
 TEST_CASE("AunEconetTransportExtension::parse_map: empty -> empty list",
           "[econet][aun][extension]") {
-    auto peers = AunEconetTransportExtension::parse_map("");
+    std::vector<std::string> entries;
+    auto peers = AunEconetTransportExtension::parse_map(entries);
     REQUIRE(peers.empty());
 }
 
 TEST_CASE("AunEconetTransportExtension::parse_map: single net.stn entry",
           "[econet][aun][extension]") {
-    auto peers = AunEconetTransportExtension::parse_map("0.254;127.0.0.1;32768");
+    std::vector<std::string> entries = {"0.254@127.0.0.1@32768"};
+    auto peers = AunEconetTransportExtension::parse_map(entries);
     REQUIRE(peers.size() == 1);
     CHECK(peers[0].net == 0);
     CHECK(peers[0].stn == 254);
@@ -77,16 +79,20 @@ TEST_CASE("AunEconetTransportExtension::parse_map: single net.stn entry",
 
 TEST_CASE("AunEconetTransportExtension::parse_map: bare station defaults net to 0",
           "[econet][aun][extension]") {
-    auto peers = AunEconetTransportExtension::parse_map("254;127.0.0.1;32768");
+    std::vector<std::string> entries = {"254@127.0.0.1@32768"};
+    auto peers = AunEconetTransportExtension::parse_map(entries);
     REQUIRE(peers.size() == 1);
     CHECK(peers[0].net == 0);
     CHECK(peers[0].stn == 254);
 }
 
-TEST_CASE("AunEconetTransportExtension::parse_map: multiple comma-joined entries",
+TEST_CASE("AunEconetTransportExtension::parse_map: multiple entries",
           "[econet][aun][extension]") {
-    auto peers = AunEconetTransportExtension::parse_map(
-        "0.254;127.0.0.1;32768,0.253;127.0.0.1;32769");
+    std::vector<std::string> entries = {
+        "0.254@127.0.0.1@32768",
+        "0.253@127.0.0.1@32769",
+    };
+    auto peers = AunEconetTransportExtension::parse_map(entries);
     REQUIRE(peers.size() == 2);
     CHECK(peers[0].stn == 254);
     CHECK(peers[0].port == 32768);
@@ -96,9 +102,11 @@ TEST_CASE("AunEconetTransportExtension::parse_map: multiple comma-joined entries
 
 TEST_CASE("AunEconetTransportExtension::parse_map: malformed entries are skipped",
           "[econet][aun][extension]") {
-    // Only 2 fields; should be dropped.
-    auto peers = AunEconetTransportExtension::parse_map(
-        "broken;entry,0.254;127.0.0.1;32768");
+    std::vector<std::string> entries = {
+        "broken@entry",                // only 2 fields -> dropped
+        "0.254@127.0.0.1@32768",
+    };
+    auto peers = AunEconetTransportExtension::parse_map(entries);
     REQUIRE(peers.size() == 1);
     CHECK(peers[0].stn == 254);
 }
@@ -126,8 +134,9 @@ TEST_CASE("AunEconetTransportExtension::create_backend: port=0 binds an ephemera
 TEST_CASE("AunEconetTransportExtension::create_backend: applies map peers",
           "[econet][aun][extension]") {
     AunEconetTransportExtension ext;
-    ext.set_config({{"port", "0"},
-                    {"map", "0.254;127.0.0.1;32768,0.253;127.0.0.1;32769"}});
+    ext.set_config({{"port", "0"}});
+    ext.set_list_config({{"map", {"0.254@127.0.0.1@32768",
+                                  "0.253@127.0.0.1@32769"}}});
     auto backend = ext.create_backend(/*station=*/32);
     REQUIRE(backend != nullptr);
     auto* aun = dynamic_cast<AunBackend*>(backend.get());

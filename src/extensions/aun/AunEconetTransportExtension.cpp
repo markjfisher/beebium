@@ -80,21 +80,19 @@ std::optional<std::uint16_t> AunEconetTransportExtension::parse_port(
 }
 
 std::vector<AunEconetTransportExtension::PeerSpec>
-AunEconetTransportExtension::parse_map(const std::string& value) {
+AunEconetTransportExtension::parse_map(std::span<const std::string> entries) {
     std::vector<PeerSpec> peers;
-    if (value.empty()) return peers;
 
-    // Top-level: ',' separated entries. Inside an entry: ';' separated
-    // net, ip, port fields.
-    for (const auto& entry : split_on(value, ',')) {
+    // Each entry encodes one peer as "[net.]stn@ip@port". The framework
+    // has already split the repeated map= tokens into separate entries;
+    // here we just split each entry on '@'.
+    for (const auto& entry : entries) {
         if (entry.empty()) continue;
-        auto fields = split_on(entry, ';');
+        auto fields = split_on(entry, '@');
         if (fields.size() != 3) {
             std::cerr << "AUN extension: malformed map entry '" << entry
-                      << "' (expected [net.]stn;ip;port -- e.g. "
-                         "0.254;127.0.0.1;32768; remember to quote the "
-                         "argument so the shell does not split on ';') "
-                         "-- skipping\n";
+                      << "' (expected [net.]stn@ip@port, "
+                         "e.g. 0.254@127.0.0.1@32768) -- skipping\n";
             continue;
         }
 
@@ -169,8 +167,8 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
         return nullptr;
     }
 
-    auto map_value = config_value("map");
-    auto peers = parse_map(map_value ? std::string(*map_value) : std::string{});
+    auto map_entries = config_list("map");
+    auto peers = parse_map(map_entries ? *map_entries : std::span<const std::string>{});
     for (const auto& p : peers) {
         backend->add_peer(p.net, p.stn, p.ip_addr_net_byte_order, p.port);
     }

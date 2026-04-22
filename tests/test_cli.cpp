@@ -1945,7 +1945,7 @@ TEST_CASE("parse_start_arguments: default station_number is -1", "[cli][parse_st
 
 // AUN is now selected via the generic extension dispatch:
 //
-//   --aun port=42001:map=0.254;127.0.0.1;32768
+//   --aun port=42001:map=0.254@127.0.0.1@32768
 //
 // parse_start_arguments turns that into one ExtensionInstance with
 // name="aun" and a config map. The actual binding/peer-table setup is
@@ -1992,7 +1992,7 @@ TEST_CASE("parse_start_arguments: --aun port=none stores 'none' in extension con
 TEST_CASE("parse_start_arguments: --aun map= is repeatable and accumulates",
           "[cli][parse_start_arguments][econet]") {
     ArgvHelper args{"beebium", "start", "--aun",
-                    "port=42001:map=0.254;192.168.1.10;32768:map=0.1;192.168.1.20;42002"};
+                    "port=42001:map=0.254@192.168.1.10@32768:map=0.1@192.168.1.20@42002"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
@@ -2001,9 +2001,10 @@ TEST_CASE("parse_start_arguments: --aun map= is repeatable and accumulates",
     auto* inst = find_extension_instance(config, "aun");
     REQUIRE(inst != nullptr);
     REQUIRE(inst->config.at("port") == "42001");
-    // List parameters are joined with ',' by the extension arg parser.
-    REQUIRE(inst->config.at("map") ==
-            "0.254;192.168.1.10;32768,0.1;192.168.1.20;42002");
+    // is_list params land in list_config as a vector of opaque tokens.
+    REQUIRE(inst->config.count("map") == 0);
+    REQUIRE(inst->list_config.at("map") == std::vector<std::string>{
+        "0.254@192.168.1.10@32768", "0.1@192.168.1.20@42002"});
 }
 
 TEST_CASE("parse_start_arguments: default has no aun extension instance",
@@ -2023,7 +2024,7 @@ TEST_CASE("parse_start_arguments: --aun and --station combined",
           "[cli][parse_start_arguments][econet]") {
     ArgvHelper args{"beebium", "start",
                     "--station", "1",
-                    "--aun", "port=42001:map=0.254;127.0.0.1;32768"};
+                    "--aun", "port=42001:map=0.254@127.0.0.1@32768"};
     ServerConfig<MachineType> config;
 
     auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
@@ -2033,7 +2034,9 @@ TEST_CASE("parse_start_arguments: --aun and --station combined",
     auto* inst = find_extension_instance(config, "aun");
     REQUIRE(inst != nullptr);
     REQUIRE(inst->config.at("port") == "42001");
-    REQUIRE(inst->config.at("map") == "0.254;127.0.0.1;32768");
+    REQUIRE(inst->config.count("map") == 0);
+    REQUIRE(inst->list_config.at("map") == std::vector<std::string>{
+        "0.254@127.0.0.1@32768"});
 }
 
 // ============================================================================

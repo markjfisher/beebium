@@ -57,7 +57,7 @@ A working command line for running the L3FS reachable over AUN:
   --acorn-scsi \
   --scsi-hdd 0:path/to/scsi-l3fs.dat \
   --station 254 \
-  --aun port=10254:map=0.221;127.0.0.1;10221 \
+  --aun port=10254:map=0.221@127.0.0.1@10221 \
   --machine-name "L3FS" \
   --acorn-rtc layout=7bit-year-in-r7 \
   --tube-65c02 \
@@ -393,7 +393,7 @@ The end goal is a test harness that:
 1. Constructs a fresh L3FS SCSI disc image (Approach 1)
 2. Launches a Beebium file server instance with the configuration above
 3. Launches one or more Beebium client instances with `--station N
-   --aun port=10N:map=0.254;127.0.0.1;10254`
+   --aun port=10N:map=0.254@127.0.0.1@10254`
 4. Waits for the file server to reach "Starting - Ready"
 5. On client stations, exercises Econet operations: `*I AM`, `*CAT`, file
    load/save, `*NOTIFY`, `*REMOTE`

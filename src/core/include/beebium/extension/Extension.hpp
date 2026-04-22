@@ -18,8 +18,10 @@
 
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace beebium {
 
@@ -50,8 +52,16 @@ public:
     const ExtensionManifest& manifest() const { return manifest_; }
 
     // Set instance configuration (called by the framework before init).
-    // Config is parsed from CLI arguments or preset files.
+    // Config is parsed from CLI arguments or preset files. Scalar params
+    // go here; list params (is_list=true in the schema) go into
+    // list_config via set_list_config.
     void set_config(std::map<std::string, std::string> config) { config_ = std::move(config); }
+
+    // Set list-valued instance configuration (is_list params). Called by
+    // the framework before init, alongside set_config.
+    void set_list_config(std::map<std::string, std::vector<std::string>> list_config) {
+        list_config_ = std::move(list_config);
+    }
 
     // Access a single config value by key.
     std::optional<std::string_view> config_value(std::string_view key) const {
@@ -62,8 +72,22 @@ public:
         return std::nullopt;
     }
 
+    // Access a list-valued config parameter. Returns nullopt if the key
+    // is absent. The returned span aliases into this extension's owned
+    // storage and is valid for the lifetime of the Extension.
+    std::optional<std::span<const std::string>> config_list(std::string_view key) const {
+        auto it = list_config_.find(std::string(key));
+        if (it != list_config_.end()) {
+            return std::span<const std::string>(it->second);
+        }
+        return std::nullopt;
+    }
+
     // Access all config values.
     const std::map<std::string, std::string>& config() const { return config_; }
+
+    // Access all list-valued config entries.
+    const std::map<std::string, std::vector<std::string>>& list_config() const { return list_config_; }
 
     // Instance ID (from config["id"] or empty if not yet assigned).
     std::string_view id() const {
@@ -97,6 +121,7 @@ public:
 protected:
     ExtensionManifest manifest_;
     std::map<std::string, std::string> config_;
+    std::map<std::string, std::vector<std::string>> list_config_;
 };
 
 }  // namespace beebium

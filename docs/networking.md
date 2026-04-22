@@ -23,7 +23,7 @@ Beebium decouples the emulated ADLC from the underlying transport via the `Netwo
 
 | Backend | CLI flag | Transport | Use case |
 |---|---|---|---|
-| `AunBackend` (built-in `aun` extension) | `--aun [port=<n>][:map=<net.stn;ip;port>]...` (default `port=32768`) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
+| `AunBackend` (built-in `aun` extension) | `--aun [port=<n>][:map=<net.stn@ip@port>]...` (default `port=32768`) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
 | `PiconetBackend` (`piconet` plugin extension) | `--piconet device_path=<path>` | USB-CDC serial to a Piconet board | Talk to real BBCs / Acorn fileservers / printers over a real Econet wire (POSIX-only) |
 | `TestBackend` | selected automatically by `--aun port=none` or by passing `--station <n>` with no transport flag | In-process; no I/O | Hardware fitted, no transport — NFS ROM sees "No Clock". Also the test double for unit tests. |
 
@@ -36,7 +36,7 @@ Beebium decouples the emulated ADLC from the underlying transport via the `Netwo
   "station": 32,
   "transport": {
     "name": "aun",
-    "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+    "parameters": { "port": "32768", "map": "0.254@127.0.0.1@32769" }
   }
 }
 ```
@@ -45,25 +45,24 @@ Beebium decouples the emulated ADLC from the underlying transport via the `Netwo
 
 ### Inner separators in `--aun map=`
 
-The extension argument parser tokenises `--<extension> a:b:c` on `:`, which conflicts with the obvious `0.254:127.0.0.1:32768` peer-map format. To avoid backslash-escaping, AUN's `map=` parameter uses `;` as the inner separator: `map=0.254;127.0.0.1;32768`. Repeated `map=` tokens accumulate (the `is_list` schema flag) so multiple peers can be specified on one CLI invocation:
+The extension argument parser tokenises `--<extension> a:b:c` on `:`, which conflicts with the obvious `0.254:127.0.0.1:32768` peer-map format. AUN's `map=` parameter therefore uses `@` as the inner separator: `map=0.254@127.0.0.1@32768`. Repeated `map=` tokens accumulate (the `is_list` schema flag) so multiple peers can be specified on one CLI invocation:
 
 ```
---aun port=32768:map=0.254;127.0.0.1;32769:map=0.253;127.0.0.1;32770
+--aun port=32768:map=0.254@127.0.0.1@32769:map=0.253@127.0.0.1@32770
 ```
 
-**Important:** `;` is a shell command separator. Quote the entire `--aun` argument when it includes any `map=`, otherwise the shell splits the line at the first `;` and only `port=32768:map=0.254` reaches Beebium:
+`@` is chosen because it is shell-safe across bash, zsh, fish, cmd.exe, and PowerShell -- no quoting is required -- and collides with neither `.` (used inside `net.stn` and IPv4 addresses) nor `:` (the top-level argument separator). The `is_list` parser plumbing now preserves repeated tokens as an opaque vector, so each extension is free to pick whatever inner separator reads best for its data; `@` is a convention for AUN, not a framework rule.
 
-```bash
-# Wrong -- shell eats everything after the first ';'
-beebium-model-b --station 32 --aun port=32768:map=0.254;127.0.0.1;32768
+In preset files, `map` accepts either a single string or a JSON array of strings:
 
-# Right
-beebium-model-b --station 32 --aun "port=32768:map=0.254;127.0.0.1;32768"
+```json
+"parameters": {
+  "port": "32768",
+  "map": ["0.254@127.0.0.1@32769", "0.253@127.0.0.1@32770"]
+}
 ```
 
-The error message ("malformed map entry '0.254' (expected [net.]stn;ip;port -- e.g. 0.254;127.0.0.1;32768; remember to quote the argument so the shell does not split on ';')") surfaces this when it happens.
-
-A future refactor of the `is_list` arg-parser would let `,` serve as the inner separator (no shell quoting needed); deferred for now since adding that without breaking the existing list-accumulation semantics requires plumbing changes across every `is_list` consumer.
+A single-string form (`"map": "0.254@127.0.0.1@32769"`) remains supported for backwards compatibility and is normalised to a one-element list at load time.
 
 ### `FourWayHandshake` is always in the path
 
@@ -116,12 +115,12 @@ Every extension carries a manifest declaring its CLI name, parameter schema, and
      "description": "UDP port to bind (decimal, or 'none' to disable)",
      "default_value": "32768"},
     {"key": "map", "type": "string", "is_list": true,
-     "description": "Peer entry 'net.stn;ip;port' (repeatable)"}
+     "description": "Peer entry 'net.stn@ip@port' (repeatable)"}
   ]
 }
 ```
 
-The CLI parser uses `cli_name` to recognise `--aun ...`; the parameter schema drives validation of the colon-separated argument string. `parameters[*].is_list = true` accumulates repeated `key=value` tokens (joined with `,` in the parsed config map).
+The CLI parser uses `cli_name` to recognise `--aun ...`; the parameter schema drives validation of the colon-separated argument string. `parameters[*].is_list = true` accumulates repeated `key=value` tokens into a `std::vector<std::string>` of raw values; the parser does not tokenise their contents, so each extension picks whatever inner separator suits its data.
 
 ### Lifecycle
 
@@ -1424,7 +1423,7 @@ The flag fill and idle detection are also in `FourWayHandshake` (via `is_receivi
    - No configuration needed for same-subnet peers
 
 3. **Explicit address mapping** (for cross-subnet / bridge)
-   - `--aun map=<net.stn;ip;port>` (repeatable) for explicit mappings
+   - `--aun map=<net.stn@ip@port>` (repeatable) for explicit mappings
    - Static mappings take precedence over discovered peers
 
 4. **Pi Econet Bridge compatibility**
@@ -1439,7 +1438,7 @@ The flag fill and idle detection are also in `FourWayHandshake` (via `is_receivi
 
 1. **Command-line options** — **Done**:
    - `--station <n>` - Enable Econet hardware and set station number (no flag = no Econet)
-   - `--aun [port=<n>][:map=<net.stn;ip;port>]...` - AUN UDP transport with explicit station-to-IP mappings
+   - `--aun [port=<n>][:map=<net.stn@ip@port>]...` - AUN UDP transport with explicit station-to-IP mappings
    - `--piconet device_path=<path>` - Piconet USB-CDC bridge to a real Econet wire
    - The legacy `--aun-port`, `--aun-map`, and bare `--piconet <path>` flags have been removed; both transports flow through the generic extension dispatch (see "Econet Transport Extensions" above).
 
@@ -1619,7 +1618,7 @@ All of these routines are in `disassembly/nfs_334_v2_96dc_9fff_adlc_nmi_handlers
 
 2. ~~**Clock detection**~~ **Resolved.** DCD (SR2b5) reflects `!backend.is_connected()`: high when disconnected (no clock), low when connected. CTS reflects `!(backend.is_connected() && CR2b7_RTS)`. The NFS ROM polls DCD during boot and reports "No Clock" when DCD is high. This is implemented and verified — see `test_boot_econet.cpp` for "No Clock" boot test.
 
-3. **Multi-network support**: The current implementation supports arbitrary network numbers via `--aun map=net.stn;ip;port` where `net` can be 0-255. Network number 0 is the default for local networks. MASSAGENETS (bit-7 translation) is not implemented. Sufficient for current needs.
+3. **Multi-network support**: The current implementation supports arbitrary network numbers via `--aun map=net.stn@ip@port` where `net` can be 0-255. Network number 0 is the default for local networks. MASSAGENETS (bit-7 translation) is not implemented. Sufficient for current needs.
 
 4. ~~**ROM licensing**~~ **Resolved.** The original copyright holder (Acorn Computers) is defunct. While the ROMs are technically still under copyright, there is no entity to enforce it. Widespread retro-computing community practice (distribution via mdfs.net, stardot.org.uk, etc.) demonstrates essentially zero risk. Beebium does not currently bundle NFS/ANFS ROMs but could do so if convenient.
 
@@ -1668,7 +1667,7 @@ Currently all peer mappings are explicit via `--aun map=...`. Local subnet disco
 #   0 101 127.0.0.1 10101
 
 # Beebium workstation connecting to BeebEm file server
-beebium-model-b --station 101 --aun port=10101:map=0.254;127.0.0.1;32768
+beebium-model-b --station 101 --aun port=10101:map=0.254@127.0.0.1@32768
 
 # On the workstation:
 # *NET
@@ -1679,16 +1678,16 @@ beebium-model-b --station 101 --aun port=10101:map=0.254;127.0.0.1;32768
 **Two Beebium instances on the same machine:**
 ```bash
 # Terminal 1: File server (station 254, port 32768)
-beebium-model-b --station 254 --aun port=32768:map=0.1;127.0.0.1;32769
+beebium-model-b --station 254 --aun port=32768:map=0.1@127.0.0.1@32769
 
 # Terminal 2: Workstation (station 1, port 32769)
-beebium-model-b --station 1 --aun port=32769:map=0.254;127.0.0.1;32768
+beebium-model-b --station 1 --aun port=32769:map=0.254@127.0.0.1@32768
 ```
 
 **Cross-subnet with explicit mapping:**
 ```bash
 # Workstation connecting to a remote file server
-beebium-model-b --station 1 --aun map=0.254;192.168.2.50;32768
+beebium-model-b --station 1 --aun map=0.254@192.168.2.50@32768
 ```
 
 **No Econet (DFS only):**

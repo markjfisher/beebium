@@ -26,11 +26,14 @@
 //                                   socket bound; create_backend returns
 //                                   nullptr).
 //   map  (string, is_list):         Repeated peer entries of the form
-//                                   "net;ip;port" (semicolon-separated
-//                                   so the extension arg parser doesn't
-//                                   split on the inner ':' chars).
-//                                   The accumulated value is a
-//                                   comma-separated list.
+//                                   "net.stn@ip@port". Each --aun
+//                                   map=... or preset JSON array element
+//                                   contributes one PeerSpec. '@' is used
+//                                   as the inner separator because it is
+//                                   shell-safe across bash/zsh/fish/cmd/
+//                                   PowerShell and does not collide with
+//                                   '.' (inside net.stn and IPv4) or ':'
+//                                   (the top-level arg separator).
 
 #include "AunUi.hpp"
 #include "beebium/econet/AunBackend.hpp"
@@ -38,6 +41,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -96,10 +100,10 @@ public:
     // missing -> AUN_DEFAULT_PORT. Otherwise parsed as decimal uint16.
     static std::optional<std::uint16_t> parse_port(const std::string& value);
 
-    // Parse the "map" config value (comma-separated list of
-    // "net;ip;port" entries). Returns the parsed list; entries that
-    // can't be parsed are dropped with a warning to stderr.
-    static std::vector<PeerSpec> parse_map(const std::string& value);
+    // Parse a list of "map" entries. Each element is one peer of the
+    // form "[net.]stn@ip@port". Entries that can't be parsed are
+    // dropped with a warning to stderr.
+    static std::vector<PeerSpec> parse_map(std::span<const std::string> entries);
 
 private:
     AunBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket

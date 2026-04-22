@@ -92,7 +92,7 @@ inline std::vector<Entry> make_entries() {
              -1, false, false, "32768"});
         m.parameters.push_back(
             {"map", "string",
-             "Peer entry 'net.stn;ip;port' (repeatable)",
+             "Peer entry 'net.stn@ip@port' (repeatable)",
              -1, false, /*is_list=*/true, ""});
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(

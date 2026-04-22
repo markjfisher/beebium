@@ -67,7 +67,7 @@ Both transports are configured via a single `econet.transport` object that names
     "station": 5,
     "transport": {
       "name": "aun",
-      "parameters": { "port": "32768", "map": "0.254;127.0.0.1;32769" }
+      "parameters": { "port": "32768", "map": "0.254@127.0.0.1@32769" }
     }
   }
 }

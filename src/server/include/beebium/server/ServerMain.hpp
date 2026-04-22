@@ -563,8 +563,9 @@ struct ServerConfig {
 
     // Parsed extension instances with config (from --<cli-name> flags)
     struct ExtensionInstance {
-        std::string name;                           // canonical extension name
-        std::map<std::string, std::string> config;  // parsed KV pairs
+        std::string name;                                               // canonical extension name
+        std::map<std::string, std::string> config;                      // parsed KV pairs (scalar params)
+        std::map<std::string, std::vector<std::string>> list_config;    // list params (is_list=true)
     };
     std::vector<ExtensionInstance> extension_instances;
 };
@@ -599,7 +600,7 @@ void print_usage(const char* program_name) {
 
     if constexpr (HasEconetSocket<Memory>) {
         std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n"
-                  << "  --aun [port=<n>][:map=<net.stn;ip;port>]...\n"
+                  << "  --aun [port=<n>][:map=<net.stn@ip@port>]...\n"
                   << "                           AUN UDP transport (default: port="
                   << beebium::AUN_DEFAULT_PORT << ").\n"
                   << "                           port=none disables the network.\n"
@@ -716,6 +717,7 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
             typename ServerConfig<MachineType>::ExtensionInstance inst;
             inst.name = econet.transport->name;
             inst.config = econet.transport->parameters;
+            inst.list_config = econet.transport->list_parameters;
             config.extension_instances.push_back(std::move(inst));
         }
     }
@@ -725,6 +727,7 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
         typename ServerConfig<MachineType>::ExtensionInstance inst;
         inst.name = ext.name;
         inst.config = ext.config;
+        inst.list_config = ext.list_config;
         config.extension_instances.push_back(std::move(inst));
     }
 }
@@ -951,7 +954,8 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 }
                 config.extension_instances.push_back({
                     manifest->name,
-                    std::move(parse_result.config)
+                    std::move(parse_result.config),
+                    std::move(parse_result.list_config)
                 });
             } else {
                 std::cerr << "Unknown argument: " << arg << "\n";
@@ -1515,10 +1519,18 @@ public:
                     if (inst.config.find("id") == inst.config.end()) {
                         inst.config["id"] = generate_uuid_v4();
                     }
+                    // Normalise scalar-form list params from presets into list_config
+                    // so the extension only sees one source of truth.
+                    normalise_list_params(inst.config, inst.list_config, manifest->parameters);
                     std::cout << "Loading transport: " << manifest->name
                               << " (id=" << inst.config["id"] << ")\n";
                     for (const auto& [k, v] : inst.config) {
                         if (k != "id") {
+                            std::cout << "  " << k << "=" << v << "\n";
+                        }
+                    }
+                    for (const auto& [k, vs] : inst.list_config) {
+                        for (const auto& v : vs) {
                             std::cout << "  " << k << "=" << v << "\n";
                         }
                     }
@@ -1528,8 +1540,10 @@ public:
                         loaded = entry->factory();
                         loaded->set_manifest(entry->manifest);
                         loaded->set_config(std::move(inst.config));
+                        loaded->set_list_config(std::move(inst.list_config));
                     } else {
-                        loaded = plugin_loader.load_extension(*manifest, std::move(inst.config));
+                        loaded = plugin_loader.load_extension(
+                            *manifest, std::move(inst.config), std::move(inst.list_config));
                     }
 
                     auto* transport = dynamic_cast<beebium::EconetTransportExtension*>(
@@ -1611,27 +1625,14 @@ public:
                 if (inst.config.find("id") == inst.config.end()) {
                     inst.config["id"] = generate_uuid_v4();
                 }
-                std::cout << "Loading extension: " << inst.name;
-                if (inst.config.count("id")) {
-                    std::cout << " (id=" << inst.config["id"] << ")";
-                }
-                std::cout << "\n";
-                for (const auto& [key, value] : inst.config) {
-                    if (key != "id") {
-                        std::cout << "  " << key << "=" << value << "\n";
-                    }
-                }
 
-                // Construct the extension instance: built-in factories take
-                // precedence over scanned plugins. Both yield a generic
-                // unique_ptr<Extension> which then dispatches by
-                // manifest.extension_kind.
-                std::unique_ptr<beebium::Extension> loaded;
+                // Resolve manifest first (built-in preferred), so we can
+                // normalise scalar-form list params from presets before
+                // logging / handing to the extension.
                 const beebium::ExtensionManifest* manifest = nullptr;
-                if (const auto* entry = beebium::builtin_extensions::find(inst.name)) {
-                    loaded = entry->factory();
-                    loaded->set_manifest(entry->manifest);
-                    loaded->set_config(std::move(inst.config));
+                const beebium::builtin_extensions::Entry* entry =
+                    beebium::builtin_extensions::find(inst.name);
+                if (entry) {
                     manifest = &entry->manifest;
                 } else {
                     manifest = beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
@@ -1643,7 +1644,38 @@ public:
                         std::cerr << "\n";
                         return ExitCode::CONFIG;
                     }
-                    loaded = plugin_loader.load_extension(*manifest, std::move(inst.config));
+                }
+                normalise_list_params(inst.config, inst.list_config, manifest->parameters);
+
+                std::cout << "Loading extension: " << inst.name;
+                if (inst.config.count("id")) {
+                    std::cout << " (id=" << inst.config["id"] << ")";
+                }
+                std::cout << "\n";
+                for (const auto& [key, value] : inst.config) {
+                    if (key != "id") {
+                        std::cout << "  " << key << "=" << value << "\n";
+                    }
+                }
+                for (const auto& [key, values] : inst.list_config) {
+                    for (const auto& v : values) {
+                        std::cout << "  " << key << "=" << v << "\n";
+                    }
+                }
+
+                // Construct the extension instance: built-in factories take
+                // precedence over scanned plugins. Both yield a generic
+                // unique_ptr<Extension> which then dispatches by
+                // manifest.extension_kind.
+                std::unique_ptr<beebium::Extension> loaded;
+                if (entry) {
+                    loaded = entry->factory();
+                    loaded->set_manifest(entry->manifest);
+                    loaded->set_config(std::move(inst.config));
+                    loaded->set_list_config(std::move(inst.list_config));
+                } else {
+                    loaded = plugin_loader.load_extension(
+                        *manifest, std::move(inst.config), std::move(inst.list_config));
                 }
 
                 // Dispatch by extension_kind. Phase 1/2 supports peripherals
