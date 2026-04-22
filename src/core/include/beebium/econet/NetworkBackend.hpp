@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -94,6 +95,23 @@ public:
     // (PiconetBackend, where the Piconet device must be told via SET_STATION)
     // override to propagate.
     virtual void on_station_id_changed(uint8_t /*new_station_id*/) {}
+
+    // Monotonic counter bumped by the backend whenever status visible on
+    // EconetStatus changes (connection toggle, port change, etc.). Read by
+    // WatchEconetStatus's poll loop to detect transport-level state changes
+    // that bypass EconetSocket (e.g. AunService.SetConnected mutating
+    // AunBackend directly). Backends that have no such state leave this at 0.
+    uint64_t backend_status_sequence() const {
+        return backend_status_sequence_.load(std::memory_order_acquire);
+    }
+
+protected:
+    void bump_backend_status_sequence() {
+        backend_status_sequence_.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+private:
+    std::atomic<uint64_t> backend_status_sequence_{0};
 };
 
 }  // namespace beebium

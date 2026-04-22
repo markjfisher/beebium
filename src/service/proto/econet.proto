@@ -22,6 +22,13 @@ service EconetService {
     // Stream Econet events (frame activity, handshake changes, connection state).
     // Reserved for future implementation.
     rpc SubscribeEconetEvents(SubscribeEconetEventsRequest) returns (stream EconetEvent);
+
+    // Server-pushed status stream. Writes an initial GetEconetStatusResponse
+    // as soon as the stream is established, then a fresh snapshot whenever
+    // status visible on EconetService changes (enable/disable, station ID
+    // change, or transport backend connection toggle). The stream stays open
+    // until the client cancels; use this instead of polling GetEconetStatus.
+    rpc WatchEconetStatus(WatchEconetStatusRequest) returns (stream GetEconetStatusResponse);
 }
 
 // Note: The four AUN-specific RPCs (SetConnected, AddPeer, RemovePeer,
@@ -173,6 +180,16 @@ message SetStationIdResponse {
 // RemovePeerRequest/Response, ListPeersRequest/Response, EconetPeer)
 // moved to AunService in src/extensions/aun/aun.proto. They were
 // always AUN-specific; their new home is the AUN extension's service.
+
+// --- Status Streaming ---
+
+message WatchEconetStatusRequest {
+    // Minimum interval between status pushes in milliseconds (optional).
+    // Defaults to 50ms server-side. The server only pushes when status
+    // actually changes, so this caps the update rate rather than forcing
+    // periodic traffic.
+    uint32 min_interval_ms = 1;
+}
 
 // --- Event Streaming (reserved for future implementation) ---
 

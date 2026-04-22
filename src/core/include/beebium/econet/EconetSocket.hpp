@@ -16,6 +16,7 @@
 #include "Mc6854.hpp"
 #include "NetworkBackend.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -69,6 +70,7 @@ public:
         }
         station_id_ = station_id;
         enabled_ = true;
+        bump_status_sequence();
     }
 
     // Remove the Econet hardware (return to empty socket state).
@@ -78,6 +80,7 @@ public:
         backend_.reset();
         enabled_ = false;
         nmi_enable_ff_ = false;
+        bump_status_sequence();
     }
 
     bool enabled() const { return enabled_; }
@@ -95,6 +98,7 @@ public:
         if (backend_) {
             backend_->on_station_id_changed(station_id);
         }
+        bump_status_sequence();
     }
 
     // Set pointer to the MemoryMap's last_bus_value for open bus emulation
@@ -211,6 +215,18 @@ public:
 
     bool nmi_enable_ff() const { return nmi_enable_ff_; }
     uint8_t station_id() const { return station_id_; }
+
+    // Monotonic sequence counter combining socket-level changes (enable,
+    // disable, station id) with the active backend's connection-state
+    // counter (e.g. AunBackend::set_connected). Used by the
+    // WatchEconetStatus RPC poll loop to detect when any status field
+    // observable through EconetService may have changed.
+    uint64_t status_sequence() const {
+        uint64_t seq = status_sequence_.load(std::memory_order_acquire);
+        if (backend_) seq += backend_->backend_status_sequence();
+        return seq;
+    }
+
     Mc6854* adlc() { return adlc_.get(); }
     const Mc6854* adlc() const { return adlc_.get(); }
     FourWayHandshake* handshake() { return handshake_.get(); }
@@ -275,6 +291,10 @@ public:
     }
 
 private:
+    void bump_status_sequence() {
+        status_sequence_.fetch_add(1, std::memory_order_acq_rel);
+    }
+
     std::unique_ptr<NetworkBackend> backend_;
     std::unique_ptr<FourWayHandshake> handshake_;
     std::unique_ptr<Mc6854> adlc_;
@@ -284,6 +304,7 @@ private:
     bool nmi_enable_ff_ = false;
     const uint8_t* last_bus_value_ptr_ = nullptr;
     uint64_t tick_count_ = 0;
+    std::atomic<uint64_t> status_sequence_{0};
 };
 
 }  // namespace beebium

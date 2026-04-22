@@ -408,9 +408,6 @@ struct NetworkModeView: View {
 
     // Peers Section deleted: AUN's peer list is now rendered by
     // ExtensionPanelView(extensionName: "aun") via AunUi (server-driven).
-    // The peer-table state continues to be reachable through
-    // econetClient.peers for any code that still needs the typed view;
-    // see feedback_extension_multi_api.md.
 }
 
 /// Popover for editing the Econet station ID

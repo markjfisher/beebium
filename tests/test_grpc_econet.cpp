@@ -23,6 +23,7 @@
 #include "econet.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
+#include <chrono>
 #include <fstream>
 #include <vector>
 
@@ -431,6 +432,126 @@ TEST_CASE("EconetService SetStationId when disabled", "[grpc][econet]") {
 // ============================================================================
 // SubscribeEconetEvents
 // ============================================================================
+
+// ============================================================================
+// WatchEconetStatus (streaming)
+// ============================================================================
+
+TEST_CASE("EconetService WatchEconetStatus initial push on disabled socket",
+          "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::WatchEconetStatusRequest request;
+    auto reader = fixture.stub().WatchEconetStatus(&context, request);
+
+    beebium::GetEconetStatusResponse snapshot;
+    REQUIRE(reader->Read(&snapshot));
+    REQUIRE(snapshot.has_econet_socket());
+    REQUIRE_FALSE(snapshot.enabled());
+
+    context.TryCancel();
+    while (reader->Read(&snapshot)) {}
+    (void)reader->Finish();
+}
+
+TEST_CASE("EconetService WatchEconetStatus pushes on enable",
+          "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::WatchEconetStatusRequest request;
+    request.set_min_interval_ms(25);
+    auto reader = fixture.stub().WatchEconetStatus(&context, request);
+
+    beebium::GetEconetStatusResponse snapshot;
+    REQUIRE(reader->Read(&snapshot));
+    REQUIRE_FALSE(snapshot.enabled());
+
+    // Trigger a state change by enabling Econet hardware.
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(42);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    REQUIRE(reader->Read(&snapshot));
+    REQUIRE(snapshot.enabled());
+    REQUIRE(snapshot.station_id() == 42);
+
+    context.TryCancel();
+    while (reader->Read(&snapshot)) {}
+    (void)reader->Finish();
+}
+
+TEST_CASE("EconetService WatchEconetStatus pushes on station id change",
+          "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    // Enable first so SetStationId has something to change.
+    {
+        grpc::ClientContext ctx;
+        beebium::EnableEconetRequest req;
+        beebium::EnableEconetResponse resp;
+        req.set_station_id(5);
+        req.set_no_network(true);
+        fixture.stub().EnableEconet(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    grpc::ClientContext context;
+    beebium::WatchEconetStatusRequest request;
+    request.set_min_interval_ms(25);
+    auto reader = fixture.stub().WatchEconetStatus(&context, request);
+
+    beebium::GetEconetStatusResponse snapshot;
+    REQUIRE(reader->Read(&snapshot));
+    REQUIRE(snapshot.enabled());
+    REQUIRE(snapshot.station_id() == 5);
+
+    {
+        grpc::ClientContext ctx;
+        beebium::SetStationIdRequest req;
+        beebium::SetStationIdResponse resp;
+        req.set_station_id(123);
+        fixture.stub().SetStationId(&ctx, req, &resp);
+        REQUIRE(resp.success());
+    }
+
+    REQUIRE(reader->Read(&snapshot));
+    REQUIRE(snapshot.station_id() == 123);
+
+    context.TryCancel();
+    while (reader->Read(&snapshot)) {}
+    (void)reader->Finish();
+}
+
+TEST_CASE("EconetService WatchEconetStatus exits on client cancel",
+          "[grpc][econet]") {
+    EconetTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::WatchEconetStatusRequest request;
+    request.set_min_interval_ms(25);
+    auto reader = fixture.stub().WatchEconetStatus(&context, request);
+
+    beebium::GetEconetStatusResponse snapshot;
+    REQUIRE(reader->Read(&snapshot));
+
+    auto t0 = std::chrono::steady_clock::now();
+    context.TryCancel();
+    while (reader->Read(&snapshot)) {}
+    auto status = reader->Finish();
+    auto elapsed = std::chrono::steady_clock::now() - t0;
+
+    REQUIRE(elapsed < std::chrono::seconds(2));
+    REQUIRE((status.error_code() == grpc::StatusCode::CANCELLED ||
+             status.error_code() == grpc::StatusCode::OK));
+}
 
 TEST_CASE("EconetService SubscribeEconetEvents returns UNIMPLEMENTED", "[grpc][econet]") {
     EconetTestFixture fixture;

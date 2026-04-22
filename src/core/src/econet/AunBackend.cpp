@@ -324,7 +324,10 @@ std::vector<PeerInfo> AunBackend::list_peers() const {
 }
 
 void AunBackend::set_connected(bool connected) {
-    connected_.store(connected, std::memory_order_relaxed);
+    bool prev = connected_.exchange(connected, std::memory_order_relaxed);
+    if (prev != connected) {
+        bump_backend_status_sequence();
+    }
 }
 
 uint16_t AunBackend::make_forward_key(uint8_t net, uint8_t stn) {

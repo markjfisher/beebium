@@ -23,7 +23,9 @@
 #include "beebium/econet/FourWayHandshake.hpp"
 
 #include <grpcpp/grpcpp.h>
+#include <chrono>
 #include <mutex>
+#include <thread>
 
 #ifdef _WIN32
 #include <ws2tcpip.h>
@@ -97,79 +99,58 @@ public:
         (void)context;
         (void)request;
         std::lock_guard<std::mutex> lock(mutex_);
+        populate_status_(*response);
+        return grpc::Status::OK;
+    }
 
+    grpc::Status WatchEconetStatus(
+        grpc::ServerContext* context,
+        const WatchEconetStatusRequest* request,
+        grpc::ServerWriter<GetEconetStatusResponse>* writer) override
+    {
         using Memory = typename MachineType::Memory;
 
-        if constexpr (!HasEconetSocket<Memory>) {
-            response->set_has_econet_socket(false);
-            return grpc::Status::OK;
-        } else {
-            response->set_has_econet_socket(true);
+        auto interval = std::chrono::milliseconds(
+            request->min_interval_ms() > 0 ? request->min_interval_ms() : 50);
 
-            auto& econet = machine_.state().memory.econet_socket;
-            response->set_enabled(econet.enabled());
-
-            if (!econet.enabled()) {
-                return grpc::Status::OK;
+        // Initial push: send a snapshot immediately so the client has
+        // something to render without waiting for the first state change.
+        uint64_t last_seq = 0;
+        {
+            GetEconetStatusResponse snapshot;
+            std::lock_guard<std::mutex> lock(mutex_);
+            populate_status_(snapshot);
+            if constexpr (HasEconetSocket<Memory>) {
+                last_seq = machine_.state().memory.econet_socket.status_sequence();
             }
-
-            response->set_station_id(econet.station_id());
-            response->set_aun_mode(econet.aun_mode());
-
-            // Generic connection state. Transport-specific status (AUN
-            // port + peer count, Piconet device path + serial open) lives
-            // on the corresponding transport service: AunService.GetStatus
-            // / PiconetService.GetStatus, surfaced via the active
-            // EconetTransportExtension's grpc_services() hook.
-            if (econet.backend()) {
-                response->set_connected(econet.backend()->is_connected());
+            if (!writer->Write(snapshot)) {
+                return grpc::Status::OK;  // Client disconnected during initial push.
             }
-
-            // ADLC status
-            if (auto* adlc = econet.adlc()) {
-                auto* adlc_status = response->mutable_adlc();
-                adlc_status->set_cr1(adlc->cr1());
-                adlc_status->set_cr2(adlc->cr2());
-                adlc_status->set_cr3(adlc->cr3());
-                adlc_status->set_cr4(adlc->cr4());
-                adlc_status->set_sr1(adlc->sr1());
-                adlc_status->set_sr2(adlc->sr2());
-                adlc_status->set_irq_output(adlc->irq_output());
-                adlc_status->set_tx_fifo_empty(adlc->tx_fifo_empty());
-                adlc_status->set_tx_fifo_full(adlc->tx_fifo_full());
-                adlc_status->set_rx_fifo_empty(adlc->rx_fifo_empty());
-                adlc_status->set_rx_fifo_full(adlc->rx_fifo_full());
-                adlc_status->set_tx_frame_field(frame_field_to_string(adlc->tx_frame_field()));
-                adlc_status->set_rx_frame_field(frame_field_to_string(adlc->rx_frame_field()));
-                adlc_status->set_pse_level(adlc->pse_level());
-                adlc_status->set_cts_input(adlc->cts_input());
-            }
-
-            // Handshake status
-            if (auto* hs = econet.handshake()) {
-                auto* hs_status = response->mutable_handshake();
-                hs_status->set_stage(handshake_stage_to_string(hs->stage()));
-                hs_status->set_flag_fill_active(hs->flag_fill_active());
-            }
-
-            // Diagnostic counters
-            response->set_tick_count(econet.tick_count());
-            response->set_cr1_0x82_write_count(econet.cr1_0x82_write_count());
-            response->set_rx_frames_received_count(econet.rx_frames_received_count());
-            response->set_rx_blocked_by_reset_count(econet.rx_blocked_by_reset_count());
-            response->set_scout_ack_generated_count(econet.scout_ack_generated_count());
-            response->set_tx_frames_from_beeb_count(econet.tx_frames_from_beeb_count());
-            response->set_unexpected_tx_reset_count(econet.unexpected_tx_reset_count());
-            response->set_tx_from_idle_count(econet.tx_from_idle_count());
-            response->set_max_handshake_timer_seen(econet.max_handshake_timer_seen());
-            response->set_watchdog_timeout_count(econet.watchdog_timeout_count());
-            response->set_send_stage_log(econet.send_stage_log_string());
-            response->set_ticks_with_timer_active(econet.ticks_with_timer_active());
-            response->set_read_stretch_parasite_ticks(
-                machine_.memory().tube_socket.read_stretch_parasite_ticks());
-
-            return grpc::Status::OK;
         }
+
+        while (!context->IsCancelled()) {
+            std::this_thread::sleep_for(interval);
+
+            uint64_t curr_seq = 0;
+            if constexpr (HasEconetSocket<Memory>) {
+                curr_seq = machine_.state().memory.econet_socket.status_sequence();
+            }
+            if (curr_seq == last_seq) {
+                continue;
+            }
+
+            GetEconetStatusResponse snapshot;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                populate_status_(snapshot);
+            }
+            if (!writer->Write(snapshot)) {
+                break;  // Client disconnected.
+            }
+            last_seq = curr_seq;
+        }
+
+        return grpc::Status::OK;
     }
 
     grpc::Status EnableEconet(
@@ -312,6 +293,76 @@ public:
     }
 
 private:
+    // Fill `response` with the current Econet status snapshot. Caller
+    // must hold mutex_ while any mutating RPC may run; this helper
+    // reads state without taking the lock itself so it can be reused
+    // by both the unary GetEconetStatus path and the streaming
+    // WatchEconetStatus path (each of which decides when to lock).
+    void populate_status_(GetEconetStatusResponse& response) {
+        using Memory = typename MachineType::Memory;
+
+        if constexpr (!HasEconetSocket<Memory>) {
+            response.set_has_econet_socket(false);
+            return;
+        } else {
+            response.set_has_econet_socket(true);
+
+            auto& econet = machine_.state().memory.econet_socket;
+            response.set_enabled(econet.enabled());
+
+            if (!econet.enabled()) {
+                return;
+            }
+
+            response.set_station_id(econet.station_id());
+            response.set_aun_mode(econet.aun_mode());
+
+            if (econet.backend()) {
+                response.set_connected(econet.backend()->is_connected());
+            }
+
+            if (auto* adlc = econet.adlc()) {
+                auto* adlc_status = response.mutable_adlc();
+                adlc_status->set_cr1(adlc->cr1());
+                adlc_status->set_cr2(adlc->cr2());
+                adlc_status->set_cr3(adlc->cr3());
+                adlc_status->set_cr4(adlc->cr4());
+                adlc_status->set_sr1(adlc->sr1());
+                adlc_status->set_sr2(adlc->sr2());
+                adlc_status->set_irq_output(adlc->irq_output());
+                adlc_status->set_tx_fifo_empty(adlc->tx_fifo_empty());
+                adlc_status->set_tx_fifo_full(adlc->tx_fifo_full());
+                adlc_status->set_rx_fifo_empty(adlc->rx_fifo_empty());
+                adlc_status->set_rx_fifo_full(adlc->rx_fifo_full());
+                adlc_status->set_tx_frame_field(frame_field_to_string(adlc->tx_frame_field()));
+                adlc_status->set_rx_frame_field(frame_field_to_string(adlc->rx_frame_field()));
+                adlc_status->set_pse_level(adlc->pse_level());
+                adlc_status->set_cts_input(adlc->cts_input());
+            }
+
+            if (auto* hs = econet.handshake()) {
+                auto* hs_status = response.mutable_handshake();
+                hs_status->set_stage(handshake_stage_to_string(hs->stage()));
+                hs_status->set_flag_fill_active(hs->flag_fill_active());
+            }
+
+            response.set_tick_count(econet.tick_count());
+            response.set_cr1_0x82_write_count(econet.cr1_0x82_write_count());
+            response.set_rx_frames_received_count(econet.rx_frames_received_count());
+            response.set_rx_blocked_by_reset_count(econet.rx_blocked_by_reset_count());
+            response.set_scout_ack_generated_count(econet.scout_ack_generated_count());
+            response.set_tx_frames_from_beeb_count(econet.tx_frames_from_beeb_count());
+            response.set_unexpected_tx_reset_count(econet.unexpected_tx_reset_count());
+            response.set_tx_from_idle_count(econet.tx_from_idle_count());
+            response.set_max_handshake_timer_seen(econet.max_handshake_timer_seen());
+            response.set_watchdog_timeout_count(econet.watchdog_timeout_count());
+            response.set_send_stage_log(econet.send_stage_log_string());
+            response.set_ticks_with_timer_active(econet.ticks_with_timer_active());
+            response.set_read_stretch_parasite_ticks(
+                machine_.memory().tube_socket.read_stretch_parasite_ticks());
+        }
+    }
+
     MachineType& machine_;
     std::mutex mutex_;
 };

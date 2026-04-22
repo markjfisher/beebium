@@ -35,42 +35,20 @@ final class EconetClient: ObservableObject, Disconnectable {
     @Published private(set) var stationId: UInt32 = 0
     @Published private(set) var aunMode: Bool = false
     @Published private(set) var connected: Bool = false
-    @Published private(set) var aunPort: UInt32 = 0
-    @Published private(set) var peerCount: UInt32 = 0
-    @Published private(set) var peers: [Beebium_EconetPeer] = []
     @Published private(set) var isLoaded: Bool = false
     @Published private(set) var errorMessage: String?
 
     private var client: Beebium_EconetServiceNIOClient?
-    private var fetchTask: Task<Void, Never>?
-    private var pollTask: Task<Void, Never>?
-
-    // Polling interval for the status-refresh background task. The
-    // transport-agnostic header (Connection state, Station id, etc.)
-    // doesn't otherwise hear about state changes that originate from
-    // the AUN/Piconet panels' Dispatch path, since those mutate
-    // AunBackend / PiconetBackend directly without going through
-    // EconetService. 500ms is well below human perception for a
-    // connection-state readout but cheap enough not to matter.
-    //
-    // This is a workaround. The clean fix is a server-streamed
-    // WatchEconetStatus RPC; see project_econet_status_streaming.md
-    // for the deferred plan.
-    private static let pollInterval: Duration = .milliseconds(500)
+    private var statusStreamCall: ServerStreamingCall<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse>?
 
     func connect(channel: GRPCChannel) {
         client = Beebium_EconetServiceNIOClient(channel: channel)
-        fetchTask = Task<Void, Never> { [weak self] in
-            await self?.fetchStatusAndPeers()
-            await self?.startPolling()
-        }
+        startStatusStream()
     }
 
     func disconnect() {
-        fetchTask?.cancel()
-        fetchTask = nil
-        pollTask?.cancel()
-        pollTask = nil
+        statusStreamCall?.cancel(promise: nil)
+        statusStreamCall = nil
         client = nil
         isLoaded = false
         hasEconetSocket = false
@@ -78,9 +56,6 @@ final class EconetClient: ObservableObject, Disconnectable {
         stationId = 0
         aunMode = false
         connected = false
-        aunPort = 0
-        peerCount = 0
-        peers = []
         errorMessage = nil
     }
 
@@ -93,41 +68,6 @@ final class EconetClient: ObservableObject, Disconnectable {
         do {
             let response = try await client.setStationId(request).response.get()
             if response.success {
-                await refreshStatus()
-                return .success(())
-            } else {
-                return .failure(.operationFailed(response.error))
-            }
-        } catch {
-            return .failure(.operationFailed(error.localizedDescription))
-        }
-    }
-
-    func connectNetwork() async -> Result<Void, EconetError> {
-        guard let client = client else { return .failure(.notConnected) }
-        var request = Beebium_SetConnectedRequest()
-        request.connected = true
-        do {
-            let response = try await client.setConnected(request).response.get()
-            if response.success {
-                await refreshStatus()
-                return .success(())
-            } else {
-                return .failure(.operationFailed(response.error))
-            }
-        } catch {
-            return .failure(.operationFailed(error.localizedDescription))
-        }
-    }
-
-    func disconnectNetwork() async -> Result<Void, EconetError> {
-        guard let client = client else { return .failure(.notConnected) }
-        var request = Beebium_SetConnectedRequest()
-        request.connected = false
-        do {
-            let response = try await client.setConnected(request).response.get()
-            if response.success {
-                await refreshStatus()
                 return .success(())
             } else {
                 return .failure(.operationFailed(response.error))
@@ -139,92 +79,47 @@ final class EconetClient: ObservableObject, Disconnectable {
 
     // MARK: - Private
 
-    private func fetchStatusAndPeers() async {
+    // Subscribe to the server's WatchEconetStatus stream. The server
+    // pushes an initial snapshot on subscription, then a fresh snapshot
+    // whenever status visible on EconetService changes (enable/disable,
+    // station id, or transport backend connection toggle). Replaces the
+    // earlier 500ms polling workaround (project_econet_status_streaming.md).
+    private func startStatusStream() {
         guard let client = client else { return }
 
-        do {
-            let request = Beebium_GetEconetStatusRequest()
-            let response = try await client.getEconetStatus(request).response.get()
-
-            await MainActor.run {
-                self.hasEconetSocket = response.hasEconetSocket_p
-                self.enabled = response.enabled
-                self.stationId = response.stationID
-                self.aunMode = response.aunMode
-                self.connected = response.connected
-                self.aunPort = response.aunPort
-                self.peerCount = response.peerCount
-                self.isLoaded = true
-                self.errorMessage = nil
+        let request = Beebium_WatchEconetStatusRequest()
+        let call = client.watchEconetStatus(request) { [weak self] status in
+            Task { @MainActor [weak self] in
+                self?.handleStatusUpdate(status)
             }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = "Failed to get Econet status: \(error.localizedDescription)"
-                self.isLoaded = false
-            }
-            return
         }
 
-        do {
-            let request = Beebium_ListPeersRequest()
-            let response = try await client.listPeers(request).response.get()
-            await MainActor.run {
-                self.peers = response.peers
-            }
-        } catch {
-            NSLog("[EconetClient] Failed to list peers: %@", error.localizedDescription)
-        }
-    }
+        statusStreamCall = call
 
-    // Background polling loop: re-runs refreshStatus() every
-    // pollInterval until the task is cancelled (in disconnect()) or
-    // the sleep is interrupted by cancellation. Started after the
-    // initial fetchStatusAndPeers() succeeds so we don't fire two
-    // refreshes back-to-back on startup.
-    private func startPolling() async {
-        pollTask = Task<Void, Never> { [weak self] in
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: EconetClient.pollInterval)
-                } catch {
-                    return  // cancelled mid-sleep
+        call.status.whenComplete { [weak self] result in
+            Task { @MainActor [weak self] in
+                switch result {
+                case .success(let status):
+                    if status.code != .ok && status.code != .cancelled {
+                        NSLog("[EconetClient] Status stream ended: %@", status.description)
+                        self?.errorMessage = "Econet status stream ended: \(status.description)"
+                    }
+                case .failure(let error):
+                    NSLog("[EconetClient] Status stream error: %@", error.localizedDescription)
+                    self?.errorMessage = "Econet status stream error: \(error.localizedDescription)"
                 }
-                await self?.refreshStatus()
+                self?.statusStreamCall = nil
             }
         }
     }
 
-    private func refreshStatus() async {
-        guard let client = client else { return }
-
-        do {
-            let request = Beebium_GetEconetStatusRequest()
-            let response = try await client.getEconetStatus(request).response.get()
-
-            await MainActor.run {
-                self.hasEconetSocket = response.hasEconetSocket_p
-                self.enabled = response.enabled
-                self.stationId = response.stationID
-                self.aunMode = response.aunMode
-                self.connected = response.connected
-                self.aunPort = response.aunPort
-                self.peerCount = response.peerCount
-                self.errorMessage = nil
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = "Failed to refresh: \(error.localizedDescription)"
-            }
-        }
-
-        do {
-            let request = Beebium_ListPeersRequest()
-            let response = try await client.listPeers(request).response.get()
-            await MainActor.run {
-                self.peers = response.peers
-            }
-        } catch {
-            NSLog("[EconetClient] Failed to refresh peers: %@", error.localizedDescription)
-        }
+    private func handleStatusUpdate(_ response: Beebium_GetEconetStatusResponse) {
+        hasEconetSocket = response.hasEconetSocket_p
+        enabled = response.enabled
+        stationId = response.stationID
+        aunMode = response.aunMode
+        connected = response.connected
+        isLoaded = true
+        errorMessage = nil
     }
 }

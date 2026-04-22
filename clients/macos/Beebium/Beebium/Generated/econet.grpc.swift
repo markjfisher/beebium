@@ -41,31 +41,17 @@ internal protocol Beebium_EconetServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_SetStationIdRequest, Beebium_SetStationIdResponse>
 
-  func setConnected(
-    _ request: Beebium_SetConnectedRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse>
-
-  func addPeer(
-    _ request: Beebium_AddPeerRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_AddPeerRequest, Beebium_AddPeerResponse>
-
-  func removePeer(
-    _ request: Beebium_RemovePeerRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse>
-
-  func listPeers(
-    _ request: Beebium_ListPeersRequest,
-    callOptions: CallOptions?
-  ) -> UnaryCall<Beebium_ListPeersRequest, Beebium_ListPeersResponse>
-
   func subscribeEconetEvents(
     _ request: Beebium_SubscribeEconetEventsRequest,
     callOptions: CallOptions?,
     handler: @escaping (Beebium_EconetEvent) -> Void
   ) -> ServerStreamingCall<Beebium_SubscribeEconetEventsRequest, Beebium_EconetEvent>
+
+  func watchEconetStatus(
+    _ request: Beebium_WatchEconetStatusRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Beebium_GetEconetStatusResponse) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse>
 }
 
 extension Beebium_EconetServiceClientProtocol {
@@ -145,78 +131,6 @@ extension Beebium_EconetServiceClientProtocol {
     )
   }
 
-  /// Connect or disconnect the network cable (takes effect immediately).
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to SetConnected.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func setConnected(
-    _ request: Beebium_SetConnectedRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.setConnected.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeSetConnectedInterceptors() ?? []
-    )
-  }
-
-  /// Add an Econet address <-> UDP endpoint peer mapping.
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to AddPeer.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func addPeer(
-    _ request: Beebium_AddPeerRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_AddPeerRequest, Beebium_AddPeerResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.addPeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeAddPeerInterceptors() ?? []
-    )
-  }
-
-  /// Remove a peer mapping by Econet address.
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to RemovePeer.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func removePeer(
-    _ request: Beebium_RemovePeerRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.removePeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeRemovePeerInterceptors() ?? []
-    )
-  }
-
-  /// Enumerate all configured AUN peers.
-  ///
-  /// - Parameters:
-  ///   - request: Request to send to ListPeers.
-  ///   - callOptions: Call options.
-  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
-  internal func listPeers(
-    _ request: Beebium_ListPeersRequest,
-    callOptions: CallOptions? = nil
-  ) -> UnaryCall<Beebium_ListPeersRequest, Beebium_ListPeersResponse> {
-    return self.makeUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.listPeers.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeListPeersInterceptors() ?? []
-    )
-  }
-
   /// Stream Econet events (frame activity, handshake changes, connection state).
   /// Reserved for future implementation.
   ///
@@ -235,6 +149,31 @@ extension Beebium_EconetServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeSubscribeEconetEventsInterceptors() ?? [],
+      handler: handler
+    )
+  }
+
+  /// Server-pushed status stream. Writes an initial GetEconetStatusResponse
+  /// as soon as the stream is established, then a fresh snapshot whenever
+  /// status visible on EconetService changes (enable/disable, station ID
+  /// change, or transport backend connection toggle). The stream stays open
+  /// until the client cancels; use this instead of polling GetEconetStatus.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to WatchEconetStatus.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  internal func watchEconetStatus(
+    _ request: Beebium_WatchEconetStatusRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Beebium_GetEconetStatusResponse) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse> {
+    return self.makeServerStreamingCall(
+      path: Beebium_EconetServiceClientMetadata.Methods.watchEconetStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchEconetStatusInterceptors() ?? [],
       handler: handler
     )
   }
@@ -326,30 +265,15 @@ internal protocol Beebium_EconetServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_SetStationIdRequest, Beebium_SetStationIdResponse>
 
-  func makeSetConnectedCall(
-    _ request: Beebium_SetConnectedRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse>
-
-  func makeAddPeerCall(
-    _ request: Beebium_AddPeerRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_AddPeerRequest, Beebium_AddPeerResponse>
-
-  func makeRemovePeerCall(
-    _ request: Beebium_RemovePeerRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse>
-
-  func makeListPeersCall(
-    _ request: Beebium_ListPeersRequest,
-    callOptions: CallOptions?
-  ) -> GRPCAsyncUnaryCall<Beebium_ListPeersRequest, Beebium_ListPeersResponse>
-
   func makeSubscribeEconetEventsCall(
     _ request: Beebium_SubscribeEconetEventsRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncServerStreamingCall<Beebium_SubscribeEconetEventsRequest, Beebium_EconetEvent>
+
+  func makeWatchEconetStatusCall(
+    _ request: Beebium_WatchEconetStatusRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -410,54 +334,6 @@ extension Beebium_EconetServiceAsyncClientProtocol {
     )
   }
 
-  internal func makeSetConnectedCall(
-    _ request: Beebium_SetConnectedRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.setConnected.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeSetConnectedInterceptors() ?? []
-    )
-  }
-
-  internal func makeAddPeerCall(
-    _ request: Beebium_AddPeerRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_AddPeerRequest, Beebium_AddPeerResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.addPeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeAddPeerInterceptors() ?? []
-    )
-  }
-
-  internal func makeRemovePeerCall(
-    _ request: Beebium_RemovePeerRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.removePeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeRemovePeerInterceptors() ?? []
-    )
-  }
-
-  internal func makeListPeersCall(
-    _ request: Beebium_ListPeersRequest,
-    callOptions: CallOptions? = nil
-  ) -> GRPCAsyncUnaryCall<Beebium_ListPeersRequest, Beebium_ListPeersResponse> {
-    return self.makeAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.listPeers.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeListPeersInterceptors() ?? []
-    )
-  }
-
   internal func makeSubscribeEconetEventsCall(
     _ request: Beebium_SubscribeEconetEventsRequest,
     callOptions: CallOptions? = nil
@@ -467,6 +343,18 @@ extension Beebium_EconetServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeSubscribeEconetEventsInterceptors() ?? []
+    )
+  }
+
+  internal func makeWatchEconetStatusCall(
+    _ request: Beebium_WatchEconetStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse> {
+    return self.makeAsyncServerStreamingCall(
+      path: Beebium_EconetServiceClientMetadata.Methods.watchEconetStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchEconetStatusInterceptors() ?? []
     )
   }
 }
@@ -521,54 +409,6 @@ extension Beebium_EconetServiceAsyncClientProtocol {
     )
   }
 
-  internal func setConnected(
-    _ request: Beebium_SetConnectedRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_SetConnectedResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.setConnected.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeSetConnectedInterceptors() ?? []
-    )
-  }
-
-  internal func addPeer(
-    _ request: Beebium_AddPeerRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_AddPeerResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.addPeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeAddPeerInterceptors() ?? []
-    )
-  }
-
-  internal func removePeer(
-    _ request: Beebium_RemovePeerRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_RemovePeerResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.removePeer.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeRemovePeerInterceptors() ?? []
-    )
-  }
-
-  internal func listPeers(
-    _ request: Beebium_ListPeersRequest,
-    callOptions: CallOptions? = nil
-  ) async throws -> Beebium_ListPeersResponse {
-    return try await self.performAsyncUnaryCall(
-      path: Beebium_EconetServiceClientMetadata.Methods.listPeers.path,
-      request: request,
-      callOptions: callOptions ?? self.defaultCallOptions,
-      interceptors: self.interceptors?.makeListPeersInterceptors() ?? []
-    )
-  }
-
   internal func subscribeEconetEvents(
     _ request: Beebium_SubscribeEconetEventsRequest,
     callOptions: CallOptions? = nil
@@ -578,6 +418,18 @@ extension Beebium_EconetServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeSubscribeEconetEventsInterceptors() ?? []
+    )
+  }
+
+  internal func watchEconetStatus(
+    _ request: Beebium_WatchEconetStatusRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Beebium_GetEconetStatusResponse> {
+    return self.performAsyncServerStreamingCall(
+      path: Beebium_EconetServiceClientMetadata.Methods.watchEconetStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchEconetStatusInterceptors() ?? []
     )
   }
 }
@@ -613,20 +465,11 @@ internal protocol Beebium_EconetServiceClientInterceptorFactoryProtocol: Sendabl
   /// - Returns: Interceptors to use when invoking 'setStationId'.
   func makeSetStationIdInterceptors() -> [ClientInterceptor<Beebium_SetStationIdRequest, Beebium_SetStationIdResponse>]
 
-  /// - Returns: Interceptors to use when invoking 'setConnected'.
-  func makeSetConnectedInterceptors() -> [ClientInterceptor<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse>]
-
-  /// - Returns: Interceptors to use when invoking 'addPeer'.
-  func makeAddPeerInterceptors() -> [ClientInterceptor<Beebium_AddPeerRequest, Beebium_AddPeerResponse>]
-
-  /// - Returns: Interceptors to use when invoking 'removePeer'.
-  func makeRemovePeerInterceptors() -> [ClientInterceptor<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse>]
-
-  /// - Returns: Interceptors to use when invoking 'listPeers'.
-  func makeListPeersInterceptors() -> [ClientInterceptor<Beebium_ListPeersRequest, Beebium_ListPeersResponse>]
-
   /// - Returns: Interceptors to use when invoking 'subscribeEconetEvents'.
   func makeSubscribeEconetEventsInterceptors() -> [ClientInterceptor<Beebium_SubscribeEconetEventsRequest, Beebium_EconetEvent>]
+
+  /// - Returns: Interceptors to use when invoking 'watchEconetStatus'.
+  func makeWatchEconetStatusInterceptors() -> [ClientInterceptor<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse>]
 }
 
 internal enum Beebium_EconetServiceClientMetadata {
@@ -638,11 +481,8 @@ internal enum Beebium_EconetServiceClientMetadata {
       Beebium_EconetServiceClientMetadata.Methods.enableEconet,
       Beebium_EconetServiceClientMetadata.Methods.disableEconet,
       Beebium_EconetServiceClientMetadata.Methods.setStationId,
-      Beebium_EconetServiceClientMetadata.Methods.setConnected,
-      Beebium_EconetServiceClientMetadata.Methods.addPeer,
-      Beebium_EconetServiceClientMetadata.Methods.removePeer,
-      Beebium_EconetServiceClientMetadata.Methods.listPeers,
       Beebium_EconetServiceClientMetadata.Methods.subscribeEconetEvents,
+      Beebium_EconetServiceClientMetadata.Methods.watchEconetStatus,
     ]
   )
 
@@ -671,33 +511,15 @@ internal enum Beebium_EconetServiceClientMetadata {
       type: GRPCCallType.unary
     )
 
-    internal static let setConnected = GRPCMethodDescriptor(
-      name: "SetConnected",
-      path: "/beebium.EconetService/SetConnected",
-      type: GRPCCallType.unary
-    )
-
-    internal static let addPeer = GRPCMethodDescriptor(
-      name: "AddPeer",
-      path: "/beebium.EconetService/AddPeer",
-      type: GRPCCallType.unary
-    )
-
-    internal static let removePeer = GRPCMethodDescriptor(
-      name: "RemovePeer",
-      path: "/beebium.EconetService/RemovePeer",
-      type: GRPCCallType.unary
-    )
-
-    internal static let listPeers = GRPCMethodDescriptor(
-      name: "ListPeers",
-      path: "/beebium.EconetService/ListPeers",
-      type: GRPCCallType.unary
-    )
-
     internal static let subscribeEconetEvents = GRPCMethodDescriptor(
       name: "SubscribeEconetEvents",
       path: "/beebium.EconetService/SubscribeEconetEvents",
+      type: GRPCCallType.serverStreaming
+    )
+
+    internal static let watchEconetStatus = GRPCMethodDescriptor(
+      name: "WatchEconetStatus",
+      path: "/beebium.EconetService/WatchEconetStatus",
       type: GRPCCallType.serverStreaming
     )
   }
@@ -724,21 +546,16 @@ internal protocol Beebium_EconetServiceProvider: CallHandlerProvider {
   /// Set the station ID (takes effect on next machine reset).
   func setStationId(request: Beebium_SetStationIdRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetStationIdResponse>
 
-  /// Connect or disconnect the network cable (takes effect immediately).
-  func setConnected(request: Beebium_SetConnectedRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetConnectedResponse>
-
-  /// Add an Econet address <-> UDP endpoint peer mapping.
-  func addPeer(request: Beebium_AddPeerRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_AddPeerResponse>
-
-  /// Remove a peer mapping by Econet address.
-  func removePeer(request: Beebium_RemovePeerRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_RemovePeerResponse>
-
-  /// Enumerate all configured AUN peers.
-  func listPeers(request: Beebium_ListPeersRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_ListPeersResponse>
-
   /// Stream Econet events (frame activity, handshake changes, connection state).
   /// Reserved for future implementation.
   func subscribeEconetEvents(request: Beebium_SubscribeEconetEventsRequest, context: StreamingResponseCallContext<Beebium_EconetEvent>) -> EventLoopFuture<GRPCStatus>
+
+  /// Server-pushed status stream. Writes an initial GetEconetStatusResponse
+  /// as soon as the stream is established, then a fresh snapshot whenever
+  /// status visible on EconetService changes (enable/disable, station ID
+  /// change, or transport backend connection toggle). The stream stays open
+  /// until the client cancels; use this instead of polling GetEconetStatus.
+  func watchEconetStatus(request: Beebium_WatchEconetStatusRequest, context: StreamingResponseCallContext<Beebium_GetEconetStatusResponse>) -> EventLoopFuture<GRPCStatus>
 }
 
 extension Beebium_EconetServiceProvider {
@@ -789,42 +606,6 @@ extension Beebium_EconetServiceProvider {
         userFunction: self.setStationId(request:context:)
       )
 
-    case "SetConnected":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_SetConnectedRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_SetConnectedResponse>(),
-        interceptors: self.interceptors?.makeSetConnectedInterceptors() ?? [],
-        userFunction: self.setConnected(request:context:)
-      )
-
-    case "AddPeer":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_AddPeerRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_AddPeerResponse>(),
-        interceptors: self.interceptors?.makeAddPeerInterceptors() ?? [],
-        userFunction: self.addPeer(request:context:)
-      )
-
-    case "RemovePeer":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_RemovePeerRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_RemovePeerResponse>(),
-        interceptors: self.interceptors?.makeRemovePeerInterceptors() ?? [],
-        userFunction: self.removePeer(request:context:)
-      )
-
-    case "ListPeers":
-      return UnaryServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_ListPeersRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ListPeersResponse>(),
-        interceptors: self.interceptors?.makeListPeersInterceptors() ?? [],
-        userFunction: self.listPeers(request:context:)
-      )
-
     case "SubscribeEconetEvents":
       return ServerStreamingServerHandler(
         context: context,
@@ -832,6 +613,15 @@ extension Beebium_EconetServiceProvider {
         responseSerializer: ProtobufSerializer<Beebium_EconetEvent>(),
         interceptors: self.interceptors?.makeSubscribeEconetEventsInterceptors() ?? [],
         userFunction: self.subscribeEconetEvents(request:context:)
+      )
+
+    case "WatchEconetStatus":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchEconetStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_GetEconetStatusResponse>(),
+        interceptors: self.interceptors?.makeWatchEconetStatusInterceptors() ?? [],
+        userFunction: self.watchEconetStatus(request:context:)
       )
 
     default:
@@ -875,35 +665,22 @@ internal protocol Beebium_EconetServiceAsyncProvider: CallHandlerProvider, Senda
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_SetStationIdResponse
 
-  /// Connect or disconnect the network cable (takes effect immediately).
-  func setConnected(
-    request: Beebium_SetConnectedRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_SetConnectedResponse
-
-  /// Add an Econet address <-> UDP endpoint peer mapping.
-  func addPeer(
-    request: Beebium_AddPeerRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_AddPeerResponse
-
-  /// Remove a peer mapping by Econet address.
-  func removePeer(
-    request: Beebium_RemovePeerRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_RemovePeerResponse
-
-  /// Enumerate all configured AUN peers.
-  func listPeers(
-    request: Beebium_ListPeersRequest,
-    context: GRPCAsyncServerCallContext
-  ) async throws -> Beebium_ListPeersResponse
-
   /// Stream Econet events (frame activity, handshake changes, connection state).
   /// Reserved for future implementation.
   func subscribeEconetEvents(
     request: Beebium_SubscribeEconetEventsRequest,
     responseStream: GRPCAsyncResponseStreamWriter<Beebium_EconetEvent>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
+
+  /// Server-pushed status stream. Writes an initial GetEconetStatusResponse
+  /// as soon as the stream is established, then a fresh snapshot whenever
+  /// status visible on EconetService changes (enable/disable, station ID
+  /// change, or transport backend connection toggle). The stream stays open
+  /// until the client cancels; use this instead of polling GetEconetStatus.
+  func watchEconetStatus(
+    request: Beebium_WatchEconetStatusRequest,
+    responseStream: GRPCAsyncResponseStreamWriter<Beebium_GetEconetStatusResponse>,
     context: GRPCAsyncServerCallContext
   ) async throws
 }
@@ -963,42 +740,6 @@ extension Beebium_EconetServiceAsyncProvider {
         wrapping: { try await self.setStationId(request: $0, context: $1) }
       )
 
-    case "SetConnected":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_SetConnectedRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_SetConnectedResponse>(),
-        interceptors: self.interceptors?.makeSetConnectedInterceptors() ?? [],
-        wrapping: { try await self.setConnected(request: $0, context: $1) }
-      )
-
-    case "AddPeer":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_AddPeerRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_AddPeerResponse>(),
-        interceptors: self.interceptors?.makeAddPeerInterceptors() ?? [],
-        wrapping: { try await self.addPeer(request: $0, context: $1) }
-      )
-
-    case "RemovePeer":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_RemovePeerRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_RemovePeerResponse>(),
-        interceptors: self.interceptors?.makeRemovePeerInterceptors() ?? [],
-        wrapping: { try await self.removePeer(request: $0, context: $1) }
-      )
-
-    case "ListPeers":
-      return GRPCAsyncServerHandler(
-        context: context,
-        requestDeserializer: ProtobufDeserializer<Beebium_ListPeersRequest>(),
-        responseSerializer: ProtobufSerializer<Beebium_ListPeersResponse>(),
-        interceptors: self.interceptors?.makeListPeersInterceptors() ?? [],
-        wrapping: { try await self.listPeers(request: $0, context: $1) }
-      )
-
     case "SubscribeEconetEvents":
       return GRPCAsyncServerHandler(
         context: context,
@@ -1006,6 +747,15 @@ extension Beebium_EconetServiceAsyncProvider {
         responseSerializer: ProtobufSerializer<Beebium_EconetEvent>(),
         interceptors: self.interceptors?.makeSubscribeEconetEventsInterceptors() ?? [],
         wrapping: { try await self.subscribeEconetEvents(request: $0, responseStream: $1, context: $2) }
+      )
+
+    case "WatchEconetStatus":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchEconetStatusRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_GetEconetStatusResponse>(),
+        interceptors: self.interceptors?.makeWatchEconetStatusInterceptors() ?? [],
+        wrapping: { try await self.watchEconetStatus(request: $0, responseStream: $1, context: $2) }
       )
 
     default:
@@ -1032,25 +782,13 @@ internal protocol Beebium_EconetServiceServerInterceptorFactoryProtocol: Sendabl
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSetStationIdInterceptors() -> [ServerInterceptor<Beebium_SetStationIdRequest, Beebium_SetStationIdResponse>]
 
-  /// - Returns: Interceptors to use when handling 'setConnected'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeSetConnectedInterceptors() -> [ServerInterceptor<Beebium_SetConnectedRequest, Beebium_SetConnectedResponse>]
-
-  /// - Returns: Interceptors to use when handling 'addPeer'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeAddPeerInterceptors() -> [ServerInterceptor<Beebium_AddPeerRequest, Beebium_AddPeerResponse>]
-
-  /// - Returns: Interceptors to use when handling 'removePeer'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeRemovePeerInterceptors() -> [ServerInterceptor<Beebium_RemovePeerRequest, Beebium_RemovePeerResponse>]
-
-  /// - Returns: Interceptors to use when handling 'listPeers'.
-  ///   Defaults to calling `self.makeInterceptors()`.
-  func makeListPeersInterceptors() -> [ServerInterceptor<Beebium_ListPeersRequest, Beebium_ListPeersResponse>]
-
   /// - Returns: Interceptors to use when handling 'subscribeEconetEvents'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSubscribeEconetEventsInterceptors() -> [ServerInterceptor<Beebium_SubscribeEconetEventsRequest, Beebium_EconetEvent>]
+
+  /// - Returns: Interceptors to use when handling 'watchEconetStatus'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeWatchEconetStatusInterceptors() -> [ServerInterceptor<Beebium_WatchEconetStatusRequest, Beebium_GetEconetStatusResponse>]
 }
 
 internal enum Beebium_EconetServiceServerMetadata {
@@ -1062,11 +800,8 @@ internal enum Beebium_EconetServiceServerMetadata {
       Beebium_EconetServiceServerMetadata.Methods.enableEconet,
       Beebium_EconetServiceServerMetadata.Methods.disableEconet,
       Beebium_EconetServiceServerMetadata.Methods.setStationId,
-      Beebium_EconetServiceServerMetadata.Methods.setConnected,
-      Beebium_EconetServiceServerMetadata.Methods.addPeer,
-      Beebium_EconetServiceServerMetadata.Methods.removePeer,
-      Beebium_EconetServiceServerMetadata.Methods.listPeers,
       Beebium_EconetServiceServerMetadata.Methods.subscribeEconetEvents,
+      Beebium_EconetServiceServerMetadata.Methods.watchEconetStatus,
     ]
   )
 
@@ -1095,33 +830,15 @@ internal enum Beebium_EconetServiceServerMetadata {
       type: GRPCCallType.unary
     )
 
-    internal static let setConnected = GRPCMethodDescriptor(
-      name: "SetConnected",
-      path: "/beebium.EconetService/SetConnected",
-      type: GRPCCallType.unary
-    )
-
-    internal static let addPeer = GRPCMethodDescriptor(
-      name: "AddPeer",
-      path: "/beebium.EconetService/AddPeer",
-      type: GRPCCallType.unary
-    )
-
-    internal static let removePeer = GRPCMethodDescriptor(
-      name: "RemovePeer",
-      path: "/beebium.EconetService/RemovePeer",
-      type: GRPCCallType.unary
-    )
-
-    internal static let listPeers = GRPCMethodDescriptor(
-      name: "ListPeers",
-      path: "/beebium.EconetService/ListPeers",
-      type: GRPCCallType.unary
-    )
-
     internal static let subscribeEconetEvents = GRPCMethodDescriptor(
       name: "SubscribeEconetEvents",
       path: "/beebium.EconetService/SubscribeEconetEvents",
+      type: GRPCCallType.serverStreaming
+    )
+
+    internal static let watchEconetStatus = GRPCMethodDescriptor(
+      name: "WatchEconetStatus",
+      path: "/beebium.EconetService/WatchEconetStatus",
       type: GRPCCallType.serverStreaming
     )
   }

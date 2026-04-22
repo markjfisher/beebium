@@ -106,22 +106,13 @@ struct Beebium_GetEconetStatusResponse: @unchecked Sendable {
     set {_uniqueStorage()._aunMode = newValue}
   }
 
-  /// True if network link is active (UDP socket bound and connected).
+  /// True if network link is active (e.g. UDP socket bound + cable
+  /// not "unplugged" via AunService.SetConnected for AUN, or USB
+  /// device responsive for Piconet). Set from the backend's generic
+  /// is_connected().
   var connected: Bool {
     get {return _storage._connected}
     set {_uniqueStorage()._connected = newValue}
-  }
-
-  /// Local AUN UDP port (0 if not in AUN mode or disabled).
-  var aunPort: UInt32 {
-    get {return _storage._aunPort}
-    set {_uniqueStorage()._aunPort = newValue}
-  }
-
-  /// Number of configured AUN peers.
-  var peerCount: UInt32 {
-    get {return _storage._peerCount}
-    set {_uniqueStorage()._peerCount = newValue}
   }
 
   /// MC6854 ADLC register state (populated when enabled).
@@ -143,6 +134,76 @@ struct Beebium_GetEconetStatusResponse: @unchecked Sendable {
   var hasHandshake: Bool {return _storage._handshake != nil}
   /// Clears the value of `handshake`. Subsequent reads from it will return its default value.
   mutating func clearHandshake() {_uniqueStorage()._handshake = nil}
+
+  /// Diagnostic: total tick_rising() calls since boot.
+  var tickCount: UInt64 {
+    get {return _storage._tickCount}
+    set {_uniqueStorage()._tickCount = newValue}
+  }
+
+  /// Diagnostic: count of CR1=&82 writes (nmi_tx_complete indicator).
+  var cr10X82WriteCount: UInt32 {
+    get {return _storage._cr10X82WriteCount}
+    set {_uniqueStorage()._cr10X82WriteCount = newValue}
+  }
+
+  /// Diagnostic: count of frames received by ADLC from backend.
+  var rxFramesReceivedCount: UInt32 {
+    get {return _storage._rxFramesReceivedCount}
+    set {_uniqueStorage()._rxFramesReceivedCount = newValue}
+  }
+
+  /// Diagnostic: count of rx_process_byte calls blocked by RX_RESET.
+  var rxBlockedByResetCount: UInt32 {
+    get {return _storage._rxBlockedByResetCount}
+    set {_uniqueStorage()._rxBlockedByResetCount = newValue}
+  }
+
+  /// Diagnostic: FourWayHandshake counters
+  var scoutAckGeneratedCount: UInt32 {
+    get {return _storage._scoutAckGeneratedCount}
+    set {_uniqueStorage()._scoutAckGeneratedCount = newValue}
+  }
+
+  var txFramesFromBeebCount: UInt32 {
+    get {return _storage._txFramesFromBeebCount}
+    set {_uniqueStorage()._txFramesFromBeebCount = newValue}
+  }
+
+  var unexpectedTxResetCount: UInt32 {
+    get {return _storage._unexpectedTxResetCount}
+    set {_uniqueStorage()._unexpectedTxResetCount = newValue}
+  }
+
+  var txFromIdleCount: UInt32 {
+    get {return _storage._txFromIdleCount}
+    set {_uniqueStorage()._txFromIdleCount = newValue}
+  }
+
+  var maxHandshakeTimerSeen: Int32 {
+    get {return _storage._maxHandshakeTimerSeen}
+    set {_uniqueStorage()._maxHandshakeTimerSeen = newValue}
+  }
+
+  var watchdogTimeoutCount: UInt32 {
+    get {return _storage._watchdogTimeoutCount}
+    set {_uniqueStorage()._watchdogTimeoutCount = newValue}
+  }
+
+  var sendStageLog: String {
+    get {return _storage._sendStageLog}
+    set {_uniqueStorage()._sendStageLog = newValue}
+  }
+
+  var ticksWithTimerActive: UInt64 {
+    get {return _storage._ticksWithTimerActive}
+    set {_uniqueStorage()._ticksWithTimerActive = newValue}
+  }
+
+  var readStretchParasiteTicks: UInt64 {
+    get {return _storage._readStretchParasiteTicks}
+    set {_uniqueStorage()._readStretchParasiteTicks = newValue}
+  }
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -296,132 +357,16 @@ struct Beebium_SetStationIdResponse: Sendable {
   init() {}
 }
 
-struct Beebium_SetConnectedRequest: Sendable {
+struct Beebium_WatchEconetStatusRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// True to connect (plug in cable), false to disconnect (unplug cable).
-  var connected: Bool = false
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_SetConnectedResponse: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var success: Bool = false
-
-  var error: String = String()
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_AddPeerRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  /// Econet network number (0-127).
-  var net: UInt32 = 0
-
-  /// Econet station number (1-254).
-  var stn: UInt32 = 0
-
-  /// Dotted-quad IP address (e.g. "192.168.1.100").
-  var ipAddress: String = String()
-
-  /// UDP port (0 = use AUN default 32768).
-  var port: UInt32 = 0
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_AddPeerResponse: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var success: Bool = false
-
-  var error: String = String()
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_RemovePeerRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var net: UInt32 = 0
-
-  var stn: UInt32 = 0
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_RemovePeerResponse: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var success: Bool = false
-
-  var error: String = String()
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-/// Empty - returns all peers.
-struct Beebium_ListPeersRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_ListPeersResponse: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var peers: [Beebium_EconetPeer] = []
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_EconetPeer: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  var net: UInt32 = 0
-
-  var stn: UInt32 = 0
-
-  var ipAddress: String = String()
-
-  var port: UInt32 = 0
+  /// Minimum interval between status pushes in milliseconds (optional).
+  /// Defaults to 50ms server-side. The server only pushes when status
+  /// actually changes, so this caps the update rate rather than forcing
+  /// periodic traffic.
+  var minIntervalMs: UInt32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -482,7 +427,7 @@ extension Beebium_GetEconetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetEconetStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_econet_socket\0\u{1}enabled\0\u{3}station_id\0\u{3}aun_mode\0\u{1}connected\0\u{3}aun_port\0\u{3}peer_count\0\u{2}\u{3}adlc\0\u{1}handshake\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_econet_socket\0\u{1}enabled\0\u{3}station_id\0\u{3}aun_mode\0\u{1}connected\0\u{2}\u{5}adlc\0\u{1}handshake\0\u{3}tick_count\0\u{3}cr1_0x82_write_count\0\u{3}rx_frames_received_count\0\u{3}rx_blocked_by_reset_count\0\u{3}scout_ack_generated_count\0\u{3}tx_frames_from_beeb_count\0\u{3}unexpected_tx_reset_count\0\u{3}tx_from_idle_count\0\u{3}max_handshake_timer_seen\0\u{3}watchdog_timeout_count\0\u{3}send_stage_log\0\u{3}ticks_with_timer_active\0\u{3}read_stretch_parasite_ticks\0\u{b}aun_port\0\u{b}peer_count\0\u{b}piconet\0\u{c}\u{6}\u{1}\u{c}\u{7}\u{1}\u{c}\u{19}\u{1}")
 
   fileprivate class _StorageClass {
     var _hasEconetSocket_p: Bool = false
@@ -490,10 +435,21 @@ extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf.
     var _stationID: UInt32 = 0
     var _aunMode: Bool = false
     var _connected: Bool = false
-    var _aunPort: UInt32 = 0
-    var _peerCount: UInt32 = 0
     var _adlc: Beebium_AdlcStatus? = nil
     var _handshake: Beebium_HandshakeStatus? = nil
+    var _tickCount: UInt64 = 0
+    var _cr10X82WriteCount: UInt32 = 0
+    var _rxFramesReceivedCount: UInt32 = 0
+    var _rxBlockedByResetCount: UInt32 = 0
+    var _scoutAckGeneratedCount: UInt32 = 0
+    var _txFramesFromBeebCount: UInt32 = 0
+    var _unexpectedTxResetCount: UInt32 = 0
+    var _txFromIdleCount: UInt32 = 0
+    var _maxHandshakeTimerSeen: Int32 = 0
+    var _watchdogTimeoutCount: UInt32 = 0
+    var _sendStageLog: String = String()
+    var _ticksWithTimerActive: UInt64 = 0
+    var _readStretchParasiteTicks: UInt64 = 0
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -509,10 +465,21 @@ extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf.
       _stationID = source._stationID
       _aunMode = source._aunMode
       _connected = source._connected
-      _aunPort = source._aunPort
-      _peerCount = source._peerCount
       _adlc = source._adlc
       _handshake = source._handshake
+      _tickCount = source._tickCount
+      _cr10X82WriteCount = source._cr10X82WriteCount
+      _rxFramesReceivedCount = source._rxFramesReceivedCount
+      _rxBlockedByResetCount = source._rxBlockedByResetCount
+      _scoutAckGeneratedCount = source._scoutAckGeneratedCount
+      _txFramesFromBeebCount = source._txFramesFromBeebCount
+      _unexpectedTxResetCount = source._unexpectedTxResetCount
+      _txFromIdleCount = source._txFromIdleCount
+      _maxHandshakeTimerSeen = source._maxHandshakeTimerSeen
+      _watchdogTimeoutCount = source._watchdogTimeoutCount
+      _sendStageLog = source._sendStageLog
+      _ticksWithTimerActive = source._ticksWithTimerActive
+      _readStretchParasiteTicks = source._readStretchParasiteTicks
     }
   }
 
@@ -536,10 +503,21 @@ extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf.
         case 3: try { try decoder.decodeSingularUInt32Field(value: &_storage._stationID) }()
         case 4: try { try decoder.decodeSingularBoolField(value: &_storage._aunMode) }()
         case 5: try { try decoder.decodeSingularBoolField(value: &_storage._connected) }()
-        case 6: try { try decoder.decodeSingularUInt32Field(value: &_storage._aunPort) }()
-        case 7: try { try decoder.decodeSingularUInt32Field(value: &_storage._peerCount) }()
         case 10: try { try decoder.decodeSingularMessageField(value: &_storage._adlc) }()
         case 11: try { try decoder.decodeSingularMessageField(value: &_storage._handshake) }()
+        case 12: try { try decoder.decodeSingularUInt64Field(value: &_storage._tickCount) }()
+        case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._cr10X82WriteCount) }()
+        case 14: try { try decoder.decodeSingularUInt32Field(value: &_storage._rxFramesReceivedCount) }()
+        case 15: try { try decoder.decodeSingularUInt32Field(value: &_storage._rxBlockedByResetCount) }()
+        case 16: try { try decoder.decodeSingularUInt32Field(value: &_storage._scoutAckGeneratedCount) }()
+        case 17: try { try decoder.decodeSingularUInt32Field(value: &_storage._txFramesFromBeebCount) }()
+        case 18: try { try decoder.decodeSingularUInt32Field(value: &_storage._unexpectedTxResetCount) }()
+        case 19: try { try decoder.decodeSingularUInt32Field(value: &_storage._txFromIdleCount) }()
+        case 20: try { try decoder.decodeSingularInt32Field(value: &_storage._maxHandshakeTimerSeen) }()
+        case 21: try { try decoder.decodeSingularUInt32Field(value: &_storage._watchdogTimeoutCount) }()
+        case 22: try { try decoder.decodeSingularStringField(value: &_storage._sendStageLog) }()
+        case 23: try { try decoder.decodeSingularUInt64Field(value: &_storage._ticksWithTimerActive) }()
+        case 24: try { try decoder.decodeSingularUInt64Field(value: &_storage._readStretchParasiteTicks) }()
         default: break
         }
       }
@@ -567,18 +545,51 @@ extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf.
       if _storage._connected != false {
         try visitor.visitSingularBoolField(value: _storage._connected, fieldNumber: 5)
       }
-      if _storage._aunPort != 0 {
-        try visitor.visitSingularUInt32Field(value: _storage._aunPort, fieldNumber: 6)
-      }
-      if _storage._peerCount != 0 {
-        try visitor.visitSingularUInt32Field(value: _storage._peerCount, fieldNumber: 7)
-      }
       try { if let v = _storage._adlc {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
       } }()
       try { if let v = _storage._handshake {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
       } }()
+      if _storage._tickCount != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._tickCount, fieldNumber: 12)
+      }
+      if _storage._cr10X82WriteCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._cr10X82WriteCount, fieldNumber: 13)
+      }
+      if _storage._rxFramesReceivedCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._rxFramesReceivedCount, fieldNumber: 14)
+      }
+      if _storage._rxBlockedByResetCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._rxBlockedByResetCount, fieldNumber: 15)
+      }
+      if _storage._scoutAckGeneratedCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._scoutAckGeneratedCount, fieldNumber: 16)
+      }
+      if _storage._txFramesFromBeebCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._txFramesFromBeebCount, fieldNumber: 17)
+      }
+      if _storage._unexpectedTxResetCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._unexpectedTxResetCount, fieldNumber: 18)
+      }
+      if _storage._txFromIdleCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._txFromIdleCount, fieldNumber: 19)
+      }
+      if _storage._maxHandshakeTimerSeen != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._maxHandshakeTimerSeen, fieldNumber: 20)
+      }
+      if _storage._watchdogTimeoutCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._watchdogTimeoutCount, fieldNumber: 21)
+      }
+      if !_storage._sendStageLog.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._sendStageLog, fieldNumber: 22)
+      }
+      if _storage._ticksWithTimerActive != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._ticksWithTimerActive, fieldNumber: 23)
+      }
+      if _storage._readStretchParasiteTicks != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._readStretchParasiteTicks, fieldNumber: 24)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -593,10 +604,21 @@ extension Beebium_GetEconetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf.
         if _storage._stationID != rhs_storage._stationID {return false}
         if _storage._aunMode != rhs_storage._aunMode {return false}
         if _storage._connected != rhs_storage._connected {return false}
-        if _storage._aunPort != rhs_storage._aunPort {return false}
-        if _storage._peerCount != rhs_storage._peerCount {return false}
         if _storage._adlc != rhs_storage._adlc {return false}
         if _storage._handshake != rhs_storage._handshake {return false}
+        if _storage._tickCount != rhs_storage._tickCount {return false}
+        if _storage._cr10X82WriteCount != rhs_storage._cr10X82WriteCount {return false}
+        if _storage._rxFramesReceivedCount != rhs_storage._rxFramesReceivedCount {return false}
+        if _storage._rxBlockedByResetCount != rhs_storage._rxBlockedByResetCount {return false}
+        if _storage._scoutAckGeneratedCount != rhs_storage._scoutAckGeneratedCount {return false}
+        if _storage._txFramesFromBeebCount != rhs_storage._txFramesFromBeebCount {return false}
+        if _storage._unexpectedTxResetCount != rhs_storage._unexpectedTxResetCount {return false}
+        if _storage._txFromIdleCount != rhs_storage._txFromIdleCount {return false}
+        if _storage._maxHandshakeTimerSeen != rhs_storage._maxHandshakeTimerSeen {return false}
+        if _storage._watchdogTimeoutCount != rhs_storage._watchdogTimeoutCount {return false}
+        if _storage._sendStageLog != rhs_storage._sendStageLog {return false}
+        if _storage._ticksWithTimerActive != rhs_storage._ticksWithTimerActive {return false}
+        if _storage._readStretchParasiteTicks != rhs_storage._readStretchParasiteTicks {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -940,9 +962,9 @@ extension Beebium_SetStationIdResponse: SwiftProtobuf.Message, SwiftProtobuf._Me
   }
 }
 
-extension Beebium_SetConnectedRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".SetConnectedRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}connected\0")
+extension Beebium_WatchEconetStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".WatchEconetStatusRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}min_interval_ms\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -950,300 +972,21 @@ extension Beebium_SetConnectedRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.connected) }()
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.minIntervalMs) }()
       default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.connected != false {
-      try visitor.visitSingularBoolField(value: self.connected, fieldNumber: 1)
+    if self.minIntervalMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.minIntervalMs, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Beebium_SetConnectedRequest, rhs: Beebium_SetConnectedRequest) -> Bool {
-    if lhs.connected != rhs.connected {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_SetConnectedResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".SetConnectedResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.error) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.success != false {
-      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_SetConnectedResponse, rhs: Beebium_SetConnectedResponse) -> Bool {
-    if lhs.success != rhs.success {return false}
-    if lhs.error != rhs.error {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_AddPeerRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".AddPeerRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}net\0\u{1}stn\0\u{3}ip_address\0\u{1}port\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.net) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.stn) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.ipAddress) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.port) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.net != 0 {
-      try visitor.visitSingularUInt32Field(value: self.net, fieldNumber: 1)
-    }
-    if self.stn != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stn, fieldNumber: 2)
-    }
-    if !self.ipAddress.isEmpty {
-      try visitor.visitSingularStringField(value: self.ipAddress, fieldNumber: 3)
-    }
-    if self.port != 0 {
-      try visitor.visitSingularUInt32Field(value: self.port, fieldNumber: 4)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_AddPeerRequest, rhs: Beebium_AddPeerRequest) -> Bool {
-    if lhs.net != rhs.net {return false}
-    if lhs.stn != rhs.stn {return false}
-    if lhs.ipAddress != rhs.ipAddress {return false}
-    if lhs.port != rhs.port {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_AddPeerResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".AddPeerResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.error) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.success != false {
-      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_AddPeerResponse, rhs: Beebium_AddPeerResponse) -> Bool {
-    if lhs.success != rhs.success {return false}
-    if lhs.error != rhs.error {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_RemovePeerRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".RemovePeerRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}net\0\u{1}stn\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.net) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.stn) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.net != 0 {
-      try visitor.visitSingularUInt32Field(value: self.net, fieldNumber: 1)
-    }
-    if self.stn != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stn, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_RemovePeerRequest, rhs: Beebium_RemovePeerRequest) -> Bool {
-    if lhs.net != rhs.net {return false}
-    if lhs.stn != rhs.stn {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_RemovePeerResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".RemovePeerResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{1}error\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularBoolField(value: &self.success) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.error) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.success != false {
-      try visitor.visitSingularBoolField(value: self.success, fieldNumber: 1)
-    }
-    if !self.error.isEmpty {
-      try visitor.visitSingularStringField(value: self.error, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_RemovePeerResponse, rhs: Beebium_RemovePeerResponse) -> Bool {
-    if lhs.success != rhs.success {return false}
-    if lhs.error != rhs.error {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_ListPeersRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ListPeersRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    // Load everything into unknown fields
-    while try decoder.nextFieldNumber() != nil {}
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_ListPeersRequest, rhs: Beebium_ListPeersRequest) -> Bool {
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_ListPeersResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ListPeersResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}peers\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.peers) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.peers.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.peers, fieldNumber: 1)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_ListPeersResponse, rhs: Beebium_ListPeersResponse) -> Bool {
-    if lhs.peers != rhs.peers {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_EconetPeer: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".EconetPeer"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}net\0\u{1}stn\0\u{3}ip_address\0\u{1}port\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.net) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.stn) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.ipAddress) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.port) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.net != 0 {
-      try visitor.visitSingularUInt32Field(value: self.net, fieldNumber: 1)
-    }
-    if self.stn != 0 {
-      try visitor.visitSingularUInt32Field(value: self.stn, fieldNumber: 2)
-    }
-    if !self.ipAddress.isEmpty {
-      try visitor.visitSingularStringField(value: self.ipAddress, fieldNumber: 3)
-    }
-    if self.port != 0 {
-      try visitor.visitSingularUInt32Field(value: self.port, fieldNumber: 4)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_EconetPeer, rhs: Beebium_EconetPeer) -> Bool {
-    if lhs.net != rhs.net {return false}
-    if lhs.stn != rhs.stn {return false}
-    if lhs.ipAddress != rhs.ipAddress {return false}
-    if lhs.port != rhs.port {return false}
+  static func ==(lhs: Beebium_WatchEconetStatusRequest, rhs: Beebium_WatchEconetStatusRequest) -> Bool {
+    if lhs.minIntervalMs != rhs.minIntervalMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
