@@ -75,6 +75,11 @@ class EconetServiceStub(object):
                 request_serializer=econet__pb2.SubscribeEconetEventsRequest.SerializeToString,
                 response_deserializer=econet__pb2.EconetEvent.FromString,
                 _registered_method=True)
+        self.WatchEconetStatus = channel.unary_stream(
+                '/beebium.EconetService/WatchEconetStatus',
+                request_serializer=econet__pb2.WatchEconetStatusRequest.SerializeToString,
+                response_deserializer=econet__pb2.GetEconetStatusResponse.FromString,
+                _registered_method=True)
 
 
 class EconetServiceServicer(object):
@@ -120,6 +125,17 @@ class EconetServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def WatchEconetStatus(self, request, context):
+        """Server-pushed status stream. Writes an initial GetEconetStatusResponse
+        as soon as the stream is established, then a fresh snapshot whenever
+        status visible on EconetService changes (enable/disable, station ID
+        change, or transport backend connection toggle). The stream stays open
+        until the client cancels; use this instead of polling GetEconetStatus.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_EconetServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -147,6 +163,11 @@ def add_EconetServiceServicer_to_server(servicer, server):
                     servicer.SubscribeEconetEvents,
                     request_deserializer=econet__pb2.SubscribeEconetEventsRequest.FromString,
                     response_serializer=econet__pb2.EconetEvent.SerializeToString,
+            ),
+            'WatchEconetStatus': grpc.unary_stream_rpc_method_handler(
+                    servicer.WatchEconetStatus,
+                    request_deserializer=econet__pb2.WatchEconetStatusRequest.FromString,
+                    response_serializer=econet__pb2.GetEconetStatusResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -288,6 +309,33 @@ class EconetService(object):
             '/beebium.EconetService/SubscribeEconetEvents',
             econet__pb2.SubscribeEconetEventsRequest.SerializeToString,
             econet__pb2.EconetEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WatchEconetStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/beebium.EconetService/WatchEconetStatus',
+            econet__pb2.WatchEconetStatusRequest.SerializeToString,
+            econet__pb2.GetEconetStatusResponse.FromString,
             options,
             channel_credentials,
             insecure,

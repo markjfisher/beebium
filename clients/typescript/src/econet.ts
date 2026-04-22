@@ -23,6 +23,7 @@ import type {
     SetStationIdResponse as ProtoSetStationIdResponse,
 } from "./generated/econet.js";
 import { promisify } from "./call-utils.js";
+import { toAsyncIterable } from "./stream-utils.js";
 import { EconetError } from "./exceptions.js";
 
 export interface AdlcStatus {
@@ -123,6 +124,31 @@ export class Econet {
             {},
         );
         return toEconetStatus(response);
+    }
+
+    /**
+     * Stream Econet status changes.
+     *
+     * The server pushes an initial snapshot on subscription, then a new
+     * snapshot whenever status visible on EconetService changes
+     * (enable/disable, station ID, or transport backend connection
+     * toggle). Iteration ends when the client cancels or the server
+     * shuts down.
+     *
+     * @param options.minIntervalMs Minimum interval between pushes
+     *     (0 = server default, typically 50ms). The server only pushes
+     *     on change, so this caps update rate rather than forcing
+     *     periodic traffic.
+     */
+    async *watchStatus(
+        options?: { minIntervalMs?: number },
+    ): AsyncIterable<EconetStatus> {
+        const stream = this.stub.watchEconetStatus({
+            minIntervalMs: options?.minIntervalMs ?? 0,
+        });
+        for await (const proto of toAsyncIterable(stream)) {
+            yield toEconetStatus(proto);
+        }
     }
 
     /** Whether Econet hardware is currently enabled. */

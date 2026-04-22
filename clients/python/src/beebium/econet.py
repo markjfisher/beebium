@@ -25,6 +25,7 @@ is active.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterator
 
 from beebium._proto import econet_pb2, econet_pb2_grpc
 from beebium.exceptions import EconetError
@@ -90,6 +91,61 @@ class EconetStatus:
     read_stretch_parasite_ticks: int = 0
 
 
+def _response_to_status(response: econet_pb2.GetEconetStatusResponse) -> EconetStatus:
+    """Convert a GetEconetStatusResponse proto into an EconetStatus dataclass."""
+    adlc = None
+    if response.HasField("adlc"):
+        a = response.adlc
+        adlc = AdlcStatus(
+            cr1=a.cr1,
+            cr2=a.cr2,
+            cr3=a.cr3,
+            cr4=a.cr4,
+            sr1=a.sr1,
+            sr2=a.sr2,
+            irq_output=a.irq_output,
+            tx_fifo_empty=a.tx_fifo_empty,
+            tx_fifo_full=a.tx_fifo_full,
+            rx_fifo_empty=a.rx_fifo_empty,
+            rx_fifo_full=a.rx_fifo_full,
+            tx_frame_field=a.tx_frame_field,
+            rx_frame_field=a.rx_frame_field,
+            pse_level=a.pse_level,
+            cts_input=a.cts_input,
+        )
+
+    handshake = None
+    if response.HasField("handshake"):
+        h = response.handshake
+        handshake = HandshakeStatus(
+            stage=h.stage,
+            flag_fill_active=h.flag_fill_active,
+        )
+
+    return EconetStatus(
+        has_econet_socket=response.has_econet_socket,
+        enabled=response.enabled,
+        station_id=response.station_id,
+        aun_mode=response.aun_mode,
+        connected=response.connected,
+        adlc=adlc,
+        handshake=handshake,
+        tick_count=response.tick_count,
+        cr1_0x82_write_count=response.cr1_0x82_write_count,
+        rx_frames_received_count=response.rx_frames_received_count,
+        rx_blocked_by_reset_count=response.rx_blocked_by_reset_count,
+        scout_ack_generated_count=response.scout_ack_generated_count,
+        tx_frames_from_beeb_count=response.tx_frames_from_beeb_count,
+        unexpected_tx_reset_count=response.unexpected_tx_reset_count,
+        tx_from_idle_count=response.tx_from_idle_count,
+        max_handshake_timer_seen=response.max_handshake_timer_seen,
+        watchdog_timeout_count=response.watchdog_timeout_count,
+        send_stage_log=response.send_stage_log,
+        ticks_with_timer_active=response.ticks_with_timer_active,
+        read_stretch_parasite_ticks=response.read_stretch_parasite_ticks,
+    )
+
+
 class Econet:
     """Transport-agnostic Econet hardware management.
 
@@ -131,58 +187,29 @@ class Econet:
         """Get Econet hardware status."""
         request = econet_pb2.GetEconetStatusRequest()
         response = self._stub.GetEconetStatus(request)
+        return _response_to_status(response)
 
-        adlc = None
-        if response.HasField("adlc"):
-            a = response.adlc
-            adlc = AdlcStatus(
-                cr1=a.cr1,
-                cr2=a.cr2,
-                cr3=a.cr3,
-                cr4=a.cr4,
-                sr1=a.sr1,
-                sr2=a.sr2,
-                irq_output=a.irq_output,
-                tx_fifo_empty=a.tx_fifo_empty,
-                tx_fifo_full=a.tx_fifo_full,
-                rx_fifo_empty=a.rx_fifo_empty,
-                rx_fifo_full=a.rx_fifo_full,
-                tx_frame_field=a.tx_frame_field,
-                rx_frame_field=a.rx_frame_field,
-                pse_level=a.pse_level,
-                cts_input=a.cts_input,
-            )
+    def watch_status(self, *, min_interval_ms: int = 0) -> Iterator[EconetStatus]:
+        """Stream Econet status changes.
 
-        handshake = None
-        if response.HasField("handshake"):
-            h = response.handshake
-            handshake = HandshakeStatus(
-                stage=h.stage,
-                flag_fill_active=h.flag_fill_active,
-            )
+        The server pushes an initial snapshot on subscription, then a new
+        snapshot whenever status visible on EconetService changes
+        (enable/disable, station ID change, or transport backend
+        connection toggle). The stream stays open until the client
+        cancels or the server shuts down.
 
-        return EconetStatus(
-            has_econet_socket=response.has_econet_socket,
-            enabled=response.enabled,
-            station_id=response.station_id,
-            aun_mode=response.aun_mode,
-            connected=response.connected,
-            adlc=adlc,
-            handshake=handshake,
-            tick_count=response.tick_count,
-            cr1_0x82_write_count=response.cr1_0x82_write_count,
-            rx_frames_received_count=response.rx_frames_received_count,
-            rx_blocked_by_reset_count=response.rx_blocked_by_reset_count,
-            scout_ack_generated_count=response.scout_ack_generated_count,
-            tx_frames_from_beeb_count=response.tx_frames_from_beeb_count,
-            unexpected_tx_reset_count=response.unexpected_tx_reset_count,
-            tx_from_idle_count=response.tx_from_idle_count,
-            max_handshake_timer_seen=response.max_handshake_timer_seen,
-            watchdog_timeout_count=response.watchdog_timeout_count,
-            send_stage_log=response.send_stage_log,
-            ticks_with_timer_active=response.ticks_with_timer_active,
-            read_stretch_parasite_ticks=response.read_stretch_parasite_ticks,
-        )
+        Args:
+            min_interval_ms: Minimum interval between pushes (0 = server
+                default, typically 50ms). The server only pushes on
+                change, so this caps update rate rather than forcing
+                periodic traffic.
+
+        Yields:
+            EconetStatus for each change.
+        """
+        request = econet_pb2.WatchEconetStatusRequest(min_interval_ms=min_interval_ms)
+        for response in self._stub.WatchEconetStatus(request):
+            yield _response_to_status(response)
 
     @property
     def is_enabled(self) -> bool:

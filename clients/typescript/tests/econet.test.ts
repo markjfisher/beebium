@@ -1,6 +1,28 @@
 import { describe, it, expect, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { Econet } from "../src/econet.js";
 import { EconetError } from "../src/exceptions.js";
+import type { GetEconetStatusResponse as ProtoGetEconetStatusResponse } from "../src/generated/econet.js";
+
+/**
+ * Fake ClientReadableStream shaped to the subset that toAsyncIterable uses:
+ * EventEmitter events (data, error, end) plus cancel().
+ */
+class FakeStream extends EventEmitter {
+    public cancelled = false;
+    cancel(): void {
+        this.cancelled = true;
+        this.emit("end");
+    }
+    drive(responses: ProtoGetEconetStatusResponse[]): void {
+        setImmediate(() => {
+            for (const r of responses) {
+                this.emit("data", r);
+            }
+            this.emit("end");
+        });
+    }
+}
 
 function createMockStub(methods: Record<string, (req: any) => any>) {
     const stub: Record<string, any> = {};
@@ -162,6 +184,83 @@ describe("Econet", () => {
     // EconetService to AunService in the prior branch and the TS
     // client does not yet have an AunService wrapper. See
     // project_typescript_client_cutover.md in project memory.
+
+    describe("watchStatus", () => {
+        function makeStatus(
+            overrides: Partial<ProtoGetEconetStatusResponse> = {},
+        ): ProtoGetEconetStatusResponse {
+            return {
+                hasEconetSocket: true,
+                enabled: false,
+                stationId: 0,
+                aunMode: false,
+                connected: false,
+                adlc: undefined,
+                handshake: undefined,
+                tickCount: 0n,
+                cr10X82WriteCount: 0,
+                rxFramesReceivedCount: 0,
+                rxBlockedByResetCount: 0,
+                scoutAckGeneratedCount: 0,
+                txFramesFromBeebCount: 0,
+                unexpectedTxResetCount: 0,
+                txFromIdleCount: 0,
+                maxHandshakeTimerSeen: 0,
+                watchdogTimeoutCount: 0,
+                sendStageLog: "",
+                ticksWithTimerActive: 0n,
+                readStretchParasiteTicks: 0n,
+                ...overrides,
+            } as ProtoGetEconetStatusResponse;
+        }
+
+        it("yields an EconetStatus per server message", async () => {
+            const stream = new FakeStream();
+            const stub = { watchEconetStatus: vi.fn(() => stream) };
+            const econet = new Econet(stub as any);
+
+            const iter = econet.watchStatus();
+            stream.drive([
+                makeStatus({ enabled: false }),
+                makeStatus({ enabled: true, stationId: 42 }),
+                makeStatus({ enabled: true, stationId: 42, connected: true }),
+            ]);
+
+            const statuses = [];
+            for await (const s of iter) {
+                statuses.push(s);
+            }
+            expect(statuses).toHaveLength(3);
+            expect(statuses[0]!.enabled).toBe(false);
+            expect(statuses[1]!.enabled).toBe(true);
+            expect(statuses[1]!.stationId).toBe(42);
+            expect(statuses[2]!.connected).toBe(true);
+        });
+
+        it("defaults minIntervalMs to 0", async () => {
+            const stream = new FakeStream();
+            const stub = { watchEconetStatus: vi.fn(() => stream) };
+            const econet = new Econet(stub as any);
+
+            const iter = econet.watchStatus();
+            stream.drive([]);
+            for await (const _ of iter) { /* drain */ }
+
+            expect(stub.watchEconetStatus).toHaveBeenCalledWith({ minIntervalMs: 0 });
+        });
+
+        it("forwards explicit minIntervalMs", async () => {
+            const stream = new FakeStream();
+            const stub = { watchEconetStatus: vi.fn(() => stream) };
+            const econet = new Econet(stub as any);
+
+            const iter = econet.watchStatus({ minIntervalMs: 200 });
+            stream.drive([]);
+            for await (const _ of iter) { /* drain */ }
+
+            expect(stub.watchEconetStatus).toHaveBeenCalledWith({ minIntervalMs: 200 });
+        });
+    });
 
     describe("convenience methods", () => {
         it("isEnabled delegates to getStatus", async () => {

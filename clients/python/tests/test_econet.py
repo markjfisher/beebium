@@ -235,6 +235,42 @@ class TestEconetStatus:
         assert status.handshake.flag_fill_active is True
 
 
+class TestWatchStatus:
+    """Tests for the watch_status streaming method."""
+
+    def test_watch_status_yields_statuses(self, mock_stub, econet):
+        """watch_status yields an EconetStatus per server message."""
+        mock_stub.WatchEconetStatus.return_value = iter(
+            [
+                MockGetEconetStatusResponse(enabled=False),
+                MockGetEconetStatusResponse(enabled=True, station_id=42),
+                MockGetEconetStatusResponse(
+                    enabled=True, station_id=42, connected=True
+                ),
+            ]
+        )
+        statuses = list(econet.watch_status())
+        assert len(statuses) == 3
+        assert statuses[0].enabled is False
+        assert statuses[1].enabled is True
+        assert statuses[1].station_id == 42
+        assert statuses[2].connected is True
+
+    def test_watch_status_default_interval_is_zero(self, mock_stub, econet):
+        """Default min_interval_ms of 0 lets the server pick its own."""
+        mock_stub.WatchEconetStatus.return_value = iter([])
+        list(econet.watch_status())
+        request = mock_stub.WatchEconetStatus.call_args[0][0]
+        assert request.min_interval_ms == 0
+
+    def test_watch_status_passes_interval(self, mock_stub, econet):
+        """Explicit min_interval_ms is forwarded to the server."""
+        mock_stub.WatchEconetStatus.return_value = iter([])
+        list(econet.watch_status(min_interval_ms=200))
+        request = mock_stub.WatchEconetStatus.call_args[0][0]
+        assert request.min_interval_ms == 200
+
+
 class TestConvenienceProperties:
     """Tests for is_enabled and station_id convenience properties."""
 
