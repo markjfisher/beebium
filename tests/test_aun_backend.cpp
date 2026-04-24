@@ -590,6 +590,71 @@ TEST_CASE("AunBackend: local_net accessor reflects construction",
     CHECK(max_valid.local_net() == 127);
 }
 
+// =============================================================================
+// Peer source precedence (operator-configured vs discovered)
+// =============================================================================
+
+TEST_CASE("AunBackend: operator-configured entry blocks Discovered overwrite",
+          "[econet][aun][backend][peer-source]") {
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
+
+    backend.add_peer(0, 254, loopback_ip(), 40001,
+                     PeerSource::OperatorConfigured);
+    REQUIRE(backend.is_operator_configured(0, 254));
+
+    // Discovered call must be a no-op against an operator entry.
+    backend.add_peer(0, 254, loopback_ip(), 40002, PeerSource::Discovered);
+    auto peers = backend.list_peers();
+    REQUIRE(peers.size() == 1);
+    CHECK(peers[0].port == 40001);   // unchanged
+    CHECK(backend.is_operator_configured(0, 254));
+}
+
+TEST_CASE("AunBackend: discovered entry can be replaced by another discovered call",
+          "[econet][aun][backend][peer-source]") {
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
+
+    backend.add_peer(0, 254, loopback_ip(), 40001, PeerSource::Discovered);
+    REQUIRE_FALSE(backend.is_operator_configured(0, 254));
+
+    // Discovered re-add updates the endpoint.
+    backend.add_peer(0, 254, loopback_ip(), 40099, PeerSource::Discovered);
+    auto peers = backend.list_peers();
+    REQUIRE(peers.size() == 1);
+    CHECK(peers[0].port == 40099);
+    CHECK_FALSE(backend.is_operator_configured(0, 254));
+}
+
+TEST_CASE("AunBackend: operator entry can replace a discovered one",
+          "[econet][aun][backend][peer-source]") {
+    AunBackend backend(0, 1, 0);
+    REQUIRE(backend.is_connected());
+
+    backend.add_peer(0, 254, loopback_ip(), 40001, PeerSource::Discovered);
+    backend.add_peer(0, 254, loopback_ip(), 40002,
+                     PeerSource::OperatorConfigured);
+    auto peers = backend.list_peers();
+    REQUIRE(peers.size() == 1);
+    CHECK(peers[0].port == 40002);
+    CHECK(backend.is_operator_configured(0, 254));
+}
+
+TEST_CASE("AunBackend: remove_peer clears operator-configured flag",
+          "[econet][aun][backend][peer-source]") {
+    AunBackend backend(0, 1, 0);
+    backend.add_peer(0, 254, loopback_ip(), 40001,
+                     PeerSource::OperatorConfigured);
+    backend.remove_peer(0, 254);
+    CHECK_FALSE(backend.is_operator_configured(0, 254));
+    CHECK(backend.peer_count() == 0);
+    // After removal, a discovered add succeeds.
+    backend.add_peer(0, 254, loopback_ip(), 40050, PeerSource::Discovered);
+    CHECK(backend.peer_count() == 1);
+    CHECK_FALSE(backend.is_operator_configured(0, 254));
+}
+
 TEST_CASE("AunBackend: local_port returns specified port when non-zero",
           "[aun_backend][port]") {
     // Pick a port the OS just told us is free to minimise conflicts with

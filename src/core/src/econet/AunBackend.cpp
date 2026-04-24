@@ -148,8 +148,17 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
     auto packet = aun_packet::encode(frame, handle);
 
     if (frame.type == FrameType::Broadcast) {
-        // Send broadcast to every known peer.
-        for (const auto& [key, endpoint] : forward_map_) {
+        // Snapshot endpoints under the lock so the actual sendto()
+        // calls happen outside the critical section.
+        std::vector<std::pair<uint32_t, uint16_t>> endpoints;
+        {
+            std::lock_guard lock(peer_table_mutex_);
+            endpoints.reserve(forward_map_.size());
+            for (const auto& [key, endpoint] : forward_map_) {
+                endpoints.push_back(endpoint);
+            }
+        }
+        for (const auto& endpoint : endpoints) {
             sockaddr_in dest_addr{};
             dest_addr.sin_family = AF_INET;
             dest_addr.sin_addr.s_addr = endpoint.first;
@@ -177,16 +186,21 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
     // non-zero net (i.e. to another segment) pass through unchanged.
     uint8_t lookup_net = (frame.dest_net == 0) ? local_net_ : frame.dest_net;
     auto forward_key = make_forward_key(lookup_net, frame.dest_stn);
-    auto it = forward_map_.find(forward_key);
-    if (it == forward_map_.end()) {
-        // Unknown peer — drop silently.
-        return;
+    std::pair<uint32_t, uint16_t> endpoint;
+    {
+        std::lock_guard lock(peer_table_mutex_);
+        auto it = forward_map_.find(forward_key);
+        if (it == forward_map_.end()) {
+            // Unknown peer -- drop silently.
+            return;
+        }
+        endpoint = it->second;
     }
 
     sockaddr_in dest_addr{};
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_addr.s_addr = it->second.first;
-    dest_addr.sin_port = htons(it->second.second);
+    dest_addr.sin_addr.s_addr = endpoint.first;
+    dest_addr.sin_port = htons(endpoint.second);
 
     auto sent = ::sendto(socket_fd_,
                          reinterpret_cast<const char*>(packet.data()),
@@ -237,16 +251,26 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     // Skip self-sends (our own broadcasts looping back).
     uint32_t sender_ip = sender_addr.sin_addr.s_addr;
     uint16_t sender_port = ntohs(sender_addr.sin_port);
-    if (sender_port == local_port_) {
-        // Check if the source IP is any of our local addresses.
-        // On loopback, the source will be 127.0.0.1 which won't match INADDR_ANY,
-        // but self-sends are still possible if we send to a peer on the same port.
-        // This is a simple heuristic — if the port matches, check the reverse map.
-        // If the sender IS in our peer table, it's a real peer, not us.
-        auto reverse_key = make_reverse_key(sender_ip, sender_port);
-        if (reverse_map_.find(reverse_key) == reverse_map_.end()) {
-            return std::nullopt;  // Unknown sender on our port — likely self
+    auto reverse_key = make_reverse_key(sender_ip, sender_port);
+
+    // Resolve sender against the peer table once, under the lock, and
+    // capture the (net, stn) pair locally so the rest of the function
+    // operates on a snapshot.
+    std::pair<uint8_t, uint8_t> sender_addr_econet;
+    bool sender_known = false;
+    {
+        std::lock_guard lock(peer_table_mutex_);
+        auto it = reverse_map_.find(reverse_key);
+        if (it != reverse_map_.end()) {
+            sender_known = true;
+            sender_addr_econet = it->second;
         }
+    }
+
+    if (sender_port == local_port_ && !sender_known) {
+        // Unknown sender on our port -- likely a self-send loop, not a
+        // real peer. Drop quietly.
+        return std::nullopt;
     }
 
     auto result = aun_packet::decode(
@@ -255,11 +279,8 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
         return std::nullopt;
     }
 
-    // Look up sender in reverse peer table.
-    auto reverse_key = make_reverse_key(sender_ip, sender_port);
-    auto it = reverse_map_.find(reverse_key);
-    if (it == reverse_map_.end()) {
-        return std::nullopt;  // Unknown peer — discard
+    if (!sender_known) {
+        return std::nullopt;  // Unknown peer -- discard.
     }
 
     // Populate addressing from peer table.
@@ -270,9 +291,9 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     // benefit of the BBC. dest_net is delivered as local_net_ so the
     // BBC sees frames addressed to its own segment in the same form an
     // outgoing frame would have used (after our send-side translation).
-    uint8_t peer_net = it->second.first;
+    uint8_t peer_net = sender_addr_econet.first;
     result.frame.src_net = (peer_net == local_net_) ? 0 : peer_net;
-    result.frame.src_stn = it->second.second;
+    result.frame.src_stn = sender_addr_econet.second;
     result.frame.dest_net = local_net_;
     result.frame.dest_stn = local_stn_;
 
@@ -294,25 +315,57 @@ bool AunBackend::is_connected() const {
     return connected_.load(std::memory_order_relaxed);
 }
 
-void AunBackend::add_peer(uint8_t net, uint8_t stn, uint32_t ip_addr, uint16_t port) {
+void AunBackend::add_peer(uint8_t net, uint8_t stn, uint32_t ip_addr,
+                          uint16_t port, PeerSource source) {
     auto fwd_key = make_forward_key(net, stn);
-    forward_map_[fwd_key] = {ip_addr, port};
+    std::lock_guard lock(peer_table_mutex_);
 
+    // Operator entries always win: a Discovered call must not
+    // overwrite an existing operator-configured entry.
+    if (source == PeerSource::Discovered
+            && operator_configured_keys_.count(fwd_key) == 1) {
+        return;
+    }
+
+    // If we're replacing an existing entry, clear its reverse-map
+    // mapping first so a stale (ip, port) doesn't keep resolving to
+    // this (net, stn) pair after the endpoint changes.
+    auto existing = forward_map_.find(fwd_key);
+    if (existing != forward_map_.end()) {
+        auto old_rev = make_reverse_key(existing->second.first,
+                                        existing->second.second);
+        reverse_map_.erase(old_rev);
+    }
+
+    forward_map_[fwd_key] = {ip_addr, port};
     auto rev_key = make_reverse_key(ip_addr, port);
     reverse_map_[rev_key] = {net, stn};
+
+    if (source == PeerSource::OperatorConfigured) {
+        operator_configured_keys_.insert(fwd_key);
+    }
 }
 
 void AunBackend::remove_peer(uint8_t net, uint8_t stn) {
     auto fwd_key = make_forward_key(net, stn);
+    std::lock_guard lock(peer_table_mutex_);
     auto it = forward_map_.find(fwd_key);
     if (it != forward_map_.end()) {
         auto rev_key = make_reverse_key(it->second.first, it->second.second);
         reverse_map_.erase(rev_key);
         forward_map_.erase(it);
+        operator_configured_keys_.erase(fwd_key);
     }
 }
 
+bool AunBackend::is_operator_configured(uint8_t net, uint8_t stn) const {
+    auto fwd_key = make_forward_key(net, stn);
+    std::lock_guard lock(peer_table_mutex_);
+    return operator_configured_keys_.count(fwd_key) == 1;
+}
+
 size_t AunBackend::peer_count() const {
+    std::lock_guard lock(peer_table_mutex_);
     return forward_map_.size();
 }
 
@@ -325,6 +378,7 @@ uint8_t AunBackend::local_net() const {
 }
 
 std::vector<PeerInfo> AunBackend::list_peers() const {
+    std::lock_guard lock(peer_table_mutex_);
     std::vector<PeerInfo> result;
     result.reserve(forward_map_.size());
     for (const auto& [key, endpoint] : forward_map_) {

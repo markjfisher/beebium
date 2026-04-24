@@ -24,7 +24,9 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -36,6 +38,14 @@ struct PeerInfo {
     uint8_t stn;
     uint32_t ip_addr;   // Network byte order
     uint16_t port;      // Host byte order
+};
+
+// Where a peer entry came from. Used by the discovery subscriber to
+// avoid overwriting an operator-configured entry with a discovered
+// one (operator config wins -- see docs/discussion/aun-mdns-peer-discovery.md).
+enum class PeerSource {
+    OperatorConfigured,
+    Discovered,
 };
 
 // UDP transport backend implementing the AUN (Acorn Universal Networking) protocol.
@@ -70,13 +80,31 @@ public:
     bool is_connected() const override;
 
     // --- Peer management ---
+    //
+    // The peer table is the only AunBackend state that has multiple
+    // writers. The emulator thread reads it from send_frame /
+    // receive_frame; AunService and AunDiscoverySubscriber write to
+    // it from gRPC and discovery threads respectively. All
+    // peer-table accessors take peer_table_mutex_ briefly. The mutex
+    // is uncontended in steady-state (peer changes are rare); the
+    // tax buys us correctness for the multi-writer case.
 
     // Add a peer mapping: Econet address (net, stn) <-> UDP endpoint (ip_addr, port).
     // ip_addr is in network byte order. port is in host byte order.
-    void add_peer(uint8_t net, uint8_t stn, uint32_t ip_addr, uint16_t port);
+    //
+    // If the (net, stn) pair already has an OperatorConfigured entry
+    // and the caller is a Discovered source, the request is silently
+    // dropped: operator config always wins. Re-adding an entry from
+    // the same source updates its endpoint.
+    void add_peer(uint8_t net, uint8_t stn, uint32_t ip_addr, uint16_t port,
+                  PeerSource source = PeerSource::OperatorConfigured);
 
     // Remove a peer mapping by Econet address.
     void remove_peer(uint8_t net, uint8_t stn);
+
+    // True if (net, stn) has an OperatorConfigured entry. Used by
+    // the discovery subscriber to skip peers it must not overwrite.
+    bool is_operator_configured(uint8_t net, uint8_t stn) const;
 
     // Number of configured peers.
     size_t peer_count() const;
@@ -118,8 +146,14 @@ private:
     // Peer table: bidirectional mapping between Econet addresses and UDP endpoints.
     // Forward: (net << 8 | stn) -> (ip_addr, port)
     // Reverse: (ip_addr << 16 | port) -> (net, stn)
+    // operator_configured_keys_: forward keys whose entries came from
+    //   the operator (CLI / preset / AunService::AddPeer); discovered
+    //   entries don't appear here. Used by the source-precedence rule
+    //   in add_peer.
     std::unordered_map<uint16_t, std::pair<uint32_t, uint16_t>> forward_map_;
     std::unordered_map<uint64_t, std::pair<uint8_t, uint8_t>> reverse_map_;
+    std::unordered_set<uint16_t> operator_configured_keys_;
+    mutable std::mutex peer_table_mutex_;
 
     // Packet trace flag -- set once at construction from BEEBIUM_AUN_TRACE env var.
     bool trace_ = false;
