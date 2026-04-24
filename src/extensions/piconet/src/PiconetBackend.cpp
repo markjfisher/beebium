@@ -206,16 +206,19 @@ void PiconetBackend::reader_loop() {
                           << " -- closing serial port\n";
             }
             serial_->close();
-            // Notify the UI hook so the Extension UI framework knows
-            // to push a fresh View. Without this the Indicator and
-            // button stay frozen at their last-pushed state, even
-            // though is_serial_open() now reads false. Skipped on the
-            // intentional-shutdown path because the destructor's
-            // close() races us; the resulting double-call is harmless
-            // but the mark_dirty() in shutdown context is pointless.
-            if (on_async_state_change_ &&
-                !shutdown_.load(std::memory_order_relaxed)) {
-                on_async_state_change_();
+            // is_connected() just flipped to false (is_serial_open() is
+            // now false), so kick WatchEconetStatus subscribers. The UI
+            // hook below covers the per-extension View stream; the
+            // sequence bump covers the transport-agnostic header.
+            // Skipped on the intentional-shutdown path because the
+            // destructor's close() races us and the push would be
+            // pointless; the double-close via serial_->close() is
+            // already documented as harmless.
+            if (!shutdown_.load(std::memory_order_relaxed)) {
+                bump_backend_status_sequence();
+                if (on_async_state_change_) {
+                    on_async_state_change_();
+                }
             }
             return;
         }
@@ -277,9 +280,11 @@ void PiconetBackend::reader_loop() {
                                       << " no longer resolves -- treating as hot-unplug\n";
                         }
                         serial_->close();
-                        if (on_async_state_change_ &&
-                            !shutdown_.load(std::memory_order_relaxed)) {
-                            on_async_state_change_();
+                        if (!shutdown_.load(std::memory_order_relaxed)) {
+                            bump_backend_status_sequence();
+                            if (on_async_state_change_) {
+                                on_async_state_change_();
+                            }
                         }
                         return;
                     }
@@ -294,9 +299,11 @@ void PiconetBackend::reader_loop() {
                                   << " no longer exists -- treating as hot-unplug\n";
                     }
                     serial_->close();
-                    if (on_async_state_change_ &&
-                        !shutdown_.load(std::memory_order_relaxed)) {
-                        on_async_state_change_();
+                    if (!shutdown_.load(std::memory_order_relaxed)) {
+                        bump_backend_status_sequence();
+                        if (on_async_state_change_) {
+                            on_async_state_change_();
+                        }
                     }
                     return;
                 }
@@ -482,7 +489,14 @@ void PiconetBackend::set_mode(piconet::Mode mode) {
         return;
     }
     write_to_serial(*serial_, piconet::format_set_mode(mode));
-    current_mode_.store(mode, std::memory_order_release);
+    const piconet::Mode prev = current_mode_.exchange(mode, std::memory_order_acq_rel);
+    // is_connected() flips when we cross the Listen boundary in either
+    // direction, so WatchEconetStatus subscribers need to be kicked.
+    // Transitions between two non-Listen modes (Stop <-> Monitor) leave
+    // is_connected() unchanged.
+    if ((prev == piconet::Mode::Listen) != (mode == piconet::Mode::Listen)) {
+        bump_backend_status_sequence();
+    }
 }
 
 }  // namespace beebium

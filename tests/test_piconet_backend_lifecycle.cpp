@@ -96,6 +96,47 @@ TEST_CASE("PiconetBackend destructor joins the reader thread within 200ms",
     CHECK(elapsed < std::chrono::milliseconds(200));
 }
 
+TEST_CASE("PiconetBackend::set_mode bumps backend_status_sequence on Listen <-> non-Listen transitions",
+          "[piconet][backend][lifecycle]") {
+    // is_connected() reflects (serial_open AND current_mode_ == Listen), so
+    // any Listen <-> non-Listen change is visible to EconetService clients
+    // via WatchEconetStatus. The poll loop pushes on EconetSocket::status_sequence()
+    // advancing, which folds in NetworkBackend::backend_status_sequence().
+    // Without the bump, WatchEconetStatus misses the change and macOS
+    // "Disable" leaves the header stuck on "Connected" (github issue #35).
+    auto mock_owner = std::make_unique<MockPiconetSerial>();
+    PiconetBackend backend(PiconetConfig{"/dev/null", 32}, std::move(mock_owner));
+    REQUIRE(backend.is_connected());
+    const auto seq_after_ctor = backend.backend_status_sequence();
+
+    // Listen -> Stop: is_connected() flips, sequence must advance.
+    backend.set_mode(piconet::Mode::Stop);
+    CHECK_FALSE(backend.is_connected());
+    CHECK(backend.backend_status_sequence() > seq_after_ctor);
+
+    // Stop -> Stop: no change in is_connected(), no bump.
+    const auto seq_after_stop = backend.backend_status_sequence();
+    backend.set_mode(piconet::Mode::Stop);
+    CHECK(backend.backend_status_sequence() == seq_after_stop);
+
+    // Stop -> Listen: flips back, sequence advances again.
+    backend.set_mode(piconet::Mode::Listen);
+    CHECK(backend.is_connected());
+    CHECK(backend.backend_status_sequence() > seq_after_stop);
+
+    // Listen -> Monitor: both non-Listen from is_connected's perspective is
+    // coming, but Listen -> Monitor is still a Listen <-> non-Listen transition.
+    const auto seq_after_listen = backend.backend_status_sequence();
+    backend.set_mode(piconet::Mode::Monitor);
+    CHECK_FALSE(backend.is_connected());
+    CHECK(backend.backend_status_sequence() > seq_after_listen);
+
+    // Monitor -> Stop: both non-Listen. is_connected() stays false, no bump.
+    const auto seq_after_monitor = backend.backend_status_sequence();
+    backend.set_mode(piconet::Mode::Stop);
+    CHECK(backend.backend_status_sequence() == seq_after_monitor);
+}
+
 TEST_CASE("PiconetBackend can be constructed and destructed many times in a row",
           "[piconet][backend][lifecycle]") {
     // Smoke test for thread leakage / double-close. If destructor cleanup
