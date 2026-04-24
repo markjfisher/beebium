@@ -30,8 +30,6 @@ namespace beebium::discovery {
 
 namespace {
 
-constexpr const wchar_t* SERVICE_TYPE = L"._beebium._tcp.local";
-
 // Convert UTF-8 std::string to wide string
 std::wstring to_wide(const std::string& s) {
     if (s.empty()) return {};
@@ -58,8 +56,10 @@ std::string to_utf8(const std::wstring& ws) {
     return result;
 }
 
-// Extract instance name from full service name
-// "MyService._beebium._tcp.local" -> "MyService"
+// Extract instance name from full service name. The format is
+// "MyService._service._proto.local" -- the instance is everything
+// before the first ".<service-type-prefix>" segment, where the
+// service-type-prefix begins with "_" (the DNS-SD convention).
 std::wstring extract_instance_name(const std::wstring& full_name) {
     auto pos = full_name.find(L"._");
     if (pos != std::wstring::npos) {
@@ -90,9 +90,13 @@ public:
             info_ = info;
         }
 
-        // Build full service instance name
-        // Format: "InstanceName._beebium._tcp.local"
-        instance_name_wide_ = to_wide(info.instance_name) + SERVICE_TYPE;
+        // Build full service instance name.
+        // Format: "InstanceName._<service>._<proto>.local"
+        // info.service_type is e.g. "_beebium._tcp" or "_aun._udp"; we
+        // prepend the instance name with a dot separator and append
+        // ".local" to land in the standard DNS-SD scope.
+        instance_name_wide_ = to_wide(info.instance_name) + L"."
+                            + to_wide(info.service_type) + L".local";
 
         // Build TXT record keys and values as separate arrays
         txt_keys_.clear();

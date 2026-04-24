@@ -41,6 +41,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -49,7 +50,8 @@ namespace grpc { class Service; }
 
 namespace beebium {
 
-class AunServiceImpl;  // forward; defined when service is built
+class AunServiceImpl;          // forward; defined when service is built
+class AunDiscoveryAnnouncer;   // forward; defined in this dir
 
 class AunEconetTransportExtension : public EconetTransportExtension {
 public:
@@ -115,6 +117,12 @@ public:
 private:
     AunBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
     std::unique_ptr<AunServiceImpl> service_;  // lazily constructed
+    // Owned by the extension so its lifetime ends with the extension
+    // (the backend lives inside EconetSocket and outlives the
+    // extension only briefly during shutdown). nullptr until
+    // create_backend() succeeds; nullptr on platforms without mDNS or
+    // when the announcer fails to start.
+    std::unique_ptr<AunDiscoveryAnnouncer> announcer_;
     AunUi ui_{*this};
 };
 

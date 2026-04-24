@@ -17,6 +17,7 @@
 
 set(AUN_SOURCES
     AunEconetTransportExtension.cpp
+    AunDiscoveryAnnouncer.cpp
     AunUi.cpp
 )
 
@@ -47,7 +48,15 @@ if(BEEBIUM_BUILD_SERVICE)
 endif()
 
 target_link_libraries(beebium_ext_aun
-    PUBLIC beebium_core
+    PUBLIC
+        beebium_core
+        beebium_discovery
+)
+
+# Threaded through into AunDiscoveryAnnouncer's TXT record so
+# discovered peers can tell which Beebium release they're talking to.
+target_compile_definitions(beebium_ext_aun PRIVATE
+    BEEBIUM_VERSION="${PROJECT_VERSION}"
 )
 
 if(BEEBIUM_BUILD_SERVICE)

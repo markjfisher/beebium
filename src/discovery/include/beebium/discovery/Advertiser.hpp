@@ -25,6 +25,13 @@ struct ServiceInfo {
     /// Display name for the service (becomes DNS-SD instance name).
     std::string instance_name;
 
+    /// DNS-SD service type. Defaults to "_beebium._tcp" for the gRPC
+    /// machine service. AUN peer discovery uses the vendor-neutral
+    /// "_aun._udp" instead so other AUN implementations (BeebEm,
+    /// PiEconetBridge, real Acorn hardware with AUN clients) can share
+    /// the announcement namespace.
+    std::string service_type = "_beebium._tcp";
+
     /// Port the gRPC server is listening on.
     uint16_t port;
 

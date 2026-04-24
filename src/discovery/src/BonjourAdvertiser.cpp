@@ -22,12 +22,6 @@
 
 namespace beebium::discovery {
 
-namespace {
-
-constexpr const char* SERVICE_TYPE = "_beebium._tcp";
-
-}  // namespace
-
 /// macOS Bonjour implementation of Advertiser using dns_sd.h.
 ///
 /// Uses DNSServiceRegister() to advertise the service via mDNS.
@@ -64,7 +58,7 @@ public:
             0,  // flags
             kDNSServiceInterfaceIndexAny,
             info.instance_name.c_str(),
-            SERVICE_TYPE,
+            info.service_type.c_str(),
             nullptr,  // domain (default = .local)
             nullptr,  // host (default = this machine)
             htons(info.port),

@@ -12,10 +12,15 @@
 
 #include "AunEconetTransportExtension.hpp"
 
+#include "AunDiscoveryAnnouncer.hpp"
 #include "beebium/econet/AunPacket.hpp"
 
 #ifdef BEEBIUM_BUILD_SERVICE
 #include "AunService.hpp"
+#endif
+
+#ifndef BEEBIUM_VERSION
+#define BEEBIUM_VERSION "unknown"
 #endif
 
 #ifdef _WIN32
@@ -187,6 +192,19 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
     }
 
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
+
+    // Publish a DNS-SD announcement so other AUN-capable peers can
+    // discover us without an explicit --aun map= entry. Failure to
+    // start (e.g. mDNS unavailable on this platform) is non-fatal --
+    // the transport still works for explicitly-mapped peers.
+    announcer_ = std::make_unique<AunDiscoveryAnnouncer>(
+        local_net, station, backend->local_port(),
+        std::string{"beebium"}, std::string{BEEBIUM_VERSION});
+    if (!announcer_->start()) {
+        std::cerr << "AUN extension: mDNS announcement unavailable -- "
+                     "discovery disabled\n";
+    }
+
     return backend;
 }
 

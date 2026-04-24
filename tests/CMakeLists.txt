@@ -66,6 +66,11 @@ add_executable(test_aun_econet_transport_extension test_aun_econet_transport_ext
 target_link_libraries(test_aun_econet_transport_extension PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
 catch_discover_tests(test_aun_econet_transport_extension)
 
+# AunDiscoveryAnnouncer tests (uses an injected fake Advertiser)
+add_executable(test_aun_discovery_announcer test_aun_discovery_announcer.cpp)
+target_link_libraries(test_aun_discovery_announcer PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
+catch_discover_tests(test_aun_discovery_announcer)
+
 # SCSI ADFS protocol compatibility tests (fast, no boot required)
 add_executable(test_scsi_adfs_protocol test_scsi_adfs_protocol.cpp)
 target_link_libraries(test_scsi_adfs_protocol PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
