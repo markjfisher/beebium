@@ -23,7 +23,7 @@ Beebium decouples the emulated ADLC from the underlying transport via the `Netwo
 
 | Backend | CLI flag | Transport | Use case |
 |---|---|---|---|
-| `AunBackend` (built-in `aun` extension) | `--aun [port=<n>][:map=<net.stn@ip@port>]...` (default `port=32768`) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP |
+| `AunBackend` (built-in `aun` extension) | `--aun [port=<n>][:net=<n>][:map=<net.stn@ip@port>]...` (default `port=32768:net=0`) | UDP/IP, AUN-encapsulated | Talk to other Beebium instances, BeebEm, PiEconetBridge, or any AUN-speaking peer over IP. Auto-discovers other `_aun._udp` peers on the LAN; manual `map=` is no longer required between Beebium instances on the same network. |
 | `PiconetBackend` (`piconet` plugin extension) | `--piconet device_path=<path>` | USB-CDC serial to a Piconet board | Talk to real BBCs / Acorn fileservers / printers over a real Econet wire (POSIX-only) |
 | `TestBackend` | selected automatically by `--aun port=none` or by passing `--station <n>` with no transport flag | In-process; no I/O | Hardware fitted, no transport — NFS ROM sees "No Clock". Also the test double for unit tests. |
 
@@ -64,13 +64,51 @@ In preset files, `map` accepts either a single string or a JSON array of strings
 
 A single-string form (`"map": "0.254@127.0.0.1@32769"`) remains supported for backwards compatibility and is normalised to a one-element list at load time.
 
+### Local Econet net number (`--aun net=N`)
+
+The `net` parameter (default `0`, valid range `0..127`) declares which Econet net number this station belongs to. AUN does not enforce a flat-net topology — each station's per-station peer table *is* its routing table, and there's no central authority assigning nets — so a station that wants to participate in a multi-net deployment must self-declare which net it's on.
+
+```
+--aun port=32768:net=3
+```
+
+The high bit (128..255) is reserved by the Acorn bridge protocol and is rejected. Beebium falls back to `net=0` with a warning rather than failing; passing nothing is equivalent to `net=0`.
+
+**Net 0 semantics.** BBC software addresses local-segment peers with `dest_net=0` ("this segment, don't route") on the wire, regardless of what net number the segment actually carries. `AunBackend` translates `dest_net=0` to the configured `local_net` before consulting the peer table, and on the receive side translates `src_net == local_net` back to `0` so the BBC sees frames in the form it expects. Cross-net frames (different absolute nets) pass through both translations unchanged. This means:
+
+- `--aun net=0` is the historical default and is fully wire-compatible with any AUN peer that uses the flat-cloud convention.
+- `--aun net=N` (non-zero) is useful for testing multi-net scenarios locally and for participating in deployments where a bridge has assigned a non-zero net to this segment.
+- Map entries (whether operator-configured via `map=` or auto-discovered via mDNS) can use any net 0..127; only the `dest_net=0` BBC convention triggers the translation.
+
+### AUN peer discovery via mDNS
+
+Beebium publishes a `_aun._udp` DNS-SD announcement when its AUN transport binds, and subscribes to the same service type on the LAN. Discovered peers are added to the routing table automatically as `Discovered` entries; operator-configured peers (from `--aun map=` or `AunService::AddPeer`) always take precedence — a discovered announcement that claims an `(net, stn)` already pinned by the operator is silently ignored.
+
+This means **Beebium-to-Beebium AUN works with no `map=` configuration on the same LAN**: launch two servers with `--aun port=32768 --station 1` and `--aun port=32769 --station 254` and they'll find each other within a couple of seconds (`mDNS resolve + getaddrinfo` round-trip).
+
+The TXT record schema, the rationale for the vendor-neutral service type, and the choice of `net=` as a mandatory field are documented in [`docs/discussion/aun-mdns-peer-discovery.md`](discussion/aun-mdns-peer-discovery.md). Other AUN implementations (BeebEm, PiEconetBridge, real Acorn hardware) are explicitly invited to adopt the same schema; nothing in it is Beebium-specific.
+
+**Platform support today:**
+
+- macOS — full support via Bonjour (`dns_sd.h`).
+- Linux — currently no mDNS responder support in the discovery layer (`NullAdvertiser` / `NullBrowser` fallbacks); discovery is silently disabled, manual `map=` still works. Avahi support is the obvious follow-up.
+- Windows — advertises via `DnsServiceRegister` but does not yet browse (`NullBrowser` fallback). A real `WindowsBrowser` using `DnsServiceBrowse` is the obvious follow-up.
+
+**Future improvements:**
+
+- `WindowsBrowser` using `DnsServiceBrowse` + `DnsServiceResolve` to bring symmetric discovery to Windows.
+- `AvahiAdvertiser` + `AvahiBrowser` for Linux.
+- An optional `--aun no-discovery` switch (or `BEEBIUM_AUN_DISCOVERY=off`) for environments where the operator wants to opt out of mDNS entirely (corporate networks, paranoid users) without disabling the AUN transport.
+- A future DSCP (Discovery Service Coordination Protocol, name TBD) layer on top of mDNS could let peers negotiate richer capability information — e.g. supported AUN extensions, machine model, fileserver hosting status — without requiring every consumer to talk gRPC. mDNS shipped first because it's independently useful; DSCP is the natural next step if richer per-peer metadata is wanted.
+- Bridge-as-bridge announcements via a separate `_acorn-bridge._udp` service type, once Beebium grows a machine type with two ADLCs (the Acorn Econet Bridge). This is reserved but not implemented; only `_aun._udp` is published today.
+
 ### `FourWayHandshake` is always in the path
 
 All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = true` is the default for production use). Econet's wire protocol is a four-way handshake (scout / scout-ack / data / data-ack). AUN's UDP protocol is two-way (Unicast / Ack). Even Piconet is *atomic* from the host's perspective — the firmware completes the wire handshake before reporting the result. `FourWayHandshake` synthesises the missing scout-ack and final-ack frames locally so the NFS ROM sees the timing it expects regardless of the transport underneath.
 
 ### When to use which
 
-- **Other Beebium emulators on the same host or LAN:** `AunBackend` with explicit peer maps. Self-contained, hermetic, no extra hardware.
+- **Other Beebium emulators on the same host or LAN:** `AunBackend`. mDNS discovery handles the peer-table population automatically (no manual `--aun map=` needed); fall back to explicit `map=` for hermetic test runs, environments without an mDNS responder (Linux today, until Avahi support lands), or WAN deployments.
 - **A real BBC, Acorn fileserver, or other Econet peripheral:** `PiconetBackend` with a Piconet device on the wire. The wire's clock generator and termination must be present (the Piconet is a participant, not a clock source).
 - **Testing only:** `TestBackend` (or the test fakes `MockPiconetSerial`, `FakePiconetDevice`, `FakePiconetDeviceOnPty`, `AunBridgePiconetDevice` in `tests/piconet/`). The Piconet integration's test stack is described in `docs/discussion/piconet-feasibility.md` ("Testing Strategy" section).
 
