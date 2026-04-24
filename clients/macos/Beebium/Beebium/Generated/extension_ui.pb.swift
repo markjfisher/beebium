@@ -68,7 +68,7 @@ struct Beebium_View: Sendable {
   fileprivate var _root: Beebium_Control? = nil
 }
 
-struct Beebium_Control: Sendable {
+struct Beebium_Control: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -76,64 +76,78 @@ struct Beebium_Control: Sendable {
   /// Stable id assigned by the extension. Used by Dispatch to address
   /// the control and by clients to patch widgets in place across pushes
   /// (instead of rebuilding the panel each time).
-  var id: String = String()
+  var id: String {
+    get {return _storage._id}
+    set {_uniqueStorage()._id = newValue}
+  }
 
-  var control: Beebium_Control.OneOf_Control? = nil
+  var control: OneOf_Control? {
+    get {return _storage._control}
+    set {_uniqueStorage()._control = newValue}
+  }
 
   var label: Beebium_Label {
     get {
-      if case .label(let v)? = control {return v}
+      if case .label(let v)? = _storage._control {return v}
       return Beebium_Label()
     }
-    set {control = .label(newValue)}
+    set {_uniqueStorage()._control = .label(newValue)}
   }
 
   var indicator: Beebium_Indicator {
     get {
-      if case .indicator(let v)? = control {return v}
+      if case .indicator(let v)? = _storage._control {return v}
       return Beebium_Indicator()
     }
-    set {control = .indicator(newValue)}
+    set {_uniqueStorage()._control = .indicator(newValue)}
   }
 
   var toggle: Beebium_Toggle {
     get {
-      if case .toggle(let v)? = control {return v}
+      if case .toggle(let v)? = _storage._control {return v}
       return Beebium_Toggle()
     }
-    set {control = .toggle(newValue)}
+    set {_uniqueStorage()._control = .toggle(newValue)}
   }
 
   var button: Beebium_Button {
     get {
-      if case .button(let v)? = control {return v}
+      if case .button(let v)? = _storage._control {return v}
       return Beebium_Button()
     }
-    set {control = .button(newValue)}
+    set {_uniqueStorage()._control = .button(newValue)}
   }
 
   var choice: Beebium_Choice {
     get {
-      if case .choice(let v)? = control {return v}
+      if case .choice(let v)? = _storage._control {return v}
       return Beebium_Choice()
     }
-    set {control = .choice(newValue)}
+    set {_uniqueStorage()._control = .choice(newValue)}
   }
 
   var textInput: Beebium_TextInput {
     get {
-      if case .textInput(let v)? = control {return v}
+      if case .textInput(let v)? = _storage._control {return v}
       return Beebium_TextInput()
     }
-    set {control = .textInput(newValue)}
+    set {_uniqueStorage()._control = .textInput(newValue)}
   }
 
   var group: Beebium_Group {
     get {
-      if case .group(let v)? = control {return v}
+      if case .group(let v)? = _storage._control {return v}
       return Beebium_Group()
     }
-    set {control = .group(newValue)}
+    set {_uniqueStorage()._control = .group(newValue)}
+  }
+
+  var modalEditor: Beebium_ModalEditor {
+    get {
+      if case .modalEditor(let v)? = _storage._control {return v}
+      return Beebium_ModalEditor()
+    }
+    set {_uniqueStorage()._control = .modalEditor(newValue)}
   }
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -146,10 +160,13 @@ struct Beebium_Control: Sendable {
     case choice(Beebium_Choice)
     case textInput(Beebium_TextInput)
     case group(Beebium_Group)
+    case modalEditor(Beebium_ModalEditor)
 
   }
 
   init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// Read-only text. Frontends render as a static label.
@@ -332,6 +349,130 @@ struct Beebium_Group: Sendable {
   fileprivate var _label: String? = nil
 }
 
+/// Structural primitive for deferred, atomic editing: an always-visible
+/// anchor (typically a Label showing the current value) plus an editor
+/// tree that is revealed on user activation, with a single atomic commit
+/// event delivered when the user confirms. "Modal" here names the
+/// interaction model -- a separate scope with deferred commit -- not the
+/// HIG-strict input-blocking sense; a macOS popover, a Win32 flyout, a
+/// TUI sub-panel, and an HTML <dialog> all satisfy this model.
+///
+/// Commit semantics are client-buffered: while the editor tree is open,
+/// its sub-controls hold local frontend state and do NOT dispatch per-
+/// keystroke / per-selection events. On confirm the frontend bundles all
+/// sub-control values into a single EditorCommit payload. Cancel is a
+/// pure client-side discard -- the server never hears about it, because
+/// it has no state to roll back.
+///
+/// The server gates editability via the 'editable' bool: when false,
+/// frontends render the anchor as a plain read-only display with no edit
+/// affordance. Symmetric to Button.enabled.
+struct Beebium_ModalEditor: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Always-visible display of the current value. Typically a Label;
+  /// any leaf Control type is valid if you want a richer anchor
+  /// (e.g. an Indicator showing status alongside a value).
+  var anchor: Beebium_Control {
+    get {return _storage._anchor ?? Beebium_Control()}
+    set {_uniqueStorage()._anchor = newValue}
+  }
+  /// Returns true if `anchor` has been explicitly set.
+  var hasAnchor: Bool {return _storage._anchor != nil}
+  /// Clears the value of `anchor`. Subsequent reads from it will return its default value.
+  mutating func clearAnchor() {_uniqueStorage()._anchor = nil}
+
+  /// The editor tree revealed on activation. By convention this is a
+  /// Group whose children are TextInput / Choice / Toggle leaves, but
+  /// any Control is accepted. Nested ModalEditors inside the editor
+  /// tree are discouraged (reason about the interaction first).
+  var editor: Beebium_Control {
+    get {return _storage._editor ?? Beebium_Control()}
+    set {_uniqueStorage()._editor = newValue}
+  }
+  /// Returns true if `editor` has been explicitly set.
+  var hasEditor: Bool {return _storage._editor != nil}
+  /// Clears the value of `editor`. Subsequent reads from it will return its default value.
+  mutating func clearEditor() {_uniqueStorage()._editor = nil}
+
+  /// False means "display only": the anchor renders as a read-only
+  /// widget with no affordance to open the editor. True means the
+  /// frontend attaches an edit affordance appropriate to its platform
+  /// (pencil button, click-to-edit, etc.).
+  var editable: Bool {
+    get {return _storage._editable}
+    set {_uniqueStorage()._editable = newValue}
+  }
+
+  var commitRole: Beebium_ModalEditor.CommitRole {
+    get {return _storage._commitRole}
+    set {_uniqueStorage()._commitRole = newValue}
+  }
+
+  /// When true, the renderer includes an explicit Cancel affordance
+  /// in addition to any platform-default dismiss (escape / click-
+  /// outside). macOS popovers dismiss natively, so explicit Cancel
+  /// is optional; full-window dialogs on other platforms may want it
+  /// regardless and can synthesise one. Default false means "trust
+  /// the frontend's default dismiss".
+  var showCancel: Bool {
+    get {return _storage._showCancel}
+    set {_uniqueStorage()._showCancel = newValue}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  /// Semantic role of the commit action. Frontends pick platform-
+  /// idiomatic wording and styling: macOS "Save"/"Add", iOS "Done"/
+  /// "Add", Windows "OK"/"Add", GNOME "Apply"/"Add". Keeping this
+  /// semantic rather than a string lets every frontend localise and
+  /// match its own conventions; string labels would leak one
+  /// platform's wording into the vocabulary.
+  enum CommitRole: SwiftProtobuf.Enum, Swift.CaseIterable {
+    typealias RawValue = Int
+
+    /// default: committing edits to an existing value
+    case save // = 0
+
+    /// creating a new entity (Add peer, Add disc, etc.)
+    case add // = 1
+    case UNRECOGNIZED(Int)
+
+    init() {
+      self = .save
+    }
+
+    init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .save
+      case 1: self = .add
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    var rawValue: Int {
+      switch self {
+      case .save: return 0
+      case .add: return 1
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    static let allCases: [Beebium_ModalEditor.CommitRole] = [
+      .save,
+      .add,
+    ]
+
+  }
+
+  init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
 struct Beebium_DispatchRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -350,10 +491,12 @@ struct Beebium_DispatchRequest: Sendable {
   var viewRevision: UInt64 = 0
 
   /// Typed payload, chosen to match the target Control's type:
-  ///   Toggle    -> bool_value
-  ///   TextInput -> string_value
-  ///   Choice    -> index_value
-  ///   Button    -> none (leave the oneof unset)
+  ///   Toggle      -> bool_value
+  ///   TextInput   -> string_value
+  ///   Choice      -> index_value
+  ///   Button      -> none (leave the oneof unset)
+  ///   ModalEditor -> editor_commit (one atomic bundle of sub-control
+  ///                  values; see EditorCommit)
   ///
   /// Validation: the server rejects requests whose payload variant
   /// does not match the addressed control's type.
@@ -383,13 +526,23 @@ struct Beebium_DispatchRequest: Sendable {
     set {payload = .indexValue(newValue)}
   }
 
+  var editorCommit: Beebium_EditorCommit {
+    get {
+      if case .editorCommit(let v)? = payload {return v}
+      return Beebium_EditorCommit()
+    }
+    set {payload = .editorCommit(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   /// Typed payload, chosen to match the target Control's type:
-  ///   Toggle    -> bool_value
-  ///   TextInput -> string_value
-  ///   Choice    -> index_value
-  ///   Button    -> none (leave the oneof unset)
+  ///   Toggle      -> bool_value
+  ///   TextInput   -> string_value
+  ///   Choice      -> index_value
+  ///   Button      -> none (leave the oneof unset)
+  ///   ModalEditor -> editor_commit (one atomic bundle of sub-control
+  ///                  values; see EditorCommit)
   ///
   /// Validation: the server rejects requests whose payload variant
   /// does not match the addressed control's type.
@@ -397,8 +550,78 @@ struct Beebium_DispatchRequest: Sendable {
     case boolValue(Bool)
     case stringValue(String)
     case indexValue(UInt32)
+    case editorCommit(Beebium_EditorCommit)
 
   }
+
+  init() {}
+}
+
+/// One field's value inside an EditorCommit. The 'field_id' names a
+/// sub-control inside the ModalEditor's editor tree (matches the
+/// Control.id of that leaf). The payload variant must match the
+/// addressed sub-control's type (see EditorCommit validation below).
+struct Beebium_EditorFieldValue: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var fieldID: String = String()
+
+  var value: Beebium_EditorFieldValue.OneOf_Value? = nil
+
+  var boolValue: Bool {
+    get {
+      if case .boolValue(let v)? = value {return v}
+      return false
+    }
+    set {value = .boolValue(newValue)}
+  }
+
+  var stringValue: String {
+    get {
+      if case .stringValue(let v)? = value {return v}
+      return String()
+    }
+    set {value = .stringValue(newValue)}
+  }
+
+  var indexValue: UInt32 {
+    get {
+      if case .indexValue(let v)? = value {return v}
+      return 0
+    }
+    set {value = .indexValue(newValue)}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum OneOf_Value: Equatable, Sendable {
+    case boolValue(Bool)
+    case stringValue(String)
+    case indexValue(UInt32)
+
+  }
+
+  init() {}
+}
+
+/// Atomic commit of a ModalEditor's editor tree. Sent as the payload of
+/// a DispatchRequest targeting a ModalEditor control.
+///
+/// Clients bundle the final value of each sub-control whose value the
+/// user changed (or all sub-controls -- either is accepted). The server
+/// validates that every field_id names a sub-control actually present in
+/// the editor tree and that each value variant matches the sub-control's
+/// type; any violation rejects the whole commit (no partial applies).
+struct Beebium_EditorCommit: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var fields: [Beebium_EditorFieldValue] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
 }
@@ -501,156 +724,211 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
 
 extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Control"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0\u{3}modal_editor\0")
+
+  fileprivate class _StorageClass {
+    var _id: String = String()
+    var _control: Beebium_Control.OneOf_Control?
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _id = source._id
+      _control = source._control
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 2: try {
-        var v: Beebium_Label?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .label(let m) = current {v = m}
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._id) }()
+        case 2: try {
+          var v: Beebium_Label?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .label(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .label(v)
+          }
+        }()
+        case 3: try {
+          var v: Beebium_Indicator?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .indicator(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .indicator(v)
+          }
+        }()
+        case 4: try {
+          var v: Beebium_Toggle?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .toggle(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .toggle(v)
+          }
+        }()
+        case 5: try {
+          var v: Beebium_Button?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .button(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .button(v)
+          }
+        }()
+        case 6: try {
+          var v: Beebium_Choice?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .choice(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .choice(v)
+          }
+        }()
+        case 7: try {
+          var v: Beebium_TextInput?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .textInput(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .textInput(v)
+          }
+        }()
+        case 8: try {
+          var v: Beebium_Group?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .group(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .group(v)
+          }
+        }()
+        case 9: try {
+          var v: Beebium_ModalEditor?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .modalEditor(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .modalEditor(v)
+          }
+        }()
+        default: break
         }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .label(v)
-        }
-      }()
-      case 3: try {
-        var v: Beebium_Indicator?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .indicator(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .indicator(v)
-        }
-      }()
-      case 4: try {
-        var v: Beebium_Toggle?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .toggle(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .toggle(v)
-        }
-      }()
-      case 5: try {
-        var v: Beebium_Button?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .button(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .button(v)
-        }
-      }()
-      case 6: try {
-        var v: Beebium_Choice?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .choice(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .choice(v)
-        }
-      }()
-      case 7: try {
-        var v: Beebium_TextInput?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .textInput(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .textInput(v)
-        }
-      }()
-      case 8: try {
-        var v: Beebium_Group?
-        var hadOneofValue = false
-        if let current = self.control {
-          hadOneofValue = true
-          if case .group(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.control = .group(v)
-        }
-      }()
-      default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.id.isEmpty {
-      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
-    }
-    switch self.control {
-    case .label?: try {
-      guard case .label(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    }()
-    case .indicator?: try {
-      guard case .indicator(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
-    }()
-    case .toggle?: try {
-      guard case .toggle(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
-    }()
-    case .button?: try {
-      guard case .button(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
-    }()
-    case .choice?: try {
-      guard case .choice(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    }()
-    case .textInput?: try {
-      guard case .textInput(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
-    }()
-    case .group?: try {
-      guard case .group(let v)? = self.control else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
-    }()
-    case nil: break
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._id.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._id, fieldNumber: 1)
+      }
+      switch _storage._control {
+      case .label?: try {
+        guard case .label(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      }()
+      case .indicator?: try {
+        guard case .indicator(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      }()
+      case .toggle?: try {
+        guard case .toggle(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      }()
+      case .button?: try {
+        guard case .button(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      }()
+      case .choice?: try {
+        guard case .choice(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      }()
+      case .textInput?: try {
+        guard case .textInput(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      }()
+      case .group?: try {
+        guard case .group(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      }()
+      case .modalEditor?: try {
+        guard case .modalEditor(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      }()
+      case nil: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Beebium_Control, rhs: Beebium_Control) -> Bool {
-    if lhs.id != rhs.id {return false}
-    if lhs.control != rhs.control {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._id != rhs_storage._id {return false}
+        if _storage._control != rhs_storage._control {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -919,9 +1197,111 @@ extension Beebium_Group: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
   }
 }
 
+extension Beebium_ModalEditor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ModalEditor"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}anchor\0\u{1}editor\0\u{1}editable\0\u{3}commit_role\0\u{3}show_cancel\0")
+
+  fileprivate class _StorageClass {
+    var _anchor: Beebium_Control? = nil
+    var _editor: Beebium_Control? = nil
+    var _editable: Bool = false
+    var _commitRole: Beebium_ModalEditor.CommitRole = .save
+    var _showCancel: Bool = false
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _anchor = source._anchor
+      _editor = source._editor
+      _editable = source._editable
+      _commitRole = source._commitRole
+      _showCancel = source._showCancel
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._anchor) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._editor) }()
+        case 3: try { try decoder.decodeSingularBoolField(value: &_storage._editable) }()
+        case 4: try { try decoder.decodeSingularEnumField(value: &_storage._commitRole) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._showCancel) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._anchor {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      try { if let v = _storage._editor {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      if _storage._editable != false {
+        try visitor.visitSingularBoolField(value: _storage._editable, fieldNumber: 3)
+      }
+      if _storage._commitRole != .save {
+        try visitor.visitSingularEnumField(value: _storage._commitRole, fieldNumber: 4)
+      }
+      if _storage._showCancel != false {
+        try visitor.visitSingularBoolField(value: _storage._showCancel, fieldNumber: 5)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_ModalEditor, rhs: Beebium_ModalEditor) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._anchor != rhs_storage._anchor {return false}
+        if _storage._editor != rhs_storage._editor {return false}
+        if _storage._editable != rhs_storage._editable {return false}
+        if _storage._commitRole != rhs_storage._commitRole {return false}
+        if _storage._showCancel != rhs_storage._showCancel {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_ModalEditor.CommitRole: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SAVE\0\u{1}ADD\0")
+}
+
 extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DispatchRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_name\0\u{3}control_id\0\u{3}view_revision\0\u{3}bool_value\0\u{3}string_value\0\u{3}index_value\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_name\0\u{3}control_id\0\u{3}view_revision\0\u{3}bool_value\0\u{3}string_value\0\u{3}index_value\0\u{3}editor_commit\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -956,6 +1336,19 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
           self.payload = .indexValue(v)
         }
       }()
+      case 7: try {
+        var v: Beebium_EditorCommit?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .editorCommit(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .editorCommit(v)
+        }
+      }()
       default: break
       }
     }
@@ -988,6 +1381,10 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
       guard case .indexValue(let v)? = self.payload else { preconditionFailure() }
       try visitor.visitSingularUInt32Field(value: v, fieldNumber: 6)
     }()
+    case .editorCommit?: try {
+      guard case .editorCommit(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -998,6 +1395,110 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
     if lhs.controlID != rhs.controlID {return false}
     if lhs.viewRevision != rhs.viewRevision {return false}
     if lhs.payload != rhs.payload {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_EditorFieldValue: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EditorFieldValue"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}field_id\0\u{3}bool_value\0\u{3}string_value\0\u{3}index_value\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.fieldID) }()
+      case 2: try {
+        var v: Bool?
+        try decoder.decodeSingularBoolField(value: &v)
+        if let v = v {
+          if self.value != nil {try decoder.handleConflictingOneOf()}
+          self.value = .boolValue(v)
+        }
+      }()
+      case 3: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.value != nil {try decoder.handleConflictingOneOf()}
+          self.value = .stringValue(v)
+        }
+      }()
+      case 4: try {
+        var v: UInt32?
+        try decoder.decodeSingularUInt32Field(value: &v)
+        if let v = v {
+          if self.value != nil {try decoder.handleConflictingOneOf()}
+          self.value = .indexValue(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.fieldID.isEmpty {
+      try visitor.visitSingularStringField(value: self.fieldID, fieldNumber: 1)
+    }
+    switch self.value {
+    case .boolValue?: try {
+      guard case .boolValue(let v)? = self.value else { preconditionFailure() }
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 2)
+    }()
+    case .stringValue?: try {
+      guard case .stringValue(let v)? = self.value else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    }()
+    case .indexValue?: try {
+      guard case .indexValue(let v)? = self.value else { preconditionFailure() }
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 4)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_EditorFieldValue, rhs: Beebium_EditorFieldValue) -> Bool {
+    if lhs.fieldID != rhs.fieldID {return false}
+    if lhs.value != rhs.value {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_EditorCommit: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EditorCommit"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}fields\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.fields) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.fields.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.fields, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_EditorCommit, rhs: Beebium_EditorCommit) -> Bool {
+    if lhs.fields != rhs.fields {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

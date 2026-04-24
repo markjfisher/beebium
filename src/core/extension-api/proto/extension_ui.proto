@@ -57,11 +57,11 @@ message View {
 
 // --- Controls ---
 //
-// Seven primitives, deliberately small. Together with nested Groups
-// they cover the panels we have today (Piconet, AUN) and are expected to
-// cover ~90% of any future extension. Stretching the alphabet should
-// hurt slightly each time -- that's the forcing function for keeping it
-// small.
+// Eight primitives, deliberately small. Together with nested Groups and
+// ModalEditors they cover the panels we have today (Piconet, AUN) and
+// are expected to cover ~90% of any future extension. Stretching the
+// alphabet should hurt slightly each time -- that's the forcing function
+// for keeping it small.
 
 message Control {
     // Stable id assigned by the extension. Used by Dispatch to address
@@ -70,13 +70,14 @@ message Control {
     string id = 1;
 
     oneof control {
-        Label     label      = 2;
-        Indicator indicator  = 3;
-        Toggle    toggle     = 4;
-        Button    button     = 5;
-        Choice    choice     = 6;
-        TextInput text_input = 7;
-        Group     group      = 8;
+        Label       label        = 2;
+        Indicator   indicator    = 3;
+        Toggle      toggle       = 4;
+        Button      button       = 5;
+        Choice      choice       = 6;
+        TextInput   text_input   = 7;
+        Group       group        = 8;
+        ModalEditor modal_editor = 9;
     }
 }
 
@@ -150,6 +151,63 @@ message Group {
     repeated Control controls = 2;
 }
 
+// Structural primitive for deferred, atomic editing: an always-visible
+// anchor (typically a Label showing the current value) plus an editor
+// tree that is revealed on user activation, with a single atomic commit
+// event delivered when the user confirms. "Modal" here names the
+// interaction model -- a separate scope with deferred commit -- not the
+// HIG-strict input-blocking sense; a macOS popover, a Win32 flyout, a
+// TUI sub-panel, and an HTML <dialog> all satisfy this model.
+//
+// Commit semantics are client-buffered: while the editor tree is open,
+// its sub-controls hold local frontend state and do NOT dispatch per-
+// keystroke / per-selection events. On confirm the frontend bundles all
+// sub-control values into a single EditorCommit payload. Cancel is a
+// pure client-side discard -- the server never hears about it, because
+// it has no state to roll back.
+//
+// The server gates editability via the 'editable' bool: when false,
+// frontends render the anchor as a plain read-only display with no edit
+// affordance. Symmetric to Button.enabled.
+message ModalEditor {
+    // Always-visible display of the current value. Typically a Label;
+    // any leaf Control type is valid if you want a richer anchor
+    // (e.g. an Indicator showing status alongside a value).
+    Control anchor = 1;
+
+    // The editor tree revealed on activation. By convention this is a
+    // Group whose children are TextInput / Choice / Toggle leaves, but
+    // any Control is accepted. Nested ModalEditors inside the editor
+    // tree are discouraged (reason about the interaction first).
+    Control editor = 2;
+
+    // False means "display only": the anchor renders as a read-only
+    // widget with no affordance to open the editor. True means the
+    // frontend attaches an edit affordance appropriate to its platform
+    // (pencil button, click-to-edit, etc.).
+    bool editable = 3;
+
+    // Semantic role of the commit action. Frontends pick platform-
+    // idiomatic wording and styling: macOS "Save"/"Add", iOS "Done"/
+    // "Add", Windows "OK"/"Add", GNOME "Apply"/"Add". Keeping this
+    // semantic rather than a string lets every frontend localise and
+    // match its own conventions; string labels would leak one
+    // platform's wording into the vocabulary.
+    enum CommitRole {
+        SAVE = 0;  // default: committing edits to an existing value
+        ADD  = 1;  // creating a new entity (Add peer, Add disc, etc.)
+    }
+    CommitRole commit_role = 4;
+
+    // When true, the renderer includes an explicit Cancel affordance
+    // in addition to any platform-default dismiss (escape / click-
+    // outside). macOS popovers dismiss natively, so explicit Cancel
+    // is optional; full-window dialogs on other platforms may want it
+    // regardless and can synthesise one. Default false means "trust
+    // the frontend's default dismiss".
+    bool show_cancel = 5;
+}
+
 // --- Dispatch ---
 
 message DispatchRequest {
@@ -166,18 +224,46 @@ message DispatchRequest {
     uint64 view_revision = 3;
 
     // Typed payload, chosen to match the target Control's type:
-    //   Toggle    -> bool_value
-    //   TextInput -> string_value
-    //   Choice    -> index_value
-    //   Button    -> none (leave the oneof unset)
+    //   Toggle      -> bool_value
+    //   TextInput   -> string_value
+    //   Choice      -> index_value
+    //   Button      -> none (leave the oneof unset)
+    //   ModalEditor -> editor_commit (one atomic bundle of sub-control
+    //                  values; see EditorCommit)
     //
     // Validation: the server rejects requests whose payload variant
     // does not match the addressed control's type.
     oneof payload {
-        bool   bool_value   = 4;
-        string string_value = 5;
-        uint32 index_value  = 6;
+        bool         bool_value    = 4;
+        string       string_value  = 5;
+        uint32       index_value   = 6;
+        EditorCommit editor_commit = 7;
     }
+}
+
+// One field's value inside an EditorCommit. The 'field_id' names a
+// sub-control inside the ModalEditor's editor tree (matches the
+// Control.id of that leaf). The payload variant must match the
+// addressed sub-control's type (see EditorCommit validation below).
+message EditorFieldValue {
+    string field_id = 1;
+    oneof value {
+        bool   bool_value   = 2;
+        string string_value = 3;
+        uint32 index_value  = 4;
+    }
+}
+
+// Atomic commit of a ModalEditor's editor tree. Sent as the payload of
+// a DispatchRequest targeting a ModalEditor control.
+//
+// Clients bundle the final value of each sub-control whose value the
+// user changed (or all sub-controls -- either is accepted). The server
+// validates that every field_id names a sub-control actually present in
+// the editor tree and that each value variant matches the sub-control's
+// type; any violation rejects the whole commit (no partial applies).
+message EditorCommit {
+    repeated EditorFieldValue fields = 1;
 }
 
 message DispatchResponse {
