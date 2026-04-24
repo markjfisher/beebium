@@ -17,6 +17,11 @@ add_library(beebium_core STATIC
     src/ParasiteCpu.cpp
     src/ParasiteRunner.cpp
     src/Expression.cpp
+    # Serial-port enumeration -- platform-conditional; only one .cpp
+    # compiles per build. Both are listed so IDEs see them.
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsPosix.cpp>
+    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsWin32.cpp>
+    include/beebium/serial/EnumeratePorts.hpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
