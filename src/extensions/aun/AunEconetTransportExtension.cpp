@@ -198,9 +198,21 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
     // discover us without an explicit --aun map= entry. Failure to
     // start (e.g. mDNS unavailable on this platform) is non-fatal --
     // the transport still works for explicitly-mapped peers.
+    //
+    // machine_uuid is injected by ServerMain so the announcement's
+    // impl-identity TXT record matches the same UUID this server
+    // publishes on its _beebium._tcp announcement -- a discovering
+    // tool can correlate the two and know which AUN peer is which
+    // Beebium machine.
+    auto machine_uuid_value = config_value("machine_uuid");
+    std::string machine_uuid = machine_uuid_value
+        ? std::string(*machine_uuid_value)
+        : std::string{};
+
     announcer_ = std::make_unique<AunDiscoveryAnnouncer>(
         local_net, station, backend->local_port(),
-        std::string{"beebium"}, std::string{BEEBIUM_VERSION});
+        std::string{"beebium"}, std::string{BEEBIUM_VERSION},
+        std::move(machine_uuid));
     if (!announcer_->start()) {
         std::cerr << "AUN extension: mDNS announcement unavailable -- "
                      "discovery disabled\n";

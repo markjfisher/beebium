@@ -85,9 +85,9 @@ TEST_CASE("AUN mDNS e2e: peers discover each other on the same net, no map=",
     REQUIRE(backend_b.is_connected());
 
     AunDiscoveryAnnouncer announce_a(0, stn_a, backend_a.local_port(),
-                                     "beebium-test", "1.0");
+                                     "beebium-test", "1.0", "");
     AunDiscoveryAnnouncer announce_b(0, stn_b, backend_b.local_port(),
-                                     "beebium-test", "1.0");
+                                     "beebium-test", "1.0", "");
     REQUIRE(announce_a.start());
     REQUIRE(announce_b.start());
 
@@ -182,9 +182,9 @@ TEST_CASE("AUN mDNS e2e: cross-net discovery routes via local_net translation",
     REQUIRE(backend_b.is_connected());
 
     AunDiscoveryAnnouncer announce_a(3, stn_a, backend_a.local_port(),
-                                     "beebium-test", "1.0");
+                                     "beebium-test", "1.0", "");
     AunDiscoveryAnnouncer announce_b(5, stn_b, backend_b.local_port(),
-                                     "beebium-test", "1.0");
+                                     "beebium-test", "1.0", "");
     REQUIRE(announce_a.start());
     REQUIRE(announce_b.start());
 

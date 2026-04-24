@@ -27,6 +27,17 @@
 //   port          "<n>"         (mandatory; UDP port mirror of SRV.port)
 //   impl          "beebium"     (optional; identifies the implementation)
 //   impl-version  "<version>"   (optional; build/release version string)
+//   impl-identity "<opaque>"    (optional; per-instance identifier.
+//                                Vendor-neutral key; the value's
+//                                format is scoped by impl=, so each
+//                                implementation picks what makes sense
+//                                for it. Beebium populates this with
+//                                the same machine UUID published as
+//                                "uuid" on _beebium._tcp, so a
+//                                discovering tool can correlate the
+//                                two announcements; another vendor
+//                                might use a hostname, a hash, or
+//                                nothing at all.)
 //
 // Lifetime is RAII-shaped: construction stores parameters, start()
 // publishes the announcement (using a real platform Advertiser unless
@@ -56,6 +67,7 @@ public:
                           std::uint16_t local_port,
                           std::string impl,
                           std::string impl_version,
+                          std::string impl_identity,
                           std::unique_ptr<discovery::Advertiser> advertiser = nullptr);
 
     ~AunDiscoveryAnnouncer();
@@ -94,6 +106,7 @@ private:
     std::uint16_t local_port_;
     std::string impl_;
     std::string impl_version_;
+    std::string impl_identity_;
     std::unique_ptr<discovery::Advertiser> advertiser_;
 };
 

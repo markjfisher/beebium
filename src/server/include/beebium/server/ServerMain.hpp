@@ -1483,6 +1483,16 @@ public:
                 return *exit_code;
             }
 
+            // Resolve the machine identity UUID up front so transport
+            // extensions can pick it up via inst.config["machine_uuid"]
+            // before their create_backend runs. The MachineIdentity
+            // proper is constructed later, but the UUID (the only
+            // value extensions need today) is fixed once it's been
+            // generated.
+            if (config.machine_uuid.empty()) {
+                config.machine_uuid = generate_uuid_v4();
+            }
+
             // Plugin manifests have to be scanned now (not later in the
             // peripheral setup) because econet-transport plugins like
             // piconet need to be constructed before install_econet so
@@ -1519,13 +1529,21 @@ public:
                     if (inst.config.find("id") == inst.config.end()) {
                         inst.config["id"] = generate_uuid_v4();
                     }
+                    // Inject the machine identity UUID under a
+                    // framework-reserved key. The AUN extension reads
+                    // this and surfaces it as the impl-identity TXT
+                    // record on its mDNS announcement so a discovering
+                    // peer can correlate the AUN announcement with the
+                    // matching _beebium._tcp gRPC announcement (which
+                    // already publishes the same UUID under "uuid").
+                    inst.config["machine_uuid"] = config.machine_uuid;
                     // Normalise scalar-form list params from presets into list_config
                     // so the extension only sees one source of truth.
                     normalise_list_params(inst.config, inst.list_config, manifest->parameters);
                     std::cout << "Loading transport: " << manifest->name
                               << " (id=" << inst.config["id"] << ")\n";
                     for (const auto& [k, v] : inst.config) {
-                        if (k != "id") {
+                        if (k != "id" && k != "machine_uuid") {
                             std::cout << "  " << k << "=" << v << "\n";
                         }
                     }

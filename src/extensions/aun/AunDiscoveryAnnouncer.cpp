@@ -22,12 +22,14 @@ AunDiscoveryAnnouncer::AunDiscoveryAnnouncer(
         std::uint16_t local_port,
         std::string impl,
         std::string impl_version,
+        std::string impl_identity,
         std::unique_ptr<discovery::Advertiser> advertiser)
     : local_net_(local_net)
     , local_stn_(local_stn)
     , local_port_(local_port)
     , impl_(std::move(impl))
     , impl_version_(std::move(impl_version))
+    , impl_identity_(std::move(impl_identity))
     , advertiser_(advertiser ? std::move(advertiser)
                              : discovery::create_advertiser()) {}
 
@@ -69,6 +71,9 @@ discovery::ServiceInfo AunDiscoveryAnnouncer::build_service_info() const {
     }
     if (!impl_version_.empty()) {
         info.txt_records["impl-version"] = impl_version_;
+    }
+    if (!impl_identity_.empty()) {
+        info.txt_records["impl-identity"] = impl_identity_;
     }
     return info;
 }

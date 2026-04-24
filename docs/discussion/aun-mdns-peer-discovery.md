@@ -47,6 +47,7 @@ Optional:
 
 * `impl=<name>` — implementation identifier, e.g. `beebium`, `beebem`, `pi-econet-bridge`. **Diagnostic only.** Never used for behavioural decisions; never used to filter or prefer announcements. We refuse to grow a fragmented protocol where each implementation only talks to its own kind.
 * `impl-version=<version>` — implementation version. Diagnostic only.
+* `impl-identity=<opaque>` — per-instance identifier. The *key* is vendor-neutral; the *value's* format is scoped by `impl=`, so each implementation picks what makes sense for it. Beebium populates this with the same machine UUID it publishes as `uuid` on its `_beebium._tcp` gRPC announcement, so a discovering tool can correlate the AUN peer with the matching gRPC server. Another implementation might use a hostname, a hash of its config, or omit the field. Consumers must treat the value as opaque (don't parse it; don't infer anything from its format) and must not use it for behavioural decisions — diagnostic and correlation only.
 
 Format: standard DNS-SD TXT record key=value pairs, each ≤ 255 bytes (well within limits for these short values).
 

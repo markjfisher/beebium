@@ -76,6 +76,7 @@ TEST_CASE("AunDiscoveryAnnouncer: build_service_info populates schema",
     FakeState s;
     AunDiscoveryAnnouncer announcer(/*net=*/3, /*stn=*/254, /*port=*/32768,
                                     "beebium", "1.2.3",
+                                    "11111111-2222-3333-4444-555555555555",
                                     std::make_unique<FakeAdvertiser>(&s));
     auto info = announcer.build_service_info();
     CHECK(info.service_type == "_aun._udp");
@@ -88,17 +89,20 @@ TEST_CASE("AunDiscoveryAnnouncer: build_service_info populates schema",
     CHECK(info.txt_records.at("port") == "32768");
     CHECK(info.txt_records.at("impl") == "beebium");
     CHECK(info.txt_records.at("impl-version") == "1.2.3");
+    CHECK(info.txt_records.at("impl-identity")
+          == "11111111-2222-3333-4444-555555555555");
 }
 
 TEST_CASE("AunDiscoveryAnnouncer: omits empty optional TXT entries",
           "[aun][discovery][announcer]") {
     FakeState s;
     AunDiscoveryAnnouncer announcer(/*net=*/0, /*stn=*/1, /*port=*/40000,
-                                    "", "",
+                                    "", "", "",
                                     std::make_unique<FakeAdvertiser>(&s));
     auto info = announcer.build_service_info();
     CHECK(info.txt_records.count("impl") == 0);
     CHECK(info.txt_records.count("impl-version") == 0);
+    CHECK(info.txt_records.count("impl-identity") == 0);
     // Mandatory schema entries still present.
     CHECK(info.txt_records.at("version") == "1");
     CHECK(info.txt_records.at("net") == "0");
@@ -106,10 +110,26 @@ TEST_CASE("AunDiscoveryAnnouncer: omits empty optional TXT entries",
     CHECK(info.txt_records.at("port") == "40000");
 }
 
+TEST_CASE("AunDiscoveryAnnouncer: impl-identity is independent of impl-version",
+          "[aun][discovery][announcer]") {
+    // impl-identity present, impl-version empty: advertise identity
+    // alone (a vendor that doesn't track versions still gets a stable
+    // per-instance handle).
+    FakeState s;
+    AunDiscoveryAnnouncer announcer(0, 1, 40000, "beebium", "",
+                                    "deadbeef-feed-face-1234-cafebabe5678",
+                                    std::make_unique<FakeAdvertiser>(&s));
+    auto info = announcer.build_service_info();
+    CHECK(info.txt_records.count("impl-version") == 0);
+    CHECK(info.txt_records.at("impl-identity")
+          == "deadbeef-feed-face-1234-cafebabe5678");
+    CHECK(info.txt_records.at("impl") == "beebium");
+}
+
 TEST_CASE("AunDiscoveryAnnouncer: start invokes advertiser with ServiceInfo",
           "[aun][discovery][announcer]") {
     FakeState s;
-    AunDiscoveryAnnouncer announcer(5, 200, 32769, "beebium", "0.1",
+    AunDiscoveryAnnouncer announcer(5, 200, 32769, "beebium", "0.1", "",
                                     std::make_unique<FakeAdvertiser>(&s));
     REQUIRE(announcer.start());
 
@@ -126,7 +146,7 @@ TEST_CASE("AunDiscoveryAnnouncer: failure propagates as false",
     FakeState s;
     s.fail_start = true;
 
-    AunDiscoveryAnnouncer announcer(0, 1, 32768, "beebium", "0.1",
+    AunDiscoveryAnnouncer announcer(0, 1, 32768, "beebium", "0.1", "",
                                     std::make_unique<FakeAdvertiser>(&s));
     CHECK_FALSE(announcer.start());
     CHECK(s.start_count == 1);
@@ -137,7 +157,7 @@ TEST_CASE("AunDiscoveryAnnouncer: destructor stops advertising",
           "[aun][discovery][announcer]") {
     FakeState s;
     {
-        AunDiscoveryAnnouncer announcer(0, 1, 32768, "beebium", "0.1",
+        AunDiscoveryAnnouncer announcer(0, 1, 32768, "beebium", "0.1", "",
                                         std::make_unique<FakeAdvertiser>(&s));
         REQUIRE(announcer.start());
         REQUIRE(s.advertising);
