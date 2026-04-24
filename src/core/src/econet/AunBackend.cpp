@@ -382,11 +382,15 @@ std::vector<PeerInfo> AunBackend::list_peers() const {
     std::vector<PeerInfo> result;
     result.reserve(forward_map_.size());
     for (const auto& [key, endpoint] : forward_map_) {
+        PeerSource source = (operator_configured_keys_.count(key) == 1)
+            ? PeerSource::OperatorConfigured
+            : PeerSource::Discovered;
         result.push_back({
             static_cast<uint8_t>(key >> 8),
             static_cast<uint8_t>(key & 0xFF),
             endpoint.first,
-            endpoint.second
+            endpoint.second,
+            source,
         });
     }
     return result;

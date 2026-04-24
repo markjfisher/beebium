@@ -217,3 +217,49 @@ TEST_CASE("AunDiscoverySubscriber: missing IPv4 address is skipped",
     subscriber.inject_added(svc);
     CHECK(backend.peer_count() == 0);
 }
+
+TEST_CASE("AunDiscoverySubscriber: on_peers_changed fires on add and remove",
+          "[aun][discovery][subscriber][callback]") {
+    AunBackend backend(0, 1, 0);
+    AunDiscoverySubscriber subscriber(backend, 1,
+                                      std::make_unique<FakeBrowser>());
+
+    int call_count = 0;
+    subscriber.set_on_peers_changed([&] { ++call_count; });
+
+    subscriber.inject_added(make_service("Beebium 0.254", 0, 254, 32768));
+    CHECK(call_count == 1);
+
+    subscriber.inject_removed("Beebium 0.254");
+    CHECK(call_count == 2);
+}
+
+TEST_CASE("AunDiscoverySubscriber: on_peers_changed skipped when operator pinned",
+          "[aun][discovery][subscriber][callback]") {
+    // Operator already pinned this peer, so add_peer is a no-op --
+    // and the UI dirty-bump would be misleading (nothing changed).
+    AunBackend backend(0, 1, 0);
+    backend.add_peer(0, 254, loopback_ip(), 40001,
+                     PeerSource::OperatorConfigured);
+
+    AunDiscoverySubscriber subscriber(backend, 1,
+                                      std::make_unique<FakeBrowser>());
+    int call_count = 0;
+    subscriber.set_on_peers_changed([&] { ++call_count; });
+
+    subscriber.inject_added(make_service("Beebium 0.254", 0, 254, 50001));
+    CHECK(call_count == 0);
+}
+
+TEST_CASE("AunDiscoverySubscriber: on_peers_changed not invoked for self",
+          "[aun][discovery][subscriber][callback]") {
+    AunBackend backend(0, 1, 0);
+    AunDiscoverySubscriber subscriber(backend, 1,
+                                      std::make_unique<FakeBrowser>());
+    int call_count = 0;
+    subscriber.set_on_peers_changed([&] { ++call_count; });
+
+    // Our own announcement: same (net, stn) as backend.
+    subscriber.inject_added(make_service("Beebium 0.1", 0, 1, 32768));
+    CHECK(call_count == 0);
+}

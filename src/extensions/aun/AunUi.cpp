@@ -48,9 +48,13 @@ std::string format_ip(uint32_t ip_addr) {
     return "0.0.0.0";
 }
 
-// Compose the per-peer human-readable label, e.g. "0.254  127.0.0.1:32768".
-// Two spaces between the Econet address and the IP endpoint matches the
-// hardcoded SwiftUI it replaces.
+// Compose the per-peer human-readable label, e.g.
+//   "0.254  127.0.0.1:32768"            (operator-configured)
+//   "0.254  127.0.0.1:32768  (mDNS)"    (auto-discovered)
+// Two spaces between fields matches the hardcoded SwiftUI it replaces;
+// the trailing "(mDNS)" makes provenance visible at a glance so the
+// operator can tell which entries came from --aun map= vs auto-
+// discovery, without having to consult AunService::ListPeers.
 std::string format_peer_line(const PeerInfo& peer) {
     std::string out;
     out += std::to_string(static_cast<unsigned>(peer.net));
@@ -60,6 +64,9 @@ std::string format_peer_line(const PeerInfo& peer) {
     out += format_ip(peer.ip_addr);
     out += ':';
     out += std::to_string(peer.port);
+    if (peer.source == PeerSource::Discovered) {
+        out += "  (mDNS)";
+    }
     return out;
 }
 

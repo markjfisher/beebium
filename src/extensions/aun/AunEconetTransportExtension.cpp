@@ -224,6 +224,13 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
     // AunService::AddPeer) take precedence over discovered ones --
     // see AunBackend::add_peer's PeerSource handling.
     subscriber_ = std::make_unique<AunDiscoverySubscriber>(*backend, station);
+    // Discovery callbacks fire on the browser's background thread.
+    // mark_dirty is atomic; the View is then re-built (and re-pushed
+    // to gRPC subscribers) on the ExtensionUiService poll thread,
+    // which calls list_peers() under the peer-table lock. So a
+    // discovered peer reaches the UI within the next poll interval
+    // (~50ms) without the operator having to interact with anything.
+    subscriber_->set_on_peers_changed([this] { ui_.mark_dirty(); });
     if (!subscriber_->start()) {
         std::cerr << "AUN extension: mDNS subscription unavailable -- "
                      "peer discovery disabled\n";

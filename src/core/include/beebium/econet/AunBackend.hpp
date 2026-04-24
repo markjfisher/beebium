@@ -32,20 +32,21 @@
 
 namespace beebium {
 
-// Information about a configured peer in the AUN peer table.
-struct PeerInfo {
-    uint8_t net;
-    uint8_t stn;
-    uint32_t ip_addr;   // Network byte order
-    uint16_t port;      // Host byte order
-};
-
 // Where a peer entry came from. Used by the discovery subscriber to
 // avoid overwriting an operator-configured entry with a discovered
 // one (operator config wins -- see docs/discussion/aun-mdns-peer-discovery.md).
 enum class PeerSource {
     OperatorConfigured,
     Discovered,
+};
+
+// Information about a configured peer in the AUN peer table.
+struct PeerInfo {
+    uint8_t net;
+    uint8_t stn;
+    uint32_t ip_addr;   // Network byte order
+    uint16_t port;      // Host byte order
+    PeerSource source = PeerSource::OperatorConfigured;
 };
 
 // UDP transport backend implementing the AUN (Acorn Universal Networking) protocol.

@@ -70,6 +70,11 @@ bool AunDiscoverySubscriber::is_subscribed() const {
     return browser_->state().browsing;
 }
 
+void AunDiscoverySubscriber::set_on_peers_changed(std::function<void()> cb) {
+    std::lock_guard lock(callback_mutex_);
+    on_peers_changed_ = std::move(cb);
+}
+
 bool AunDiscoverySubscriber::parse_txt(
         const std::map<std::string, std::string>& txt,
         std::uint8_t& net_out,
@@ -113,11 +118,23 @@ void AunDiscoverySubscriber::handle_added(
         return;  // No usable endpoint yet (e.g. IPv6-only peer).
     }
 
+    // Skip the change-callback if the operator already pinned this
+    // (net, stn) -- add_peer will refuse to overwrite, so the peer
+    // table didn't actually change.
+    bool operator_pinned =
+        backend_.is_operator_configured(net, stn);
+
     backend_.add_peer(net, stn, svc.ipv4_addr_net_byte_order, svc.port,
                       PeerSource::Discovered);
 
-    std::lock_guard lock(name_map_mutex_);
-    name_to_peer_[svc.instance_name] = {net, stn};
+    {
+        std::lock_guard lock(name_map_mutex_);
+        name_to_peer_[svc.instance_name] = {net, stn};
+    }
+
+    if (!operator_pinned) {
+        notify_peers_changed();
+    }
 }
 
 void AunDiscoverySubscriber::handle_removed(const std::string& instance_name) {
@@ -136,6 +153,16 @@ void AunDiscoverySubscriber::handle_removed(const std::string& instance_name) {
     if (backend_.is_operator_configured(peer.first, peer.second)) return;
 
     backend_.remove_peer(peer.first, peer.second);
+    notify_peers_changed();
+}
+
+void AunDiscoverySubscriber::notify_peers_changed() {
+    std::function<void()> cb;
+    {
+        std::lock_guard lock(callback_mutex_);
+        cb = on_peers_changed_;
+    }
+    if (cb) cb();
 }
 
 }  // namespace beebium

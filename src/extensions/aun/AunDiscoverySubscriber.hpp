@@ -30,6 +30,7 @@
 #include <beebium/discovery/Browser.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -66,6 +67,15 @@ public:
     // True between a successful start() and a stop() call.
     bool is_subscribed() const;
 
+    // Install a callback fired (without holding any subscriber lock)
+    // after every successful peer-table mutation that the subscriber
+    // makes -- both add and remove paths. The extension wires this to
+    // its ExtensionUi::mark_dirty() so the AUN panel re-renders when
+    // a peer comes or goes. The callback runs on the browser's
+    // background thread; consumers that touch their own state from
+    // it must arrange their own synchronisation.
+    void set_on_peers_changed(std::function<void()> cb);
+
     // Test-only: parse a TXT record set into the (net, stn) pair the
     // subscriber would derive. Returns nullopt if the schema is
     // missing or invalid (so the subscriber can't safely act on it).
@@ -92,8 +102,14 @@ private:
     mutable std::mutex name_map_mutex_;
     std::map<std::string, std::pair<std::uint8_t, std::uint8_t>> name_to_peer_;
 
+    // Snapshot read out under name_map_mutex_; invoked outside the
+    // lock so re-entrant callers can call back into the subscriber.
+    mutable std::mutex callback_mutex_;
+    std::function<void()> on_peers_changed_;
+
     void handle_added(const discovery::DiscoveredService& svc);
     void handle_removed(const std::string& instance_name);
+    void notify_peers_changed();
 };
 
 }  // namespace beebium

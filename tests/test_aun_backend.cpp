@@ -655,6 +655,26 @@ TEST_CASE("AunBackend: remove_peer clears operator-configured flag",
     CHECK_FALSE(backend.is_operator_configured(0, 254));
 }
 
+TEST_CASE("AunBackend: list_peers reports each entry's source",
+          "[econet][aun][backend][peer-source]") {
+    AunBackend backend(0, 1, 0);
+    backend.add_peer(0, 100, loopback_ip(), 40001,
+                     PeerSource::OperatorConfigured);
+    backend.add_peer(0, 200, loopback_ip(), 40002, PeerSource::Discovered);
+
+    auto peers = backend.list_peers();
+    REQUIRE(peers.size() == 2);
+
+    PeerSource op_source = PeerSource::Discovered;
+    PeerSource disc_source = PeerSource::OperatorConfigured;
+    for (const auto& p : peers) {
+        if (p.stn == 100) op_source = p.source;
+        else if (p.stn == 200) disc_source = p.source;
+    }
+    CHECK(op_source == PeerSource::OperatorConfigured);
+    CHECK(disc_source == PeerSource::Discovered);
+}
+
 TEST_CASE("AunBackend: local_port returns specified port when non-zero",
           "[aun_backend][port]") {
     // Pick a port the OS just told us is free to minimise conflicts with
