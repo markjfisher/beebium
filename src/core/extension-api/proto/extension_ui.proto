@@ -81,8 +81,18 @@ message Control {
 }
 
 // Read-only text. Frontends render as a static label.
+//
+// secondary_text is a renderer hint for a short, lower-emphasis
+// caption shown alongside the primary text -- typically right-
+// aligned or in a muted style. Use it for provenance / status / size
+// metadata that's logically attached to the primary line but should
+// not be confused with it. Empty / absent means "no secondary
+// caption", which is the default. Frontends that don't have a
+// natural muted-text style fall back to rendering the two strings
+// joined with whitespace.
 message Label {
     string text = 1;
+    string secondary_text = 2;
 }
 
 // Read-only state badge. The 'state' field is semantic -- the frontend

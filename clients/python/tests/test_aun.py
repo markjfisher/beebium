@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium.aun import Aun, AunStatus, PeerInfo
+from beebium.aun import Aun, AunStatus, PeerInfo, PeerSource
 from beebium.exceptions import EconetError
 
 
@@ -51,11 +51,17 @@ class MockRemovePeerResponse:
 
 
 class MockAunPeer:
-    def __init__(self, net=0, stn=254, ip_address="127.0.0.1", port=32768):
+    def __init__(self, net=0, stn=254, ip_address="127.0.0.1", port=32768,
+                 source=None):
+        from beebium._proto import aun_pb2
         self.net = net
         self.stn = stn
         self.ip_address = ip_address
         self.port = port
+        # Default to OPERATOR_CONFIGURED so existing tests that don't
+        # care about provenance keep their previous semantics.
+        self.source = (source if source is not None
+                       else aun_pb2.AUN_PEER_SOURCE_OPERATOR_CONFIGURED)
 
 
 class MockListPeersResponse:
@@ -158,10 +164,12 @@ class TestPeers:
         assert aun.peers == []
 
     def test_peers_populated(self, mock_stub, aun):
+        from beebium._proto import aun_pb2
         mock_stub.ListPeers.return_value = MockListPeersResponse(
             peers=[
                 MockAunPeer(net=0, stn=1, ip_address="192.168.1.1", port=32768),
-                MockAunPeer(net=1, stn=254, ip_address="10.0.0.100", port=9999),
+                MockAunPeer(net=1, stn=254, ip_address="10.0.0.100", port=9999,
+                            source=aun_pb2.AUN_PEER_SOURCE_DISCOVERED),
             ]
         )
         peers = aun.peers
@@ -169,4 +177,24 @@ class TestPeers:
         assert isinstance(peers[0], PeerInfo)
         assert peers[0].net == 0
         assert peers[0].ip_address == "192.168.1.1"
+        assert peers[0].source == PeerSource.OPERATOR_CONFIGURED
         assert peers[1].port == 9999
+        assert peers[1].source == PeerSource.DISCOVERED
+
+    def test_peers_unspecified_source_falls_back_to_operator(
+            self, mock_stub, aun):
+        # Older servers leave source unset (UNSPECIFIED is the proto
+        # default). The wrapper must collapse that to OPERATOR_CONFIGURED
+        # because pre-discovery servers only ever published operator
+        # entries -- treating UNSPECIFIED as DISCOVERED would mis-label
+        # everything from those servers.
+        from beebium._proto import aun_pb2
+        mock_stub.ListPeers.return_value = MockListPeersResponse(
+            peers=[
+                MockAunPeer(net=0, stn=1, ip_address="192.168.1.1",
+                            port=32768,
+                            source=aun_pb2.AUN_PEER_SOURCE_UNSPECIFIED),
+            ]
+        )
+        peers = aun.peers
+        assert peers[0].source == PeerSource.OPERATOR_CONFIGURED

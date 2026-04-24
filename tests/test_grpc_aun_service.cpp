@@ -25,6 +25,13 @@
 
 #include <grpcpp/grpcpp.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#endif
+
 #include <memory>
 
 namespace {
@@ -67,6 +74,11 @@ public:
     }
 
     beebium::AunService::Stub& stub() { return *stub_; }
+
+    // Reach through to the underlying AunBackend so a test can simulate
+    // a discovered (vs operator-configured) peer addition without going
+    // through real mDNS.
+    beebium::AunEconetTransportExtension& extension() { return *ext_; }
 
 private:
     beebium::ModelB machine_;
@@ -121,7 +133,34 @@ TEST_CASE("AunService AddPeer then ListPeers", "[grpc][aun]") {
         REQUIRE(peer.stn() == 254);
         REQUIRE(peer.ip_address() == "127.0.0.1");
         REQUIRE(peer.port() == 40001);
+        // AddPeer goes via the operator path; ListPeers reports the
+        // source so clients can distinguish operator entries from
+        // mDNS-discovered ones without a side channel.
+        CHECK(peer.source() == beebium::AUN_PEER_SOURCE_OPERATOR_CONFIGURED);
     }
+}
+
+TEST_CASE("AunService ListPeers reports source for discovered entries",
+          "[grpc][aun]") {
+    AunServiceFixture fixture;
+
+    // Inject a discovered peer directly through the backend, mimicking
+    // what AunDiscoverySubscriber would do on receipt of an mDNS
+    // announcement. The gRPC client should see source=DISCOVERED.
+    auto* backend = fixture.extension().backend();
+    REQUIRE(backend != nullptr);
+    backend->add_peer(0, 200, htonl(INADDR_LOOPBACK), 50001,
+                      beebium::PeerSource::Discovered);
+
+    grpc::ClientContext context;
+    beebium::AunListPeersRequest request;
+    beebium::AunListPeersResponse response;
+    auto status = fixture.stub().ListPeers(&context, request, &response);
+    REQUIRE(status.ok());
+    REQUIRE(response.peers_size() == 1);
+    const auto& peer = response.peers(0);
+    CHECK(peer.stn() == 200);
+    CHECK(peer.source() == beebium::AUN_PEER_SOURCE_DISCOVERED);
 }
 
 TEST_CASE("AunService AddPeer with default port (0) substitutes AUN_DEFAULT_PORT",

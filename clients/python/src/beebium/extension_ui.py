@@ -78,6 +78,10 @@ class ControlKind(enum.Enum):
 @dataclass(frozen=True)
 class Label:
     text: str = ""
+    # Optional muted caption shown alongside the primary text. Used
+    # for provenance / status / size metadata that's logically
+    # attached to the primary line. Empty means no caption.
+    secondary_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -156,7 +160,10 @@ def _convert_control(proto: extension_ui_pb2.Control) -> Control:
         return Control(
             id=proto.id,
             kind=ControlKind.LABEL,
-            label=Label(text=proto.label.text),
+            label=Label(
+                text=proto.label.text,
+                secondary_text=proto.label.secondary_text,
+            ),
         )
     if case == "indicator":
         return Control(

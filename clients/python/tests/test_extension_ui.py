@@ -50,6 +50,7 @@ def _make_view_proto() -> extension_ui_pb2.View:
     label_c = root.group.controls.add()
     label_c.id = "lbl"
     label_c.label.text = "Hello"
+    label_c.label.secondary_text = "world"
 
     indicator_c = root.group.controls.add()
     indicator_c.id = "ind"
@@ -114,6 +115,7 @@ class TestSubscribeView:
 
         assert label.kind == ControlKind.LABEL
         assert label.label.text == "Hello"
+        assert label.label.secondary_text == "world"
 
         assert indicator.kind == ControlKind.INDICATOR
         assert indicator.indicator.state == IndicatorState.WARN

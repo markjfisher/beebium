@@ -67,6 +67,12 @@ export enum ControlKind {
 
 export interface Label {
     text: string;
+    /**
+     * Optional muted caption shown alongside the primary text. Used
+     * for provenance / status / size metadata that's logically
+     * attached to the primary line. Empty string means no caption.
+     */
+    secondaryText: string;
 }
 
 export interface Indicator {
@@ -141,7 +147,10 @@ function convertControl(proto: ProtoControl | undefined): Control {
         return {
             id: proto.id,
             kind: ControlKind.LABEL,
-            label: { text: proto.label.text },
+            label: {
+                text: proto.label.text,
+                secondaryText: proto.label.secondaryText,
+            },
         };
     }
     if (proto.indicator !== undefined) {

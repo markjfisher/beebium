@@ -139,6 +139,9 @@ grpc::Status AunServiceImpl::ListPeers(
         peer->set_stn(info.stn);
         peer->set_ip_address(ip_to_dotted(info.ip_addr));
         peer->set_port(info.port);
+        peer->set_source(info.source == PeerSource::Discovered
+                         ? AUN_PEER_SOURCE_DISCOVERED
+                         : AUN_PEER_SOURCE_OPERATOR_CONFIGURED);
     }
     return grpc::Status::OK;
 }

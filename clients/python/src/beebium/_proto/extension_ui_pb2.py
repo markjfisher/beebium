@@ -36,7 +36,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x65xtension_ui.proto\x12\x07\x62\x65\x65\x62ium\".\n\x14SubscribeViewRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\"U\n\x04View\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x15\n\rview_revision\x18\x02 \x01(\x04\x12\x1e\n\x04root\x18\x03 \x01(\x0b\x32\x10.beebium.Control\"\x9e\x02\n\x07\x43ontrol\x12\n\n\x02id\x18\x01 \x01(\t\x12\x1f\n\x05label\x18\x02 \x01(\x0b\x32\x0e.beebium.LabelH\x00\x12\'\n\tindicator\x18\x03 \x01(\x0b\x32\x12.beebium.IndicatorH\x00\x12!\n\x06toggle\x18\x04 \x01(\x0b\x32\x0f.beebium.ToggleH\x00\x12!\n\x06\x62utton\x18\x05 \x01(\x0b\x32\x0f.beebium.ButtonH\x00\x12!\n\x06\x63hoice\x18\x06 \x01(\x0b\x32\x0f.beebium.ChoiceH\x00\x12(\n\ntext_input\x18\x07 \x01(\x0b\x32\x12.beebium.TextInputH\x00\x12\x1f\n\x05group\x18\x08 \x01(\x0b\x32\x0e.beebium.GroupH\x00\x42\t\n\x07\x63ontrol\"\x15\n\x05Label\x12\x0c\n\x04text\x18\x01 \x01(\t\"u\n\tIndicator\x12\'\n\x05state\x18\x01 \x01(\x0e\x32\x18.beebium.Indicator.State\x12\x0c\n\x04text\x18\x02 \x01(\t\"1\n\x05State\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x06\n\x02OK\x10\x01\x12\x08\n\x04WARN\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"&\n\x06Toggle\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x08\"(\n\x06\x42utton\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x02 \x01(\x08\"@\n\x06\x43hoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x16\n\x0eselected_index\x18\x03 \x01(\r\">\n\tTextInput\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\"I\n\x05Group\x12\x12\n\x05label\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\"\n\x08\x63ontrols\x18\x02 \x03(\x0b\x32\x10.beebium.ControlB\x08\n\x06_label\"\xa4\x01\n\x0f\x44ispatchRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x12\n\ncontrol_id\x18\x02 \x01(\t\x12\x15\n\rview_revision\x18\x03 \x01(\x04\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x05 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x06 \x01(\rH\x00\x42\t\n\x07payload\"3\n\x10\x44ispatchResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\x96\x01\n\x12\x45xtensionUiService\x12?\n\rSubscribeView\x12\x1d.beebium.SubscribeViewRequest\x1a\r.beebium.View0\x01\x12?\n\x08\x44ispatch\x12\x18.beebium.DispatchRequest\x1a\x19.beebium.DispatchResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x65xtension_ui.proto\x12\x07\x62\x65\x65\x62ium\".\n\x14SubscribeViewRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\"U\n\x04View\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x15\n\rview_revision\x18\x02 \x01(\x04\x12\x1e\n\x04root\x18\x03 \x01(\x0b\x32\x10.beebium.Control\"\x9e\x02\n\x07\x43ontrol\x12\n\n\x02id\x18\x01 \x01(\t\x12\x1f\n\x05label\x18\x02 \x01(\x0b\x32\x0e.beebium.LabelH\x00\x12\'\n\tindicator\x18\x03 \x01(\x0b\x32\x12.beebium.IndicatorH\x00\x12!\n\x06toggle\x18\x04 \x01(\x0b\x32\x0f.beebium.ToggleH\x00\x12!\n\x06\x62utton\x18\x05 \x01(\x0b\x32\x0f.beebium.ButtonH\x00\x12!\n\x06\x63hoice\x18\x06 \x01(\x0b\x32\x0f.beebium.ChoiceH\x00\x12(\n\ntext_input\x18\x07 \x01(\x0b\x32\x12.beebium.TextInputH\x00\x12\x1f\n\x05group\x18\x08 \x01(\x0b\x32\x0e.beebium.GroupH\x00\x42\t\n\x07\x63ontrol\"-\n\x05Label\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x16\n\x0esecondary_text\x18\x02 \x01(\t\"u\n\tIndicator\x12\'\n\x05state\x18\x01 \x01(\x0e\x32\x18.beebium.Indicator.State\x12\x0c\n\x04text\x18\x02 \x01(\t\"1\n\x05State\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x06\n\x02OK\x10\x01\x12\x08\n\x04WARN\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"&\n\x06Toggle\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x08\"(\n\x06\x42utton\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x02 \x01(\x08\"@\n\x06\x43hoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x16\n\x0eselected_index\x18\x03 \x01(\r\">\n\tTextInput\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\"I\n\x05Group\x12\x12\n\x05label\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\"\n\x08\x63ontrols\x18\x02 \x03(\x0b\x32\x10.beebium.ControlB\x08\n\x06_label\"\xa4\x01\n\x0f\x44ispatchRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x12\n\ncontrol_id\x18\x02 \x01(\t\x12\x15\n\rview_revision\x18\x03 \x01(\x04\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x05 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x06 \x01(\rH\x00\x42\t\n\x07payload\"3\n\x10\x44ispatchResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\x96\x01\n\x12\x45xtensionUiService\x12?\n\rSubscribeView\x12\x1d.beebium.SubscribeViewRequest\x1a\r.beebium.View0\x01\x12?\n\x08\x44ispatch\x12\x18.beebium.DispatchRequest\x1a\x19.beebium.DispatchResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -50,25 +50,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_CONTROL']._serialized_start=167
   _globals['_CONTROL']._serialized_end=453
   _globals['_LABEL']._serialized_start=455
-  _globals['_LABEL']._serialized_end=476
-  _globals['_INDICATOR']._serialized_start=478
-  _globals['_INDICATOR']._serialized_end=595
-  _globals['_INDICATOR_STATE']._serialized_start=546
-  _globals['_INDICATOR_STATE']._serialized_end=595
-  _globals['_TOGGLE']._serialized_start=597
-  _globals['_TOGGLE']._serialized_end=635
-  _globals['_BUTTON']._serialized_start=637
-  _globals['_BUTTON']._serialized_end=677
-  _globals['_CHOICE']._serialized_start=679
-  _globals['_CHOICE']._serialized_end=743
-  _globals['_TEXTINPUT']._serialized_start=745
-  _globals['_TEXTINPUT']._serialized_end=807
-  _globals['_GROUP']._serialized_start=809
-  _globals['_GROUP']._serialized_end=882
-  _globals['_DISPATCHREQUEST']._serialized_start=885
-  _globals['_DISPATCHREQUEST']._serialized_end=1049
-  _globals['_DISPATCHRESPONSE']._serialized_start=1051
-  _globals['_DISPATCHRESPONSE']._serialized_end=1102
-  _globals['_EXTENSIONUISERVICE']._serialized_start=1105
-  _globals['_EXTENSIONUISERVICE']._serialized_end=1255
+  _globals['_LABEL']._serialized_end=500
+  _globals['_INDICATOR']._serialized_start=502
+  _globals['_INDICATOR']._serialized_end=619
+  _globals['_INDICATOR_STATE']._serialized_start=570
+  _globals['_INDICATOR_STATE']._serialized_end=619
+  _globals['_TOGGLE']._serialized_start=621
+  _globals['_TOGGLE']._serialized_end=659
+  _globals['_BUTTON']._serialized_start=661
+  _globals['_BUTTON']._serialized_end=701
+  _globals['_CHOICE']._serialized_start=703
+  _globals['_CHOICE']._serialized_end=767
+  _globals['_TEXTINPUT']._serialized_start=769
+  _globals['_TEXTINPUT']._serialized_end=831
+  _globals['_GROUP']._serialized_start=833
+  _globals['_GROUP']._serialized_end=906
+  _globals['_DISPATCHREQUEST']._serialized_start=909
+  _globals['_DISPATCHREQUEST']._serialized_end=1073
+  _globals['_DISPATCHRESPONSE']._serialized_start=1075
+  _globals['_DISPATCHRESPONSE']._serialized_end=1126
+  _globals['_EXTENSIONUISERVICE']._serialized_start=1129
+  _globals['_EXTENSIONUISERVICE']._serialized_end=1279
 # @@protoc_insertion_point(module_scope)

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { Aun } from "../src/aun.js";
+import { Aun, PeerSource } from "../src/aun.js";
+import { AunPeerSource } from "../src/generated/aun.js";
 import { EconetError } from "../src/exceptions.js";
 
 function createMockStub(methods: Record<string, (req: any) => any>) {
@@ -63,8 +64,20 @@ describe("Aun", () => {
             const stub = createMockStub({
                 listPeers: () => ({
                     peers: [
-                        { net: 0, stn: 254, ipAddress: "192.168.1.10", port: 32768 },
-                        { net: 0, stn: 100, ipAddress: "10.0.0.1", port: 33000 },
+                        {
+                            net: 0,
+                            stn: 254,
+                            ipAddress: "192.168.1.10",
+                            port: 32768,
+                            source: AunPeerSource.AUN_PEER_SOURCE_OPERATOR_CONFIGURED,
+                        },
+                        {
+                            net: 0,
+                            stn: 100,
+                            ipAddress: "10.0.0.1",
+                            port: 33000,
+                            source: AunPeerSource.AUN_PEER_SOURCE_DISCOVERED,
+                        },
                     ],
                 }),
             });
@@ -76,9 +89,33 @@ describe("Aun", () => {
                 stn: 254,
                 ipAddress: "192.168.1.10",
                 port: 32768,
+                source: PeerSource.OperatorConfigured,
             });
             expect(peers[1]!.stn).toBe(100);
             expect(peers[1]!.ipAddress).toBe("10.0.0.1");
+            expect(peers[1]!.source).toBe(PeerSource.Discovered);
+        });
+
+        it("falls back to OperatorConfigured for UNSPECIFIED source", async () => {
+            // Older servers don't populate the source field; UNSPECIFIED
+            // is the proto default and must collapse to the historical
+            // operator-only behaviour.
+            const stub = createMockStub({
+                listPeers: () => ({
+                    peers: [
+                        {
+                            net: 0,
+                            stn: 254,
+                            ipAddress: "192.168.1.10",
+                            port: 32768,
+                            source: AunPeerSource.AUN_PEER_SOURCE_UNSPECIFIED,
+                        },
+                    ],
+                }),
+            });
+            const aun = new Aun(stub as any);
+            const peers = await aun.listPeers();
+            expect(peers[0]!.source).toBe(PeerSource.OperatorConfigured);
         });
     });
 

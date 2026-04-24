@@ -153,12 +153,23 @@ struct Beebium_Control: Sendable {
 }
 
 /// Read-only text. Frontends render as a static label.
+///
+/// secondary_text is a renderer hint for a short, lower-emphasis
+/// caption shown alongside the primary text -- typically right-
+/// aligned or in a muted style. Use it for provenance / status / size
+/// metadata that's logically attached to the primary line but should
+/// not be confused with it. Empty / absent means "no secondary
+/// caption", which is the default. Frontends that don't have a
+/// natural muted-text style fall back to rendering the two strings
+/// joined with whitespace.
 struct Beebium_Label: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   var text: String = String()
+
+  var secondaryText: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -647,7 +658,7 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
 
 extension Beebium_Label: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Label"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0\u{3}secondary_text\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -656,6 +667,7 @@ extension Beebium_Label: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.text) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.secondaryText) }()
       default: break
       }
     }
@@ -665,11 +677,15 @@ extension Beebium_Label: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementa
     if !self.text.isEmpty {
       try visitor.visitSingularStringField(value: self.text, fieldNumber: 1)
     }
+    if !self.secondaryText.isEmpty {
+      try visitor.visitSingularStringField(value: self.secondaryText, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Beebium_Label, rhs: Beebium_Label) -> Bool {
     if lhs.text != rhs.text {return false}
+    if lhs.secondaryText != rhs.secondaryText {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

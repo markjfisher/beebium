@@ -48,14 +48,13 @@ std::string format_ip(uint32_t ip_addr) {
     return "0.0.0.0";
 }
 
-// Compose the per-peer human-readable label, e.g.
-//   "0.254  127.0.0.1:32768"            (operator-configured)
-//   "0.254  127.0.0.1:32768  (mDNS)"    (auto-discovered)
-// Two spaces between fields matches the hardcoded SwiftUI it replaces;
-// the trailing "(mDNS)" makes provenance visible at a glance so the
-// operator can tell which entries came from --aun map= vs auto-
-// discovery, without having to consult AunService::ListPeers.
-std::string format_peer_line(const PeerInfo& peer) {
+// Compose the per-peer primary label, e.g. "0.254  127.0.0.1:32768".
+// Two spaces between the Econet address and the IP endpoint matches
+// the hardcoded SwiftUI it replaces. Provenance (operator vs mDNS)
+// is carried separately on Label::secondary_text so the renderer can
+// style it as a muted caption rather than blending it into the
+// primary text.
+std::string format_peer_primary(const PeerInfo& peer) {
     std::string out;
     out += std::to_string(static_cast<unsigned>(peer.net));
     out += '.';
@@ -64,10 +63,17 @@ std::string format_peer_line(const PeerInfo& peer) {
     out += format_ip(peer.ip_addr);
     out += ':';
     out += std::to_string(peer.port);
-    if (peer.source == PeerSource::Discovered) {
-        out += "  (mDNS)";
-    }
     return out;
+}
+
+// Caption for the source of a peer. Operator-configured peers get
+// no caption (they're the implicit default); discovered peers carry
+// "mDNS" so the operator can tell at a glance which entries came
+// from auto-discovery vs --aun map= without having to consult the
+// typed AunService::ListPeers RPC.
+std::string format_peer_secondary(const PeerInfo& peer) {
+    if (peer.source == PeerSource::Discovered) return "mDNS";
+    return "";
 }
 
 }  // namespace
@@ -136,7 +142,12 @@ void AunUi::build_view(View* out) const {
         auto* control = peers_group->add_controls();
         control->set_id("peer." + std::to_string(static_cast<unsigned>(peer.net)) +
                         "." + std::to_string(static_cast<unsigned>(peer.stn)));
-        control->mutable_label()->set_text(format_peer_line(peer));
+        auto* label = control->mutable_label();
+        label->set_text(format_peer_primary(peer));
+        auto secondary = format_peer_secondary(peer);
+        if (!secondary.empty()) {
+            label->set_secondary_text(std::move(secondary));
+        }
     }
 }
 

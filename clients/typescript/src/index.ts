@@ -18,7 +18,7 @@ export { System, type Provenance, type MachineIdentity, type ServerStatusEvent, 
 export { Disc, Drive, type DiscMetadata, type DriveStatus, type DiscControllerStatus, type DiscEvent, type DiscControllerInfo, DriveState, DiscEventType } from "./disc.js";
 export { Econet, type EconetStatus, type AdlcStatus, type HandshakeStatus } from "./econet.js";
 export { Tube, type TubeStatus } from "./tube.js";
-export { Aun, type AunStatus, type PeerInfo } from "./aun.js";
+export { Aun, type AunStatus, type PeerInfo, PeerSource } from "./aun.js";
 export { Piconet, type PiconetStatus } from "./piconet.js";
 export { EconetTransport, type TransportInfo } from "./econet_transport.js";
 export {

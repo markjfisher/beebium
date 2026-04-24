@@ -15,6 +15,7 @@ import type {
     AunAddPeerResponse as ProtoAunAddPeerResponse,
     AunRemovePeerResponse as ProtoAunRemovePeerResponse,
 } from "./generated/aun.js";
+import { AunPeerSource as ProtoAunPeerSource } from "./generated/aun.js";
 import { promisify } from "./call-utils.js";
 import { EconetError } from "./exceptions.js";
 
@@ -24,11 +25,31 @@ export interface AunStatus {
     peerCount: number;
 }
 
+/**
+ * Where an AUN peer entry came from.
+ *
+ * Operator-configured peers (CLI `--aun map=`, the preset's
+ * `econet.transport.parameters`, or `addPeer()`) always take precedence
+ * over discovered peers in the routing table.
+ */
+export enum PeerSource {
+    OperatorConfigured = "operator-configured",
+    Discovered = "discovered",
+}
+
 export interface PeerInfo {
     net: number;
     stn: number;
     ipAddress: string;
     port: number;
+    /**
+     * Provenance of this entry. `OperatorConfigured` for entries
+     * added via `--aun map=` / preset / `addPeer`; `Discovered` for
+     * entries auto-populated by the AUN extension's mDNS subscriber.
+     * Older servers that don't carry the proto field default to
+     * `OperatorConfigured` (the only kind they had).
+     */
+    source: PeerSource;
 }
 
 /**
@@ -72,6 +93,13 @@ export class Aun {
             stn: p.stn,
             ipAddress: p.ipAddress,
             port: p.port,
+            // UNSPECIFIED collapses to OperatorConfigured so a newer
+            // client reading an older server's response behaves the
+            // same way it always has -- pre-discovery servers only
+            // ever published operator-configured peers.
+            source: p.source === ProtoAunPeerSource.AUN_PEER_SOURCE_DISCOVERED
+                ? PeerSource.Discovered
+                : PeerSource.OperatorConfigured,
         }));
     }
 

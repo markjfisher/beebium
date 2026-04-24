@@ -46,7 +46,7 @@ function makeViewProto(): ProtoView {
     };
     const label: ProtoControl = {
         id: "lbl",
-        label: { text: "Hello" },
+        label: { text: "Hello", secondaryText: "world" },
     };
     const indicator: ProtoControl = {
         id: "ind",
@@ -114,6 +114,7 @@ describe("ExtensionUi", () => {
 
             expect(lbl!.kind).toBe(ControlKind.LABEL);
             expect(lbl!.label!.text).toBe("Hello");
+            expect(lbl!.label!.secondaryText).toBe("world");
 
             expect(ind!.kind).toBe(ControlKind.INDICATOR);
             expect(ind!.indicator!.state).toBe(IndicatorState.WARN);

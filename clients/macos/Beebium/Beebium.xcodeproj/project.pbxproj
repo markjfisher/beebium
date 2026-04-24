@@ -10,6 +10,7 @@
 		010DBCB8FE2D1DAA06D514CC /* BeebiumSvgGlyphRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F63FE0D5862D2315B5AFDC /* BeebiumSvgGlyphRenderer.swift */; };
 		02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */; };
 		02EAA3A16D440CCD12071A3D /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F2683BAFB4C72B6644F473 /* AudioEngine.swift */; };
+		03B945147D637860AEC9B652 /* aun.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32A705682AF714B2B54471F /* aun.grpc.swift */; };
 		03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */; };
 		03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */ = {isa = PBXBuildFile; fileRef = C9A1A70DB6662E96A6210970 /* KeyboardMappings */; };
 		06B9C1E897D9DB39E8392078 /* SidebarModeContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7386122C0E5009AE250FECD /* SidebarModeContent.swift */; };
@@ -88,6 +89,7 @@
 		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
 		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
+		E3426D82AD066B2F7FF0830F /* aun.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0CF5589888F672F43B52FD /* aun.pb.swift */; };
 		E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */; };
 		E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */; };
 		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
@@ -181,6 +183,7 @@
 		9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachineManagerTests.swift; sourceTree = "<group>"; };
 		A16BD17340EC98E2C5EF1127 /* audio.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = audio.proto; sourceTree = "<group>"; };
 		A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorView.swift; sourceTree = "<group>"; };
+		A32A705682AF714B2B54471F /* aun.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.grpc.swift; sourceTree = "<group>"; };
 		A44DA8D133CDD247497229CA /* disc.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.grpc.swift; sourceTree = "<group>"; };
 		A7386122C0E5009AE250FECD /* SidebarModeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeContent.swift; sourceTree = "<group>"; };
 		AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.grpc.swift; sourceTree = "<group>"; };
@@ -199,6 +202,7 @@
 		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
 		D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryClient.swift; sourceTree = "<group>"; };
 		D969BBA00E4077B69BBCACAF /* econet.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet.pb.swift; sourceTree = "<group>"; };
+		DA0CF5589888F672F43B52FD /* aun.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.pb.swift; sourceTree = "<group>"; };
 		DFB1414298AE8F8261138293 /* keyboard.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = keyboard.proto; sourceTree = "<group>"; };
 		E14137BA5B8968468AC84092 /* StorageSchemaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSchemaSection.swift; sourceTree = "<group>"; };
 		E1724F99FA9BFDDE24FF4F8A /* StorageSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSectionView.swift; sourceTree = "<group>"; };
@@ -259,6 +263,8 @@
 			children = (
 				AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */,
 				4E0CD29C9A89B375C692C019 /* audio.pb.swift */,
+				A32A705682AF714B2B54471F /* aun.grpc.swift */,
+				DA0CF5589888F672F43B52FD /* aun.pb.swift */,
 				4A25B5AEA5BC043A1C1314DA /* debugger.grpc.swift */,
 				57967139EC7DEA91FCF67161 /* debugger.pb.swift */,
 				A44DA8D133CDD247497229CA /* disc.grpc.swift */,
@@ -618,6 +624,8 @@
 				E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */,
 				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,
 				A005244A2347799984C194E6 /* audio.pb.swift in Sources */,
+				03B945147D637860AEC9B652 /* aun.grpc.swift in Sources */,
+				E3426D82AD066B2F7FF0830F /* aun.pb.swift in Sources */,
 				517A5C299A144DD482FC9AC2 /* debugger.grpc.swift in Sources */,
 				698365A81FDEB647194AEF2D /* debugger.pb.swift in Sources */,
 				22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */,

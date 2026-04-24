@@ -128,6 +128,30 @@ TEST_CASE("AunUi build_view (one peer) emits one labelled row",
     REQUIRE(peer.id() == "peer.0.254");
     REQUIRE(peer.control_case() == beebium::Control::kLabel);
     REQUIRE(peer.label().text() == "0.254  127.0.0.1:32768");
+    // Operator-configured peers carry no secondary caption -- the
+    // empty-string default communicates "no provenance marker".
+    CHECK(peer.label().secondary_text().empty());
+}
+
+TEST_CASE("AunUi build_view marks discovered peers via secondary_text",
+          "[aun][ui]") {
+    AunUiFixture fixture;
+    fixture.backend().add_peer(0, 254, make_ip(127, 0, 0, 1), 32768,
+                               beebium::PeerSource::Discovered);
+
+    auto* ui = fixture.extension().ui();
+    beebium::View view;
+    ui->build_view(&view);
+
+    const auto* peers = find_control(view.root(), "peers_group");
+    REQUIRE(peers != nullptr);
+    REQUIRE(peers->group().controls_size() == 1);
+
+    const auto& peer = peers->group().controls(0);
+    // Primary text unchanged -- provenance lives on secondary_text so
+    // the renderer can style it as a muted caption.
+    CHECK(peer.label().text() == "0.254  127.0.0.1:32768");
+    CHECK(peer.label().secondary_text() == "mDNS");
 }
 
 TEST_CASE("AunUi build_view (multiple peers) emits one row per peer",

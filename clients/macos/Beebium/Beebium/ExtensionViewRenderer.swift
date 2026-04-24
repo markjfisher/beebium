@@ -71,9 +71,21 @@ struct ExtensionViewRenderer: View {
     // MARK: - Primitives
 
     private func renderLabel(id: String, label: Beebium_Label) -> some View {
-        Text(label.text)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .id(id)
+        // secondary_text (when present) is a renderer hint for short
+        // provenance / status / size metadata attached to the primary
+        // line. AppKit conventions push it right and de-emphasise it,
+        // so the primary text reads as the focus and the secondary
+        // disambiguates without competing for attention.
+        HStack(spacing: 6) {
+            Text(label.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if !label.secondaryText.isEmpty {
+                Text(label.secondaryText)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        }
+        .id(id)
     }
 
     private func renderIndicator(id: String, indicator: Beebium_Indicator) -> some View {

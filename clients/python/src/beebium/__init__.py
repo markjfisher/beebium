@@ -27,7 +27,7 @@ Usage:
         bbc.keyboard.press_return()
 """
 
-from beebium.aun import AunStatus, PeerInfo
+from beebium.aun import AunStatus, PeerInfo, PeerSource
 from beebium.client import Beebium
 from beebium.econet import (
     AdlcStatus,
@@ -104,6 +104,7 @@ __all__ = [
     "MachineIdentity",
     "MemoryAccessError",
     "PeerInfo",
+    "PeerSource",
     "PiconetStatus",
     "Provenance",
     "ServerNotFoundError",
