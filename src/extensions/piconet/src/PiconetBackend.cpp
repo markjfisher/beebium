@@ -139,13 +139,15 @@ NetworkFrame make_ack() {
 
 PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
                                std::unique_ptr<piconet::SerialPort> serial,
-                               std::function<void()> on_async_state_change)
+                               std::function<void()> on_async_state_change,
+                               piconet::Mode initial_mode)
     : config_(std::move(config)),
       serial_(std::move(serial)),
       on_async_state_change_(std::move(on_async_state_change)) {
     if (trace_enabled()) {
         std::cerr << "PiconetBackend: constructed for device " << config_.device_path
-                  << " station=" << static_cast<unsigned>(config_.initial_station) << "\n";
+                  << " station=" << static_cast<unsigned>(config_.initial_station)
+                  << " initial_mode=" << static_cast<unsigned>(initial_mode) << "\n";
     }
 
     // If the serial port failed to open, leave the backend disconnected:
@@ -155,12 +157,14 @@ PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
         return;
     }
 
-    // Initial handshake: tell the device our station, then put it in LISTEN
-    // mode. Failures are logged via trace but do not abort -- the next
-    // operation will observe the failure.
+    // Initial handshake: tell the device our station, then set the
+    // requested firmware mode (LISTEN at server startup; STOP on
+    // reconfigure_device_path's hot-swap path). Failures are logged
+    // via trace but do not abort -- the next operation will observe
+    // the failure.
     write_to_serial(*serial_, piconet::format_set_station(config_.initial_station));
-    write_to_serial(*serial_, piconet::format_set_mode(piconet::Mode::Listen));
-    current_mode_.store(piconet::Mode::Listen, std::memory_order_release);
+    write_to_serial(*serial_, piconet::format_set_mode(initial_mode));
+    current_mode_.store(initial_mode, std::memory_order_release);
 
     reader_thread_ = std::thread([this] { reader_loop(); });
 }

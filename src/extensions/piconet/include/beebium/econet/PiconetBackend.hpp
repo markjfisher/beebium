@@ -56,9 +56,18 @@ public:
     // so the Extension UI framework knows to push a fresh View. If null,
     // the callback is simply not invoked. Must be thread-safe -- it runs
     // on the reader thread.
+    //
+    // initial_mode selects the firmware mode the backend starts in. The
+    // default (Mode::Listen) matches the original server-startup
+    // behaviour where the Piconet is brought up live. The device-path
+    // hot-swap path in PiconetEconetTransportExtension::reconfigure_device_path
+    // passes Mode::Stop so the replacement backend comes up disabled --
+    // preserving the invariant "edited while disabled stays disabled";
+    // the user clicks Enable explicitly afterwards.
     PiconetBackend(piconet::PiconetConfig config,
                    std::unique_ptr<piconet::SerialPort> serial,
-                   std::function<void()> on_async_state_change = nullptr);
+                   std::function<void()> on_async_state_change = nullptr,
+                   piconet::Mode initial_mode = piconet::Mode::Listen);
 
     ~PiconetBackend() override;
 
