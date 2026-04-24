@@ -106,6 +106,38 @@ Combined with `STRICT` mode (infer addresses for unknown peers from the same map
 
 **No mDNS support today.** BeebEm doesn't announce or listen on mDNS.
 
+### What PiEconetBridge does
+
+[PiEconetBridge](https://github.com/cr12925/PiEconetBridge) is the most actively-developed AUN/Econet bridging implementation and has explored a lot of the relevant design space. It is the closest existing prior art to what we're building.
+
+**Real Acorn bridge protocol on the Econet wire.** PiEconetBridge speaks the Acorn bridge protocol on Econet port `0x9C`:
+
+| Ctrl | Name | Purpose |
+|------|------|---------|
+| `0x80` | `BRIDGE_RESET` | Bridge broadcasts: "I'm here, these are the nets I reach" |
+| `0x81` | `BRIDGE_UPDATE` | Incremental net-list change |
+| `0x82` | `BRIDGE_WHATNET` | Station asks: "what net am I on?" |
+| `0x83` | `BRIDGE_ISNET` | Bridge responds yes/no for a specific net |
+
+This is the bridge-to-station discovery layer that lives on the Econet wire underneath AUN. It's separate from anything mDNS does and doesn't currently affect Beebium (Beebium has no real wire). Once Beebium grows wire-side participation via Piconet *and* a real bridge is on that same wire, the emulated BBC OS would issue `BRIDGE_WHATNET` and the bridge would answer with the wire's net number — that's where the bridge-supplied "what net am I on?" answer would come from for a Piconet-equipped Beebium.
+
+**TRUNK protocol for bridge-to-bridge over UDP.** PiEconetBridge has a dedicated UDP-encapsulated bridge interconnect: `TRUNK ON PORT 9000 TO myfriend.econet.org:9500 KEY abcdef123456`. HMAC-keyed, optionally one-end-dynamic-IP, with per-net XLATE for renumbering and per-net BRIDGE DROP filtering. Not relevant to mDNS endpoint discovery — different layer (bridge interconnect rather than endpoint discovery).
+
+**EXPOSE for AUN-side endpoints.** `EXPOSE NET 1 ON 172.17.1.0 PORT FIXED AUTO` maps every Econet station on net 1 to a per-station AUN endpoint at `172.17.1.<stn>:32768`. Each EXPOSEd station has *its own IP+port*, unlike Beebium where one process serves one station at one endpoint. This works fine with our mDNS schema — a PiEconetBridge would emit one announcement per EXPOSEd station, each with its own SRV record pointing at that station's IP. Per-station instance names disambiguate.
+
+**`DYNAMIC <net>` for reactive AUN learning.** Reserves a net number for AUN/IP stations the bridge doesn't know about upfront. When unknown traffic arrives, the bridge allocates a spare station from the dynamic net (with an inactivity timeout). This is essentially ARP-cache-for-AUN — *reactive* rather than proactive (peer must transmit before being learned), and *per-bridge* (no propagation to other peers). It is the closest existing equivalent to what we want, but mDNS supersedes it cleanly: announcements are proactive (peers known before first traffic), symmetric (every peer auto-populates from the same announcement stream), and they carry the peer's self-declared `(net, stn)` so the bridge doesn't have to allocate from a dynamic pool.
+
+**No mDNS support today.** PiEconetBridge currently uses static `AUN MAP HOST` entries (similar to BeebEm's `AddHost`) for known peers and `DYNAMIC` for the rest. Adopting our `_aun._udp` schema would let it: (a) announce its EXPOSEd stations so other AUN peers discover them automatically; (b) consume announcements from peers like Beebium and treat them as if they were `AUN MAP HOST` entries, with `DYNAMIC` becoming a fallback for non-mDNS-speaking peers.
+
+**Implication for our design:** the schema is adoptable by PiEconetBridge as-is, with one open question — how (if at all) bridges should signal "I'm a bridge announcing on behalf of an exposed station" versus "I'm a direct AUN endpoint". Two options:
+
+1. **A `via=bridge|direct` TXT field** (defaulting to `direct` if absent). Diagnostic-only — addressing-equivalent endpoints don't change consumer behaviour, but the field makes the topology visible.
+2. **A separate `_acorn-bridge._udp` service type** for bridges-as-bridges, with bridges advertising the list of nets they route. Individual exposed stations *also* announce under `_aun._udp` as ordinary endpoints. This preserves the "an AUN announcement is just an endpoint" model.
+
+Option 2 is the preferred direction — cleaner separation between "endpoint discovery" and "topology discovery". It mirrors the existing Acorn distinction between station addresses and bridge advertisements. **Not implementing it now** because: (a) Beebium doesn't act as a bridge, so the announcement-as-bridge case has no Beebium-side consumer or producer yet; (b) PiEconetBridge could add a separate `_acorn-bridge._udp` advertiser later without affecting `_aun._udp` consumers (they remain backwards-compatible); (c) the bridge-as-topology-source feature interacts with DSCP, trunking, and `XLATE` net-translation in ways that benefit from being designed alongside those rather than in isolation.
+
+For now: bridges adopting our schema announce their EXPOSEd stations via `_aun._udp` and that's it. The `_acorn-bridge._udp` service type stays reserved as a future extension point.
+
 ### Why we're not adopting BeebEm's IP-subnet-derived approach
 
 Beebium could in principle add an `AUNMap`-equivalent feature to derive `local_net` from the host's IP. It would not interoperate with BeebEm at the file-format level (different config syntax), but it would replicate the conceptual behaviour. We're not doing this because:
@@ -182,7 +214,7 @@ Two Beebium instances on different declared nets (`--aun net=3` and `--aun net=5
 * **DSCP integration.** Tracked separately at [`dynamic-station-config-protocol.md`](dynamic-station-config-protocol.md). Layers naturally on top of mDNS but isn't a prerequisite.
 * **`STRICT` / `LEARN` mode equivalents.** BeebEm-style address inference from incoming-packet IP is unnecessary once mDNS is in place; passive inference is also less reliable than explicit announcements. Skip.
 * **IP-subnet-derived `local_net`.** See "Why we're not adopting BeebEm's approach" above. The operator sets `local_net` explicitly via `--aun net=N`.
-* **Bridge announcements.** A future Beebium machine type that acts as an AUN-to-real-Econet bridge (or an explicit "bridge announcer" extension) would advertise itself under a different DNS-SD service type — `_acorn-bridge._udp` is the working name — and announce the nets it routes. Pure AUN endpoints don't need to know whether bridges exist.
+* **Bridge announcements.** A future bridge-as-bridge announcement (a Beebium machine type acting as an AUN-to-real-Econet bridge, or PiEconetBridge growing mDNS support) would advertise itself under a different DNS-SD service type — `_acorn-bridge._udp` is the reserved name — and announce the list of nets it routes. The "What PiEconetBridge does" subsection above covers the rationale for keeping this separate from `_aun._udp`. Pure AUN endpoints (Beebium, BeebEm, individual EXPOSEd stations behind a bridge) don't need to know whether bridges exist; they just announce themselves as endpoints. Out of scope for this design; the `_aun._udp` schema does not preclude a future `_acorn-bridge._udp` companion.
 * **Authentication / authorisation of announcements.** mDNS is unauthenticated by design and runs on the local LAN only; we trust the local network. If/when that changes, a separate "trusted peers" allowlist would be the response. Not now.
 * **WAN AUN deployments.** mDNS doesn't traverse routers. Operators wanting AUN across WANs continue to use static `--aun map=` entries pointing at WAN-reachable IPs.
 
@@ -193,3 +225,4 @@ Two Beebium instances on different declared nets (`--aun net=3` and `--aun net=5
 * `docs/discussion/dynamic-station-config-protocol.md` — the station-assignment sibling problem
 * `docs/networking.md` — current AUN behaviour, `--aun map=` syntax
 * BeebEm-Windows: `Src/Econet.cpp` — reference implementation of the IP-subnet → Econet-net mapping approach (`AUNMap`, `MASSAGENETS`, `STRICT`, `LEARN`)
+* PiEconetBridge: `utilities/econet-hpbridge.c` and `docs/README.CONFIG-v2.1` — reference implementation of the Acorn bridge protocol (`BRIDGE_PORT 0x9C`), the AUN-side TRUNK protocol, and the EXPOSE / DYNAMIC mechanisms for AUN endpoint mapping and reactive learning. Closest existing prior art for what we're building on the discovery side.
