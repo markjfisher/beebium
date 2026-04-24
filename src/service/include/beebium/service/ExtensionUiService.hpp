@@ -41,14 +41,23 @@ namespace beebium::service {
 
 namespace detail {
 
-// Walk the View's Control tree, populating (id -> control_case) so the
+// Walk the View's Control tree, populating (id -> Control*) so the
 // Dispatch validator can look up an addressed control by id and check
-// its type.
+// both its type and its underlying message.
+//
+// Groups descend into their children. ModalEditors deliberately do NOT
+// descend into their anchor or editor sub-trees: the ModalEditor itself
+// is the only dispatch target at the top level, and its editor sub-
+// controls are addressed only via EditorCommit.fields.field_id (which
+// uses a separate per-ModalEditor lookup; see collect_editor_fields).
+// Keeping editor sub-controls out of the top-level map also prevents
+// id collisions between two ModalEditors' sub-trees from shadowing
+// each other.
 inline void collect_control_ids(
     const ::beebium::Control& control,
-    std::unordered_map<std::string, ::beebium::Control::ControlCase>& out)
+    std::unordered_map<std::string, const ::beebium::Control*>& out)
 {
-    out[control.id()] = control.control_case();
+    out[control.id()] = &control;
     if (control.control_case() == ::beebium::Control::kGroup) {
         for (const auto& child : control.group().controls()) {
             collect_control_ids(child, out);
@@ -56,15 +65,31 @@ inline void collect_control_ids(
     }
 }
 
+// Walk a ModalEditor's editor sub-tree, populating (field_id -> Control*)
+// for EditorCommit field validation. Descends into Groups; does not
+// descend into nested ModalEditors (those are their own atomic units).
+inline void collect_editor_fields(
+    const ::beebium::Control& editor_root,
+    std::unordered_map<std::string, const ::beebium::Control*>& out)
+{
+    out[editor_root.id()] = &editor_root;
+    if (editor_root.control_case() == ::beebium::Control::kGroup) {
+        for (const auto& child : editor_root.group().controls()) {
+            collect_editor_fields(child, out);
+        }
+    }
+}
+
 inline const char* control_type_name(::beebium::Control::ControlCase c) noexcept {
     switch (c) {
-        case ::beebium::Control::kLabel:     return "Label";
-        case ::beebium::Control::kIndicator: return "Indicator";
-        case ::beebium::Control::kToggle:    return "Toggle";
-        case ::beebium::Control::kButton:    return "Button";
-        case ::beebium::Control::kChoice:    return "Choice";
-        case ::beebium::Control::kTextInput: return "TextInput";
-        case ::beebium::Control::kGroup:     return "Group";
+        case ::beebium::Control::kLabel:       return "Label";
+        case ::beebium::Control::kIndicator:   return "Indicator";
+        case ::beebium::Control::kToggle:      return "Toggle";
+        case ::beebium::Control::kButton:      return "Button";
+        case ::beebium::Control::kChoice:      return "Choice";
+        case ::beebium::Control::kTextInput:   return "TextInput";
+        case ::beebium::Control::kGroup:       return "Group";
+        case ::beebium::Control::kModalEditor: return "ModalEditor";
         case ::beebium::Control::CONTROL_NOT_SET: return "(unset)";
     }
     return "(unknown)";
@@ -86,10 +111,11 @@ inline bool payload_matches_control(
     bool dispatchable = true;
 
     switch (ctrl_case) {
-        case CC::kToggle:    expected = PC::kBoolValue;   break;
-        case CC::kTextInput: expected = PC::kStringValue; break;
-        case CC::kChoice:    expected = PC::kIndexValue;  break;
-        case CC::kButton:    expected = PC::PAYLOAD_NOT_SET; break;
+        case CC::kToggle:      expected = PC::kBoolValue;     break;
+        case CC::kTextInput:   expected = PC::kStringValue;   break;
+        case CC::kChoice:      expected = PC::kIndexValue;    break;
+        case CC::kButton:      expected = PC::PAYLOAD_NOT_SET; break;
+        case CC::kModalEditor: expected = PC::kEditorCommit;  break;
         case CC::kLabel:
         case CC::kIndicator:
         case CC::kGroup:
@@ -108,6 +134,68 @@ inline bool payload_matches_control(
         error = "payload type mismatch for control '" + req.control_id() +
                 "' (" + control_type_name(ctrl_case) + ")";
         return false;
+    }
+    return true;
+}
+
+// Verify a single EditorFieldValue: its value variant must match the
+// addressed sub-control's type. Only input types (Toggle, TextInput,
+// Choice) are valid commit targets inside an editor tree.
+inline bool editor_field_matches(
+    const ::beebium::EditorFieldValue& field,
+    ::beebium::Control::ControlCase ctrl_case,
+    std::string& error)
+{
+    using FV = ::beebium::EditorFieldValue::ValueCase;
+    using CC = ::beebium::Control::ControlCase;
+
+    FV actual = field.value_case();
+    FV expected;
+    switch (ctrl_case) {
+        case CC::kToggle:    expected = FV::kBoolValue;   break;
+        case CC::kTextInput: expected = FV::kStringValue; break;
+        case CC::kChoice:    expected = FV::kIndexValue;  break;
+        default:
+            error = "editor field '" + field.field_id() +
+                    "' addresses a non-input control (" +
+                    control_type_name(ctrl_case) + ")";
+            return false;
+    }
+    if (actual != expected) {
+        error = "editor field '" + field.field_id() +
+                "' value variant mismatches sub-control type " +
+                control_type_name(ctrl_case);
+        return false;
+    }
+    return true;
+}
+
+// Additional validation for a DispatchRequest whose target is a
+// ModalEditor and whose payload is an EditorCommit. Checks (a) the
+// ModalEditor is editable, (b) every EditorCommit.field_id names a
+// sub-control in the editor tree, (c) each field's value variant
+// matches the sub-control's type. All-or-nothing: any failure rejects
+// the whole commit.
+inline bool validate_editor_commit(
+    const ::beebium::DispatchRequest& req,
+    const ::beebium::ModalEditor& modal,
+    std::string& error)
+{
+    if (!modal.editable()) {
+        error = "ModalEditor '" + req.control_id() + "' is not editable";
+        return false;
+    }
+    std::unordered_map<std::string, const ::beebium::Control*> sub_ids;
+    collect_editor_fields(modal.editor(), sub_ids);
+    for (const auto& field : req.editor_commit().fields()) {
+        auto it = sub_ids.find(field.field_id());
+        if (it == sub_ids.end()) {
+            error = "unknown editor field id: " + field.field_id();
+            return false;
+        }
+        if (!editor_field_matches(field, it->second->control_case(), error)) {
+            return false;
+        }
     }
     return true;
 }
@@ -191,7 +279,7 @@ public:
         ::beebium::View view;
         ui->build_view(&view);
 
-        std::unordered_map<std::string, ::beebium::Control::ControlCase> ids;
+        std::unordered_map<std::string, const ::beebium::Control*> ids;
         detail::collect_control_ids(view.root(), ids);
         auto it = ids.find(request->control_id());
         if (it == ids.end()) {
@@ -201,11 +289,26 @@ public:
             return grpc::Status::OK;
         }
 
+        const ::beebium::Control* target = it->second;
         std::string error;
-        if (!detail::payload_matches_control(*request, it->second, error)) {
+        if (!detail::payload_matches_control(
+                *request, target->control_case(), error)) {
             response->set_accepted(false);
             response->set_error(std::move(error));
             return grpc::Status::OK;
+        }
+
+        // ModalEditor carries additional structure that Dispatch must
+        // validate before running handle_event: editable gate, every
+        // EditorCommit field_id resolves to a sub-control, each value
+        // variant matches its sub-control's type. All-or-nothing.
+        if (target->control_case() == ::beebium::Control::kModalEditor) {
+            if (!detail::validate_editor_commit(
+                    *request, target->modal_editor(), error)) {
+                response->set_accepted(false);
+                response->set_error(std::move(error));
+                return grpc::Status::OK;
+            }
         }
 
         ui->handle_event(*request);
