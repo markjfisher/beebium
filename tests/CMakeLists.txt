@@ -76,6 +76,13 @@ add_executable(test_aun_discovery_subscriber test_aun_discovery_subscriber.cpp)
 target_link_libraries(test_aun_discovery_subscriber PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
 catch_discover_tests(test_aun_discovery_subscriber)
 
+# End-to-end mDNS test: paired announcers / subscribers with real
+# platform mDNS. Tagged [.mdns] so it's skipped by default in
+# environments without a working responder.
+add_executable(test_aun_mdns_e2e test_aun_mdns_e2e.cpp)
+target_link_libraries(test_aun_mdns_e2e PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
+catch_discover_tests(test_aun_mdns_e2e)
+
 # Browser smoke tests (state, lifecycle, real-mDNS round-trip on macOS)
 add_executable(test_browser test_browser.cpp)
 target_link_libraries(test_browser PRIVATE beebium_discovery Catch2::Catch2WithMain)

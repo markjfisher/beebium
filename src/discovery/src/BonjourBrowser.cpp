@@ -357,18 +357,16 @@ private:
         it->second.addr_ref = addr_ref;
     }
 
-    static void addrinfo_callback(DNSServiceRef /*sdRef*/,
+    static void addrinfo_callback(DNSServiceRef sdRef,
                                   DNSServiceFlags /*flags*/,
                                   uint32_t /*interfaceIndex*/,
                                   DNSServiceErrorType errorCode,
-                                  const char* hostname,
+                                  const char* /*hostname*/,
                                   const sockaddr* address,
                                   uint32_t /*ttl*/,
                                   void* context) {
         auto* self = static_cast<BonjourBrowser*>(context);
-        if (errorCode != kDNSServiceErr_NoError || !address || !hostname) {
-            return;
-        }
+        if (errorCode != kDNSServiceErr_NoError || !address) return;
         if (address->sa_family != AF_INET) return;
         const auto* sin = reinterpret_cast<const sockaddr_in*>(address);
         uint32_t ipv4 = sin->sin_addr.s_addr;
@@ -377,10 +375,12 @@ private:
         BrowserCallbacks cbs;
         {
             std::lock_guard lock(self->mutex_);
-            // Match instance by hostname; if we have multiple in flight
-            // it's safe because a single host advertises one announcement.
+            // Match by sdRef: each resolve fires its own getaddrinfo
+            // ref, so the ref uniquely identifies the instance --
+            // matching by hostname wouldn't, since two announcements
+            // on the same machine share the host.
             for (auto& [name, inst] : self->instances_) {
-                if (inst.service.hostname == hostname) {
+                if (inst.addr_ref == sdRef) {
                     inst.service.ipv4_addr_net_byte_order = ipv4;
                     announce_payload = inst.service;
                     inst.announced = true;
