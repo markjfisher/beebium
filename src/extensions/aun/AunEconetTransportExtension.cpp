@@ -13,6 +13,7 @@
 #include "AunEconetTransportExtension.hpp"
 
 #include "AunDiscoveryAnnouncer.hpp"
+#include "AunDiscoverySubscriber.hpp"
 #include "beebium/econet/AunPacket.hpp"
 
 #ifdef BEEBIUM_BUILD_SERVICE
@@ -203,6 +204,17 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
     if (!announcer_->start()) {
         std::cerr << "AUN extension: mDNS announcement unavailable -- "
                      "discovery disabled\n";
+    }
+
+    // Subscribe to peer announcements published by other AUN-capable
+    // stations and add them to our peer table as Discovered entries.
+    // Operator-configured peers (added via --aun map= or
+    // AunService::AddPeer) take precedence over discovered ones --
+    // see AunBackend::add_peer's PeerSource handling.
+    subscriber_ = std::make_unique<AunDiscoverySubscriber>(*backend, station);
+    if (!subscriber_->start()) {
+        std::cerr << "AUN extension: mDNS subscription unavailable -- "
+                     "peer discovery disabled\n";
     }
 
     return backend;

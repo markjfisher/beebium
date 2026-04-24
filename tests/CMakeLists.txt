@@ -71,6 +71,11 @@ add_executable(test_aun_discovery_announcer test_aun_discovery_announcer.cpp)
 target_link_libraries(test_aun_discovery_announcer PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
 catch_discover_tests(test_aun_discovery_announcer)
 
+# AunDiscoverySubscriber tests (driven via inject_* helpers, no real browser)
+add_executable(test_aun_discovery_subscriber test_aun_discovery_subscriber.cpp)
+target_link_libraries(test_aun_discovery_subscriber PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
+catch_discover_tests(test_aun_discovery_subscriber)
+
 # Browser smoke tests (state, lifecycle, real-mDNS round-trip on macOS)
 add_executable(test_browser test_browser.cpp)
 target_link_libraries(test_browser PRIVATE beebium_discovery Catch2::Catch2WithMain)

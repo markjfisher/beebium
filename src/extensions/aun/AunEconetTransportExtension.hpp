@@ -52,6 +52,7 @@ namespace beebium {
 
 class AunServiceImpl;          // forward; defined when service is built
 class AunDiscoveryAnnouncer;   // forward; defined in this dir
+class AunDiscoverySubscriber;  // forward; defined in this dir
 
 class AunEconetTransportExtension : public EconetTransportExtension {
 public:
@@ -123,6 +124,9 @@ private:
     // create_backend() succeeds; nullptr on platforms without mDNS or
     // when the announcer fails to start.
     std::unique_ptr<AunDiscoveryAnnouncer> announcer_;
+    // Subscribes to peer announcements and feeds them into the
+    // backend. Same lifetime model as announcer_.
+    std::unique_ptr<AunDiscoverySubscriber> subscriber_;
     AunUi ui_{*this};
 };
 

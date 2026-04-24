@@ -18,6 +18,7 @@
 set(AUN_SOURCES
     AunEconetTransportExtension.cpp
     AunDiscoveryAnnouncer.cpp
+    AunDiscoverySubscriber.cpp
     AunUi.cpp
 )
 
