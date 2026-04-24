@@ -1,0 +1,195 @@
+# AUN Peer Discovery via mDNS / DNS-SD
+
+Replacing the manual `--aun map=` peer table with opportunistic discovery of other AUN endpoints on the local network, using the standard mDNS / DNS-SD machinery Beebium already employs for service discovery.
+
+Status: Design proposal. Not committed to implementation.
+
+---
+
+## Problem
+
+Today every Beebium instance that wants to talk to AUN peers must enumerate them by hand: `--aun map=0.254@127.0.0.1@32768:map=0.253@127.0.0.1@32769:...`. Three machines on a LAN need three sets of `map=` entries that all stay consistent. Adding a fourth machine means editing four configurations. There is no way for an instance to learn about peers that come and go.
+
+This isn't a fundamental AUN problem — AUN's `(net, stn) → (ip, port)` table is per-instance state, but nothing about the protocol prevents that table being populated by discovery rather than by configuration. The `--aun map=` mechanism is just the only mechanism Beebium currently offers.
+
+mDNS / DNS-SD solves this exact category of problem on local networks: each AUN endpoint advertises itself, listeners populate their tables from the announcements, peers come and go without manual intervention.
+
+## Why mDNS, why now
+
+* Beebium already uses mDNS-family service discovery (`src/discovery/`) — Bonjour on macOS, Avahi on Linux, Windows DNS-SD APIs on Win32. Reuse rather than reinvent.
+* The infrastructure Stage 6 of the Extension UI Framework deliberately did *not* build (a manual Add/Remove peer form on the AUN panel) was held back specifically for an auto-discovery direction; this is that direction.
+* DSCP (Dynamic Station Configuration Protocol — see [`dynamic-station-config-protocol.md`](dynamic-station-config-protocol.md)) is the bigger sibling that *also* solves the manual coordination problem, but for station-number assignment rather than peer-table population. The two are independent: mDNS solves peer discovery without solving station assignment, and vice versa. mDNS is the smaller of the two and ships immediate value; DSCP can layer on top later.
+
+## Design decisions
+
+### Service type: `_aun._udp`
+
+Vendor-neutral DNS-SD service type. Other AUN-speaking implementations (BeebEm, future-Beebium, PiEconetBridge on its AUN side, real Acorn hardware via an AUN bridge) can advertise on the same name without coordination.
+
+Rejected alternatives:
+
+* `_beebium-*` — would partition the announcement space along implementation lines for no protocol-level reason. AUN is the protocol; Beebium is one implementation.
+* `_acorn-universal_networking-station._udp` (literal) — exceeds the 15-character DNS-SD service-name limit (33 chars), contains an underscore mid-name (non-standard per RFC 6763), conflates protocol with instance-role.
+* `_aun-econet._udp` / `_acorn-econet._udp` — more specific, harder to collide with anything else, but signals the family of protocols rather than the specific protocol that's actually being advertised. The announcement carries an AUN endpoint; "AUN" is the right name for it.
+
+The instance name (the part before the service type, e.g. `Beebium-32._aun._udp.local.`) is per-host and we control it. Other implementations would use their own instance names alongside ours under the shared service type.
+
+### TXT record schema
+
+Mandatory:
+
+* `version=1` — schema version of the announcement; bump on incompatible changes. Consumers should ignore announcements with a `version` they don't understand rather than guessing.
+* `station=N` — Econet station number (1-254). Mandatory because there is no useful default.
+* `port=N` — UDP port the AUN endpoint is bound to. Mandatory.
+* `net=N` — Econet net number (0-127). Mandatory because the protocol allows non-zero nets and consumers must know which net to address us as. **See "Net number semantics" below for why this can't sensibly default-by-omission.**
+
+Optional:
+
+* `impl=<name>` — implementation identifier, e.g. `beebium`, `beebem`, `pi-econet-bridge`. **Diagnostic only.** Never used for behavioural decisions; never used to filter or prefer announcements. We refuse to grow a fragmented protocol where each implementation only talks to its own kind.
+* `impl-version=<version>` — implementation version. Diagnostic only.
+
+Format: standard DNS-SD TXT record key=value pairs, each ≤ 255 bytes (well within limits for these short values).
+
+### Net number semantics
+
+This is the subtle bit. The conversation that produced this doc spent considerable time on it because the answer isn't obvious.
+
+**Net 0 is local-relative, not global.** On a real Econet wire, every station and bridge interprets `dest_net=0` as "this segment, don't route" and `src_net=0` as "I came from this segment". It's not a globally-unique identifier; it means "here" relative to the receiver's view. On a multi-segment Econet, bridges define the actual net numbers — a station doesn't intrinsically know its own net, it asks the local bridge.
+
+**AUN does not enforce a flat-net assumption.** The protocol's per-station `(net, stn) → (ip, port)` peer table is the *de facto* routing table; nothing requires every AUN endpoint to claim the same net. You can build a bridgeless AUN deployment where:
+
+* Station A claims `net=3`, station 10
+* Station B claims `net=5`, station 42
+* Station C claims `net=0`, station 254
+
+…and as long as their peer tables agree (A's table has B at net 5, B's table has A at net 3, etc.), routing works. There is no central authority. The "flat AUN cloud, everyone on net 0" model is just one common topology, not a protocol requirement.
+
+**Implication for the announcement:** `net=N` must be a per-station self-declaration that consumers populate into their peer table verbatim. It cannot be omitted-with-default-0 because that would silently force every announcement into the flat-cloud model, breaking deployments that legitimately use multi-net topologies. Make it mandatory.
+
+**For Beebium specifically (today):** `AunBackend::local_net` is hardcoded to 0. Beebium instances will only ever announce `net=0` until that hardcoding is fixed. The fix (making `local_net` configurable) is part of this work package — see "Implementation sequence" below.
+
+### Operator-configured peers always override discovered peers
+
+`--aun map=` (and equivalent preset entries) are operator intent and authoritative. mDNS-discovered peers are advisory and only apply when the operator hasn't said otherwise. This means:
+
+* If `--aun map=0.42@10.0.0.1@32768` is configured AND an announcement arrives claiming `(net=0, stn=42)` at a different `(ip, port)`, the configured entry wins. The discovered entry is ignored (or logged as a conflict; not yet decided).
+* Discovered peers populate the table for `(net, stn)` pairs that the operator has not configured.
+* Removing a `--aun map=` entry doesn't remove the corresponding discovered entry if one exists; the discovered entry takes over.
+
+This rule is non-negotiable: discovery is a convenience layer; the operator's explicit config is the source of truth.
+
+### Stale-peer eviction
+
+Discovered peers are removed from the table when their announcement is no longer being received. Standard mDNS practice: each announcement carries a TTL; we re-evaluate at TTL/2 boundaries; missing-renewal removes. Operator-configured peers are immune to eviction.
+
+### What the announcement does NOT carry
+
+* `aun-protocol-version` — we don't have a versioned AUN protocol on the wire today; the announcement schema's `version=1` is sufficient for evolving the announcement format itself.
+* IP address of the announcer — already available from the DNS-SD A/AAAA record that accompanies the SRV record. Don't duplicate it in the TXT record.
+* List of peers the announcer knows about — peer-of-peer transitive discovery is overkill for a LAN; mDNS already sees every announcer.
+* Bridge information — bridges are a separate concept (an AUN-to-real-Econet bridge would announce itself as a bridge service, probably under a different DNS-SD service type, e.g. `_acorn-bridge._udp`). Out of scope here.
+
+## Findings worth recording
+
+### What other emulators do (BeebEm)
+
+[BeebEm-Windows](https://github.com/stardot/beebem-windows) (the most actively maintained BeebEm fork) handles AUN net numbers via a **static IP-subnet → Econet-net mapping** in `AUNMap`. Format: `AddMap <ip-prefix> <net-number>`, e.g. `AddMap 192.168.0.0 128` declares "any host in 192.168.0.x is on Econet net 128". At startup BeebEm:
+
+* Looks at the local machine's IP.
+* Finds the matching `AUNMap` entry.
+* Sets `EconetNetworkID` to that net number.
+* Sets `EconetStationID` from the last octet of the IP (192.168.0.42 → station 42).
+
+Combined with `STRICT` mode (infer addresses for unknown peers from the same map) and `LEARN` mode (add receivers dynamically from incoming traffic), this provides a "just put the right `AUNMap` on every host and it works" experience — but the topology is still hand-maintained per host, just at the IP-mapping layer rather than the peer-mapping layer.
+
+**No bridge-discovery protocol.** BeebEm has no runtime negotiation with anyone about its net assignment. (There IS a real Acorn Econet bridge protocol used by physical bridges between segments, and PiEconetBridge implements it on its real-Econet side, but BeebEm doesn't speak it for self-discovery.)
+
+**No mDNS support today.** BeebEm doesn't announce or listen on mDNS.
+
+### Why we're not adopting BeebEm's IP-subnet-derived approach
+
+Beebium could in principle add an `AUNMap`-equivalent feature to derive `local_net` from the host's IP. It would not interoperate with BeebEm at the file-format level (different config syntax), but it would replicate the conceptual behaviour. We're not doing this because:
+
+* It assumes IP topology mirrors Acorn-net topology, which is an organisational accident the user has to engineer. Multi-net AUN on a single subnet, or a single AUN net spanning multiple IP subnets, both become awkward.
+* mDNS's per-station-self-declaration model gives the operator direct control over net assignment without needing IP-subnet correspondence. Each instance just declares its net via `--aun net=N` and announces it.
+* The IP-subnet model requires a static config file (`AUNMap`-equivalent) that has to stay in sync across hosts. We're trying to *eliminate* per-host static config, not introduce a new flavour of it.
+
+We should still support per-instance `local_net` configuration via `--aun net=N` so Beebium can participate in non-flat AUN deployments. That's necessary regardless of whether discovery is mDNS or IP-subnet-derived.
+
+### Interop with non-mDNS AUN implementations
+
+mDNS is opportunistic. Beebium-to-BeebEm interop continues to work via static `AddHost` entries in BeebEm's `Econet.cfg` and `--aun map=` in Beebium, exactly as today. mDNS announcements are fire-and-forget — BeebEm won't see them, and that's fine. Cross-implementation deployments are explicit-configuration territory.
+
+If/when other implementations grow mDNS support, they slot in automatically — `_aun._udp` is the shared name and the TXT record schema is implementation-neutral.
+
+### Why mDNS is independently useful from DSCP
+
+[DSCP](dynamic-station-config-protocol.md) addresses station-number assignment ("how does this instance get a unique station number?"). mDNS peer discovery addresses peer-table population ("how does this instance learn about other peers' (station, IP, port)?").
+
+They share the goal of reducing manual AUN-deployment friction but solve orthogonal sub-problems. Either is independently useful:
+
+* **mDNS only**: every operator manually picks each instance's station number via `--station N` (current model), but `--aun map=` becomes optional.
+* **DSCP only**: instances auto-acquire station numbers but operators still manually specify peer maps.
+* **Both**: zero per-instance AUN configuration in the common case; operators just launch Beebium and it joins the local AUN cloud.
+
+Build mDNS first because:
+
+* It's the smaller piece (no broker process, no peer-to-peer negotiation, no conflict resolution).
+* It exercises the existing `src/discovery/` infrastructure rather than building a new protocol.
+* DSCP becomes more attractive once mDNS is in place — the visible win of "I just plugged in another instance and it works" is bigger when peer discovery is also automatic.
+
+## Implementation sequence
+
+The work fits naturally into a single branch with four green-each-step commits. Each step is independently testable.
+
+### Step 1: AunBackend::local_net configurable
+
+**Pure AUN correctness work, independent of discovery.** Currently `AunBackend::local_net` is hardcoded to 0; the existing memory note (`AUN map must use net 0 ... AunBackend hardcodes local_net=0`) describes the symptom.
+
+What changes:
+
+* `AunBackend` constructor takes `local_net` as a parameter (default 0 to preserve current behaviour). Threaded through `AunEconetTransportExtension::create_backend()` from a new `--aun net=N` CLI parameter and matching `econet.transport.parameters.net` preset field.
+* Validation: 0-127 (Econet's high bit is reserved for the routing protocol).
+* Net translation at the AUN/BBC boundary:
+  * Outbound from BBC: `dest_net=0` (BBC's "this segment" addressing) → look up `(local_net, dest_stn)` in the peer table. The BBC says "local segment"; we know "local segment" means our `local_net` from our perspective.
+  * Inbound from peer: `src_net=local_net` → present to BBC as `src_net=0` (since that net IS our local segment from the BBC's view). `src_net=other` → present as `src_net=other` unchanged (genuinely remote).
+* Tests: two AunBackend instances with different `local_net` values, manually configured peer maps, verify routing both directions.
+
+### Step 2: mDNS announcement production
+
+`AunBackend` (or a new `AunDiscoveryAnnouncer` collaborator) registers a `_aun._udp` advertisement at startup using the existing `src/discovery/` machinery, with the TXT record populated from `local_net`, the local station ID, and the bound UDP port. Re-publish on `local_net` or station-ID changes.
+
+Tests: spin up an `AunBackend`, query the local Bonjour/Avahi resolver, confirm the announcement is visible with the expected TXT record contents. Cross-platform tests reuse existing discovery test infrastructure.
+
+### Step 3: mDNS announcement consumption
+
+`AunBackend` (or `AunDiscoverySubscriber`) subscribes to `_aun._udp` and populates the peer table from announcements:
+
+* Skip our own announcement (compare with our local `(net, stn)`).
+* Operator-configured entries take precedence — if `(net, stn)` is already in the peer table from `--aun map=`, log conflict and ignore the discovered entry.
+* Otherwise add `(net, stn) → (ip, port)` to the peer table.
+* Stale-peer eviction on announcement TTL expiry.
+* Distinguish operator-configured entries from discovered entries internally so eviction only applies to the latter.
+
+Tests: spin up two `AunBackend` instances on different ports, verify each appears in the other's peer table within a bounded time. Verify operator-configured override behaviour.
+
+### Step 4: End-to-end test
+
+Two Beebium instances on different declared nets (`--aun net=3` and `--aun net=5`), no `--aun map=` configuration, verify they discover each other via mDNS and route AUN traffic correctly. Exercises every layer: announcement production, announcement consumption, peer-table merging, net translation at the AUN/BBC boundary.
+
+## Out of scope
+
+* **DSCP integration.** Tracked separately at [`dynamic-station-config-protocol.md`](dynamic-station-config-protocol.md). Layers naturally on top of mDNS but isn't a prerequisite.
+* **`STRICT` / `LEARN` mode equivalents.** BeebEm-style address inference from incoming-packet IP is unnecessary once mDNS is in place; passive inference is also less reliable than explicit announcements. Skip.
+* **IP-subnet-derived `local_net`.** See "Why we're not adopting BeebEm's approach" above. The operator sets `local_net` explicitly via `--aun net=N`.
+* **Bridge announcements.** A future Beebium machine type that acts as an AUN-to-real-Econet bridge (or an explicit "bridge announcer" extension) would advertise itself under a different DNS-SD service type — `_acorn-bridge._udp` is the working name — and announce the nets it routes. Pure AUN endpoints don't need to know whether bridges exist.
+* **Authentication / authorisation of announcements.** mDNS is unauthenticated by design and runs on the local LAN only; we trust the local network. If/when that changes, a separate "trusted peers" allowlist would be the response. Not now.
+* **WAN AUN deployments.** mDNS doesn't traverse routers. Operators wanting AUN across WANs continue to use static `--aun map=` entries pointing at WAN-reachable IPs.
+
+## References
+
+* RFC 6763 — DNS-Based Service Discovery (DNS-SD)
+* RFC 6335 — IANA service name registry rules; the 15-char service-name limit
+* `docs/discussion/dynamic-station-config-protocol.md` — the station-assignment sibling problem
+* `docs/networking.md` — current AUN behaviour, `--aun map=` syntax
+* BeebEm-Windows: `Src/Econet.cpp` — reference implementation of the IP-subnet → Econet-net mapping approach (`AUNMap`, `MASSAGENETS`, `STRICT`, `LEARN`)
