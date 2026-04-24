@@ -79,6 +79,19 @@ std::optional<std::uint16_t> AunEconetTransportExtension::parse_port(
     return static_cast<std::uint16_t>(parsed);
 }
 
+std::uint8_t AunEconetTransportExtension::parse_net(const std::string& value) {
+    if (value.empty()) {
+        return 0;
+    }
+    unsigned long parsed = 0;
+    if (!parse_uint(value, parsed) || parsed > 127) {
+        std::cerr << "AUN extension: invalid net '" << value
+                  << "' (expected 0..127) -- using default 0\n";
+        return 0;
+    }
+    return static_cast<std::uint8_t>(parsed);
+}
+
 std::vector<AunEconetTransportExtension::PeerSpec>
 AunEconetTransportExtension::parse_map(std::span<const std::string> entries) {
     std::vector<PeerSpec> peers;
@@ -157,10 +170,10 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
         return nullptr;
     }
 
-    // local_net is hardcoded to 0 to match AunBackend's existing
-    // assumption that source frames carry net 0. (See the legacy
-    // --aun-map net 0 requirement.)
-    auto backend = std::make_unique<AunBackend>(0, station, *port);
+    auto net_value = config_value("net");
+    auto local_net = parse_net(net_value ? std::string(*net_value) : std::string{});
+
+    auto backend = std::make_unique<AunBackend>(local_net, station, *port);
     if (!backend->is_connected()) {
         std::cerr << "AUN extension: failed to bind UDP socket on port "
                   << *port << " -- network disabled\n";

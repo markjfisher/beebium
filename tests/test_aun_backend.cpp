@@ -477,6 +477,119 @@ TEST_CASE("AunBackend: port 0 binds to an ephemeral port",
     REQUIRE(backend.local_port() != 0);  // OS assigned a real port
 }
 
+// =============================================================================
+// Net translation (local_net != 0)
+// =============================================================================
+
+TEST_CASE("AunBackend: BBC dest_net=0 routes via local_net for peer lookup",
+          "[econet][aun][backend][net]") {
+    // Two backends on different nets, peered via their absolute net
+    // numbers. BBC software always sends with dest_net=0 (the
+    // local-segment sentinel); the backend must translate that to its
+    // own local_net for the peer-table lookup to succeed.
+    auto a = std::make_unique<AunBackend>(/*local_net=*/3, /*local_stn=*/1, 0);
+    auto b = std::make_unique<AunBackend>(/*local_net=*/3, /*local_stn=*/254, 0);
+    REQUIRE(a->is_connected());
+    REQUIRE(b->is_connected());
+
+    // Both stations are on net 3; peer entries use the absolute net.
+    a->add_peer(3, 254, loopback_ip(), b->local_port());
+    b->add_peer(3, 1,   loopback_ip(), a->local_port());
+
+    NetworkFrame frame;
+    frame.type = FrameType::Unicast;
+    frame.port = 0x99;
+    frame.dest_net = 0;     // BBC view: "this segment"
+    frame.dest_stn = 254;
+    frame.src_net = 0;
+    frame.src_stn = 1;
+    frame.data = {0xAA, 0xBB};
+
+    a->send_frame(frame);
+    brief_pause();
+
+    auto received = receive_with_timeout(*b);
+    REQUIRE(received.has_value());
+    // src_net presented as 0 (peer is on the local net 3, BBC expects 0).
+    CHECK(received->src_net == 0);
+    CHECK(received->src_stn == 1);
+    CHECK(received->dest_net == 3);   // local_net_ of the receiver
+    CHECK(received->dest_stn == 254);
+    REQUIRE(received->data.size() == 2);
+    CHECK(received->data[0] == 0xAA);
+    CHECK(received->data[1] == 0xBB);
+}
+
+TEST_CASE("AunBackend: cross-net unicast preserves source net",
+          "[econet][aun][backend][net]") {
+    // A on net 3, B on net 5. A sends with dest_net=5; B's BBC sees
+    // src_net=3 (the absolute net of the sender, NOT translated to 0
+    // because A is not on B's local segment).
+    auto a = std::make_unique<AunBackend>(/*local_net=*/3, /*local_stn=*/1, 0);
+    auto b = std::make_unique<AunBackend>(/*local_net=*/5, /*local_stn=*/200, 0);
+    REQUIRE(a->is_connected());
+    REQUIRE(b->is_connected());
+
+    a->add_peer(5, 200, loopback_ip(), b->local_port());
+    b->add_peer(3, 1,   loopback_ip(), a->local_port());
+
+    NetworkFrame frame;
+    frame.type = FrameType::Unicast;
+    frame.port = 0x99;
+    frame.dest_net = 5;     // BBC view: explicit cross-net
+    frame.dest_stn = 200;
+    frame.src_net = 0;
+    frame.src_stn = 1;
+    frame.data = {0xCC};
+
+    a->send_frame(frame);
+    brief_pause();
+
+    auto received = receive_with_timeout(*b);
+    REQUIRE(received.has_value());
+    CHECK(received->src_net == 3);    // Cross-net: pass through unchanged
+    CHECK(received->src_stn == 1);
+    CHECK(received->dest_net == 5);   // local_net_ of the receiver
+    CHECK(received->dest_stn == 200);
+    REQUIRE(received->data.size() == 1);
+    CHECK(received->data[0] == 0xCC);
+}
+
+TEST_CASE("AunBackend: dest_net=0 with no local_net peer drops silently",
+          "[econet][aun][backend][net]") {
+    // A on net 3 has only a cross-net peer at net 5. When BBC software
+    // sends to dest_net=0, the lookup happens against (3, stn) and the
+    // (5, stn) peer is not matched -- dropped silently.
+    auto a = std::make_unique<AunBackend>(/*local_net=*/3, /*local_stn=*/1, 0);
+    auto b = std::make_unique<AunBackend>(/*local_net=*/5, /*local_stn=*/200, 0);
+    REQUIRE(a->is_connected());
+    REQUIRE(b->is_connected());
+
+    a->add_peer(5, 200, loopback_ip(), b->local_port());
+    b->add_peer(3, 1,   loopback_ip(), a->local_port());
+
+    NetworkFrame frame;
+    frame.type = FrameType::Unicast;
+    frame.dest_net = 0;     // BBC view: "this segment" -- net 3
+    frame.dest_stn = 200;   // but the only peer with stn=200 is on net 5
+    frame.data = {0xAA};
+
+    a->send_frame(frame);
+    brief_pause();
+
+    CHECK_FALSE(b->receive_frame().has_value());
+}
+
+TEST_CASE("AunBackend: local_net accessor reflects construction",
+          "[econet][aun][backend][net]") {
+    AunBackend zero(0, 1, 0);
+    AunBackend three(3, 1, 0);
+    AunBackend max_valid(127, 1, 0);
+    CHECK(zero.local_net() == 0);
+    CHECK(three.local_net() == 3);
+    CHECK(max_valid.local_net() == 127);
+}
+
 TEST_CASE("AunBackend: local_port returns specified port when non-zero",
           "[aun_backend][port]") {
     // Pick a port the OS just told us is free to minimise conflicts with

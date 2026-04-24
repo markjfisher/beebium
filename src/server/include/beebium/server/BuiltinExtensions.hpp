@@ -91,6 +91,10 @@ inline std::vector<Entry> make_entries() {
              "UDP port to bind (decimal, or 'none' to disable)",
              -1, false, false, "32768"});
         m.parameters.push_back(
+            {"net", "string",
+             "Local Econet net number this station belongs to (0..127)",
+             -1, false, false, "0"});
+        m.parameters.push_back(
             {"map", "string",
              "Peer entry 'net.stn@ip@port' (repeatable)",
              -1, false, /*is_list=*/true, ""});

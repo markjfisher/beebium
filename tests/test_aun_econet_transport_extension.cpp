@@ -59,6 +59,40 @@ TEST_CASE("AunEconetTransportExtension::parse_port: invalid falls back to defaul
     REQUIRE(*p == AUN_DEFAULT_PORT);
 }
 
+TEST_CASE("AunEconetTransportExtension::parse_net: empty -> 0",
+          "[econet][aun][extension]") {
+    CHECK(AunEconetTransportExtension::parse_net("") == 0);
+}
+
+TEST_CASE("AunEconetTransportExtension::parse_net: zero",
+          "[econet][aun][extension]") {
+    CHECK(AunEconetTransportExtension::parse_net("0") == 0);
+}
+
+TEST_CASE("AunEconetTransportExtension::parse_net: typical non-zero",
+          "[econet][aun][extension]") {
+    CHECK(AunEconetTransportExtension::parse_net("3") == 3);
+    CHECK(AunEconetTransportExtension::parse_net("42") == 42);
+}
+
+TEST_CASE("AunEconetTransportExtension::parse_net: upper bound",
+          "[econet][aun][extension]") {
+    CHECK(AunEconetTransportExtension::parse_net("127") == 127);
+}
+
+TEST_CASE("AunEconetTransportExtension::parse_net: rejects 128 and above",
+          "[econet][aun][extension]") {
+    // High bit reserved by the Acorn bridge protocol -- fall back to 0.
+    CHECK(AunEconetTransportExtension::parse_net("128") == 0);
+    CHECK(AunEconetTransportExtension::parse_net("255") == 0);
+}
+
+TEST_CASE("AunEconetTransportExtension::parse_net: non-numeric falls back to 0",
+          "[econet][aun][extension]") {
+    CHECK(AunEconetTransportExtension::parse_net("abc") == 0);
+    CHECK(AunEconetTransportExtension::parse_net("none") == 0);
+}
+
 TEST_CASE("AunEconetTransportExtension::parse_map: empty -> empty list",
           "[econet][aun][extension]") {
     std::vector<std::string> entries;
@@ -142,4 +176,26 @@ TEST_CASE("AunEconetTransportExtension::create_backend: applies map peers",
     auto* aun = dynamic_cast<AunBackend*>(backend.get());
     REQUIRE(aun != nullptr);
     REQUIRE(aun->peer_count() == 2);
+}
+
+TEST_CASE("AunEconetTransportExtension::create_backend: defaults local_net to 0",
+          "[econet][aun][extension]") {
+    AunEconetTransportExtension ext;
+    ext.set_config({{"port", "0"}});
+    auto backend = ext.create_backend(/*station=*/32);
+    REQUIRE(backend != nullptr);
+    auto* aun = dynamic_cast<AunBackend*>(backend.get());
+    REQUIRE(aun != nullptr);
+    CHECK(aun->local_net() == 0);
+}
+
+TEST_CASE("AunEconetTransportExtension::create_backend: honours net config",
+          "[econet][aun][extension]") {
+    AunEconetTransportExtension ext;
+    ext.set_config({{"port", "0"}, {"net", "5"}});
+    auto backend = ext.create_backend(/*station=*/32);
+    REQUIRE(backend != nullptr);
+    auto* aun = dynamic_cast<AunBackend*>(backend.get());
+    REQUIRE(aun != nullptr);
+    CHECK(aun->local_net() == 5);
 }

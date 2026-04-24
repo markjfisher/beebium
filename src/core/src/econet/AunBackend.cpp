@@ -169,7 +169,14 @@ void AunBackend::send_frame(const NetworkFrame& frame) {
     }
 
     // Unicast / Ack / Immediate / ImmReply / Nack: look up destination peer.
-    auto forward_key = make_forward_key(frame.dest_net, frame.dest_stn);
+    //
+    // BBC software addresses local-segment peers with dest_net=0 (the
+    // historical "this network" sentinel from the wire-protocol era).
+    // Our peer table is keyed by absolute net numbers, so translate
+    // dest_net=0 to local_net_ before the lookup. Frames addressed to a
+    // non-zero net (i.e. to another segment) pass through unchanged.
+    uint8_t lookup_net = (frame.dest_net == 0) ? local_net_ : frame.dest_net;
+    auto forward_key = make_forward_key(lookup_net, frame.dest_stn);
     auto it = forward_map_.find(forward_key);
     if (it == forward_map_.end()) {
         // Unknown peer — drop silently.
@@ -256,7 +263,15 @@ std::optional<NetworkFrame> AunBackend::receive_frame() {
     }
 
     // Populate addressing from peer table.
-    result.frame.src_net = it->second.first;
+    //
+    // BBC software expects local-segment frames to carry src_net=0 (the
+    // historical wire-protocol sentinel). The peer table holds absolute
+    // net numbers; translate the local-segment case back to 0 for the
+    // benefit of the BBC. dest_net is delivered as local_net_ so the
+    // BBC sees frames addressed to its own segment in the same form an
+    // outgoing frame would have used (after our send-side translation).
+    uint8_t peer_net = it->second.first;
+    result.frame.src_net = (peer_net == local_net_) ? 0 : peer_net;
     result.frame.src_stn = it->second.second;
     result.frame.dest_net = local_net_;
     result.frame.dest_stn = local_stn_;
