@@ -71,6 +71,11 @@ add_executable(test_aun_discovery_announcer test_aun_discovery_announcer.cpp)
 target_link_libraries(test_aun_discovery_announcer PRIVATE beebium_ext_aun Catch2::Catch2WithMain)
 catch_discover_tests(test_aun_discovery_announcer)
 
+# Browser smoke tests (state, lifecycle, real-mDNS round-trip on macOS)
+add_executable(test_browser test_browser.cpp)
+target_link_libraries(test_browser PRIVATE beebium_discovery Catch2::Catch2WithMain)
+catch_discover_tests(test_browser)
+
 # SCSI ADFS protocol compatibility tests (fast, no boot required)
 add_executable(test_scsi_adfs_protocol test_scsi_adfs_protocol.cpp)
 target_link_libraries(test_scsi_adfs_protocol PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
