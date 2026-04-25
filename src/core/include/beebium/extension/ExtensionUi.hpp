@@ -39,11 +39,19 @@ class DispatchRequest;
 //   * Call mark_dirty() when state changes for reasons other than an
 //     incoming event (e.g. asynchronous status from a downstream
 //     device).
-class BEEBIUM_EXT_API ExtensionUi {
+class BEEBIUM_EXT_TYPE_VISIBLE ExtensionUi {
 public:
-    // Out-of-line destructor anchors the vtable in beebium_extension_api
-    // (required by MSVC for dllimport-decorated polymorphic classes).
-    virtual ~ExtensionUi();
+    // BEEBIUM_EXT_TYPE_VISIBLE on the class makes the vtable +
+    // typeinfo reachable from consumer shared libraries on POSIX
+    // (it's a no-op on Windows). The destructor's BEEBIUM_EXT_API
+    // is what anchors the vtable in the exporting DLL on Windows.
+    // We deliberately don't use class-level dllimport on MSVC because
+    // that makes inline-in-class methods emit as out-of-line imports,
+    // which fail to link in consumer DLLs that don't link
+    // beebium_extension_api (e.g. beebium_extension_ui_proto compiling
+    // ExtensionUiServiceImpl). See
+    // docs/discussion/grpc-windows-streaming-race.md.
+    BEEBIUM_EXT_API virtual ~ExtensionUi();
 
     // Populate `out` with the extension's current control tree. The
     // implementation should set Control ids, oneof payloads, and any

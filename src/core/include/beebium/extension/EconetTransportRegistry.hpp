@@ -29,12 +29,12 @@ namespace beebium {
 // for BBC Micro / Master / Master Compact") is enforced at machine-setup
 // time by the caller, not here. A future Acorn-Econet-Bridge machine
 // type with two memory-mapped ADLCs will hold two transports here.
-class BEEBIUM_EXT_API EconetTransportRegistry {
+class BEEBIUM_EXT_TYPE_VISIBLE EconetTransportRegistry {
 public:
     EconetTransportRegistry() = default;
-    // Out-of-line destructor anchors the registry's symbols in
-    // beebium_extension_api on MSVC.
-    ~EconetTransportRegistry();
+    // See ExtensionUi.hpp for the BEEBIUM_EXT_TYPE_VISIBLE / per-method
+    // BEEBIUM_EXT_API split.
+    BEEBIUM_EXT_API ~EconetTransportRegistry();
     EconetTransportRegistry(const EconetTransportRegistry&) = delete;
     EconetTransportRegistry& operator=(const EconetTransportRegistry&) = delete;
 

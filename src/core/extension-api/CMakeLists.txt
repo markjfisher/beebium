@@ -158,6 +158,7 @@ elseif(MSVC)
 endif()
 
 add_library(beebium_extension_api SHARED
+    Extension.cpp
     ExtensionContext.cpp
     OneMHzBusPort.cpp
     EconetTransportExtension.cpp

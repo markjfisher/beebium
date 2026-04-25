@@ -41,9 +41,12 @@ class ExtensionUi;  // forward decl; defined in ExtensionUi.hpp
 // Instance config (the parameters passed via CLI or preset) is stored
 // as a string -> string map. Extensions parse typed values out of it
 // during their own initialisation.
-class BEEBIUM_EXT_API Extension {
+class BEEBIUM_EXT_TYPE_VISIBLE Extension {
 public:
-    virtual ~Extension() = default;
+    // See ExtensionUi.hpp for the BEEBIUM_EXT_TYPE_VISIBLE / per-method
+    // BEEBIUM_EXT_API split. Inline accessors below stay genuinely
+    // inline in consumer DLLs that don't link beebium_extension_api.
+    BEEBIUM_EXT_API virtual ~Extension();
 
     // Set the manifest (called by the framework before init).
     void set_manifest(ExtensionManifest manifest) { manifest_ = std::move(manifest); }
