@@ -29,6 +29,25 @@
 
 namespace beebium {
 
+namespace {
+
+// Single platform-selection helper used both for the initial open in
+// create_backend and for the SerialFactory the backend uses to build
+// a replacement during process_pending_reopen. Keeping the #ifdef in
+// one place ensures the two paths can never drift to different
+// SerialPort implementations.
+std::unique_ptr<piconet::SerialPort> make_platform_serial(
+    const std::string& path)
+{
+#ifdef _WIN32
+    return std::make_unique<piconet::Win32SerialPort>(path);
+#else
+    return std::make_unique<piconet::PosixSerialPort>(path);
+#endif
+}
+
+}  // namespace
+
 PiconetEconetTransportExtension::PiconetEconetTransportExtension() = default;
 PiconetEconetTransportExtension::~PiconetEconetTransportExtension() = default;
 
@@ -42,11 +61,7 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     }
 
     std::string path(*device_path);
-#ifdef _WIN32
-    auto serial = std::make_unique<piconet::Win32SerialPort>(path);
-#else
-    auto serial = std::make_unique<piconet::PosixSerialPort>(path);
-#endif
+    auto serial = make_platform_serial(path);
     if (!serial->is_open()) {
         // Log the failure but still construct a PiconetBackend in a
         // closed state. The ModalEditor on the Piconet panel needs a
@@ -60,20 +75,6 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
                   << ": " << serial->open_error() << "\n";
     }
 
-    // Factory used by PiconetBackend::process_pending_reopen() to build
-    // a replacement SerialPort when the user re-points the adapter via
-    // the Extension UI. Mirrors the platform selection used for the
-    // initial open above so tests / production agree on which
-    // SerialPort class drives reopens.
-    auto serial_factory = [](const std::string& new_path)
-        -> std::unique_ptr<piconet::SerialPort> {
-#ifdef _WIN32
-        return std::make_unique<piconet::Win32SerialPort>(new_path);
-#else
-        return std::make_unique<piconet::PosixSerialPort>(new_path);
-#endif
-    };
-
     // Wire the backend's async-state-change hook to the UI's
     // mark_dirty(). Without this the panel View stays frozen across
     // hot-unplug events -- the reader thread closes the serial port
@@ -84,7 +85,7 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     auto backend = std::make_unique<PiconetBackend>(
         piconet::PiconetConfig{path, station},
         std::move(serial),
-        std::move(serial_factory),
+        &make_platform_serial,
         [this]{ ui_.mark_dirty(); });
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
     open_error_message_.clear();
