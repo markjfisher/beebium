@@ -1093,6 +1093,27 @@ if(BEEBIUM_BUILD_SERVICE)
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
         catch_discover_tests(test_grpc_piconet_service)
+
+        # Piconet ModalEditor / EditableChoice end-to-end through the
+        # ExtensionUiService gRPC stub: SubscribeView -> Dispatch
+        # (EditorCommit) -> emulation tick drains pending reopen ->
+        # next pushed View shows the new path.
+        add_executable(test_grpc_piconet_ui
+            test_grpc_piconet_ui.cpp
+            piconet/FakePiconetDevice.cpp
+            ${PICONET_SERIAL_BRIDGE_SRCS})
+        target_link_libraries(test_grpc_piconet_ui PRIVATE
+            beebium_service
+            beebium_ext_piconet_plugin
+            beebium_piconet_core
+            beebium_extension_api
+            beebium_extension_ui_proto
+            Catch2::Catch2WithMain
+        )
+        target_include_directories(test_grpc_piconet_ui PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
+        catch_discover_tests(test_grpc_piconet_ui)
     endif()
 
     # PiconetUi unit tests (build_view shape + handle_event SET_MODE
