@@ -33,26 +33,31 @@ set_target_properties(beebium_piconet_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# gRPC service. Compiled into the plugin only when the service layer
-# is part of the build. The proto file is in the same directory.
+# piconet plugin sources. The plugin DLL contains only the
+# EconetTransportExtension implementation, the UI, and the platform
+# serial wiring -- it deliberately does NOT link gRPC.
+#
+# Why: vcpkg builds gRPC as a static library on Windows. When two
+# modules in the same process each link gRPC::grpc++ statically, each
+# gets its own private copy of gRPC's internal state (thread-local
+# ExecCtx, closure lists, iomgr). When the EXE-side gRPC server
+# dispatches a server-streaming RPC handler that crosses into the
+# plugin DLL (e.g. a gRPC worker thread invokes
+# PiconetUi::handle_event), heap corruption manifests as a 32-bit
+# zeroing of nearby PiconetBackend members -- specifically the
+# serial_factory_ std::function's stored fn-ptr -- yielding an AV at
+# the next reopen call. See docs/discussion/grpc-windows-streaming-race.md.
+#
+# The PiconetService gRPC stub used to live here; it was extracted
+# (TODO: a beebium_ext_piconet_service STATIC linked into the EXE
+# would restore the GetStatus RPC). The macOS frontend's
+# device-path-editor flow only needs ExtensionUiService, which is
+# unaffected by piconet.dll's gRPC absence.
 set(PICONET_PLUGIN_SOURCES
     PiconetEconetTransportExtension.cpp
     PiconetUi.cpp
     plugin_entry.cpp
 )
-
-if(BEEBIUM_BUILD_SERVICE)
-    beebium_compile_proto(
-        TARGET beebium_ext_piconet_plugin
-        PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/piconet_service.proto
-        PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    list(APPEND PICONET_PLUGIN_SOURCES
-        PiconetService.cpp
-        ${beebium_ext_piconet_plugin_PROTO_SRCS}
-        ${beebium_ext_piconet_plugin_GRPC_SRCS}
-    )
-endif()
 
 # The shared-library plugin: links the protocol core and the
 # EconetTransportExtension wrapper, exports beebium_create_extension.
@@ -67,22 +72,6 @@ target_link_libraries(beebium_ext_piconet_plugin
         beebium_piconet_core
         beebium_extension_api
 )
-
-if(BEEBIUM_BUILD_SERVICE)
-    # PUBLIC for the proto OUT_DIR so test targets that link this
-    # shared library can include the generated piconet_service.pb.h
-    # / .grpc.pb.h. Without PUBLIC the generated headers are private
-    # to the plugin and tests can't compile against the service stubs.
-    target_include_directories(beebium_ext_piconet_plugin
-        PUBLIC ${beebium_ext_piconet_plugin_OUT_DIR}
-    )
-    target_compile_definitions(beebium_ext_piconet_plugin PRIVATE BEEBIUM_BUILD_SERVICE)
-    target_link_libraries(beebium_ext_piconet_plugin
-        PUBLIC
-            gRPC::grpc++
-            protobuf::libprotobuf
-    )
-endif()
 
 set_target_properties(beebium_ext_piconet_plugin PROPERTIES
     PREFIX ""

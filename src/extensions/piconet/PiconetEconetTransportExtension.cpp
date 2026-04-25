@@ -20,10 +20,6 @@
 #include "beebium/econet/piconet/PosixSerialPort.hpp"
 #endif
 
-#ifdef BEEBIUM_BUILD_SERVICE
-#include "PiconetService.hpp"
-#endif
-
 #include <iostream>
 #include <string>
 
@@ -90,17 +86,6 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
     open_error_message_.clear();
     return backend;
-}
-
-std::vector<grpc::Service*> PiconetEconetTransportExtension::grpc_services() {
-#ifdef BEEBIUM_BUILD_SERVICE
-    if (!service_) {
-        service_ = std::make_unique<PiconetServiceImpl>(*this);
-    }
-    return {service_.get()};
-#else
-    return {};
-#endif
 }
 
 }  // namespace beebium

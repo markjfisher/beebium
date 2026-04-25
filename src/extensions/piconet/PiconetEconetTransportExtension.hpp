@@ -33,8 +33,6 @@ namespace grpc { class Service; }
 
 namespace beebium {
 
-class PiconetServiceImpl;  // forward; defined when service is built
-
 class PiconetEconetTransportExtension : public EconetTransportExtension {
 public:
     PiconetEconetTransportExtension();
@@ -46,18 +44,13 @@ public:
     // and installs a disconnected stub instead.
     //
     // The constructed backend is also stashed as a non-owning pointer
-    // so PiconetService can read its state. The owning unique_ptr is
-    // handed off to EconetSocket; the raw pointer mirrors the AUN
-    // extension's pattern and shares its lifetime caveat (becomes
-    // dangling at machine shutdown, which only happens at process
-    // exit).
+    // so PiconetUi can read its state. The owning unique_ptr is handed
+    // off to EconetSocket; the raw pointer mirrors the AUN extension's
+    // pattern and shares its lifetime caveat (becomes dangling at
+    // machine shutdown, which only happens at process exit).
     std::unique_ptr<NetworkBackend> create_backend(std::uint8_t station) override;
 
-    // Returns the PiconetService bound to this extension's backend.
-    // The server collects this and registers it with gRPC.
-    std::vector<grpc::Service*> grpc_services() override;
-
-    // Non-owning accessor used by PiconetService and PiconetUi.
+    // Non-owning accessor used by PiconetUi.
     PiconetBackend* backend() { return backend_; }
     const PiconetBackend* backend() const { return backend_; }
 
@@ -76,7 +69,6 @@ public:
 private:
     PiconetBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
     std::string open_error_message_;
-    std::unique_ptr<PiconetServiceImpl> service_;
     PiconetUi ui_{*this};
 };
 
