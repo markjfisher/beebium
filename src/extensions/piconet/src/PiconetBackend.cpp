@@ -221,20 +221,13 @@ void PiconetBackend::reader_loop() {
                           << " -- closing serial port\n";
             }
             serial_->close();
-            // is_connected() just flipped to false (is_serial_open() is
-            // now false), so kick WatchEconetStatus subscribers. The UI
-            // hook below covers the per-extension View stream; the
-            // sequence bump covers the transport-agnostic header.
-            // Skipped on the intentional-shutdown path because the
-            // destructor's close() races us and the push would be
-            // pointless; the double-close via serial_->close() is
-            // already documented as harmless.
-            if (!shutdown_.load(std::memory_order_relaxed)) {
-                bump_backend_status_sequence();
-                if (on_async_state_change_) {
-                    on_async_state_change_();
-                }
-            }
+            // is_connected() just flipped to false; kick
+            // WatchEconetStatus subscribers (sequence bump) and the
+            // per-extension View stream (UI mark_dirty via the
+            // callback). notify_state_changed() gates on shutdown_,
+            // so the destructor's racing close() doesn't trigger a
+            // pointless push.
+            notify_state_changed();
             return;
         }
         if (result.would_block) {
@@ -295,12 +288,7 @@ void PiconetBackend::reader_loop() {
                                       << " no longer resolves -- treating as hot-unplug\n";
                         }
                         serial_->close();
-                        if (!shutdown_.load(std::memory_order_relaxed)) {
-                            bump_backend_status_sequence();
-                            if (on_async_state_change_) {
-                                on_async_state_change_();
-                            }
-                        }
+                        notify_state_changed();
                         return;
                     }
                 }
@@ -314,12 +302,7 @@ void PiconetBackend::reader_loop() {
                                   << " no longer exists -- treating as hot-unplug\n";
                     }
                     serial_->close();
-                    if (!shutdown_.load(std::memory_order_relaxed)) {
-                        bump_backend_status_sequence();
-                        if (on_async_state_change_) {
-                            on_async_state_change_();
-                        }
-                    }
+                    notify_state_changed();
                     return;
                 }
 #endif
