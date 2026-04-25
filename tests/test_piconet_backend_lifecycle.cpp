@@ -254,3 +254,53 @@ TEST_CASE("PiconetBackend::request_reopen coalesces successive requests",
     REQUIRE(factory_calls.size() == 1);
     CHECK(factory_calls[0] == "/dev/final");
 }
+
+TEST_CASE("PiconetBackend recovers from a closed-state initial open via request_reopen",
+          "[piconet][backend][lifecycle][reopen][recovery]") {
+    // The user's headline scenario: server started with a wrong path
+    // (e.g. /dev/tty.usbmodem101 when the device is at usbmodem1101);
+    // create_backend produces a closed-state backend with an OS-level
+    // error in open_error_message_; the user opens the ModalEditor
+    // and saves the corrected path; reopen should put the backend
+    // into a fully-open state with the error cleared.
+    MockPiconetSerial* replacement = nullptr;
+    auto factory = [&](const std::string& /*path*/)
+        -> std::unique_ptr<SerialPort> {
+        auto mock = std::make_unique<MockPiconetSerial>();
+        replacement = mock.get();
+        return mock;
+    };
+
+    // Initial serial fails to open (set_open(false) before move).
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    initial_owner->set_open(false);
+    PiconetBackend backend(PiconetConfig{"/dev/wrong-path", 32},
+                           std::move(initial_owner),
+                           factory);
+
+    // Closed-state preconditions: is_serial_open is false (no
+    // SET_STATION/SET_MODE writes were issued because the ctor's
+    // reader-start branch was skipped). open_error_message_ may be
+    // empty in this mock-only test (MockPiconetSerial's open_error()
+    // returns empty); a real PosixSerialPort would carry strerror
+    // text here. The recovery test below doesn't depend on that
+    // string -- only that the reopen path clears it on success.
+    REQUIRE_FALSE(backend.is_serial_open());
+    REQUIRE_FALSE(backend.is_connected());
+
+    // Save the corrected path through the editor's reopen path.
+    backend.request_reopen("/dev/correct-path");
+    (void)backend.receive_frame();
+
+    REQUIRE(backend.is_serial_open());
+    REQUIRE(backend.config().device_path == "/dev/correct-path");
+    REQUIRE(backend.open_error_message().empty());
+    REQUIRE(backend.mode() == piconet::Mode::Stop);  // reopen lands in Stop
+
+    // The replacement mock should have received SET_STATION 32 +
+    // SET_MODE STOP from install_open_serial.
+    REQUIRE(replacement != nullptr);
+    REQUIRE(replacement->write_count() == 2);
+    CHECK(replacement->write_as_string(0) == "SET_STATION 32\r");
+    CHECK(replacement->write_as_string(1) == "SET_MODE STOP\r");
+}

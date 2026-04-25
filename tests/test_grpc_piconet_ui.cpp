@@ -282,3 +282,171 @@ TEST_CASE("Piconet end-to-end: SubscribeView -> EditorCommit -> reopen -> next V
     while (reader->Read(&drain)) {}
     (void)reader->Finish();
 }
+
+namespace {
+
+// Variant fixture: starts with a non-existent device path so
+// create_backend produces a closed-state PiconetBackend. The
+// ModalEditor is the only path the user has to recover.
+class PiconetExtensionUiClosedFixture {
+public:
+    PiconetExtensionUiClosedFixture() {
+        auto ext = std::make_unique<beebium::PiconetEconetTransportExtension>();
+        beebium::ExtensionManifest manifest;
+        manifest.name = "piconet";
+        manifest.cli_name = "piconet";
+        manifest.extension_kind = "econet-transport";
+        ext->set_manifest(std::move(manifest));
+        ext->set_config({{"device_path", std::string("/dev/does-not-exist-piconet")}});
+
+        // create_backend now returns a closed-state backend on open
+        // failure (the recovery-via-editor enabling change). The
+        // backend exists, has its serial closed, and carries the
+        // OS-level error in open_error_message_.
+        auto backend_owner = ext->create_backend(/*station=*/1);
+        REQUIRE(backend_owner != nullptr);
+        backend_ = static_cast<beebium::PiconetBackend*>(backend_owner.get());
+        REQUIRE_FALSE(backend_->is_serial_open());
+        REQUIRE_FALSE(backend_->open_error_message().empty());
+
+        machine_.state().memory.econet_socket.enable(
+            /*station=*/1, std::move(backend_owner), /*aun_mode=*/true);
+
+        registry_.add(std::move(ext));
+
+        service_ = std::make_unique<beebium::service::ExtensionUiServiceImpl>(
+            registry_, peripheral_registry_);
+        services_.push_back(service_.get());
+
+        server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
+            machine_, "127.0.0.1", 0);
+        server_->start(beebium::service::Provenance{},
+                       beebium::service::MachineIdentity{},
+                       /*enable_advertisement=*/false,
+                       /*policy_config=*/{},
+                       /*shutdown_callback=*/nullptr,
+                       std::span<grpc::Service*>(services_));
+
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+        stub_ = beebium::ExtensionUiService::NewStub(channel_);
+    }
+
+    ~PiconetExtensionUiClosedFixture() {
+        server_->stop();
+    }
+
+    beebium::ExtensionUiService::Stub& stub() { return *stub_; }
+    beebium::PiconetBackend& backend() { return *backend_; }
+
+    bool wait_for_serial_open(bool expected) {
+        auto deadline = std::chrono::steady_clock::now() + 1s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (backend_->is_serial_open() == expected) return true;
+            std::this_thread::sleep_for(5ms);
+        }
+        return backend_->is_serial_open() == expected;
+    }
+
+private:
+    beebium::ModelB machine_;
+    beebium::PiconetBackend* backend_ = nullptr;
+    beebium::EconetTransportRegistry registry_;
+    beebium::ExtensionRegistry peripheral_registry_;
+    std::unique_ptr<beebium::service::ExtensionUiServiceImpl> service_;
+    std::vector<grpc::Service*> services_;
+    std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
+    std::shared_ptr<grpc::Channel> channel_;
+    std::unique_ptr<beebium::ExtensionUiService::Stub> stub_;
+};
+
+}  // namespace
+
+TEST_CASE("Piconet recovery: closed-state startup -> EditorCommit -> adapter responsive",
+          "[grpc][piconet][extension-ui][reopen][recovery]") {
+    PiconetExtensionUiClosedFixture fixture;
+
+    grpc::ClientContext sub_ctx;
+    beebium::SubscribeViewRequest sub_req;
+    sub_req.set_extension_name("piconet");
+    auto reader = fixture.stub().SubscribeView(&sub_ctx, sub_req);
+
+    // Initial View: anchor shows the bad path; Indicator is ERROR
+    // with "Cannot open device: ..."; ModalEditor is editable
+    // because the serial is closed.
+    beebium::View initial;
+    REQUIRE(reader->Read(&initial));
+    REQUIRE(initial.root().control_case() == beebium::Control::kGroup);
+
+    auto find_control = [](const beebium::View& v, const std::string& id) {
+        for (const auto& c : v.root().group().controls()) {
+            if (c.id() == id) return &c;
+        }
+        return static_cast<const beebium::Control*>(nullptr);
+    };
+
+    {
+        const auto* device = find_control(initial, "device_path");
+        REQUIRE(device != nullptr);
+        REQUIRE(device->control_case() == beebium::Control::kModalEditor);
+        REQUIRE(device->modal_editor().editable());
+        REQUIRE(device->modal_editor().anchor().label().text() ==
+                "Device: /dev/does-not-exist-piconet");
+
+        const auto* indicator = find_control(initial, "connected");
+        REQUIRE(indicator != nullptr);
+        REQUIRE(indicator->control_case() == beebium::Control::kIndicator);
+        REQUIRE(indicator->indicator().state() == beebium::Indicator_State_ERROR);
+        REQUIRE(indicator->indicator().text().find("Cannot open device") !=
+                std::string::npos);
+    }
+
+    // Spin up a real PTY bridge and dispatch the corrected path.
+    beebium::piconet::test::FakePiconetDeviceOnSerial replacement_fake;
+    REQUIRE(replacement_fake.is_open());
+
+    grpc::ClientContext disp_ctx;
+    beebium::DispatchRequest disp_req;
+    disp_req.set_extension_name("piconet");
+    disp_req.set_control_id("device_path");
+    disp_req.set_view_revision(initial.view_revision());
+    auto* commit = disp_req.mutable_editor_commit();
+    auto* field = commit->add_fields();
+    field->set_field_id("device_path_value");
+    field->set_string_value(replacement_fake.slave_path());
+
+    beebium::DispatchResponse disp_resp;
+    REQUIRE(fixture.stub().Dispatch(&disp_ctx, disp_req, &disp_resp).ok());
+    REQUIRE(disp_resp.accepted());
+
+    (void)fixture.backend().receive_frame();
+    REQUIRE(fixture.wait_for_serial_open(true));
+
+    // Drain the stream until we see Indicator OK / "Adapter
+    // responsive" -- the user-visible signal that the reopen succeeded.
+    auto deadline = std::chrono::steady_clock::now() + 1s;
+    beebium::View latest = initial;
+    bool saw_responsive = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (!reader->Read(&latest)) break;
+        const auto* indicator = find_control(latest, "connected");
+        if (indicator &&
+            indicator->indicator().state() == beebium::Indicator_State_OK &&
+            indicator->indicator().text() == "Adapter responsive") {
+            saw_responsive = true;
+            break;
+        }
+    }
+    REQUIRE(saw_responsive);
+
+    // And the anchor reflects the new path.
+    const auto* device = find_control(latest, "device_path");
+    REQUIRE(device != nullptr);
+    REQUIRE(device->modal_editor().anchor().label().text() ==
+            std::string("Device: ") + replacement_fake.slave_path());
+
+    sub_ctx.TryCancel();
+    beebium::View drain;
+    while (reader->Read(&drain)) {}
+    (void)reader->Finish();
+}
