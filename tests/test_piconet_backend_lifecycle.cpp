@@ -19,8 +19,11 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <thread>
+#include <vector>
 
 using namespace beebium;
+using namespace std::chrono_literals;
 using namespace beebium::piconet;
 using beebium::piconet::test::MockPiconetSerial;
 
@@ -307,6 +310,68 @@ TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
     // The chosen path comes from one of the threads' posts.
     CHECK(factory_calls[0].rfind("/dev/path-", 0) == 0);
     CHECK(backend.config().device_path == factory_calls[0]);
+}
+
+TEST_CASE("PiconetBackend rx_queue contents survive a reopen",
+          "[piconet][backend][lifecycle][reopen]") {
+    // The rx_queue_ is a member of PiconetBackend, not of SerialPort,
+    // so a SerialPort swap during reopen must not lose enqueued
+    // frames. A regression that re-created the queue on reopen would
+    // silently drop pending bytes the reader had already parsed.
+    //
+    // Inject a TX_RESULT OK line via the mock; the reader thread
+    // parses it and enqueues a synthesised Ack. Trigger the reopen.
+    // Drain receive_frame, which first runs process_pending_reopen
+    // (closing the old serial, joining the reader, swapping in the
+    // factory's mock), then dequeues the surviving Ack.
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    auto* initial_mock = initial_owner.get();
+
+    auto factory = [](const std::string& /*path*/)
+        -> std::unique_ptr<SerialPort> {
+        return std::make_unique<MockPiconetSerial>();
+    };
+
+    PiconetBackend backend(PiconetConfig{"/dev/initial", 32},
+                           std::move(initial_owner),
+                           factory);
+
+    // Sanity check: drain a synthesised Ack to confirm the reader
+    // pipeline is wired up before relying on it for the survives-
+    // reopen assertion below. Stage and poll for up to 500ms.
+    initial_mock->stage_read_chunk("TX_RESULT OK\n");
+    bool sanity_ack = false;
+    auto deadline = std::chrono::steady_clock::now() + 500ms;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (auto f = backend.receive_frame(); f.has_value()) {
+            REQUIRE(f->type == FrameType::Ack);
+            sanity_ack = true;
+            break;
+        }
+        std::this_thread::sleep_for(5ms);
+    }
+    REQUIRE(sanity_ack);
+
+    // Now stage another Ack and give the reader time to enqueue it,
+    // but do NOT drain. Then trigger the reopen.
+    initial_mock->stage_read_chunk("TX_RESULT OK\n");
+    // 100ms is comfortably above the busy-loop reader's iteration
+    // cadence on the mock (no select timeout in MockPiconetSerial).
+    std::this_thread::sleep_for(100ms);
+
+    backend.request_reopen("/dev/replacement");
+
+    // First post-reopen receive_frame: process_pending_reopen runs
+    // first (closes initial_mock, joins reader, swaps), then
+    // try_dequeue picks up the pre-reopen Ack from the queue.
+    auto post = backend.receive_frame();
+    REQUIRE(post.has_value());
+    REQUIRE(post->type == FrameType::Ack);
+
+    // And the reopen actually swapped the serial: backend.config_
+    // now points at the replacement path.
+    REQUIRE(backend.config().device_path == "/dev/replacement");
+    REQUIRE(backend.is_serial_open());
 }
 
 TEST_CASE("PiconetBackend recovers from a closed-state initial open via request_reopen",
