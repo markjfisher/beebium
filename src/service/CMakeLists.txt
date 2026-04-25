@@ -81,6 +81,12 @@ target_link_libraries(beebium_service
     PUBLIC
         beebium_core
         beebium_discovery
+        # ExtensionUiServiceImpl is constructed in ServerMain.hpp (server
+        # EXE) and in test fixtures. Static so it links into a single
+        # module per process, keeping gRPC's per-module thread-local
+        # state (ExecCtx, closure lists) confined there. See
+        # docs/discussion/grpc-windows-streaming-race.md.
+        beebium_extension_ui_service
         gRPC::grpc++
         protobuf::libprotobuf
 )

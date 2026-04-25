@@ -24,9 +24,16 @@ set(EXT_UI_PROTO_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${EXT_UI_PROTO_OUT_DIR})
 
 set(EXT_UI_PROTO_FILE ${CMAKE_CURRENT_SOURCE_DIR}/proto/extension_ui.proto)
+# Split protoc output into the *message* sources (.pb.cc / .pb.h)
+# and the *gRPC service stub* sources (.grpc.pb.cc / .grpc.pb.h).
+# Plugin DLLs only need messages; gRPC stubs go into a static library
+# that's linked into the server EXE only. See the rationale at the
+# beebium_extension_ui_proto target below.
+set(EXT_UI_PROTO_MSG_SRCS  ${EXT_UI_PROTO_OUT_DIR}/extension_ui.pb.cc)
+set(EXT_UI_PROTO_GRPC_SRCS ${EXT_UI_PROTO_OUT_DIR}/extension_ui.grpc.pb.cc)
 set(EXT_UI_PROTO_SRCS
-    ${EXT_UI_PROTO_OUT_DIR}/extension_ui.pb.cc
-    ${EXT_UI_PROTO_OUT_DIR}/extension_ui.grpc.pb.cc
+    ${EXT_UI_PROTO_MSG_SRCS}
+    ${EXT_UI_PROTO_GRPC_SRCS}
 )
 set(EXT_UI_PROTO_HDRS
     ${EXT_UI_PROTO_OUT_DIR}/extension_ui.pb.h
@@ -82,35 +89,34 @@ target_compile_options(beebium_ext_ui_proto_export INTERFACE
 #
 # History: this library was STATIC on Windows while Piconet was
 # POSIX-only; see docs/discussion/win32-piconet-gap.md.
-# ExtensionUiServiceImpl.cpp is compiled into this same shared library
-# on purpose: the protoc-generated Beebium_ExtensionUiService::Service
-# base class lives here, and if the handler subclass's vtable + method
-# bodies were emitted in a different Windows DLL, gRPC's closure-list
-# manipulation racing across that boundary crashes the server. See
-# docs/discussion/grpc-windows-streaming-race.md (gRPC issue #39198)
-# for the full diagnosis. Header at:
-#   src/service/include/beebium/service/ExtensionUiService.hpp
+# beebium_extension_ui_proto contains *only* the protoc-generated
+# message types (.pb.cc), not the gRPC service stubs (.grpc.pb.cc).
+# This is deliberate and load-bearing on Windows: vcpkg builds gRPC
+# as a static library, so any DLL that links gRPC::grpc++ ends up
+# with its own private copy of gRPC's internal state (thread-local
+# ExecCtx, closure lists, iomgr). Cross-DLL gRPC operations race on
+# mismatched per-module state and crash with an access violation in
+# grpc_closure_list_append. See docs/discussion/grpc-windows-streaming-race.md
+# for the diagnosis with stack trace.
+#
+# Plugins that #include extension_ui.pb.h get the message types they
+# need (View, Control, Label, Indicator, Toggle, Button, Choice,
+# TextInput, Group, ModalEditor, EditableChoice, EditorCommit, ...)
+# without pulling in any gRPC code. The gRPC service stubs and the
+# ExtensionUiServiceImpl handler live in the static
+# beebium_extension_ui_service library below, which is linked only
+# into the server EXE.
 add_library(beebium_extension_ui_proto SHARED
-    ${EXT_UI_PROTO_SRCS}
-    ExtensionUiService.cpp
+    ${EXT_UI_PROTO_MSG_SRCS}
 )
 
 target_include_directories(beebium_extension_ui_proto PUBLIC
     ${EXT_UI_PROTO_OUT_DIR}
 )
-target_include_directories(beebium_extension_ui_proto PRIVATE
-    # ExtensionUiServiceImpl pulls in extension/Extension.hpp,
-    # ExtensionUi.hpp, ExtensionRegistry.hpp, EconetTransportRegistry.hpp
-    # (declarations only -- the impls live in beebium_extension_api).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    # And the service-layer header that declares the class itself.
-    ${CMAKE_SOURCE_DIR}/src/service/include
-)
 
 target_link_libraries(beebium_extension_ui_proto
     PUBLIC
         beebium_ext_ui_proto_export
-        gRPC::grpc++
         protobuf::libprotobuf
 )
 
@@ -141,6 +147,40 @@ if(WIN32)
         COMMENT "Copying beebium_extension_ui_proto.dll to tests/$<CONFIG> for runtime loading"
     )
 endif()
+
+# beebium_extension_ui_service: gRPC service stubs for ExtensionUiService
+# plus the handler implementation. Static so it links into exactly one
+# module (the server EXE / test EXE), keeping gRPC's per-module state
+# (thread-local ExecCtx, closure lists, iomgr) confined to that module.
+# Linking gRPC into multiple DLLs in the same process race-corrupts the
+# closure list -- see the rationale on beebium_extension_ui_proto above
+# and the diagnosis in docs/discussion/grpc-windows-streaming-race.md.
+add_library(beebium_extension_ui_service STATIC
+    ${EXT_UI_PROTO_GRPC_SRCS}
+    ExtensionUiService.cpp
+)
+
+target_include_directories(beebium_extension_ui_service PUBLIC
+    ${EXT_UI_PROTO_OUT_DIR}
+)
+target_include_directories(beebium_extension_ui_service PRIVATE
+    # ExtensionUiServiceImpl pulls in extension/Extension.hpp,
+    # ExtensionUi.hpp, ExtensionRegistry.hpp, EconetTransportRegistry.hpp.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    # And the service-layer header that declares the class itself.
+    ${CMAKE_SOURCE_DIR}/src/service/include
+)
+
+target_link_libraries(beebium_extension_ui_service
+    PUBLIC
+        beebium_ext_ui_proto_export
+        beebium_extension_ui_proto
+        gRPC::grpc++
+)
+
+set_target_properties(beebium_extension_ui_service PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
 
 # Suppress warnings in generated proto/gRPC code.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")

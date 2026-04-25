@@ -1052,69 +1052,50 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_extension_ui_proto)
 
-    # gRPC-server-hosted ExtensionUiService and PiconetService tests are
-    # POSIX-only. On Windows, spinning up a gRPC Server with a service
-    # whose generated class is compiled into beebium_extension_ui_proto.dll
-    # segfaults during fixture setup. Root cause is an MSVC rough edge
-    # with dllexport_decl + gRPC service stubs -- grpc_cpp_plugin does
-    # not accept dllexport_decl, so the service base class's vtable
-    # and init paths don't cross the DLL boundary cleanly. The proto
-    # message types themselves work fine across the boundary (see
-    # test_extension_ui_proto, which passes on Windows).
-    #
-    # The underlying functionality is covered on Windows via:
-    #   - test_extension_ui_proto (proto-layer round-trip)
-    #   - test_piconet_ui (build_view / handle_event without gRPC server)
-    #   - the manual-verification path on real Windows with a Piconet
-    #     adapter (the server exes run fine; it's only the test-harness
-    #     gRPC fixture that trips over the DLL boundary).
-    if(NOT WIN32)
-        # ExtensionUiService end-to-end tests with a fake extension
-        add_executable(test_grpc_extension_ui_service
-            test_grpc_extension_ui_service.cpp)
-        target_link_libraries(test_grpc_extension_ui_service PRIVATE
-            beebium_service
-            Catch2::Catch2WithMain
-        )
-        catch_discover_tests(test_grpc_extension_ui_service)
+    # ExtensionUiService end-to-end tests with a fake extension
+    add_executable(test_grpc_extension_ui_service
+        test_grpc_extension_ui_service.cpp)
+    target_link_libraries(test_grpc_extension_ui_service PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_extension_ui_service)
 
-        # Piconet gRPC service tests
-        add_executable(test_grpc_piconet_service
-            test_grpc_piconet_service.cpp
-            piconet/FakePiconetDevice.cpp
-            ${PICONET_SERIAL_BRIDGE_SRCS})
-        target_link_libraries(test_grpc_piconet_service PRIVATE
-            beebium_service
-            beebium_ext_piconet_plugin
-            beebium_piconet_core
-            Catch2::Catch2WithMain
-        )
-        target_include_directories(test_grpc_piconet_service PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
-        catch_discover_tests(test_grpc_piconet_service)
+    # Piconet gRPC service tests
+    add_executable(test_grpc_piconet_service
+        test_grpc_piconet_service.cpp
+        piconet/FakePiconetDevice.cpp
+        ${PICONET_SERIAL_BRIDGE_SRCS})
+    target_link_libraries(test_grpc_piconet_service PRIVATE
+        beebium_service
+        beebium_ext_piconet_plugin
+        beebium_piconet_core
+        Catch2::Catch2WithMain
+    )
+    target_include_directories(test_grpc_piconet_service PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
+    catch_discover_tests(test_grpc_piconet_service)
 
-        # Piconet ModalEditor / EditableChoice end-to-end through the
-        # ExtensionUiService gRPC stub: SubscribeView -> Dispatch
-        # (EditorCommit) -> emulation tick drains pending reopen ->
-        # next pushed View shows the new path.
-        add_executable(test_grpc_piconet_ui
-            test_grpc_piconet_ui.cpp
-            piconet/FakePiconetDevice.cpp
-            ${PICONET_SERIAL_BRIDGE_SRCS})
-        target_link_libraries(test_grpc_piconet_ui PRIVATE
-            beebium_service
-            beebium_ext_piconet_plugin
-            beebium_piconet_core
-            beebium_extension_api
-            beebium_extension_ui_proto
-            Catch2::Catch2WithMain
-        )
-        target_include_directories(test_grpc_piconet_ui PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
-        catch_discover_tests(test_grpc_piconet_ui)
-    endif()
+    # Piconet ModalEditor / EditableChoice end-to-end through the
+    # ExtensionUiService gRPC stub: SubscribeView -> Dispatch
+    # (EditorCommit) -> emulation tick drains pending reopen ->
+    # next pushed View shows the new path.
+    add_executable(test_grpc_piconet_ui
+        test_grpc_piconet_ui.cpp
+        piconet/FakePiconetDevice.cpp
+        ${PICONET_SERIAL_BRIDGE_SRCS})
+    target_link_libraries(test_grpc_piconet_ui PRIVATE
+        beebium_service
+        beebium_ext_piconet_plugin
+        beebium_piconet_core
+        beebium_extension_api
+        Catch2::Catch2WithMain
+    )
+    target_include_directories(test_grpc_piconet_ui PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
+    catch_discover_tests(test_grpc_piconet_ui)
 
     # PiconetUi unit tests (build_view shape + handle_event SET_MODE
     # round-trip via FakePiconetDevice). Same fixture infrastructure
