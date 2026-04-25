@@ -150,6 +150,14 @@ struct Beebium_Control: @unchecked Sendable {
     set {_uniqueStorage()._control = .modalEditor(newValue)}
   }
 
+  var editableChoice: Beebium_EditableChoice {
+    get {
+      if case .editableChoice(let v)? = _storage._control {return v}
+      return Beebium_EditableChoice()
+    }
+    set {_uniqueStorage()._control = .editableChoice(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   enum OneOf_Control: Equatable, Sendable {
@@ -161,6 +169,7 @@ struct Beebium_Control: @unchecked Sendable {
     case textInput(Beebium_TextInput)
     case group(Beebium_Group)
     case modalEditor(Beebium_ModalEditor)
+    case editableChoice(Beebium_EditableChoice)
 
   }
 
@@ -304,17 +313,6 @@ struct Beebium_Choice: Sendable {
 /// Free-form string. Dispatch payload: string_value. Frontends decide
 /// dispatch timing (per-keystroke vs on-blur); the protocol does not
 /// constrain that.
-///
-/// suggestions, when non-empty, lets the server expose a fixed list of
-/// candidate values that the frontend renders as a combobox-style picker
-/// alongside the text field. The text field remains the single source of
-/// truth: picking a suggestion writes its text into the field, and the
-/// list highlights whichever entry (if any) matches the current field
-/// value. Editing the field to a value not in the list clears the
-/// highlight. Use this for "pick from a known set OR enter a custom
-/// value" workflows -- e.g. choosing a serial port path where the OS
-/// enumerates known ports but the user may also need to type a path the
-/// enumerator did not return.
 struct Beebium_TextInput: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -326,7 +324,35 @@ struct Beebium_TextInput: Sendable {
 
   var placeholder: String = String()
 
-  var suggestions: [String] = []
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Open-ended choice: pick from a fixed list of options OR type a custom
+/// value. The semantic mirror of Choice (closed: must be one of the
+/// options); EditableChoice is open. Renderers map this to the platform's
+/// idiomatic combobox widget -- macOS NSComboBox, GTK GtkComboBox with
+/// has_entry, HTML <input list="..."> with a <datalist>, etc.
+///
+/// Dispatch payload: string_value. The string is whatever the user
+/// committed -- whether they typed it freely or picked it from the
+/// dropdown is not visible on the wire, and shouldn't matter to the
+/// extension.
+struct Beebium_EditableChoice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var label: String = String()
+
+  /// current text content
+  var value: String = String()
+
+  var placeholder: String = String()
+
+  /// dropdown content; may be empty
+  var options: [String] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -737,7 +763,7 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
 
 extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Control"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0\u{3}modal_editor\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0\u{3}modal_editor\0\u{3}editable_choice\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -877,6 +903,19 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
             _storage._control = .modalEditor(v)
           }
         }()
+        case 10: try {
+          var v: Beebium_EditableChoice?
+          var hadOneofValue = false
+          if let current = _storage._control {
+            hadOneofValue = true
+            if case .editableChoice(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._control = .editableChoice(v)
+          }
+        }()
         default: break
         }
       }
@@ -924,6 +963,10 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       case .modalEditor?: try {
         guard case .modalEditor(let v)? = _storage._control else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      }()
+      case .editableChoice?: try {
+        guard case .editableChoice(let v)? = _storage._control else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
       }()
       case nil: break
       }
@@ -1133,7 +1176,7 @@ extension Beebium_Choice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
 
 extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".TextInput"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}value\0\u{1}placeholder\0\u{1}suggestions\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}value\0\u{1}placeholder\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1144,7 +1187,6 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
       case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.value) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.placeholder) }()
-      case 4: try { try decoder.decodeRepeatedStringField(value: &self.suggestions) }()
       default: break
       }
     }
@@ -1160,9 +1202,6 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if !self.placeholder.isEmpty {
       try visitor.visitSingularStringField(value: self.placeholder, fieldNumber: 3)
     }
-    if !self.suggestions.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.suggestions, fieldNumber: 4)
-    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1170,7 +1209,51 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if lhs.label != rhs.label {return false}
     if lhs.value != rhs.value {return false}
     if lhs.placeholder != rhs.placeholder {return false}
-    if lhs.suggestions != rhs.suggestions {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_EditableChoice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".EditableChoice"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}value\0\u{1}placeholder\0\u{1}options\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.value) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.placeholder) }()
+      case 4: try { try decoder.decodeRepeatedStringField(value: &self.options) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    }
+    if !self.value.isEmpty {
+      try visitor.visitSingularStringField(value: self.value, fieldNumber: 2)
+    }
+    if !self.placeholder.isEmpty {
+      try visitor.visitSingularStringField(value: self.placeholder, fieldNumber: 3)
+    }
+    if !self.options.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.options, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_EditableChoice, rhs: Beebium_EditableChoice) -> Bool {
+    if lhs.label != rhs.label {return false}
+    if lhs.value != rhs.value {return false}
+    if lhs.placeholder != rhs.placeholder {return false}
+    if lhs.options != rhs.options {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

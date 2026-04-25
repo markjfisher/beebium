@@ -68,6 +68,8 @@ struct ExtensionViewRenderer: View {
                                            modal: modal,
                                            dispatch: dispatch)
                 .id(control.id))
+        case .editableChoice(let ec):
+            return AnyView(renderEditableChoice(id: control.id, editableChoice: ec))
         case .none:
             return AnyView(EmptyView())
         }
@@ -151,6 +153,14 @@ struct ExtensionViewRenderer: View {
             .id(id)
     }
 
+    private func renderEditableChoice(id: String,
+                                      editableChoice: Beebium_EditableChoice) -> some View {
+        EditableChoiceField(controlId: id,
+                            editableChoice: editableChoice,
+                            dispatch: dispatch)
+            .id(id)
+    }
+
     private func renderGroup(id: String, group: Beebium_Group) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if !group.label.isEmpty {
@@ -184,9 +194,7 @@ fileprivate func extensionUiIndicatorColor(_ state: Beebium_Indicator.State) -> 
 }
 
 /// Local-state wrapper for TextInput so typing doesn't fire a dispatch
-/// per keystroke. Dispatches on commit (Return / focus loss). When
-/// suggestions is non-empty, renders a combobox: text field above,
-/// suggestion list below, with bidirectional sync between them.
+/// per keystroke. Dispatches on commit (Return / focus loss).
 private struct TextInputField: View {
     let controlId: String
     let textInput: Beebium_TextInput
@@ -217,52 +225,136 @@ private struct TextInputField: View {
                         localValue = newValue
                     }
                 }
-
-            if !textInput.suggestions.isEmpty {
-                SuggestionList(suggestions: textInput.suggestions,
-                               selection: $localValue)
-            }
         }
     }
 }
 
-/// Renders the suggestions list attached to a TextInput. The list and
-/// the bound text field are two views of one underlying string: tapping
-/// a suggestion writes its text into the bound `selection`, and the
-/// row whose text equals `selection` (if any) is highlighted. Editing
-/// `selection` to a value not in the list clears the highlight. This
-/// is the "list + custom field with bidirectional sync" pattern used
-/// elsewhere in the app (File -> Connect's machine list).
-fileprivate struct SuggestionList: View {
-    let suggestions: [String]
-    @Binding var selection: String
+/// Local-state wrapper for EditableChoice. Wraps an NSComboBox via
+/// NSViewRepresentable so the macOS frontend renders a real native
+/// combobox with text editing + dropdown chevron + arrow-key
+/// navigation. Dispatch fires on commit (Return / focus loss /
+/// dropdown selection); per-keystroke edits stay local.
+private struct EditableChoiceField: View {
+    let controlId: String
+    let editableChoice: Beebium_EditableChoice
+    let dispatch: (String, ExtensionDispatchPayload) -> Void
+
+    @State private var localValue: String = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(suggestions.enumerated()), id: \.offset) { _, option in
-                    Button {
-                        selection = option
-                    } label: {
-                        Text(option)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(option == selection
-                                        ? Color.accentColor.opacity(0.25)
-                                        : Color.clear)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            if !editableChoice.label.isEmpty {
+                Text(editableChoice.label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+            ComboBoxRepresentable(value: $localValue,
+                                  options: editableChoice.options,
+                                  placeholder: editableChoice.placeholder,
+                                  onCommit: {
+                                      dispatch(controlId, .string(localValue))
+                                  })
+                .frame(height: 24)
+                .onAppear {
+                    localValue = editableChoice.value
+                }
+                .onChange(of: editableChoice.value) { newValue in
+                    if localValue == editableChoice.value {
+                        localValue = newValue
+                    }
+                }
         }
-        .frame(maxHeight: 120)
-        .background(Color(nsColor: .textBackgroundColor))
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
-        )
+    }
+}
+
+/// NSComboBox bridge. The combobox is editable: the user can pick from
+/// the dropdown OR type any custom value; on commit the bound `value`
+/// holds whatever string is currently in the field. Selection from the
+/// dropdown updates `value` immediately and fires onCommit; typing
+/// updates `value` on Return / focus loss (not per keystroke).
+fileprivate struct ComboBoxRepresentable: NSViewRepresentable {
+    @Binding var value: String
+    let options: [String]
+    let placeholder: String
+    let onCommit: () -> Void
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let combo = NSComboBox()
+        combo.usesDataSource = false
+        combo.completes = true
+        combo.isEditable = true
+        combo.placeholderString = placeholder
+        combo.delegate = context.coordinator
+        combo.target = context.coordinator
+        combo.action = #selector(Coordinator.commitFromAction(_:))
+        return combo
+    }
+
+    func updateNSView(_ combo: NSComboBox, context: Context) {
+        context.coordinator.parent = self
+
+        // Refresh the dropdown content if the option list changed.
+        let currentOptions = (combo.objectValues as? [String]) ?? []
+        if currentOptions != options {
+            combo.removeAllItems()
+            combo.addItems(withObjectValues: options)
+        }
+
+        // Sync the field text only when the user isn't mid-edit -- the
+        // coordinator's `editing` flag suppresses overwrites while a
+        // text edit is in progress.
+        if !context.coordinator.editing && combo.stringValue != value {
+            combo.stringValue = value
+        }
+        combo.placeholderString = placeholder
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, NSComboBoxDelegate, NSTextFieldDelegate {
+        var parent: ComboBoxRepresentable
+        var editing: Bool = false
+
+        init(parent: ComboBoxRepresentable) {
+            self.parent = parent
+        }
+
+        // Dropdown selection: write the picked option into the binding
+        // and treat as a commit.
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let combo = notification.object as? NSComboBox,
+                  combo.indexOfSelectedItem >= 0,
+                  let item = combo.objectValueOfSelectedItem as? String else {
+                return
+            }
+            parent.value = item
+            DispatchQueue.main.async { [parent] in parent.onCommit() }
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            editing = true
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            editing = false
+            guard let combo = notification.object as? NSComboBox else { return }
+            if parent.value != combo.stringValue {
+                parent.value = combo.stringValue
+            }
+            parent.onCommit()
+        }
+
+        // Triggered by Return on the editable text field; AppKit fires
+        // the target/action separately from the end-editing notification.
+        @objc func commitFromAction(_ sender: Any?) {
+            guard let combo = sender as? NSComboBox else { return }
+            if parent.value != combo.stringValue {
+                parent.value = combo.stringValue
+            }
+            parent.onCommit()
+        }
     }
 }
 
@@ -376,10 +468,25 @@ fileprivate struct ModalEditorView: View {
                 }
                 TextField(ti.placeholder, text: binding)
                     .textFieldStyle(.roundedBorder)
-                if !ti.suggestions.isEmpty {
-                    SuggestionList(suggestions: ti.suggestions,
-                                   selection: binding)
+            }
+            .id(control.id))
+        case .editableChoice(let ec):
+            let binding = Binding<String>(
+                get: {
+                    if case .string(let s) = buffers[control.id] { return s }
+                    return ""
+                },
+                set: { buffers[control.id] = .string($0) }
+            )
+            return AnyView(VStack(alignment: .leading, spacing: 4) {
+                if !ec.label.isEmpty {
+                    Text(ec.label).font(.caption).foregroundColor(.secondary)
                 }
+                ComboBoxRepresentable(value: binding,
+                                      options: ec.options,
+                                      placeholder: ec.placeholder,
+                                      onCommit: { /* deferred to ModalEditor commit */ })
+                    .frame(height: 24)
             }
             .id(control.id))
         case .choice(let ch):
@@ -464,6 +571,8 @@ fileprivate struct ModalEditorView: View {
             }
         case .textInput(let ti):
             out[control.id] = .string(ti.value)
+        case .editableChoice(let ec):
+            out[control.id] = .string(ec.value)
         case .choice(let ch):
             out[control.id] = .index(ch.selectedIndex)
         case .toggle(let tg):

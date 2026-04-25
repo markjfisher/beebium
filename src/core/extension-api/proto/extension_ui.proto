@@ -57,7 +57,7 @@ message View {
 
 // --- Controls ---
 //
-// Eight primitives, deliberately small. Together with nested Groups and
+// Nine primitives, deliberately small. Together with nested Groups and
 // ModalEditors they cover the panels we have today (Piconet, AUN) and
 // are expected to cover ~90% of any future extension. Stretching the
 // alphabet should hurt slightly each time -- that's the forcing function
@@ -70,14 +70,15 @@ message Control {
     string id = 1;
 
     oneof control {
-        Label       label        = 2;
-        Indicator   indicator    = 3;
-        Toggle      toggle       = 4;
-        Button      button       = 5;
-        Choice      choice       = 6;
-        TextInput   text_input   = 7;
-        Group       group        = 8;
-        ModalEditor modal_editor = 9;
+        Label          label           = 2;
+        Indicator      indicator       = 3;
+        Toggle         toggle          = 4;
+        Button         button          = 5;
+        Choice         choice          = 6;
+        TextInput      text_input      = 7;
+        Group          group           = 8;
+        ModalEditor    modal_editor    = 9;
+        EditableChoice editable_choice = 10;
     }
 }
 
@@ -134,22 +135,27 @@ message Choice {
 // Free-form string. Dispatch payload: string_value. Frontends decide
 // dispatch timing (per-keystroke vs on-blur); the protocol does not
 // constrain that.
-//
-// suggestions, when non-empty, lets the server expose a fixed list of
-// candidate values that the frontend renders as a combobox-style picker
-// alongside the text field. The text field remains the single source of
-// truth: picking a suggestion writes its text into the field, and the
-// list highlights whichever entry (if any) matches the current field
-// value. Editing the field to a value not in the list clears the
-// highlight. Use this for "pick from a known set OR enter a custom
-// value" workflows -- e.g. choosing a serial port path where the OS
-// enumerates known ports but the user may also need to type a path the
-// enumerator did not return.
 message TextInput {
     string label = 1;
     string value = 2;
     string placeholder = 3;
-    repeated string suggestions = 4;
+}
+
+// Open-ended choice: pick from a fixed list of options OR type a custom
+// value. The semantic mirror of Choice (closed: must be one of the
+// options); EditableChoice is open. Renderers map this to the platform's
+// idiomatic combobox widget -- macOS NSComboBox, GTK GtkComboBox with
+// has_entry, HTML <input list="..."> with a <datalist>, etc.
+//
+// Dispatch payload: string_value. The string is whatever the user
+// committed -- whether they typed it freely or picked it from the
+// dropdown is not visible on the wire, and shouldn't matter to the
+// extension.
+message EditableChoice {
+    string label = 1;
+    string value = 2;            // current text content
+    string placeholder = 3;
+    repeated string options = 4; // dropdown content; may be empty
 }
 
 // Structural primitive: an ordered sequence of child Controls with an

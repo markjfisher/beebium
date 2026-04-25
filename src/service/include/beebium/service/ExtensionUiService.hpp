@@ -82,14 +82,15 @@ inline void collect_editor_fields(
 
 inline const char* control_type_name(::beebium::Control::ControlCase c) noexcept {
     switch (c) {
-        case ::beebium::Control::kLabel:       return "Label";
-        case ::beebium::Control::kIndicator:   return "Indicator";
-        case ::beebium::Control::kToggle:      return "Toggle";
-        case ::beebium::Control::kButton:      return "Button";
-        case ::beebium::Control::kChoice:      return "Choice";
-        case ::beebium::Control::kTextInput:   return "TextInput";
-        case ::beebium::Control::kGroup:       return "Group";
-        case ::beebium::Control::kModalEditor: return "ModalEditor";
+        case ::beebium::Control::kLabel:          return "Label";
+        case ::beebium::Control::kIndicator:      return "Indicator";
+        case ::beebium::Control::kToggle:         return "Toggle";
+        case ::beebium::Control::kButton:         return "Button";
+        case ::beebium::Control::kChoice:         return "Choice";
+        case ::beebium::Control::kTextInput:      return "TextInput";
+        case ::beebium::Control::kGroup:          return "Group";
+        case ::beebium::Control::kModalEditor:    return "ModalEditor";
+        case ::beebium::Control::kEditableChoice: return "EditableChoice";
         case ::beebium::Control::CONTROL_NOT_SET: return "(unset)";
     }
     return "(unknown)";
@@ -111,11 +112,12 @@ inline bool payload_matches_control(
     bool dispatchable = true;
 
     switch (ctrl_case) {
-        case CC::kToggle:      expected = PC::kBoolValue;     break;
-        case CC::kTextInput:   expected = PC::kStringValue;   break;
-        case CC::kChoice:      expected = PC::kIndexValue;    break;
-        case CC::kButton:      expected = PC::PAYLOAD_NOT_SET; break;
-        case CC::kModalEditor: expected = PC::kEditorCommit;  break;
+        case CC::kToggle:         expected = PC::kBoolValue;     break;
+        case CC::kTextInput:      expected = PC::kStringValue;   break;
+        case CC::kEditableChoice: expected = PC::kStringValue;   break;
+        case CC::kChoice:         expected = PC::kIndexValue;    break;
+        case CC::kButton:         expected = PC::PAYLOAD_NOT_SET; break;
+        case CC::kModalEditor:    expected = PC::kEditorCommit;  break;
         case CC::kLabel:
         case CC::kIndicator:
         case CC::kGroup:
@@ -152,9 +154,10 @@ inline bool editor_field_matches(
     FV actual = field.value_case();
     FV expected;
     switch (ctrl_case) {
-        case CC::kToggle:    expected = FV::kBoolValue;   break;
-        case CC::kTextInput: expected = FV::kStringValue; break;
-        case CC::kChoice:    expected = FV::kIndexValue;  break;
+        case CC::kToggle:         expected = FV::kBoolValue;   break;
+        case CC::kTextInput:      expected = FV::kStringValue; break;
+        case CC::kEditableChoice: expected = FV::kStringValue; break;
+        case CC::kChoice:         expected = FV::kIndexValue;  break;
         default:
             error = "editor field '" + field.field_id() +
                     "' addresses a non-input control (" +

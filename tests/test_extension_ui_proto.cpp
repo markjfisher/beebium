@@ -270,14 +270,14 @@ TEST_CASE("ModalEditor round-trips with anchor, editor, and flags",
     anchor->set_id("device_path");
     anchor->mutable_label()->set_text("Device: /dev/tty.usbmodem101");
 
-    // Editor is a single TextInput with enumerated suggestions.
+    // Editor is a single EditableChoice with enumerated options.
     auto* editor = modal->mutable_editor();
     editor->set_id("device_path_value");
-    auto* text = editor->mutable_text_input();
-    text->set_label("Serial port");
-    text->set_value("/dev/tty.usbmodem101");
-    *text->add_suggestions() = "/dev/tty.usbmodem101";
-    *text->add_suggestions() = "/dev/tty.usbmodem14101";
+    auto* ec = editor->mutable_editable_choice();
+    ec->set_label("Serial port");
+    ec->set_value("/dev/tty.usbmodem101");
+    *ec->add_options() = "/dev/tty.usbmodem101";
+    *ec->add_options() = "/dev/tty.usbmodem14101";
 
     std::string wire;
     REQUIRE(control.SerializeToString(&wire));
@@ -291,33 +291,37 @@ TEST_CASE("ModalEditor round-trips with anchor, editor, and flags",
     REQUIRE(pm.show_cancel() == true);
     REQUIRE(pm.anchor().control_case() == beebium::Control::kLabel);
     REQUIRE(pm.anchor().label().text() == "Device: /dev/tty.usbmodem101");
-    REQUIRE(pm.editor().control_case() == beebium::Control::kTextInput);
+    REQUIRE(pm.editor().control_case() == beebium::Control::kEditableChoice);
     REQUIRE(pm.editor().id() == "device_path_value");
-    REQUIRE(pm.editor().text_input().value() == "/dev/tty.usbmodem101");
-    REQUIRE(pm.editor().text_input().suggestions_size() == 2);
-    REQUIRE(pm.editor().text_input().suggestions(0) == "/dev/tty.usbmodem101");
-    REQUIRE(pm.editor().text_input().suggestions(1) == "/dev/tty.usbmodem14101");
+    REQUIRE(pm.editor().editable_choice().value() == "/dev/tty.usbmodem101");
+    REQUIRE(pm.editor().editable_choice().options_size() == 2);
+    REQUIRE(pm.editor().editable_choice().options(0) == "/dev/tty.usbmodem101");
+    REQUIRE(pm.editor().editable_choice().options(1) == "/dev/tty.usbmodem14101");
 }
 
-TEST_CASE("TextInput round-trips with the suggestions list",
-          "[extension_ui][proto]") {
-    beebium::TextInput input;
-    input.set_label("Serial port");
-    input.set_value("/dev/tty.usbmodem101");
-    input.set_placeholder("/dev/tty.usbmodem...");
-    *input.add_suggestions() = "/dev/tty.usbmodem101";
-    *input.add_suggestions() = "/dev/tty.usbmodem14101";
+TEST_CASE("EditableChoice round-trips with options and value",
+          "[extension_ui][proto][editable_choice]") {
+    beebium::Control control;
+    control.set_id("device_path_value");
+    auto* ec = control.mutable_editable_choice();
+    ec->set_label("Serial port");
+    ec->set_value("/dev/tty.usbmodem101");
+    ec->set_placeholder("/dev/tty.usbmodem...");
+    *ec->add_options() = "/dev/tty.usbmodem101";
+    *ec->add_options() = "/dev/tty.usbmodem14101";
 
     std::string wire;
-    REQUIRE(input.SerializeToString(&wire));
+    REQUIRE(control.SerializeToString(&wire));
 
-    beebium::TextInput parsed;
+    beebium::Control parsed;
     REQUIRE(parsed.ParseFromString(wire));
-    REQUIRE(parsed.label() == "Serial port");
-    REQUIRE(parsed.value() == "/dev/tty.usbmodem101");
-    REQUIRE(parsed.suggestions_size() == 2);
-    REQUIRE(parsed.suggestions(0) == "/dev/tty.usbmodem101");
-    REQUIRE(parsed.suggestions(1) == "/dev/tty.usbmodem14101");
+    REQUIRE(parsed.control_case() == beebium::Control::kEditableChoice);
+    const auto& pec = parsed.editable_choice();
+    REQUIRE(pec.label() == "Serial port");
+    REQUIRE(pec.value() == "/dev/tty.usbmodem101");
+    REQUIRE(pec.options_size() == 2);
+    REQUIRE(pec.options(0) == "/dev/tty.usbmodem101");
+    REQUIRE(pec.options(1) == "/dev/tty.usbmodem14101");
 }
 
 TEST_CASE("DispatchRequest round-trips an EditorCommit with mixed field types",

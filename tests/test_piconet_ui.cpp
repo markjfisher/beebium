@@ -158,16 +158,17 @@ TEST_CASE("PiconetUi build_view (live backend) produces ModalEditor + Indicator 
     REQUIRE(anchor.label().text() ==
             std::string("Device: ") + fixture.slave_path());
 
-    // Editor body is a single TextInput with the enumerated host
-    // serial ports surfaced as suggestions. No more Choice / Group
-    // wrapper -- the field is the single source of truth and the
-    // suggestions list is a "pick to fill" affordance the renderer
-    // attaches alongside the text field.
+    // Editor body is a single EditableChoice. Frontends render it as
+    // the platform's idiomatic combobox; the field is the single
+    // source of truth on commit. The previous shape (Choice +
+    // TextInput in a Group, then TextInput with suggestions) is
+    // superseded -- one primitive captures the "pick from known list
+    // OR type your own" intent at the right level of abstraction.
     const auto& editor = modal.editor();
     REQUIRE(editor.id() == "device_path_value");
-    REQUIRE(editor.control_case() == beebium::Control::kTextInput);
-    REQUIRE(editor.text_input().value() == fixture.slave_path());
-    REQUIRE(editor.text_input().placeholder() == fixture.slave_path());
+    REQUIRE(editor.control_case() == beebium::Control::kEditableChoice);
+    REQUIRE(editor.editable_choice().value() == fixture.slave_path());
+    REQUIRE(editor.editable_choice().placeholder() == fixture.slave_path());
 
     const auto& indicator = root.group().controls(1);
     REQUIRE(indicator.id() == "connected");

@@ -99,25 +99,25 @@ void PiconetUi::build_view(View* out) const {
             anchor->mutable_label()->set_text(std::move(text));
         }
 
-        // Editor body: a single TextInput with enumerated host serial
-        // ports surfaced as suggestions. The frontend renders this as
-        // a combobox (text field + list); the field is the single
-        // source of truth on commit, the list is a "pick to fill"
-        // affordance with bidirectional highlight tracking.
+        // Editor body: a single EditableChoice. Frontends render this
+        // as the platform's idiomatic combobox (NSComboBox on macOS,
+        // <input list> on the web, ...); the field is the single source
+        // of truth on commit, and the dropdown / list is a "pick from
+        // known" affordance.
         {
             auto* editor = modal->mutable_editor();
             editor->set_id(FIELD_DEVICE_PATH);
-            auto* text = editor->mutable_text_input();
-            text->set_label("Serial port");
-            text->set_value(current_path);
-            text->set_placeholder(current_path.empty()
-                                      ? std::string("/dev/tty.usbmodem...")
-                                      : current_path);
-            // Best-effort enumeration. An empty list is fine -- the
-            // frontend renders a plain text field with no
-            // suggestions.
+            auto* ec = editor->mutable_editable_choice();
+            ec->set_label("Serial port");
+            ec->set_value(current_path);
+            ec->set_placeholder(current_path.empty()
+                                    ? std::string("/dev/tty.usbmodem...")
+                                    : current_path);
+            // Best-effort enumeration. An empty options list is fine
+            // -- the frontend still gives the user a plain editable
+            // field.
             for (auto& port : serial::enumerate_ports()) {
-                *text->add_suggestions() = std::move(port);
+                *ec->add_options() = std::move(port);
             }
         }
     }

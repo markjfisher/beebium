@@ -478,6 +478,132 @@ TEST_CASE("Dispatch EditorCommit with wrong value variant for a sub-control is r
     REQUIRE(fake_ptr->fake_ui().event_count() == 0);
 }
 
+TEST_CASE("Dispatch with string_value targets an EditableChoice",
+          "[grpc][extension-ui][editable_choice]") {
+    // FakeUi's view tree only has a Toggle. Build a fresh transport
+    // with an inline FakeEditableUi so this test stays self-contained.
+    class FakeEditableUi : public beebium::ExtensionUi {
+    public:
+        void build_view(beebium::View* out) const override {
+            auto* root = out->mutable_root();
+            root->set_id("root");
+            auto* group = root->mutable_group();
+            auto* control = group->add_controls();
+            control->set_id("ec1");
+            auto* ec = control->mutable_editable_choice();
+            ec->set_label("Pick");
+            *ec->add_options() = "alpha";
+            *ec->add_options() = "beta";
+        }
+        void handle_event(const beebium::DispatchRequest& req) override {
+            last_value_ = req.string_value();
+            ++event_count_;
+        }
+        const std::string& last_value() const { return last_value_; }
+        int event_count() const { return event_count_.load(std::memory_order_acquire); }
+    private:
+        std::string last_value_;
+        std::atomic<int> event_count_{0};
+    };
+    class FakeEditableTransport : public beebium::EconetTransportExtension {
+    public:
+        FakeEditableTransport() {
+            beebium::ExtensionManifest m;
+            m.name = "ec";
+            m.cli_name = "ec";
+            m.extension_kind = "econet-transport";
+            set_manifest(std::move(m));
+        }
+        std::unique_ptr<beebium::NetworkBackend> create_backend(uint8_t) override {
+            return nullptr;
+        }
+        beebium::ExtensionUi* ui() override { return &ui_; }
+        FakeEditableUi& fake_ui() { return ui_; }
+    private:
+        FakeEditableUi ui_;
+    };
+
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeEditableTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("ec");
+    req.set_control_id("ec1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    req.set_string_value("custom-typed");
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE(resp.accepted());
+    REQUIRE(fake_ptr->fake_ui().last_value() == "custom-typed");
+    REQUIRE(fake_ptr->fake_ui().event_count() == 1);
+}
+
+TEST_CASE("Dispatch with index_value to an EditableChoice is rejected",
+          "[grpc][extension-ui][editable_choice]") {
+    // Same FakeEditableTransport pattern as the accept-test above; the
+    // server should reject index_value because EditableChoice expects
+    // string_value (the typed/picked text, not an option index).
+    class FakeEditableUi : public beebium::ExtensionUi {
+    public:
+        void build_view(beebium::View* out) const override {
+            auto* root = out->mutable_root();
+            root->set_id("root");
+            auto* group = root->mutable_group();
+            auto* control = group->add_controls();
+            control->set_id("ec1");
+            auto* ec = control->mutable_editable_choice();
+            *ec->add_options() = "a";
+        }
+        void handle_event(const beebium::DispatchRequest&) override {
+            ++event_count_;
+        }
+        int event_count() const { return event_count_.load(std::memory_order_acquire); }
+    private:
+        std::atomic<int> event_count_{0};
+    };
+    class FakeEditableTransport : public beebium::EconetTransportExtension {
+    public:
+        FakeEditableTransport() {
+            beebium::ExtensionManifest m;
+            m.name = "ec";
+            m.cli_name = "ec";
+            m.extension_kind = "econet-transport";
+            set_manifest(std::move(m));
+        }
+        std::unique_ptr<beebium::NetworkBackend> create_backend(uint8_t) override {
+            return nullptr;
+        }
+        beebium::ExtensionUi* ui() override { return &ui_; }
+        FakeEditableUi& fake_ui() { return ui_; }
+    private:
+        FakeEditableUi ui_;
+    };
+
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeEditableTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("ec");
+    req.set_control_id("ec1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    req.set_index_value(0);  // wrong variant for EditableChoice
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE_FALSE(resp.accepted());
+    REQUIRE(resp.error().find("payload type") != std::string::npos);
+    REQUIRE(fake_ptr->fake_ui().event_count() == 0);
+}
+
 TEST_CASE("Cancelling the SubscribeView context exits the server poll loop cleanly",
           "[grpc][extension-ui]") {
     beebium::EconetTransportRegistry registry;
