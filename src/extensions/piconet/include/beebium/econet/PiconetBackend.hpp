@@ -20,6 +20,7 @@
 #include <moodycamel/readerwriterqueue.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -44,45 +45,13 @@ class PiconetBackend : public NetworkBackend {
 public:
     // Factory that opens a fresh SerialPort for a given device path. Used
     // by process_pending_reopen() to rebuild the serial after a path
-    // change. Production code passes a free-function pointer
-    // (&make_platform_serial) that constructs the platform-specific
-    // SerialPort (PosixSerialPort / Win32SerialPort); tests that need a
-    // custom factory pass a static helper. When null, the reopen request
-    // is silently dropped (the pre-opened serial handed in at construction
-    // time is the only one the backend will ever own).
-    //
-    // Why a raw function pointer rather than std::function: the Windows
-    // build of test_grpc_piconet_ui crashes inside the std::function
-    // dispatch at process_pending_reopen()'s factory call site, with the
-    // call landing at an unmapped <piconet-base-high-16>00000000 address.
-    // The std::function's storage bytes are bit-for-bit correct at the
-    // moment of the call (verified by hardware data watchpoints,
-    // Application Verifier, and direct byte inspection), and the call
-    // single-stepped under cdb dispatches correctly -- yet at full speed
-    // it goes wrong. The mechanism remains undiagnosed; see
-    // docs/discussion/test-grpc-piconet-ui-windows-av.md for the full
-    // investigation log. Switching to a raw function pointer eliminates
-    // the std::function dispatch entirely (the call becomes a direct
-    // register-indirect CALL) and dodges the bug. There is no functional
-    // loss: every production call site passes a free function with no
-    // captures.
+    // change. Production code passes a factory that constructs the
+    // platform-specific SerialPort (PosixSerialPort / Win32SerialPort);
+    // tests pass a factory that returns a scripted mock. When null, the
+    // reopen request is silently dropped (the pre-opened serial handed
+    // in at construction time is the only one the backend will ever own).
     using SerialFactory =
-        std::unique_ptr<piconet::SerialPort> (*)(const std::string& device_path);
-
-    // Async-state-change callback. Invoked whenever PiconetBackend's
-    // externally-observable state changes for reasons other than a
-    // synchronous call from the emulation thread (today: hot-unplug
-    // detection, serial read errors that close the port, completion of
-    // a pending reopen). The userdata pointer is passed back as the
-    // single argument; production binds it to PiconetEconetTransportExtension
-    // and invokes ui_.mark_dirty() through a static thunk.
-    //
-    // Why a C-style (fn-ptr, void*) callback rather than std::function:
-    // same as SerialFactory above. We avoid std::function on every cross-
-    // thread call site in PiconetBackend so the Windows AV cannot be
-    // re-triggered through the on_async_state_change_ path (which would
-    // be vulnerable to the same dispatch issue as serial_factory_).
-    using AsyncStateChangeFn = void (*)(void* userdata);
+        std::function<std::unique_ptr<piconet::SerialPort>(const std::string&)>;
 
     // Constructor opens the SerialPort, sends SET_STATION + SET_MODE LISTEN,
     // and starts the reader thread. Failures during startup mark the
@@ -96,18 +65,19 @@ public:
     // adapter via the Extension UI. When null, request_reopen() is a
     // no-op.
     //
-    // on_async_state_change (with on_async_state_change_userdata as the
-    // single argument) is invoked by the reader thread whenever
+    // on_async_state_change is invoked by the reader thread whenever
     // PiconetBackend's externally-observable state changes for reasons
-    // other than a synchronous call from the emulation thread. The
-    // callback must be thread-safe -- it runs on the reader thread (or
-    // the emulation thread in the reopen-completion case). The userdata
-    // pointer's lifetime must outlive the PiconetBackend.
+    // other than a synchronous call from the emulation thread (today:
+    // hot-unplug detection, serial read errors that close the port,
+    // completion of a pending reopen). PiconetEconetTransportExtension
+    // wires this to PiconetUi::mark_dirty() so the Extension UI framework
+    // knows to push a fresh View. If null, the callback is simply not
+    // invoked. Must be thread-safe -- it runs on the reader thread (or
+    // the emulation thread in the reopen-completion case).
     PiconetBackend(piconet::PiconetConfig config,
                    std::unique_ptr<piconet::SerialPort> serial,
                    SerialFactory serial_factory = nullptr,
-                   AsyncStateChangeFn on_async_state_change = nullptr,
-                   void* on_async_state_change_userdata = nullptr);
+                   std::function<void()> on_async_state_change = nullptr);
 
     ~PiconetBackend() override;
 
@@ -183,15 +153,14 @@ public:
     // serial_, open_error_message_); direct accessors above are for the
     // emulation thread or single-threaded tests.
     //
-    // Without this synchronisation, build_view (gRPC thread) reads
-    // config_.device_path / serial_ / open_error_message_ concurrently
-    // with process_pending_reopen's writes (emulation thread). That is
-    // straight-up UB on std::string and std::unique_ptr, and even
-    // though it turned out not to be the cause of the Windows AV the
-    // race tracking led us to investigate, the data race itself is
-    // real and is fixed here. See
-    // docs/discussion/test-grpc-piconet-ui-windows-av.md for the AV
-    // investigation.
+    // Without this synchronisation, build_view (gRPC thread) racing
+    // against process_pending_reopen (emulation thread) corrupts heap
+    // memory near serial_factory_ on Windows -- the std::string
+    // assignment to config_.device_path interleaved with the gRPC
+    // thread's read of the same string produces UB that manifests as a
+    // 32-bit zero write to PiconetBackend+0x48 (the std::function's
+    // stored function pointer). See
+    // docs/discussion/grpc-windows-streaming-race.md.
     struct UiSnapshot {
         std::string device_path;
         bool serial_open;
@@ -263,10 +232,7 @@ private:
     moodycamel::ReaderWriterQueue<NetworkFrame> rx_queue_{64};
     std::atomic<bool> shutdown_{false};
     std::atomic<piconet::Mode> current_mode_{piconet::Mode::Stop};
-    // C-style callback + userdata. See AsyncStateChangeFn doc above for
-    // why this is not a std::function.
-    AsyncStateChangeFn on_async_state_change_ = nullptr;
-    void* on_async_state_change_userdata_ = nullptr;
+    std::function<void()> on_async_state_change_;
     std::thread reader_thread_;
 
     // Cross-thread slot used by request_reopen() to post a new device
