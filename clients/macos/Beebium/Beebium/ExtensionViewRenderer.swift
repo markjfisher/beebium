@@ -390,8 +390,7 @@ fileprivate struct ModalEditorView: View {
                     buffers = collectInitialBuffers(modal.editor)
                     isPresented = true
                 } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 14))
+                    Image(systemName: "square.and.pencil")
                 }
                 .buttonStyle(.borderless)
                 .help("Edit")
