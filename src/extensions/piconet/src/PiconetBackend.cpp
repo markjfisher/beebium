@@ -534,68 +534,81 @@ void PiconetBackend::request_reopen(std::string new_path) {
 }
 
 void PiconetBackend::process_pending_reopen() {
-    std::string* pending = pending_reopen_path_.exchange(nullptr, std::memory_order_acq_rel);
-    if (!pending) {
+    auto pending = take_pending_reopen();
+    if (!pending || !serial_factory_) {
         return;
     }
-    const std::string new_path = std::move(*pending);
-    delete pending;
 
-    if (!serial_factory_) {
-        return;  // Nothing we can do; request_reopen should have dropped it.
+    tear_down_active_serial();
+
+    config_.device_path = *pending;
+    auto fresh = serial_factory_(*pending);
+    if (!fresh || !fresh->is_open()) {
+        install_failed_serial(std::move(fresh));
+    } else {
+        install_open_serial(std::move(fresh));
     }
+    notify_state_changed();
+}
 
-    // Tear down the current serial and reader. Closing the serial
-    // unblocks the reader's timed read with error=true; the reader's
-    // own close + async-state-change callback fire once as a side
-    // effect (benign: mark_dirty / bump are idempotent and the reopen
-    // will issue its own at the end).
+std::optional<std::string> PiconetBackend::take_pending_reopen() {
+    std::string* pending =
+        pending_reopen_path_.exchange(nullptr, std::memory_order_acq_rel);
+    if (!pending) {
+        return std::nullopt;
+    }
+    std::string out = std::move(*pending);
+    delete pending;
+    return out;
+}
+
+void PiconetBackend::tear_down_active_serial() {
     if (serial_) {
         serial_->close();
     }
     if (reader_thread_.joinable()) {
         reader_thread_.join();
     }
+}
 
-    // Build the replacement SerialPort. Whatever the factory returns
-    // becomes serial_ -- even on failure -- so open_error() is readable
-    // and is_serial_open() reflects the failure.
-    config_.device_path = new_path;
-    auto fresh = serial_factory_(new_path);
-    const bool opened = fresh && fresh->is_open();
-    if (!opened) {
-        if (fresh) {
-            auto why = fresh->open_error();
-            open_error_message_ =
-                why.empty() ? std::string("unknown error") : std::string(why);
-        } else {
-            open_error_message_ = "serial factory returned null";
-        }
-        serial_ = std::move(fresh);
-        current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
-        bump_backend_status_sequence();
-        if (on_async_state_change_) {
-            on_async_state_change_();
-        }
-        return;
+void PiconetBackend::install_failed_serial(
+    std::unique_ptr<piconet::SerialPort> fresh) {
+    if (fresh) {
+        auto why = fresh->open_error();
+        open_error_message_ =
+            why.empty() ? std::string("unknown error") : std::string(why);
+    } else {
+        open_error_message_ = "serial factory returned null";
     }
+    serial_ = std::move(fresh);
+    current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
+}
 
+void PiconetBackend::install_open_serial(
+    std::unique_ptr<piconet::SerialPort> fresh) {
     open_error_message_.clear();
     serial_ = std::move(fresh);
 
-    // Reopen always lands in Stop. The user is re-pointing the adapter
-    // while it is disabled; Enable is a deliberate next step taken via
-    // the action button once the Indicator has flipped green.
+    // Reopen always lands in Stop. The user is re-pointing the
+    // adapter while it is disabled; Enable is a deliberate next step
+    // taken via the action button once the Indicator has flipped
+    // green.
     write_to_serial(*serial_, piconet::format_set_station(config_.initial_station));
     write_to_serial(*serial_, piconet::format_set_mode(piconet::Mode::Stop));
     current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
 
-    // shutdown_ is not touched by the reopen-teardown path above (that
+    // shutdown_ is not touched by tear_down_active_serial (that
     // sequence drives the reader out via read-error, not via the
-    // shutdown flag) but reset defensively so the fresh reader loops.
+    // shutdown flag) but reset defensively before spawning a fresh
+    // reader.
     shutdown_.store(false, std::memory_order_relaxed);
     reader_thread_ = std::thread([this] { reader_loop(); });
+}
 
+void PiconetBackend::notify_state_changed() {
+    if (shutdown_.load(std::memory_order_relaxed)) {
+        return;
+    }
     bump_backend_status_sequence();
     if (on_async_state_change_) {
         on_async_state_change_();

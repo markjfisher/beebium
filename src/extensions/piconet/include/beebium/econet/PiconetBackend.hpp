@@ -158,13 +158,39 @@ private:
     void reader_loop();
 
     // Called by receive_frame() on the emulation thread. If a reopen
-    // has been requested, closes the current SerialPort, joins the
-    // reader thread, constructs a fresh SerialPort via serial_factory_,
-    // writes SET_STATION + SET_MODE STOP, and starts a new reader
-    // thread. On open failure records open_error_message_ and leaves
-    // the backend in the closed state. Fires on_async_state_change_
-    // so the UI re-renders with the new path / error text.
+    // has been requested, orchestrates teardown + replacement open +
+    // reader restart; on open failure leaves the backend in a closed
+    // state with open_error_message_ populated. Fires
+    // on_async_state_change_ so the UI re-renders.
     void process_pending_reopen();
+
+    // Returns the pending reopen path (and clears the slot) if one is
+    // queued, otherwise nullopt.
+    std::optional<std::string> take_pending_reopen();
+
+    // Closes the current SerialPort and joins the reader thread. The
+    // close unblocks the reader's timed read; the reader's own
+    // close + async-state-change side-effect fires once (benign:
+    // bump_backend_status_sequence and mark_dirty are idempotent and
+    // process_pending_reopen will issue its own at the end).
+    void tear_down_active_serial();
+
+    // Stores `fresh` (a SerialPort whose open failed) as the new
+    // serial_, captures the OS-level error into open_error_message_,
+    // and pushes mode to Stop. Backend is now in a closed state.
+    void install_failed_serial(std::unique_ptr<piconet::SerialPort> fresh);
+
+    // Stores `fresh` as the new serial_, clears open_error_message_,
+    // sends SET_STATION + SET_MODE STOP to the device, resets
+    // shutdown_, and starts a fresh reader thread.
+    void install_open_serial(std::unique_ptr<piconet::SerialPort> fresh);
+
+    // Bump the backend-status sequence and fire the async-state-change
+    // callback, both gated on !shutdown_ so the destructor's
+    // teardown doesn't race observers. Used by every place that
+    // observably mutates is_connected() / is_serial_open() outside a
+    // synchronous emulation-thread call.
+    void notify_state_changed();
 
     piconet::PiconetConfig config_;
     std::unique_ptr<piconet::SerialPort> serial_;
