@@ -72,11 +72,13 @@ public:
     virtual void close() = 0;
 
     // OS-level diagnosis recorded if the last open attempt failed.
-    // Empty on success, or on implementations that cannot recover an
-    // error string. Used by PiconetBackend::process_pending_reopen to
-    // surface "No such file or directory" / "Permission denied" etc.
-    // on the Extension UI Indicator after a user-initiated path change.
-    virtual std::string_view open_error() const noexcept { return {}; }
+    // Empty on success. Pure virtual so concrete implementations
+    // can't silently lose the error string by inheriting an empty
+    // default -- a regression that would surface to the user as a
+    // generic "Adapter offline" instead of the actual reason.
+    // PiconetBackend::process_pending_reopen reads this to populate
+    // the Extension UI Indicator after a user-initiated path change.
+    virtual std::string_view open_error() const noexcept = 0;
 };
 
 }  // namespace beebium::piconet

@@ -71,6 +71,10 @@ public:
 
     void close() override { open_ = false; }
 
+    std::string_view open_error() const noexcept override {
+        return open_error_;
+    }
+
     // ---- Test control: stage inbound bytes ----
 
     // Push bytes that the next read() call (or several calls, depending on
@@ -87,6 +91,11 @@ public:
     // ---- Test control: connection state ----
 
     void set_open(bool o) { open_ = o; }
+
+    // Inject a synthetic OS-level error so tests can verify the
+    // PiconetBackend / PiconetUi paths that surface
+    // serial->open_error() to the Indicator. Default is empty.
+    void set_open_error(std::string err) { open_error_ = std::move(err); }
 
     // ---- Test inspection: captured writes ----
 
@@ -114,6 +123,7 @@ public:
 
 private:
     bool open_ = true;
+    std::string open_error_;
     std::deque<std::vector<std::uint8_t>> read_chunks_;
     std::vector<std::vector<std::uint8_t>> writes_;
 };

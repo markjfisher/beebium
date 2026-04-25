@@ -91,6 +91,7 @@ public:
     WriteResult write(std::span<const std::uint8_t> bytes) override;
     bool is_open() const override;
     void close() override;
+    std::string_view open_error() const noexcept override { return {}; }
 
     // Peer management (same shape as AunBackend::add_peer).
     void add_peer(std::uint8_t net, std::uint8_t stn,

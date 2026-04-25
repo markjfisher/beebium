@@ -44,6 +44,10 @@ public:
     // owner, not to the PiconetBackend that holds the BorrowedSerialPort.
     void close() override {}
 
+    std::string_view open_error() const noexcept override {
+        return inner_->open_error();
+    }
+
 private:
     SerialPort* inner_;
 };
