@@ -158,7 +158,7 @@ PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
     // alive -- this lets the ModalEditor's reopen path recover from a
     // wrong-path-at-startup without the extension needing a separate
     // "build a fresh backend" code path.
-    if (!serial_ || !serial_->is_open()) {
+    if (!is_serial_writable()) {
         if (serial_) {
             auto why = serial_->open_error();
             if (!why.empty()) {
@@ -370,7 +370,7 @@ void PiconetBackend::reader_loop() {
 }
 
 void PiconetBackend::send_frame(const NetworkFrame& frame) {
-    if (!serial_ || !serial_->is_open()) {
+    if (!is_serial_writable()) {
         return;  // Disconnected: drop silently. FourWayHandshake's watchdog cleans up.
     }
 
@@ -481,7 +481,7 @@ std::optional<NetworkFrame> PiconetBackend::receive_frame() {
 }
 
 void PiconetBackend::on_station_id_changed(std::uint8_t new_station_id) {
-    if (!serial_ || !serial_->is_open()) {
+    if (!is_serial_writable()) {
         return;
     }
     config_.initial_station = new_station_id;  // Keep config in sync for diagnostics.
@@ -489,7 +489,7 @@ void PiconetBackend::on_station_id_changed(std::uint8_t new_station_id) {
 }
 
 void PiconetBackend::set_mode(piconet::Mode mode) {
-    if (!serial_ || !serial_->is_open()) {
+    if (!is_serial_writable()) {
         return;
     }
     write_to_serial(*serial_, piconet::format_set_mode(mode));

@@ -192,6 +192,14 @@ private:
     // synchronous emulation-thread call.
     void notify_state_changed();
 
+    // True iff a write to serial_ would be sensible right now. The
+    // ctor-time, send-time and station-change-time guards all share
+    // the same condition; the helper keeps them visually uniform and
+    // gives a single named anchor for "is the wire writeable?".
+    bool is_serial_writable() const noexcept {
+        return serial_ && serial_->is_open();
+    }
+
     piconet::PiconetConfig config_;
     std::unique_ptr<piconet::SerialPort> serial_;
     SerialFactory serial_factory_;
