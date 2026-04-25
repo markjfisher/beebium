@@ -1,11 +1,20 @@
 # `test_grpc_piconet_ui` AV on Windows — investigation log
 
-Status: **open, root cause unknown**. The test reliably AVs on Windows
-on the `grpc-windows-streaming-race` branch as of commit `05b81f4`.
-This document captures every diagnostic step taken on 2026-04-25, what
-each one ruled in or out, and the hypotheses still in play. It exists
-so the next person looking at this (or future-me looking at a similar
-ghost) does not re-run the same dead ends.
+Status: **partial root cause found, still open.** A two-hour TTD-based
+investigation on 2026-04-26 narrowed the bug to a kernel-mode write
+that corrupts the saved return address on `Win32SerialPort`'s
+constructor stack frame during a Windows syscall. The corruption is
+invisible to TTD's data model (no recorded write event) and to
+hardware data watchpoints. A targeted fix that prevented the most
+plausible trigger (`GetCommState` on a non-COM handle, called via
+`configure_comm`) was implemented but did not fix the bug — TTD
+confirmed the fix took effect (zero `GetCommState` calls) but the
+test still AVs with the same signature, meaning at least one *other*
+syscall path is also triggering the kernel-side write.
+
+See "The TTD investigation" near the bottom for the methodology and
+findings; the older sections record dead-end hypotheses that future
+similar bugs will look like initially.
 
 ---
 
@@ -589,6 +598,177 @@ specific to PiconetBackend at all.
   seeds. Related family of "Windows-specific gRPC headache" but
   different surface.
 
+## The TTD investigation (2026-04-26)
+
+After the workaround revert, I returned to the bug with WinDbg's
+**Time Travel Debugging**. TTD records the entire trace of a process
+execution to a `.run` file, then lets you replay it backwards — every
+register read, every memory access, every instruction. Unlike a
+post-mortem dump, it captures the *full* timeline, so even a
+Heisenbug that disappears under perturbation can be analysed
+deterministically once recorded.
+
+The recipe used here:
+
+```powershell
+# Slioch already has C:/Users/rjs/windbg/ttd/ from a robocopy of the
+# WindowsApps WinDbg amd64\ttd directory.
+& C:/Users/rjs/windbg/ttd/TTD.exe -accepteula -out C:/Users/rjs/test-trace.run \
+   -noUI .\test_grpc_piconet_ui.exe --reporter compact
+
+# Open in cdb (or windbg) for replay analysis:
+& C:/Users/rjs/windbg/cdb.exe -cf script.txt -z C:/Users/rjs/test-trace.run
+```
+
+`script.txt` is a normal cdb script except backwards-stepping (`t-`),
+backwards-going (`g-`), and TTD position jumps (`!tt 273D:22D`) all
+work, plus the data-model query
+`@$cursession.TTD.Memory(addr, addr+len, "rw")` returns the entire
+chronological list of reads and writes to a memory range.
+
+### What TTD found
+
+1. **The AV is a corrupted RET, not a corrupted call site.** `t-`-ing
+   from the AV (RIP=`0x7ff?_00000000`) lands on the `ret` instruction
+   at `Win32SerialPort::Win32SerialPort+0x1b3`. The CPU pops `[rsp]`
+   into RIP and faults trying to fetch the first instruction at the
+   popped target.
+
+2. **The corrupted value is `<piconet-base-high16>00000000`.** Bytes
+   0..3 of the popped value are zero, bytes 4..7 are intact. The
+   slot was previously a valid piconet RA (e.g. `0x7ff985333d2b` =
+   `make_unique+0x1f`), so the high half is "incidentally" piconet's
+   loaded high-16 — **not** because the corruption wrote piconet's
+   base, but because the *original* value had it.
+
+3. **TTD's data model shows no write to the slot between the CALL
+   that pushed the correct RA and the AV.** Querying
+   `@$cursession.TTD.Memory(@rsp, @rsp+8, "w").OrderBy(...)` returns
+   the CALL itself as the most recent write, with value
+   `0x...85333d2b`. Yet `dq @rsp` at the `ret` reads `0x7ff?_00000000`.
+   The value visibly changes without TTD recording an event.
+
+4. **Stepwise bisection across TTD positions pins the change to a
+   syscall.** Sampling `dq @rsp` at TTD positions `273D:22E`,
+   `2740:0`, `2745:0`, ..., `2750:0`, `2751:0` shows the value is
+   intact at `2750:0` (`ntdll!NtClose+0x12`, the syscall instruction)
+   and corrupted at `2751:0` (`NtClose+0x14`, the `ret` after the
+   syscall returned). The corruption happens during the
+   kernel-mode portion of the syscall, which TTD does not record.
+
+5. **The first-found NtClose call site was inside `configure_comm`.**
+   The `kbn 30` at TTD position 2750:0 showed:
+   ```
+   ntdll!NtClose+0x12
+   KERNELBASE!CloseHandle+0x45
+   KERNELBASE!GetCommState+0xf1
+   piconet!configure_comm+0x4c
+   piconet!Win32SerialPort::Win32SerialPort+0x33b
+   ```
+   `GetCommState` was being called on a named-pipe handle (the test's
+   `FakePiconetDeviceOnPipe`), and it internally calls `CloseHandle`
+   → `NtClose` on some kernel object, which is what triggers the
+   stack-corrupting return path.
+
+### The fix attempt that didn't work
+
+Hypothesis: skip `GetCommState` for non-COM handles by probing
+`GetFileType` first.
+
+```cpp
+void configure_comm(HANDLE handle, const std::string& path) {
+    DWORD file_type = ::GetFileType(handle);
+    if (file_type != FILE_TYPE_CHAR) {
+        // Test pipes, files, etc.: skip COM-specific configuration.
+        return;
+    }
+    DCB dcb{}; dcb.DCBlength = sizeof(dcb);
+    if (!::GetCommState(handle, &dcb)) { ... }
+    ...
+}
+```
+
+`GetFileType` is documented as a cheap, side-effect-free probe and
+does not internally close any kernel objects.
+
+**Result of the fix attempt:** the test still AVs with the same
+signature. TTD analysis of the *fixed* binary's trace
+(`@$cursession.TTD.Calls("KERNELBASE!GetCommState").Count()` = `0x0`,
+`@$cursession.TTD.Calls("KERNELBASE!GetFileType").Count()` = `0x2`)
+confirms the fix took effect — `GetCommState` was not called — but
+the corrupting kernel-side write still happens. So **at least one
+other syscall path** through `Win32SerialPort`'s constructor is
+also triggering the same kernel-mode corruption mechanism. Unfixed.
+
+The fix was not committed.
+
+### What we learned about the corrupting mechanism
+
+- It happens in **kernel mode during a syscall**, not in any
+  user-mode code that TTD records.
+- Hardware data watchpoints on the slot don't fire (DR registers
+  don't trip on kernel-side writes to user pages on this Windows
+  build).
+- The pattern (low 32 bits zeroed, high 32 bits preserved) is
+  consistent with a 32-bit `mov dword ptr` write of zero, but we
+  haven't found the writing instruction.
+- This is *almost certainly* a Windows kernel quirk specific to
+  Slioch's environment: a particular interaction between certain
+  syscalls and the user-mode stack of the calling thread on this
+  build. We did not reproduce on a different Windows host.
+
+### Most likely remaining hypotheses
+
+1. **Asynchronous Procedure Call (APC) delivery on syscall return.**
+   Windows can deliver pending APCs when a thread returns from a
+   syscall; the user-mode dispatcher writes a CONTEXT and
+   EXCEPTION_RECORD to the user stack. If the dispatcher's frame
+   layout collides with the calling function's saved RA slot, that
+   slot gets clobbered. The piconet test does have many gRPC worker
+   threads queueing work that could land as APCs on the test thread
+   while it's making syscalls.
+
+2. **Strict-handle-check + user-mode exception dispatch.** Some
+   Windows configurations turn `STATUS_INVALID_HANDLE` from an
+   internal `NtClose` into a user-mode exception via
+   `KiUserExceptionDispatcher`. The dispatcher writes exception state
+   to the user stack. If our process or one of its loaded DLLs
+   enables this mitigation (perhaps via IFEO or
+   `SetProcessMitigationPolicy`), it would explain the per-syscall
+   user-stack writes that TTD doesn't see.
+
+3. **A specific Windows 10 22H2 build bug.** The corruption is
+   reproducible across clean rebuilds on Slioch, so it's not random.
+   But we did not reproduce on a different Windows machine.
+
+### What to try next if/when investigation resumes
+
+1. **Reproduce on a different Windows 11 / different Intel CPU box.**
+   Confirms whether the bug is environmental.
+
+2. **Check process mitigation policies.**
+   `GetProcessMitigationPolicy(GetCurrentProcess(),
+   ProcessStrictHandleCheckPolicy, ...)` will say whether this
+   process raises exceptions on invalid handle close. If yes, that's
+   probably the trigger.
+
+3. **Use TTD's "find calls" to locate each NtClose triggered by
+   Win32SerialPort.** With the GetFileType fix in place,
+   `@$cursession.TTD.Calls("ntdll!NtClose").Where(c => c.SystemTimeStart
+   > <Win32SerialPort entry>) ` will list every kernel handle close
+   in the constructor's call tree. The remaining trigger is one of
+   these.
+
+4. **Disable APC delivery on the test thread for the duration of the
+   reopen.** `QueueUserAPC` with a no-op handler followed by a
+   `SleepEx(0, TRUE)` flushes pending APCs at a known-safe point.
+   If the bug disappears when we drain APCs before each reopen,
+   that's strong evidence for hypothesis #1.
+
+5. **Build the entire dependency stack with `/Od` (no optimisation)
+   and re-run.** This rules out one remaining set of optimizer
+   theories cleanly.
+
 ## Files / commits relevant to this investigation
 
 | Commit    | Summary                                                                  |
@@ -600,6 +780,9 @@ specific to PiconetBackend at all.
 | `05b81f4` | `PiconetBackend::UiSnapshot` mutex (real data-race fix; doesn't fix `test_grpc_piconet_ui`) |
 | `a84e1a8` | Replace std::function with raw fn pointers (didn't fix; reverted in `37ffe2b`) |
 | `37ffe2b` | Revert `a84e1a8` (the workaround did not fix the bug)                    |
+| `4aa9f5d` | Restore + extend investigation log                                       |
+| `f927dd9` | Disable CI on this branch while investigation runs                       |
+| `4f9284b`+ | TTD-based investigation 2026-04-26: pinned bug to kernel-mode syscall write; `configure_comm` GetFileType skip attempted, did not fix, not committed |
 
 The test that exposes this bug is `tests/test_grpc_piconet_ui.cpp`,
 specifically the `Piconet end-to-end: SubscribeView -> EditorCommit ->
