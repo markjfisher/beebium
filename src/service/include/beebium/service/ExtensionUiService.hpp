@@ -31,10 +31,8 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include <chrono>
 #include <cstdint>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
 namespace beebium::service {
@@ -205,134 +203,31 @@ inline bool validate_editor_commit(
 
 }  // namespace detail
 
+// All methods (including the destructor) are out-of-line so the class
+// is fully anchored in the translation unit that compiles into
+// beebium_extension_ui_proto.dll. The handler-class symbols and the
+// gRPC service base class then live in the same Windows DLL, which
+// avoids the cross-DLL gRPC closure-list corruption documented in
+// docs/discussion/grpc-windows-streaming-race.md (gRPC issue #39198).
 class ExtensionUiServiceImpl final
     : public ::beebium::ExtensionUiService::Service {
 public:
     ExtensionUiServiceImpl(EconetTransportRegistry& transport_registry,
-                           ExtensionRegistry& peripheral_registry)
-        : transport_registry_(transport_registry),
-          peripheral_registry_(peripheral_registry) {}
+                           ExtensionRegistry& peripheral_registry);
+    ~ExtensionUiServiceImpl() override;
 
     grpc::Status SubscribeView(
         grpc::ServerContext* context,
         const ::beebium::SubscribeViewRequest* request,
-        grpc::ServerWriter<::beebium::View>* writer) override
-    {
-        Extension* ext = find_extension(request->extension_name());
-        ExtensionUi* ui = ext ? ext->ui() : nullptr;
-        if (!ui) {
-            return grpc::Status(
-                grpc::StatusCode::NOT_FOUND,
-                "Extension '" + request->extension_name() +
-                "' not found or has no UI");
-        }
-
-        // Initial last_pushed = 0 ensures the first iteration always
-        // pushes (ExtensionUi::current_revision() starts at 1).
-        std::uint64_t last_pushed = 0;
-        const auto interval = std::chrono::milliseconds(50);
-
-        while (!context->IsCancelled()) {
-            std::uint64_t curr = ui->current_revision();
-            if (curr != last_pushed) {
-                ::beebium::View view;
-                ui->build_view(&view);
-                view.set_extension_name(request->extension_name());
-                view.set_view_revision(curr);
-                if (!writer->Write(view)) {
-                    break;  // client disconnected
-                }
-                last_pushed = curr;
-            }
-            std::this_thread::sleep_for(interval);
-        }
-        return grpc::Status::OK;
-    }
+        grpc::ServerWriter<::beebium::View>* writer) override;
 
     grpc::Status Dispatch(
-        grpc::ServerContext*,
+        grpc::ServerContext* context,
         const ::beebium::DispatchRequest* request,
-        ::beebium::DispatchResponse* response) override
-    {
-        Extension* ext = find_extension(request->extension_name());
-        if (!ext) {
-            response->set_accepted(false);
-            response->set_error(
-                "unknown extension: " + request->extension_name());
-            return grpc::Status::OK;
-        }
-        ExtensionUi* ui = ext->ui();
-        if (!ui) {
-            response->set_accepted(false);
-            response->set_error(
-                "extension '" + request->extension_name() + "' has no UI");
-            return grpc::Status::OK;
-        }
-
-        std::uint64_t curr_rev = ui->current_revision();
-        if (request->view_revision() != curr_rev) {
-            response->set_accepted(false);
-            response->set_error(
-                "stale event: client revision " +
-                std::to_string(request->view_revision()) +
-                ", current " + std::to_string(curr_rev));
-            return grpc::Status::OK;
-        }
-
-        ::beebium::View view;
-        ui->build_view(&view);
-
-        std::unordered_map<std::string, const ::beebium::Control*> ids;
-        detail::collect_control_ids(view.root(), ids);
-        auto it = ids.find(request->control_id());
-        if (it == ids.end()) {
-            response->set_accepted(false);
-            response->set_error(
-                "unknown control id: " + request->control_id());
-            return grpc::Status::OK;
-        }
-
-        const ::beebium::Control* target = it->second;
-        std::string error;
-        if (!detail::payload_matches_control(
-                *request, target->control_case(), error)) {
-            response->set_accepted(false);
-            response->set_error(std::move(error));
-            return grpc::Status::OK;
-        }
-
-        // ModalEditor carries additional structure that Dispatch must
-        // validate before running handle_event: editable gate, every
-        // EditorCommit field_id resolves to a sub-control, each value
-        // variant matches its sub-control's type. All-or-nothing.
-        if (target->control_case() == ::beebium::Control::kModalEditor) {
-            if (!detail::validate_editor_commit(
-                    *request, target->modal_editor(), error)) {
-                response->set_accepted(false);
-                response->set_error(std::move(error));
-                return grpc::Status::OK;
-            }
-        }
-
-        ui->handle_event(*request);
-        response->set_accepted(true);
-        return grpc::Status::OK;
-    }
+        ::beebium::DispatchResponse* response) override;
 
 private:
-    Extension* find_extension(const std::string& name) const {
-        for (const auto& ext : transport_registry_.extensions()) {
-            if (ext->name() == name) {
-                return ext.get();
-            }
-        }
-        for (auto* ext : peripheral_registry_.extensions()) {
-            if (ext->name() == name) {
-                return ext;
-            }
-        }
-        return nullptr;
-    }
+    Extension* find_extension(const std::string& name) const;
 
     EconetTransportRegistry& transport_registry_;
     ExtensionRegistry& peripheral_registry_;

@@ -82,10 +82,29 @@ target_compile_options(beebium_ext_ui_proto_export INTERFACE
 #
 # History: this library was STATIC on Windows while Piconet was
 # POSIX-only; see docs/discussion/win32-piconet-gap.md.
-add_library(beebium_extension_ui_proto SHARED ${EXT_UI_PROTO_SRCS})
+# ExtensionUiServiceImpl.cpp is compiled into this same shared library
+# on purpose: the protoc-generated Beebium_ExtensionUiService::Service
+# base class lives here, and if the handler subclass's vtable + method
+# bodies were emitted in a different Windows DLL, gRPC's closure-list
+# manipulation racing across that boundary crashes the server. See
+# docs/discussion/grpc-windows-streaming-race.md (gRPC issue #39198)
+# for the full diagnosis. Header at:
+#   src/service/include/beebium/service/ExtensionUiService.hpp
+add_library(beebium_extension_ui_proto SHARED
+    ${EXT_UI_PROTO_SRCS}
+    ExtensionUiService.cpp
+)
 
 target_include_directories(beebium_extension_ui_proto PUBLIC
     ${EXT_UI_PROTO_OUT_DIR}
+)
+target_include_directories(beebium_extension_ui_proto PRIVATE
+    # ExtensionUiServiceImpl pulls in extension/Extension.hpp,
+    # ExtensionUi.hpp, ExtensionRegistry.hpp, EconetTransportRegistry.hpp
+    # (declarations only -- the impls live in beebium_extension_api).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    # And the service-layer header that declares the class itself.
+    ${CMAKE_SOURCE_DIR}/src/service/include
 )
 
 target_link_libraries(beebium_extension_ui_proto
