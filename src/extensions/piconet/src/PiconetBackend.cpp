@@ -140,11 +140,13 @@ NetworkFrame make_ack() {
 PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
                                std::unique_ptr<piconet::SerialPort> serial,
                                SerialFactory serial_factory,
-                               std::function<void()> on_async_state_change)
+                               AsyncStateChangeFn on_async_state_change,
+                               void* on_async_state_change_userdata)
     : config_(std::move(config)),
       serial_(std::move(serial)),
-      serial_factory_(std::move(serial_factory)),
-      on_async_state_change_(std::move(on_async_state_change)) {
+      serial_factory_(serial_factory),
+      on_async_state_change_(on_async_state_change),
+      on_async_state_change_userdata_(on_async_state_change_userdata) {
     if (trace_enabled()) {
         std::cerr << "PiconetBackend: constructed for device " << config_.device_path
                   << " station=" << static_cast<unsigned>(config_.initial_station) << "\n";
@@ -619,7 +621,7 @@ void PiconetBackend::notify_state_changed() {
     }
     bump_backend_status_sequence();
     if (on_async_state_change_) {
-        on_async_state_change_();
+        on_async_state_change_(on_async_state_change_userdata_);
     }
 }
 

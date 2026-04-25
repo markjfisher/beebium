@@ -42,6 +42,20 @@ std::unique_ptr<piconet::SerialPort> make_platform_serial(
 #endif
 }
 
+// Static thunk wired to PiconetBackend::on_async_state_change_. The
+// userdata is the owning PiconetEconetTransportExtension*. Used as a
+// plain function pointer rather than a capturing lambda boxed in a
+// std::function to avoid the Windows AV described in
+// docs/discussion/test-grpc-piconet-ui-windows-av.md -- on Windows a
+// std::function dispatch from this hook (or from PiconetBackend's
+// SerialFactory) crashes with the call landing in unmapped memory at a
+// canonical-high-only address. A free function pointer lowers to a
+// direct register-indirect CALL with no SBO, no vtable, and no
+// _Mybase indirection, which sidesteps the bug.
+void mark_ui_dirty_thunk(void* userdata) noexcept {
+    static_cast<PiconetEconetTransportExtension*>(userdata)->ui()->mark_dirty();
+}
+
 }  // namespace
 
 PiconetEconetTransportExtension::PiconetEconetTransportExtension() = default;
@@ -72,17 +86,21 @@ PiconetEconetTransportExtension::create_backend(std::uint8_t station) {
     }
 
     // Wire the backend's async-state-change hook to the UI's
-    // mark_dirty(). Without this the panel View stays frozen across
-    // hot-unplug events -- the reader thread closes the serial port
-    // but the framework's poll loop only sees a revision change when
-    // mark_dirty() is called. Captures `this` because the extension
-    // owns both ui_ and the backend (via the unique_ptr handed to
-    // EconetSocket); the callback's lifetime is bounded by both.
+    // mark_dirty() via a static thunk; `this` is passed as userdata so
+    // the thunk can recover the PiconetEconetTransportExtension*.
+    // Without this the panel View stays frozen across hot-unplug events
+    // -- the reader thread closes the serial port but the framework's
+    // poll loop only sees a revision change when mark_dirty() is
+    // called. The extension owns both ui_ and the backend (via the
+    // unique_ptr handed to EconetSocket), so the userdata's lifetime is
+    // bounded by both. See mark_ui_dirty_thunk above for why this is a
+    // free function rather than a capturing lambda.
     auto backend = std::make_unique<PiconetBackend>(
         piconet::PiconetConfig{path, station},
         std::move(serial),
         &make_platform_serial,
-        [this]{ ui_.mark_dirty(); });
+        &mark_ui_dirty_thunk,
+        this);
     backend_ = backend.get();  // non-owning; ownership goes to EconetSocket
     open_error_message_.clear();
     return backend;

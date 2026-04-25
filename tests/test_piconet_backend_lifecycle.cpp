@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -26,6 +27,57 @@ using namespace beebium;
 using namespace std::chrono_literals;
 using namespace beebium::piconet;
 using beebium::piconet::test::MockPiconetSerial;
+
+namespace {
+
+// File-local plumbing for tests that need a custom SerialFactory.
+//
+// PiconetBackend's SerialFactory is a raw function pointer (see the
+// rationale in PiconetBackend.hpp): the production-targeting Windows
+// AV is sidestepped by avoiding std::function on the cross-thread
+// reopen call site. As a consequence, tests cannot pass capturing
+// lambdas as factories. Tests that need to inspect what the factory
+// produced or what arguments it received instead stash the
+// observation into one of these namespace-scope variables and reset
+// it at the top of each test case.
+
+// The "swap" and "recovery" tests want a single MockPiconetSerial*
+// pointer to the replacement the factory produced.
+MockPiconetSerial* g_recovery_replacement = nullptr;
+
+std::unique_ptr<SerialPort> recovery_factory(const std::string& /*path*/) {
+    auto mock = std::make_unique<MockPiconetSerial>();
+    g_recovery_replacement = mock.get();
+    return mock;
+}
+
+// The "open-error-from-factory" test wants a factory that produces a
+// MockPiconetSerial with open=false to model the OS rejecting the new
+// path. Stateless; lifetime concerns don't apply.
+std::unique_ptr<SerialPort> closed_factory(const std::string& /*path*/) {
+    auto mock = std::make_unique<MockPiconetSerial>();
+    mock->set_open(false);
+    return mock;
+}
+
+// The "coalesce" and "concurrent posters" tests want a record of the
+// paths the factory was called with. The concurrent test races
+// multiple threads against request_reopen, but only ONE factory call
+// actually happens (it runs on the emulation thread driving
+// receive_frame), so the mutex below is for safety against a
+// pathological future test rather than expected contention.
+std::mutex g_factory_calls_mutex;
+std::vector<std::string> g_factory_calls;
+
+std::unique_ptr<SerialPort> recording_factory(const std::string& path) {
+    {
+        std::lock_guard<std::mutex> lock(g_factory_calls_mutex);
+        g_factory_calls.push_back(path);
+    }
+    return std::make_unique<MockPiconetSerial>();
+}
+
+}  // namespace
 
 TEST_CASE("PiconetBackend constructor sends SET_STATION then SET_MODE LISTEN in order",
           "[piconet][backend][lifecycle]") {
@@ -156,20 +208,14 @@ TEST_CASE("PiconetBackend can be constructed and destructed many times in a row"
 
 TEST_CASE("PiconetBackend::request_reopen swaps serial and sends SET_STATION + SET_MODE STOP",
           "[piconet][backend][lifecycle][reopen]") {
-    // Keep a pointer to the replacement mock so the test can inspect the
-    // writes issued on the reopen path.
-    MockPiconetSerial* replacement = nullptr;
-    auto factory = [&](const std::string& /*path*/)
-        -> std::unique_ptr<SerialPort> {
-        auto mock = std::make_unique<MockPiconetSerial>();
-        replacement = mock.get();
-        return mock;
-    };
+    // Use the file-local recovery_factory; reuse the same g_recovery_replacement
+    // slot to inspect the writes issued on the reopen path.
+    g_recovery_replacement = nullptr;
 
     auto initial_owner = std::make_unique<MockPiconetSerial>();
     PiconetBackend backend(PiconetConfig{"/dev/old", /*initial_station=*/64},
                            std::move(initial_owner),
-                           factory);
+                           &recovery_factory);
 
     REQUIRE(backend.config().device_path == "/dev/old");
 
@@ -185,25 +231,18 @@ TEST_CASE("PiconetBackend::request_reopen swaps serial and sends SET_STATION + S
     // Replacement mock should have seen SET_STATION <initial_station>
     // followed by SET_MODE STOP. The factory's mock is freshly created,
     // so write_count reflects only the reopen-time writes.
-    REQUIRE(replacement != nullptr);
-    REQUIRE(replacement->write_count() == 2);
-    CHECK(replacement->write_as_string(0) == "SET_STATION 64\r");
-    CHECK(replacement->write_as_string(1) == "SET_MODE STOP\r");
+    REQUIRE(g_recovery_replacement != nullptr);
+    REQUIRE(g_recovery_replacement->write_count() == 2);
+    CHECK(g_recovery_replacement->write_as_string(0) == "SET_STATION 64\r");
+    CHECK(g_recovery_replacement->write_as_string(1) == "SET_MODE STOP\r");
 }
 
 TEST_CASE("PiconetBackend::request_reopen records open_error_message on factory-returned closed port",
           "[piconet][backend][lifecycle][reopen]") {
-    auto factory = [](const std::string& /*path*/)
-        -> std::unique_ptr<SerialPort> {
-        auto mock = std::make_unique<MockPiconetSerial>();
-        mock->set_open(false);  // Simulate "open failed" at the OS level.
-        return mock;
-    };
-
     auto initial_owner = std::make_unique<MockPiconetSerial>();
     PiconetBackend backend(PiconetConfig{"/dev/old", 32},
                            std::move(initial_owner),
-                           factory);
+                           &closed_factory);
 
     backend.request_reopen("/dev/absent");
     (void)backend.receive_frame();
@@ -235,17 +274,15 @@ TEST_CASE("PiconetBackend::request_reopen is a no-op without a SerialFactory",
 
 TEST_CASE("PiconetBackend::request_reopen coalesces successive requests",
           "[piconet][backend][lifecycle][reopen]") {
-    std::vector<std::string> factory_calls;
-    auto factory = [&](const std::string& path)
-        -> std::unique_ptr<SerialPort> {
-        factory_calls.push_back(path);
-        return std::make_unique<MockPiconetSerial>();
-    };
+    {
+        std::lock_guard<std::mutex> lock(g_factory_calls_mutex);
+        g_factory_calls.clear();
+    }
 
     auto initial_owner = std::make_unique<MockPiconetSerial>();
     PiconetBackend backend(PiconetConfig{"/dev/old", 32},
                            std::move(initial_owner),
-                           factory);
+                           &recording_factory);
 
     backend.request_reopen("/dev/intermediate");
     backend.request_reopen("/dev/final");
@@ -254,8 +291,9 @@ TEST_CASE("PiconetBackend::request_reopen coalesces successive requests",
     // Only the latest request is consumed; the intermediate one was
     // superseded before the emulation thread woke up to process it.
     CHECK(backend.config().device_path == "/dev/final");
-    REQUIRE(factory_calls.size() == 1);
-    CHECK(factory_calls[0] == "/dev/final");
+    std::lock_guard<std::mutex> lock(g_factory_calls_mutex);
+    REQUIRE(g_factory_calls.size() == 1);
+    CHECK(g_factory_calls[0] == "/dev/final");
 }
 
 TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
@@ -271,17 +309,15 @@ TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
     constexpr int kThreads = 8;
     constexpr int kPostsPerThread = 50;
 
-    std::vector<std::string> factory_calls;
-    auto factory = [&](const std::string& path)
-        -> std::unique_ptr<SerialPort> {
-        factory_calls.push_back(path);
-        return std::make_unique<MockPiconetSerial>();
-    };
+    {
+        std::lock_guard<std::mutex> lock(g_factory_calls_mutex);
+        g_factory_calls.clear();
+    }
 
     auto initial_owner = std::make_unique<MockPiconetSerial>();
     PiconetBackend backend(PiconetConfig{"/dev/initial", 32},
                            std::move(initial_owner),
-                           factory);
+                           &recording_factory);
 
     std::atomic<bool> go{false};
     std::vector<std::thread> threads;
@@ -306,10 +342,11 @@ TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
     // would catch it (the test runs under sanitizers in CI).
     (void)backend.receive_frame();
 
-    REQUIRE(factory_calls.size() == 1);
+    std::lock_guard<std::mutex> lock(g_factory_calls_mutex);
+    REQUIRE(g_factory_calls.size() == 1);
     // The chosen path comes from one of the threads' posts.
-    CHECK(factory_calls[0].rfind("/dev/path-", 0) == 0);
-    CHECK(backend.config().device_path == factory_calls[0]);
+    CHECK(g_factory_calls[0].rfind("/dev/path-", 0) == 0);
+    CHECK(backend.config().device_path == g_factory_calls[0]);
 }
 
 TEST_CASE("PiconetBackend status_sequence advances on hot-unplug via read-error",
@@ -461,20 +498,14 @@ TEST_CASE("PiconetBackend recovers from a closed-state initial open via request_
     // error in open_error_message_; the user opens the ModalEditor
     // and saves the corrected path; reopen should put the backend
     // into a fully-open state with the error cleared.
-    MockPiconetSerial* replacement = nullptr;
-    auto factory = [&](const std::string& /*path*/)
-        -> std::unique_ptr<SerialPort> {
-        auto mock = std::make_unique<MockPiconetSerial>();
-        replacement = mock.get();
-        return mock;
-    };
+    g_recovery_replacement = nullptr;
 
     // Initial serial fails to open (set_open(false) before move).
     auto initial_owner = std::make_unique<MockPiconetSerial>();
     initial_owner->set_open(false);
     PiconetBackend backend(PiconetConfig{"/dev/wrong-path", 32},
                            std::move(initial_owner),
-                           factory);
+                           &recovery_factory);
 
     // Closed-state preconditions: is_serial_open is false (no
     // SET_STATION/SET_MODE writes were issued because the ctor's
@@ -497,8 +528,8 @@ TEST_CASE("PiconetBackend recovers from a closed-state initial open via request_
 
     // The replacement mock should have received SET_STATION 32 +
     // SET_MODE STOP from install_open_serial.
-    REQUIRE(replacement != nullptr);
-    REQUIRE(replacement->write_count() == 2);
-    CHECK(replacement->write_as_string(0) == "SET_STATION 32\r");
-    CHECK(replacement->write_as_string(1) == "SET_MODE STOP\r");
+    REQUIRE(g_recovery_replacement != nullptr);
+    REQUIRE(g_recovery_replacement->write_count() == 2);
+    CHECK(g_recovery_replacement->write_as_string(0) == "SET_STATION 32\r");
+    CHECK(g_recovery_replacement->write_as_string(1) == "SET_MODE STOP\r");
 }
