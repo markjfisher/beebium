@@ -162,6 +162,7 @@ PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
         if (serial_) {
             auto why = serial_->open_error();
             if (!why.empty()) {
+                std::lock_guard<std::mutex> lock(ui_mutex_);
                 open_error_message_ = std::string(why);
             }
         }
@@ -524,7 +525,10 @@ void PiconetBackend::process_pending_reopen() {
 
     tear_down_active_serial();
 
-    config_.device_path = *pending;
+    {
+        std::lock_guard<std::mutex> lock(ui_mutex_);
+        config_.device_path = *pending;
+    }
     auto fresh = serial_factory_(*pending);
     if (!fresh || !fresh->is_open()) {
         install_failed_serial(std::move(fresh));
@@ -556,21 +560,29 @@ void PiconetBackend::tear_down_active_serial() {
 
 void PiconetBackend::install_failed_serial(
     std::unique_ptr<piconet::SerialPort> fresh) {
+    std::string why;
     if (fresh) {
-        auto why = fresh->open_error();
-        open_error_message_ =
-            why.empty() ? std::string("unknown error") : std::string(why);
+        auto why_view = fresh->open_error();
+        why = why_view.empty() ? std::string("unknown error")
+                               : std::string(why_view);
     } else {
-        open_error_message_ = "serial factory returned null";
+        why = "serial factory returned null";
     }
-    serial_ = std::move(fresh);
+    {
+        std::lock_guard<std::mutex> lock(ui_mutex_);
+        open_error_message_ = std::move(why);
+        serial_ = std::move(fresh);
+    }
     current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
 }
 
 void PiconetBackend::install_open_serial(
     std::unique_ptr<piconet::SerialPort> fresh) {
-    open_error_message_.clear();
-    serial_ = std::move(fresh);
+    {
+        std::lock_guard<std::mutex> lock(ui_mutex_);
+        open_error_message_.clear();
+        serial_ = std::move(fresh);
+    }
 
     // Reopen always lands in Stop. The user is re-pointing the
     // adapter while it is disabled; Enable is a deliberate next step
@@ -586,6 +598,19 @@ void PiconetBackend::install_open_serial(
     // reader.
     shutdown_.store(false, std::memory_order_relaxed);
     reader_thread_ = std::thread([this] { reader_loop(); });
+}
+
+PiconetBackend::UiSnapshot PiconetBackend::ui_snapshot() const {
+    UiSnapshot snap;
+    {
+        std::lock_guard<std::mutex> lock(ui_mutex_);
+        snap.device_path = config_.device_path;
+        snap.serial_open = serial_ && serial_->is_open();
+        snap.open_error_message = open_error_message_;
+    }
+    snap.listening =
+        current_mode_.load(std::memory_order_acquire) == piconet::Mode::Listen;
+    return snap;
 }
 
 void PiconetBackend::notify_state_changed() {

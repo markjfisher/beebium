@@ -22,6 +22,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -144,6 +145,30 @@ public:
     // pre-backend failure case).
     const std::string& open_error_message() const { return open_error_message_; }
 
+    // Atomic snapshot of the state read by PiconetUi::build_view. Built
+    // by the emulation thread under ui_mutex_; returned by value so the
+    // caller (the gRPC SubscribeView thread) sees a consistent view
+    // without holding the lock for the rest of build_view. This is the
+    // sole supported cross-thread read of the racy fields (config_,
+    // serial_, open_error_message_); direct accessors above are for the
+    // emulation thread or single-threaded tests.
+    //
+    // Without this synchronisation, build_view (gRPC thread) racing
+    // against process_pending_reopen (emulation thread) corrupts heap
+    // memory near serial_factory_ on Windows -- the std::string
+    // assignment to config_.device_path interleaved with the gRPC
+    // thread's read of the same string produces UB that manifests as a
+    // 32-bit zero write to PiconetBackend+0x48 (the std::function's
+    // stored function pointer). See
+    // docs/discussion/grpc-windows-streaming-race.md.
+    struct UiSnapshot {
+        std::string device_path;
+        bool serial_open;
+        bool listening;
+        std::string open_error_message;
+    };
+    UiSnapshot ui_snapshot() const;
+
     // Request that the backend close its current SerialPort and reopen
     // the named device path. Safe to call from the gRPC handler thread;
     // the actual close / open / reader-restart runs on the emulation
@@ -220,6 +245,15 @@ private:
     // Populated by process_pending_reopen() when the new SerialPort
     // fails to open. Cleared on successful reopen.
     std::string open_error_message_;
+
+    // Guards the cross-thread read path (PiconetUi::build_view on the
+    // gRPC SubscribeView thread) against the emulation thread's writes
+    // to config_.device_path / serial_ / open_error_message_. Held only
+    // for the duration of an atomic field swap or the construction of a
+    // UiSnapshot; the heavy lifting in process_pending_reopen
+    // (tear_down_active_serial, the SerialPort open, the reader-thread
+    // spawn) all run outside the lock.
+    mutable std::mutex ui_mutex_;
 };
 
 }  // namespace beebium

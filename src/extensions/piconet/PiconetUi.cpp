@@ -51,6 +51,17 @@ void PiconetUi::build_view(View* out) const {
     auto* group = root->mutable_group();
     group->set_label("Piconet");
 
+    // build_view runs on the gRPC SubscribeView thread. PiconetBackend's
+    // mutable state (config_.device_path, serial_, open_error_message_)
+    // is mutated on the emulation thread (process_pending_reopen). Read
+    // an atomic snapshot once at the top so the rest of build_view sees
+    // a consistent view; concurrent direct accesses caused heap
+    // corruption near serial_factory_ on Windows. See
+    // docs/discussion/grpc-windows-streaming-race.md.
+    const PiconetBackend* backend = ext_.backend();
+    const auto snap = backend ? backend->ui_snapshot()
+                              : PiconetBackend::UiSnapshot{};
+
     // Device path editor. The anchor is a Label showing the current
     // device_path; the editor body is a Group containing a Choice over
     // enumerated host serial ports and a TextInput for a custom path.
@@ -60,10 +71,9 @@ void PiconetUi::build_view(View* out) const {
     // derived gate; the frontend holds buffers across the popover
     // session and ships an EditorCommit on confirm.
     {
-        const PiconetBackend* backend = ext_.backend();
         std::string current_path;
         if (backend) {
-            current_path = backend->config().device_path;
+            current_path = snap.device_path;
         } else if (auto path = ext_.config_value("device_path");
                    path && !path->empty()) {
             current_path.assign(path->data(), path->size());
@@ -77,9 +87,8 @@ void PiconetUi::build_view(View* out) const {
         // listening. Mid-session hot-unplug closes the serial -> editable.
         // Mode::Stop / Monitor -> editable. Only the live-talking state
         // (serial open + Listen) is read-only, matching the design.
-        const bool serial_open = backend && backend->is_serial_open();
-        const bool listening = backend &&
-            backend->mode() == piconet::Mode::Listen;
+        const bool serial_open = backend && snap.serial_open;
+        const bool listening = backend && snap.listening;
         modal->set_editable(!backend || !serial_open || !listening);
         modal->set_commit_role(ModalEditor_CommitRole_SAVE);
         // Cancel affordance is cheap and makes the editor symmetric on
@@ -134,20 +143,19 @@ void PiconetUi::build_view(View* out) const {
         auto* control = group->add_controls();
         control->set_id(CONTROL_CONNECTED);
         auto* indicator = control->mutable_indicator();
-        const PiconetBackend* backend = ext_.backend();
-        const bool serial_open = backend && backend->is_serial_open();
+        const bool serial_open = backend && snap.serial_open;
         indicator->set_state(serial_open ? Indicator_State_OK
                                          : Indicator_State_ERROR);
         if (serial_open) {
             indicator->set_text("Adapter responsive");
-        } else if (backend && !backend->open_error_message().empty()) {
+        } else if (backend && !snap.open_error_message.empty()) {
             // Backend exists but its serial is not open. The error
             // text comes from the backend itself: populated by the
             // ctor when the initial open failed (wrong path at
             // startup), or by process_pending_reopen() when the
             // user-initiated reopen failed.
             indicator->set_text("Cannot open device: " +
-                                backend->open_error_message());
+                                snap.open_error_message);
         } else if (!ext_.open_error_message().empty()) {
             // No backend at all -- only the missing-config branch in
             // create_backend reaches here today.
@@ -170,12 +178,11 @@ void PiconetUi::build_view(View* out) const {
     // case set_mode would be a no-op because the firmware is
     // unreachable, so the affordance would be misleading. A future
     // Reconnect button would slot in here for both cases.
-    if (auto* backend = ext_.backend(); backend && backend->is_serial_open()) {
+    if (backend && snap.serial_open) {
         auto* control = group->add_controls();
         control->set_id(CONTROL_ENABLE_ACTION);
         auto* button = control->mutable_button();
-        const bool listening = backend->mode() == piconet::Mode::Listen;
-        button->set_label(listening ? "Disable" : "Enable");
+        button->set_label(snap.listening ? "Disable" : "Enable");
         button->set_enabled(true);
     }
 }
