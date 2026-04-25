@@ -139,9 +139,11 @@ NetworkFrame make_ack() {
 
 PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
                                std::unique_ptr<piconet::SerialPort> serial,
+                               SerialFactory serial_factory,
                                std::function<void()> on_async_state_change)
     : config_(std::move(config)),
       serial_(std::move(serial)),
+      serial_factory_(std::move(serial_factory)),
       on_async_state_change_(std::move(on_async_state_change)) {
     if (trace_enabled()) {
         std::cerr << "PiconetBackend: constructed for device " << config_.device_path
@@ -150,8 +152,19 @@ PiconetBackend::PiconetBackend(piconet::PiconetConfig config,
 
     // If the serial port failed to open, leave the backend disconnected:
     // is_connected() will return false, send_frame()/receive_frame() are
-    // no-ops, and the reader thread is never started.
+    // no-ops, and the reader thread is never started. Capture the
+    // OS-level error from the SerialPort so the UI Indicator can surface
+    // it ("Cannot open device: ...") even though the backend itself is
+    // alive -- this lets the ModalEditor's reopen path recover from a
+    // wrong-path-at-startup without the extension needing a separate
+    // "build a fresh backend" code path.
     if (!serial_ || !serial_->is_open()) {
+        if (serial_) {
+            auto why = serial_->open_error();
+            if (!why.empty()) {
+                open_error_message_ = std::string(why);
+            }
+        }
         return;
     }
 
@@ -176,6 +189,8 @@ PiconetBackend::~PiconetBackend() {
     if (reader_thread_.joinable()) {
         reader_thread_.join();
     }
+    // Drop any reopen request the emulation thread never got to.
+    delete pending_reopen_path_.exchange(nullptr, std::memory_order_acq_rel);
 }
 
 void PiconetBackend::reader_loop() {
@@ -469,6 +484,12 @@ void PiconetBackend::send_frame(const NetworkFrame& frame) {
 }
 
 std::optional<NetworkFrame> PiconetBackend::receive_frame() {
+    // Serialise any user-initiated reopen with the emulation thread's
+    // own reads of serial_. receive_frame() is the natural tick entry
+    // point: the emulation thread is here every frame, never simultaneously
+    // with send_frame(), and the reopen is a no-op on the common path.
+    process_pending_reopen();
+
     NetworkFrame frame;
     if (rx_queue_.try_dequeue(frame)) {
         return frame;
@@ -496,6 +517,88 @@ void PiconetBackend::set_mode(piconet::Mode mode) {
     // is_connected() unchanged.
     if ((prev == piconet::Mode::Listen) != (mode == piconet::Mode::Listen)) {
         bump_backend_status_sequence();
+    }
+}
+
+void PiconetBackend::request_reopen(std::string new_path) {
+    if (!serial_factory_) {
+        // Backend was constructed without a factory (typically a test
+        // that doesn't exercise reopen). Silently drop -- the UI layer
+        // gates the edit affordance, so production never lands here.
+        return;
+    }
+    auto* next = new std::string(std::move(new_path));
+    auto* old = pending_reopen_path_.exchange(next, std::memory_order_acq_rel);
+    delete old;  // Coalesce: a stale request the emulation thread hasn't
+                 // consumed is superseded by the newer one.
+}
+
+void PiconetBackend::process_pending_reopen() {
+    std::string* pending = pending_reopen_path_.exchange(nullptr, std::memory_order_acq_rel);
+    if (!pending) {
+        return;
+    }
+    const std::string new_path = std::move(*pending);
+    delete pending;
+
+    if (!serial_factory_) {
+        return;  // Nothing we can do; request_reopen should have dropped it.
+    }
+
+    // Tear down the current serial and reader. Closing the serial
+    // unblocks the reader's timed read with error=true; the reader's
+    // own close + async-state-change callback fire once as a side
+    // effect (benign: mark_dirty / bump are idempotent and the reopen
+    // will issue its own at the end).
+    if (serial_) {
+        serial_->close();
+    }
+    if (reader_thread_.joinable()) {
+        reader_thread_.join();
+    }
+
+    // Build the replacement SerialPort. Whatever the factory returns
+    // becomes serial_ -- even on failure -- so open_error() is readable
+    // and is_serial_open() reflects the failure.
+    config_.device_path = new_path;
+    auto fresh = serial_factory_(new_path);
+    const bool opened = fresh && fresh->is_open();
+    if (!opened) {
+        if (fresh) {
+            auto why = fresh->open_error();
+            open_error_message_ =
+                why.empty() ? std::string("unknown error") : std::string(why);
+        } else {
+            open_error_message_ = "serial factory returned null";
+        }
+        serial_ = std::move(fresh);
+        current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
+        bump_backend_status_sequence();
+        if (on_async_state_change_) {
+            on_async_state_change_();
+        }
+        return;
+    }
+
+    open_error_message_.clear();
+    serial_ = std::move(fresh);
+
+    // Reopen always lands in Stop. The user is re-pointing the adapter
+    // while it is disabled; Enable is a deliberate next step taken via
+    // the action button once the Indicator has flipped green.
+    write_to_serial(*serial_, piconet::format_set_station(config_.initial_station));
+    write_to_serial(*serial_, piconet::format_set_mode(piconet::Mode::Stop));
+    current_mode_.store(piconet::Mode::Stop, std::memory_order_release);
+
+    // shutdown_ is not touched by the reopen-teardown path above (that
+    // sequence drives the reader out via read-error, not via the
+    // shutdown flag) but reset defensively so the fresh reader loops.
+    shutdown_.store(false, std::memory_order_relaxed);
+    reader_thread_ = std::thread([this] { reader_loop(); });
+
+    bump_backend_status_sequence();
+    if (on_async_state_change_) {
+        on_async_state_change_();
     }
 }
 

@@ -150,3 +150,107 @@ TEST_CASE("PiconetBackend can be constructed and destructed many times in a row"
     }
     SUCCEED("constructed and destructed 5 times without hang or crash");
 }
+
+TEST_CASE("PiconetBackend::request_reopen swaps serial and sends SET_STATION + SET_MODE STOP",
+          "[piconet][backend][lifecycle][reopen]") {
+    // Keep a pointer to the replacement mock so the test can inspect the
+    // writes issued on the reopen path.
+    MockPiconetSerial* replacement = nullptr;
+    auto factory = [&](const std::string& /*path*/)
+        -> std::unique_ptr<SerialPort> {
+        auto mock = std::make_unique<MockPiconetSerial>();
+        replacement = mock.get();
+        return mock;
+    };
+
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    PiconetBackend backend(PiconetConfig{"/dev/old", /*initial_station=*/64},
+                           std::move(initial_owner),
+                           factory);
+
+    REQUIRE(backend.config().device_path == "/dev/old");
+
+    backend.request_reopen("/dev/new");
+    // Reopen happens at the top of receive_frame(); drive one tick.
+    (void)backend.receive_frame();
+
+    REQUIRE(backend.config().device_path == "/dev/new");
+    REQUIRE(backend.open_error_message().empty());
+    REQUIRE(backend.is_serial_open());
+    REQUIRE(backend.mode() == piconet::Mode::Stop);
+
+    // Replacement mock should have seen SET_STATION <initial_station>
+    // followed by SET_MODE STOP. The factory's mock is freshly created,
+    // so write_count reflects only the reopen-time writes.
+    REQUIRE(replacement != nullptr);
+    REQUIRE(replacement->write_count() == 2);
+    CHECK(replacement->write_as_string(0) == "SET_STATION 64\r");
+    CHECK(replacement->write_as_string(1) == "SET_MODE STOP\r");
+}
+
+TEST_CASE("PiconetBackend::request_reopen records open_error_message on factory-returned closed port",
+          "[piconet][backend][lifecycle][reopen]") {
+    auto factory = [](const std::string& /*path*/)
+        -> std::unique_ptr<SerialPort> {
+        auto mock = std::make_unique<MockPiconetSerial>();
+        mock->set_open(false);  // Simulate "open failed" at the OS level.
+        return mock;
+    };
+
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    PiconetBackend backend(PiconetConfig{"/dev/old", 32},
+                           std::move(initial_owner),
+                           factory);
+
+    backend.request_reopen("/dev/absent");
+    (void)backend.receive_frame();
+
+    CHECK(backend.config().device_path == "/dev/absent");
+    CHECK_FALSE(backend.is_serial_open());
+    CHECK_FALSE(backend.open_error_message().empty());
+    // MockPiconetSerial does not supply an OS error, so the backend
+    // falls back to the "unknown error" placeholder.
+    CHECK(backend.open_error_message() == "unknown error");
+}
+
+TEST_CASE("PiconetBackend::request_reopen is a no-op without a SerialFactory",
+          "[piconet][backend][lifecycle][reopen]") {
+    auto mock_owner = std::make_unique<MockPiconetSerial>();
+    auto* initial_mock = mock_owner.get();
+    PiconetBackend backend(PiconetConfig{"/dev/old", 32},
+                           std::move(mock_owner));
+    const auto initial_write_count = initial_mock->write_count();
+
+    backend.request_reopen("/dev/new");
+    (void)backend.receive_frame();
+
+    // Device path stays unchanged; no writes against the initial serial
+    // above what the constructor already produced.
+    CHECK(backend.config().device_path == "/dev/old");
+    CHECK(initial_mock->write_count() == initial_write_count);
+}
+
+TEST_CASE("PiconetBackend::request_reopen coalesces successive requests",
+          "[piconet][backend][lifecycle][reopen]") {
+    std::vector<std::string> factory_calls;
+    auto factory = [&](const std::string& path)
+        -> std::unique_ptr<SerialPort> {
+        factory_calls.push_back(path);
+        return std::make_unique<MockPiconetSerial>();
+    };
+
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    PiconetBackend backend(PiconetConfig{"/dev/old", 32},
+                           std::move(initial_owner),
+                           factory);
+
+    backend.request_reopen("/dev/intermediate");
+    backend.request_reopen("/dev/final");
+    (void)backend.receive_frame();
+
+    // Only the latest request is consumed; the intermediate one was
+    // superseded before the emulation thread woke up to process it.
+    CHECK(backend.config().device_path == "/dev/final");
+    REQUIRE(factory_calls.size() == 1);
+    CHECK(factory_calls[0] == "/dev/final");
+}

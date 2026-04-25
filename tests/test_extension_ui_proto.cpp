@@ -257,6 +257,117 @@ TEST_CASE("View with view_revision = UINT64_MAX serializes correctly (boundary)"
     REQUIRE(parsed.view_revision() == std::numeric_limits<std::uint64_t>::max());
 }
 
+TEST_CASE("ModalEditor round-trips with anchor, editor, and flags",
+          "[extension_ui][proto][modal_editor]") {
+    beebium::Control control;
+    control.set_id("device_path");
+    auto* modal = control.mutable_modal_editor();
+    modal->set_editable(true);
+    modal->set_commit_role(beebium::ModalEditor_CommitRole_SAVE);
+    modal->set_show_cancel(true);
+
+    auto* anchor = modal->mutable_anchor();
+    anchor->set_id("device_path");
+    anchor->mutable_label()->set_text("Device: /dev/tty.usbmodem101");
+
+    // Editor is a single TextInput with enumerated suggestions.
+    auto* editor = modal->mutable_editor();
+    editor->set_id("device_path_value");
+    auto* text = editor->mutable_text_input();
+    text->set_label("Serial port");
+    text->set_value("/dev/tty.usbmodem101");
+    *text->add_suggestions() = "/dev/tty.usbmodem101";
+    *text->add_suggestions() = "/dev/tty.usbmodem14101";
+
+    std::string wire;
+    REQUIRE(control.SerializeToString(&wire));
+
+    beebium::Control parsed;
+    REQUIRE(parsed.ParseFromString(wire));
+    REQUIRE(parsed.control_case() == beebium::Control::kModalEditor);
+    const auto& pm = parsed.modal_editor();
+    REQUIRE(pm.editable() == true);
+    REQUIRE(pm.commit_role() == beebium::ModalEditor_CommitRole_SAVE);
+    REQUIRE(pm.show_cancel() == true);
+    REQUIRE(pm.anchor().control_case() == beebium::Control::kLabel);
+    REQUIRE(pm.anchor().label().text() == "Device: /dev/tty.usbmodem101");
+    REQUIRE(pm.editor().control_case() == beebium::Control::kTextInput);
+    REQUIRE(pm.editor().id() == "device_path_value");
+    REQUIRE(pm.editor().text_input().value() == "/dev/tty.usbmodem101");
+    REQUIRE(pm.editor().text_input().suggestions_size() == 2);
+    REQUIRE(pm.editor().text_input().suggestions(0) == "/dev/tty.usbmodem101");
+    REQUIRE(pm.editor().text_input().suggestions(1) == "/dev/tty.usbmodem14101");
+}
+
+TEST_CASE("TextInput round-trips with the suggestions list",
+          "[extension_ui][proto]") {
+    beebium::TextInput input;
+    input.set_label("Serial port");
+    input.set_value("/dev/tty.usbmodem101");
+    input.set_placeholder("/dev/tty.usbmodem...");
+    *input.add_suggestions() = "/dev/tty.usbmodem101";
+    *input.add_suggestions() = "/dev/tty.usbmodem14101";
+
+    std::string wire;
+    REQUIRE(input.SerializeToString(&wire));
+
+    beebium::TextInput parsed;
+    REQUIRE(parsed.ParseFromString(wire));
+    REQUIRE(parsed.label() == "Serial port");
+    REQUIRE(parsed.value() == "/dev/tty.usbmodem101");
+    REQUIRE(parsed.suggestions_size() == 2);
+    REQUIRE(parsed.suggestions(0) == "/dev/tty.usbmodem101");
+    REQUIRE(parsed.suggestions(1) == "/dev/tty.usbmodem14101");
+}
+
+TEST_CASE("DispatchRequest round-trips an EditorCommit with mixed field types",
+          "[extension_ui][proto][modal_editor]") {
+    beebium::DispatchRequest req;
+    req.set_extension_name("piconet");
+    req.set_control_id("device_path");
+    req.set_view_revision(7);
+    auto* commit = req.mutable_editor_commit();
+
+    {
+        auto* f = commit->add_fields();
+        f->set_field_id("port_choice");
+        f->set_index_value(1);
+    }
+    {
+        auto* f = commit->add_fields();
+        f->set_field_id("custom_path");
+        f->set_string_value("/dev/tty.usbserial-A1");
+    }
+    {
+        auto* f = commit->add_fields();
+        f->set_field_id("include_unlisted");
+        f->set_bool_value(true);
+    }
+
+    std::string wire;
+    REQUIRE(req.SerializeToString(&wire));
+
+    beebium::DispatchRequest parsed;
+    REQUIRE(parsed.ParseFromString(wire));
+    REQUIRE(parsed.payload_case() == beebium::DispatchRequest::kEditorCommit);
+    REQUIRE(parsed.editor_commit().fields_size() == 3);
+
+    const auto& f0 = parsed.editor_commit().fields(0);
+    REQUIRE(f0.field_id() == "port_choice");
+    REQUIRE(f0.value_case() == beebium::EditorFieldValue::kIndexValue);
+    REQUIRE(f0.index_value() == 1u);
+
+    const auto& f1 = parsed.editor_commit().fields(1);
+    REQUIRE(f1.field_id() == "custom_path");
+    REQUIRE(f1.value_case() == beebium::EditorFieldValue::kStringValue);
+    REQUIRE(f1.string_value() == "/dev/tty.usbserial-A1");
+
+    const auto& f2 = parsed.editor_commit().fields(2);
+    REQUIRE(f2.field_id() == "include_unlisted");
+    REQUIRE(f2.value_case() == beebium::EditorFieldValue::kBoolValue);
+    REQUIRE(f2.bool_value() == true);
+}
+
 TEST_CASE("DispatchResponse round-trips both accepted and error cases",
           "[extension_ui][proto]") {
     beebium::DispatchResponse ok;

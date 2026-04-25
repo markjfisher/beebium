@@ -134,10 +134,22 @@ message Choice {
 // Free-form string. Dispatch payload: string_value. Frontends decide
 // dispatch timing (per-keystroke vs on-blur); the protocol does not
 // constrain that.
+//
+// suggestions, when non-empty, lets the server expose a fixed list of
+// candidate values that the frontend renders as a combobox-style picker
+// alongside the text field. The text field remains the single source of
+// truth: picking a suggestion writes its text into the field, and the
+// list highlights whichever entry (if any) matches the current field
+// value. Editing the field to a value not in the list clears the
+// highlight. Use this for "pick from a known set OR enter a custom
+// value" workflows -- e.g. choosing a serial port path where the OS
+// enumerates known ports but the user may also need to type a path the
+// enumerator did not return.
 message TextInput {
     string label = 1;
     string value = 2;
     string placeholder = 3;
+    repeated string suggestions = 4;
 }
 
 // Structural primitive: an ordered sequence of child Controls with an

@@ -127,7 +127,7 @@ private:
 
 }  // namespace
 
-TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Button",
+TEST_CASE("PiconetUi build_view (live backend) produces ModalEditor + Indicator + Button",
           "[piconet][ui]") {
     PiconetUiFixture fixture;
     auto* ui = fixture.extension().ui();
@@ -142,11 +142,32 @@ TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Butt
     REQUIRE(root.group().label() == "Piconet");
     REQUIRE(root.group().controls_size() == 3);
 
-    const auto& label = root.group().controls(0);
-    REQUIRE(label.id() == "device_path");
-    REQUIRE(label.control_case() == beebium::Control::kLabel);
-    REQUIRE(label.label().text() ==
+    // Device path is a ModalEditor whose anchor is a Label. Editable
+    // is gated off here because the backend is live and listening, so
+    // the frontend renders the anchor as read-only.
+    const auto& device = root.group().controls(0);
+    REQUIRE(device.id() == "device_path");
+    REQUIRE(device.control_case() == beebium::Control::kModalEditor);
+    const auto& modal = device.modal_editor();
+    REQUIRE_FALSE(modal.editable());
+    REQUIRE(modal.commit_role() == beebium::ModalEditor_CommitRole_SAVE);
+    REQUIRE(modal.show_cancel());
+
+    const auto& anchor = modal.anchor();
+    REQUIRE(anchor.control_case() == beebium::Control::kLabel);
+    REQUIRE(anchor.label().text() ==
             std::string("Device: ") + fixture.slave_path());
+
+    // Editor body is a single TextInput with the enumerated host
+    // serial ports surfaced as suggestions. No more Choice / Group
+    // wrapper -- the field is the single source of truth and the
+    // suggestions list is a "pick to fill" affordance the renderer
+    // attaches alongside the text field.
+    const auto& editor = modal.editor();
+    REQUIRE(editor.id() == "device_path_value");
+    REQUIRE(editor.control_case() == beebium::Control::kTextInput);
+    REQUIRE(editor.text_input().value() == fixture.slave_path());
+    REQUIRE(editor.text_input().placeholder() == fixture.slave_path());
 
     const auto& indicator = root.group().controls(1);
     REQUIRE(indicator.id() == "connected");
@@ -163,17 +184,21 @@ TEST_CASE("PiconetUi build_view (live backend) produces Label + Indicator + Butt
     REQUIRE(button.button().label() == "Disable");
 }
 
-TEST_CASE("PiconetUi build_view (no backend) hides Button and surfaces OS error",
+TEST_CASE("PiconetUi build_view (closed-state backend) hides Button and surfaces OS error",
           "[piconet][ui]") {
-    // Construct an extension whose create_backend will fail at the
-    // POSIX open() because the device path doesn't exist. This is the
-    // realistic "user got the path wrong / device unplugged at startup"
-    // case that motivated the polish.
+    // Construct an extension with a device path that won't open at the
+    // POSIX layer. create_backend now returns a closed-state backend
+    // (rather than nullptr) so the ModalEditor can call
+    // request_reopen() to recover -- the wrong-path-at-startup case
+    // that motivated the editor.
     beebium::PiconetEconetTransportExtension ext;
     ext.set_config({{"device_path", "/dev/does-not-exist-piconet"}});
     auto backend = ext.create_backend(/*station=*/1);
-    REQUIRE(backend == nullptr);
-    REQUIRE_FALSE(ext.open_error_message().empty());
+    REQUIRE(backend != nullptr);
+    REQUIRE_FALSE(static_cast<beebium::PiconetBackend*>(backend.get())
+                      ->is_serial_open());
+    REQUIRE_FALSE(static_cast<beebium::PiconetBackend*>(backend.get())
+                      ->open_error_message().empty());
 
     auto* ui = ext.ui();
     REQUIRE(ui != nullptr);
@@ -183,14 +208,20 @@ TEST_CASE("PiconetUi build_view (no backend) hides Button and surfaces OS error"
 
     const auto& root = view.root();
     REQUIRE(root.control_case() == beebium::Control::kGroup);
-    // Two controls only -- Label + Indicator. Enable button suppressed
-    // because there is no backend to drive.
+    // Two controls only -- ModalEditor + Indicator. Enable button
+    // suppressed because the serial port is closed (gating on
+    // is_serial_open in PiconetUi::build_view).
     REQUIRE(root.group().controls_size() == 2);
 
-    const auto& label = root.group().controls(0);
-    REQUIRE(label.id() == "device_path");
-    REQUIRE(label.control_case() == beebium::Control::kLabel);
-    REQUIRE(label.label().text() == "Device: /dev/does-not-exist-piconet");
+    const auto& device = root.group().controls(0);
+    REQUIRE(device.id() == "device_path");
+    REQUIRE(device.control_case() == beebium::Control::kModalEditor);
+    // Serial isn't open, so the editor is editable -- this is the path
+    // the user takes to fix a wrong-at-startup configuration.
+    REQUIRE(device.modal_editor().editable());
+    const auto& anchor = device.modal_editor().anchor();
+    REQUIRE(anchor.control_case() == beebium::Control::kLabel);
+    REQUIRE(anchor.label().text() == "Device: /dev/does-not-exist-piconet");
 
     const auto& indicator = root.group().controls(1);
     REQUIRE(indicator.id() == "connected");
@@ -328,4 +359,93 @@ TEST_CASE("PiconetBackend hot-unplug closes serial and updates the UI",
 
     // The Enable button is suppressed -- nothing to drive any more.
     REQUIRE(view.root().group().controls_size() == 2);
+}
+
+TEST_CASE("PiconetUi ModalEditor editable gate follows the mode + serial state",
+          "[piconet][ui][modal_editor]") {
+    PiconetUiFixture fixture;
+    auto* ui = fixture.extension().ui();
+
+    auto device_control = [&] {
+        beebium::View view;
+        ui->build_view(&view);
+        return view.root().group().controls(0);
+    };
+
+    // Live + Listen -> read-only.
+    {
+        auto d = device_control();
+        REQUIRE(d.control_case() == beebium::Control::kModalEditor);
+        REQUIRE_FALSE(d.modal_editor().editable());
+    }
+
+    // Muted (Mode::Stop) while serial still open -> editable. The user
+    // has explicitly disabled the wire so re-pointing it is harmless.
+    fixture.backend().set_mode(beebium::piconet::Mode::Stop);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
+    {
+        auto d = device_control();
+        REQUIRE(d.modal_editor().editable());
+    }
+
+    // Hot-unplug -> serial closes -> editable (user needs to re-point
+    // to recover). mode() stays at Stop from the previous step.
+    fixture.simulate_hot_unplug();
+    REQUIRE(fixture.wait_for_serial_close());
+    {
+        auto d = device_control();
+        REQUIRE(d.modal_editor().editable());
+    }
+}
+
+TEST_CASE("PiconetUi EditorCommit with the device_path field calls backend request_reopen",
+          "[piconet][ui][modal_editor]") {
+    PiconetUiFixture fixture;
+    auto* ui = fixture.extension().ui();
+
+    // Disable first -- editable gate requires mode != Listen (or the
+    // serial closed). We want editable=true for this test.
+    fixture.backend().set_mode(beebium::piconet::Mode::Stop);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
+
+    beebium::DispatchRequest req;
+    req.set_extension_name("piconet");
+    req.set_control_id("device_path");
+    req.set_view_revision(ui->current_revision());
+    auto* commit = req.mutable_editor_commit();
+    auto* field = commit->add_fields();
+    field->set_field_id("device_path_value");
+    field->set_string_value("/dev/null");
+
+    // Dispatch. request_reopen posts the path to the atomic slot; the
+    // next receive_frame() call on the emulation thread consumes it
+    // and performs the teardown + reopen.
+    ui->handle_event(req);
+    (void)fixture.backend().receive_frame();
+
+    REQUIRE(fixture.backend().config().device_path == "/dev/null");
+}
+
+TEST_CASE("PiconetUi EditorCommit with empty commit is a safe no-op",
+          "[piconet][ui][modal_editor]") {
+    PiconetUiFixture fixture;
+    auto* ui = fixture.extension().ui();
+    fixture.backend().set_mode(beebium::piconet::Mode::Stop);
+    REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
+
+    const std::string before_path = fixture.backend().config().device_path;
+    const auto before_rev = ui->current_revision();
+
+    beebium::DispatchRequest req;
+    req.set_extension_name("piconet");
+    req.set_control_id("device_path");
+    req.set_view_revision(before_rev);
+    // Empty editor_commit: no fields. Should not trigger a reopen.
+    req.mutable_editor_commit();
+
+    ui->handle_event(req);
+    (void)fixture.backend().receive_frame();
+
+    REQUIRE(fixture.backend().config().device_path == before_path);
+    REQUIRE(ui->current_revision() > before_rev);  // mark_dirty was called.
 }

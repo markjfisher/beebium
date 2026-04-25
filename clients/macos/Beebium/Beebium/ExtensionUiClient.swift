@@ -18,10 +18,26 @@ import SwiftUI
 /// to one of the proto DispatchRequest oneof fields (or to "no payload"
 /// for fire-only Buttons).
 enum ExtensionDispatchPayload: Sendable {
-    case none           // Button (no payload)
-    case bool(Bool)     // Toggle
-    case string(String) // TextInput
-    case index(UInt32)  // Choice
+    case none                                  // Button (no payload)
+    case bool(Bool)                            // Toggle
+    case string(String)                        // TextInput
+    case index(UInt32)                         // Choice
+    case editorCommit([EditorFieldCommit])     // ModalEditor
+}
+
+/// One field's value inside a ModalEditor's EditorCommit. Mirrors the
+/// proto EditorFieldValue: the `fieldID` names the sub-control in the
+/// editor tree; `value` carries the sub-control's local-buffer state at
+/// commit time.
+struct EditorFieldCommit: Sendable {
+    let fieldID: String
+    let value: EditorFieldValue
+
+    enum EditorFieldValue: Sendable {
+        case bool(Bool)
+        case string(String)
+        case index(UInt32)
+    }
 }
 
 /// Client for the server-driven Extension UI framework.
@@ -114,6 +130,22 @@ final class ExtensionUiClient: ObservableObject, Disconnectable {
             request.stringValue = value
         case .index(let value):
             request.indexValue = value
+        case .editorCommit(let fields):
+            var commit = Beebium_EditorCommit()
+            for field in fields {
+                var proto = Beebium_EditorFieldValue()
+                proto.fieldID = field.fieldID
+                switch field.value {
+                case .bool(let value):
+                    proto.boolValue = value
+                case .string(let value):
+                    proto.stringValue = value
+                case .index(let value):
+                    proto.indexValue = value
+                }
+                commit.fields.append(proto)
+            }
+            request.editorCommit = commit
         }
 
         do {

@@ -304,6 +304,17 @@ struct Beebium_Choice: Sendable {
 /// Free-form string. Dispatch payload: string_value. Frontends decide
 /// dispatch timing (per-keystroke vs on-blur); the protocol does not
 /// constrain that.
+///
+/// suggestions, when non-empty, lets the server expose a fixed list of
+/// candidate values that the frontend renders as a combobox-style picker
+/// alongside the text field. The text field remains the single source of
+/// truth: picking a suggestion writes its text into the field, and the
+/// list highlights whichever entry (if any) matches the current field
+/// value. Editing the field to a value not in the list clears the
+/// highlight. Use this for "pick from a known set OR enter a custom
+/// value" workflows -- e.g. choosing a serial port path where the OS
+/// enumerates known ports but the user may also need to type a path the
+/// enumerator did not return.
 struct Beebium_TextInput: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -314,6 +325,8 @@ struct Beebium_TextInput: Sendable {
   var value: String = String()
 
   var placeholder: String = String()
+
+  var suggestions: [String] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1120,7 +1133,7 @@ extension Beebium_Choice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplement
 
 extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".TextInput"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}value\0\u{1}placeholder\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}value\0\u{1}placeholder\0\u{1}suggestions\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1131,6 +1144,7 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
       case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.value) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.placeholder) }()
+      case 4: try { try decoder.decodeRepeatedStringField(value: &self.suggestions) }()
       default: break
       }
     }
@@ -1146,6 +1160,9 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if !self.placeholder.isEmpty {
       try visitor.visitSingularStringField(value: self.placeholder, fieldNumber: 3)
     }
+    if !self.suggestions.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.suggestions, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1153,6 +1170,7 @@ extension Beebium_TextInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplem
     if lhs.label != rhs.label {return false}
     if lhs.value != rhs.value {return false}
     if lhs.placeholder != rhs.placeholder {return false}
+    if lhs.suggestions != rhs.suggestions {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

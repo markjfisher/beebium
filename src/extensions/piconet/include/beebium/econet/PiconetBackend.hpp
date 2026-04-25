@@ -23,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 
 namespace beebium {
@@ -41,6 +42,16 @@ namespace beebium {
 // SerialPort.hpp -- no internal mutex.
 class PiconetBackend : public NetworkBackend {
 public:
+    // Factory that opens a fresh SerialPort for a given device path. Used
+    // by process_pending_reopen() to rebuild the serial after a path
+    // change. Production code passes a factory that constructs the
+    // platform-specific SerialPort (PosixSerialPort / Win32SerialPort);
+    // tests pass a factory that returns a scripted mock. When null, the
+    // reopen request is silently dropped (the pre-opened serial handed
+    // in at construction time is the only one the backend will ever own).
+    using SerialFactory =
+        std::function<std::unique_ptr<piconet::SerialPort>(const std::string&)>;
+
     // Constructor opens the SerialPort, sends SET_STATION + SET_MODE LISTEN,
     // and starts the reader thread. Failures during startup mark the
     // backend disconnected (is_connected() returns false) but do not throw,
@@ -48,16 +59,23 @@ public:
     // closes the serial port (which unblocks the reader's timed read), and
     // joins the reader thread.
     //
+    // serial_factory is used only by process_pending_reopen() to
+    // construct a replacement SerialPort when the user re-points the
+    // adapter via the Extension UI. When null, request_reopen() is a
+    // no-op.
+    //
     // on_async_state_change is invoked by the reader thread whenever
     // PiconetBackend's externally-observable state changes for reasons
     // other than a synchronous call from the emulation thread (today:
-    // hot-unplug detection, serial read errors that close the port).
-    // PiconetEconetTransportExtension wires this to PiconetUi::mark_dirty()
-    // so the Extension UI framework knows to push a fresh View. If null,
-    // the callback is simply not invoked. Must be thread-safe -- it runs
-    // on the reader thread.
+    // hot-unplug detection, serial read errors that close the port,
+    // completion of a pending reopen). PiconetEconetTransportExtension
+    // wires this to PiconetUi::mark_dirty() so the Extension UI framework
+    // knows to push a fresh View. If null, the callback is simply not
+    // invoked. Must be thread-safe -- it runs on the reader thread (or
+    // the emulation thread in the reopen-completion case).
     PiconetBackend(piconet::PiconetConfig config,
                    std::unique_ptr<piconet::SerialPort> serial,
+                   SerialFactory serial_factory = nullptr,
                    std::function<void()> on_async_state_change = nullptr);
 
     ~PiconetBackend() override;
@@ -118,17 +136,56 @@ public:
     // Accessor for diagnostics / gRPC introspection.
     const piconet::PiconetConfig& config() const { return config_; }
 
+    // Last OS-level error encountered opening the serial port, populated
+    // when a reopen (see request_reopen) fails. Empty otherwise. Read by
+    // PiconetUi to surface a human-readable diagnosis on the Indicator
+    // after a user-initiated path change; distinct from the startup-open
+    // error held by PiconetEconetTransportExtension (which describes the
+    // pre-backend failure case).
+    const std::string& open_error_message() const { return open_error_message_; }
+
+    // Request that the backend close its current SerialPort and reopen
+    // the named device path. Safe to call from the gRPC handler thread;
+    // the actual close / open / reader-restart runs on the emulation
+    // thread at the start of the next receive_frame() tick, keeping the
+    // emulation thread as the sole writer of serial_. Successive calls
+    // before the emulation thread has picked up the pending request
+    // coalesce to the most recent path. No-op when the backend was
+    // constructed without a SerialFactory.
+    void request_reopen(std::string new_path);
+
 private:
     void reader_loop();
 
+    // Called by receive_frame() on the emulation thread. If a reopen
+    // has been requested, closes the current SerialPort, joins the
+    // reader thread, constructs a fresh SerialPort via serial_factory_,
+    // writes SET_STATION + SET_MODE STOP, and starts a new reader
+    // thread. On open failure records open_error_message_ and leaves
+    // the backend in the closed state. Fires on_async_state_change_
+    // so the UI re-renders with the new path / error text.
+    void process_pending_reopen();
+
     piconet::PiconetConfig config_;
     std::unique_ptr<piconet::SerialPort> serial_;
+    SerialFactory serial_factory_;
 
     moodycamel::ReaderWriterQueue<NetworkFrame> rx_queue_{64};
     std::atomic<bool> shutdown_{false};
     std::atomic<piconet::Mode> current_mode_{piconet::Mode::Stop};
     std::function<void()> on_async_state_change_;
     std::thread reader_thread_;
+
+    // Cross-thread slot used by request_reopen() to post a new device
+    // path to the emulation thread. Heap-allocated std::string because
+    // there is no std::atomic<std::string>. Ownership: whichever thread
+    // exchanges the pointer out of the slot (or the destructor) is
+    // responsible for deleting it.
+    std::atomic<std::string*> pending_reopen_path_{nullptr};
+
+    // Populated by process_pending_reopen() when the new SerialPort
+    // fails to open. Cleared on successful reopen.
+    std::string open_error_message_;
 };
 
 }  // namespace beebium

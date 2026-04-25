@@ -75,7 +75,7 @@ public:
     // GetLastError() code from the failing CreateFile (or post-open
     // configuration). Surfaced through PiconetBackend to the Extension UI
     // Indicator so the user sees why the port did not open.
-    std::string_view open_error() const noexcept { return open_error_; }
+    std::string_view open_error() const noexcept override { return open_error_; }
 
 private:
     // Platform-specific members are deliberately kept as opaque integer

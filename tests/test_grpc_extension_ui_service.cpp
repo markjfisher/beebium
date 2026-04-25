@@ -101,6 +101,85 @@ private:
     FakeUi ui_;
 };
 
+// FakeModalUi exposes a single ModalEditor whose editor body is a Group
+// containing a Choice (id="choice1") and a TextInput (id="text1"). Used
+// by the EditorCommit-targeted dispatcher validation tests.
+class FakeModalUi : public beebium::ExtensionUi {
+public:
+    void build_view(beebium::View* out) const override {
+        auto* root = out->mutable_root();
+        root->set_id("root");
+        auto* group = root->mutable_group();
+        auto* control = group->add_controls();
+        control->set_id("editor1");
+        auto* modal = control->mutable_modal_editor();
+        modal->set_editable(editable_.load(std::memory_order_acquire));
+        modal->set_commit_role(beebium::ModalEditor_CommitRole_SAVE);
+        modal->set_show_cancel(true);
+
+        auto* anchor = modal->mutable_anchor();
+        anchor->set_id("editor1");
+        anchor->mutable_label()->set_text("Current: (unset)");
+
+        auto* editor = modal->mutable_editor();
+        editor->set_id("editor_body");
+        auto* body = editor->mutable_group();
+
+        auto* choice_ctrl = body->add_controls();
+        choice_ctrl->set_id("choice1");
+        auto* choice = choice_ctrl->mutable_choice();
+        choice->set_label("Choice");
+        *choice->add_options() = "first";
+        *choice->add_options() = "second";
+        choice->set_selected_index(0);
+
+        auto* text_ctrl = body->add_controls();
+        text_ctrl->set_id("text1");
+        auto* text = text_ctrl->mutable_text_input();
+        text->set_label("Text");
+    }
+
+    void handle_event(const beebium::DispatchRequest& req) override {
+        last_commit_ = req.editor_commit();
+        ++event_count_;
+    }
+
+    void set_editable(bool e) {
+        editable_.store(e, std::memory_order_release);
+        mark_dirty();
+    }
+
+    const beebium::EditorCommit& last_commit() const { return last_commit_; }
+    int event_count() const { return event_count_.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<bool> editable_{true};
+    beebium::EditorCommit last_commit_;
+    std::atomic<int> event_count_{0};
+};
+
+class FakeModalTransport : public beebium::EconetTransportExtension {
+public:
+    explicit FakeModalTransport(std::string name = "modal") {
+        beebium::ExtensionManifest m;
+        m.name = std::move(name);
+        m.description = "Fake modal-editor UI extension for tests";
+        m.cli_name = m.name;
+        m.extension_kind = "econet-transport";
+        set_manifest(std::move(m));
+    }
+
+    std::unique_ptr<beebium::NetworkBackend> create_backend(uint8_t) override {
+        return nullptr;
+    }
+
+    beebium::ExtensionUi* ui() override { return &ui_; }
+    FakeModalUi& fake_ui() { return ui_; }
+
+private:
+    FakeModalUi ui_;
+};
+
 // Spin up a Server with only ExtensionUiService bound to a registry
 // containing the caller's transport extensions. The peripheral registry
 // is left empty.
@@ -287,6 +366,115 @@ TEST_CASE("Dispatch with wrong payload type for the addressed control is rejecte
     REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
     REQUIRE_FALSE(resp.accepted());
     REQUIRE(resp.error().find("payload type") != std::string::npos);
+    REQUIRE(fake_ptr->fake_ui().event_count() == 0);
+}
+
+TEST_CASE("Dispatch EditorCommit to a ModalEditor runs handle_event",
+          "[grpc][extension-ui][modal_editor]") {
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeModalTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("modal");
+    req.set_control_id("editor1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    auto* commit = req.mutable_editor_commit();
+    {
+        auto* f = commit->add_fields();
+        f->set_field_id("choice1");
+        f->set_index_value(1);
+    }
+    {
+        auto* f = commit->add_fields();
+        f->set_field_id("text1");
+        f->set_string_value("hello");
+    }
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE(resp.accepted());
+    REQUIRE(resp.error().empty());
+    REQUIRE(fake_ptr->fake_ui().event_count() == 1);
+    REQUIRE(fake_ptr->fake_ui().last_commit().fields_size() == 2);
+}
+
+TEST_CASE("Dispatch EditorCommit rejected when the ModalEditor is not editable",
+          "[grpc][extension-ui][modal_editor]") {
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeModalTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+    fake_ptr->fake_ui().set_editable(false);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("modal");
+    req.set_control_id("editor1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    auto* commit = req.mutable_editor_commit();
+    auto* f = commit->add_fields();
+    f->set_field_id("text1");
+    f->set_string_value("should be rejected");
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE_FALSE(resp.accepted());
+    REQUIRE(resp.error().find("not editable") != std::string::npos);
+    REQUIRE(fake_ptr->fake_ui().event_count() == 0);
+}
+
+TEST_CASE("Dispatch EditorCommit with unknown field_id is rejected",
+          "[grpc][extension-ui][modal_editor]") {
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeModalTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("modal");
+    req.set_control_id("editor1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    auto* commit = req.mutable_editor_commit();
+    auto* f = commit->add_fields();
+    f->set_field_id("no_such_field");
+    f->set_string_value("bogus");
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE_FALSE(resp.accepted());
+    REQUIRE(resp.error().find("unknown editor field") != std::string::npos);
+    REQUIRE(fake_ptr->fake_ui().event_count() == 0);
+}
+
+TEST_CASE("Dispatch EditorCommit with wrong value variant for a sub-control is rejected",
+          "[grpc][extension-ui][modal_editor]") {
+    beebium::EconetTransportRegistry registry;
+    auto fake = std::make_unique<FakeModalTransport>();
+    auto* fake_ptr = fake.get();
+    registry.add(std::move(fake));
+    ExtensionUiFixture fixture(registry);
+
+    grpc::ClientContext ctx;
+    beebium::DispatchRequest req;
+    req.set_extension_name("modal");
+    req.set_control_id("editor1");
+    req.set_view_revision(fake_ptr->fake_ui().current_revision());
+    auto* commit = req.mutable_editor_commit();
+    auto* f = commit->add_fields();
+    f->set_field_id("text1");  // TextInput expects string_value
+    f->set_index_value(7);     // Wrong variant
+
+    beebium::DispatchResponse resp;
+    REQUIRE(fixture.stub().Dispatch(&ctx, req, &resp).ok());
+    REQUIRE_FALSE(resp.accepted());
+    REQUIRE(resp.error().find("variant") != std::string::npos);
     REQUIRE(fake_ptr->fake_ui().event_count() == 0);
 }
 

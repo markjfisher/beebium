@@ -57,7 +57,7 @@ public:
     // the errno set by the failing open() syscall (e.g. "No such file
     // or directory", "Permission denied"). Useful for surfacing a
     // human-readable diagnosis through the Extension UI Indicator.
-    std::string_view open_error() const noexcept { return open_error_; }
+    std::string_view open_error() const noexcept override { return open_error_; }
 
 private:
     std::string device_path_;
