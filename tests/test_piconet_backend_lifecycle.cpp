@@ -312,6 +312,85 @@ TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
     CHECK(backend.config().device_path == factory_calls[0]);
 }
 
+TEST_CASE("PiconetBackend status_sequence advances on hot-unplug via read-error",
+          "[piconet][backend][lifecycle][sequence]") {
+    // The reader thread's read-error branch closes the SerialPort
+    // and calls notify_state_changed -- which must bump the
+    // backend_status_sequence so WatchEconetStatus subscribers
+    // notice the transport-level state flip. A regression that
+    // dropped the bump (or the gating shutdown_ check that lets it
+    // run when the backend is alive) would leave the macOS
+    // sidebar's Connection row stuck on Connected after an unplug.
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    auto* initial_mock = initial_owner.get();
+    PiconetBackend backend(PiconetConfig{"/dev/initial", 32},
+                           std::move(initial_owner));
+
+    REQUIRE(backend.is_connected());
+    const auto before = backend.backend_status_sequence();
+
+    // Close the mock from outside the reader thread; the next
+    // read() returns error=true. The reader then closes the serial
+    // (idempotent), invokes notify_state_changed, and exits.
+    initial_mock->close();
+
+    auto deadline = std::chrono::steady_clock::now() + 500ms;
+    while (std::chrono::steady_clock::now() < deadline &&
+           backend.backend_status_sequence() == before) {
+        std::this_thread::sleep_for(5ms);
+    }
+    REQUIRE(backend.backend_status_sequence() > before);
+    REQUIRE_FALSE(backend.is_serial_open());
+}
+
+TEST_CASE("PiconetBackend status_sequence advances on reopen success and failure",
+          "[piconet][backend][lifecycle][sequence]") {
+    // The reopen path (process_pending_reopen -> notify_state_changed)
+    // must bump the sequence on both branches so subscribers see the
+    // transition regardless of outcome -- otherwise a UI rebuild
+    // wouldn't fire when a reopen failed (leaving the user with
+    // a stale "Adapter responsive" indicator).
+    SECTION("success path") {
+        auto factory = [](const std::string& /*path*/)
+            -> std::unique_ptr<SerialPort> {
+            return std::make_unique<MockPiconetSerial>();
+        };
+        auto initial = std::make_unique<MockPiconetSerial>();
+        PiconetBackend backend(PiconetConfig{"/dev/init", 32},
+                              std::move(initial),
+                              factory);
+        backend.set_mode(piconet::Mode::Stop);
+        const auto before = backend.backend_status_sequence();
+
+        backend.request_reopen("/dev/replacement");
+        (void)backend.receive_frame();
+
+        REQUIRE(backend.is_serial_open());
+        REQUIRE(backend.backend_status_sequence() > before);
+    }
+
+    SECTION("failure path") {
+        auto failing_factory = [](const std::string& /*path*/)
+            -> std::unique_ptr<SerialPort> {
+            auto m = std::make_unique<MockPiconetSerial>();
+            m->set_open(false);
+            return m;
+        };
+        auto initial = std::make_unique<MockPiconetSerial>();
+        PiconetBackend backend(PiconetConfig{"/dev/init", 32},
+                              std::move(initial),
+                              failing_factory);
+        backend.set_mode(piconet::Mode::Stop);
+        const auto before = backend.backend_status_sequence();
+
+        backend.request_reopen("/dev/bad");
+        (void)backend.receive_frame();
+
+        REQUIRE_FALSE(backend.is_serial_open());
+        REQUIRE(backend.backend_status_sequence() > before);
+    }
+}
+
 TEST_CASE("PiconetBackend rx_queue contents survive a reopen",
           "[piconet][backend][lifecycle][reopen]") {
     // The rx_queue_ is a member of PiconetBackend, not of SerialPort,
