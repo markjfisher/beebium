@@ -1,8 +1,10 @@
 # Piconet device-path editor via a `ModalEditor` primitive
 
-Status: Design agreed. Implementation in flight on branch
-`piconet-device-path-editor`. Three commits landed so far; see "Current
-state" below.
+Status: Shipped on branch `piconet-device-path-editor`. The design
+below records the conversation that ratified the approach; see
+[Implementation notes](#implementation-notes) at the bottom for what
+landed, where reality deviated from the original plan, and what is
+still deferred.
 
 This document supersedes
 [`serial-port-selector-control.md`](serial-port-selector-control.md)
@@ -52,16 +54,17 @@ Piconet
   [Enable]        <-- only when serial is open
 ```
 
-Clicking the pencil on macOS opens a popover:
+Clicking the pencil on macOS opens a popover with a single combobox
+(NSComboBox; the editor body is one `EditableChoice` — see
+[Implementation notes](#implementation-notes) for the evolution from
+the original Choice + TextInput sketch):
 
 ```
   Serial port
-  | /dev/tty.usbmodem101           v |
-  | /dev/tty.usbmodem14101            |
-  | /dev/tty.usbserial-A1B2           |
-
-  Custom path
-  [_____________________________]
+  [ /dev/tty.usbmodem101                      v ]
+                  ^ enumerated ports as dropdown items;
+                    the field is freely editable for paths
+                    the enumerator did not return.
 
             [ Cancel ]  [ Save ]
 ```
@@ -243,13 +246,14 @@ Branch: `piconet-device-path-editor`.
 | A | Extend `extension_ui.proto` with `ModalEditor` + `EditorCommit`; regen stubs | Done (commit `5a99529`) |
 | B | Dispatcher validation for `EditorCommit` payloads | Done (commit `f244b36`) |
 | C | `beebium::serial::enumerate_ports` helper (POSIX + Win32 + tests) | Done (commit `e02e632`) |
-| D | `PiconetBackend::request_reopen` + `process_pending_reopen` | Pending |
-| E | `PiconetUi`: emit `ModalEditor` when disabled; handle `EditorCommit` | Pending |
-| F | Swift renderer: `.modalEditor` arm with `.popover(...)` + per-sub-control `@State` buffers | Pending |
-| G | Swift client: `.editorCommit` case in `ExtensionDispatchPayload` and `ExtensionUiClient` | Pending |
-| H | Tests: proto round-trip, dispatcher validation, `PiconetBackend` reopen, `PiconetUi` state matrix | Pending |
-| I | Manual end-to-end on macOS and Slioch (Windows) | Pending |
-| J | Python and TypeScript renderers | Follow-up commit |
+| D | `PiconetBackend::request_reopen` + `process_pending_reopen` | Done (commit `cb9b614`) |
+| E | `PiconetUi`: emit `ModalEditor` when disabled; handle `EditorCommit` | Done (commit `cb9b614`) |
+| F | Swift renderer: `.modalEditor` arm with `.popover(...)` + per-sub-control `@State` buffers | Done (commit `cb9b614`) |
+| G | Swift client: `.editorCommit` case in `ExtensionDispatchPayload` and `ExtensionUiClient` | Done (commit `cb9b614`) |
+| H | Tests: proto round-trip, dispatcher validation, `PiconetBackend` reopen, `PiconetUi` state matrix | Done (commits `cb9b614` + `17a8333`) |
+| I | Manual end-to-end on macOS and Slioch (Windows) | macOS done; Slioch deferred |
+| J | Python and TypeScript renderers | Deferred (follow-up commit) |
+| K | `EditableChoice` primitive; migrate from `TextInput.suggestions` | Done (commit `17a8333`); see [Implementation notes](#implementation-notes) |
 
 Critical files by area:
 
@@ -276,22 +280,10 @@ Notably **unchanged**:
 
 ## Current state
 
-Branch `piconet-device-path-editor` has (relative to `master`):
-
-1. `5a99529` Extension UI: add `ModalEditor` primitive and
-   `EditorCommit` payload
-2. `f244b36` Extension UI dispatcher: validate `ModalEditor`
-   `EditorCommit` payloads
-3. `8f3d3cb` PiconetBackend: add `initial_mode` ctor parameter —
-   **reverted** by `ab8d028` (see "Design missteps" below)
-4. `e02e632` Add `beebium::serial::enumerate_ports` host-serial
-   enumerator
-5. `ab8d028` Revert "PiconetBackend: add `initial_mode` ctor
-   parameter"
-
-Net useful commits: 1, 2, 4. Commit 3 was a preparatory step for a
-design direction (EconetSocket-level backend swap) that we walked
-back from, and has been reverted.
+See [Implementation notes](#implementation-notes) below for the full
+landed picture: seven commits on `piconet-device-path-editor`
+(including the rejected `8f3d3cb` and its revert), the EditableChoice
+promotion, and the closed-state-backend recovery deviation.
 
 ## Rejected alternatives (and why)
 
@@ -496,3 +488,155 @@ equivalent). The ephemeral plan file is for in-flight scratch work,
 not ratified design. When a design conversation reaches a stable
 point, the default should be to propose an in-repo home for the
 artefact even without being asked.
+
+## Implementation notes
+
+Brief walkthrough of where the as-built implementation matches the
+design and where it deviates. Written 2026-04-25 after the two
+landing commits on `piconet-device-path-editor` were verified
+end-to-end on macOS.
+
+### Landed commits
+
+Branch `piconet-device-path-editor` (relative to `master`):
+
+| Commit | Subject |
+|---|---|
+| `5a99529` | Extension UI: add `ModalEditor` primitive and `EditorCommit` payload |
+| `f244b36` | Extension UI dispatcher: validate `ModalEditor` `EditorCommit` payloads |
+| `8f3d3cb` | PiconetBackend: add `initial_mode` ctor parameter (reverted) |
+| `e02e632` | Add `beebium::serial::enumerate_ports` host-serial enumerator |
+| `ab8d028` | Revert "PiconetBackend: add `initial_mode` ctor parameter" |
+| `cb9b614` | Piconet device-path editor via ModalEditor + TextInput.suggestions |
+| `17a8333` | Extension UI: add EditableChoice primitive; drop TextInput.suggestions |
+
+Net useful commits: `5a99529`, `f244b36`, `e02e632`, `cb9b614`,
+`17a8333`. Commits `8f3d3cb` / `ab8d028` were a preparatory step for
+the rejected R2 direction.
+
+### What shipped (matches the design)
+
+- **ModalEditor primitive + EditorCommit payload.** Nine controls now
+  in the vocabulary: the original seven plus `ModalEditor` (8th) and
+  `EditableChoice` (9th, see deviations below).
+- **Reopen path on the emulation thread via an atomic-pointer slot.**
+  `PiconetBackend::request_reopen` (gRPC thread) posts; `process_pending_reopen`
+  (emulation thread, top of `receive_frame`) consumes. `SerialFactory`
+  injection makes the reopen mockable in unit tests. Reopens always
+  land in `Mode::Stop`; the user re-Enables explicitly.
+- **No EconetSocket / FourWayHandshake / Mc6854 / Machine changes.**
+  The R2 / R3 reframes held: backend identity is stable, the
+  `SerialPort` member is the moving part.
+- **macOS frontend: ModalEditor as `.popover` with deferred commit.**
+  Anchor + 14pt pencil button + popover containing the editor body
+  and Save/Cancel; sub-control values held in a per-popover
+  `[String: FieldBuffer]` until commit.
+
+### Where the design deviated
+
+- **The editor body collapsed from `Choice + TextInput` (in a Group)
+  to a single `EditableChoice`.** The original sketch in this doc
+  composed the editor body of two existing primitives — a `Choice`
+  with the enumerated port list and a `TextInput` for a custom path.
+  Implementing that surfaced an ambiguity: with both controls
+  visible and editable, the user couldn't tell which one would take
+  effect on Save. We tried a halfway fix (extending `TextInput` with
+  `repeated string suggestions = 4`, single source of truth, list as
+  a "pick to fill" affordance), shipped that as `cb9b614`, then
+  promoted it to a first-class `EditableChoice` primitive in
+  `17a8333`. See R5 / M6 below.
+
+- **The closed-state-backend recovery path.** The original design
+  assumed a backend would only exist if the initial open succeeded.
+  When testing the wrong-path-at-startup scenario end-to-end, the
+  ModalEditor's reopen path needed something to call
+  `request_reopen` against; with `create_backend` returning
+  `nullptr` on open failure, the editor was reachable but Save was
+  inert. Fix: `PiconetEconetTransportExtension::create_backend` now
+  always returns a `PiconetBackend` (even when the SerialPort failed
+  to open), populated with the OS-level error in
+  `PiconetBackend::open_error_message_`. The Indicator surfaces the
+  same "Cannot open device: …" text either way; the editor's Save
+  now always has a backend to drive.
+
+- **`SerialPort::open_error()` lifted to the abstract base.** The
+  reopen path needs a uniform way to recover the OS-level error
+  string regardless of which SerialPort implementation the factory
+  returned. Promoted from a concrete `PosixSerialPort` /
+  `Win32SerialPort` accessor to a virtual on the base class with an
+  empty-string default; both production implementations override.
+
+- **Manual verification was macOS-only.** The branch was verified
+  end-to-end on macOS (wrong path at startup → editor → reopen →
+  Enable → BBC sees the wire). Slioch (Windows) verification
+  remains deferred.
+
+### What was deferred
+
+- **Python and TypeScript renderers.** Item J on the original plan;
+  needs `EditableChoice` support in
+  `clients/python/src/beebium/extension_ui.py` and the TS client.
+- **Manual verification on Slioch (Windows).** Item I, partial.
+- **Reconnect button + auto-reconnect timer.** Out of scope per the
+  parent doc
+  [`piconet-device-discovery.md`](piconet-device-discovery.md);
+  manual path edit covers the renumbering case for the common
+  single-Pico setup.
+
+### R5. `TextInput.suggestions` as a poor-man's combobox
+
+After R1's reframe (general `ModalEditor` primitive, editor body
+composed of existing primitives), the first-pass editor body used a
+`Choice` + `TextInput` pair. Field testing surfaced an ambiguity:
+the user couldn't tell whether the Save would apply the Choice's
+selected option or the TextInput's typed value. We considered three
+fixes:
+
+1. Extend `TextInput` with a `repeated string suggestions = 4` field
+   and render TextField + always-visible list, single source of
+   truth in the field, list highlights the matching entry. Shipped
+   as `cb9b614`.
+2. Link the Choice and TextInput inside the popover renderer with an
+   ad-hoc convention. Rejected — fragile, undocumentable in the
+   framework's type system.
+3. Add a first-class `EditableChoice` primitive. Picked up in the
+   next iteration (`17a8333`).
+
+(1) shipped as the working state because it unblocked the user's
+real scenario quickly. Once the pattern was validated end-to-end,
+(3) was the cleaner long-term home: the role "pick from a known set
+or enter a custom value" deserves its own name, parallels `Choice`
+on the closed/open axis (`Choice` = closed list, `EditableChoice` =
+open list), and maps directly to NSComboBox / GtkComboBox(has_entry)
+/ HTML `<input list>` — no novel rendering code required.
+
+The `TextInput.suggestions` field was removed in `17a8333` rather
+than kept as a deprecated alias. No downstream consumers existed
+besides PiconetUi, and per project convention there are no
+backwards-compatibility shims between client and server.
+
+### M6. Bolting a side-feature onto an existing primitive when the role deserves its own name
+
+**What happened.** When the Choice + TextInput ambiguity surfaced,
+the first instinct was to fix it inside `TextInput` — adding a
+`suggestions` field, special-casing the renderer when it was
+non-empty. The field worked, but it felt vestigial: every reader of
+the proto had to learn that "TextInput with non-empty suggestions"
+behaved fundamentally differently from a plain TextInput, and
+nothing in the type signature surfaced that.
+
+**Corrective direction.** When extending an existing primitive with
+a feature flag fundamentally changes its interaction model, prefer
+a new role-named primitive. The forcing question is: *"does the
+new behaviour deserve its own name?"* If a competent reader looking
+at the Control oneof should be able to tell at a glance that this
+shape exists, the answer is yes. `EditableChoice` clears that bar;
+`TextInput-with-suggestions` did not.
+
+This is the inverse of M1's lesson: M1 says "don't reach for a
+domain-specific primitive when a general one suffices"; M6 says
+"don't extend an existing primitive when the role is general enough
+to deserve its own name". Both rules are about keeping the
+vocabulary small *and* honest — primitives should describe
+interaction roles, not carry feature flags that mutate their
+behaviour.
