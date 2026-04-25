@@ -255,6 +255,60 @@ TEST_CASE("PiconetBackend::request_reopen coalesces successive requests",
     CHECK(factory_calls[0] == "/dev/final");
 }
 
+TEST_CASE("PiconetBackend::request_reopen is safe under concurrent posters",
+          "[piconet][backend][lifecycle][reopen][race]") {
+    // gRPC serialises Dispatch per stream, but a misbehaving client
+    // could open multiple streams and race them; this test pins down
+    // the atomic-pointer coalescing under contention. Spawn N threads
+    // each posting M paths, then drive a single tick. The slot
+    // ultimately holds whichever path won the final exchange; the
+    // factory should be invoked exactly once with that path, no
+    // double-frees of the heap-allocated string slot, no missed
+    // deletes of superseded posts.
+    constexpr int kThreads = 8;
+    constexpr int kPostsPerThread = 50;
+
+    std::vector<std::string> factory_calls;
+    auto factory = [&](const std::string& path)
+        -> std::unique_ptr<SerialPort> {
+        factory_calls.push_back(path);
+        return std::make_unique<MockPiconetSerial>();
+    };
+
+    auto initial_owner = std::make_unique<MockPiconetSerial>();
+    PiconetBackend backend(PiconetConfig{"/dev/initial", 32},
+                           std::move(initial_owner),
+                           factory);
+
+    std::atomic<bool> go{false};
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&, t] {
+            while (!go.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            for (int i = 0; i < kPostsPerThread; ++i) {
+                backend.request_reopen("/dev/path-" + std::to_string(t) +
+                                       "-" + std::to_string(i));
+            }
+        });
+    }
+    go.store(true, std::memory_order_release);
+    for (auto& th : threads) th.join();
+
+    // Single tick consumes whatever pending request happened to be
+    // last-written. All other posts must have been delete'd by the
+    // exchange path; if any were leaked or double-freed, ASan/UBSan
+    // would catch it (the test runs under sanitizers in CI).
+    (void)backend.receive_frame();
+
+    REQUIRE(factory_calls.size() == 1);
+    // The chosen path comes from one of the threads' posts.
+    CHECK(factory_calls[0].rfind("/dev/path-", 0) == 0);
+    CHECK(backend.config().device_path == factory_calls[0]);
+}
+
 TEST_CASE("PiconetBackend recovers from a closed-state initial open via request_reopen",
           "[piconet][backend][lifecycle][reopen][recovery]") {
     // The user's headline scenario: server started with a wrong path
