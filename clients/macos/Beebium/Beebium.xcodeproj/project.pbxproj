@@ -22,6 +22,7 @@
 		1F9774ADF4454EEA179ED3EA /* KeyboardSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */; };
 		2296373E4C15F8C223E5CCF8 /* MachineManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */; };
 		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
+		23DC1F33FE15F8CEABE9FBE2 /* BBCModifierState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063CC2272D058D46784E181A /* BBCModifierState.swift */; };
 		23F3E03B298F6AB8A9B9924E /* EconetClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA006204A482FCD8B77F7549 /* EconetClient.swift */; };
 		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
 		2E9C2894C04791EF7CCDE424 /* BeebiumTouchBarLEDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA112A053333004DAE316F9 /* BeebiumTouchBarLEDs.swift */; };
@@ -92,6 +93,7 @@
 		DD7F6150B025820774A44746 /* KeyboardMTKView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98CF59648104556C3677412 /* KeyboardMTKView.swift */; };
 		E0AAE22F2367681330BC0EC2 /* ConnectDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42858282A95435EEDFA1413F /* ConnectDialog.swift */; };
 		E275D2F57760944D93A67635 /* SystemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB0459103AA8B2261579315 /* SystemClient.swift */; };
+		E2C3C9AB563A0A8406735C73 /* BBCModifierStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DFE84A58CCC1A258C1DA04E /* BBCModifierStateTests.swift */; };
 		E3426D82AD066B2F7FF0830F /* aun.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0CF5589888F672F43B52FD /* aun.pb.swift */; };
 		E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */; };
 		E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */; };
@@ -126,6 +128,7 @@
 		028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMachineDialog.swift; sourceTree = "<group>"; };
 		0380D979784116B4110F8904 /* ConnectionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRegistry.swift; sourceTree = "<group>"; };
 		03C4898953F0003B85113EC0 /* indicator.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.grpc.swift; sourceTree = "<group>"; };
+		063CC2272D058D46784E181A /* BBCModifierState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BBCModifierState.swift; sourceTree = "<group>"; };
 		0787829BB8681E1354B9C585 /* BeebiumTouchBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumTouchBarManager.swift; sourceTree = "<group>"; };
 		08EE196EF5A83B8C77CEA3FA /* VideoClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClient.swift; sourceTree = "<group>"; };
 		0A03414ECE92D9AA04944FBB /* TextInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInputField.swift; sourceTree = "<group>"; };
@@ -133,6 +136,7 @@
 		0C19550BD759DAA9DFA9A015 /* extension_ui.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extension_ui.pb.swift; sourceTree = "<group>"; };
 		0FA112A053333004DAE316F9 /* BeebiumTouchBarLEDs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumTouchBarLEDs.swift; sourceTree = "<group>"; };
 		1031975F4050BF5875549DFA /* FileCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileCommands.swift; sourceTree = "<group>"; };
+		1DFE84A58CCC1A258C1DA04E /* BBCModifierStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BBCModifierStateTests.swift; sourceTree = "<group>"; };
 		2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.grpc.swift; sourceTree = "<group>"; };
 		21F63FE0D5862D2315B5AFDC /* BeebiumSvgGlyphRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumSvgGlyphRenderer.swift; sourceTree = "<group>"; };
 		22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = extension_ui.grpc.swift; sourceTree = "<group>"; };
@@ -366,6 +370,7 @@
 				B86FF568406281481A0E0D88 /* AudioRenderer.swift */,
 				E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */,
 				C152853E7E4735D1E7994275 /* BBCKeyCache.swift */,
+				063CC2272D058D46784E181A /* BBCModifierState.swift */,
 				58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */,
 				C511516BDB7D578CF5D63867 /* BiquadFilter.swift */,
 				42858282A95435EEDFA1413F /* ConnectDialog.swift */,
@@ -432,6 +437,7 @@
 		F07BCA445DC9C4A1F9AD1711 /* BeebiumTests */ = {
 			isa = PBXGroup;
 			children = (
+				1DFE84A58CCC1A258C1DA04E /* BBCModifierStateTests.swift */,
 				BC8890240329736D55E651ED /* ComboBoxRepresentableTests.swift */,
 				9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */,
 				8061A3DD36CCF7976C8F41E1 /* PresetTests.swift */,
@@ -563,6 +569,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E2C3C9AB563A0A8406735C73 /* BBCModifierStateTests.swift in Sources */,
 				524A3CDC4C24461BC89C6886 /* ComboBoxRepresentableTests.swift in Sources */,
 				2296373E4C15F8C223E5CCF8 /* MachineManagerTests.swift in Sources */,
 				62024A31F9AD52CA2676CCB2 /* PresetTests.swift in Sources */,
@@ -581,6 +588,7 @@
 				6573E0F14063A6C83E3204CA /* AudioRenderer.swift in Sources */,
 				BB411BA73F2726E174FF3054 /* AudioRingBuffer.swift in Sources */,
 				1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */,
+				23DC1F33FE15F8CEABE9FBE2 /* BBCModifierState.swift in Sources */,
 				42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */,
 				010DBCB8FE2D1DAA06D514CC /* BeebiumSvgGlyphRenderer.swift in Sources */,
 				C3F9E318AA63A0215FDA1793 /* BeebiumTouchBarEscapeKey.swift in Sources */,

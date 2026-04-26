@@ -163,6 +163,12 @@ final class KeyboardMapping: Identifiable {
         /// Whether BBC Ctrl should be pressed
         let bbcCtrl: Bool
 
+        /// True iff this resolution came from the character-mapping path
+        /// (cache lookup). The KeyboardClient uses this to distinguish
+        /// "user is typing a character" from "user pressed a directly
+        /// mapped physical key" so it can decide BBC SHIFT correctly.
+        let fromCharacterMapping: Bool
+
         /// Whether this is the Break key (requires special handling)
         var isBreak: Bool { bbcKeyName == "Break" }
     }
@@ -220,7 +226,8 @@ final class KeyboardMapping: Identifiable {
                 bbcKeyName: entry.name,
                 ikNumber: entry.ikNumber,
                 bbcShift: entry.needsShift,
-                bbcCtrl: false
+                bbcCtrl: false,
+                fromCharacterMapping: true
             )
         }
 
@@ -235,7 +242,8 @@ final class KeyboardMapping: Identifiable {
                 bbcKeyName: "Break",
                 ikNumber: 0,  // Not a matrix key
                 bbcShift: ref.bbcWithShift,
-                bbcCtrl: ref.bbcWithCtrl
+                bbcCtrl: ref.bbcWithCtrl,
+                fromCharacterMapping: false
             )
         }
 
@@ -248,7 +256,8 @@ final class KeyboardMapping: Identifiable {
             bbcKeyName: entry.name,
             ikNumber: entry.ikNumber,
             bbcShift: ref.bbcWithShift || entry.needsShift,
-            bbcCtrl: ref.bbcWithCtrl
+            bbcCtrl: ref.bbcWithCtrl,
+            fromCharacterMapping: false
         )
     }
 
