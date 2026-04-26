@@ -1,17 +1,8 @@
 name: CI
 
-# CI is paused on grpc-windows-streaming-race while we run a long
-# Windows-only investigation that would otherwise burn macOS/Linux/Windows
-# minutes on every diagnostic push. Re-enable by removing this branch
-# from the ignore list once the investigation is complete and the branch
-# is back to a buildable state on all platforms.
 on:
   push:
-    branches-ignore:
-      - grpc-windows-streaming-race
   pull_request:
-    branches-ignore:
-      - grpc-windows-streaming-race
   schedule:
     # Run weekly on Monday at 6 AM UTC to keep caches alive (7-day expiry)
     - cron: '0 6 * * 1'
