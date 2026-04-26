@@ -225,7 +225,8 @@ class TestDfsSaveWithTube:
         # Read parasite memory: PAGE is &0800 on the 65C02 coprocessor
         page = 0x0800
         program_length = len(test_program_bytes)
-        parasite_data = bbc_with_tube.tube.memory.peek.read(page, program_length)
+        parasite = bbc_with_tube.connect_parasite()
+        parasite_data = parasite.memory.address.peek.read(page, program_length)
 
         if parasite_data != test_program_bytes:
             pytest.fail(
