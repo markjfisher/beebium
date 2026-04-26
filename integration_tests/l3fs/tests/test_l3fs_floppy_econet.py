@@ -235,10 +235,11 @@ def test_l3fs_floppy_client_login(
 
             # Dump server Econet status.
             s_eco = server_bbc.econet.status
+            s_aun = server_bbc.aun.status
             print(f"\nServer Econet: station={s_eco.station_id} "
                   f"aun_mode={s_eco.aun_mode} connected={s_eco.connected} "
-                  f"aun_port={s_eco.aun_port} peers={s_eco.peer_count}")
-            for peer in server_bbc.econet.peers:
+                  f"aun_port={s_aun.local_port} peers={s_aun.peer_count}")
+            for peer in server_bbc.aun.peers:
                 print(f"  Peer: {peer.net}.{peer.stn} -> {peer.ip_address}:{peer.port}")
 
             # Launch the client.

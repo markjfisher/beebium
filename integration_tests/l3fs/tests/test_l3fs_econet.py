@@ -160,15 +160,16 @@ def test_l3fs_client_login(
 
             # Dump Econet diagnostics for the server.
             server_econet = server_bbc.econet.status
+            server_aun = server_bbc.aun.status
             print(f"\nServer Econet: station={server_econet.station_id} "
                   f"aun_mode={server_econet.aun_mode} "
                   f"connected={server_econet.connected} "
-                  f"aun_port={server_econet.aun_port} "
-                  f"peers={server_econet.peer_count}")
+                  f"aun_port={server_aun.local_port} "
+                  f"peers={server_aun.peer_count}")
             if server_econet.handshake:
                 print(f"  Handshake: stage={server_econet.handshake.stage} "
                       f"flag_fill={server_econet.handshake.flag_fill_active}")
-            for peer in server_bbc.econet.peers:
+            for peer in server_bbc.aun.peers:
                 print(f"  Peer: {peer.net}.{peer.stn} -> {peer.ip_address}:{peer.port}")
 
             # Now launch the client station.
@@ -189,15 +190,16 @@ def test_l3fs_client_login(
 
                 # Dump Econet diagnostics for the client.
                 client_econet = client_bbc.econet.status
+                client_aun = client_bbc.aun.status
                 print(f"\nClient Econet: station={client_econet.station_id} "
                       f"aun_mode={client_econet.aun_mode} "
                       f"connected={client_econet.connected} "
-                      f"aun_port={client_econet.aun_port} "
-                      f"peers={client_econet.peer_count}")
+                      f"aun_port={client_aun.local_port} "
+                      f"peers={client_aun.peer_count}")
                 if client_econet.handshake:
                     print(f"  Handshake: stage={client_econet.handshake.stage} "
                           f"flag_fill={client_econet.handshake.flag_fill_active}")
-                for peer in client_bbc.econet.peers:
+                for peer in client_bbc.aun.peers:
                     print(f"  Peer: {peer.net}.{peer.stn} -> {peer.ip_address}:{peer.port}")
 
                 # Select NFS as the active filing system, then log in.
