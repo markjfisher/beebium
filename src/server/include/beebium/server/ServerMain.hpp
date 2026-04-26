@@ -14,6 +14,7 @@
 #define BEEBIUM_SERVER_SERVER_MAIN_HPP
 
 #include "BuiltinExtensions.hpp"
+#include "CliArgParsers.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
@@ -79,18 +80,11 @@ namespace beebium::server {
 // Types used by ServerConfig (must be outside anonymous namespace to avoid -Wsubobject-linkage)
 constexpr uint16_t DEFAULT_GRPC_PORT = 0xBEEB;  // 48875
 
-enum class WaitMode {
-    None,   // Start immediately
-    Cli,    // Wait for RETURN on console
-    Api     // Wait for Run() RPC
-};
-
-enum class OutputFormat {
-    Auto,    // Detect based on platform::is_stdout_tty()
-    Pretty,  // Human-friendly formatted output
-    Tsv,     // Tab-separated values with header
-    Jsonl    // JSON Lines (one object per line)
-};
+// WaitMode, OutputFormat, SidewaysSlotType, SidewaysConfig and the
+// inline arg parsers (parse_int, parse_floppy_arg, parse_sideways_arg,
+// parse_wait_arg, parse_format_arg) live in CliArgParsers.hpp so that
+// they can be unit-tested without pulling in the full server template
+// stack.
 
 // Exit codes following sysexits.h conventions
 namespace ExitCode {
@@ -216,60 +210,7 @@ inline std::string generate_uuid_v4() {
     return std::string(buf);
 }
 
-// Parse an integer from a string with support for multiple bases.
-// Supported formats:
-//   - Decimal (no prefix): "123", "0", "255"
-//   - Binary (0b prefix): "0b1010", "0B1111"
-//   - Octal (0o prefix): "0o17", "0O377"
-//   - Hexadecimal (0x prefix): "0xff", "0XBE", "0xBEEB"
-// Throws std::runtime_error on invalid input.
-int parse_int(const std::string& str, const std::string& context = "") {
-    if (str.empty()) {
-        throw std::runtime_error("Empty integer value" + (context.empty() ? "" : " for " + context));
-    }
-
-    std::string_view sv = str;
-    int base = 10;
-    size_t start = 0;
-
-    // Check for base prefix
-    if (sv.length() >= 2 && sv[0] == '0') {
-        char prefix = static_cast<char>(std::tolower(static_cast<unsigned char>(sv[1])));
-        if (prefix == 'b') {
-            base = 2;
-            start = 2;
-        } else if (prefix == 'o') {
-            base = 8;
-            start = 2;
-        } else if (prefix == 'x') {
-            base = 16;
-            start = 2;
-        }
-    }
-
-    if (start >= sv.length()) {
-        throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
-    }
-
-    // Parse the number using long long for consistent 64-bit range on all platforms
-    // (Windows has 32-bit long, while Unix has 64-bit long)
-    std::string digits(sv.substr(start));
-    char* end = nullptr;
-    errno = 0;
-    long long value = std::strtoll(digits.c_str(), &end, base);
-
-    // Check for parsing errors
-    if (end == digits.c_str() || *end != '\0') {
-        throw std::runtime_error("Invalid integer: " + str + (context.empty() ? "" : " for " + context));
-    }
-
-    // Check for overflow (either strtoll overflow or int range overflow)
-    if (errno == ERANGE || value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-        throw std::runtime_error("Integer overflow: " + str + (context.empty() ? "" : " for " + context));
-    }
-
-    return static_cast<int>(value);
-}
+// parse_int has moved to CliArgParsers.hpp.
 
 // Complete a colon-terminated argument value with the next argv element.
 // This enables shell tab completion for arguments like "--floppy 0: game.ssd"
@@ -300,28 +241,8 @@ inline void complete_colon_arg(std::string& value, int& i, int argc, char* argv[
     i = next_i;
 }
 
-// Parse "drive:filepath" or "drive:url" format for floppy drives
-// Returns (drive, filepath_or_url)
-inline std::pair<uint8_t, std::string> parse_floppy_arg(const std::string& arg) {
-    auto colon_pos = arg.find(':');
-    if (colon_pos == std::string::npos || colon_pos == 0) {
-        throw std::runtime_error("Invalid --floppy format: " + arg + " (expected drive:filepath)");
-    }
-
-    std::string drive_str = arg.substr(0, colon_pos);
-    std::string filepath_or_url = arg.substr(colon_pos + 1);
-
-    int drive = parse_int(drive_str, "--floppy drive");
-    if (drive < 0 || drive > 1) {
-        throw std::runtime_error("Invalid floppy drive number: " + drive_str + " (must be 0 or 1)");
-    }
-
-    if (filepath_or_url.empty()) {
-        throw std::runtime_error("Invalid --floppy format: " + arg + " (filepath required)");
-    }
-
-    return {static_cast<uint8_t>(drive), filepath_or_url};
-}
+// parse_floppy_arg, parse_sideways_arg, parse_wait_arg moved to
+// CliArgParsers.hpp. SidewaysSlotType / SidewaysConfig live there too.
 
 // Sentinel values to mark slots that should not have default ROMs loaded
 constexpr const char* EMPTY_SLOT_MARKER = "\x01EMPTY\x01";
@@ -329,87 +250,7 @@ constexpr const char* RAM_SLOT_MARKER = "\x01RAM\x01";
 
 } // anonymous namespace
 
-// Sideways slot configuration (for --sideways argument)
-// Outside anonymous namespace because used by ServerConfig
-enum class SidewaysSlotType { Empty, Rom, Ram };
-
-struct SidewaysConfig {
-    uint8_t slot;
-    SidewaysSlotType type;
-    std::string image_filepath;  // Optional: filepath for ROM or pre-loaded RAM
-};
-
 namespace {
-
-// Parse --sideways argument: SLOT:TYPE[:IMAGE]
-// Examples:
-//   15:rom:bbc-basic_2.rom  - ROM with image
-//   4:ram                    - Empty RAM
-//   4:ram:preload.bin        - RAM with pre-loaded image
-//   2:empty                  - Empty slot
-inline SidewaysConfig parse_sideways_arg(const std::string& arg) {
-    SidewaysConfig config{};
-
-    // Find first colon (slot:type...)
-    auto first_colon = arg.find(':');
-    if (first_colon == std::string::npos) {
-        throw std::runtime_error("Invalid --sideways format: " + arg +
-            " (expected SLOT:TYPE[:IMAGE])");
-    }
-
-    // Parse slot number
-    std::string slot_str = arg.substr(0, first_colon);
-    int slot = parse_int(slot_str, "--sideways slot");
-    if (slot < 0 || slot > 15) {
-        throw std::runtime_error("Invalid slot number: " + slot_str + " (must be 0-15)");
-    }
-    config.slot = static_cast<uint8_t>(slot);
-
-    // Find second colon (type:image...) or end
-    std::string remainder = arg.substr(first_colon + 1);
-    auto second_colon = remainder.find(':');
-
-    std::string type_str;
-    if (second_colon == std::string::npos) {
-        type_str = remainder;
-        // No image path
-    } else {
-        type_str = remainder.substr(0, second_colon);
-        config.image_filepath = remainder.substr(second_colon + 1);
-    }
-
-    // Parse type
-    if (type_str == "empty") {
-        config.type = SidewaysSlotType::Empty;
-        if (!config.image_filepath.empty()) {
-            throw std::runtime_error("--sideways: 'empty' type cannot have image path");
-        }
-    } else if (type_str == "rom") {
-        config.type = SidewaysSlotType::Rom;
-        if (config.image_filepath.empty()) {
-            throw std::runtime_error("--sideways: 'rom' type requires image path");
-        }
-    } else if (type_str == "ram") {
-        config.type = SidewaysSlotType::Ram;
-        // image_filepath is optional for RAM (pre-loaded battery-backed RAM)
-    } else {
-        throw std::runtime_error("Invalid --sideways type: " + type_str +
-            " (expected 'empty', 'rom', or 'ram')");
-    }
-
-    return config;
-}
-
-// Parse --wait argument value
-inline WaitMode parse_wait_arg(const std::string& value) {
-    if (value == "cli") {
-        return WaitMode::Cli;
-    } else if (value == "api") {
-        return WaitMode::Api;
-    } else {
-        throw std::runtime_error("Invalid --wait value: " + value + " (expected 'cli' or 'api')");
-    }
-}
 
 // Convert a URL or filepath to a canonical file:// URL.
 // If the input is already a URL, returns it unchanged.
@@ -432,14 +273,7 @@ inline OutputFormat resolve_output_format(OutputFormat format) {
     return format;
 }
 
-// Parse --format argument value
-OutputFormat parse_format_arg(const std::string& value) {
-    if (value == "pretty") return OutputFormat::Pretty;
-    if (value == "tsv") return OutputFormat::Tsv;
-    if (value == "jsonl") return OutputFormat::Jsonl;
-    throw std::runtime_error("Invalid --format value: " + value +
-                             " (expected 'pretty', 'tsv', or 'jsonl')");
-}
+// parse_format_arg moved to CliArgParsers.hpp.
 
 // Parse global arguments that appear before the subcommand.
 // Returns:
@@ -915,7 +749,13 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         } else if (arg == "--sideways" && i + 1 < argc) {
             std::string value = argv[++i];
             complete_colon_arg(value, i, argc, argv);
-            auto sideways_config = parse_sideways_arg(value);
+            SidewaysConfig sideways_config;
+            try {
+                sideways_config = parse_sideways_arg(value);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
             config.sideways_configs.push_back(sideways_config);
             // Add ALL slot types to rom_slots to prevent default ROM loading
             // This ensures --sideways 15:empty or --sideways 15:ram prevents BASIC from loading
@@ -938,8 +778,13 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         } else if (arg == "--floppy" && i + 1 < argc) {
             std::string value = argv[++i];
             complete_colon_arg(value, i, argc, argv);
-            auto [drive, filepath] = parse_floppy_arg(value);
-            config.floppy_filepaths[drive] = filepath;
+            try {
+                auto [drive, filepath] = parse_floppy_arg(value);
+                config.floppy_filepaths[drive] = filepath;
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--screen-mode" && i + 1 < argc) {
             try {
                 config.screen_mode = parse_int(argv[++i], "--screen-mode");
@@ -972,7 +817,12 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         } else if (arg.rfind("--wait=", 0) == 0) {
             // --wait=cli or --wait=api
             std::string wait_value = arg.substr(7);  // Skip "--wait="
-            config.wait_mode = parse_wait_arg(wait_value);
+            try {
+                config.wait_mode = parse_wait_arg(wait_value);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
         } else if (arg == "--station" && i + 1 < argc) {

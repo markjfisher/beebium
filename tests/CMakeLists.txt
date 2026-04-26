@@ -70,6 +70,21 @@ add_executable(test_extension_resolver test_extension_resolver.cpp)
 target_link_libraries(test_extension_resolver PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_extension_resolver)
 
+# Inline CLI argument parsers from ServerMain.hpp (case tolerance, error messages)
+add_executable(test_cli_arg_parsers test_cli_arg_parsers.cpp)
+target_include_directories(test_cli_arg_parsers PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/include
+)
+target_compile_definitions(test_cli_arg_parsers PRIVATE
+    BEEBIUM_VERSION="${PROJECT_VERSION}"
+)
+target_link_libraries(test_cli_arg_parsers PRIVATE
+    beebium_core
+    beebium_service
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_cli_arg_parsers)
+
 # EconetTransportRegistry container tests
 add_executable(test_econet_transport_registry test_econet_transport_registry.cpp)
 target_link_libraries(test_econet_transport_registry PRIVATE beebium_core Catch2::Catch2WithMain)

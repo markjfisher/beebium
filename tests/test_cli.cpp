@@ -753,7 +753,13 @@ TEST_CASE("parse_format_arg: valid values", "[cli][parse_format_arg]") {
 TEST_CASE("parse_format_arg: invalid value throws", "[cli][parse_format_arg]") {
     REQUIRE_THROWS_AS(parse_format_arg("invalid"), std::runtime_error);
     REQUIRE_THROWS_AS(parse_format_arg("json"), std::runtime_error);  // Not jsonl
-    REQUIRE_THROWS_AS(parse_format_arg("PRETTY"), std::runtime_error);  // Case sensitive
+}
+
+TEST_CASE("parse_format_arg: case insensitive", "[cli][parse_format_arg]") {
+    // Tolerant of the user typing PRETTY / Tsv / JsonL.
+    REQUIRE(parse_format_arg("PRETTY") == OutputFormat::Pretty);
+    REQUIRE(parse_format_arg("Tsv") == OutputFormat::Tsv);
+    REQUIRE(parse_format_arg("JsonL") == OutputFormat::Jsonl);
 }
 
 // ============================================================================
@@ -2141,10 +2147,11 @@ TEST_CASE("parse_start_arguments: --floppy colon completion doesn't consume opti
     ArgvHelper args{"beebium", "start", "--floppy", "0:", "--port", "8080"};
     ServerConfig<MachineType> config;
 
-    REQUIRE_THROWS_WITH(
-        parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config),
-        Catch::Matchers::ContainsSubstring("filepath required")
-    );
+    // Returns ExitCode::USAGE rather than throwing -- a CLI typo must
+    // produce a clean error, not abort the process (#33).
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+    REQUIRE(result.has_value());
+    REQUIRE(*result == ExitCode::USAGE);
 }
 
 TEST_CASE("parse_start_arguments: --sideways colon completion with following option", "[cli][parse_start_arguments]") {
