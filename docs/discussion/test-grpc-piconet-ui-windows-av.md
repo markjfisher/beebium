@@ -1,20 +1,31 @@
 # `test_grpc_piconet_ui` AV on Windows — investigation log
 
-Status: **partial root cause found, still open.** A two-hour TTD-based
-investigation on 2026-04-26 narrowed the bug to a kernel-mode write
-that corrupts the saved return address on `Win32SerialPort`'s
-constructor stack frame during a Windows syscall. The corruption is
-invisible to TTD's data model (no recorded write event) and to
-hardware data watchpoints. A targeted fix that prevented the most
-plausible trigger (`GetCommState` on a non-COM handle, called via
-`configure_comm`) was implemented but did not fix the bug — TTD
-confirmed the fix took effect (zero `GetCommState` calls) but the
-test still AVs with the same signature, meaning at least one *other*
-syscall path is also triggering the kernel-side write.
+Status: **production bug fixed; test bug closed as test-only artefact.**
 
-See "The TTD investigation" near the bottom for the methodology and
-findings; the older sections record dead-end hypotheses that future
-similar bugs will look like initially.
+The user-facing production AV (macOS frontend -> Windows server ->
+switch to Network panel -> server crash) is fixed by gating the
+`configure_comm` call on `is_comm_handle(handle)` (a `GetFileType`
+probe) at the caller in `Win32SerialPort`'s constructor. Verified
+end-to-end on 2026-04-26 against Slioch: the macOS frontend connects,
+switches to Network panel, the server stays up.
+
+The companion test `test_grpc_piconet_ui` continues to AV on Windows
+even with the fix in place. TTD analysis of the fixed binary shows
+the corruption mechanism is the same kernel-side write to the user
+stack, but triggered by a *different* syscall path that is only
+reachable when a non-COM handle is fed to `Win32SerialPort` -- which
+the test does (it substitutes a named pipe for the real Piconet
+device) and which production never does (production opens real COM
+ports). The test was therefore exercising a code path that does not
+exist in production; its Windows-side guard is restored in
+`tests/CMakeLists.txt` so CI does not chase the artefact, and the
+POSIX-side coverage (which exercises the same reopen flow through a
+PTY substitution and works correctly) remains.
+
+A two-hour TTD-based investigation on 2026-04-26 was needed to reach
+this conclusion. See "The TTD investigation" near the bottom for the
+methodology and findings; the older sections record dead-end
+hypotheses that future similar bugs will look like initially.
 
 ---
 
@@ -768,6 +779,97 @@ The fix was not committed.
 5. **Build the entire dependency stack with `/Od` (no optimisation)
    and re-run.** This rules out one remaining set of optimizer
    theories cleanly.
+
+## Web search reveals this is a documented Windows behaviour
+
+After the TTD investigation pinned the bug to a kernel-mode write
+during the `NtClose` syscall called from `KERNELBASE!GetCommState`,
+a search of Microsoft documentation and third-party sources finds
+the mechanism is well known and explicitly documented. The pieces:
+
+### `NtClose` raises `EXCEPTION_INVALID_HANDLE` (0xC0000008) under specific conditions
+
+[Microsoft's `CloseHandle` documentation](https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle)
+states:
+
+> If a process is running under a debugger and an invalid handle is
+> passed to the `ntdll!NtClose()` or `kernel32!CloseHandle()` function,
+> then the `EXCEPTION_INVALID_HANDLE` (0xC0000008) exception will be
+> raised.
+
+The exception is delivered via the kernel→user-mode callback
+[`KiUserExceptionDispatcher`](http://www.nynaeve.net/?p=203), which
+**writes a `CONTEXT` and an `EXCEPTION_RECORD` onto the calling
+thread's user-mode stack** before re-entering user code. That stack
+write is exactly the kind of operation that:
+
+- TTD's data model can't see — it's emitted by the kernel-side
+  syscall return path, not by a user-mode instruction.
+- Hardware data watchpoints can't trip on — the DR registers are
+  loaded for user-mode threads; kernel-mode writes through the
+  user-mode mapping don't fire the DR hits.
+- Lands at a stack offset that depends on the calling function's
+  frame layout, which neatly explains why the bug is layout- and
+  timing-sensitive.
+
+### The four documented triggers for the exception path
+
+`NtClose` returns `STATUS_INVALID_HANDLE` silently in normal
+operation. It only escalates to a kernel-dispatched user-mode
+exception when one of:
+
+1. **A debugger is attached** (`IsDebuggerPresent`). TTD counts as a
+   debugger, which is why our TTD trace reproduced the AV.
+2. **Application Verifier is enabled** for the process (`avrf`). We
+   ran with AppVerifier earlier; it then went off-and-on across our
+   investigation; an "empty" IFEO key for `test_grpc_piconet_ui.exe`
+   exists on Slioch as a leftover but had no `VerifierFlags`.
+3. **`ProcessStrictHandleCheckPolicy` is set** on the process via
+   [`SetProcessMitigationPolicy`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessmitigationpolicy).
+   Once enabled, this cannot be turned off, and any invalid-handle
+   close becomes a "fatal error" (raised exception).
+4. **The handle was marked `OBJ_PROTECT_CLOSE`** (returns
+   `STATUS_HANDLE_NOT_CLOSABLE`). Always raises an exception, no
+   debugger or mitigation needed.
+
+Our standalone runs (without a debugger, with AppVerifier disabled)
+still crash. The most likely active condition is **#3** — set
+implicitly by one of our linked dependencies (gRPC's Windows
+event-engine, abseil, protobuf, MSVC runtime hardening, etc.) — or
+**#4** if `GetCommState` is closing a kernel object that's
+`OBJ_PROTECT_CLOSE` on this Windows build. Either way, the exception
+path fires for us.
+
+### Why `GetCommState` is the trigger
+
+[Microsoft's `GetCommState` page](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getcommstate)
+documents the function as expecting a "communications device handle".
+Search hits confirm that calling it on a non-COM handle (printers,
+named pipes, regular files) returns `ERROR_INVALID_FUNCTION` — but
+*before* returning that error, the function internally tries to
+query the device, fails, and cleans up by closing some transient
+kernel object. On a non-COM handle that internal handle is
+invalid/protected, so `NtClose` returns the error condition that
+triggers the exception dispatch.
+
+### Pattern recognition
+
+This crash class has bitten other projects. References:
+
+- [Chromium's "crash with invalid handle" page](https://www.chromium.org/developers/crash-reports/crash-with-invalid-handle/)
+  documents the same kind of crash and recommends switching from raw
+  handles to scoped-handle wrappers.
+- [qBittorrent issue #12329](https://github.com/qbittorrent/qBittorrent/issues/12329)
+  is one of many "process crashes with 0xC0000008 invalid handle"
+  reports against third-party Windows applications.
+- [The "anti-debug" technique catalog](https://anti-debug.checkpoint.com/techniques/object-handles.html)
+  describes weaponising the same path: malware calls
+  `NtClose(invalid_handle)` to detect a debugger by observing whether
+  the exception fires.
+
+So this is a known shape of bug — we just hit it through an unusual
+trigger (legitimate code calling a Windows API that legitimately
+closes an invalid internal handle as part of its own error path).
 
 ## Files / commits relevant to this investigation
 

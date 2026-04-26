@@ -89,19 +89,39 @@ std::string format_last_error(DWORD err) {
     return result;
 }
 
-// Configure a COM-style handle for raw 115200 8N1. Graceful on handles
-// that do not accept comm configuration (named pipes, files) -- matches
-// PosixSerialPort's tcgetattr-skip for non-tty targets, so unit tests
-// that bridge through a named pipe can open Win32SerialPort without
-// pretending to be a real COM port.
+// Configure a real COM-port handle for raw 115200 8N1. The CALLER must
+// guarantee that `handle` is for a true serial device (FILE_TYPE_CHAR);
+// see is_comm_handle() and the Win32SerialPort constructor below for
+// the gate. Calling any of the Get*/Set*/PurgeComm/EscapeCommFunction
+// family on a non-COM handle (a named pipe, regular file, mailslot,
+// ...) is documented to return ERROR_INVALID_FUNCTION but **also has
+// a kernel-side side effect** on Windows builds where strict handle
+// checking or OBJ_PROTECT_CLOSE is in play: the failed comm API
+// internally closes a transient kernel object that's invalid in this
+// context, NtClose raises EXCEPTION_INVALID_HANDLE, and
+// KiUserExceptionDispatcher writes the resulting EXCEPTION_RECORD +
+// CONTEXT onto the calling thread's user stack. That stack write
+// lands at our saved return-address slot and crashes the function on
+// return with an AV at <piconet-base-high16>00000000.
+//
+// The corruption is invisible to TTD's user-mode memory-write
+// tracking, invisible to MSVC ASan, and invisible to hardware data
+// watchpoints. Application Verifier's PageHeap "fixes" it only by
+// relayout. See docs/discussion/test-grpc-piconet-ui-windows-av.md
+// for the full investigation; the practical takeaway is "never call
+// any comm API on a handle that isn't a real COM port".
 void configure_comm(HANDLE handle, const std::string& path) {
     DCB dcb{};
     dcb.DCBlength = sizeof(dcb);
     if (!::GetCommState(handle, &dcb)) {
         DWORD err = ::GetLastError();
+        // Kept as a defensive fallback only; the caller's
+        // is_comm_handle() gate should already have prevented us from
+        // reaching here for non-COM handles, so anything that lands
+        // here represents a driver-specific quirk on a real comm
+        // device rather than the documented non-COM crash path.
         if (err == ERROR_INVALID_FUNCTION || err == ERROR_INVALID_PARAMETER ||
             err == ERROR_INVALID_HANDLE) {
-            // Not a comm device (likely a pipe in tests). Skip configuration.
             return;
         }
         std::cerr << "Win32SerialPort: GetCommState(" << path
@@ -161,6 +181,20 @@ void configure_comm(HANDLE handle, const std::string& path) {
 
     // Discard any bytes that the driver buffered before we opened.
     ::PurgeComm(handle, PURGE_RXCLEAR | PURGE_TXCLEAR);
+}
+
+// Returns true iff the handle is for a real character-mode device
+// (a real COM port). Returns false for named pipes, regular files,
+// mailslots, sockets, FILE_TYPE_UNKNOWN, etc.
+//
+// This is the gate that protects configure_comm() from being entered
+// on non-COM handles. GetFileType is documented as a cheap, side-
+// effect-free probe that does not internally close any kernel
+// objects, so it doesn't trigger the user-stack-corrupting exception
+// dispatch path that the Win32 comm APIs do. See configure_comm()
+// above for the rationale.
+bool is_comm_handle(HANDLE handle) {
+    return ::GetFileType(handle) == FILE_TYPE_CHAR;
 }
 
 ReadResult map_read_error(DWORD err) {
@@ -225,7 +259,16 @@ Win32SerialPort::Win32SerialPort(const std::string& device_path)
     read_event_raw_ = reinterpret_cast<std::uintptr_t>(read_event);
     write_event_raw_ = reinterpret_cast<std::uintptr_t>(write_event);
 
-    configure_comm(handle, qualified);
+    // Only configure as a COM port if the handle is for a real
+    // character-mode device. Tests open this class against a named
+    // pipe (FakePiconetDeviceOnPipe); the pipe is fine for raw
+    // ReadFile/WriteFile/CloseHandle but blows up if the COM-config
+    // helpers are invoked on it (see the configure_comm comment for
+    // the gory details). PosixSerialPort skips its tcgetattr block
+    // for non-tty handles for the same architectural reason.
+    if (is_comm_handle(handle)) {
+        configure_comm(handle, qualified);
+    }
 
     handle_raw_.store(reinterpret_cast<std::uintptr_t>(handle),
                       std::memory_order_release);

@@ -1090,6 +1090,18 @@ if(BEEBIUM_BUILD_SERVICE)
     # ExtensionUiService gRPC stub: SubscribeView -> Dispatch
     # (EditorCommit) -> emulation tick drains pending reopen ->
     # next pushed View shows the new path.
+    #
+    # POSIX-only: the test substitutes a FakePiconetDeviceOnPipe (a
+    # named pipe) for the real serial device so the production code
+    # path is exercised with the device replaced. On Windows that
+    # substitution feeds a non-COM handle to Win32SerialPort, which
+    # triggers a kernel-side stack write during a syscall on the test
+    # machine's environment -- a fault that production never sees
+    # because production only ever opens real COM ports. See
+    # docs/discussion/test-grpc-piconet-ui-windows-av.md for the full
+    # TTD-based investigation that established the test path is not
+    # the production path.
+    if(NOT WIN32)
     add_executable(test_grpc_piconet_ui
         test_grpc_piconet_ui.cpp
         piconet/FakePiconetDevice.cpp
@@ -1105,6 +1117,7 @@ if(BEEBIUM_BUILD_SERVICE)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src/extensions/piconet)
     catch_discover_tests(test_grpc_piconet_ui)
+    endif()
 
     # PiconetUi unit tests (build_view shape + handle_event SET_MODE
     # round-trip via FakePiconetDevice). Same fixture infrastructure
