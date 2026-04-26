@@ -64,14 +64,19 @@ final class KeyboardMTKView: MTKView {
         }
 
         let input = KeyInput(event: event, source: .physicalKeyboard)
-        print("[KeyboardMTKView] keyDown: keyCode=\(event.keyCode) chars='\(input.characters)'")
+        print("[KBD][in.keyDown] keyCode=\(event.keyCode)"
+              + " chars=\(quotedDebug(input.characters))"
+              + " charsIgnoringMods=\(quotedDebug(input.charactersIgnoringModifiers))"
+              + " mods=[\(formatModifiers(event.modifierFlags))]")
 
         keyboardClient?.keyDown(input: input)
     }
 
     override func keyUp(with event: NSEvent) {
         let input = KeyInput(event: event, source: .physicalKeyboard)
-        print("[KeyboardMTKView] keyUp: keyCode=\(event.keyCode) chars='\(input.characters)'")
+        print("[KBD][in.keyUp] keyCode=\(event.keyCode)"
+              + " chars=\(quotedDebug(input.characters))"
+              + " mods=[\(formatModifiers(event.modifierFlags))]")
 
         keyboardClient?.keyUp(input: input)
     }
@@ -80,6 +85,11 @@ final class KeyboardMTKView: MTKView {
         let current = event.modifierFlags
         let diff = current.symmetricDifference(lastModifiers)
         let keyCode = event.keyCode
+
+        print("[KBD][in.flags] keyCode=\(keyCode)"
+              + " current=[\(formatModifiers(current))]"
+              + " prev=[\(formatModifiers(lastModifiers))]"
+              + " diff=[\(formatModifiers(diff))]")
 
         // Caps Lock uses special handling (toggle sync)
         if diff.contains(.capsLock) {
@@ -91,7 +101,7 @@ final class KeyboardMTKView: MTKView {
         if isModifierKeyCode(keyCode) && keyCode != MacKeyCode.capsLock {
             let isDown = isModifierPressed(keyCode: keyCode, flags: current)
             let input = KeyInput(keyCode: keyCode, source: .physicalKeyboard)
-            print("[KeyboardMTKView] flagsChanged: keyCode=\(keyCode) isDown=\(isDown)")
+            print("[KBD][in.flags] -> keyCode=\(keyCode) isDown=\(isDown)")
 
             if isDown {
                 keyboardClient?.keyDown(input: input)
@@ -101,6 +111,42 @@ final class KeyboardMTKView: MTKView {
         }
 
         lastModifiers = current
+    }
+
+    /// Render NSEvent.ModifierFlags as a readable comma-separated list.
+    private func formatModifiers(_ flags: NSEvent.ModifierFlags) -> String {
+        var parts: [String] = []
+        if flags.contains(.shift)    { parts.append("shift") }
+        if flags.contains(.control)  { parts.append("control") }
+        if flags.contains(.option)   { parts.append("option") }
+        if flags.contains(.command)  { parts.append("command") }
+        if flags.contains(.function) { parts.append("function") }
+        if flags.contains(.capsLock) { parts.append("capsLock") }
+        if flags.contains(.numericPad) { parts.append("numericPad") }
+        if flags.contains(.help)     { parts.append("help") }
+        return parts.joined(separator: ",")
+    }
+
+    /// Quote a string with visible escapes so log lines remain on one line.
+    private func quotedDebug(_ s: String) -> String {
+        var out = "\""
+        for scalar in s.unicodeScalars {
+            switch scalar {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if scalar.value < 0x20 || scalar.value == 0x7F {
+                    out += String(format: "\\u{%04X}", scalar.value)
+                } else {
+                    out += String(scalar)
+                }
+            }
+        }
+        out += "\""
+        return out
     }
 
     /// Check if a keyCode is a modifier key

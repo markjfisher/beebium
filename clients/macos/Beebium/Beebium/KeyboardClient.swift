@@ -165,17 +165,28 @@ final class KeyboardClient: ObservableObject, Disconnectable {
             if !MacKeyCode.isHostModifierKey(input.keyCode) {
                 signalUnmappedKey()
             }
+            print("[KBD][resolve] keyCode=\(input.keyCode) -> UNMAPPED"
+                  + " (mapping=\(mapping.name))")
             return
         }
+
+        print("[KBD][resolve] keyCode=\(input.keyCode)"
+              + " -> bbcKeyName=\(resolved.bbcKeyName)"
+              + " ik=\(formatIk(resolved.ikNumber))"
+              + " bbcShift=\(resolved.bbcShift) bbcCtrl=\(resolved.bbcCtrl)"
+              + " fromCharMap=\(resolved.fromCharacterMapping)"
+              + " (mapping=\(mapping.name))")
 
         // Check if key is disabled
         if manager.isKeyDisabled(resolved.bbcKeyName) {
             signalDisabledKey()
+            print("[KBD][resolve] -> DISABLED")
             return
         }
 
         // Check if already pressed (by keyCode)
         if pressedKeys[input.keyCode] != nil {
+            print("[KBD][resolve] -> already pressed, ignoring")
             return
         }
 
@@ -193,11 +204,21 @@ final class KeyboardClient: ObservableObject, Disconnectable {
         )
         pressedKeys[input.keyCode] = state
 
+        print("[KBD][fact] ik=\(formatIk(fact.bbcKeyName, ik: resolved.ikNumber))"
+              + " needsSyntheticShift=\(fact.needsSyntheticShift)"
+              + " forbidsShift=\(fact.forbidsShift)"
+              + " needsSyntheticCtrl=\(fact.needsSyntheticCtrl)"
+              + " forbidsCtrl=\(fact.forbidsCtrl)")
+
         let shiftAction = computeShiftAction()
         let ctrlAction = computeCtrlAction()
         let isBreak = resolved.isBreak
         let ikNumber = resolved.ikNumber
         let isModifier = isModifierIK(ikNumber)
+
+        print("[KBD][decide.down] desired shiftAction=\(describe(shiftAction))"
+              + " ctrlAction=\(describe(ctrlAction))"
+              + " ikToSend=\(isBreak ? "BREAK" : (isModifier ? "(reconciler-owned)" : formatIk(ikNumber)))")
 
         enqueueSend { [weak self] in
             guard let self = self else { return }
@@ -219,6 +240,7 @@ final class KeyboardClient: ObservableObject, Disconnectable {
     /// - Parameter input: The key input event
     func keyUp(input: KeyInput) {
         guard let state = pressedKeys.removeValue(forKey: input.keyCode) else {
+            print("[KBD][keyUp] keyCode=\(input.keyCode) was not tracked, ignoring")
             return
         }
 
@@ -227,6 +249,12 @@ final class KeyboardClient: ObservableObject, Disconnectable {
         let ikNumber = state.ikNumber
         let isBreak = state.isBreak
         let isModifier = isModifierIK(ikNumber)
+
+        print("[KBD][decide.up] keyCode=\(input.keyCode)"
+              + " released ik=\(formatIk(ikNumber))"
+              + " desired shiftAction=\(describe(shiftAction))"
+              + " ctrlAction=\(describe(ctrlAction))"
+              + " ikToSend=\(isBreak ? "BREAK" : (isModifier ? "(reconciler-owned)" : formatIk(ikNumber)))")
 
         enqueueSend { [weak self] in
             guard let self = self else { return }
@@ -317,6 +345,7 @@ final class KeyboardClient: ObservableObject, Disconnectable {
 
     private func applyModifierAction(_ action: Bool?, ikNumber: UInt8) async {
         guard let action = action else { return }
+        print("[KBD][modifier] ik=\(formatIk(ikNumber)) -> \(action ? "DOWN" : "UP")")
         if action {
             await sendKeyDown(ikNumber: ikNumber)
         } else {
@@ -338,7 +367,9 @@ final class KeyboardClient: ObservableObject, Disconnectable {
 
     /// Handle user pressing Mac Caps Lock key (from flagsChanged event)
     func handleCapsLockToggle() {
-        guard mappingManager?.isCapsLockSyncEnabled == true else { return }
+        let enabled = mappingManager?.isCapsLockSyncEnabled == true
+        print("[KBD][capsLock.toggle] syncEnabled=\(enabled)")
+        guard enabled else { return }
         pressCapsLock()
     }
 
@@ -348,7 +379,8 @@ final class KeyboardClient: ObservableObject, Disconnectable {
     ///   - macCapsLockIsOn: Current macOS Caps Lock state
     ///   - bbcState: Current BBC Caps Lock LED state
     func syncCapsLockState(macCapsLockIsOn: Bool, bbcState: CapsLockState) {
-        guard mappingManager?.isCapsLockSyncEnabled == true else { return }
+        let enabled = mappingManager?.isCapsLockSyncEnabled == true
+        guard enabled else { return }
 
         // Ignore transient states (PWM filtered intermediate values)
         guard bbcState != .transient else { return }
@@ -359,6 +391,8 @@ final class KeyboardClient: ObservableObject, Disconnectable {
 
         let bbcCapsLockIsOn = (bbcState == .on)
         if macCapsLockIsOn != bbcCapsLockIsOn {
+            print("[KBD][capsLock.sync] macOn=\(macCapsLockIsOn)"
+                  + " bbcOn=\(bbcCapsLockIsOn) -> tap")
             lastSyncTime = now
             pressCapsLock()
         }
@@ -367,6 +401,7 @@ final class KeyboardClient: ObservableObject, Disconnectable {
     /// Send a complete Caps Lock key DOWN/UP cycle to BBC.
     /// The 50ms delay ensures MOS has time to scan keyboard and process the key press.
     private func pressCapsLock() {
+        print("[KBD][capsLock.tap] ik=\(formatIk(BBCModifierKey.capsLock)) DOWN/UP")
         Task {
             await sendKeyDown(ikNumber: BBCModifierKey.capsLock)
 
@@ -429,6 +464,7 @@ final class KeyboardClient: ObservableObject, Disconnectable {
             return
         }
 
+        print("[KBD][wire.tx] KeyDown ik=\(formatIk(ikNumber))")
         var request = Beebium_KeyRequest()
         request.ikNumber = UInt32(ikNumber)
 
@@ -445,6 +481,7 @@ final class KeyboardClient: ObservableObject, Disconnectable {
             return
         }
 
+        print("[KBD][wire.tx] KeyUp   ik=\(formatIk(ikNumber))")
         var request = Beebium_KeyRequest()
         request.ikNumber = UInt32(ikNumber)
 
@@ -452,6 +489,39 @@ final class KeyboardClient: ObservableObject, Disconnectable {
             _ = try await client.keyUp(request).response.get()
         } catch {
             print("[KeyboardClient] sendKeyUp gRPC error: \(error)")
+        }
+    }
+
+    // MARK: - Logging helpers
+
+    /// Render an ikNumber as `0xHH(row,col)[name]`. Falls back if no name.
+    private func formatIk(_ ikNumber: UInt8) -> String {
+        let row = (ikNumber >> 4) & 0x0F
+        let col = ikNumber & 0x0F
+        let nameSuffix: String
+        if ikNumber == BBCModifierKey.shift {
+            nameSuffix = "[BBC.Shift]"
+        } else if ikNumber == BBCModifierKey.ctrl {
+            nameSuffix = "[BBC.Ctrl]"
+        } else if ikNumber == BBCModifierKey.capsLock {
+            nameSuffix = "[BBC.CapsLock]"
+        } else {
+            nameSuffix = ""
+        }
+        return String(format: "0x%02X(%d,%d)%@", ikNumber, row, col, nameSuffix)
+    }
+
+    /// Render an ikNumber alongside the BBC key name we resolved it from.
+    private func formatIk(_ bbcKeyName: String, ik ikNumber: UInt8) -> String {
+        return "\(formatIk(ikNumber))[\(bbcKeyName)]"
+    }
+
+    /// Render the optional Bool result of computeShiftAction / computeCtrlAction.
+    private func describe(_ action: Bool?) -> String {
+        switch action {
+        case .none:        return "no-change"
+        case .some(true):  return "DOWN"
+        case .some(false): return "UP"
         }
     }
 
