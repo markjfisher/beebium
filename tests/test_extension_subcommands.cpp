@@ -1,0 +1,166 @@
+// Copyright © 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+// Integration tests for `list-extensions` and `describe-extension` subcommands.
+//
+// These tests run the actual server executable as a subprocess to verify
+// end-to-end that the auto-default extension directory is scanned, that
+// a user-supplied --extension-dir is honoured, and that the rendered
+// output matches the requested --format.
+
+#include <catch2/catch_test_macros.hpp>
+#include <beebium/PlatformUtils.hpp>
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+namespace {
+
+struct ProcessResult {
+    int exit_code;
+    std::string stdout_output;
+    std::string stderr_output;
+};
+
+ProcessResult run_command(const std::string& command) {
+    auto stdout_filepath = std::filesystem::temp_directory_path() / "beebium_ext_test_stdout.txt";
+    auto stderr_filepath = std::filesystem::temp_directory_path() / "beebium_ext_test_stderr.txt";
+
+    std::string full_command = command;
+#ifdef _WIN32
+    full_command += " >\"" + stdout_filepath.string() + "\" 2>\"" + stderr_filepath.string() + "\"";
+#else
+    full_command += " >" + stdout_filepath.string() + " 2>" + stderr_filepath.string();
+#endif
+
+    ProcessResult result;
+    result.exit_code = std::system(full_command.c_str());
+#ifndef _WIN32
+    if (WIFEXITED(result.exit_code)) {
+        result.exit_code = WEXITSTATUS(result.exit_code);
+    }
+#endif
+
+    if (std::ifstream f(stdout_filepath); f) {
+        std::ostringstream ss; ss << f.rdbuf(); result.stdout_output = ss.str();
+    }
+    if (std::ifstream f(stderr_filepath); f) {
+        std::ostringstream ss; ss << f.rdbuf(); result.stderr_output = ss.str();
+    }
+
+    std::filesystem::remove(stdout_filepath);
+    std::filesystem::remove(stderr_filepath);
+
+    return result;
+}
+
+std::filesystem::path find_executable(const std::string& name) {
+#ifdef _WIN32
+    std::string exe_name = name + ".exe";
+#else
+    std::string exe_name = name;
+#endif
+    if (auto env = beebium::platform::get_env("BEEBIUM_SERVERS_DIRPATH")) {
+        auto p = std::filesystem::path(*env) / exe_name;
+        if (std::filesystem::exists(p)) return p;
+    }
+    std::vector<std::filesystem::path> search_paths = {
+        std::filesystem::current_path() / "src" / "server" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / exe_name,
+        std::filesystem::current_path() / "build" / "src" / "server" / exe_name,
+    };
+    for (const auto& p : search_paths) {
+        if (std::filesystem::exists(p)) return p;
+    }
+    return exe_name;
+}
+
+const std::string EXECUTABLE = find_executable("beebium-model-b-romram").string();
+
+}  // namespace
+
+TEST_CASE("list-extensions exits successfully with no args",
+          "[integration][extension][list-extensions]") {
+    auto r = run_command(EXECUTABLE + " list-extensions");
+    INFO("stdout: " << r.stdout_output);
+    INFO("stderr: " << r.stderr_output);
+    REQUIRE(r.exit_code == 0);
+}
+
+TEST_CASE("list-extensions includes the built-in tube-65c02 extension",
+          "[integration][extension][list-extensions]") {
+    auto r = run_command(EXECUTABLE + " list-extensions");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    REQUIRE(r.stdout_output.find("tube-65c02") != std::string::npos);
+}
+
+TEST_CASE("list-extensions includes plugin extensions from the default directory",
+          "[integration][extension][list-extensions]") {
+    auto r = run_command(EXECUTABLE + " list-extensions");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    REQUIRE(r.stdout_output.find("acorn-rtc") != std::string::npos);
+    REQUIRE(r.stdout_output.find("acorn-scsi") != std::string::npos);
+}
+
+TEST_CASE("list-extensions --format jsonl emits one JSON object per line",
+          "[integration][extension][list-extensions]") {
+    auto r = run_command(EXECUTABLE + " --format jsonl list-extensions");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    // Each line begins with '{' and ends with '}'
+    std::istringstream iss(r.stdout_output);
+    std::string line;
+    int count = 0;
+    while (std::getline(iss, line)) {
+        if (line.empty()) continue;
+        REQUIRE(line.front() == '{');
+        REQUIRE(line.back() == '}');
+        ++count;
+    }
+    REQUIRE(count > 0);
+}
+
+TEST_CASE("list-extensions --extension-dir of a non-existent path errors",
+          "[integration][extension][list-extensions]") {
+    auto r = run_command(EXECUTABLE + " list-extensions --extension-dir /nonexistent-beebium-test-path");
+    REQUIRE(r.exit_code != 0);
+    INFO("stderr: " << r.stderr_output);
+    REQUIRE(r.stderr_output.find("/nonexistent-beebium-test-path") != std::string::npos);
+}
+
+TEST_CASE("describe-extension shows parameter detail for a known extension",
+          "[integration][extension][describe-extension]") {
+    auto r = run_command(EXECUTABLE + " --format pretty describe-extension tube-65c02");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    REQUIRE(r.stdout_output.find("tube-65c02") != std::string::npos);
+    REQUIRE(r.stdout_output.find("rom") != std::string::npos);  // parameter name
+}
+
+TEST_CASE("describe-extension errors for unknown extension",
+          "[integration][extension][describe-extension]") {
+    auto r = run_command(EXECUTABLE + " describe-extension definitely-not-a-real-extension");
+    REQUIRE(r.exit_code != 0);
+    INFO("stderr: " << r.stderr_output);
+    REQUIRE(r.stderr_output.find("definitely-not-a-real-extension") != std::string::npos);
+}
+
+TEST_CASE("describe-extension requires a name argument",
+          "[integration][extension][describe-extension]") {
+    auto r = run_command(EXECUTABLE + " describe-extension");
+    REQUIRE(r.exit_code != 0);
+}

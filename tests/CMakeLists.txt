@@ -1231,6 +1231,15 @@ if(BEEBIUM_BUILD_SERVICE)
     # These tests share temp files and a user presets directory, so they must
     # run sequentially to avoid races when CTest runs tests in parallel.
     catch_discover_tests(test_preset_subcommands PROPERTIES RESOURCE_LOCK preset_dir)
+
+    # Extension subcommand integration tests (list-extensions, describe-extension)
+    add_executable(test_extension_subcommands test_extension_subcommands.cpp)
+    target_link_libraries(test_extension_subcommands PRIVATE
+        beebium_core
+        Catch2::Catch2WithMain
+    )
+    add_dependencies(test_extension_subcommands beebium-servers)
+    catch_discover_tests(test_extension_subcommands)
 endif()
 
 # Step performance benchmarks (run with --benchmark-samples N, not during normal ctest)

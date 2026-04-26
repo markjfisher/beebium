@@ -757,6 +757,77 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
 // Preset merge semantics: If --preset is specified, the preset file is loaded first
 // and its values populate the config. Then CLI arguments are parsed and can override
 // any preset value. This allows presets to provide defaults while CLI provides overrides.
+// Resolve the default extension directory <exe-dir>/extensions if it
+// exists. beebium_finalize_plugin() (cmake/BeebiumPlugin.cmake) post-
+// build-copies every dynamic plugin to this layout so the same rule
+// works on every platform and every build configuration -- including
+// MSBuild / Xcode multi-config where the exe sits in a $(Configuration)
+// subdirectory. The canonical install layout mirrors this: plugins
+// ship alongside the server binary. Absent on stripped-down installs.
+inline std::optional<std::string> resolve_default_extension_dirpath(const char* argv0) {
+    std::error_code ec;
+    auto exe_path = std::filesystem::canonical(std::filesystem::path(argv0), ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    auto candidate = exe_path.parent_path() / "extensions";
+    if (!std::filesystem::exists(candidate)) {
+        return std::nullopt;
+    }
+    return candidate.string();
+}
+
+// Populate the four extension-resolution fields on a ServerConfig. The
+// resolver is rebuilt with built-ins (lowest priority), the auto-default
+// extension directory if it exists, and each user_dirs entry in order
+// (highest priority last). User-supplied paths use the Throw policy --
+// a typo is reported up the stack as ExitCode::CONFIG.
+template<typename MachineType>
+std::optional<int> populate_extension_resolver(
+        const char* argv0,
+        const std::vector<std::string>& user_dirs,
+        ServerConfig<MachineType>& config) {
+    config.default_extension_dirpath = resolve_default_extension_dirpath(argv0);
+
+    const auto& builtin_entries = beebium::builtin_extensions::entries();
+    config.builtin_manifests.clear();
+    config.builtin_manifests.reserve(builtin_entries.size());
+    for (const auto& e : builtin_entries) {
+        config.builtin_manifests.push_back(e.manifest);
+    }
+
+    config.extension_resolver = beebium::ExtensionResolver{};
+    config.extension_resolver.add_source("built-in", config.builtin_manifests);
+    config.extension_scan_results.clear();
+
+    auto scan = [&](const std::string& path,
+                    beebium::PluginLoader::MissingDirPolicy policy) -> std::optional<int> {
+        beebium::PluginLoader scanner;
+        try {
+            config.extension_scan_results.push_back(scanner.scan_manifests(path, policy));
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::CONFIG;
+        }
+        config.extension_resolver.add_source(path, config.extension_scan_results.back());
+        return std::nullopt;
+    };
+
+    if (config.default_extension_dirpath) {
+        if (auto err = scan(*config.default_extension_dirpath,
+                beebium::PluginLoader::MissingDirPolicy::ReturnEmpty)) {
+            return err;
+        }
+    }
+    for (const auto& user_path : user_dirs) {
+        if (auto err = scan(user_path,
+                beebium::PluginLoader::MissingDirPolicy::Throw)) {
+            return err;
+        }
+    }
+    return std::nullopt;
+}
+
 template<typename MachineType>
 std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index,
                                           ServerConfig<MachineType>& config) {
@@ -797,66 +868,11 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // Resolve the default extension directory <exe-dir>/extensions, if it
-    // exists. beebium_finalize_plugin() (cmake/BeebiumPlugin.cmake) post-
-    // build-copies every dynamic plugin to this layout so the same rule
-    // works on every platform and every build configuration -- including
-    // MSBuild / Xcode multi-config where the exe sits in a $(Configuration)
-    // subdirectory. The canonical install layout mirrors this: plugins
-    // ship alongside the server binary. Absent on stripped-down installs.
-    {
-        std::error_code ec;
-        auto exe_path = std::filesystem::canonical(std::filesystem::path(argv[0]), ec);
-        if (!ec) {
-            auto candidate = exe_path.parent_path() / "extensions";
-            if (std::filesystem::exists(candidate)) {
-                config.default_extension_dirpath = candidate.string();
-            }
-        }
-    }
-
-    // Built-in extension manifests so the CLI parser recognises them.
-    const auto& builtin_entries = beebium::builtin_extensions::entries();
-    config.builtin_manifests.clear();
-    config.builtin_manifests.reserve(builtin_entries.size());
-    for (const auto& e : builtin_entries) {
-        config.builtin_manifests.push_back(e.manifest);
-    }
-
-    // Build the extension resolver: built-ins first (lowest priority),
-    // then the auto-resolved default extension dir, then each user-
-    // supplied --extension-dir in order. Later sources override earlier
-    // ones for matching cli_name -- so a user-supplied directory can
-    // replace a built-in extension.
-    config.extension_resolver = beebium::ExtensionResolver{};
-    config.extension_resolver.add_source("built-in", config.builtin_manifests);
-    config.extension_scan_results.clear();
-
-    auto scan_into_resolver = [&](const std::string& path,
-                                   beebium::PluginLoader::MissingDirPolicy policy)
-        -> std::optional<int> {
-        beebium::PluginLoader scanner;
-        try {
-            config.extension_scan_results.push_back(scanner.scan_manifests(path, policy));
-        } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << "\n";
-            return ExitCode::CONFIG;
-        }
-        config.extension_resolver.add_source(path, config.extension_scan_results.back());
-        return std::nullopt;
-    };
-
-    if (config.default_extension_dirpath) {
-        if (auto err = scan_into_resolver(*config.default_extension_dirpath,
-                beebium::PluginLoader::MissingDirPolicy::ReturnEmpty)) {
-            return err;
-        }
-    }
-    for (const auto& user_path : config.extension_dirpaths) {
-        if (auto err = scan_into_resolver(user_path,
-                beebium::PluginLoader::MissingDirPolicy::Throw)) {
-            return err;
-        }
+    // Build the extension resolver: built-ins (lowest priority), the
+    // auto-resolved default <exe-dir>/extensions, then each user-
+    // supplied --extension-dir in CLI order (later wins).
+    if (auto err = populate_extension_resolver(argv[0], config.extension_dirpaths, config)) {
+        return err;
     }
 
     // Lowercase CLI flag map driven by the resolved manifest set.
@@ -2079,6 +2095,295 @@ public:
     }
 };
 
+namespace extension_listing {
+
+// Minimal JSON string escaping for description / name fields.
+inline std::string json_escape(std::string_view s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    for (char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8]; std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += c;
+                }
+        }
+    }
+    return out;
+}
+
+// Parse just `--extension-dir <path>` arguments out of a subcommand argv slice.
+// Other tokens are reported as "unknown argument" by the caller.
+struct ExtensionDirParse {
+    std::vector<std::string> extension_dirpaths;
+    std::vector<std::string> remaining;  // tokens that were not --extension-dir
+};
+
+inline ExtensionDirParse parse_extension_dir_args(int argc, char* argv[], int start) {
+    ExtensionDirParse result;
+    for (int i = start; i < argc; ++i) {
+        std::string_view arg = argv[i];
+        if (arg == "--extension-dir" && i + 1 < argc) {
+            result.extension_dirpaths.emplace_back(argv[++i]);
+            continue;
+        }
+        result.remaining.emplace_back(arg);
+    }
+    return result;
+}
+
+}  // namespace extension_listing
+
+// ListExtensions subcommand - list all available extensions
+template<typename MachineType>
+class ListExtensionsSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "list-extensions"; }
+    std::string_view description() const override {
+        return "List available peripheral and transport extensions";
+    }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " list-extensions [--extension-dir <path>]...\n"
+                  << "\n"
+                  << "Lists every extension that can be selected via a --<cli-name> flag,\n"
+                  << "in the same priority order as `start` would resolve them: built-in\n"
+                  << "extensions, then the auto-detected <exe-dir>/extensions directory,\n"
+                  << "then each --extension-dir given here. Later sources override earlier\n"
+                  << "ones for matching cli-name. Honours --format pretty|tsv|jsonl.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        auto parsed = extension_listing::parse_extension_dir_args(
+            argc, argv, global.subcommand_argv_start);
+        for (const auto& tok : parsed.remaining) {
+            if (tok == "--help" || tok == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            std::cerr << "Unknown argument: " << tok << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        ServerConfig<MachineType> config;
+        if (auto err = populate_extension_resolver(argv[0], parsed.extension_dirpaths, config)) {
+            return *err;
+        }
+
+        OutputFormat format = resolve_output_format(global.output_format);
+        const auto& entries = config.extension_resolver.entries();
+
+        switch (format) {
+            case OutputFormat::Pretty:
+                std::cout << "Available extensions:\n";
+                for (const auto& e : entries) {
+                    std::cout << "  --" << e.manifest->effective_cli_name();
+                    if (e.manifest->name != e.manifest->effective_cli_name()) {
+                        std::cout << " (" << e.manifest->name << ")";
+                    }
+                    std::cout << " [" << e.source_label << "]\n";
+                    if (!e.manifest->description.empty()) {
+                        std::cout << "      " << e.manifest->description << "\n";
+                    }
+                }
+                if (entries.empty()) {
+                    std::cout << "  (no extensions found)\n";
+                }
+                break;
+
+            case OutputFormat::Tsv:
+                std::cout << "cli_name\tname\tkind\tsource\tdescription\n";
+                for (const auto& e : entries) {
+                    std::cout << e.manifest->effective_cli_name() << "\t"
+                              << e.manifest->name << "\t"
+                              << e.manifest->extension_kind << "\t"
+                              << e.source_label << "\t"
+                              << e.manifest->description << "\n";
+                }
+                break;
+
+            case OutputFormat::Jsonl:
+                for (const auto& e : entries) {
+                    std::cout << "{\"cli_name\":\""
+                              << extension_listing::json_escape(e.manifest->effective_cli_name())
+                              << "\",\"name\":\""
+                              << extension_listing::json_escape(e.manifest->name)
+                              << "\",\"kind\":\""
+                              << extension_listing::json_escape(e.manifest->extension_kind)
+                              << "\",\"source\":\""
+                              << extension_listing::json_escape(e.source_label)
+                              << "\",\"description\":\""
+                              << extension_listing::json_escape(e.manifest->description)
+                              << "\"}\n";
+                }
+                break;
+
+            case OutputFormat::Auto:
+                break;
+        }
+        return ExitCode::OK;
+    }
+};
+
+// DescribeExtension subcommand - parameter detail for a single extension
+template<typename MachineType>
+class DescribeExtensionSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "describe-extension"; }
+    std::string_view description() const override {
+        return "Show parameter detail for a specific extension";
+    }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name
+                  << " describe-extension <name> [--extension-dir <path>]...\n"
+                  << "\n"
+                  << "Shows the parameter schema for an extension. <name> may be\n"
+                  << "either the CLI flag stem (e.g. tube-65c02) or the canonical\n"
+                  << "extension name (e.g. acorn-65c02-coprocessor).\n"
+                  << "Honours --format pretty|tsv|jsonl.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        auto parsed = extension_listing::parse_extension_dir_args(
+            argc, argv, global.subcommand_argv_start);
+
+        std::string target_name;
+        for (const auto& tok : parsed.remaining) {
+            if (tok == "--help" || tok == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            if (!tok.empty() && tok.front() == '-') {
+                std::cerr << "Unknown argument: " << tok << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+            if (!target_name.empty()) {
+                std::cerr << "Error: describe-extension takes a single name argument\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+            target_name = tok;
+        }
+
+        if (target_name.empty()) {
+            std::cerr << "Error: describe-extension requires an extension name\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        ServerConfig<MachineType> config;
+        if (auto err = populate_extension_resolver(argv[0], parsed.extension_dirpaths, config)) {
+            return *err;
+        }
+
+        // Look up by cli_name first, then by canonical name.
+        const beebium::ExtensionManifest* manifest = nullptr;
+        std::string source_label;
+        for (const auto& e : config.extension_resolver.entries()) {
+            if (e.manifest->effective_cli_name() == target_name
+                || e.manifest->name == target_name) {
+                manifest = e.manifest;
+                source_label = e.source_label;
+                break;
+            }
+        }
+
+        if (!manifest) {
+            std::cerr << "Error: no extension named '" << target_name << "'\n";
+            return ExitCode::CONFIG;
+        }
+
+        OutputFormat format = resolve_output_format(global.output_format);
+
+        switch (format) {
+            case OutputFormat::Pretty: {
+                std::cout << "--" << manifest->effective_cli_name();
+                if (manifest->name != manifest->effective_cli_name()) {
+                    std::cout << " (" << manifest->name << ")";
+                }
+                std::cout << " [" << source_label << "]\n";
+                if (!manifest->description.empty()) {
+                    std::cout << "  " << manifest->description << "\n";
+                }
+                std::cout << "  kind: " << manifest->extension_kind << "\n";
+                if (!manifest->provides.empty()) {
+                    std::cout << "  provides:";
+                    for (const auto& p : manifest->provides) std::cout << " " << p;
+                    std::cout << "\n";
+                }
+                if (manifest->parameters.empty()) {
+                    std::cout << "  (no parameters)\n";
+                } else {
+                    std::cout << "  Parameters:\n";
+                    for (const auto& p : manifest->parameters) {
+                        std::cout << "    " << p.key
+                                  << " : " << p.type;
+                        if (p.is_list) std::cout << " (list)";
+                        if (p.required) std::cout << " (required)";
+                        if (!p.default_value.empty()) {
+                            std::cout << " [default: " << p.default_value << "]";
+                        }
+                        std::cout << "\n";
+                        if (!p.description.empty()) {
+                            std::cout << "        " << p.description << "\n";
+                        }
+                    }
+                }
+                break;
+            }
+            case OutputFormat::Tsv:
+                std::cout << "key\ttype\tis_list\trequired\tdefault\tdescription\n";
+                for (const auto& p : manifest->parameters) {
+                    std::cout << p.key << "\t" << p.type << "\t"
+                              << (p.is_list ? "true" : "false") << "\t"
+                              << (p.required ? "true" : "false") << "\t"
+                              << p.default_value << "\t"
+                              << p.description << "\n";
+                }
+                break;
+
+            case OutputFormat::Jsonl:
+                for (const auto& p : manifest->parameters) {
+                    std::cout << "{\"key\":\"" << extension_listing::json_escape(p.key)
+                              << "\",\"type\":\"" << extension_listing::json_escape(p.type)
+                              << "\",\"is_list\":" << (p.is_list ? "true" : "false")
+                              << ",\"required\":" << (p.required ? "true" : "false")
+                              << ",\"default\":\""
+                              << extension_listing::json_escape(p.default_value)
+                              << "\",\"description\":\""
+                              << extension_listing::json_escape(p.description)
+                              << "\"}\n";
+                }
+                break;
+
+            case OutputFormat::Auto:
+                break;
+        }
+        return ExitCode::OK;
+    }
+};
+
 // DescribeMachine subcommand - output machine info
 template<typename MachineType>
 class DescribeMachineSubcommand : public Subcommand<MachineType> {
@@ -3242,6 +3547,8 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<StartSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListFdcsSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListFloppyFormatsSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ListExtensionsSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DescribeExtensionSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListPresetsSubcommand<MachineType>>());
