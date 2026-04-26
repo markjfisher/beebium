@@ -195,8 +195,7 @@ def test_l3fs_floppy_client_login(
         "--fdc", "acorn-1770",
         "--floppy", f"0:{l3fs_floppy_filepath}",
         "--station", str(SERVER_STATION),
-        "--aun-port", str(SERVER_AUN_PORT),
-        "--aun-map", f"0.{CLIENT_STATION}:127.0.0.1:{CLIENT_AUN_PORT}",
+        "--aun", f"port={SERVER_AUN_PORT}:map=0.{CLIENT_STATION}@127.0.0.1@{CLIENT_AUN_PORT}",
         "--machine-name", "L3FS",
         "--acorn-rtc", "layout=7bit-year-in-r7",
         "--tube-65c02",
@@ -206,8 +205,7 @@ def test_l3fs_floppy_client_login(
     client_extra_args = [
         "--sideways", f"9:rom:{anfs_filepath}",
         "--station", str(CLIENT_STATION),
-        "--aun-port", str(CLIENT_AUN_PORT),
-        "--aun-map", f"0.{SERVER_STATION}:127.0.0.1:{SERVER_AUN_PORT}",
+        "--aun", f"port={CLIENT_AUN_PORT}:map=0.{SERVER_STATION}@127.0.0.1@{SERVER_AUN_PORT}",
         "--machine-name", "Station 221",
     ]
 

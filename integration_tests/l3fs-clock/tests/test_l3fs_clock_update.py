@@ -128,7 +128,7 @@ def test_l3fs_clock_update_interval(
         "--acorn-scsi",
         "--scsi-hdd", f"0:{scsi_hdd_filepath}",
         "--station", "254",
-        "--aun-port", "0",  # Auto-assign port
+        "--aun", "port=0",  # Auto-assign port
         "--machine-name", "L3FS-TEST",
         "--acorn-rtc", "layout=7bit-year-in-r7:time=1985-10-26T0121",
         "--tube", "65C02-3MHz",

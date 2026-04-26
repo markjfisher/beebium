@@ -60,7 +60,7 @@ def main():
         "--acorn-scsi",
         "--scsi-hdd", "0:/Users/rjs/Code/beebem-windows/UserData/DiscIms/scsi0.dat",
         "--station", "254",
-        "--aun-port", "0",
+        "--aun", "port=0",
         "--machine-name", "L3FS-DIAG",
         "--acorn-rtc", "layout=7bit-year-in-r7:time=1985-10-26T0121",
         "--tube", "65C02-3MHz",

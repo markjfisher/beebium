@@ -73,7 +73,7 @@ def bbc(beebium_roms_dirpath: Path, mos_filepath: Path, basic_filepath: Path | N
                 "--sideways", f"9:rom:{anfs}",
                 "--tube-65c02",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=20.0,
         ) as instance:

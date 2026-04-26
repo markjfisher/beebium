@@ -269,7 +269,7 @@ def test_adfs_select_with_tube_and_scsi(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -330,7 +330,7 @@ def test_osword_72_then_adfs_select_with_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -420,7 +420,7 @@ def test_osword_72_correct_cb_with_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -498,7 +498,7 @@ def test_adfs_cat_with_tube_and_scsi(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -567,7 +567,7 @@ def test_osword_72_scsi_read_with_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -670,7 +670,7 @@ def test_osword_72_after_adfs_select_with_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -763,7 +763,7 @@ def test_watchpoint_025f_tube_flag(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:

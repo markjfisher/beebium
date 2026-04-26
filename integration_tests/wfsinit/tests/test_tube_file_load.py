@@ -134,7 +134,7 @@ def test_load_file_via_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
@@ -206,7 +206,7 @@ def test_call_loaded_file_via_tube(
                 "--acorn-scsi",
                 "--scsi-hdd", f"0:{scsi_hdd_filepath}",
                 "--station", "254",
-                "--aun-port", "0",
+                "--aun", "port=0",
             ],
             startup_timeout=30.0,
         ) as bbc:
