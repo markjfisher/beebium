@@ -65,17 +65,6 @@ final class AudioClient: ObservableObject, Disconnectable {
     /// Error message if connection failed
     @Published private(set) var errorMessage: String?
 
-    // MARK: - Statistics
-
-    /// Number of audio chunks received
-    @Published private(set) var chunksReceived: UInt64 = 0
-
-    /// Number of samples dropped due to buffer overflow
-    @Published private(set) var samplesDropped: UInt64 = 0
-
-    /// Last sequence number for drop detection
-    private var lastSequence: UInt64 = 0
-
     // MARK: - Audio Pipeline Components
 
     /// Ring buffer shared with audio renderer
@@ -136,9 +125,6 @@ final class AudioClient: ObservableObject, Disconnectable {
         sources = []
         groups = []
         errorMessage = nil
-        chunksReceived = 0
-        samplesDropped = 0
-        lastSequence = 0
 
         // Reset ring buffer
         ringBuffer.reset()
@@ -209,15 +195,6 @@ final class AudioClient: ObservableObject, Disconnectable {
     }
 
     private func handleAudioChunk(_ chunk: Beebium_AudioChunk) {
-        // Detect dropped chunks via sequence gap
-        if lastSequence > 0 && chunk.sequence > lastSequence + 1 {
-            let gap = chunk.sequence - lastSequence - 1
-            Task { @MainActor in
-                self.samplesDropped += UInt64(gap) * UInt64(chunk.sampleCount)
-            }
-        }
-        lastSequence = chunk.sequence
-
         // The samples field contains: sample_count * source_count * 4 bytes
         // Each sample has MAX_SOURCES (4) × 32-bit fields
         // We only need source 0 (SN76489) - extract it
@@ -242,14 +219,7 @@ final class AudioClient: ObservableObject, Disconnectable {
             }
         }
 
-        let written = ringBuffer.write(data: source0Data)
-
-        Task { @MainActor in
-            self.chunksReceived += 1
-            if written < sampleCount {
-                self.samplesDropped += UInt64(sampleCount - written)
-            }
-        }
+        _ = ringBuffer.write(data: source0Data)
     }
 
     // MARK: - Volume Control Passthrough

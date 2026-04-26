@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -72,11 +72,6 @@ struct AudioMixerView: View {
                 ForEach(audioClient.groups) { group in
                     groupSection(group)
                 }
-
-                // Statistics section (collapsible)
-                statisticsSection
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
             }
             .padding(.vertical, 8)
         }
@@ -179,41 +174,6 @@ struct AudioMixerView: View {
         )
     }
 
-    // MARK: - Statistics Section
-
-    private var statisticsSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Statistics")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.secondary)
-
-            HStack {
-                Text("Chunks:")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(audioClient.chunksReceived)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-            }
-
-            HStack {
-                Text("Dropped:")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(audioClient.samplesDropped)")
-                    .font(.caption2)
-                    .foregroundColor(audioClient.samplesDropped > 0 ? .orange : .secondary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.1))
-        .cornerRadius(6)
-    }
 }
 
 // MARK: - Volume Slider Component
