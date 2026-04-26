@@ -50,8 +50,13 @@ final class IndicatorClient: ObservableObject, Disconnectable {
     /// Callback for initial Caps Lock sync (called when first LED update received)
     var onInitialCapsLockSync: (() -> Void)?
 
-    /// Whether initial sync has been triggered this session
-    private var hasTriggeredInitialSync = false
+    /// True once the indicator stream has delivered its first
+    /// caps-lock-led value. Observable so SwiftUI views can use it as
+    /// the canonical "BBC LED state is now known" gate -- secondary
+    /// triggers (NSWindow.didBecomeKey, at-connect re-syncs) wait for
+    /// this before attempting Caps Lock sync, which avoids them firing
+    /// during startup with stale defaults.
+    @Published private(set) var hasTriggeredInitialSync = false
 
     private var client: Beebium_IndicatorServiceNIOClient?
     private var subscriptionTask: Task<Void, Never>?
@@ -152,9 +157,18 @@ final class IndicatorClient: ObservableObject, Disconnectable {
             values[name] = value
         }
 
-        // Trigger initial Caps Lock sync on first caps-lock-led update
-        if !hasTriggeredInitialSync && update.values["caps-lock-led"] != nil {
+        // Trigger initial Caps Lock sync on the first DEFINITIVE
+        // caps-lock-led value (0 or 255). Intermediate PWM-filter
+        // values (1-254) are not meaningful for state comparison, so
+        // we don't want to consume the once-per-session initial-sync
+        // event on a transient brightness -- if we did, the canonical
+        // sync would silently no-op on the transient guard and a
+        // later stable value would never trigger any further sync.
+        if !hasTriggeredInitialSync,
+           let brightness = values["caps-lock-led"],
+           brightness == 0 || brightness == 255 {
             hasTriggeredInitialSync = true
+            print("[KBD][capsLock.initial] caps-lock-led brightness=\(brightness) -> firing onInitialCapsLockSync")
             onInitialCapsLockSync?()
         }
     }

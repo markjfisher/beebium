@@ -163,7 +163,14 @@ struct ContentView: View {
             // Wire up audio mixer state to audio client
             audioMixerState.audioClient = audioClient
 
-            // Set up initial Caps Lock sync callback (triggered on first LED update after MOS boot)
+            // Initial Caps Lock sync. This callback fires once per session
+            // when the indicator stream delivers its first caps-lock-led
+            // value -- the moment when {channel up, keyboard service
+            // connected, BBC LED state actually known} are all true. Treat
+            // it as the canonical "perform initial sync now" event. Other
+            // triggers in this view (NSWindow.didBecomeKey, the at-connect
+            // sync below) gate on indicatorClient.hasTriggeredInitialSync
+            // so they never run before this one.
             indicatorClient.onInitialCapsLockSync = { [weak keyboardClient, weak indicatorClient] in
                 guard let keyboardClient = keyboardClient,
                       let indicatorClient = indicatorClient else { return }
@@ -253,14 +260,25 @@ struct ContentView: View {
                     await keyboardClient.loadKeyMappings()
                 }
 
-                // Sync Caps Lock state on connection (core may already be running)
-                let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
-                keyboardClient.syncCapsLockState(
-                    macCapsLockIsOn: macCapsLockIsOn,
-                    bbcState: indicatorClient.capsLockState
-                )
+                // Re-sync Caps Lock if and only if the indicator stream
+                // has already delivered LED state in this session (i.e.
+                // this is a reconnect, not first startup). On first
+                // startup the LED state has not arrived yet, so sync
+                // would no-op silently against the .off default; the
+                // canonical initial sync via
+                // indicatorClient.onInitialCapsLockSync will fire
+                // shortly afterwards with real data.
+                if indicatorClient.hasTriggeredInitialSync {
+                    let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
+                    keyboardClient.syncCapsLockState(
+                        macCapsLockIsOn: macCapsLockIsOn,
+                        bbcState: indicatorClient.capsLockState
+                    )
+                }
             } else {
                 // Handle unexpected disconnection (server dropped connection).
+                // IndicatorClient resets its hasTriggeredInitialSync inside
+                // disconnect(), so the gate naturally re-arms for reconnect.
                 if case .disconnected = newState {
                     ConnectionRegistry.shared.unregister(address: videoClient.target.address)
                     clientGroup.disconnectNonVideoClients()
@@ -271,8 +289,14 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            // Sync Caps Lock state when window gains focus
-            // (macOS Caps Lock may have changed while we were unfocused)
+            // Sync Caps Lock state when window gains focus (macOS Caps Lock
+            // may have changed while we were unfocused). Only fire after
+            // the indicator stream has delivered LED state -- otherwise
+            // the window-key notification at app launch (which happens
+            // before the channel is up and before the indicator stream
+            // has delivered LED data) would attempt a sync against
+            // missing client and stale state.
+            guard indicatorClient.hasTriggeredInitialSync else { return }
             let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
             keyboardClient.syncCapsLockState(
                 macCapsLockIsOn: macCapsLockIsOn,
