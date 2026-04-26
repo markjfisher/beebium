@@ -20,6 +20,7 @@
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
+#include "beebium/extension/ExtensionResolver.hpp"
 #include "beebium/extension/OneMHzBusPort.hpp"
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
@@ -558,8 +559,23 @@ struct ServerConfig {
     // Preset file path
     std::optional<std::filesystem::path> preset_filepath;
 
-    // Extension configuration
-    std::string extension_dirpath;
+    // Extension configuration: search paths added via --extension-dir, in order.
+    // Later paths override earlier ones (and the auto-resolved default
+    // <exe-dir>/extensions) when manifests share the same cli_name.
+    std::vector<std::string> extension_dirpaths;
+
+    // Auto-resolved default extension directory (<exe-dir>/extensions),
+    // populated during parse_start_arguments if it exists. Lower priority
+    // than any explicit --extension-dir paths.
+    std::optional<std::string> default_extension_dirpath;
+
+    // Internal: built-in manifests and per-source scan results, owned so
+    // that ExtensionResolver's pointers stay valid for the lifetime of
+    // ServerConfig. Populated by parse_start_arguments; consumed by
+    // run_server.
+    std::vector<beebium::ExtensionManifest> builtin_manifests;
+    std::vector<std::vector<beebium::ExtensionManifest>> extension_scan_results;
+    beebium::ExtensionResolver extension_resolver;
 
     // Parsed extension instances with config (from --<cli-name> flags)
     struct ExtensionInstance {
@@ -749,12 +765,10 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
     // First pass: find --preset and --extension-dir before other options
     // --preset is loaded first so CLI can override; --extension-dir is needed
     // to scan manifests so extension CLI flags can be recognised in second pass
-    bool extension_dirpath_user_supplied = false;
     for (int i = start_index; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--extension-dir" && i + 1 < argc) {
-            config.extension_dirpath = argv[i + 1];
-            extension_dirpath_user_supplied = true;
+            config.extension_dirpaths.push_back(argv[i + 1]);
             ++i;
             continue;
         }
@@ -783,58 +797,76 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
         }
     }
 
-    // If --extension-dir not specified, derive a default from the
-    // executable path: <exe-dir>/extensions/<plugin>/manifest.json.
-    // beebium_finalize_plugin() (cmake/BeebiumPlugin.cmake) post-build-
-    // copies every dynamic plugin to this layout so the same rule works
-    // on every platform and every build configuration -- including
+    // Resolve the default extension directory <exe-dir>/extensions, if it
+    // exists. beebium_finalize_plugin() (cmake/BeebiumPlugin.cmake) post-
+    // build-copies every dynamic plugin to this layout so the same rule
+    // works on every platform and every build configuration -- including
     // MSBuild / Xcode multi-config where the exe sits in a $(Configuration)
     // subdirectory. The canonical install layout mirrors this: plugins
-    // ship alongside the server binary.
-    if (config.extension_dirpath.empty()) {
+    // ship alongside the server binary. Absent on stripped-down installs.
+    {
         std::error_code ec;
         auto exe_path = std::filesystem::canonical(std::filesystem::path(argv[0]), ec);
         if (!ec) {
-            auto default_ext_dirpath = exe_path.parent_path() / "extensions";
-            if (std::filesystem::exists(default_ext_dirpath)) {
-                config.extension_dirpath = default_ext_dirpath.string();
+            auto candidate = exe_path.parent_path() / "extensions";
+            if (std::filesystem::exists(candidate)) {
+                config.default_extension_dirpath = candidate.string();
             }
         }
     }
 
     // Built-in extension manifests so the CLI parser recognises them.
     const auto& builtin_entries = beebium::builtin_extensions::entries();
+    config.builtin_manifests.clear();
+    config.builtin_manifests.reserve(builtin_entries.size());
+    for (const auto& e : builtin_entries) {
+        config.builtin_manifests.push_back(e.manifest);
+    }
 
-    // Normalise an extension CLI flag to lowercase for case-insensitive matching.
+    // Build the extension resolver: built-ins first (lowest priority),
+    // then the auto-resolved default extension dir, then each user-
+    // supplied --extension-dir in order. Later sources override earlier
+    // ones for matching cli_name -- so a user-supplied directory can
+    // replace a built-in extension.
+    config.extension_resolver = beebium::ExtensionResolver{};
+    config.extension_resolver.add_source("built-in", config.builtin_manifests);
+    config.extension_scan_results.clear();
+
+    auto scan_into_resolver = [&](const std::string& path,
+                                   beebium::PluginLoader::MissingDirPolicy policy)
+        -> std::optional<int> {
+        beebium::PluginLoader scanner;
+        try {
+            config.extension_scan_results.push_back(scanner.scan_manifests(path, policy));
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::CONFIG;
+        }
+        config.extension_resolver.add_source(path, config.extension_scan_results.back());
+        return std::nullopt;
+    };
+
+    if (config.default_extension_dirpath) {
+        if (auto err = scan_into_resolver(*config.default_extension_dirpath,
+                beebium::PluginLoader::MissingDirPolicy::ReturnEmpty)) {
+            return err;
+        }
+    }
+    for (const auto& user_path : config.extension_dirpaths) {
+        if (auto err = scan_into_resolver(user_path,
+                beebium::PluginLoader::MissingDirPolicy::Throw)) {
+            return err;
+        }
+    }
+
+    // Lowercase CLI flag map driven by the resolved manifest set.
+    auto cli_name_to_manifest = config.extension_resolver.cli_name_map();
+
     auto to_lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
                        [](unsigned char c) { return std::tolower(c); });
         return s;
     };
-
-    // Scan plugin extension manifests so we can recognise --<cli-name> flags in the second pass
-    std::vector<beebium::ExtensionManifest> scanned_manifests;
-    std::map<std::string, const beebium::ExtensionManifest*> cli_name_to_manifest;
-    for (const auto& e : builtin_entries) {
-        cli_name_to_manifest[to_lower("--" + std::string(e.manifest.effective_cli_name()))]
-            = &e.manifest;
-    }
-    if (!config.extension_dirpath.empty()) {
-        beebium::PluginLoader scanner;
-        const auto on_missing = extension_dirpath_user_supplied
-            ? beebium::PluginLoader::MissingDirPolicy::Throw
-            : beebium::PluginLoader::MissingDirPolicy::ReturnEmpty;
-        try {
-            scanned_manifests = scanner.scan_manifests(config.extension_dirpath, on_missing);
-        } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << "\n";
-            return ExitCode::CONFIG;
-        }
-        for (const auto& m : scanned_manifests) {
-            std::string cli = std::string(m.effective_cli_name());
-            cli_name_to_manifest[to_lower("--" + cli)] = &m;
-        }
-    }
 
     // Second pass: parse all CLI arguments (including --preset which we skip now)
     for (int i = start_index; i < argc; ++i) {
@@ -1503,15 +1535,15 @@ public:
                 config.machine_uuid = generate_uuid_v4();
             }
 
-            // Plugin manifests have to be scanned now (not later in the
-            // peripheral setup) because econet-transport plugins like
-            // piconet need to be constructed before install_econet so
-            // their backend is ready when the machine reads the ADLC.
+            // Plugin manifests were scanned during parse_start_arguments and
+            // stored on config.extension_resolver, applying the search-path
+            // override semantics. Echo the directories that contributed.
             beebium::PluginLoader plugin_loader;
-            std::vector<beebium::ExtensionManifest> plugin_manifests;
-            if (!config.extension_dirpath.empty()) {
-                std::cout << "Extension directory: " << config.extension_dirpath << "\n";
-                plugin_manifests = plugin_loader.scan_manifests(config.extension_dirpath);
+            if (config.default_extension_dirpath) {
+                std::cout << "Extension directory: " << *config.default_extension_dirpath << "\n";
+            }
+            for (const auto& p : config.extension_dirpaths) {
+                std::cout << "Extension directory: " << p << "\n";
             }
 
             // Build the Econet transport registry from any econet-transport
@@ -1525,11 +1557,11 @@ public:
                 std::vector<typename ServerConfig<MachineType>::ExtensionInstance> remaining;
                 remaining.reserve(config.extension_instances.size());
                 for (auto& inst : config.extension_instances) {
-                    // Locate the manifest: built-ins first, then scanned plugins.
-                    const auto* entry = beebium::builtin_extensions::find(inst.name);
+                    // Locate the manifest via the resolver so
+                    // user-supplied extension dirs override built-ins
+                    // and earlier dirs.
                     const beebium::ExtensionManifest* manifest =
-                        entry ? &entry->manifest
-                              : beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
+                        config.extension_resolver.find_by_name(inst.name);
 
                     if (!manifest || manifest->extension_kind != "econet-transport") {
                         remaining.push_back(std::move(inst));
@@ -1564,14 +1596,21 @@ public:
                     }
 
                     std::unique_ptr<beebium::Extension> loaded;
-                    if (entry) {
-                        loaded = entry->factory();
-                        loaded->set_manifest(entry->manifest);
-                        loaded->set_config(std::move(inst.config));
-                        loaded->set_list_config(std::move(inst.list_config));
-                    } else {
+                    if (!manifest->library_stem.empty()) {
                         loaded = plugin_loader.load_extension(
                             *manifest, std::move(inst.config), std::move(inst.list_config));
+                    } else {
+                        const auto* builtin_entry =
+                            beebium::builtin_extensions::find(inst.name);
+                        if (!builtin_entry) {
+                            std::cerr << "Error: Transport extension '" << inst.name
+                                      << "' has no library and no built-in factory.\n";
+                            return 1;
+                        }
+                        loaded = builtin_entry->factory();
+                        loaded->set_manifest(*manifest);
+                        loaded->set_config(std::move(inst.config));
+                        loaded->set_list_config(std::move(inst.list_config));
                     }
 
                     auto* transport = dynamic_cast<beebium::EconetTransportExtension*>(
@@ -1642,9 +1681,8 @@ public:
             std::stable_partition(
                 config.extension_instances.begin(),
                 config.extension_instances.end(),
-                [&plugin_manifests](const auto& inst) {
-                    auto* m = beebium::PluginLoader::find_manifest(
-                        plugin_manifests, inst.name);
+                [&config](const auto& inst) {
+                    const auto* m = config.extension_resolver.find_by_name(inst.name);
                     return m && !m->provides.empty();
                 });
 
@@ -1654,20 +1692,19 @@ public:
                     inst.config["id"] = generate_uuid_v4();
                 }
 
-                // Resolve manifest first (built-in preferred), so we can
-                // normalise scalar-form list params from presets before
-                // logging / handing to the extension.
-                const beebium::ExtensionManifest* manifest = nullptr;
-                const beebium::builtin_extensions::Entry* entry =
-                    beebium::builtin_extensions::find(inst.name);
-                if (entry) {
-                    manifest = &entry->manifest;
-                } else {
-                    manifest = beebium::PluginLoader::find_manifest(plugin_manifests, inst.name);
-                    if (!manifest) {
+                // Resolve manifest via the resolver so user-supplied
+                // extension dirs override built-ins and earlier dirs.
+                const beebium::ExtensionManifest* manifest =
+                    config.extension_resolver.find_by_name(inst.name);
+                if (!manifest) {
+                    {
                         std::cerr << "Error: Extension '" << inst.name << "' not found";
-                        if (!config.extension_dirpath.empty()) {
-                            std::cerr << " in " << config.extension_dirpath;
+                        for (const auto& p : config.extension_dirpaths) {
+                            std::cerr << " in " << p;
+                        }
+                        if (config.default_extension_dirpath
+                            && config.extension_dirpaths.empty()) {
+                            std::cerr << " in " << *config.default_extension_dirpath;
                         }
                         std::cerr << "\n";
                         return ExitCode::CONFIG;
@@ -1691,19 +1728,25 @@ public:
                     }
                 }
 
-                // Construct the extension instance: built-in factories take
-                // precedence over scanned plugins. Both yield a generic
-                // unique_ptr<Extension> which then dispatches by
-                // manifest.extension_kind.
+                // Construct the extension instance. A plugin manifest
+                // (library_stem set) overrides any same-named built-in;
+                // otherwise fall back to the built-in factory.
                 std::unique_ptr<beebium::Extension> loaded;
-                if (entry) {
-                    loaded = entry->factory();
-                    loaded->set_manifest(entry->manifest);
-                    loaded->set_config(std::move(inst.config));
-                    loaded->set_list_config(std::move(inst.list_config));
-                } else {
+                if (!manifest->library_stem.empty()) {
                     loaded = plugin_loader.load_extension(
                         *manifest, std::move(inst.config), std::move(inst.list_config));
+                } else {
+                    const auto* builtin_entry =
+                        beebium::builtin_extensions::find(inst.name);
+                    if (!builtin_entry) {
+                        std::cerr << "Error: Extension '" << inst.name
+                                  << "' has no library and no built-in factory.\n";
+                        return ExitCode::CONFIG;
+                    }
+                    loaded = builtin_entry->factory();
+                    loaded->set_manifest(*manifest);
+                    loaded->set_config(std::move(inst.config));
+                    loaded->set_list_config(std::move(inst.list_config));
                 }
 
                 // Dispatch by extension_kind. Phase 1/2 supports peripherals

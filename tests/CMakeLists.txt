@@ -65,6 +65,11 @@ add_executable(test_extension_base test_extension_base.cpp)
 target_link_libraries(test_extension_base PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_extension_base)
 
+# ExtensionResolver: merging multi-source manifest collections
+add_executable(test_extension_resolver test_extension_resolver.cpp)
+target_link_libraries(test_extension_resolver PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_extension_resolver)
+
 # EconetTransportRegistry container tests
 add_executable(test_econet_transport_registry test_econet_transport_registry.cpp)
 target_link_libraries(test_econet_transport_registry PRIVATE beebium_core Catch2::Catch2WithMain)
