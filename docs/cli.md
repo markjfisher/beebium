@@ -251,6 +251,51 @@ none	No controller	-	Leave socket empty (no disc)
 {"id":"none","display_name":"No controller","fdc_chip":"-","description":"Leave socket empty (no disc)"}
 ```
 
+### list-extensions
+
+List every peripheral or transport extension that the server can recognise via a `--<cli-name>` flag, in the same priority order that `start` would resolve. See [Extension Search Paths](peripheral-extension-framework.md#extension-search-paths) in the extension framework doc for the full ordering rules.
+
+```bash
+beebium-model-b list-extensions
+beebium-model-b list-extensions --extension-dir ~/my-beebium-plugins
+```
+
+`--extension-dir` is repeatable; later paths override earlier ones (and the auto-detected `<exe-dir>/extensions`) for matching `cli` names.
+
+**`--format pretty`** (default for TTY):
+```
+Available extensions:
+  --tube-65c02 (acorn-65c02-coprocessor) [built-in]
+      Acorn 65C02 3 MHz second processor
+  --acorn-rtc [/install/path/extensions]
+      Acorn User Port Real Time Clock Module (SAF3019P)
+  ...
+```
+
+**`--format tsv`** (default for non-TTY):
+```
+cli_name	name	kind	source	description
+tube-65c02	acorn-65c02-coprocessor	peripheral	built-in	Acorn 65C02 3 MHz second processor
+acorn-rtc	acorn-rtc	peripheral	/install/path/extensions	Acorn User Port Real Time Clock Module (SAF3019P)
+```
+
+**`--format jsonl`** — one JSON object per extension, with the same fields as the TSV form.
+
+A `--extension-dir` argument that points to a non-existent directory is a hard error (exit code `EX_CONFIG` = 78). The auto-detected default is silent if absent.
+
+### describe-extension
+
+Show the parameter schema for a single extension. The argument matches against either the CLI flag stem (e.g. `tube-65c02`) or the canonical extension name (e.g. `acorn-65c02-coprocessor`).
+
+```bash
+beebium-model-b describe-extension acorn-rtc
+beebium-model-b describe-extension --format jsonl scsi-hdd
+```
+
+**`--format pretty`** prints a parameter list with type, default, and description per parameter; `tsv` and `jsonl` emit one row per parameter.
+
+Like `list-extensions`, `--extension-dir` is repeatable and can be used to look up extensions in user-supplied directories.
+
 ### describe-machine
 
 Output machine information for programmatic use.

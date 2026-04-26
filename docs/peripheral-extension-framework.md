@@ -158,11 +158,12 @@ Each extension becomes a first-class `--<cli-name>` flag. Arguments are colon-se
 
 ```bash
 beebium-model-b-plus start \
-    --extension-dir build/src/extensions \
     --acorn-scsi \
     --scsi-hdd 0:/path/to/drive0.dat \
     --scsi-hdd 1:/path/to/drive1.dat
 ```
+
+Plugin extensions are auto-loaded from `<exe-dir>/extensions` (the canonical install layout populated by `beebium_finalize_plugin`). `--extension-dir <path>` adds further search directories — see [Extension Search Paths](#extension-search-paths) below.
 
 Positional arguments may also be written in keyword form (must be in the correct positional slot):
 
@@ -225,9 +226,45 @@ The guiding principle follows the real hardware's internal/external boundary:
 - **Internal hardware** (factory-fitted): built into the server executable
 - **External hardware** (user-attached): loaded from a plugin
 
-The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use). No BBC Micro model (except the Master AIV, not yet emulated) had a built-in SCSI adapter -- it was an external card. The SCSI adapter and hard disc target are plugins, loaded via `--extension-dir` and `--acorn-scsi`/`--scsi-hdd` flags.
+The same source code compiles to both a static library (for built-in use) and a shared library (for plugin use). No BBC Micro model (except the Master AIV, not yet emulated) had a built-in SCSI adapter — it was an external card. The SCSI adapter and hard disc target are plugins, loaded via `--acorn-scsi` / `--scsi-hdd`.
 
-Plugin loading requires `--extension-dir <path>` which tells the server where to find extension shared libraries and manifests. Extension flags are only recognised after `--extension-dir` is processed.
+### Extension Search Paths
+
+Beebium resolves available extensions from multiple sources in priority order. For each `--<cli-name>` the highest-priority source wins, so a user-supplied directory can replace a stock built-in or augment the default install.
+
+| Priority | Source | When |
+| --- | --- | --- |
+| 1 (lowest) | Built-in extensions compiled into the server | Always |
+| 2 | `<exe-dir>/extensions` (auto-detected) | If the directory exists |
+| 3..N | Each `--extension-dir <path>` in CLI order | Always processed; later overrides earlier |
+
+Notes:
+
+- `--extension-dir` is repeatable. Each occurrence appends to the search list.
+- The auto-detected `<exe-dir>/extensions` is included whether or not `--extension-dir` is given. It's the canonical install layout produced by `beebium_finalize_plugin` (see `cmake/BeebiumPlugin.cmake`).
+- A user-supplied `--extension-dir` whose path does not exist is a hard error (`Extension directory does not exist: <path>`, exit code `EX_CONFIG = 78`). The auto-detected default keeps failing silently — it's reasonable for that path not to exist on a stripped-down install.
+- An extension manifest with the same `cli` field as one in a lower-priority source replaces it. If the replacement has a non-empty `library` field, the plugin loader is used (so a user dir can swap in a forked dynamic build of a stock extension).
+
+### Discovering Available Extensions
+
+Three commands surface the same resolved extension set without launching the emulator. All three honour `--format pretty|tsv|jsonl`:
+
+```bash
+# Concise list of every available extension (cli flag + description)
+beebium-model-b list-extensions
+
+# Add user dirs to the search path; same priority rules as `start`
+beebium-model-b list-extensions --extension-dir ~/my-beebium-plugins
+
+# Full parameter schema for one extension; <name> matches CLI stem or canonical name
+beebium-model-b describe-extension acorn-rtc
+beebium-model-b describe-extension acorn-65c02-coprocessor
+
+# `start --help` includes the same list in its "Extensions:" section
+beebium-model-b start --help
+```
+
+`start --help` shows the section using the auto-default search paths only; it does not pre-scan user `--extension-dir` paths (kept side-effect-free). For a view that includes user paths, use `list-extensions --extension-dir ...`.
 
 ## Developer Guide: Creating a Built-in Extension
 
