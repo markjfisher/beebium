@@ -247,15 +247,23 @@ final class KeyboardMapping: Identifiable {
             )
         }
 
-        // Normal matrix key - look up in cache
+        // Normal matrix key - look up in cache for ikNumber only.
         guard let entry = cache.lookup(name: ref.bbcKeyName) else {
             return nil
         }
 
+        // BBC SHIFT / CTRL come solely from the explicit ref.bbcWithShift /
+        // bbcWithCtrl flags. We deliberately ignore entry.needsShift here:
+        // the cache's case-insensitive byName index collides between
+        // letter-pair entries (e.g. lowercase 'a' and uppercase 'A' share
+        // ikNumber 0x41 and lowercase to "a"), so the lookup is not a
+        // reliable source of "does this matrix position need shift to
+        // produce its shifted face". A direct keyMapping author who wants
+        // the shifted face spells it out via shift=true in the JSON.
         return ResolvedKey(
             bbcKeyName: entry.name,
             ikNumber: entry.ikNumber,
-            bbcShift: ref.bbcWithShift || entry.needsShift,
+            bbcShift: ref.bbcWithShift,
             bbcCtrl: ref.bbcWithCtrl,
             fromCharacterMapping: false
         )
