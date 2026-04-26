@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -149,20 +150,32 @@ def wfsinit_ssd_filepath():
 
 @pytest.fixture
 def scsi_hdd_filepath(tmp_path):
-    """Copy the blank 20MB ADFS SCSI image to tmp_path for safe modification.
+    """Build a fresh 20MB ADFS hard-disc image (DAT + DSC) using oaknut's `disc` CLI.
 
-    WFSINIT writes to the disc, so we must not modify the source asset.
-    Both .dat and .dsc files are required.
+    WFSINIT writes to the disc, so each test run gets its own blank image.
+    Generating on the fly avoids checking a 20MB binary into Git.
     """
-    src_dat = SCSI_ASSETS_DIRPATH / "l3fs-blank-20mb.dat"
-    src_dsc = SCSI_ASSETS_DIRPATH / "l3fs-blank-20mb.dsc"
-    if not src_dat.exists():
-        pytest.skip(f"Blank SCSI image not found: {src_dat}")
-    if not src_dsc.exists():
-        pytest.skip(f"SCSI geometry descriptor not found: {src_dsc}")
+    disc_cli_filepath = shutil.which("disc")
+    if disc_cli_filepath is None:
+        pytest.skip("oaknut `disc` CLI not on PATH (install with: uv tool install oaknut-disc)")
 
-    dst_dat = tmp_path / "l3fs-blank-20mb.dat"
-    dst_dsc = tmp_path / "l3fs-blank-20mb.dsc"
-    shutil.copy2(src_dat, dst_dat)
-    shutil.copy2(src_dsc, dst_dsc)
-    return dst_dat
+    dat_filepath = tmp_path / "l3fs-blank-20mb.dat"
+    result = subprocess.run(
+        [
+            disc_cli_filepath, "create", str(dat_filepath),
+            "--format", "adfs-hard",
+            "--capacity", "20MB",
+            "--title", "Server",
+        ],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            f"`disc create` failed (exit {result.returncode}):\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    dsc_filepath = tmp_path / "l3fs-blank-20mb.dsc"
+    assert dat_filepath.exists(), f"disc create did not produce {dat_filepath}"
+    assert dsc_filepath.exists(), f"disc create did not produce {dsc_filepath}"
+    return dat_filepath

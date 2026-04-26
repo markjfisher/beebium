@@ -73,7 +73,7 @@ def test_wfsinit_completes(
         "--acorn-scsi",
         "--scsi-hdd", f"0:{scsi_hdd_filepath}",
         "--station", "254",
-        "--aun-port", "0",
+        "--aun", "port=0",
         "--acorn-rtc", "layout=7bit-year-in-r7:time=1985-10-25T0000",
         "--tube-65c02",
     ]
