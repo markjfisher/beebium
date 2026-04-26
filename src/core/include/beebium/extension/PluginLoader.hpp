@@ -40,9 +40,21 @@ public:
     PluginLoader(const PluginLoader&) = delete;
     PluginLoader& operator=(const PluginLoader&) = delete;
 
+    // Behaviour when scan_manifests is asked to scan a directory that
+    // does not exist. Use Throw for paths the user explicitly named
+    // (so a typo or stale path is reported, not silently ignored), and
+    // ReturnEmpty for opportunistic scans of conventional locations
+    // that may legitimately be absent.
+    enum class MissingDirPolicy {
+        ReturnEmpty,
+        Throw,
+    };
+
     // Scan directory for manifest.json files. No code is loaded.
     // Each subdirectory or direct manifest.json in the directory is checked.
-    std::vector<ExtensionManifest> scan_manifests(const std::filesystem::path& extension_dirpath);
+    std::vector<ExtensionManifest> scan_manifests(
+        const std::filesystem::path& extension_dirpath,
+        MissingDirPolicy on_missing = MissingDirPolicy::ReturnEmpty);
 
     // Load a specific extension from its manifest. The shared library
     // named in the manifest is loaded and the entry point called.

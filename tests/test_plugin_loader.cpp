@@ -60,6 +60,31 @@ TEST_CASE("PluginLoader scan_manifests returns empty for non-existent directory"
     REQUIRE(manifests.empty());
 }
 
+TEST_CASE("PluginLoader scan_manifests with MissingDirPolicy::Throw "
+          "throws on non-existent directory",
+          "[extension][plugin]") {
+    beebium::PluginLoader loader;
+    REQUIRE_THROWS_AS(
+        loader.scan_manifests("/non/existent/path",
+                              beebium::PluginLoader::MissingDirPolicy::Throw),
+        std::runtime_error);
+}
+
+TEST_CASE("PluginLoader scan_manifests with MissingDirPolicy::Throw "
+          "succeeds for existing empty directory",
+          "[extension][plugin]") {
+    auto tmp_dirpath = std::filesystem::temp_directory_path()
+                       / "beebium_plugin_loader_empty_dir";
+    std::filesystem::create_directories(tmp_dirpath);
+
+    beebium::PluginLoader loader;
+    auto manifests = loader.scan_manifests(
+        tmp_dirpath, beebium::PluginLoader::MissingDirPolicy::Throw);
+    REQUIRE(manifests.empty());
+
+    std::filesystem::remove_all(tmp_dirpath);
+}
+
 TEST_CASE("PluginLoader find_manifest returns nullptr for unknown name",
           "[extension][plugin]") {
     std::vector<beebium::ExtensionManifest> manifests;

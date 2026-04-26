@@ -749,10 +749,12 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
     // First pass: find --preset and --extension-dir before other options
     // --preset is loaded first so CLI can override; --extension-dir is needed
     // to scan manifests so extension CLI flags can be recognised in second pass
+    bool extension_dirpath_user_supplied = false;
     for (int i = start_index; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--extension-dir" && i + 1 < argc) {
             config.extension_dirpath = argv[i + 1];
+            extension_dirpath_user_supplied = true;
             ++i;
             continue;
         }
@@ -819,7 +821,15 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
     }
     if (!config.extension_dirpath.empty()) {
         beebium::PluginLoader scanner;
-        scanned_manifests = scanner.scan_manifests(config.extension_dirpath);
+        const auto on_missing = extension_dirpath_user_supplied
+            ? beebium::PluginLoader::MissingDirPolicy::Throw
+            : beebium::PluginLoader::MissingDirPolicy::ReturnEmpty;
+        try {
+            scanned_manifests = scanner.scan_manifests(config.extension_dirpath, on_missing);
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::CONFIG;
+        }
         for (const auto& m : scanned_manifests) {
             std::string cli = std::string(m.effective_cli_name());
             cli_name_to_manifest[to_lower("--" + cli)] = &m;

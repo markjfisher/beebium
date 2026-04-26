@@ -161,10 +161,15 @@ PluginLoader::~PluginLoader() {
 }
 
 std::vector<ExtensionManifest> PluginLoader::scan_manifests(
-        const std::filesystem::path& extension_dirpath) {
+        const std::filesystem::path& extension_dirpath,
+        MissingDirPolicy on_missing) {
     std::vector<ExtensionManifest> manifests;
 
     if (!std::filesystem::exists(extension_dirpath)) {
+        if (on_missing == MissingDirPolicy::Throw) {
+            throw std::runtime_error(
+                "Extension directory does not exist: " + extension_dirpath.string());
+        }
         return manifests;
     }
 
