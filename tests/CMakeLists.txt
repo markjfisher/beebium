@@ -1239,7 +1239,9 @@ if(BEEBIUM_BUILD_SERVICE)
         Catch2::Catch2WithMain
     )
     add_dependencies(test_extension_subcommands beebium-servers)
-    catch_discover_tests(test_extension_subcommands)
+    # These tests share temp files for stdout/stderr capture and must
+    # serialise to avoid races when CTest runs tests in parallel.
+    catch_discover_tests(test_extension_subcommands PROPERTIES RESOURCE_LOCK ext_subcommand_temp)
 endif()
 
 # Step performance benchmarks (run with --benchmark-samples N, not during normal ctest)

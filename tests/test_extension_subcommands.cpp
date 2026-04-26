@@ -20,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/PlatformUtils.hpp>
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -35,8 +36,12 @@ struct ProcessResult {
 };
 
 ProcessResult run_command(const std::string& command) {
-    auto stdout_filepath = std::filesystem::temp_directory_path() / "beebium_ext_test_stdout.txt";
-    auto stderr_filepath = std::filesystem::temp_directory_path() / "beebium_ext_test_stderr.txt";
+    static std::atomic<unsigned long> counter{0};
+    auto suffix = std::to_string(counter.fetch_add(1));
+    auto stdout_filepath = std::filesystem::temp_directory_path()
+        / ("beebium_ext_test_stdout_" + suffix + ".txt");
+    auto stderr_filepath = std::filesystem::temp_directory_path()
+        / ("beebium_ext_test_stderr_" + suffix + ".txt");
 
     std::string full_command = command;
 #ifdef _WIN32
@@ -163,4 +168,35 @@ TEST_CASE("describe-extension requires a name argument",
           "[integration][extension][describe-extension]") {
     auto r = run_command(EXECUTABLE + " describe-extension");
     REQUIRE(r.exit_code != 0);
+}
+
+TEST_CASE("start --help lists the built-in tube-65c02 extension flag",
+          "[integration][extension][start-help]") {
+    auto r = run_command(EXECUTABLE + " start --help");
+    INFO("stdout: " << r.stdout_output);
+    INFO("stderr: " << r.stderr_output);
+    auto combined = r.stdout_output + r.stderr_output;
+    REQUIRE(combined.find("--tube-65c02") != std::string::npos);
+}
+
+TEST_CASE("start --help lists plugin extension flags from the default directory",
+          "[integration][extension][start-help]") {
+    auto r = run_command(EXECUTABLE + " start --help");
+    INFO("stdout: " << r.stdout_output);
+    INFO("stderr: " << r.stderr_output);
+    auto combined = r.stdout_output + r.stderr_output;
+    REQUIRE(combined.find("--acorn-scsi") != std::string::npos);
+    REQUIRE(combined.find("--acorn-rtc") != std::string::npos);
+    REQUIRE(combined.find("--scsi-hdd") != std::string::npos);
+}
+
+TEST_CASE("start --help mentions --extension-dir is repeatable",
+          "[integration][extension][start-help]") {
+    auto r = run_command(EXECUTABLE + " start --help");
+    auto combined = r.stdout_output + r.stderr_output;
+    INFO("combined: " << combined);
+    REQUIRE(combined.find("--extension-dir") != std::string::npos);
+    // Description should call out the repeatability/override semantics.
+    REQUIRE((combined.find("Repeatable") != std::string::npos
+             || combined.find("repeatable") != std::string::npos));
 }

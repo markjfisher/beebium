@@ -615,17 +615,7 @@ void print_usage(const char* program_name) {
     }
 
     if constexpr (HasEconetSocket<Memory>) {
-        std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n"
-                  << "  --aun [port=<n>][:map=<net.stn@ip@port>]...\n"
-                  << "                           AUN UDP transport (default: port="
-                  << beebium::AUN_DEFAULT_PORT << ").\n"
-                  << "                           port=none disables the network.\n"
-                  << "                           map= entries are repeatable; the inner\n"
-                  << "                           separator is ';' (not ':').\n"
-                  << "  --piconet device_path=/dev/ttyX\n"
-                  << "                           Piconet USB-CDC bridge to a real Econet wire\n"
-                  << "                           (POSIX-only; provided by the piconet plugin).\n"
-                  << "                           Mutually exclusive with --aun.\n";
+        std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n";
     }
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
@@ -642,10 +632,35 @@ void print_usage(const char* program_name) {
               << "  --machine-name <name>    Machine name/label (default: from model)\n"
               << "  --allow-shutdown         Allow any client to shut down the server\n"
               << "  --advertise              Enable mDNS service advertisement\n"
-              << "  --extension-dir <path>   Directory containing extension plugins\n"
-              << "                           Enables --<extension> flags (see below)\n"
-              << "  --help                   Show this help message\n"
-              << "\n"
+              << "  --extension-dir <path>   Add an extension search directory. Repeatable;\n"
+              << "                           later paths override earlier (and the auto-\n"
+              << "                           detected <exe-dir>/extensions) for matching\n"
+              << "                           --<cli-name>. Use list-extensions to see what\n"
+              << "                           a given combination resolves to.\n"
+              << "  --help                   Show this help message\n";
+
+    // Auto-generated extensions section. Built-ins + auto-default extension
+    // dir; user --extension-dir paths aren't scanned here (they may not have
+    // been parsed yet, and we want --help to be cheap and side-effect-free).
+    {
+        ServerConfig<MachineType> tmp;
+        if (!populate_extension_resolver(program_name, {}, tmp)) {
+            const auto& entries = tmp.extension_resolver.entries();
+            if (!entries.empty()) {
+                std::cerr << "\n"
+                          << "Extensions (use describe-extension <name> for parameter detail):\n";
+                for (const auto& e : entries) {
+                    std::cerr << "  --" << e.manifest->effective_cli_name();
+                    if (!e.manifest->description.empty()) {
+                        std::cerr << "\n      " << e.manifest->description;
+                    }
+                    std::cerr << "\n";
+                }
+            }
+        }
+    }
+
+    std::cerr << "\n"
               << "Default sideways ROMs:\n"
               << "  Slot " << static_cast<int>(Memory::DEFAULT_LANGUAGE_SLOT) << ": "
               << Memory::DEFAULT_LANGUAGE_ROM << " (language ROM)\n";
