@@ -22,6 +22,7 @@ import { Aun } from "./aun.js";
 import { Piconet } from "./piconet.js";
 import { EconetTransport } from "./econet_transport.js";
 import { ExtensionUi } from "./extension_ui.js";
+import { Indicators } from "./indicators.js";
 import { Via, ViaId } from "./via.js";
 import { Crtc } from "./crtc.js";
 import { VideoUla } from "./video-ula.js";
@@ -80,6 +81,7 @@ export class Beebium {
     private _piconet?: Piconet;
     private _transport?: EconetTransport;
     private _extensionUi?: ExtensionUi;
+    private _indicators?: Indicators;
     private _systemVia?: Via;
     private _userVia?: Via;
     private _crtc?: Crtc;
@@ -197,7 +199,7 @@ export class Beebium {
     /** Access keyboard input. */
     get keyboard(): Keyboard {
         if (this._keyboard === undefined) {
-            this._keyboard = new Keyboard(this.connection.keyboardStub);
+            this._keyboard = new Keyboard(this.connection.keyboardStub, this);
         }
         return this._keyboard;
     }
@@ -272,6 +274,14 @@ export class Beebium {
             this._extensionUi = new ExtensionUi(this.connection.extensionUiStub);
         }
         return this._extensionUi;
+    }
+
+    /** Access hardware indicators (LEDs, motor activity). */
+    get indicators(): Indicators {
+        if (this._indicators === undefined) {
+            this._indicators = new Indicators(this.connection.indicatorStub);
+        }
+        return this._indicators;
     }
 
     /** Access System VIA (6522) state. */

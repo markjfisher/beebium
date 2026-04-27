@@ -31,6 +31,38 @@ import type {
     TypeQuicklyResponse,
     TypingStatus,
 } from "./generated/keyboard.js";
+import type { Beebium } from "./client.js";
+import { Indicators } from "./indicators.js";
+
+// CAPS LOCK and SHIFT LOCK live on row 4/5 column 0 of the keyboard matrix.
+// These are not modifier keys -- a tap toggles a sticky state held by MOS.
+const CAPS_LOCK_KEY: readonly [number, number] = [4, 0];
+const SHIFT_LOCK_KEY: readonly [number, number] = [5, 0];
+
+// IndicatorService names for the lock LEDs.
+const CAPS_LOCK_LED = "caps-lock-led";
+const SHIFT_LOCK_LED = "shift-lock-led";
+
+// Cycles the lock key is held before being released. The MOS scans the
+// keyboard matrix from a ~10ms timer IRQ and debounces transitions, so
+// 50ms held is comfortably above the minimum to register a clean press.
+const LOCK_TAP_HOLD_CYCLES = 100_000;
+
+// Bound on emulator cycles spent waiting for the IndicatorService LED
+// value to settle to its new definitive state after the key is released.
+// 1,000,000 cycles == 500ms at 2 MHz; far longer than the 100ms duty-
+// cycle filter window plus MOS scan latency, so a timeout indicates a
+// real fault rather than slow scheduling.
+const LOCK_TAP_TIMEOUT_CYCLES = 1_000_000;
+
+// Cycles between LED reads while polling for the edge.
+const LOCK_TAP_POLL_CHUNK_CYCLES = 5_000;
+
+// Cycles to spin after the LED edge is observed, giving MOS time to
+// scan the key release and complete its keyboard-handler routine.
+// Without this settle, a back-to-back tap of the same key can look like
+// a continuous press and fail to re-trigger the toggle.
+const LOCK_TAP_RELEASE_SETTLE_CYCLES = 100_000;
 
 export {
     CTRL_KEY,
@@ -86,9 +118,20 @@ function createKeyboardState(pressedRows: number[]): KeyboardState {
 export class Keyboard {
     private readonly _stub: KeyboardServiceClient;
     private readonly _pressedKeys = new Set<string>();
+    private readonly _client: Beebium | undefined;
 
-    constructor(stub: KeyboardServiceClient) {
+    /**
+     * Construct a keyboard wrapper.
+     *
+     * @param stub - gRPC stub for the KeyboardService.
+     * @param client - Optional reference to the parent Beebium client.
+     *   Required by `withTextInput()` and `tapCapsLock()`/`tapShiftLock()`,
+     *   which read the addressable-latch LED state and step the emulator
+     *   between key down and key up so the MOS can scan the matrix.
+     */
+    constructor(stub: KeyboardServiceClient, client?: Beebium) {
         this._stub = stub;
+        this._client = client;
     }
 
     // =========================================================================
@@ -216,6 +259,230 @@ export class Keyboard {
             const char = key.substring(0, key.lastIndexOf(":"));
             await this.keyUp(char);
         }
+    }
+
+    // =========================================================================
+    // Lock keys (CAPS LOCK and SHIFT LOCK)
+    // =========================================================================
+    // CAPS LOCK and SHIFT LOCK toggle a sticky state held by the MOS. A "tap"
+    // is a complete key-down/key-up cycle with enough emulated time between
+    // for the MOS keyboard scan to detect both edges. The current state can
+    // be read from the addressable-latch LED bits.
+
+    /**
+     * Tap the CAPS LOCK key, toggling the MOS caps-lock state.
+     *
+     * Polls the IndicatorService `caps-lock-led` value until it has
+     * switched to its new definitive state, confirming that the MOS
+     * has registered the toggle and the duty-cycle filter has settled.
+     *
+     * The emulator must be running on entry -- the MOS keyboard scan
+     * is interrupt-driven and only progresses while CPU cycles are
+     * being executed.
+     *
+     * @param timeoutCycles - Maximum emulator cycles to wait for the LED
+     *   edge. Default 1,000,000 cycles (500ms at 2 MHz).
+     * @throws Error if the emulator is not running, or if the LED value
+     *   fails to settle within `timeoutCycles`.
+     */
+    async tapCapsLock(timeoutCycles: number = LOCK_TAP_TIMEOUT_CYCLES): Promise<void> {
+        await this._tapLockKey(
+            CAPS_LOCK_KEY[0],
+            CAPS_LOCK_KEY[1],
+            CAPS_LOCK_LED,
+            timeoutCycles,
+        );
+    }
+
+    /**
+     * Tap the SHIFT LOCK key, toggling the MOS shift-lock state.
+     *
+     * See `tapCapsLock` for the polling, running-mode precondition, and
+     * timeout semantics.
+     */
+    async tapShiftLock(timeoutCycles: number = LOCK_TAP_TIMEOUT_CYCLES): Promise<void> {
+        await this._tapLockKey(
+            SHIFT_LOCK_KEY[0],
+            SHIFT_LOCK_KEY[1],
+            SHIFT_LOCK_LED,
+            timeoutCycles,
+        );
+    }
+
+    /**
+     * Run `body` with CAPS LOCK and SHIFT LOCK disabled, then restore
+     * the original lock state.
+     *
+     * The BBC Micro boots with CAPS LOCK on, so without this guard
+     * `keyboard.type("hello")` echoes as "HELLO" on screen, and
+     * `keyboard.type("HELLO")` (which presses SHIFT for each letter)
+     * echoes as "hello". Wrapping typing in this helper makes the screen
+     * match the source string.
+     *
+     * The emulator must be running on entry, both so the entry tap
+     * registers and so any queued typing inside the block can drain.
+     * Pending typing is drained via `waitForTyping()` before the locks
+     * are restored, so any in-flight characters are typed under the
+     * same lock state that produced them.
+     *
+     * @throws Error if the emulator is not running on entry.
+     *
+     * @example
+     * await bbc.debugger.run();
+     * await bbc.keyboard.withTextInput(async () => {
+     *     await bbc.keyboard.type("Hello, World!\r");
+     *     await bbc.runUntilOrTimeout(predicate, 2.0);
+     * });
+     */
+    async withTextInput<T>(body: () => Promise<T>): Promise<T> {
+        const client = this._requireClient("withTextInput()");
+        if (!(await client.debugger.isRunning())) {
+            throw new Error(
+                "withTextInput() requires a running emulator. Call " +
+                "bbc.debugger.run() before invoking it.",
+            );
+        }
+
+        const indicators = client.indicators;
+        const capsWasOn = Indicators.isDefinitiveOn(
+            await this._waitForDefinitiveLed(
+                indicators, CAPS_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
+            ),
+        );
+        const shiftWasOn = Indicators.isDefinitiveOn(
+            await this._waitForDefinitiveLed(
+                indicators, SHIFT_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
+            ),
+        );
+
+        if (capsWasOn) {
+            await this.tapCapsLock();
+        }
+        if (shiftWasOn) {
+            await this.tapShiftLock();
+        }
+
+        try {
+            return await body();
+        } finally {
+            // Drain pending typing under the disabled-locks state so the
+            // restoring tap doesn't change the case of in-flight characters.
+            await this.waitForTyping();
+
+            const capsNowOn = Indicators.isDefinitiveOn(
+                await this._waitForDefinitiveLed(
+                    indicators, CAPS_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
+                ),
+            );
+            const shiftNowOn = Indicators.isDefinitiveOn(
+                await this._waitForDefinitiveLed(
+                    indicators, SHIFT_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
+                ),
+            );
+            if (capsNowOn !== capsWasOn) {
+                await this.tapCapsLock();
+            }
+            if (shiftNowOn !== shiftWasOn) {
+                await this.tapShiftLock();
+            }
+        }
+    }
+
+    private async _tapLockKey(
+        row: number,
+        column: number,
+        ledName: string,
+        timeoutCycles: number,
+    ): Promise<void> {
+        const client = this._requireClient("tap");
+        const dbg = client.debugger;
+        if (!(await dbg.isRunning())) {
+            throw new Error(
+                "Lock key tap requires a running emulator: the MOS " +
+                "keyboard scan is interrupt-driven and only progresses " +
+                "while the CPU is executing. Call bbc.debugger.run() " +
+                "before tapping.",
+            );
+        }
+
+        const indicators = client.indicators;
+        const initialLed = await this._waitForDefinitiveLed(
+            indicators, ledName, timeoutCycles,
+        );
+        await this.matrixDown(row, column);
+        await this._waitEmulatedCycles(LOCK_TAP_HOLD_CYCLES);
+        await this.matrixUp(row, column);
+
+        const startCycles = (await dbg.getState()).cycleCount;
+        while ((await dbg.getState()).cycleCount - startCycles < timeoutCycles) {
+            const value = await indicators.get(ledName);
+            if (value !== initialLed && !Indicators.isTransient(value)) {
+                // MOS may still be inside its keyboard-handler IRQ
+                // routine, processing the press. Wait for the release
+                // to be scanned and the key-debounce window to clear
+                // before returning, otherwise an immediately-following
+                // tap of the same key looks like a continuous press
+                // and never re-triggers the toggle.
+                await this._waitEmulatedCycles(LOCK_TAP_RELEASE_SETTLE_CYCLES);
+                return;
+            }
+            await this._waitEmulatedCycles(LOCK_TAP_POLL_CHUNK_CYCLES);
+        }
+        const value = await indicators.get(ledName);
+        if (value !== initialLed && !Indicators.isTransient(value)) {
+            await this._waitEmulatedCycles(LOCK_TAP_RELEASE_SETTLE_CYCLES);
+            return;
+        }
+        throw new Error(
+            `Lock key tap not registered: indicator '${ledName}' did ` +
+            `not transition to its opposite definitive state within ` +
+            `${timeoutCycles} emulator cycles (last value ${value}).`,
+        );
+    }
+
+    private async _waitForDefinitiveLed(
+        indicators: Indicators,
+        ledName: string,
+        timeoutCycles: number,
+    ): Promise<number> {
+        const client = this._requireClient("tap");
+        const dbg = client.debugger;
+        const startCycles = (await dbg.getState()).cycleCount;
+        while ((await dbg.getState()).cycleCount - startCycles < timeoutCycles) {
+            const value = await indicators.get(ledName);
+            if (!Indicators.isTransient(value)) {
+                return value;
+            }
+            await this._waitEmulatedCycles(LOCK_TAP_POLL_CHUNK_CYCLES);
+        }
+        throw new Error(
+            `Indicator '${ledName}' stayed in a PWM-filter transient ` +
+            `state for ${timeoutCycles} emulator cycles.`,
+        );
+    }
+
+    private async _waitEmulatedCycles(cycles: number): Promise<void> {
+        const client = this._requireClient("tap");
+        const dbg = client.debugger;
+        const target = (await dbg.getState()).cycleCount + cycles;
+        // 2 MHz host clock; sleep approximately the equivalent wall-clock
+        // time, then top up by polling. Keep delays small enough not to
+        // overshoot but large enough to reduce gRPC chatter.
+        const sleepMs = Math.max(5, Math.floor(cycles / 2_000_000 * 1000 / 2));
+        while ((await dbg.getState()).cycleCount < target) {
+            await new Promise(r => setTimeout(r, sleepMs));
+        }
+    }
+
+    private _requireClient(feature: string): Beebium {
+        if (this._client === undefined) {
+            throw new Error(
+                `${feature} requires Keyboard to be constructed with a client ` +
+                "reference (use bbc.keyboard rather than constructing Keyboard " +
+                "directly).",
+            );
+        }
+        return this._client;
     }
 
     // =========================================================================

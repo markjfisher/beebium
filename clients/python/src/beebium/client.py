@@ -33,6 +33,7 @@ from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
 from beebium.extension_ui import ExtensionUi
+from beebium.indicators import Indicators
 from beebium.piconet import Piconet
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
@@ -105,6 +106,7 @@ class Beebium:
         self._aun: Aun | None = None
         self._piconet: Piconet | None = None
         self._extension_ui: ExtensionUi | None = None
+        self._indicators: Indicators | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
 
@@ -229,7 +231,7 @@ class Beebium:
     def keyboard(self) -> Keyboard:
         """Access keyboard input."""
         if self._keyboard is None:
-            self._keyboard = Keyboard(self._connection.keyboard_stub)
+            self._keyboard = Keyboard(self._connection.keyboard_stub, client=self)
         return self._keyboard
 
     @property
@@ -362,6 +364,13 @@ class Beebium:
         if self._piconet is None:
             self._piconet = Piconet(self._connection.piconet_stub)
         return self._piconet
+
+    @property
+    def indicators(self) -> Indicators:
+        """Access hardware indicators (LEDs, motor activity)."""
+        if self._indicators is None:
+            self._indicators = Indicators(self._connection.indicator_stub)
+        return self._indicators
 
     @property
     def extension_ui(self) -> ExtensionUi:

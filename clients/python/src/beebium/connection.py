@@ -23,6 +23,7 @@ from beebium._proto import (
     econet_pb2_grpc,
     econet_transport_pb2_grpc,
     extension_ui_pb2_grpc,
+    indicator_pb2_grpc,
     keyboard_pb2_grpc,
     piconet_service_pb2_grpc,
     system_pb2_grpc,
@@ -59,6 +60,7 @@ class Connection:
         self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
         self._piconet_stub: piconet_service_pb2_grpc.PiconetServiceStub | None = None
         self._extension_ui_stub: extension_ui_pb2_grpc.ExtensionUiServiceStub | None = None
+        self._indicator_stub: indicator_pb2_grpc.IndicatorServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
@@ -91,6 +93,7 @@ class Connection:
         self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
         self._piconet_stub = piconet_service_pb2_grpc.PiconetServiceStub(self._channel)
         self._extension_ui_stub = extension_ui_pb2_grpc.ExtensionUiServiceStub(self._channel)
+        self._indicator_stub = indicator_pb2_grpc.IndicatorServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
@@ -184,6 +187,13 @@ class Connection:
         return self._extension_ui_stub
 
     @property
+    def indicator_stub(self) -> indicator_pb2_grpc.IndicatorServiceStub:
+        """The IndicatorService stub (LED and motor activity state)."""
+        if self._indicator_stub is None:
+            raise ConnectionError("Not connected")
+        return self._indicator_stub
+
+    @property
     def parasite_debugger_stub(self) -> debugger_pb2_grpc.ParasiteDebuggerControlStub:
         """The ParasiteDebuggerControl service stub."""
         if self._parasite_debugger_stub is None:
@@ -211,6 +221,7 @@ class Connection:
             self._aun_stub = None
             self._piconet_stub = None
             self._extension_ui_stub = None
+            self._indicator_stub = None
             self._keyboard_stub = None
             self._system_stub = None
             self._tube_stub = None

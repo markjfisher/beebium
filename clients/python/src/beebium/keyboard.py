@@ -14,10 +14,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from beebium._proto import keyboard_pb2, keyboard_pb2_grpc
+from beebium.indicators import Indicators
 from beebium.keyboard_map import (
     CTRL_KEY,
     DELETE_KEY,
@@ -27,6 +31,40 @@ from beebium.keyboard_map import (
     SPACE_KEY,
     char_to_matrix,
 )
+
+if TYPE_CHECKING:
+    from beebium.client import Beebium
+
+
+# CAPS LOCK and SHIFT LOCK live on row 4/5 column 0 of the keyboard matrix.
+# These are not "modifier" keys -- a tap toggles a state held by the MOS.
+CAPS_LOCK_KEY = (4, 0)
+SHIFT_LOCK_KEY = (5, 0)
+
+# IndicatorService names for the lock LEDs.
+CAPS_LOCK_LED = "caps-lock-led"
+SHIFT_LOCK_LED = "shift-lock-led"
+
+# Cycles the lock key is held before being released. The MOS scans the
+# keyboard matrix from a ~10ms timer IRQ and debounces transitions, so
+# 50ms held is comfortably above the minimum to register a clean press.
+_LOCK_TAP_HOLD_CYCLES = 100_000
+
+# Bound on emulator cycles spent waiting for the IndicatorService LED
+# value to settle to its new definitive state after the key is released.
+# 1,000,000 cycles == 500ms at 2 MHz; far longer than the 100ms duty-
+# cycle filter window plus MOS scan latency, so a timeout indicates a
+# real fault rather than slow scheduling.
+_LOCK_TAP_TIMEOUT_CYCLES = 1_000_000
+
+# Cycles between LED reads while polling for the edge.
+_LOCK_TAP_POLL_CHUNK_CYCLES = 5_000
+
+# Cycles to spin after the LED edge is observed, giving MOS time to
+# scan the key release and complete its keyboard-handler routine.
+# Without this settle, a back-to-back tap of the same key can look like
+# a continuous press and fail to re-trigger the toggle.
+_LOCK_TAP_RELEASE_SETTLE_CYCLES = 100_000
 
 
 @dataclass
@@ -67,13 +105,23 @@ class Keyboard:
         bbc.keyboard.matrix_down(row=4, column=1)  # 'A' key
     """
 
-    def __init__(self, stub: keyboard_pb2_grpc.KeyboardServiceStub):
+    def __init__(
+        self,
+        stub: keyboard_pb2_grpc.KeyboardServiceStub,
+        client: Beebium | None = None,
+    ):
         """Create a keyboard interface.
 
         Args:
             stub: The gRPC stub for the KeyboardService.
+            client: Optional reference to the parent Beebium client. Required
+                by ``text_input()`` and ``tap_caps_lock()``/``tap_shift_lock()``,
+                which read the addressable-latch LED state and step the
+                emulator between key down and key up so the MOS can scan
+                the matrix.
         """
         self._stub = stub
+        self._client = client
         self._pressed_keys: set[tuple[str, bool]] = set()
 
     # High-level text input (cycle-paced via server-side TypeAheadQueue)
@@ -180,6 +228,223 @@ class Keyboard:
         """Release all currently pressed keys."""
         for char, _ in list(self._pressed_keys):
             self.key_up(char)
+
+    # =========================================================================
+    # Lock keys (CAPS LOCK and SHIFT LOCK)
+    # =========================================================================
+    # CAPS LOCK and SHIFT LOCK toggle a sticky state held by the MOS. A "tap"
+    # is a complete key-down/key-up cycle with enough emulated time between
+    # for the MOS keyboard scan to detect both edges. The current state can
+    # be read from the addressable-latch LED bits.
+
+    def tap_caps_lock(
+        self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES
+    ) -> None:
+        """Tap the CAPS LOCK key, toggling the MOS caps-lock state.
+
+        Polls the IndicatorService ``caps-lock-led`` value until it has
+        switched to its new definitive state, confirming that the MOS
+        has registered the toggle and the duty-cycle filter has settled.
+
+        The emulator must be running on entry -- the MOS keyboard scan
+        is interrupt-driven and only progresses while CPU cycles are
+        being executed.
+
+        Args:
+            timeout_cycles: Maximum emulator cycles to wait for the LED
+                edge. Default 1,000,000 cycles (500ms at 2 MHz).
+
+        Raises:
+            RuntimeError: If the emulator is not running, or if the LED
+                value fails to settle within ``timeout_cycles``.
+        """
+        self._tap_lock_key(
+            *CAPS_LOCK_KEY,
+            led_name=CAPS_LOCK_LED,
+            timeout_cycles=timeout_cycles,
+        )
+
+    def tap_shift_lock(
+        self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES
+    ) -> None:
+        """Tap the SHIFT LOCK key, toggling the MOS shift-lock state.
+
+        See :meth:`tap_caps_lock` for the polling, running-mode
+        precondition, and timeout semantics.
+        """
+        self._tap_lock_key(
+            *SHIFT_LOCK_KEY,
+            led_name=SHIFT_LOCK_LED,
+            timeout_cycles=timeout_cycles,
+        )
+
+    def _tap_lock_key(
+        self,
+        row: int,
+        column: int,
+        *,
+        led_name: str,
+        timeout_cycles: int,
+    ) -> None:
+        client = self._require_client("tap")
+        debugger = client.debugger
+        if not debugger.is_running:
+            raise RuntimeError(
+                "Lock key tap requires a running emulator: the MOS "
+                "keyboard scan is interrupt-driven and only progresses "
+                "while the CPU is executing. Call bbc.debugger.run() "
+                "before tapping."
+            )
+
+        indicators = client.indicators
+        # IndicatorService values are PWM/duty-cycle filtered. Wait for a
+        # definitive starting reading so we can detect the toggle by a
+        # transition between definitive states rather than reacting to a
+        # transient.
+        initial_led = self._wait_for_definitive_led(
+            indicators, led_name, timeout_cycles
+        )
+        self.matrix_down(row, column)
+        self._wait_emulated_cycles(_LOCK_TAP_HOLD_CYCLES)
+        self.matrix_up(row, column)
+
+        start_cycles = debugger.cycle_count
+        while debugger.cycle_count - start_cycles < timeout_cycles:
+            value = indicators.get(led_name)
+            if value != initial_led and not Indicators.is_transient(value):
+                # MOS may still be inside its keyboard-handler IRQ
+                # routine, processing the press. Wait for the release
+                # to be scanned and the key-debounce window to clear
+                # before returning, otherwise an immediately-following
+                # tap of the same key looks like a continuous press
+                # and never re-triggers the toggle.
+                self._wait_emulated_cycles(_LOCK_TAP_RELEASE_SETTLE_CYCLES)
+                return
+            self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
+        # Final check after the budget elapsed
+        value = indicators.get(led_name)
+        if value != initial_led and not Indicators.is_transient(value):
+            self._wait_emulated_cycles(_LOCK_TAP_RELEASE_SETTLE_CYCLES)
+            return
+        raise RuntimeError(
+            f"Lock key tap not registered: indicator {led_name!r} did "
+            f"not transition to its opposite definitive state within "
+            f"{timeout_cycles} emulator cycles (last value {value})."
+        )
+
+    def _wait_for_definitive_led(
+        self, indicators: Indicators, led_name: str, timeout_cycles: int
+    ) -> int:
+        """Block until ``led_name`` reads as a definitive 0 or 255 value."""
+        client = self._require_client("tap")
+        debugger = client.debugger
+        start_cycles = debugger.cycle_count
+        while debugger.cycle_count - start_cycles < timeout_cycles:
+            value = indicators.get(led_name)
+            if not Indicators.is_transient(value):
+                return value
+            self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
+        raise RuntimeError(
+            f"Indicator {led_name!r} stayed in a PWM-filter transient "
+            f"state for {timeout_cycles} emulator cycles."
+        )
+
+    def _wait_emulated_cycles(self, cycles: int) -> None:
+        """Block until the running emulator has advanced ``cycles`` cycles.
+
+        Assumes the emulator is running; the call sites that require
+        cycle-paced waits already enforce that precondition.
+        """
+        client = self._require_client("tap")
+        target = client.debugger.cycle_count + cycles
+        # 2 MHz host clock; sleep approximately the equivalent wall-clock
+        # time, then top up by polling. Small enough not to overshoot but
+        # large enough to keep gRPC chatter low.
+        sleep_seconds = max(0.005, cycles / 2_000_000 / 2)
+        while client.debugger.cycle_count < target:
+            time.sleep(sleep_seconds)
+
+    @contextlib.contextmanager
+    def text_input(self) -> Iterator[None]:
+        """Context manager that disables CAPS LOCK and SHIFT LOCK for the
+        duration of the block, restoring the original state on exit.
+
+        The BBC Micro boots with CAPS LOCK on, so without this guard
+        ``bbc.keyboard.type("hello")`` echoes as "HELLO" on screen, and
+        ``bbc.keyboard.type("HELLO")`` (which presses SHIFT for each
+        letter) echoes as "hello". Wrapping the typing in this context
+        manager makes the screen match the source string.
+
+        The emulator must be running on entry, both so the entry tap
+        registers and so any queued typing inside the block can drain.
+        On exit the queue is drained via :meth:`wait_for_typing` before
+        the locks are restored, so any pending characters are typed under
+        the same lock state that produced them.
+
+        Usage::
+
+            bbc.debugger.run()
+            with bbc.keyboard.text_input():
+                bbc.keyboard.type("Hello, World!\\r")
+                bbc.run_until_or_timeout(predicate, emulated_seconds=2.0)
+
+        Raises:
+            RuntimeError: If the emulator is not running on entry.
+        """
+        client = self._require_client("text_input()")
+        if not client.debugger.is_running:
+            raise RuntimeError(
+                "text_input() requires a running emulator. Call "
+                "bbc.debugger.run() before entering the with-block."
+            )
+
+        indicators = client.indicators
+        caps_was_on = Indicators.is_definitive_on(
+            self._wait_for_definitive_led(
+                indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
+            )
+        )
+        shift_was_on = Indicators.is_definitive_on(
+            self._wait_for_definitive_led(
+                indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
+            )
+        )
+
+        if caps_was_on:
+            self.tap_caps_lock()
+        if shift_was_on:
+            self.tap_shift_lock()
+
+        try:
+            yield
+        finally:
+            # Drain pending typing under the disabled-locks state so the
+            # restoring tap doesn't change the case of in-flight characters.
+            self.wait_for_typing()
+
+            caps_now_on = Indicators.is_definitive_on(
+                self._wait_for_definitive_led(
+                    indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
+                )
+            )
+            shift_now_on = Indicators.is_definitive_on(
+                self._wait_for_definitive_led(
+                    indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
+                )
+            )
+            if caps_now_on != caps_was_on:
+                self.tap_caps_lock()
+            if shift_now_on != shift_was_on:
+                self.tap_shift_lock()
+
+    def _require_client(self, feature: str) -> Beebium:
+        if self._client is None:
+            raise RuntimeError(
+                f"{feature} requires Keyboard to be constructed with a client "
+                "reference (use bbc.keyboard rather than constructing Keyboard "
+                "directly)."
+            )
+        return self._client
 
     # Modifier keys
 

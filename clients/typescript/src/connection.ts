@@ -17,6 +17,7 @@ import { AunServiceClient } from "./generated/aun.js";
 import { PiconetServiceClient } from "./generated/piconet_service.js";
 import { EconetTransportServiceClient } from "./generated/econet_transport.js";
 import { ExtensionUiServiceClient } from "./generated/extension_ui.js";
+import { IndicatorServiceClient } from "./generated/indicator.js";
 
 import type { DebuggerControlClient as DebuggerControlClientType } from "./generated/debugger.js";
 import type { ParasiteDebuggerControlClient as ParasiteDebuggerControlClientType } from "./generated/debugger.js";
@@ -31,6 +32,7 @@ import type { AunServiceClient as AunServiceClientType } from "./generated/aun.j
 import type { PiconetServiceClient as PiconetServiceClientType } from "./generated/piconet_service.js";
 import type { EconetTransportServiceClient as EconetTransportServiceClientType } from "./generated/econet_transport.js";
 import type { ExtensionUiServiceClient as ExtensionUiServiceClientType } from "./generated/extension_ui.js";
+import type { IndicatorServiceClient as IndicatorServiceClientType } from "./generated/indicator.js";
 
 /**
  * Manages a gRPC connection to a Beebium emulator server.
@@ -56,6 +58,7 @@ export class Connection {
     private _piconetStub: PiconetServiceClientType | null = null;
     private _econetTransportStub: EconetTransportServiceClientType | null = null;
     private _extensionUiStub: ExtensionUiServiceClientType | null = null;
+    private _indicatorStub: IndicatorServiceClientType | null = null;
 
     constructor(target: string) {
         this._target = target;
@@ -223,6 +226,17 @@ export class Connection {
         return this._extensionUiStub;
     }
 
+    get indicatorStub(): IndicatorServiceClientType {
+        this.ensureOpen();
+        if (!this._indicatorStub) {
+            this._indicatorStub = new IndicatorServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._indicatorStub;
+    }
+
     /**
      * Wait until the underlying channel is ready, or until the timeout expires.
      *
@@ -278,6 +292,7 @@ export class Connection {
             this._piconetStub,
             this._econetTransportStub,
             this._extensionUiStub,
+            this._indicatorStub,
         ];
 
         for (const stub of stubs) {
@@ -299,5 +314,6 @@ export class Connection {
         this._piconetStub = null;
         this._econetTransportStub = null;
         this._extensionUiStub = null;
+        this._indicatorStub = null;
     }
 }
