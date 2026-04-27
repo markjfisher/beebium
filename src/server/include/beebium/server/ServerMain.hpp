@@ -461,7 +461,23 @@ void print_usage(const char* program_name) {
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
-              << "                           with --screen-mode and --auto-boot)\n"
+              << "                           with --screen-mode and --auto-boot)\n";
+
+    // --motherboard-link KEY=VALUE: only relevant on machines whose slot
+    // mapping depends on physical jumpers (Model B+ S13 today; others to
+    // come). For machines with no such links the option is rejected at
+    // parse time, so we hide it from --help to avoid confusion.
+    if constexpr (Memory::MotherboardLinks::has_slot_links) {
+        std::cerr << "  --motherboard-link KEY=VALUE\n"
+                  << "                           Set a motherboard jumper position\n"
+                  << "                           (case-insensitive). Repeat for multiple\n"
+                  << "                           links. Available on this machine:\n";
+        for (const auto& line : Memory::MotherboardLinks::help_lines()) {
+            std::cerr << "                             " << line << "\n";
+        }
+    }
+
+    std::cerr
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"

@@ -747,6 +747,10 @@ public:
     // sockets between 16K and 32K modes -- not yet modelled. Speed links
     // S18/S19 do not affect slot mapping and are not covered by this struct.
     struct MotherboardLinks {
+        // Compile-time flag: this machine has slot-mapping links the user
+        // can configure with --motherboard-link.
+        static constexpr bool has_slot_links = true;
+
         enum class S13Position { West, East };
         S13Position s13 = S13Position::West;
 
@@ -786,6 +790,17 @@ public:
                 s13 == S13Position::West ? "west" : "east",
                 "IC71 (BASIC ROM) slot position: West=slots 14/15, East=slots 0/1"
             }};
+        }
+
+        // Lines describing every available link, formatted for inclusion in
+        // --help under "Available links". One line per supported KEY=VALUE
+        // form; whitespace-only lines are not produced so callers can join
+        // with newlines without worrying about trailing blanks.
+        static std::vector<std::string> help_lines() {
+            return {
+                "s13=west|east   IC71 (BASIC) slot pair "
+                "(west=slots 14/15, east=slots 0/1; default: west)"
+            };
         }
     };
 

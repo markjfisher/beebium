@@ -51,6 +51,10 @@ struct MotherboardLinkInfo {
 // Default link state for machines whose sideways slot mapping is fixed by
 // the motherboard wiring and does not vary with any link position.
 struct EmptyMotherboardLinks {
+    // Compile-time flag for help-text emission and similar gating: this
+    // machine has no slot-mapping links the user can twist.
+    static constexpr bool has_slot_links = false;
+
     // Reject any attempt to set a link on a machine that has none.
     std::optional<std::string> parse(std::string_view key,
                                      std::string_view /*value*/) {
