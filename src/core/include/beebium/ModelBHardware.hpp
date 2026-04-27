@@ -21,8 +21,10 @@
 #include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
+#include "MotherboardLinks.hpp"
 #include "OutputQueue.hpp"
 #include "Saa5050.hpp"
+#include "SlotTopology.hpp"
 #include "SystemViaPeripheral.hpp"
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
@@ -606,6 +608,34 @@ public:
     // Indicates this memory type supports runtime slot configuration
     static constexpr bool supports_slot_configuration() {
         return AliasedBankedMemory::supports_slot_configuration();
+    }
+
+    // The Model B has no motherboard links that affect sideways slot mapping;
+    // the four sockets are wired the same way on every machine.
+    using MotherboardLinks = EmptyMotherboardLinks;
+
+    // Topology of the four sideways ROM sockets, including the 4-way aliasing
+    // produced by partial ROMSEL decoding. Used by configuration validation
+    // and the gRPC SidewaysService to describe the hardware layout to
+    // clients.
+    static SlotTopology slot_topology(MotherboardLinks /*links*/ = {}) {
+        SlotTopology topo;
+        topo.has_aliasing = true;
+        for (uint8_t socket_idx = 0; socket_idx < AliasedBankedMemory::num_sockets;
+             ++socket_idx) {
+            SocketSpec spec;
+            spec.socket_index = socket_idx;
+            spec.label = std::string(AliasedBankedMemory::socket_names[socket_idx]);
+            for (uint8_t slot : AliasedBankedMemory::socket_aliased_slots(socket_idx)) {
+                spec.slots.push_back(slot);
+            }
+            spec.supports_rom = true;
+            spec.supports_ram = true;
+            spec.supports_empty = true;
+            spec.runtime_configurable = true;
+            topo.sockets.push_back(std::move(spec));
+        }
+        return topo;
     }
 
     // =========================================================================

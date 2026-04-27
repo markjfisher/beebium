@@ -571,3 +571,53 @@ TEST_CASE("DebuggerControl PeekRegion returns error for invalid region name", "[
         CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+// Socket capability fields populated from SlotTopology
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("SidewaysService GetSlotStatus reports Model B sockets as RAM-capable",
+          "[grpc][sideways][capabilities]") {
+    ModelBSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 4);
+
+    // Model B AliasedBankedMemory sockets are runtime-configurable to any
+    // of ROM/RAM/Empty -- the topology says so, and so does GetSlotStatus.
+    for (int i = 0; i < response.sockets_size(); ++i) {
+        const auto& caps = response.sockets(i).capabilities();
+        CHECK(caps.supports_rom());
+        CHECK(caps.supports_ram());
+        CHECK(caps.supports_empty());
+        CHECK(caps.runtime_configurable());
+    }
+}
+
+TEST_CASE("SidewaysService GetSlotStatus reports ROM/RAM board sockets as RAM-capable",
+          "[grpc][sideways][capabilities]") {
+    RomRamBoardSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 16);
+
+    for (int i = 0; i < response.sockets_size(); ++i) {
+        const auto& caps = response.sockets(i).capabilities();
+        CHECK(caps.supports_rom());
+        CHECK(caps.supports_ram());
+        CHECK(caps.supports_empty());
+        CHECK(caps.runtime_configurable());
+    }
+}

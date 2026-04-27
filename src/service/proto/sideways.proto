@@ -40,6 +40,10 @@ message GetSlotStatusResponse {
     uint32 num_physical_slots = 2;      // 4 for Model B, 16 for ROM/RAM board
     repeated SocketStatus sockets = 3;  // Physical sockets/slots
     uint32 selected_bank = 4;           // Currently selected ROMSEL bank (0-15)
+    // Motherboard link (jumper) state on this server, when the machine
+    // variant has slot-mapping links (e.g. Model B+ S13). Empty for
+    // machines with no such links.
+    repeated MotherboardLink motherboard_links = 5;
 }
 
 // Status of a physical socket (or independent slot for ROM/RAM board)
@@ -51,6 +55,28 @@ message SocketStatus {
     bool populated = 4;                 // Has content loaded
     string image_name = 5;              // Source filename/name if loaded
     string socket_label = 6;            // Physical label (e.g., "IC52", "IC88") for Model B
+    // Capability flags describing what types this physical socket can hold
+    // and whether the type can change at runtime via ConfigureSlot. Lets
+    // GUI clients gray out RAM/Empty options on ROM-only machines (Model B+).
+    SocketCapabilities capabilities = 7;
+}
+
+// Capability flags for a physical socket. These reflect the hardware
+// (e.g. all Model B+ sockets are ROM-only by motherboard design).
+message SocketCapabilities {
+    bool supports_rom = 1;
+    bool supports_ram = 2;
+    bool supports_empty = 3;
+    bool runtime_configurable = 4;
+}
+
+// One motherboard link (jumper) and its current position. Reported back so
+// clients can display the current link configuration and (in future) build
+// link configuration UIs.
+message MotherboardLink {
+    string name = 1;          // e.g. "S13"
+    string value = 2;         // e.g. "west", "east"
+    string description = 3;   // Optional human-readable description
 }
 
 // --- Configure Slot ---

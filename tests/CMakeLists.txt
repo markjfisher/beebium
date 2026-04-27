@@ -85,6 +85,17 @@ target_link_libraries(test_cli_arg_parsers PRIVATE
 )
 catch_discover_tests(test_cli_arg_parsers)
 
+# Sideways slot topology + --sideways validation against each machine variant.
+add_executable(test_sideways_validation test_sideways_validation.cpp)
+target_include_directories(test_sideways_validation PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server/include
+)
+target_link_libraries(test_sideways_validation PRIVATE
+    beebium_core
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_sideways_validation)
+
 # EconetTransportRegistry container tests
 add_executable(test_econet_transport_registry test_econet_transport_registry.cpp)
 target_link_libraries(test_econet_transport_registry PRIVATE beebium_core Catch2::Catch2WithMain)

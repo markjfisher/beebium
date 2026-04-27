@@ -14,6 +14,7 @@
 #define BEEBIUM_SERVICE_SIDEWAYS_SERVICE_HPP
 
 #include "sideways.grpc.pb.h"
+#include "beebium/SlotTopology.hpp"
 #include "beebium/devices/ConfigurableSlot.hpp"
 #include "beebium/devices/AliasedBankedMemory.hpp"
 #include "beebium/devices/ConfigurableBankedMemory.hpp"
@@ -57,6 +58,15 @@ inline beebium::SidewaysSlotType slot_type_to_proto(beebium::SlotType type) {
     }
 }
 
+// Populate proto SocketCapabilities from a SocketSpec (topology source of truth).
+inline void fill_capabilities(beebium::SocketCapabilities* caps,
+                              const beebium::SocketSpec& spec) {
+    caps->set_supports_rom(spec.supports_rom);
+    caps->set_supports_ram(spec.supports_ram);
+    caps->set_supports_empty(spec.supports_empty);
+    caps->set_runtime_configurable(spec.runtime_configurable);
+}
+
 // Helper to convert protobuf enum to SlotType
 inline beebium::SlotType proto_to_slot_type(beebium::SidewaysSlotType proto_type) {
     switch (proto_type) {
@@ -91,60 +101,74 @@ public:
 
         using Memory = typename MachineType::Memory;
 
-        if constexpr (!HasSideways<Memory>) {
-            // Machine has no sideways memory
+        // Topology comes from the machine variant when available, and is
+        // the source of truth for socket labels, alias sets, and capability
+        // flags. The runtime per-slot type/image_name fields are read from
+        // the live device when accessible.
+        if constexpr (requires { Memory::slot_topology(); }) {
+            auto topo = Memory::slot_topology();
+            response->set_has_aliasing(topo.has_aliasing);
+            response->set_num_physical_slots(
+                static_cast<uint32_t>(topo.sockets.size()));
+
+            if constexpr (HasSideways<Memory>) {
+                response->set_selected_bank(
+                    machine_.state().memory.sideways.selected_bank());
+            } else {
+                response->set_selected_bank(0);
+            }
+
+            for (const auto& spec : topo.sockets) {
+                auto* socket_status = response->add_sockets();
+                socket_status->set_socket_index(spec.socket_index);
+                socket_status->set_socket_label(spec.label);
+                for (int slot : spec.slots) {
+                    socket_status->add_aliased_slots(static_cast<uint32_t>(slot));
+                }
+                fill_capabilities(
+                    socket_status->mutable_capabilities(), spec);
+
+                // Runtime fields: read from the live device when the device
+                // exposes per-socket / per-slot accessors. Otherwise fall
+                // back to topology defaults.
+                if constexpr (HasAliasedSideways<Memory>) {
+                    auto& sideways = machine_.state().memory.sideways;
+                    const auto& slot = sideways.socket(
+                        static_cast<uint8_t>(spec.socket_index));
+                    socket_status->set_type(slot_type_to_proto(slot.type()));
+                    socket_status->set_populated(slot.is_populated());
+                    socket_status->set_image_name(std::string(slot.image_name()));
+                } else if constexpr (HasConfigurableSideways<Memory>) {
+                    auto& sideways = machine_.state().memory.sideways;
+                    const auto& slot = sideways.slot(
+                        static_cast<uint8_t>(spec.socket_index));
+                    socket_status->set_type(slot_type_to_proto(slot.type()));
+                    socket_status->set_populated(slot.is_populated());
+                    socket_status->set_image_name(std::string(slot.image_name()));
+                } else {
+                    // Model B+ or similar: no per-socket runtime accessors
+                    // on the device. Report ROM as the design-time type for
+                    // ROM-only sockets so clients see something sensible.
+                    socket_status->set_type(
+                        spec.supports_rom && !spec.supports_ram
+                            ? beebium::SIDEWAYS_SLOT_TYPE_ROM
+                            : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
+                    socket_status->set_populated(false);
+                    socket_status->set_image_name("");
+                }
+            }
+            return grpc::Status::OK;
+        } else if constexpr (!HasSideways<Memory>) {
+            // Machine has no sideways memory and no topology.
             response->set_has_aliasing(false);
             response->set_num_physical_slots(0);
             response->set_selected_bank(0);
             return grpc::Status::OK;
         } else {
-            auto& sideways = machine_.state().memory.sideways;
-            response->set_selected_bank(sideways.selected_bank());
-
-            if constexpr (HasAliasedSideways<Memory>) {
-                // Model B with 4 aliased sockets
-                response->set_has_aliasing(true);
-                response->set_num_physical_slots(4);
-
-                for (uint8_t socket_idx = 0; socket_idx < 4; ++socket_idx) {
-                    auto* socket_status = response->add_sockets();
-                    socket_status->set_socket_index(socket_idx);
-
-                    // Add aliased slots for this socket
-                    auto aliased = AliasedBankedMemory::socket_aliased_slots(socket_idx);
-                    for (uint8_t slot : aliased) {
-                        socket_status->add_aliased_slots(slot);
-                    }
-
-                    // Get socket info
-                    const auto& slot = sideways.socket(socket_idx);
-                    socket_status->set_type(slot_type_to_proto(slot.type()));
-                    socket_status->set_populated(slot.is_populated());
-                    socket_status->set_image_name(std::string(slot.image_name()));
-                    socket_status->set_socket_label(
-                        std::string(AliasedBankedMemory::socket_names[socket_idx]));
-                }
-            } else if constexpr (HasConfigurableSideways<Memory>) {
-                // ROM/RAM board with 16 independent slots
-                response->set_has_aliasing(false);
-                response->set_num_physical_slots(16);
-
-                for (uint8_t slot_idx = 0; slot_idx < 16; ++slot_idx) {
-                    auto* socket_status = response->add_sockets();
-                    socket_status->set_socket_index(slot_idx);
-
-                    // No aliasing - slot maps to itself
-                    socket_status->add_aliased_slots(slot_idx);
-
-                    // Get slot info
-                    const auto& slot = sideways.slot(slot_idx);
-                    socket_status->set_type(slot_type_to_proto(slot.type()));
-                    socket_status->set_populated(slot.is_populated());
-                    socket_status->set_image_name(std::string(slot.image_name()));
-                    socket_status->set_socket_label("Slot " + std::to_string(slot_idx));
-                }
-            }
-
+            // Should be unreachable: any machine with sideways now also
+            // provides slot_topology().
+            response->set_selected_bank(
+                machine_.state().memory.sideways.selected_bank());
             return grpc::Status::OK;
         }
     }

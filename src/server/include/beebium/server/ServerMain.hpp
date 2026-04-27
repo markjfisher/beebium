@@ -15,6 +15,7 @@
 
 #include "BuiltinExtensions.hpp"
 #include "CliArgParsers.hpp"
+#include "SidewaysValidation.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
@@ -344,6 +345,11 @@ struct ServerConfig {
     std::string rom_dirpath;
     std::map<uint8_t, std::string> rom_slots;
     std::vector<SidewaysConfig> sideways_configs;
+
+    // Motherboard link state (jumpers that affect sideways slot mapping).
+    // Default-constructed to factory positions. For machine variants with no
+    // such links this is EmptyMotherboardLinks and accepts no assignments.
+    typename MachineType::Memory::MotherboardLinks motherboard_links{};
 
     // Network
     uint16_t port = DEFAULT_GRPC_PORT;
@@ -768,6 +774,22 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--rom-dir" && i + 1 < argc) {
             config.rom_dirpath = argv[++i];
+        } else if (arg == "--motherboard-link" && i + 1 < argc) {
+            // KEY=VALUE; key/value strings interpreted by the machine
+            // variant's MotherboardLinks::parse method.
+            std::string spec = argv[++i];
+            auto eq = spec.find('=');
+            if (eq == std::string::npos) {
+                std::cerr << "Error: --motherboard-link expects KEY=VALUE, got '"
+                          << spec << "'\n";
+                return ExitCode::USAGE;
+            }
+            std::string key = spec.substr(0, eq);
+            std::string value = spec.substr(eq + 1);
+            if (auto err = config.motherboard_links.parse(key, value)) {
+                std::cerr << "Error: " << *err << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--port" && i + 1 < argc) {
             try {
                 config.port = static_cast<uint16_t>(parse_int(argv[++i], "--port"));
@@ -903,6 +925,19 @@ std::optional<std::string> validate_config(const ServerConfig<MachineType>& conf
     // Econet transports are mutually exclusive. Both AUN and Piconet
     // are now extension instances; mutex enforcement lives in
     // install_econet (which sees the EconetTransportRegistry).
+
+    // Validate --sideways arguments against the machine variant's slot
+    // topology, taking into account any motherboard link state that affects
+    // slot mapping (e.g. Model B+ S13). Reports nonexistent slots,
+    // unsupported types, aliased-socket conflicts, duplicate slot specs.
+    using Memory = typename MachineType::Memory;
+    if constexpr (requires { Memory::slot_topology(config.motherboard_links); }) {
+        if (auto err = validate_sideways_configs(
+                Memory::slot_topology(config.motherboard_links),
+                config.sideways_configs)) {
+            return err;
+        }
+    }
 
     return std::nullopt;  // Valid
 }
