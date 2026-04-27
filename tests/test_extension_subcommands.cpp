@@ -85,6 +85,13 @@ std::filesystem::path find_executable(const std::string& name) {
         std::filesystem::current_path() / "src" / "server" / exe_name,
         std::filesystem::current_path() / ".." / "src" / "server" / exe_name,
         std::filesystem::current_path() / "build" / "src" / "server" / exe_name,
+#ifdef _WIN32
+        // MSBuild puts executables under a per-config subdirectory.
+        std::filesystem::current_path() / "src" / "server" / "Release" / exe_name,
+        std::filesystem::current_path() / "src" / "server" / "Debug" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / "Release" / exe_name,
+        std::filesystem::current_path() / ".." / "src" / "server" / "Debug" / exe_name,
+#endif
     };
     for (const auto& p : search_paths) {
         if (std::filesystem::exists(p)) return p;
