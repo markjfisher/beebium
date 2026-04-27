@@ -470,8 +470,16 @@ public:
     using MotherboardLinks = EmptyMotherboardLinks;
 
     // Topology of the 16 fully-decoded sideways slots provided by the
-    // ROM/RAM expansion board. Each slot is independent (no aliasing) and
-    // can be configured as Empty, ROM, or RAM at runtime.
+    // ROM/RAM expansion board.
+    //
+    // This board is not modelled on a specific real-world product: it is a
+    // notional "sufficiently sophisticated" expansion board with full 4-bit
+    // ROMSEL decoding (no aliasing) and runtime-configurable slot types.
+    // We allow ROM/RAM/Empty changes through the gRPC ConfigureSlot RPC
+    // because such a board could plausibly exist with that capability,
+    // and it gives users a flexible test bed without forcing a server
+    // restart. Future cartridge-slot machines (e.g. Master 128) will share
+    // this runtime-configurable behaviour for their cartridge sockets.
     static SlotTopology slot_topology(MotherboardLinks /*links*/ = {}) {
         SlotTopology topo;
         topo.has_aliasing = false;

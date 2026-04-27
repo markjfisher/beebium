@@ -60,12 +60,14 @@ TEST_CASE("ModelBHardware topology has 4 sockets with 4-way aliasing",
     REQUIRE(topo.has_aliasing);
     REQUIRE(topo.sockets.size() == 4);
 
-    // Every socket on the Model B can hold ROM, RAM, or be empty.
+    // Every socket on the Model B can hold ROM, RAM, or be empty (set at
+    // start-up by --sideways), but the type cannot be changed at runtime --
+    // on real hardware that is a power-off chip-swap operation.
     for (const auto& s : topo.sockets) {
         REQUIRE(s.supports_rom);
         REQUIRE(s.supports_ram);
         REQUIRE(s.supports_empty);
-        REQUIRE(s.runtime_configurable);
+        REQUIRE_FALSE(s.runtime_configurable);
         REQUIRE(s.slots.size() == 4);
     }
 

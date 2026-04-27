@@ -1740,6 +1740,13 @@ public:
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";
             beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
+
+            // Push the configured motherboard link state into the server
+            // so that the sideways service (constructed during start())
+            // reports the actual topology to clients -- e.g. Model B+
+            // with --motherboard-link s13=east shows IC71 at slots 0/1.
+            server.set_motherboard_links(config.motherboard_links);
+
             beebium::service::Provenance provenance{
                 config.provenance_type,
                 config.provenance_uuid,

@@ -81,6 +81,9 @@ inline beebium::SlotType proto_to_slot_type(beebium::SidewaysSlotType proto_type
 template<typename MachineType>
 class SidewaysServiceImpl final : public SidewaysService::Service {
 public:
+    using Memory = typename MachineType::Memory;
+    using MotherboardLinks = typename Memory::MotherboardLinks;
+
     explicit SidewaysServiceImpl(MachineType& machine)
         : machine_(machine) {}
 
@@ -89,6 +92,15 @@ public:
     // Non-copyable
     SidewaysServiceImpl(const SidewaysServiceImpl&) = delete;
     SidewaysServiceImpl& operator=(const SidewaysServiceImpl&) = delete;
+
+    // Capture the motherboard link state the server was configured with at
+    // start-up so GetSlotStatus reports the correct topology and link list
+    // to clients. Motherboard links are not runtime-mutable; this is a
+    // one-shot setter called by the server bootstrap code.
+    void set_motherboard_links(const MotherboardLinks& links) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        motherboard_links_ = links;
+    }
 
     grpc::Status GetSlotStatus(
         grpc::ServerContext* context,
@@ -103,10 +115,22 @@ public:
 
         // Topology comes from the machine variant when available, and is
         // the source of truth for socket labels, alias sets, and capability
-        // flags. The runtime per-slot type/image_name fields are read from
-        // the live device when accessible.
-        if constexpr (requires { Memory::slot_topology(); }) {
-            auto topo = Memory::slot_topology();
+        // flags. The link-aware overload is used so machines like the
+        // Model B+ (where S13 changes which slots IC71 owns) report what
+        // the user actually asked for at startup. The runtime per-slot
+        // type/image_name fields are read from the live device when
+        // accessible.
+        if constexpr (requires { Memory::slot_topology(motherboard_links_); }) {
+            auto topo = Memory::slot_topology(motherboard_links_);
+
+            // Report the link state itself so clients can display it.
+            for (const auto& info : motherboard_links_.describe()) {
+                auto* link = response->add_motherboard_links();
+                link->set_name(info.name);
+                link->set_value(info.value);
+                link->set_description(info.description);
+            }
+
             response->set_has_aliasing(topo.has_aliasing);
             response->set_num_physical_slots(
                 static_cast<uint32_t>(topo.sockets.size()));
@@ -195,6 +219,32 @@ public:
                 return grpc::Status::OK;
             }
             uint8_t slot = static_cast<uint8_t>(slot_num);
+
+            // Reject runtime configuration of sockets the topology marks as
+            // not runtime_configurable. On real hardware (Model B, Model B+,
+            // Master 128 internal sockets) this is a power-off chip-swap
+            // operation; only the fantasy ROM/RAM expansion board and
+            // future cartridge slots support hot reconfiguration.
+            if constexpr (requires { Memory::slot_topology(motherboard_links_); }) {
+                auto topo = Memory::slot_topology(motherboard_links_);
+                const auto* spec = topo.find_socket_for_slot(
+                    static_cast<int>(slot));
+                if (spec == nullptr) {
+                    response->set_success(false);
+                    response->set_error(
+                        "Slot " + std::to_string(slot)
+                        + " does not exist on this machine variant");
+                    return grpc::Status::OK;
+                }
+                if (!spec->runtime_configurable) {
+                    response->set_success(false);
+                    response->set_error(
+                        "Socket " + spec->label
+                        + " is not runtime-reconfigurable on this machine "
+                          "variant; configure at startup with --sideways");
+                    return grpc::Status::OK;
+                }
+            }
 
             auto& sideways = machine_.state().memory.sideways;
             beebium::SlotType new_type = proto_to_slot_type(request->type());
@@ -390,6 +440,7 @@ public:
 private:
     MachineType& machine_;
     std::mutex mutex_;
+    MotherboardLinks motherboard_links_{};
 };
 
 } // namespace beebium::service

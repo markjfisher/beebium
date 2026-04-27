@@ -776,6 +776,17 @@ public:
                 << "' on BBC Model B+ (expected: s13)";
             return msg.str();
         }
+
+        // Report current state of every modelled link. The values returned
+        // here are the same strings parse() accepts, so a client can round-
+        // trip them.
+        std::vector<MotherboardLinkInfo> describe() const {
+            return {{
+                "S13",
+                s13 == S13Position::West ? "west" : "east",
+                "IC71 (BASIC ROM) slot position: West=slots 14/15, East=slots 0/1"
+            }};
+        }
     };
 
     // Topology of the six fixed ROM sockets on the Model B+ motherboard.

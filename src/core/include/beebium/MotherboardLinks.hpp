@@ -34,8 +34,19 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace beebium {
+
+// Description of one motherboard link's current state, returned by
+// MotherboardLinks::describe(). Used by the SidewaysService to populate
+// the proto MotherboardLink list so clients can see what link state the
+// server was started with.
+struct MotherboardLinkInfo {
+    std::string name;
+    std::string value;
+    std::string description;
+};
 
 // Default link state for machines whose sideways slot mapping is fixed by
 // the motherboard wiring and does not vary with any link position.
@@ -48,6 +59,9 @@ struct EmptyMotherboardLinks {
             << "': this machine variant has no configurable slot-mapping links.";
         return msg.str();
     }
+
+    // No links to describe.
+    std::vector<MotherboardLinkInfo> describe() const { return {}; }
 };
 
 }  // namespace beebium

@@ -93,6 +93,21 @@ public:
     /// Access the TubeService (for host startup to set shared memory pointer).
     TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
 
+    /// Access the SidewaysService. Returns nullptr until start() has been
+    /// called, since services are constructed during start. Use
+    /// set_motherboard_links() before start() to configure link state.
+    SidewaysServiceImpl<MachineType>* sideways_service() {
+        return impl_->sideways_service.get();
+    }
+
+    /// Configure the motherboard link state to apply when the sideways
+    /// service is created during start(). Must be called before start();
+    /// has no effect afterwards. Motherboard links are not runtime mutable.
+    void set_motherboard_links(
+        const typename MachineType::Memory::MotherboardLinks& links) {
+        impl_->motherboard_links = links;
+    }
+
     /// Access the host DebuggerService (for wiring cross-processor stop).
     DebuggerControlServiceImpl<MachineType>& debugger_service() {
         return *impl_->debugger_control_service;
@@ -127,6 +142,9 @@ private:
         std::unique_ptr<SystemServiceImpl<MachineType>> system_service;
         std::unique_ptr<AudioServiceImpl<MachineType>> audio_service;
         std::unique_ptr<SidewaysServiceImpl<MachineType>> sideways_service;
+        // Motherboard link state captured before start(), applied to
+        // sideways_service when it is constructed.
+        typename MachineType::Memory::MotherboardLinks motherboard_links{};
         std::unique_ptr<EconetServiceImpl<MachineType>> econet_service;
         std::unique_ptr<TubeServiceImpl<MachineType>> tube_service;
         std::unique_ptr<grpc::Server> grpc_server;
@@ -229,6 +247,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
 
     impl_->sideways_service = std::make_unique<SidewaysServiceImpl<MachineType>>(
         impl_->machine);
+    impl_->sideways_service->set_motherboard_links(impl_->motherboard_links);
 
     impl_->econet_service = std::make_unique<EconetServiceImpl<MachineType>>(
         impl_->machine);

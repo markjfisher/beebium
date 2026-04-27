@@ -618,6 +618,15 @@ public:
     // produced by partial ROMSEL decoding. Used by configuration validation
     // and the gRPC SidewaysService to describe the hardware layout to
     // clients.
+    //
+    // Model B sockets are not runtime-reconfigurable: on real hardware,
+    // changing what is in a socket means powering off, removing the EPROM,
+    // and inserting a different chip (or sideways RAM module). Initial
+    // socket type and ROM image are configured at startup via --sideways;
+    // the gRPC ConfigureSlot RPC will reject runtime change requests on
+    // these sockets. The fantasy ROM/RAM expansion board variant
+    // (model-b-romram) and future cartridge-slot machines (e.g. Master 128)
+    // are where runtime reconfiguration belongs.
     static SlotTopology slot_topology(MotherboardLinks /*links*/ = {}) {
         SlotTopology topo;
         topo.has_aliasing = true;
@@ -630,9 +639,9 @@ public:
                 spec.slots.push_back(slot);
             }
             spec.supports_rom = true;
-            spec.supports_ram = true;
-            spec.supports_empty = true;
-            spec.runtime_configurable = true;
+            spec.supports_ram = true;     // a sideways-RAM module can be plugged in
+            spec.supports_empty = true;   // socket can be left vacant
+            spec.runtime_configurable = false;  // power-off operation in real life
             topo.sockets.push_back(std::move(spec));
         }
         return topo;
