@@ -954,14 +954,64 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
         config.mos_filepath = std::string(Memory::DEFAULT_MOS_ROM);
     }
 
+    // Apply motherboard link state to memory wiring before any ROM is
+    // loaded. On Model B+ this drops the IC71 binding from the slot pair
+    // S13 has routed away from, so loaded BASIC only appears at the
+    // currently-active pair. Other variants don't supply this hook.
+    if constexpr (requires (typename MachineType::Memory& m,
+                            const typename MachineType::Memory::MotherboardLinks& l) {
+                      m.apply_motherboard_links(l);
+                  }) {
+        machine.state().memory.apply_motherboard_links(config.motherboard_links);
+    }
+
+    // Apply default ROM fallbacks (BASIC into the language slot, DFS into
+    // the DFS slot) when the user has not asked for something different.
+    // "Different" is checked at the socket level, not the slot level: on
+    // machines with aliasing or link-dependent slot mapping (Model B+ S13)
+    // a user --sideways at any slot wired to the same physical chip
+    // counts as overriding the default for that chip. This avoids two
+    // pitfalls: (a) loading a default into a slot that does not exist on
+    // the configured topology, and (b) silently overwriting a user's ROM
+    // with the default because the default-slot's load_sideways_rom path
+    // still dispatches to the same physical chip.
+    auto user_targets_socket =
+        [&](const SlotTopology& topo, int socket_index) -> bool {
+        for (const auto& cfg : config.sideways_configs) {
+            const auto* s = topo.find_socket_for_slot(cfg.slot);
+            if (s && s->socket_index == socket_index) return true;
+        }
+        return false;
+    };
+
+    auto skip_default_for_slot =
+        [&](uint8_t default_slot) -> bool {
+        if constexpr (requires {
+                          Memory::slot_topology(config.motherboard_links);
+                      }) {
+            auto topo = Memory::slot_topology(config.motherboard_links);
+            const auto* spec = topo.find_socket_for_slot(default_slot);
+            // Default slot is not present on this configured topology.
+            if (spec == nullptr) return true;
+            // User already targets this socket via a different slot.
+            return user_targets_socket(topo, spec->socket_index);
+        } else {
+            return false;
+        }
+    };
+
     // Load default language ROM into default slot unless overridden
-    if (config.rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT) == config.rom_slots.end()) {
+    if (!skip_default_for_slot(Memory::DEFAULT_LANGUAGE_SLOT)
+        && config.rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT)
+               == config.rom_slots.end()) {
         config.rom_slots[Memory::DEFAULT_LANGUAGE_SLOT] = std::string(Memory::DEFAULT_LANGUAGE_ROM);
     }
 
     // Load default DFS ROM if machine has one and slot not overridden
     if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
-        if (config.rom_slots.find(Memory::DEFAULT_DFS_SLOT) == config.rom_slots.end()) {
+        if (!skip_default_for_slot(Memory::DEFAULT_DFS_SLOT)
+            && config.rom_slots.find(Memory::DEFAULT_DFS_SLOT)
+                   == config.rom_slots.end()) {
             config.rom_slots[Memory::DEFAULT_DFS_SLOT] = std::string(Memory::DEFAULT_DFS_ROM);
         }
     }

@@ -123,6 +123,11 @@ public:
         beebium::ModelBPlusHardware::MotherboardLinks links =
             beebium::ModelBPlusHardware::MotherboardLinks{}) {
         machine_.reset();
+        // Apply the link state to the memory wiring so that, at the
+        // dispatch level, IC71 only responds at the slots S13 selected.
+        // Production code does this in load_roms(); the fixture replicates
+        // that step explicitly because it doesn't go through load_roms.
+        machine_.state().memory.apply_motherboard_links(links);
         server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
             machine_, "127.0.0.1", 0);
         // set_motherboard_links must be called BEFORE start() -- the

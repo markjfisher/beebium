@@ -839,6 +839,31 @@ public:
         return topo;
     }
 
+    // Apply motherboard link state to the runtime memory wiring. The
+    // BankedMemory template binds IC71 (BASIC) to all four candidate slots
+    // (0, 1, 14, 15) at construction; this method drops the inactive pair
+    // based on the configured S13 position. Real hardware leaves those
+    // slot numbers electrically unconnected when S13 routes IC71 to the
+    // other pair, so reads should return open-bus (0xFF).
+    //
+    // Must be called once at start-up, after the Hardware is constructed
+    // but before the BBC is allowed to fetch ROMs. Calling more than once
+    // is harmless but unnecessary.
+    void apply_motherboard_links(const MotherboardLinks& links) {
+        switch (links.s13) {
+            case MotherboardLinks::S13Position::West:
+                // IC71 lives at slots 14/15; slots 0/1 are unwired.
+                sideways.unbind_bank(0);
+                sideways.unbind_bank(1);
+                break;
+            case MotherboardLinks::S13Position::East:
+                // IC71 lives at slots 0/1; slots 14/15 are unwired.
+                sideways.unbind_bank(14);
+                sideways.unbind_bank(15);
+                break;
+        }
+    }
+
     // =========================================================================
     // Startup Options (keyboard links)
     // =========================================================================

@@ -183,6 +183,62 @@ TEST_CASE("Validation against Model B+ with S13 East accepts --sideways 0:rom",
     REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
 }
 
+// ============================================================================
+// Memory-dispatch level: apply_motherboard_links() unbinds the inactive
+// IC71 slot pair so reads return open-bus (0xFF) rather than mirroring the
+// active pair. This is what makes the BBC see the topology the user
+// declared.
+// ============================================================================
+
+TEST_CASE("Model B+ S13 West unwires slots 0 and 1 in the memory dispatch",
+          "[sideways][model_b_plus][links][memory]") {
+    ModelBPlusHardware hw;
+    // Plant a sentinel in basic_rom so we can tell which slots route to it.
+    hw.basic_rom.data()[0x0000] = 0xAB;
+    hw.basic_rom.data()[0x0001] = 0xCD;
+
+    ModelBPlusHardware::MotherboardLinks links;  // default = S13 West
+    hw.apply_motherboard_links(links);
+
+    // Slots 14 and 15 (active pair) read from basic_rom.
+    REQUIRE(hw.sideways.peek_bank(15, 0x0000) == 0xAB);
+    REQUIRE(hw.sideways.peek_bank(15, 0x0001) == 0xCD);
+    REQUIRE(hw.sideways.peek_bank(14, 0x0000) == 0xAB);
+
+    // Slots 0 and 1 (inactive pair with S13=West) are now open-bus.
+    REQUIRE(hw.sideways.peek_bank(0, 0x0000) == 0xFF);
+    REQUIRE(hw.sideways.peek_bank(0, 0x0001) == 0xFF);
+    REQUIRE(hw.sideways.peek_bank(1, 0x0000) == 0xFF);
+    REQUIRE_FALSE(hw.sideways.is_bank_populated(0));
+    REQUIRE_FALSE(hw.sideways.is_bank_populated(1));
+    REQUIRE(hw.sideways.is_bank_populated(14));
+    REQUIRE(hw.sideways.is_bank_populated(15));
+}
+
+TEST_CASE("Model B+ S13 East unwires slots 14 and 15 in the memory dispatch",
+          "[sideways][model_b_plus][links][memory]") {
+    ModelBPlusHardware hw;
+    hw.basic_rom.data()[0x0000] = 0x55;
+    hw.basic_rom.data()[0x0001] = 0xAA;
+
+    ModelBPlusHardware::MotherboardLinks links;
+    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::East;
+    hw.apply_motherboard_links(links);
+
+    // Slots 0 and 1 are now the active pair.
+    REQUIRE(hw.sideways.peek_bank(0, 0x0000) == 0x55);
+    REQUIRE(hw.sideways.peek_bank(0, 0x0001) == 0xAA);
+    REQUIRE(hw.sideways.peek_bank(1, 0x0000) == 0x55);
+    REQUIRE(hw.sideways.is_bank_populated(0));
+    REQUIRE(hw.sideways.is_bank_populated(1));
+
+    // Slots 14 and 15 are now open-bus.
+    REQUIRE(hw.sideways.peek_bank(14, 0x0000) == 0xFF);
+    REQUIRE(hw.sideways.peek_bank(15, 0x0000) == 0xFF);
+    REQUIRE_FALSE(hw.sideways.is_bank_populated(14));
+    REQUIRE_FALSE(hw.sideways.is_bank_populated(15));
+}
+
 TEST_CASE("ModelBRomRamBoardHardware topology has 16 independent slots",
           "[sideways][topology][model_b_romram]") {
     auto topo = ModelBRomRamBoardHardware::slot_topology();

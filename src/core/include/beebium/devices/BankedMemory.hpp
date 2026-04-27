@@ -103,6 +103,21 @@ public:
         return bank < 16 && device_ptrs_[bank] != nullptr;
     }
 
+    // Drop a bank's binding so it behaves as an empty slot (reads return
+    // 0xFF, writes are ignored). Used by hardware policies whose physical
+    // wiring depends on motherboard link state -- e.g. on the Model B+
+    // link S13 selects which slot pair the IC71 (BASIC) socket responds
+    // to, leaving the other pair electrically dead. The default
+    // constructor binds every slot listed in the BankBindings template
+    // pack; calling unbind_bank() at start-up applies the link state.
+    void unbind_bank(uint8_t bank) {
+        if (bank < 16) {
+            read_table_[bank] = empty_read;
+            write_table_[bank] = empty_write;
+            device_ptrs_[bank] = nullptr;
+        }
+    }
+
     // Direct bank access for debugger - side-effect free read
     uint8_t peek_bank(uint8_t bank, uint16_t offset) const {
         if (bank >= 16 || device_ptrs_[bank] == nullptr) return 0xFF;
