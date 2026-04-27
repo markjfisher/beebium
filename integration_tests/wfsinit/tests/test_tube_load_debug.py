@@ -267,3 +267,66 @@ def test_run_from_keyboard_with_tube(
 
     except ServerNotFoundError as e:
         pytest.skip(str(e))
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(60)
+def test_auto_boot_with_tube(
+    server_filepath, mos_filepath, basic_filepath,
+    dfs_filepath,
+):
+    """Shift-Break auto-boot with Tube active.
+
+    Same minimal config as test_exec_boot_with_tube, but driven via
+    --auto-boot rather than a typed *EXEC !BOOT. The SSD's !BOOT chain
+    must reach "HELLO DONE" without manual keyboard input. Regression
+    cover for issue #23.
+    """
+    ssd_filepath = ASM_DIRPATH / "test_hello_proper.ssd"
+    if not ssd_filepath.exists():
+        pytest.skip(f"SSD not found: {ssd_filepath}")
+
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=server_filepath,
+            extra_args=[
+                "--tube-65c02",
+                "--fdc", "acorn-1770",
+                "--sideways", f"14:rom:{dfs_filepath}",
+                "--floppy", f"0:{ssd_filepath}",
+                "--auto-boot",
+            ],
+            startup_timeout=30.0,
+        ) as bbc:
+            def _boot_complete():
+                rows = read_mode7_screen(bbc.memory)
+                text = "\n".join(rows)
+                return "DONE" in text or "fault" in text.lower()
+
+            ok = run_until_or_timeout(
+                bbc,
+                _boot_complete,
+                emulated_seconds=30.0,
+            )
+
+            screen = dump_screen(bbc.memory)
+            print(f"Screen:\n{screen}")
+
+            rows = read_mode7_screen(bbc.memory)
+            text = "\n".join(rows)
+            if "fault" in text.lower():
+                pytest.fail(
+                    "Auto-boot produced a Disc fault with Tube active. "
+                    "See screen output."
+                )
+            if not ok:
+                pytest.fail(
+                    "Auto-boot did not reach DONE within timeout with Tube "
+                    "active. See screen output."
+                )
+            assert "HELLO" in text
+
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
