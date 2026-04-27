@@ -8,6 +8,7 @@ The Beebium emulator runs as a headless gRPC server. This document covers all co
 |------------|---------|-------------|
 | `beebium-model-b` | BBC Model B | Original 32K BBC Micro with MOS 1.20 |
 | `beebium-model-b-plus` | BBC Model B+ 64K | Enhanced 64K model with MOS 2.0 |
+| `beebium-model-b-romram` | BBC Model B with ROM/RAM expansion | Notional 16-slot ROM/RAM expansion board over an MOS 1.20 Model B |
 
 ## Usage
 
@@ -61,7 +62,10 @@ All integer arguments accept multiple formats:
 | Binary | `0b` or `0B` | `0b1010` | 10 |
 | Octal | `0o` or `0O` | `0o377` | 255 |
 
-This applies to `--port`, `--screen-mode`, `--links`, slot numbers in `--sideways`, and drive numbers in `--floppy`.
+This applies to `--port`, `--screen-mode`, `--links` (the keyboard
+startup-options byte; not to be confused with `--motherboard-link`,
+which takes named string values), slot numbers in `--sideways`, and
+drive numbers in `--floppy`.
 
 ## Subcommand Naming
 
@@ -98,6 +102,18 @@ The `--sideways` option supports three slot types:
 - `SLOT:rom:IMAGE` - Load ROM image file into slot
 - `SLOT:ram[:IMAGE]` - Configure as RAM (optionally pre-load from file)
 - `SLOT:empty` - Leave slot empty
+
+`--sideways` arguments are validated against each machine variant's
+slot topology at startup. The server refuses to start when an argument
+references a slot that does not exist on the chosen machine, requests
+a type the underlying physical socket does not support (e.g. `ram` on
+a Model B+, where every socket is ROM-only), targets two aliased slots
+with conflicting types or different ROM images, or specifies the same
+slot twice. All detected problems are reported in a single error
+message naming the affected socket and its alias set, so multiple
+mistakes can be fixed before retrying. The full topology and
+validation rules per machine are described in
+[sideways-slots.md](sideways-slots.md).
 
 #### Disc Configuration
 
@@ -219,6 +235,40 @@ The `--wait` option allows clients to connect and set up before emulation begins
 | `--links <0-255>` | Raw startup options byte |
 
 `--links` is mutually exclusive with `--screen-mode` and `--auto-boot`.
+
+#### Motherboard Links
+
+| Option | Description |
+|--------|-------------|
+| `--motherboard-link KEY=VALUE` | Set a motherboard jumper position (case-insensitive). Repeat the flag for multiple links. |
+
+This option is distinct from the keyboard `--links` byte above:
+keyboard links live on the keyboard PCB and select startup behaviour;
+**motherboard** links are physical jumpers on the main board that
+change which slots the sideways ROM sockets respond to. The set of
+available links is machine-specific; on machines with no slot-mapping
+links (Model B, ROM/RAM board) the option is rejected at parse time
+and is hidden from `start --help`.
+
+Currently modelled:
+
+| Machine | KEY | Values | Effect |
+|---------|-----|--------|--------|
+| Model B+ | `s13` | `west` (default), `east` | `west`: IC71 (BASIC) socket appears at slots 14/15; `east`: at slots 0/1. The other pair becomes electrically dead. |
+
+The link state is set once at server start; there is no runtime API
+to change it. Servers report their configured link state to clients
+via `SidewaysService.GetSlotStatus`, so frontends can display the
+current configuration without re-parsing CLI arguments.
+
+Example:
+
+```bash
+beebium-model-b-plus --motherboard-link s13=east --sideways 0:rom:bbc-basic_2.rom
+```
+
+See [sideways-slots.md](sideways-slots.md) for the full slot topology
+behind these options.
 
 ### list-fdcs
 

@@ -114,6 +114,44 @@ private:
     std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
 };
 
+// Fixture for Model B+ with optional motherboard link override. The B+
+// has S13, which reroutes IC71 (BASIC) between slots 14/15 (West) and
+// 0/1 (East).
+class ModelBPlusSidewaysFixture {
+public:
+    explicit ModelBPlusSidewaysFixture(
+        beebium::ModelBPlusHardware::MotherboardLinks links =
+            beebium::ModelBPlusHardware::MotherboardLinks{}) {
+        machine_.reset();
+        // Apply the link state to the memory wiring so that, at the
+        // dispatch level, IC71 only responds at the slots S13 selected.
+        // Production code does this in load_roms(); the fixture replicates
+        // that step explicitly because it doesn't go through load_roms.
+        machine_.state().memory.apply_motherboard_links(links);
+        server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
+            machine_, "127.0.0.1", 0);
+        // set_motherboard_links must be called BEFORE start() -- the
+        // sideways service is constructed during start() and reads the
+        // saved link state at that point.
+        server_->set_motherboard_links(links);
+        server_->start({}, {});
+
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+        sideways_stub_ = beebium::SidewaysService::NewStub(channel_);
+    }
+
+    ~ModelBPlusSidewaysFixture() { server_->stop(); }
+
+    beebium::SidewaysService::Stub& sideways() { return *sideways_stub_; }
+
+private:
+    beebium::ModelBPlus machine_;
+    std::unique_ptr<beebium::service::Server<beebium::ModelBPlus>> server_;
+    std::shared_ptr<grpc::Channel> channel_;
+    std::unique_ptr<beebium::SidewaysService::Stub> sideways_stub_;
+};
+
 } // anonymous namespace
 
 //////////////////////////////////////////////////////////////////////////////
@@ -201,14 +239,38 @@ TEST_CASE("SidewaysService ConfigureSlot with invalid slot returns error", "[grp
     CHECK(response.error().find("Invalid slot") != std::string::npos);
 }
 
-TEST_CASE("SidewaysService ConfigureSlot maps slot to socket for Model B", "[grpc][sideways]") {
+TEST_CASE("SidewaysService ConfigureSlot rejects runtime configuration on Model B",
+          "[grpc][sideways]") {
+    // Model B sockets are not runtime-reconfigurable (real hardware would
+    // need a power cycle to swap chips). Initial layout is set via
+    // --sideways at startup; the runtime RPC must refuse.
     ModelBSidewaysFixture fixture;
 
     grpc::ClientContext context;
     beebium::ConfigureSlotRequest request;
     beebium::ConfigureSlotResponse response;
 
-    // Configuring slot 4 should affect socket 0 (IC52) due to aliasing
+    request.set_slot(4);
+    request.set_type(beebium::SIDEWAYS_SLOT_TYPE_RAM);
+
+    auto status = fixture.sideways().ConfigureSlot(&context, request, &response);
+
+    REQUIRE(status.ok());
+    CHECK(response.success() == false);
+    CHECK(response.error().find("not runtime-reconfigurable") != std::string::npos);
+    CHECK(response.error().find("IC52") != std::string::npos);  // socket label included
+}
+
+TEST_CASE("SidewaysService ConfigureSlot accepts runtime configuration on ROM/RAM board",
+          "[grpc][sideways]") {
+    // The ROM/RAM expansion board is the fantasy hardware that DOES support
+    // runtime reconfiguration -- the topology says so, ConfigureSlot honours it.
+    RomRamBoardSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::ConfigureSlotRequest request;
+    beebium::ConfigureSlotResponse response;
+
     request.set_slot(4);
     request.set_type(beebium::SIDEWAYS_SLOT_TYPE_RAM);
 
@@ -216,7 +278,7 @@ TEST_CASE("SidewaysService ConfigureSlot maps slot to socket for Model B", "[grp
 
     REQUIRE(status.ok());
     CHECK(response.success() == true);
-    CHECK(response.actual_socket() == 0);  // slot 4 & 0x03 = 0
+    CHECK(response.actual_socket() == 4);  // 1:1 slot/socket on this board
 }
 
 TEST_CASE("SidewaysService ReadSlotData reads ROM contents", "[grpc][sideways]") {
@@ -569,5 +631,117 @@ TEST_CASE("DebuggerControl PeekRegion returns error for invalid region name", "[
 
         REQUIRE(!status.ok());
         CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Socket capability fields populated from SlotTopology
+//////////////////////////////////////////////////////////////////////////////
+
+TEST_CASE("SidewaysService GetSlotStatus reports Model B socket capabilities",
+          "[grpc][sideways][capabilities]") {
+    ModelBSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 4);
+
+    // Model B sockets can hold any of ROM/RAM/Empty -- but only as
+    // configured at start-up. They are NOT runtime-reconfigurable; the
+    // capability flag must report this honestly so GUI clients don't
+    // expose a useless "convert to RAM" command.
+    for (int i = 0; i < response.sockets_size(); ++i) {
+        const auto& caps = response.sockets(i).capabilities();
+        CHECK(caps.supports_rom());
+        CHECK(caps.supports_ram());
+        CHECK(caps.supports_empty());
+        CHECK_FALSE(caps.runtime_configurable());
+    }
+}
+
+TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13",
+          "[grpc][sideways][model_b_plus][links]") {
+    SECTION("default S13=West binds IC71 to slots 14/15") {
+        ModelBPlusSidewaysFixture fixture;  // default links = S13 West
+
+        grpc::ClientContext context;
+        beebium::GetSlotStatusRequest request;
+        beebium::GetSlotStatusResponse response;
+
+        auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+        REQUIRE(status.ok());
+        CHECK(response.has_aliasing() == true);
+        REQUIRE(response.sockets_size() == 6);
+        REQUIRE(response.motherboard_links_size() == 1);
+        CHECK(response.motherboard_links(0).name() == "S13");
+        CHECK(response.motherboard_links(0).value() == "west");
+
+        // IC71 should be the first socket and own slots 14, 15.
+        const auto& ic71 = response.sockets(0);
+        CHECK(ic71.socket_label() == "IC71");
+        REQUIRE(ic71.aliased_slots_size() == 2);
+        CHECK(ic71.aliased_slots(0) == 14);
+        CHECK(ic71.aliased_slots(1) == 15);
+
+        // B+ sockets are ROM-only and not runtime-reconfigurable.
+        for (int i = 0; i < response.sockets_size(); ++i) {
+            const auto& caps = response.sockets(i).capabilities();
+            CHECK(caps.supports_rom());
+            CHECK_FALSE(caps.supports_ram());
+            CHECK_FALSE(caps.supports_empty());
+            CHECK_FALSE(caps.runtime_configurable());
+        }
+    }
+
+    SECTION("S13=East rebinds IC71 to slots 0/1") {
+        beebium::ModelBPlusHardware::MotherboardLinks links;
+        links.s13 = beebium::ModelBPlusHardware::MotherboardLinks::S13Position::East;
+        ModelBPlusSidewaysFixture fixture{links};
+
+        grpc::ClientContext context;
+        beebium::GetSlotStatusRequest request;
+        beebium::GetSlotStatusResponse response;
+
+        auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+        REQUIRE(status.ok());
+        REQUIRE(response.motherboard_links_size() == 1);
+        CHECK(response.motherboard_links(0).value() == "east");
+
+        const auto& ic71 = response.sockets(0);
+        CHECK(ic71.socket_label() == "IC71");
+        REQUIRE(ic71.aliased_slots_size() == 2);
+        CHECK(ic71.aliased_slots(0) == 0);
+        CHECK(ic71.aliased_slots(1) == 1);
+    }
+}
+
+TEST_CASE("SidewaysService GetSlotStatus reports ROM/RAM board socket capabilities",
+          "[grpc][sideways][capabilities]") {
+    // The ROM/RAM expansion board is the variant where runtime
+    // reconfiguration is allowed.
+    RomRamBoardSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 16);
+
+    for (int i = 0; i < response.sockets_size(); ++i) {
+        const auto& caps = response.sockets(i).capabilities();
+        CHECK(caps.supports_rom());
+        CHECK(caps.supports_ram());
+        CHECK(caps.supports_empty());
+        CHECK(caps.runtime_configurable());
     }
 }

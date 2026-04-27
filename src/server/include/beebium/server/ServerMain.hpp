@@ -15,6 +15,7 @@
 
 #include "BuiltinExtensions.hpp"
 #include "CliArgParsers.hpp"
+#include "SidewaysValidation.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
@@ -345,6 +346,11 @@ struct ServerConfig {
     std::map<uint8_t, std::string> rom_slots;
     std::vector<SidewaysConfig> sideways_configs;
 
+    // Motherboard link state (jumpers that affect sideways slot mapping).
+    // Default-constructed to factory positions. For machine variants with no
+    // such links this is EmptyMotherboardLinks and accepts no assignments.
+    typename MachineType::Memory::MotherboardLinks motherboard_links{};
+
     // Network
     uint16_t port = DEFAULT_GRPC_PORT;
 
@@ -455,7 +461,23 @@ void print_usage(const char* program_name) {
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
-              << "                           with --screen-mode and --auto-boot)\n"
+              << "                           with --screen-mode and --auto-boot)\n";
+
+    // --motherboard-link KEY=VALUE: only relevant on machines whose slot
+    // mapping depends on physical jumpers (Model B+ S13 today; others to
+    // come). For machines with no such links the option is rejected at
+    // parse time, so we hide it from --help to avoid confusion.
+    if constexpr (Memory::MotherboardLinks::has_slot_links) {
+        std::cerr << "  --motherboard-link KEY=VALUE\n"
+                  << "                           Set a motherboard jumper position\n"
+                  << "                           (case-insensitive). Repeat for multiple\n"
+                  << "                           links. Available on this machine:\n";
+        for (const auto& line : Memory::MotherboardLinks::help_lines()) {
+            std::cerr << "                             " << line << "\n";
+        }
+    }
+
+    std::cerr
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
@@ -768,6 +790,22 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         } else if (arg == "--rom-dir" && i + 1 < argc) {
             config.rom_dirpath = argv[++i];
+        } else if (arg == "--motherboard-link" && i + 1 < argc) {
+            // KEY=VALUE; key/value strings interpreted by the machine
+            // variant's MotherboardLinks::parse method.
+            std::string spec = argv[++i];
+            auto eq = spec.find('=');
+            if (eq == std::string::npos) {
+                std::cerr << "Error: --motherboard-link expects KEY=VALUE, got '"
+                          << spec << "'\n";
+                return ExitCode::USAGE;
+            }
+            std::string key = spec.substr(0, eq);
+            std::string value = spec.substr(eq + 1);
+            if (auto err = config.motherboard_links.parse(key, value)) {
+                std::cerr << "Error: " << *err << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--port" && i + 1 < argc) {
             try {
                 config.port = static_cast<uint16_t>(parse_int(argv[++i], "--port"));
@@ -904,6 +942,19 @@ std::optional<std::string> validate_config(const ServerConfig<MachineType>& conf
     // are now extension instances; mutex enforcement lives in
     // install_econet (which sees the EconetTransportRegistry).
 
+    // Validate --sideways arguments against the machine variant's slot
+    // topology, taking into account any motherboard link state that affects
+    // slot mapping (e.g. Model B+ S13). Reports nonexistent slots,
+    // unsupported types, aliased-socket conflicts, duplicate slot specs.
+    using Memory = typename MachineType::Memory;
+    if constexpr (requires { Memory::slot_topology(config.motherboard_links); }) {
+        if (auto err = validate_sideways_configs(
+                Memory::slot_topology(config.motherboard_links),
+                config.sideways_configs)) {
+            return err;
+        }
+    }
+
     return std::nullopt;  // Valid
 }
 
@@ -919,14 +970,64 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
         config.mos_filepath = std::string(Memory::DEFAULT_MOS_ROM);
     }
 
+    // Apply motherboard link state to memory wiring before any ROM is
+    // loaded. On Model B+ this drops the IC71 binding from the slot pair
+    // S13 has routed away from, so loaded BASIC only appears at the
+    // currently-active pair. Other variants don't supply this hook.
+    if constexpr (requires (typename MachineType::Memory& m,
+                            const typename MachineType::Memory::MotherboardLinks& l) {
+                      m.apply_motherboard_links(l);
+                  }) {
+        machine.state().memory.apply_motherboard_links(config.motherboard_links);
+    }
+
+    // Apply default ROM fallbacks (BASIC into the language slot, DFS into
+    // the DFS slot) when the user has not asked for something different.
+    // "Different" is checked at the socket level, not the slot level: on
+    // machines with aliasing or link-dependent slot mapping (Model B+ S13)
+    // a user --sideways at any slot wired to the same physical chip
+    // counts as overriding the default for that chip. This avoids two
+    // pitfalls: (a) loading a default into a slot that does not exist on
+    // the configured topology, and (b) silently overwriting a user's ROM
+    // with the default because the default-slot's load_sideways_rom path
+    // still dispatches to the same physical chip.
+    auto user_targets_socket =
+        [&](const SlotTopology& topo, int socket_index) -> bool {
+        for (const auto& cfg : config.sideways_configs) {
+            const auto* s = topo.find_socket_for_slot(cfg.slot);
+            if (s && s->socket_index == socket_index) return true;
+        }
+        return false;
+    };
+
+    auto skip_default_for_slot =
+        [&](uint8_t default_slot) -> bool {
+        if constexpr (requires {
+                          Memory::slot_topology(config.motherboard_links);
+                      }) {
+            auto topo = Memory::slot_topology(config.motherboard_links);
+            const auto* spec = topo.find_socket_for_slot(default_slot);
+            // Default slot is not present on this configured topology.
+            if (spec == nullptr) return true;
+            // User already targets this socket via a different slot.
+            return user_targets_socket(topo, spec->socket_index);
+        } else {
+            return false;
+        }
+    };
+
     // Load default language ROM into default slot unless overridden
-    if (config.rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT) == config.rom_slots.end()) {
+    if (!skip_default_for_slot(Memory::DEFAULT_LANGUAGE_SLOT)
+        && config.rom_slots.find(Memory::DEFAULT_LANGUAGE_SLOT)
+               == config.rom_slots.end()) {
         config.rom_slots[Memory::DEFAULT_LANGUAGE_SLOT] = std::string(Memory::DEFAULT_LANGUAGE_ROM);
     }
 
     // Load default DFS ROM if machine has one and slot not overridden
     if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
-        if (config.rom_slots.find(Memory::DEFAULT_DFS_SLOT) == config.rom_slots.end()) {
+        if (!skip_default_for_slot(Memory::DEFAULT_DFS_SLOT)
+            && config.rom_slots.find(Memory::DEFAULT_DFS_SLOT)
+                   == config.rom_slots.end()) {
             config.rom_slots[Memory::DEFAULT_DFS_SLOT] = std::string(Memory::DEFAULT_DFS_ROM);
         }
     }
@@ -1705,6 +1806,13 @@ public:
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";
             beebium::service::Server<MachineType> server(machine, "0.0.0.0", config.port);
+
+            // Push the configured motherboard link state into the server
+            // so that the sideways service (constructed during start())
+            // reports the actual topology to clients -- e.g. Model B+
+            // with --motherboard-link s13=east shows IC71 at slots 0/1.
+            server.set_motherboard_links(config.motherboard_links);
+
             beebium::service::Provenance provenance{
                 config.provenance_type,
                 config.provenance_uuid,

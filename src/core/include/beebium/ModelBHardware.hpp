@@ -21,8 +21,10 @@
 #include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
+#include "MotherboardLinks.hpp"
 #include "OutputQueue.hpp"
 #include "Saa5050.hpp"
+#include "SlotTopology.hpp"
 #include "SystemViaPeripheral.hpp"
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
@@ -606,6 +608,43 @@ public:
     // Indicates this memory type supports runtime slot configuration
     static constexpr bool supports_slot_configuration() {
         return AliasedBankedMemory::supports_slot_configuration();
+    }
+
+    // The Model B has no motherboard links that affect sideways slot mapping;
+    // the four sockets are wired the same way on every machine.
+    using MotherboardLinks = EmptyMotherboardLinks;
+
+    // Topology of the four sideways ROM sockets, including the 4-way aliasing
+    // produced by partial ROMSEL decoding. Used by configuration validation
+    // and the gRPC SidewaysService to describe the hardware layout to
+    // clients.
+    //
+    // Model B sockets are not runtime-reconfigurable: on real hardware,
+    // changing what is in a socket means powering off, removing the EPROM,
+    // and inserting a different chip (or sideways RAM module). Initial
+    // socket type and ROM image are configured at startup via --sideways;
+    // the gRPC ConfigureSlot RPC will reject runtime change requests on
+    // these sockets. The fantasy ROM/RAM expansion board variant
+    // (model-b-romram) and future cartridge-slot machines (e.g. Master 128)
+    // are where runtime reconfiguration belongs.
+    static SlotTopology slot_topology(MotherboardLinks /*links*/ = {}) {
+        SlotTopology topo;
+        topo.has_aliasing = true;
+        for (uint8_t socket_idx = 0; socket_idx < AliasedBankedMemory::num_sockets;
+             ++socket_idx) {
+            SocketSpec spec;
+            spec.socket_index = socket_idx;
+            spec.label = std::string(AliasedBankedMemory::socket_names[socket_idx]);
+            for (uint8_t slot : AliasedBankedMemory::socket_aliased_slots(socket_idx)) {
+                spec.slots.push_back(slot);
+            }
+            spec.supports_rom = true;
+            spec.supports_ram = true;     // a sideways-RAM module can be plugged in
+            spec.supports_empty = true;   // socket can be left vacant
+            spec.runtime_configurable = false;  // power-off operation in real life
+            topo.sockets.push_back(std::move(spec));
+        }
+        return topo;
     }
 
     // =========================================================================

@@ -21,8 +21,10 @@
 #include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
+#include "MotherboardLinks.hpp"
 #include "OutputQueue.hpp"
 #include "Saa5050.hpp"
+#include "SlotTopology.hpp"
 #include "SystemViaPeripheral.hpp"
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
@@ -460,6 +462,39 @@ public:
     // Indicates this memory type supports runtime slot configuration
     static constexpr bool supports_slot_configuration() {
         return ConfigurableBankedMemory::supports_slot_configuration();
+    }
+
+    // The ROM/RAM expansion board has full 4-bit ROMSEL decoding and no
+    // motherboard links that affect slot mapping; every slot is independent
+    // regardless of any link state.
+    using MotherboardLinks = EmptyMotherboardLinks;
+
+    // Topology of the 16 fully-decoded sideways slots provided by the
+    // ROM/RAM expansion board.
+    //
+    // This board is not modelled on a specific real-world product: it is a
+    // notional "sufficiently sophisticated" expansion board with full 4-bit
+    // ROMSEL decoding (no aliasing) and runtime-configurable slot types.
+    // We allow ROM/RAM/Empty changes through the gRPC ConfigureSlot RPC
+    // because such a board could plausibly exist with that capability,
+    // and it gives users a flexible test bed without forcing a server
+    // restart. Future cartridge-slot machines (e.g. Master 128) will share
+    // this runtime-configurable behaviour for their cartridge sockets.
+    static SlotTopology slot_topology(MotherboardLinks /*links*/ = {}) {
+        SlotTopology topo;
+        topo.has_aliasing = false;
+        for (int slot = 0; slot < 16; ++slot) {
+            SocketSpec spec;
+            spec.socket_index = slot;
+            spec.label = "Slot " + std::to_string(slot);
+            spec.slots = {slot};
+            spec.supports_rom = true;
+            spec.supports_ram = true;
+            spec.supports_empty = true;
+            spec.runtime_configurable = true;
+            topo.sockets.push_back(std::move(spec));
+        }
+        return topo;
     }
 
     // =========================================================================

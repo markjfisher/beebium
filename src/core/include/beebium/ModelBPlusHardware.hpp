@@ -23,8 +23,10 @@
 #include "PacingConfig.hpp"
 #include "MemoryMap.hpp"
 #include "MemoryRegion.hpp"
+#include "MotherboardLinks.hpp"
 #include "OutputQueue.hpp"
 #include "Saa5050.hpp"
+#include "SlotTopology.hpp"
 #include "SystemViaPeripheral.hpp"
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
@@ -729,6 +731,153 @@ public:
 
     // Indicates this memory type does NOT support runtime slot configuration
     static constexpr bool supports_slot_configuration() { return false; }
+
+    // Motherboard links on the BBC Model B+ that affect sideways slot
+    // mapping. Today we model link S13, which selects which slot number(s)
+    // the IC71 (BASIC) socket responds to:
+    //
+    //   * West (default factory position): IC71 appears at slots 14 and 15.
+    //     This is the standard configuration -- BASIC sits in slot 15, where
+    //     the MOS searches for a language ROM.
+    //
+    //   * East: IC71 appears at slots 0 and 1. Used when slot 15 is needed
+    //     for a different language ROM and BASIC is paged in elsewhere.
+    //
+    // The other slot-mapping links on the B+ (S9, S11, S12, S15) switch user
+    // sockets between 16K and 32K modes -- not yet modelled. Speed links
+    // S18/S19 do not affect slot mapping and are not covered by this struct.
+    struct MotherboardLinks {
+        // Compile-time flag: this machine has slot-mapping links the user
+        // can configure with --motherboard-link.
+        static constexpr bool has_slot_links = true;
+
+        enum class S13Position { West, East };
+        S13Position s13 = S13Position::West;
+
+        std::optional<std::string> parse(std::string_view key,
+                                         std::string_view value) {
+            auto lower = [](std::string_view sv) {
+                std::string out;
+                out.reserve(sv.size());
+                for (char c : sv) {
+                    out.push_back(static_cast<char>(std::tolower(
+                        static_cast<unsigned char>(c))));
+                }
+                return out;
+            };
+            const std::string lkey = lower(key);
+            const std::string lvalue = lower(value);
+            if (lkey == "s13") {
+                if (lvalue == "west") { s13 = S13Position::West; return std::nullopt; }
+                if (lvalue == "east") { s13 = S13Position::East; return std::nullopt; }
+                std::ostringstream msg;
+                msg << "Invalid value for motherboard link S13: '" << value
+                    << "' (expected: west, east)";
+                return msg.str();
+            }
+            std::ostringstream msg;
+            msg << "Unknown motherboard link '" << key
+                << "' on BBC Model B+ (expected: s13)";
+            return msg.str();
+        }
+
+        // Report current state of every modelled link. The values returned
+        // here are the same strings parse() accepts, so a client can round-
+        // trip them.
+        std::vector<MotherboardLinkInfo> describe() const {
+            return {{
+                "S13",
+                s13 == S13Position::West ? "west" : "east",
+                "IC71 (BASIC ROM) slot position: West=slots 14/15, East=slots 0/1"
+            }};
+        }
+
+        // Lines describing every available link, formatted for inclusion in
+        // --help under "Available links". One line per supported KEY=VALUE
+        // form; whitespace-only lines are not produced so callers can join
+        // with newlines without worrying about trailing blanks.
+        static std::vector<std::string> help_lines() {
+            return {
+                "s13=west|east   IC71 (BASIC) slot pair "
+                "(west=slots 14/15, east=slots 0/1; default: west)"
+            };
+        }
+    };
+
+    // Topology of the six fixed ROM sockets on the Model B+ motherboard.
+    //
+    // Five sockets (IC35, IC44, IC57, IC62, IC68) are each wired to a fixed
+    // pair of slot numbers by the standard PCB decoding. The sixth socket,
+    // IC71 (BASIC), is wired through link S13 to one of two possible slot
+    // pairs -- the topology reflects the configured S13 position.
+    //
+    // No socket is assigned to slots 12 or 13 on a stock B+, and selecting
+    // them via ROMSEL reads as an empty slot (0xFF).
+    //
+    // All B+ sockets are ROM-only and not runtime-configurable: the
+    // motherboard does not provide sideways RAM, and the ROM contents cannot
+    // change while the machine is running.
+    static SlotTopology slot_topology() {
+        return slot_topology(MotherboardLinks{});
+    }
+
+    static SlotTopology slot_topology(MotherboardLinks links) {
+        SlotTopology topo;
+        topo.has_aliasing = true;  // Each socket responds to >1 slot
+        std::vector<int> ic71_slots;
+        switch (links.s13) {
+            case MotherboardLinks::S13Position::West:
+                ic71_slots = {14, 15}; break;
+            case MotherboardLinks::S13Position::East:
+                ic71_slots = {0, 1}; break;
+        }
+        struct Entry { const char* label; std::vector<int> slots; };
+        const std::vector<Entry> entries = {
+            {"IC71", ic71_slots},      // BASIC (link S13 selects pair)
+            {"IC35", {2, 3}},
+            {"IC44", {4, 5}},
+            {"IC57", {6, 7}},
+            {"IC62", {8, 9}},
+            {"IC68", {10, 11}}        // DFS
+        };
+        for (size_t i = 0; i < entries.size(); ++i) {
+            SocketSpec spec;
+            spec.socket_index = static_cast<int>(i);
+            spec.label = entries[i].label;
+            spec.slots = entries[i].slots;
+            spec.supports_rom = true;
+            spec.supports_ram = false;
+            spec.supports_empty = false;
+            spec.runtime_configurable = false;
+            topo.sockets.push_back(std::move(spec));
+        }
+        return topo;
+    }
+
+    // Apply motherboard link state to the runtime memory wiring. The
+    // BankedMemory template binds IC71 (BASIC) to all four candidate slots
+    // (0, 1, 14, 15) at construction; this method drops the inactive pair
+    // based on the configured S13 position. Real hardware leaves those
+    // slot numbers electrically unconnected when S13 routes IC71 to the
+    // other pair, so reads should return open-bus (0xFF).
+    //
+    // Must be called once at start-up, after the Hardware is constructed
+    // but before the BBC is allowed to fetch ROMs. Calling more than once
+    // is harmless but unnecessary.
+    void apply_motherboard_links(const MotherboardLinks& links) {
+        switch (links.s13) {
+            case MotherboardLinks::S13Position::West:
+                // IC71 lives at slots 14/15; slots 0/1 are unwired.
+                sideways.unbind_bank(0);
+                sideways.unbind_bank(1);
+                break;
+            case MotherboardLinks::S13Position::East:
+                // IC71 lives at slots 0/1; slots 14/15 are unwired.
+                sideways.unbind_bank(14);
+                sideways.unbind_bank(15);
+                break;
+        }
+    }
 
     // =========================================================================
     // Startup Options (keyboard links)
