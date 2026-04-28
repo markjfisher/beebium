@@ -504,15 +504,18 @@ public:
     // a paused machine. Otherwise the machine is paused for the duration
     // of `f` and resumed afterwards.
     //
+    // Note: pause() merely sets an atomic flag; the run loop only checks it
+    // between cycles. We unconditionally wait_until_idle() so that even when
+    // the machine was already "paused" by an earlier pause() that hadn't
+    // drained the loop yet (DebuggerService::Stop does this), `f` runs
+    // single-threaded against the CPU/memory state.
+    //
     // Use this from gRPC service threads when mutating CPU/memory state
     // that the emulation loop may be reading or writing concurrently.
     template<typename F>
     void with_emulation_paused(F&& f) {
-        const bool was_paused = paused_.load();
-        if (!was_paused) {
-            paused_.store(true);
-            wait_until_idle();
-        }
+        const bool was_paused = paused_.exchange(true);
+        wait_until_idle();
         f();
         if (!was_paused) {
             {
