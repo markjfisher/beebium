@@ -30,6 +30,16 @@ public:
     // TubeSocket skips ticking when paused.
     virtual bool is_paused() const = 0;
 
+    // Reset the parasite processor.
+    //
+    // On real hardware, the BBC's reset line propagates through the Tube
+    // cable and resets the parasite CPU together with the host. The host's
+    // TubeSocket::reset() invokes this so the parasite restarts at the
+    // reset vector instead of resuming whatever it was doing before Break.
+    // Default is a no-op so tests with simple stub tickables don't have to
+    // implement it.
+    virtual void reset() {}
+
     // Diagnostic: current parasite PC for stretch deadlock investigation.
     // Default returns 0xFFFF (sentinel) for implementations that don't override.
     virtual uint16_t diag_pc() const { return 0xFFFF; }

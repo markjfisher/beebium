@@ -154,8 +154,18 @@ public:
 
     // --- Reset ---
 
+    // Reset the Tube subsystem: ULA backend (FIFOs, control flags) and the
+    // parasite CPU if one is installed. This models the BBC's RST line
+    // propagating through the Tube cable: when the host is reset (power-on
+    // or Break), the second processor resets too. Without resetting the
+    // parasite here it would resume whatever it was doing before Break --
+    // typically blocked in a Tube R2 OSRDCH wait -- so the host's post-reset
+    // banner sequence has no respondent and the user sees a blank screen.
     void reset() {
         active_backend()->reset();
+        if (parasite_) {
+            parasite_->reset();
+        }
     }
 
     // --- Parasite management (single-threaded interleaved ticking) ---

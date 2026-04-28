@@ -54,7 +54,9 @@ public:
     ParasiteRunner& operator=(const ParasiteRunner&) = delete;
 
     // Reset CPU, memory map, and Tube port. Clears cycle count.
-    void reset();
+    // Overrides ParasiteTickable::reset() so TubeSocket can propagate the
+    // host's reset signal across the Tube cable to the parasite.
+    void reset() override;
 
     // Execute for the given number of cycles, or until shutdown.
     // Checks pause state periodically.
