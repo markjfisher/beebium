@@ -160,10 +160,17 @@ public:
 
     // Assert Break key (hold reset line low, halting CPU)
     // While Break is held, the CPU is frozen - step() will not execute instructions.
+    //
+    // Called from the KeyboardService gRPC thread; the emulation loop may be
+    // mid-cycle calling cpu.tfn. Pause and drain the loop before mutating CPU
+    // state so we don't race against `(*cpu.tfn)(&cpu)`. Restore the original
+    // paused state on exit so a debugger pause is preserved.
     void break_down() {
-        in_reset_ = true;
-        M6502_Halt(&state_.cpu);
-        ++sequence_;
+        with_emulation_paused([this] {
+            in_reset_ = true;
+            M6502_Halt(&state_.cpu);
+            ++sequence_;
+        });
     }
 
     // Release Break key (begin reset sequence)
@@ -171,8 +178,14 @@ public:
     // The System VIA is preserved, and MOS checks the keyboard matrix during its
     // reset sequence. If Ctrl is held, MOS itself clears the VIA configuration
     // to force a "hard reset" behavior.
+    //
+    // The soft_reset() does memset(&cpu, 0, sizeof) inside M6502_Init -- it MUST
+    // run while the emulation loop is idle, otherwise a torn read of cpu.tfn or
+    // a call through a NULL tfn segfaults the server (issues #27 / #39).
     void break_up() {
-        soft_reset();
+        with_emulation_paused([this] {
+            soft_reset();
+        });
     }
 
     // Check if Break key is currently held (CPU halted)
@@ -481,6 +494,32 @@ public:
     void wait_until_idle() {
         while (in_run_.load(std::memory_order_acquire)) {
             std::this_thread::yield();
+        }
+    }
+
+    // Run `f` with the emulation loop guaranteed not to be inside run().
+    //
+    // If the machine was already paused (e.g. by the debugger) the prior
+    // paused state is preserved so the caller doesn't accidentally resume
+    // a paused machine. Otherwise the machine is paused for the duration
+    // of `f` and resumed afterwards.
+    //
+    // Use this from gRPC service threads when mutating CPU/memory state
+    // that the emulation loop may be reading or writing concurrently.
+    template<typename F>
+    void with_emulation_paused(F&& f) {
+        const bool was_paused = paused_.load();
+        if (!was_paused) {
+            paused_.store(true);
+            wait_until_idle();
+        }
+        f();
+        if (!was_paused) {
+            {
+                std::lock_guard<std::mutex> lock(debug_mutex_);
+                paused_.store(false);
+            }
+            debug_cv_.notify_all();
         }
     }
 
