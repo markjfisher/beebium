@@ -21,14 +21,18 @@
 #include <beebium/extension/OneMHzBusDevice.hpp>
 #include <beebium/extension/OneMHzBusPort.hpp>
 #include <beebium/extension/PeripheralExtension.hpp>
+#include <beebium/indicators/IndicatorFilter.hpp>
+#include <beebium/indicators/Indicators.hpp>
 
 #include <array>
 #include <chrono>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace beebium {
@@ -80,10 +84,30 @@ public:
     //
     // Throws if init() has not yet been called (no Indicators registry
     // available) or if the LUN is out of range.
+    //
+    // Defined inline because each plugin dylib that depends on the SCSI
+    // extension point (e.g. scsi-hard-disc) compiles its own caller to this
+    // method without linking the acorn-scsi library at static-link time.
     void register_target_indicator(
         uint8_t lun,
         std::string name,
-        std::unordered_map<std::string, std::string> metadata);
+        std::unordered_map<std::string, std::string> metadata) {
+        if (!indicators_) {
+            throw std::runtime_error(
+                "AcornScsiHostAdapter::register_target_indicator: "
+                "no Indicators registry (init() must run first, and the machine "
+                "must provide one)");
+        }
+        if (lun >= indicator_ids_.size()) {
+            throw std::out_of_range(
+                "AcornScsiHostAdapter::register_target_indicator: LUN out of range");
+        }
+        uint16_t id = indicators_->register_indicator(
+            std::move(name),
+            std::make_unique<RetriggerableMonostableFilter>(kActivityPulseWidth),
+            std::move(metadata));
+        indicator_ids_[lun] = id;
+    }
 
     // OneMHzBusDevice
     uint8_t read(uint16_t offset) override {

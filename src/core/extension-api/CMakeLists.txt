@@ -211,6 +211,10 @@ add_library(beebium_extension_api SHARED
 
 target_include_directories(beebium_extension_api PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    # third_party (moodycamel) is part of the extension-facing surface
+    # because Indicators.hpp -- now reachable through ExtensionContext --
+    # includes <moodycamel/readerwriterqueue.h>.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party
 )
 
 # nlohmann_json is needed by PluginLoader for manifest parsing.
