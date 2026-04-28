@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -280,4 +280,121 @@ TEST_CASE("DutyCycleFilter transition at exact window boundary", "[indicators][f
     // Sample at window end - entire window was on
     auto value = filter.sample(now + 100ms);
     REQUIRE(value == 255);
+}
+
+// =============================================================================
+// RetriggerableMonostableFilter Tests
+// =============================================================================
+//
+// Semantics: a trigger (any nonzero update) sets the output high and (re)starts
+// a timer. The output remains high for `pulse_width` from the most recent
+// trigger, then falls. Subsequent triggers within the active interval extend
+// the high duration to `pulse_width` from each new trigger. OFF inputs are
+// ignored entirely; only the timer governs the falling edge.
+//
+// The active interval is half-open: sample(t) is high iff
+// t < last_trigger + pulse_width.
+
+TEST_CASE("RetriggerableMonostableFilter initial value is zero", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    REQUIRE(filter.sample(steady_clock::now()) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter triggers high immediately", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    REQUIRE(filter.sample(now) == 255);
+}
+
+TEST_CASE("RetriggerableMonostableFilter holds high through pulse window", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    REQUIRE(filter.sample(now + 1ms) == 255);
+    REQUIRE(filter.sample(now + 40ms) == 255);
+    REQUIRE(filter.sample(now + 79ms) == 255);
+}
+
+TEST_CASE("RetriggerableMonostableFilter falls at end of pulse window", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    // Exactly at expiration -- half-open interval [trigger, trigger+width).
+    REQUIRE(filter.sample(now + 80ms) == 0);
+    REQUIRE(filter.sample(now + 200ms) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter retrigger extends pulse", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    // Retrigger at t=50ms -- new expiration at t=130ms.
+    filter.update(255, now + 50ms);
+    REQUIRE(filter.sample(now + 100ms) == 255);
+    REQUIRE(filter.sample(now + 129ms) == 255);
+    REQUIRE(filter.sample(now + 130ms) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter ignores OFF input", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    filter.update(0, now + 10ms);
+    // OFF must not interrupt the active pulse.
+    REQUIRE(filter.sample(now + 50ms) == 255);
+    REQUIRE(filter.sample(now + 79ms) == 255);
+    // Timer alone governs the falling edge.
+    REQUIRE(filter.sample(now + 80ms) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter OFF does not retrigger", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    filter.update(0, now + 60ms);
+    // OFF at t=60 must not reset the timer; pulse still ends at t=80.
+    REQUIRE(filter.sample(now + 80ms) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter re-fires after expiry", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    REQUIRE(filter.sample(now + 80ms) == 0);
+
+    filter.update(255, now + 200ms);
+    REQUIRE(filter.sample(now + 200ms) == 255);
+    REQUIRE(filter.sample(now + 279ms) == 255);
+    REQUIRE(filter.sample(now + 280ms) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter zero-width pulse", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(0ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    // With zero width, sample(now) is at the expiration boundary -- already low.
+    REQUIRE(filter.sample(now) == 0);
+}
+
+TEST_CASE("RetriggerableMonostableFilter rapid retriggers stay high", "[indicators][filter]") {
+    RetriggerableMonostableFilter filter(80ms);
+    auto now = steady_clock::now();
+
+    // Burst of triggers every 10ms for 200ms; should remain high throughout.
+    for (int i = 0; i < 20; ++i) {
+        filter.update(255, now + std::chrono::milliseconds(i * 10));
+        REQUIRE(filter.sample(now + std::chrono::milliseconds(i * 10)) == 255);
+    }
+    // Last trigger at t=190ms -- still high until t=270ms.
+    REQUIRE(filter.sample(now + 269ms) == 255);
+    REQUIRE(filter.sample(now + 270ms) == 0);
 }

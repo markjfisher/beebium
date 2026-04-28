@@ -30,10 +30,12 @@ class ScsiHardDisc;
 // host adapter. Discovers the adapter via the "scsi" extension point
 // and installs a ScsiHardDisc target in its target registry.
 //
-// The disc image filepath and SCSI target ID can be set before init()
-// via set_image_filepath() and set_scsi_id(). If no image is set, the
-// extension initialises without a disc (targets can be mounted later
-// via gRPC).
+// The disc image filepath and SCSI target ID must be configured before
+// init() via the config map (keys "image" and "scsi-id") or the legacy
+// set_image_filepath() / set_scsi_id() setters. Hard discs are fixed
+// media: there is no facility to mount, swap, or eject at runtime.
+// If no image is configured the extension initialises but installs no
+// target.
 class ScsiHardDiscExtension : public PeripheralExtension {
 public:
     ScsiHardDiscExtension();

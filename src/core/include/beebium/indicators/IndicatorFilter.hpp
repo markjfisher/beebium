@@ -1,4 +1,4 @@
-// Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 //
 // This file is part of Beebium.
 //
@@ -172,6 +172,51 @@ private:
     std::deque<Transition> transitions_;
     bool current_state_ = false;
     bool initial_state_at_window_ = false;
+};
+
+/// Retriggerable monostable filter: a brief input pulse is stretched into a
+/// minimum-duration output pulse.
+///
+/// Any nonzero update sets the output high and (re)starts a timer. The output
+/// remains high for `pulse_width` from the most recent trigger; subsequent
+/// triggers within the active interval extend the pulse. OFF (zero) inputs are
+/// ignored entirely -- only the timer governs the falling edge.
+///
+/// The active interval is half-open: sample(t) is high iff
+/// t < last_trigger + pulse_width.
+///
+/// Use for transient activity pulses too brief to perceive at human time scales
+/// (e.g. SCSI bus selection that lasts microseconds).
+class RetriggerableMonostableFilter : public IndicatorFilter {
+public:
+    explicit RetriggerableMonostableFilter(std::chrono::milliseconds pulse_width)
+        : pulse_width_(pulse_width) {}
+
+    void update(uint8_t value, time_point timestamp) override {
+        if (value == 0) {
+            return;  // OFF inputs are ignored
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        last_trigger_ = timestamp;
+        triggered_ = true;
+    }
+
+    uint8_t sample(time_point now) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!triggered_) {
+            return 0;
+        }
+        if (now - last_trigger_ < pulse_width_) {
+            return 255;
+        }
+        return 0;
+    }
+
+private:
+    std::chrono::milliseconds pulse_width_;
+    std::mutex mutex_;
+    time_point last_trigger_{};
+    bool triggered_ = false;
 };
 
 /// Quantized duty cycle filter with hysteresis.

@@ -112,6 +112,33 @@ TEST_CASE("Indicators set by name for unknown name returns false", "[indicators]
 // Indicator Consumer Thread Tests
 // =============================================================================
 
+TEST_CASE("Indicators register_indicator after start throws", "[indicators]") {
+    Indicators indicators;
+
+    indicators.register_indicator("led-0", std::make_unique<PassthroughFilter>());
+    indicators.start();
+
+    REQUIRE_THROWS_AS(
+        indicators.register_indicator("led-1", std::make_unique<PassthroughFilter>()),
+        std::logic_error);
+
+    indicators.stop();
+}
+
+TEST_CASE("Indicators register_indicator after stop still throws", "[indicators]") {
+    // Once start() has been called, the registration window is closed
+    // permanently. Stopping the consumer thread does not reopen it.
+    Indicators indicators;
+
+    indicators.register_indicator("led-0", std::make_unique<PassthroughFilter>());
+    indicators.start();
+    indicators.stop();
+
+    REQUIRE_THROWS_AS(
+        indicators.register_indicator("led-1", std::make_unique<PassthroughFilter>()),
+        std::logic_error);
+}
+
 TEST_CASE("Indicators start and stop lifecycle", "[indicators]") {
     Indicators indicators;
 

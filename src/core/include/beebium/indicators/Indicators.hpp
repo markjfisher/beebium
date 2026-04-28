@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <shared_mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -112,15 +113,24 @@ public:
     IndicatorsBase& operator=(IndicatorsBase&&) = delete;
 
     /// Register an indicator with a filter policy.
-    /// Must be called before start().
+    /// Must be called before the first call to start(). Once start() has been
+    /// called, the registration window is closed permanently -- subsequent
+    /// calls throw std::logic_error, even after stop().
     /// @param name Unique indicator name (e.g., "caps-lock-led")
     /// @param filter Filter policy to apply to updates
     /// @param metadata Key-value pairs for frontend rendering (e.g., {"label", "CAPS LOCK"})
     /// @return ID for efficient updates via set(id, value)
+    /// @throws std::logic_error if called after start()
     uint16_t register_indicator(
         const std::string& name,
         std::unique_ptr<IndicatorFilter> filter,
         std::unordered_map<std::string, std::string> metadata = {}) {
+
+        if (ever_started_.load(std::memory_order_acquire)) {
+            throw std::logic_error(
+                "Indicators::register_indicator(\"" + name +
+                "\") called after start(); registration must complete before start()");
+        }
 
         std::unique_lock lock(registry_mutex_);
 
@@ -225,8 +235,10 @@ public:
     }
 
     /// Start the consumer thread.
-    /// Call after all indicators are registered.
+    /// Call after all indicators are registered. Closes the registration window
+    /// permanently -- subsequent register_indicator() calls will throw.
     void start() {
+        ever_started_.store(true, std::memory_order_release);
         if (running_.exchange(true)) {
             return;  // Already running
         }
@@ -347,6 +359,9 @@ private:
     // Consumer thread
     std::thread consumer_thread_;
     std::atomic<bool> running_{false};
+    // Latches true on the first call to start(); never reset. Guards
+    // register_indicator() against post-start registration.
+    std::atomic<bool> ever_started_{false};
 
     // Change tracking
     std::atomic<uint64_t> sequence_{0};

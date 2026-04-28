@@ -15,18 +15,17 @@
 
 namespace beebium {
 
-AcornScsiHostAdapter::AcornScsiHostAdapter() = default;
+AcornScsiHostAdapter::AcornScsiHostAdapter() {
+    indicator_ids_.fill(kNoIndicator);
+}
 AcornScsiHostAdapter::~AcornScsiHostAdapter() = default;
 
 std::unique_ptr<AcornScsiHostAdapter> AcornScsiHostAdapter::create() {
     auto adapter = std::unique_ptr<AcornScsiHostAdapter>(new AcornScsiHostAdapter());
     adapter->set_manifest(ExtensionManifest{
-        "acorn-scsi",
-        "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)",
-        "acorn-scsi",
-        {},   // cli_name (uses name)
-        {},   // manifest_dirpath (built-in, no manifest file)
-        {},   // parameters
+        .name = "acorn-scsi",
+        .description = "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)",
+        .library_stem = "acorn-scsi",
     });
     return adapter;
 }
@@ -35,6 +34,20 @@ void AcornScsiHostAdapter::init(ExtensionContext& ctx) {
     ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
     registry_.wire_to_bus(bus_);
     service_ = std::make_unique<ScsiHostAdapterServiceImpl>(*this);
+
+    if (ctx.has_indicators()) {
+        indicators_ = &ctx.indicators();
+        // Single bus-level activity callback dispatches to the per-LUN
+        // indicator (if one has been registered for that LUN). Activity for
+        // unregistered LUNs is silently dropped.
+        bus_.set_activity_callback(
+            [this](uint8_t lun, bool active) {
+                if (lun >= indicator_ids_.size()) return;
+                uint16_t id = indicator_ids_[lun];
+                if (id == kNoIndicator) return;
+                indicators_->set(id, active ? uint8_t{255} : uint8_t{0});
+            });
+    }
 }
 
 void AcornScsiHostAdapter::shutdown() {

@@ -951,11 +951,13 @@ if(BEEBIUM_BUILD_SERVICE)
     add_executable(test_grpc_indicator test_grpc_indicator.cpp)
     target_link_libraries(test_grpc_indicator PRIVATE
         beebium_service
+        beebium_ext_scsi_hard_disc
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_grpc_indicator PRIVATE
         BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
         BEEBIUM_DISCS_DIR="${BEEBIUM_DISCS_DIR}"
+        BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
     )
     catch_discover_tests(test_grpc_indicator)
 

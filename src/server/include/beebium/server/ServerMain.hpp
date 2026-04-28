@@ -1757,8 +1757,14 @@ public:
             beebium::ExtensionContext extension_context(
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
                 beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr,
-                beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr);
+                beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr,
+                &machine.state().memory.indicators);
             extension_registry.resolve_and_init(extension_context);
+
+            // All registrations are complete -- close the registration window
+            // and start the indicators consumer thread. From this point on,
+            // any further register_indicator() call will throw.
+            machine.state().memory.indicators.start();
 
             // Log initialisation order
             for (auto* ext : extension_registry.extensions()) {

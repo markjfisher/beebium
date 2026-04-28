@@ -112,6 +112,84 @@ void run_cycles(ModelBPlus& machine, FrameRenderer& renderer, uint64_t cycles) {
 
 }  // namespace
 
+TEST_CASE("ScsiHardDiscExtension registers hdd-N-activity-led when indicators are available",
+          "[scsi][hdd][indicators]") {
+    if (!adfs_available()) SKIP("SCSI disc image not available");
+
+    ModelBPlus machine;
+
+    ExtensionRegistry registry;
+    registry.register_extension_point("1mhz-bus");
+    registry.register_extension(AcornScsiHostAdapter::create());
+    auto hdd_ext = ScsiHardDiscExtension::create();
+    hdd_ext->set_config({
+        {"scsi-id", "0"},
+        {"image", (kAssetsDir / "scsi" / "scsi0.dat").string()},
+        {"id", "test-hdd"},
+    });
+    registry.register_extension(std::move(hdd_ext));
+
+    ExtensionContext ctx(
+        &machine.memory().one_mhz_bus(), nullptr, nullptr, &machine.memory().indicators);
+    registry.resolve_and_init(ctx);
+
+    auto names = machine.memory().indicators.names();
+    REQUIRE(std::find(names.begin(), names.end(), "hdd-0-activity-led") != names.end());
+
+    auto meta = machine.memory().indicators.metadata("hdd-0-activity-led");
+    REQUIRE(meta.count("label") == 1);
+    REQUIRE(meta.count("color") == 1);
+    REQUIRE(meta.count("shape") == 1);
+}
+
+TEST_CASE("ScsiHardDiscExtension uses configured scsi-id in indicator name",
+          "[scsi][hdd][indicators]") {
+    if (!adfs_available()) SKIP("SCSI disc image not available");
+
+    ModelBPlus machine;
+
+    ExtensionRegistry registry;
+    registry.register_extension_point("1mhz-bus");
+    registry.register_extension(AcornScsiHostAdapter::create());
+    auto hdd_ext = ScsiHardDiscExtension::create();
+    hdd_ext->set_config({
+        {"scsi-id", "5"},
+        {"image", (kAssetsDir / "scsi" / "scsi0.dat").string()},
+        {"id", "test-hdd"},
+    });
+    registry.register_extension(std::move(hdd_ext));
+
+    ExtensionContext ctx(
+        &machine.memory().one_mhz_bus(), nullptr, nullptr, &machine.memory().indicators);
+    registry.resolve_and_init(ctx);
+
+    auto names = machine.memory().indicators.names();
+    REQUIRE(std::find(names.begin(), names.end(), "hdd-5-activity-led") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "hdd-0-activity-led") == names.end());
+}
+
+TEST_CASE("ScsiHardDiscExtension init without indicators does not throw",
+          "[scsi][hdd][indicators]") {
+    if (!adfs_available()) SKIP("SCSI disc image not available");
+
+    ModelBPlus machine;
+
+    ExtensionRegistry registry;
+    registry.register_extension_point("1mhz-bus");
+    registry.register_extension(AcornScsiHostAdapter::create());
+    auto hdd_ext = ScsiHardDiscExtension::create();
+    hdd_ext->set_config({
+        {"scsi-id", "0"},
+        {"image", (kAssetsDir / "scsi" / "scsi0.dat").string()},
+        {"id", "test-hdd"},
+    });
+    registry.register_extension(std::move(hdd_ext));
+
+    // Construct the context WITHOUT indicators (4th arg defaulted to nullptr).
+    ExtensionContext ctx(&machine.memory().one_mhz_bus());
+    REQUIRE_NOTHROW(registry.resolve_and_init(ctx));
+}
+
 TEST_CASE("ADFS SCSI boot and *CAT on Model B+", "[scsi][adfs][e2e]") {
     if (!roms_available()) SKIP("ROMs not available");
     if (!adfs_available()) SKIP("ADFS ROM or SCSI disc image not available");
