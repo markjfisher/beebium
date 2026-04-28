@@ -86,6 +86,22 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
         disc_ = std::make_unique<ScsiHardDisc>(std::move(image));
         scsi_adapter->target_registry().install(target_id, std::move(disc_));
         scsi_adapter->target_registry().wire_to_bus(scsi_adapter->bus());
+
+        // Register a per-LUN activity indicator with the adapter, which owns
+        // the filter policy. The indicator is named for the SCSI ID, matching
+        // the floppy convention (floppy-N-activity-led -> hdd-N-activity-led).
+        // Skipped silently when the machine has no Indicators registry, so
+        // tests that don't care about LEDs work unchanged.
+        if (ctx.has_indicators()) {
+            std::string indicator_name = "hdd-" + std::to_string(target_id) + "-activity-led";
+            std::string label = "Hard Disc " + std::to_string(target_id);
+            scsi_adapter->register_target_indicator(
+                target_id,
+                std::move(indicator_name),
+                {{"label", std::move(label)},
+                 {"color", "630nm"},        // typical red HDD activity LED
+                 {"shape", "rectangular"}});
+        }
     }
 }
 

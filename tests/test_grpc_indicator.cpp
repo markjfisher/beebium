@@ -24,6 +24,11 @@
 #include "beebium/FrameAllocator.hpp"
 #include "beebium/FrameBuffer.hpp"
 #include "beebium/FrameRenderer.hpp"
+#include "beebium/extension/ExtensionContext.hpp"
+#include "beebium/extension/ExtensionRegistry.hpp"
+
+#include <AcornScsiHostAdapter.hpp>
+#include <ScsiHardDiscExtension.hpp>
 
 #include "indicator.grpc.pb.h"
 #include "disc.grpc.pb.h"
@@ -135,6 +140,10 @@ public:
 #endif
         machine_.reset();
 
+        // No extensions in this fixture, so we can close the registration
+        // window immediately by starting the indicators consumer thread.
+        machine_.state().memory.indicators.start();
+
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
             machine_, "127.0.0.1", 0);
@@ -172,6 +181,10 @@ public:
         machine_.state().memory.load_basic(basic.data(), basic.size());
 #endif
         machine_.reset();
+
+        // No extensions in this fixture, so we can close the registration
+        // window immediately by starting the indicators consumer thread.
+        machine_.state().memory.indicators.start();
 
         // Start server on a dynamically allocated port
         server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
@@ -930,3 +943,147 @@ TEST_CASE("Measure drive LED indicator duration during *CAT via gRPC", "[grpc][i
 #endif
 #endif
 }
+
+// =============================================================================
+// HDD activity LED end-to-end: SCSI bus activity drives hdd-N-activity-led
+// through the full IndicatorService gRPC pipeline.
+// =============================================================================
+
+#if defined(BEEBIUM_ROM_DIR) && defined(BEEBIUM_TEST_ASSETS_DIR)
+
+namespace {
+
+bool scsi_assets_available() {
+    std::filesystem::path assets_dir = BEEBIUM_TEST_ASSETS_DIR;
+    return !assets_dir.empty()
+        && std::filesystem::exists(assets_dir / "scsi" / "scsi0.dat")
+        && std::filesystem::exists(assets_dir / "scsi" / "scsi0.dsc");
+}
+
+// Test fixture: Model B+ with the Acorn SCSI host adapter and a single
+// SCSI hard disc at LUN 0. Goes through the full extension lifecycle so
+// hdd-0-activity-led is registered with the indicators registry and exposed
+// through IndicatorService.
+class IndicatorTestFixtureBPlusWithScsi {
+public:
+    IndicatorTestFixtureBPlusWithScsi() {
+        auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_2_0.rom");
+        auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
+        std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
+        machine_.state().memory.load_basic(basic.data(), basic.size());
+        machine_.reset();
+
+        // SCSI extensions
+        registry_.register_extension_point("1mhz-bus");
+        registry_.register_extension(beebium::AcornScsiHostAdapter::create());
+        auto hdd_ext = beebium::ScsiHardDiscExtension::create();
+        std::filesystem::path image =
+            std::filesystem::path(BEEBIUM_TEST_ASSETS_DIR) / "scsi" / "scsi0.dat";
+        hdd_ext->set_config({
+            {"scsi-id", "0"},
+            {"image", image.string()},
+            {"id", "test-hdd"},
+        });
+        registry_.register_extension(std::move(hdd_ext));
+
+        beebium::ExtensionContext ctx(
+            &machine_.state().memory.one_mhz_bus(), nullptr, nullptr,
+            &machine_.state().memory.indicators);
+        registry_.resolve_and_init(ctx);
+
+        // Close registration window after extensions have registered.
+        machine_.state().memory.indicators.start();
+
+        // Start gRPC server with the extension's services attached.
+        auto extension_services = registry_.collect_grpc_services();
+
+        server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
+            machine_, "127.0.0.1", 0);
+        server_->start({}, {}, false, {}, nullptr, extension_services);
+
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+        indicator_stub_ = beebium::IndicatorService::NewStub(channel_);
+    }
+
+    ~IndicatorTestFixtureBPlusWithScsi() {
+        server_->stop();
+        registry_.shutdown();
+    }
+
+    beebium::ModelBPlus& machine() { return machine_; }
+    beebium::IndicatorService::Stub& stub() { return *indicator_stub_; }
+
+private:
+    beebium::ModelBPlus machine_;
+    beebium::ExtensionRegistry registry_;
+    std::unique_ptr<beebium::service::Server<beebium::ModelBPlus>> server_;
+    std::shared_ptr<grpc::Channel> channel_;
+    std::unique_ptr<beebium::IndicatorService::Stub> indicator_stub_;
+};
+
+}  // namespace
+
+TEST_CASE("IndicatorService Model B+ with SCSI exposes hdd-0-activity-led",
+          "[grpc][indicator][hdd]") {
+    if (!scsi_assets_available()) SKIP("SCSI disc image not available");
+    IndicatorTestFixtureBPlusWithScsi fixture;
+
+    grpc::ClientContext context;
+    beebium::ListIndicatorsRequest request;
+    beebium::ListIndicatorsResponse response;
+
+    auto status = fixture.stub().ListIndicators(&context, request, &response);
+    REQUIRE(status.ok());
+
+    bool found = false;
+    std::string label, color, shape;
+    for (const auto& info : response.indicators()) {
+        if (info.name() == "hdd-0-activity-led") {
+            found = true;
+            label = proto_map_get(info.metadata(), std::string("label"), std::string{});
+            color = proto_map_get(info.metadata(), std::string("color"), std::string{});
+            shape = proto_map_get(info.metadata(), std::string("shape"), std::string{});
+            break;
+        }
+    }
+    REQUIRE(found);
+    REQUIRE(label == "Hard Disc 0");
+    REQUIRE(color == "630nm");
+    REQUIRE(shape == "rectangular");
+}
+
+TEST_CASE("IndicatorService Model B+ with SCSI signals activity on transaction",
+          "[grpc][indicator][hdd]") {
+    if (!scsi_assets_available()) SKIP("SCSI disc image not available");
+    IndicatorTestFixtureBPlusWithScsi fixture;
+
+    // Drive a TEST UNIT READY transaction directly via the memory map.
+    // We don't run the 6502; we just write the SCSI register sequence.
+    // OneMHzBusPort offsets are relative to 0xFC00, so the SCSI registers
+    // live at 0x40-0x43 (which is 0xFC40-0xFC43 in absolute terms).
+    auto& bus = fixture.machine().state().memory.one_mhz_bus();
+    bus.write(0x40, 0x01);  // data: select target 0
+    bus.write(0x42, 0x00);  // select reg: trigger Selection -> Command
+    bus.write(0x40, 0x00);  // OP_TEST_UNIT_READY
+    for (int i = 0; i < 5; ++i) {
+        bus.write(0x40, 0x00);
+    }
+    bus.read(0x40);  // status byte
+    bus.read(0x40);  // message byte -> BusFree
+
+    // The bus fired (lun=0, true) on Selection and (lun=0, false) on BusFree.
+    // The RetriggerableMonostable filter holds the LED on for ~80ms.
+    bool went_high = wait_for_indicator(
+        fixture.stub(), "hdd-0-activity-led",
+        [](uint64_t v) { return v == 255; });
+    REQUIRE(went_high);
+
+    // After the pulse expires, the LED must drop to 0.
+    bool went_low = wait_for_indicator(
+        fixture.stub(), "hdd-0-activity-led",
+        [](uint64_t v) { return v == 0; });
+    REQUIRE(went_low);
+}
+
+#endif  // BEEBIUM_ROM_DIR && BEEBIUM_TEST_ASSETS_DIR

@@ -810,3 +810,171 @@ TEST_CASE("ScsiBus multiple transactions on same target", "[scsi][bus]") {
 
     REQUIRE(dev.command_count() == 2);
 }
+
+// ---------------------------------------------------------------------------
+// Activity callback (LUN-indexed on/off events for indicator wiring)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct ActivityEvent {
+    uint8_t lun;
+    bool active;
+};
+
+}  // namespace
+
+TEST_CASE("ScsiBus with no activity callback does not crash", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    select_target(bus);
+    uint8_t cdb[] = {OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    complete_transaction(bus);
+    // No assertions on the callback -- the test passes if nothing throws.
+    SUCCEED();
+}
+
+TEST_CASE("ScsiBus activity callback fires on/off for TEST UNIT READY", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    select_target(bus);
+    uint8_t cdb[] = {OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    complete_transaction(bus);
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].lun == 0);
+    REQUIRE(events[0].active == true);
+    REQUIRE(events[1].lun == 0);
+    REQUIRE(events[1].active == false);
+}
+
+TEST_CASE("ScsiBus activity callback fires for READ(6) transaction", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    std::vector<uint8_t> sector(256, 0xAB);
+    dev.set_read_data(sector);
+    bus.set_target(0, &dev);
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    select_target(bus);
+    uint8_t cdb[] = {OP_READ_6, 0, 0, 0, 1, 0};
+    write_cdb(bus, cdb);
+    read_all_data(bus);
+    complete_transaction(bus);
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].active == true);
+    REQUIRE(events[1].active == false);
+}
+
+TEST_CASE("ScsiBus activity callback fires for WRITE(6) transaction", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    select_target(bus);
+    uint8_t cdb[] = {OP_WRITE_6, 0, 0, 0, 1, 0};
+    write_cdb(bus, cdb);
+    // Write 256 data bytes; only after this completes does the bus reach Status.
+    for (int i = 0; i < 256; ++i) {
+        bus.write_register(REG_DATA, static_cast<uint8_t>(i));
+    }
+    REQUIRE(bus.phase() == ScsiBusPhase::Status);
+    // Off must not have fired yet -- still mid-transaction.
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].active == true);
+
+    complete_transaction(bus);
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[1].active == false);
+}
+
+TEST_CASE("ScsiBus activity callback does not fire for absent target", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    // No target attached at any ID.
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    bus.write_register(REG_DATA, 0x01);   // try to select target 0
+    bus.write_register(REG_SELECT, 0);    // trigger selection -- fails, stays in BusFree
+    REQUIRE(bus.phase() == ScsiBusPhase::BusFree);
+    REQUIRE(events.empty());
+}
+
+TEST_CASE("ScsiBus activity callback reports correct LUN", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(3, &dev);
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    bus.write_register(REG_DATA, 1 << 3);    // select target 3
+    bus.write_register(REG_SELECT, 0);
+    uint8_t cdb[] = {OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
+    write_cdb(bus, cdb);
+    complete_transaction(bus);
+
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].lun == 3);
+    REQUIRE(events[0].active == true);
+    REQUIRE(events[1].lun == 3);
+    REQUIRE(events[1].active == false);
+}
+
+TEST_CASE("ScsiBus activity callback fires for back-to-back transactions", "[scsi][bus][activity]") {
+    ScsiBus bus;
+    ScsiTestDevice dev;
+    dev.set_present(true);
+    bus.set_target(0, &dev);
+
+    std::vector<ActivityEvent> events;
+    bus.set_activity_callback([&](uint8_t lun, bool active) {
+        events.push_back({lun, active});
+    });
+
+    // Two TEST UNIT READY transactions.
+    for (int i = 0; i < 2; ++i) {
+        select_target(bus);
+        uint8_t cdb[] = {OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
+        write_cdb(bus, cdb);
+        complete_transaction(bus);
+    }
+
+    REQUIRE(events.size() == 4);
+    REQUIRE(events[0].active == true);
+    REQUIRE(events[1].active == false);
+    REQUIRE(events[2].active == true);
+    REQUIRE(events[3].active == false);
+}

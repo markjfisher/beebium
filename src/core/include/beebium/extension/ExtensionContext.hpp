@@ -27,6 +27,12 @@
 
 namespace beebium {
 
+// Forward declaration to avoid pulling Indicators.hpp transitively into every
+// extension translation unit.
+template<typename Clock> class IndicatorsBase;
+struct SteadyClock;
+using Indicators = IndicatorsBase<SteadyClock>;
+
 // Provides type-safe access to port handles and initialised extension
 // providers during extension init().
 //
@@ -36,10 +42,12 @@ class BEEBIUM_EXT_API ExtensionContext {
 public:
     explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr,
                              UserPort* user_port = nullptr,
-                             TubeSocket* tube_socket = nullptr)
+                             TubeSocket* tube_socket = nullptr,
+                             Indicators* indicators = nullptr)
         : one_mhz_bus_port_(one_mhz_bus_port)
         , user_port_(user_port)
-        , tube_socket_(tube_socket) {}
+        , tube_socket_(tube_socket)
+        , indicators_(indicators) {}
 
     // Type-safe port handle access.
     template<typename T>
@@ -81,6 +89,21 @@ public:
         }
     }
 
+    // Access the central Indicators registry. Extensions may register their
+    // own indicators here during init(); the registration window closes when
+    // the server bootstrap calls Indicators::start() after resolve_and_init()
+    // returns. Throws if indicators are not available on this machine.
+    Indicators& indicators() {
+        if (!indicators_) {
+            throw std::runtime_error(
+                "ExtensionContext: indicators not available on this machine");
+        }
+        return *indicators_;
+    }
+
+    // Query whether an Indicators registry was provided.
+    bool has_indicators() const { return indicators_ != nullptr; }
+
     // Access an initialised extension that provides a named extension point.
     // The dependency resolver guarantees the provider is initialised before
     // any extension that attaches_to the same extension point.
@@ -104,6 +127,7 @@ private:
     OneMHzBusPort* one_mhz_bus_port_;
     UserPort* user_port_;
     TubeSocket* tube_socket_;
+    Indicators* indicators_;
     std::unordered_map<std::string, PeripheralExtension*> providers_;
 };
 

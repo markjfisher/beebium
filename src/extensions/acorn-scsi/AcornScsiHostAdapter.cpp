@@ -13,9 +13,17 @@
 #include "AcornScsiHostAdapter.hpp"
 #include "ScsiHostAdapterService.hpp"
 
+#include <beebium/indicators/IndicatorFilter.hpp>
+#include <beebium/indicators/Indicators.hpp>
+
+#include <stdexcept>
+#include <utility>
+
 namespace beebium {
 
-AcornScsiHostAdapter::AcornScsiHostAdapter() = default;
+AcornScsiHostAdapter::AcornScsiHostAdapter() {
+    indicator_ids_.fill(kNoIndicator);
+}
 AcornScsiHostAdapter::~AcornScsiHostAdapter() = default;
 
 std::unique_ptr<AcornScsiHostAdapter> AcornScsiHostAdapter::create() {
@@ -35,6 +43,41 @@ void AcornScsiHostAdapter::init(ExtensionContext& ctx) {
     ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
     registry_.wire_to_bus(bus_);
     service_ = std::make_unique<ScsiHostAdapterServiceImpl>(*this);
+
+    if (ctx.has_indicators()) {
+        indicators_ = &ctx.indicators();
+        // Single bus-level activity callback dispatches to the per-LUN
+        // indicator (if one has been registered for that LUN). Activity for
+        // unregistered LUNs is silently dropped.
+        bus_.set_activity_callback(
+            [this](uint8_t lun, bool active) {
+                if (lun >= indicator_ids_.size()) return;
+                uint16_t id = indicator_ids_[lun];
+                if (id == kNoIndicator) return;
+                indicators_->set(id, active ? uint8_t{255} : uint8_t{0});
+            });
+    }
+}
+
+void AcornScsiHostAdapter::register_target_indicator(
+        uint8_t lun,
+        std::string name,
+        std::unordered_map<std::string, std::string> metadata) {
+    if (!indicators_) {
+        throw std::runtime_error(
+            "AcornScsiHostAdapter::register_target_indicator: "
+            "no Indicators registry (init() must run first, and the machine "
+            "must provide one)");
+    }
+    if (lun >= indicator_ids_.size()) {
+        throw std::out_of_range(
+            "AcornScsiHostAdapter::register_target_indicator: LUN out of range");
+    }
+    uint16_t id = indicators_->register_indicator(
+        std::move(name),
+        std::make_unique<RetriggerableMonostableFilter>(kActivityPulseWidth),
+        std::move(metadata));
+    indicator_ids_[lun] = id;
 }
 
 void AcornScsiHostAdapter::shutdown() {

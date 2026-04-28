@@ -252,8 +252,10 @@ public:
         system_via.set_peripheral(&system_via_peripheral);
         // Connect sound chip to system VIA peripheral
         system_via_peripheral.set_sound_chip(&sound_chip);
-        // Start the indicators consumer thread
-        indicators.start();
+        // Note: indicators.start() is deferred to the server bootstrap, after
+        // extension init() runs. This keeps the registration window open for
+        // extensions; closing it before extensions can register would violate
+        // the Indicators register-before-start contract.
 
         // Configure default socket types (stock Model B: all ROM sockets)
         // Socket 0 (IC52): Empty by default

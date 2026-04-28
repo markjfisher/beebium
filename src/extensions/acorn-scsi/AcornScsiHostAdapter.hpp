@@ -14,6 +14,7 @@
 #define BEEBIUM_ACORN_SCSI_HOST_ADAPTER_HPP
 
 #include "ScsiBus.hpp"
+#include "ScsiConstants.hpp"
 #include "ScsiTargetRegistry.hpp"
 
 #include <beebium/extension/ExtensionContext.hpp>
@@ -21,9 +22,13 @@
 #include <beebium/extension/OneMHzBusPort.hpp>
 #include <beebium/extension/PeripheralExtension.hpp>
 
+#include <array>
+#include <chrono>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace beebium {
@@ -63,6 +68,23 @@ public:
     void shutdown() override;
     std::vector<grpc::Service*> grpc_services() override;
 
+    // Register a per-LUN activity indicator. Called by SCSI target extensions
+    // (e.g. scsi-hard-disc) during their own init() after the adapter has been
+    // initialised. The adapter owns the filter policy (RetriggerableMonostable
+    // with a fixed pulse width) so that all SCSI activity LEDs share the same
+    // visual semantics. The caller supplies the indicator name and metadata
+    // (label, color, shape) which determine its presentation.
+    //
+    // Subsequent SCSI activity on this LUN will drive the indicator value
+    // through the adapter's bus activity callback.
+    //
+    // Throws if init() has not yet been called (no Indicators registry
+    // available) or if the LUN is out of range.
+    void register_target_indicator(
+        uint8_t lun,
+        std::string name,
+        std::unordered_map<std::string, std::string> metadata);
+
     // OneMHzBusDevice
     uint8_t read(uint16_t offset) override {
         return bus_.read_register(static_cast<uint8_t>(offset - kBaseOffset));
@@ -83,9 +105,26 @@ public:
     const ScsiTargetRegistry& target_registry() const { return registry_; }
 
 private:
+    // Pulse width for the SCSI activity LED. A SCSI transaction is typically
+    // dispatched in a fraction of a millisecond; without this stretch the LED
+    // would flash imperceptibly. 80 ms is fast enough to flicker visibly under
+    // sustained access and slow enough that single transactions register.
+    static constexpr std::chrono::milliseconds kActivityPulseWidth{80};
+
+    // 0xFFFF means "no indicator registered for this LUN".
+    static constexpr uint16_t kNoIndicator = 0xFFFF;
+
     ScsiBus bus_;
     ScsiTargetRegistry registry_;
     std::unique_ptr<ScsiHostAdapterServiceImpl> service_;
+
+    // Captured from ExtensionContext during init(). Non-owning; lifetime is
+    // managed by the machine.
+    Indicators* indicators_ = nullptr;
+
+    // Per-LUN indicator IDs. kNoIndicator means no indicator has been
+    // registered for that LUN; activity events for it are silently dropped.
+    std::array<uint16_t, scsi::MAX_TARGETS> indicator_ids_{};
 };
 
 }  // namespace beebium

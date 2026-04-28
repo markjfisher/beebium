@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -84,6 +85,15 @@ public:
     void set_event_buffer(ScsiBusEventBuffer* buffer) { event_buffer_ = buffer; }
     void set_event_register_access(bool enabled) { event_register_access_ = enabled; }
 
+    // Activity callback. Fires (lun, true) when a target is successfully
+    // selected and (lun, false) when the bus returns to BusFree. Used by the
+    // host adapter to drive per-LUN activity indicators. The callback runs on
+    // the emulation thread and must not block.
+    using ActivityCallback = std::function<void(uint8_t lun, bool active)>;
+    void set_activity_callback(ActivityCallback cb) {
+        activity_callback_ = std::move(cb);
+    }
+
 private:
     // Phase transitions
     void enter_bus_free();
@@ -142,6 +152,11 @@ private:
     // Event stream
     ScsiBusEventBuffer* event_buffer_ = nullptr;
     bool event_register_access_ = false;
+
+    // Activity callback. last_active_id_ tracks the most recently selected LUN
+    // so that enter_bus_free() can fire the matching off event.
+    ActivityCallback activity_callback_;
+    uint8_t last_active_id_ = 0xFF;
 
     // Event emission helpers
     void emit_phase_change(std::string_view from, std::string_view to);

@@ -214,7 +214,10 @@ public:
     {
         system_via.set_peripheral(&system_via_peripheral);
         system_via_peripheral.set_sound_chip(&sound_chip);
-        indicators.start();
+        // Note: indicators.start() is deferred to the server bootstrap, after
+        // extension init() runs. This keeps the registration window open for
+        // extensions; closing it before extensions can register would violate
+        // the Indicators register-before-start contract.
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
         tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }

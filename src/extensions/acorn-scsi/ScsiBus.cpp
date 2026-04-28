@@ -264,6 +264,10 @@ void ScsiBus::enter_bus_free() {
     auto old_phase = scsi_phase_name(phase_);
     phase_ = ScsiBusPhase::BusFree;
     emit_phase_change(old_phase, scsi_phase_name(phase_));
+    if (activity_callback_ && last_active_id_ != 0xFF) {
+        activity_callback_(last_active_id_, false);
+    }
+    last_active_id_ = 0xFF;
     selected_id_ = 0xFF;
     sel_asserted_ = false;
     cdb_index_ = 0;
@@ -282,6 +286,10 @@ void ScsiBus::enter_selection() {
             phase_ = ScsiBusPhase::Selection;
             selected_id_ = id;
             emit_selection(id, true);
+            if (activity_callback_) {
+                activity_callback_(id, true);
+            }
+            last_active_id_ = id;
             return;
         }
     }

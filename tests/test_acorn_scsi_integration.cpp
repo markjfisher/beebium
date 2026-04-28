@@ -19,9 +19,14 @@
 #include <beebium/ModelBHardware.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/ExtensionRegistry.hpp>
+#include <beebium/indicators/Indicators.hpp>
 #include <AcornScsiHostAdapter.hpp>
 #include <ScsiTestDevice.hpp>
 #include <ScsiConstants.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <thread>
 
 using namespace beebium;
 using namespace beebium::scsi;
@@ -39,7 +44,7 @@ struct ScsiIntegrationFixture {
         adapter = ext.get();
         registry.register_extension(std::move(ext));
 
-        ExtensionContext ctx(&hw.one_mhz_bus());
+        ExtensionContext ctx(&hw.one_mhz_bus(), nullptr, nullptr, &hw.indicators);
         registry.resolve_and_init(ctx);
     }
 
@@ -52,6 +57,18 @@ struct ScsiIntegrationFixture {
         dev->set_present(true);
         adapter->target_registry().install(id, std::move(dev));
         adapter->target_registry().wire_to_bus(adapter->bus());
+    }
+
+    // Drive a complete TEST UNIT READY transaction on the given target ID
+    // through the memory map. The bus fires its activity callback on/off
+    // around this transaction.
+    void run_test_unit_ready(uint8_t target_id) {
+        hw.write(0xFC40, static_cast<uint8_t>(1 << target_id));
+        hw.write(0xFC42, 0x00);
+        hw.write(0xFC40, OP_TEST_UNIT_READY);
+        for (int i = 0; i < 5; ++i) hw.write(0xFC40, 0x00);
+        hw.read(0xFC40);  // status
+        hw.read(0xFC40);  // message
     }
 };
 
@@ -156,4 +173,76 @@ TEST_CASE("AcornScsiHostAdapter READ(6) through memory map",
     f.hw.read(0xFC40);  // status
     f.hw.read(0xFC40);  // message
     REQUIRE(f.hw.read(0xFC41) == SR_REQ);  // BUS_FREE (only REQ set)
+}
+
+// ---------------------------------------------------------------------------
+// Per-LUN activity indicators
+// ---------------------------------------------------------------------------
+
+TEST_CASE("AcornScsiHostAdapter register_target_indicator registers the indicator",
+          "[scsi][integration][indicators]") {
+    ScsiIntegrationFixture f;
+    f.adapter->register_target_indicator(
+        0, "hdd-0-activity-led",
+        {{"label", "Hard Disc 0"}, {"color", "rgb(255,191,0)"}, {"shape", "rectangular"}});
+
+    auto names = f.hw.indicators.names();
+    REQUIRE(std::find(names.begin(), names.end(), "hdd-0-activity-led") != names.end());
+
+    auto meta = f.hw.indicators.metadata("hdd-0-activity-led");
+    REQUIRE(meta["label"] == "Hard Disc 0");
+    REQUIRE(meta["color"] == "rgb(255,191,0)");
+    REQUIRE(meta["shape"] == "rectangular");
+}
+
+TEST_CASE("AcornScsiHostAdapter SCSI activity drives the registered LUN indicator",
+          "[scsi][integration][indicators]") {
+    ScsiIntegrationFixture f;
+    f.install_test_device(0);
+    f.adapter->register_target_indicator(0, "hdd-0-activity-led", {});
+
+    f.run_test_unit_ready(0);
+
+    // The bus fired (lun=0, true) and (lun=0, false) around the transaction.
+    // The RetriggerableMonostable filter holds the LED on for the configured
+    // pulse width regardless of the off event, so immediately after the
+    // transaction the published value should be 255.
+    f.hw.indicators.process_pending();
+    REQUIRE(f.hw.indicators.get("hdd-0-activity-led") == 255);
+
+    // After the pulse window expires (real wall clock), it must drop to 0.
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    f.hw.indicators.process_pending();
+    REQUIRE(f.hw.indicators.get("hdd-0-activity-led") == 0);
+}
+
+TEST_CASE("AcornScsiHostAdapter activity for unregistered LUN is silently dropped",
+          "[scsi][integration][indicators]") {
+    ScsiIntegrationFixture f;
+    f.install_test_device(2);  // present at LUN 2, but no indicator registered
+
+    f.run_test_unit_ready(2);  // must not crash
+
+    f.hw.indicators.process_pending();
+    // No hdd-* indicator should exist; the keyboard LEDs registered by
+    // ModelBHardware are unrelated.
+    auto names = f.hw.indicators.names();
+    bool any_hdd = std::any_of(names.begin(), names.end(),
+        [](const std::string& n) { return n.starts_with("hdd-"); });
+    REQUIRE_FALSE(any_hdd);
+}
+
+TEST_CASE("AcornScsiHostAdapter activity does not bleed across LUNs",
+          "[scsi][integration][indicators]") {
+    ScsiIntegrationFixture f;
+    f.install_test_device(0);
+    f.install_test_device(3);
+    f.adapter->register_target_indicator(0, "hdd-0-activity-led", {});
+    f.adapter->register_target_indicator(3, "hdd-3-activity-led", {});
+
+    f.run_test_unit_ready(0);
+
+    f.hw.indicators.process_pending();
+    REQUIRE(f.hw.indicators.get("hdd-0-activity-led") == 255);
+    REQUIRE(f.hw.indicators.get("hdd-3-activity-led") == 0);
 }

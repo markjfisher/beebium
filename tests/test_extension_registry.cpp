@@ -11,6 +11,8 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/extension/ExtensionRegistry.hpp>
+#include <beebium/indicators/Indicators.hpp>
+#include <beebium/indicators/IndicatorFilter.hpp>
 #include <TestScratchRam.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -190,4 +192,30 @@ TEST_CASE("ExtensionRegistry with TestScratchRam", "[extension][registry]") {
     REQUIRE(port.is_claimed(beebium::TestScratchRam::kBaseOffset));
     REQUIRE(port.is_claimed(beebium::TestScratchRam::kEndOffset));
     REQUIRE_FALSE(port.is_claimed(beebium::TestScratchRam::kEndOffset + 1));
+}
+
+TEST_CASE("ExtensionContext without indicators reports unavailable",
+          "[extension][indicators]") {
+    ExtensionContext ctx;
+    REQUIRE_FALSE(ctx.has_indicators());
+    REQUIRE_THROWS_AS(ctx.indicators(), std::runtime_error);
+}
+
+TEST_CASE("ExtensionContext with indicators returns the registry",
+          "[extension][indicators]") {
+    Indicators indicators;
+    ExtensionContext ctx(nullptr, nullptr, nullptr, &indicators);
+
+    REQUIRE(ctx.has_indicators());
+    // Returned reference must alias the same instance.
+    REQUIRE(&ctx.indicators() == &indicators);
+
+    // The registry is usable from the context: registration succeeds and the
+    // indicator is queryable by name.
+    auto id = ctx.indicators().register_indicator(
+        "test-extension-led",
+        std::make_unique<PassthroughFilter>(),
+        {{"label", "Test"}});
+    REQUIRE(id == 0);
+    REQUIRE(ctx.indicators().get("test-extension-led") == 0);
 }

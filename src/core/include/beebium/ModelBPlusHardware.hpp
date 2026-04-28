@@ -376,8 +376,10 @@ public:
         // Connect disc drives to disc controller
         disc_controller.attach_drive(0, &disc_drive_0);
         disc_controller.attach_drive(1, &disc_drive_1);
-        // Start the indicators consumer thread
-        indicators.start();
+        // Note: indicators.start() is deferred to the server bootstrap, after
+        // extension init() runs. This keeps the registration window open for
+        // extensions; closing it before extensions can register would violate
+        // the Indicators register-before-start contract.
         // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
         tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
