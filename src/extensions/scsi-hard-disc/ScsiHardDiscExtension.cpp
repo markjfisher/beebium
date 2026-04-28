@@ -29,12 +29,9 @@ ScsiHardDiscExtension::~ScsiHardDiscExtension() = default;
 std::unique_ptr<ScsiHardDiscExtension> ScsiHardDiscExtension::create() {
     auto ext = std::unique_ptr<ScsiHardDiscExtension>(new ScsiHardDiscExtension());
     ext->set_manifest(ExtensionManifest{
-        "scsi-hard-disc",
-        "SCSI hard disc target (DAT+DSC image)",
-        "scsi-hard-disc",
-        {},   // cli_name (uses name)
-        {},   // manifest_dirpath (built-in, no manifest file)
-        {},   // parameters
+        .name = "scsi-hard-disc",
+        .description = "SCSI hard disc target (DAT+DSC image)",
+        .library_stem = "scsi-hard-disc",
     });
     return ext;
 }
@@ -99,7 +96,7 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
                 target_id,
                 std::move(indicator_name),
                 {{"label", std::move(label)},
-                 {"color", "630nm"},        // typical red HDD activity LED
+                 {"color", "600nm"},        // orange HDD activity LED
                  {"shape", "rectangular"}});
         }
     }

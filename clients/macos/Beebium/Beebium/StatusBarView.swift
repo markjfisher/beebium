@@ -28,7 +28,10 @@ struct StatusBarView: View {
         "caps-lock-led",
         "shift-lock-led",
         "floppy-0-activity-led",
-        "floppy-1-activity-led"
+        "floppy-1-activity-led",
+        "hdd-0-activity-led",
+        "hdd-1-activity-led",
+        "hdd-2-activity-led"
     ]
 
     var body: some View {

@@ -1049,7 +1049,7 @@ TEST_CASE("IndicatorService Model B+ with SCSI exposes hdd-0-activity-led",
     }
     REQUIRE(found);
     REQUIRE(label == "Hard Disc 0");
-    REQUIRE(color == "630nm");
+    REQUIRE(color == "600nm");
     REQUIRE(shape == "rectangular");
 }
 
