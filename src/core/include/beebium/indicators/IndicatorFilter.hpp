@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_INDICATORS_INDICATOR_FILTER_HPP
 #define BEEBIUM_INDICATORS_INDICATOR_FILTER_HPP
 
+#include "beebium/extension/Export.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -28,11 +30,22 @@ namespace beebium {
 /// - PassthroughFilter: No filtering, immediate updates
 /// - DebounceFilter: Requires stable input for a duration before changing
 /// - DutyCycleFilter: Computes PWM duty cycle over a time window
-class IndicatorFilter {
+///
+/// Filters are stored long-lived inside the central Indicators registry,
+/// which lives on the host machine. Plugin extensions (e.g. scsi-hard-disc)
+/// can construct concrete filters via std::make_unique and hand them off.
+/// The vtables for the non-template filter classes are anchored in
+/// beebium_extension_api (see IndicatorFilter.cpp) by making each virtual
+/// destructor non-inline; without that anchor, every translation unit that
+/// instantiates a filter emits its own weak vtable, and a vtable that ends
+/// up inside a plugin DLL would be unmapped by dlclose() before the
+/// Indicators registry destroys its filters at machine shutdown -- crashing
+/// the process. See issue #42.
+class BEEBIUM_EXT_TYPE_VISIBLE IndicatorFilter {
 public:
     using time_point = std::chrono::steady_clock::time_point;
 
-    virtual ~IndicatorFilter() = default;
+    BEEBIUM_EXT_API virtual ~IndicatorFilter();
 
     /// Accept a raw update from the emulation.
     /// Called from the emulation thread; must be fast and non-blocking.
@@ -51,8 +64,10 @@ public:
 ///
 /// Use for indicators that don't need filtering (e.g., motor state that's
 /// already debounced by the hardware).
-class PassthroughFilter : public IndicatorFilter {
+class BEEBIUM_EXT_TYPE_VISIBLE PassthroughFilter : public IndicatorFilter {
 public:
+    BEEBIUM_EXT_API ~PassthroughFilter() override;
+
     void update(uint8_t value, time_point /*timestamp*/) override {
         value_.store(value, std::memory_order_relaxed);
     }
@@ -68,10 +83,12 @@ private:
 /// Debounce filter: only changes output after input is stable for a duration.
 ///
 /// Use for indicators that may have spurious transients that should be ignored.
-class DebounceFilter : public IndicatorFilter {
+class BEEBIUM_EXT_TYPE_VISIBLE DebounceFilter : public IndicatorFilter {
 public:
     explicit DebounceFilter(std::chrono::milliseconds min_stable)
         : min_stable_(min_stable) {}
+
+    BEEBIUM_EXT_API ~DebounceFilter() override;
 
     void update(uint8_t value, time_point timestamp) override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -105,10 +122,12 @@ private:
 ///
 /// Use for LEDs that are PWM-modulated by software (e.g., BBC Micro's Caps Lock LED).
 /// The output represents brightness as a value 0-255.
-class DutyCycleFilter : public IndicatorFilter {
+class BEEBIUM_EXT_TYPE_VISIBLE DutyCycleFilter : public IndicatorFilter {
 public:
     explicit DutyCycleFilter(std::chrono::milliseconds window)
         : window_(window) {}
+
+    BEEBIUM_EXT_API ~DutyCycleFilter() override;
 
     void update(uint8_t value, time_point timestamp) override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -187,10 +206,12 @@ private:
 ///
 /// Use for transient activity pulses too brief to perceive at human time scales
 /// (e.g. SCSI bus selection that lasts microseconds).
-class RetriggerableMonostableFilter : public IndicatorFilter {
+class BEEBIUM_EXT_TYPE_VISIBLE RetriggerableMonostableFilter : public IndicatorFilter {
 public:
     explicit RetriggerableMonostableFilter(std::chrono::milliseconds pulse_width)
         : pulse_width_(pulse_width) {}
+
+    BEEBIUM_EXT_API ~RetriggerableMonostableFilter() override;
 
     void update(uint8_t value, time_point timestamp) override {
         if (value == 0) {

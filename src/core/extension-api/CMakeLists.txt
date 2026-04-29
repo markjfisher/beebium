@@ -200,6 +200,7 @@ endif()
 add_library(beebium_extension_api SHARED
     Extension.cpp
     ExtensionContext.cpp
+    IndicatorFilter.cpp
     OneMHzBusPort.cpp
     EconetTransportExtension.cpp
     ExtensionUi.cpp

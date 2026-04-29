@@ -1001,6 +1001,26 @@ if(BEEBIUM_BUILD_SERVICE)
     add_dependencies(test_plugin_loader beebium_ext_test_scratch_ram_plugin)
     catch_discover_tests(test_plugin_loader)
 
+    # Regression test for issue #42: SIGINT crash when shutting down
+    # beebium-model-b-romram with a mounted SCSI hard disc image. Loads the
+    # acorn-scsi and scsi-hard-disc plugins via PluginLoader, registers an
+    # HDD activity indicator (whose filter vtable lives in scsi-hard-disc.dylib),
+    # then dlclose's the plugins before the Indicators registry is destroyed
+    # -- the same destruction order the server has at exit.
+    add_executable(test_scsi_plugin_shutdown test_scsi_plugin_shutdown.cpp)
+    target_link_libraries(test_scsi_plugin_shutdown PRIVATE
+        beebium_core
+        Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_scsi_plugin_shutdown PRIVATE
+        BEEBIUM_PLUGIN_EXTENSIONS_DIR="$<TARGET_FILE_DIR:beebium-model-b>/extensions"
+    )
+    add_dependencies(test_scsi_plugin_shutdown
+        beebium_ext_acorn_scsi_plugin
+        beebium_ext_scsi_hard_disc_plugin
+    )
+    catch_discover_tests(test_scsi_plugin_shutdown)
+
     # PeripheralExtensionService gRPC tests (frontend discovery)
     add_executable(test_grpc_peripheral_extension test_grpc_peripheral_extension.cpp)
     target_link_libraries(test_grpc_peripheral_extension PRIVATE
