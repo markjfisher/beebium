@@ -91,7 +91,7 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
         // tests that don't care about LEDs work unchanged.
         if (ctx.has_indicators()) {
             std::string indicator_name = "hdd-" + std::to_string(target_id) + "-activity-led";
-            std::string label = "Hard Disc " + std::to_string(target_id);
+            std::string label = "HDD " + std::to_string(target_id);
             scsi_adapter->register_target_indicator(
                 target_id,
                 std::move(indicator_name),

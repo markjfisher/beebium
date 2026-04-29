@@ -208,8 +208,8 @@ public:
 
     // Disc controller (WD1770 built-in on Model B+)
     WD1770 disc_controller;
-    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "Floppy 0", "568nm"};
-    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "Floppy 1", "568nm"};
+    DiscDrive disc_drive_0{indicators, "floppy-0-activity-led", "FDD 0", "568nm"};
+    DiscDrive disc_drive_1{indicators, "floppy-1-activity-led", "FDD 1", "568nm"};
 
     // Econet subsystem -- optional networking hardware
     EconetSocket econet_socket;

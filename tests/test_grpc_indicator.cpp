@@ -311,13 +311,13 @@ TEST_CASE("IndicatorService ListIndicators returns disc indicators for Model B+"
             found_floppy_0 = true;
             // Use iteration-based lookup (workaround for protobuf Map hash bug)
             CHECK(proto_map_contains(indicator.metadata(), std::string("label")));
-            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "Floppy 0");
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "FDD 0");
             CHECK(proto_map_contains(indicator.metadata(), std::string("color")));
             CHECK(proto_map_get(indicator.metadata(), std::string("color")) == "568nm");
         }
         if (indicator.name() == "floppy-1-activity-led") {
             found_floppy_1 = true;
-            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "Floppy 1");
+            CHECK(proto_map_get(indicator.metadata(), std::string("label")) == "FDD 1");
         }
     }
     CHECK(found_floppy_0);
@@ -1048,7 +1048,7 @@ TEST_CASE("IndicatorService Model B+ with SCSI exposes hdd-0-activity-led",
         }
     }
     REQUIRE(found);
-    REQUIRE(label == "Hard Disc 0");
+    REQUIRE(label == "HDD 0");
     REQUIRE(color == "600nm");
     REQUIRE(shape == "rectangular");
 }

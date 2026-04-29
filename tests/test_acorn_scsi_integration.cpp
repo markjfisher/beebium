@@ -184,13 +184,13 @@ TEST_CASE("AcornScsiHostAdapter register_target_indicator registers the indicato
     ScsiIntegrationFixture f;
     f.adapter->register_target_indicator(
         0, "hdd-0-activity-led",
-        {{"label", "Hard Disc 0"}, {"color", "rgb(255,191,0)"}, {"shape", "rectangular"}});
+        {{"label", "HDD 0"}, {"color", "rgb(255,191,0)"}, {"shape", "rectangular"}});
 
     auto names = f.hw.indicators.names();
     REQUIRE(std::find(names.begin(), names.end(), "hdd-0-activity-led") != names.end());
 
     auto meta = f.hw.indicators.metadata("hdd-0-activity-led");
-    REQUIRE(meta["label"] == "Hard Disc 0");
+    REQUIRE(meta["label"] == "HDD 0");
     REQUIRE(meta["color"] == "rgb(255,191,0)");
     REQUIRE(meta["shape"] == "rectangular");
 }
