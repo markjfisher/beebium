@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <mutex>
 
 namespace beebium {
@@ -356,6 +357,21 @@ private:
     bool initial_state_at_window_ = false;
     uint8_t current_output_ = 0;
 };
+
+// Factory functions defined in beebium_extension_api.
+//
+// Plugins must NOT instantiate the concrete filter classes directly (e.g. via
+// std::make_unique<RetriggerableMonostableFilter>). MSVC emits the vtable
+// COMDAT into every translation unit that constructs a polymorphic type, so
+// a plugin DLL that builds the filter inline ends up with its own vtable
+// copy. When the plugin is dlclose'd at server shutdown, that copy is
+// unmapped, and the destructor dispatch from the host's long-lived
+// Indicators registry walks freed memory and crashes (issue #42). The
+// out-of-line virtual destructor anchors the vtable on GCC/Clang but not
+// on MSVC. Using these factories keeps construction inside
+// beebium_extension_api on every platform.
+BEEBIUM_EXT_API std::unique_ptr<IndicatorFilter>
+make_retriggerable_monostable_filter(std::chrono::milliseconds pulse_width);
 
 } // namespace beebium
 

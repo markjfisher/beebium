@@ -211,7 +211,9 @@ TEST_CASE("AcornScsiHostAdapter SCSI activity drives the registered LUN indicato
     REQUIRE(f.hw.indicators.get("hdd-0-activity-led") == 255);
 
     // After the pulse window expires (real wall clock), it must drop to 0.
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // The pulse width (kActivityPulseWidth in AcornScsiHostAdapter) is 250 ms
+    // so wait comfortably past it before sampling.
+    std::this_thread::sleep_for(std::chrono::milliseconds(350));
     f.hw.indicators.process_pending();
     REQUIRE(f.hw.indicators.get("hdd-0-activity-led") == 0);
 }

@@ -1073,7 +1073,8 @@ TEST_CASE("IndicatorService Model B+ with SCSI signals activity on transaction",
     bus.read(0x40);  // message byte -> BusFree
 
     // The bus fired (lun=0, true) on Selection and (lun=0, false) on BusFree.
-    // The RetriggerableMonostable filter holds the LED on for ~80ms.
+    // The RetriggerableMonostable filter holds the LED on for the pulse width
+    // configured in AcornScsiHostAdapter (kActivityPulseWidth, 250 ms).
     bool went_high = wait_for_indicator(
         fixture.stub(), "hdd-0-activity-led",
         [](uint64_t v) { return v == 255; });

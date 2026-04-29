@@ -88,6 +88,10 @@ public:
     // Defined inline because each plugin dylib that depends on the SCSI
     // extension point (e.g. scsi-hard-disc) compiles its own caller to this
     // method without linking the acorn-scsi library at static-link time.
+    // The filter is constructed via make_retriggerable_monostable_filter()
+    // (defined in beebium_extension_api) rather than std::make_unique here,
+    // to keep the filter's vtable out of plugin DLLs on MSVC -- see
+    // IndicatorFilter.cpp for the full rationale (issue #42).
     void register_target_indicator(
         uint8_t lun,
         std::string name,
@@ -104,7 +108,7 @@ public:
         }
         uint16_t id = indicators_->register_indicator(
             std::move(name),
-            std::make_unique<RetriggerableMonostableFilter>(kActivityPulseWidth),
+            make_retriggerable_monostable_filter(kActivityPulseWidth),
             std::move(metadata));
         indicator_ids_[lun] = id;
     }
@@ -131,9 +135,13 @@ public:
 private:
     // Pulse width for the SCSI activity LED. A SCSI transaction is typically
     // dispatched in a fraction of a millisecond; without this stretch the LED
-    // would flash imperceptibly. 80 ms is fast enough to flicker visibly under
-    // sustained access and slow enough that single transactions register.
-    static constexpr std::chrono::milliseconds kActivityPulseWidth{80};
+    // would flash imperceptibly. 250 ms is in the same range as a real HDD
+    // activity LED with a one-shot stretcher (typically 100-300 ms), is fast
+    // enough to flicker visibly under sustained access, and is comfortably
+    // longer than the Indicators consumer thread's ~20 ms sample cadence
+    // even when it is delayed by a heavily-contended host (e.g. CI runners),
+    // which makes single-transaction pulses reliably observable.
+    static constexpr std::chrono::milliseconds kActivityPulseWidth{250};
 
     // 0xFFFF means "no indicator registered for this LUN".
     static constexpr uint16_t kNoIndicator = 0xFFFF;
