@@ -88,4 +88,25 @@ final class VideoSettingsLoadTests: XCTestCase {
         let settings = VideoSettings.loadFromUserDefaults(defaults)
         XCTAssertEqual(settings.pixelShape, .authentic)
     }
+
+    // MARK: - Window background
+
+    func testEmptyDefaultsProduceBuiltInBackground() {
+        let settings = VideoSettings.loadFromUserDefaults(defaults)
+        XCTAssertEqual(settings.windowBackground.sRGBHex,
+                       VideoSettings.defaultWindowBackground.sRGBHex)
+    }
+
+    func testStoredBackgroundHexIsRespected() {
+        defaults.set("#102030", forKey: VideoSettings.defaultWindowBackgroundKey)
+        let settings = VideoSettings.loadFromUserDefaults(defaults)
+        XCTAssertEqual(settings.windowBackground.sRGBHex, "#102030")
+    }
+
+    func testInvalidBackgroundHexFallsBackToBuiltInDefault() {
+        defaults.set("not a colour", forKey: VideoSettings.defaultWindowBackgroundKey)
+        let settings = VideoSettings.loadFromUserDefaults(defaults)
+        XCTAssertEqual(settings.windowBackground.sRGBHex,
+                       VideoSettings.defaultWindowBackground.sRGBHex)
+    }
 }

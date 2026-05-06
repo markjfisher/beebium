@@ -25,6 +25,9 @@ struct VideoSettingsPane: View {
     @AppStorage(VideoSettings.defaultPixelShapeKey)
     private var defaultPixelShapeRaw: String = PixelShape.authentic.rawValue
 
+    @AppStorage(VideoSettings.defaultWindowBackgroundKey)
+    private var defaultWindowBackgroundHex: String = VideoSettings.defaultWindowBackground.sRGBHex
+
     /// Adapter binding so the picker can use the typed PixelShape enum even
     /// though @AppStorage holds the raw string.
     private var defaultPixelShape: Binding<PixelShape> {
@@ -34,6 +37,20 @@ struct VideoSettingsPane: View {
             },
             set: { newValue in
                 defaultPixelShapeRaw = newValue.rawValue
+            }
+        )
+    }
+
+    /// Adapter binding so ColorPicker can use a Color even though @AppStorage
+    /// holds the sRGB hex string.
+    private var defaultWindowBackground: Binding<Color> {
+        Binding(
+            get: {
+                Color(sRGBHex: defaultWindowBackgroundHex)
+                    ?? VideoSettings.defaultWindowBackground
+            },
+            set: { newValue in
+                defaultWindowBackgroundHex = newValue.sRGBHex
             }
         )
     }
@@ -51,6 +68,10 @@ struct VideoSettingsPane: View {
                         Text(shape.displayName).tag(shape)
                     }
                 }
+
+                ColorPicker("Default window background",
+                            selection: defaultWindowBackground,
+                            supportsOpacity: false)
             } footer: {
                 Text("Defaults apply to new emulator windows. Existing "
                      + "windows keep their current settings.")
@@ -59,7 +80,7 @@ struct VideoSettingsPane: View {
             }
         }
         .padding()
-        .frame(minWidth: 420, minHeight: 220)
+        .frame(minWidth: 420, minHeight: 280)
     }
 }
 

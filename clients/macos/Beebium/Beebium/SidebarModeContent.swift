@@ -98,9 +98,31 @@ struct VideoModeView: View {
                 stylePickerSection
                 Divider()
                 styleOptionsSection
+                Divider()
+                backgroundColourSection
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Background colour
+
+    private var backgroundColourSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Window Background")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            HStack {
+                ColorPicker("",
+                            selection: $videoSettings.windowBackground,
+                            supportsOpacity: false)
+                    .labelsHidden()
+                Text("Shows around the picture as letterbox or pillarbox.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

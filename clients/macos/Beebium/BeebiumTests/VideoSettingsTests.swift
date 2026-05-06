@@ -10,6 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+import SwiftUI
 import XCTest
 @testable import Beebium
 
@@ -120,6 +121,31 @@ final class VideoSettingsTests: XCTestCase {
         let exp = expectation(description: "objectWillChange fires")
         let cancellable = settings.objectWillChange.sink { _ in exp.fulfill() }
         settings.pixelShape = .crisp
+        wait(for: [exp], timeout: 1.0)
+        _ = cancellable
+    }
+
+    // MARK: - Window background
+
+    func testDefaultWindowBackgroundIsTheBuiltInDarkGrey() {
+        // New users should see the same dark grey that shipped before the
+        // setting was configurable.
+        let settings = VideoSettings()
+        XCTAssertEqual(settings.windowBackground.sRGBHex,
+                       VideoSettings.defaultWindowBackground.sRGBHex)
+    }
+
+    func testCustomInitialWindowBackgroundIsRespected() {
+        let pink = Color(sRGBHex: "#FFC0CB")!
+        let settings = VideoSettings(initialWindowBackground: pink)
+        XCTAssertEqual(settings.windowBackground.sRGBHex, "#FFC0CB")
+    }
+
+    func testWindowBackgroundChangeEmitsObservableObjectChange() {
+        let settings = VideoSettings()
+        let exp = expectation(description: "objectWillChange fires")
+        let cancellable = settings.objectWillChange.sink { _ in exp.fulfill() }
+        settings.windowBackground = Color(sRGBHex: "#102030")!
         wait(for: [exp], timeout: 1.0)
         _ = cancellable
     }

@@ -42,7 +42,7 @@ struct EmulatorView: NSViewRepresentable {
 
         mtkView.device = device
         mtkView.colorPixelFormat = .bgra8Unorm
-        mtkView.clearColor = MTLClearColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
+        mtkView.clearColor = videoSettings.windowBackground.mtlClearColor
 
         // Create renderer with the currently selected display style as the
         // initial pipeline. setActiveStyle handles subsequent style changes.
@@ -82,7 +82,9 @@ struct EmulatorView: NSViewRepresentable {
     func updateNSView(_ nsView: KeyboardMTKView, context: Context) {
         // Frame updates happen directly via VideoClient -> MetalRenderer.
         // The keyboard client reference is stable. We do need to react to
-        // display-style and pixel-shape changes from the sidebar.
+        // display-style, pixel-shape, and window-background changes from the
+        // sidebar.
+        nsView.clearColor = videoSettings.windowBackground.mtlClearColor
         guard let renderer = context.coordinator.renderer else { return }
         renderer.setActiveStyle(videoSettings.activeStyle)
         renderer.parScale = videoSettings.parScale

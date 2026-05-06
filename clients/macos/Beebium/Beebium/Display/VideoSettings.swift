@@ -39,6 +39,11 @@ final class VideoSettings: ObservableObject {
     /// scaling on modern displays at the cost of geometric authenticity.
     @Published var pixelShape: PixelShape
 
+    /// Window background colour shown as letterbox/pillarbox fill around the
+    /// active picture and (under Standard) inside the edge-margin frame.
+    /// Drives MTKView.clearColor; persisted as an sRGB hex string.
+    @Published var windowBackground: Color
+
     /// Resolves activeStyleID to a concrete style. Falls back to the first
     /// available style if the id has somehow been set to something unknown.
     var activeStyle: any DisplayStyle {
@@ -52,6 +57,17 @@ final class VideoSettings: ObservableObject {
     /// Video pane can use the same constants for its @AppStorage bindings.
     static let defaultStyleIDKey = "video.defaultStyleID"
     static let defaultPixelShapeKey = "video.defaultPixelShape"
+    static let defaultWindowBackgroundKey = "video.defaultWindowBackgroundHex"
+
+    /// The dark-grey background colour used before this setting was
+    /// configurable. Acts as the built-in fallback when no preference is set.
+    /// `nonisolated` so it can be referenced from default argument
+    /// expressions evaluated at the call site under Swift 6 strict isolation.
+    nonisolated static let defaultWindowBackground: Color = Color(.sRGB,
+                                                                  red: 0.15,
+                                                                  green: 0.15,
+                                                                  blue: 0.15,
+                                                                  opacity: 1.0)
 
     /// Construct with explicit values. Tests use this so they are not
     /// affected by the local UserDefaults state.
@@ -63,12 +79,14 @@ final class VideoSettings: ObservableObject {
     ///   - initialPixelShape: PAR mode to start in.
     init(styles: [any DisplayStyle] = [StandardDisplayStyle(), DebugDisplayStyle()],
          initialStyleID: String = "standard",
-         initialPixelShape: PixelShape = .authentic) {
+         initialPixelShape: PixelShape = .authentic,
+         initialWindowBackground: Color = VideoSettings.defaultWindowBackground) {
         precondition(!styles.isEmpty, "VideoSettings requires at least one display style")
         self.availableStyles = styles
         let isKnown = styles.contains { $0.id == initialStyleID }
         self.activeStyleID = isKnown ? initialStyleID : styles[0].id
         self.pixelShape = initialPixelShape
+        self.windowBackground = initialWindowBackground
     }
 
     /// Production constructor used by ContentView - reads global defaults
@@ -86,7 +104,17 @@ final class VideoSettings: ObservableObject {
             shape = .authentic
         }
 
-        return VideoSettings(initialStyleID: styleID, initialPixelShape: shape)
+        let background: Color
+        if let hex = defaults.string(forKey: defaultWindowBackgroundKey),
+           let parsed = Color(sRGBHex: hex) {
+            background = parsed
+        } else {
+            background = defaultWindowBackground
+        }
+
+        return VideoSettings(initialStyleID: styleID,
+                             initialPixelShape: shape,
+                             initialWindowBackground: background)
     }
 
     /// Set the active style by id. No-op if the id is unknown.
