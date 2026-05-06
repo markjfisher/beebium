@@ -15,32 +15,29 @@ import Metal
 import SwiftUI
 import simd
 
-/// Display style that paints four distinct coloured borders around the active
-/// pixel area, with the overall picture (active + borders) aspect-fit into the
-/// drawable. Used to make CRTC border tracking and overscan visible while
-/// developing the emulator.
-final class DebugDisplayStyle: DisplayStyle {
-    let id = "debug"
-    let displayName = "Debug"
-
-    /// RGBA border colours. Defaults match the values that shipped before the
-    /// display-style refactor so behaviour is unchanged after switching to this
-    /// style. Mutable so a future "customise debug colours" UI can tweak them.
-    var leftBorderColor = SIMD4<Float>(0.5, 0.0, 0.0, 1.0)   // Dark red
-    var rightBorderColor = SIMD4<Float>(0.0, 0.5, 0.0, 1.0)  // Dark green
-    var topBorderColor = SIMD4<Float>(0.0, 0.0, 0.5, 1.0)    // Dark blue
-    var bottomBorderColor = SIMD4<Float>(0.5, 0.5, 0.0, 1.0) // Dark yellow
+/// Display style that fits only the active pixel area into the drawable, with
+/// no coloured debug borders. The blanking around the active area appears as
+/// the window's background colour (letterbox/pillarbox).
+///
+/// The active area's apparent size therefore stays constant when the BBC
+/// switches screen modes, even though the CRTC border tracking varies.
+final class StandardDisplayStyle: DisplayStyle {
+    let id = "standard"
+    let displayName = "Standard"
 
     func makePipelineState(device: MTLDevice,
                            pixelFormat: MTLPixelFormat) throws -> MTLRenderPipelineState {
         guard let library = device.makeDefaultLibrary() else {
             throw DisplayStyleError.defaultLibraryUnavailable
         }
+        // Reuses the shared vertexShader (the aspect-fit math is identical
+        // once totalSize == displaySize). The Standard fragment shader has no
+        // border-drawing branches.
         guard let vertexFn = library.makeFunction(name: "vertexShader") else {
             throw DisplayStyleError.shaderFunctionMissing("vertexShader")
         }
-        guard let fragmentFn = library.makeFunction(name: "fragmentShader") else {
-            throw DisplayStyleError.shaderFunctionMissing("fragmentShader")
+        guard let fragmentFn = library.makeFunction(name: "fragmentShaderStandard") else {
+            throw DisplayStyleError.shaderFunctionMissing("fragmentShaderStandard")
         }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertexFn
@@ -50,10 +47,9 @@ final class DebugDisplayStyle: DisplayStyle {
     }
 
     func makeUniforms(frame: FrameContext, drawable: DrawableContext) -> Uniforms {
-        // Debug style aspect-fits the entire active+border rectangle so the
-        // coloured borders are visible inside the window content area.
-        let totalWidth = Float(frame.leftBorder + frame.displayWidth + frame.rightBorder)
-        let totalHeight = Float(frame.topBorder + frame.displayHeight + frame.bottomBorder)
+        // Standard fits the active pixel area only; CRTC borders are not part
+        // of the picture. totalSize == displaySize and borderOffset == (0, 0).
+        let displaySize = SIMD2<Float>(Float(frame.displayWidth), Float(frame.displayHeight))
 
         var regionUniforms = (
             RegionUniforms(), RegionUniforms(), RegionUniforms(), RegionUniforms(),
@@ -76,15 +72,19 @@ final class DebugDisplayStyle: DisplayStyle {
             drawableSize: SIMD2<Float>(Float(drawable.drawableSize.width),
                                        Float(drawable.drawableSize.height)),
             textureSize: SIMD2<Float>(Float(frame.textureWidth), Float(frame.textureHeight)),
-            displaySize: SIMD2<Float>(Float(frame.displayWidth), Float(frame.displayHeight)),
-            totalSize: SIMD2<Float>(totalWidth, totalHeight),
-            borderOffset: SIMD2<Float>(Float(frame.leftBorder), Float(frame.topBorder)),
+            displaySize: displaySize,
+            totalSize: displaySize,
+            borderOffset: SIMD2<Float>(0, 0),
             parScale: drawable.parScale,
             interlaced: frame.interlaced ? 1 : 0,
-            leftBorderColor: leftBorderColor,
-            rightBorderColor: rightBorderColor,
-            topBorderColor: topBorderColor,
-            bottomBorderColor: bottomBorderColor,
+            // Standard does not draw the four debug borders; the fragment
+            // shader doesn't read the colour fields. Zero them for hygiene
+            // so a future shader change can't accidentally pick up stale
+            // values.
+            leftBorderColor: SIMD4<Float>(0, 0, 0, 0),
+            rightBorderColor: SIMD4<Float>(0, 0, 0, 0),
+            topBorderColor: SIMD4<Float>(0, 0, 0, 0),
+            bottomBorderColor: SIMD4<Float>(0, 0, 0, 0),
             regionCount: UInt32(regionCount),
             regions: regionUniforms
         )
@@ -92,11 +92,10 @@ final class DebugDisplayStyle: DisplayStyle {
 
     @MainActor
     func makeOptionsView() -> AnyView {
-        // Border-colour customisation is a future refinement; nothing to expose
-        // for now beyond an explanatory note.
+        // No tweakable parameters yet; commit C adds the overscan amount.
         AnyView(
-            Text("Coloured borders are drawn around the active pixel area "
-                 + "to show CRTC overscan tracking.")
+            Text("The active pixel area is fitted to the window. Blanking "
+                 + "appears as the window background colour.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

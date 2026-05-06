@@ -25,6 +25,10 @@ struct EmulatorView: NSViewRepresentable {
     /// Indicator client for LED states (used by Touch Bar)
     @ObservedObject var indicatorClient: IndicatorClient
 
+    /// Per-window video settings (active display style, etc.).
+    /// Changes are propagated to the renderer via updateNSView.
+    @ObservedObject var videoSettings: VideoSettings
+
     /// BBC key cache for Touch Bar key lookups
     var bbcKeyCache: BBCKeyCache?
 
@@ -40,8 +44,10 @@ struct EmulatorView: NSViewRepresentable {
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.clearColor = MTLClearColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
 
-        // Create renderer and set as delegate
-        if let renderer = MetalRenderer(device: device) {
+        // Create renderer with the currently selected display style as the
+        // initial pipeline. setActiveStyle handles subsequent style changes.
+        if let renderer = MetalRenderer(device: device,
+                                         initialStyle: videoSettings.activeStyle) {
             context.coordinator.renderer = renderer
             mtkView.delegate = renderer
 
@@ -73,8 +79,10 @@ struct EmulatorView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: KeyboardMTKView, context: Context) {
-        // Frame updates now happen directly via VideoClient -> MetalRenderer
-        // Keyboard client reference is stable, no update needed
+        // Frame updates happen directly via VideoClient -> MetalRenderer.
+        // The keyboard client reference is stable. We only need to react to
+        // display-style changes from the sidebar.
+        context.coordinator.renderer?.setActiveStyle(videoSettings.activeStyle)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -95,6 +103,7 @@ struct EmulatorView_Previews: PreviewProvider {
             videoClient: VideoClient(),
             keyboardClient: KeyboardClient(),
             indicatorClient: IndicatorClient(),
+            videoSettings: VideoSettings(),
             bbcKeyCache: nil
         )
             .frame(width: 736, height: 576)

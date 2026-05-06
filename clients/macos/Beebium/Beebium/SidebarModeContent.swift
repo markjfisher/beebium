@@ -40,6 +40,7 @@ struct SidebarModeContent: View {
     @ObservedObject var audioMixerState: AudioMixerState
     @ObservedObject var econetClient: EconetClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var videoSettings: VideoSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,7 +54,7 @@ struct SidebarModeContent: View {
             case .peripherals:
                 PeripheralsModeView()
             case .video:
-                VideoModeView()
+                VideoModeView(videoSettings: videoSettings)
             case .sound:
                 AudioMixerView(audioClient: audioClient, mixerState: audioMixerState)
             case .keyboard:
@@ -85,10 +86,60 @@ struct PeripheralsModeView: View {
     }
 }
 
-/// Placeholder view for Video mode
+/// Video mode: pick a display style and tweak its options.
 struct VideoModeView: View {
+    @ObservedObject var videoSettings: VideoSettings
+
     var body: some View {
-        ModePlaceholder(mode: .video)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                stylePickerSection
+                Divider()
+                styleOptionsSection
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Style Picker
+
+    private var stylePickerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Display Style")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            // Bind through a derived binding so changes go through
+            // selectStyle(id:) (rejects unknown ids).
+            Picker("", selection: stylePickerBinding) {
+                ForEach(videoSettings.availableStyles, id: \.id) { style in
+                    Text(style.displayName).tag(style.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private var stylePickerBinding: Binding<String> {
+        Binding(
+            get: { videoSettings.activeStyleID },
+            set: { videoSettings.selectStyle(id: $0) }
+        )
+    }
+
+    // MARK: - Per-style Options
+
+    private var styleOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(videoSettings.activeStyle.displayName)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            videoSettings.activeStyle.makeOptionsView()
+        }
+        // Force the options view to rebuild when the active style changes,
+        // so styles with @Published parameters bind to the right instance.
+        .id(videoSettings.activeStyleID)
     }
 }
 
@@ -513,7 +564,8 @@ struct SidebarModeContent_Previews: PreviewProvider {
             audioClient: AudioClient(),
             audioMixerState: AudioMixerState(),
             econetClient: EconetClient(),
-            extensionUiClient: ExtensionUiClient()
+            extensionUiClient: ExtensionUiClient(),
+            videoSettings: VideoSettings()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))

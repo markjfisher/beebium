@@ -98,6 +98,31 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
     return out;
 }
 
+// Per-region horizontal scaling shared by the Debug and Standard fragment
+// shaders. Maps a fragment's content-area position into a texture U coordinate,
+// honouring split-screen mode bands when present. contentCoord is the fragment
+// position relative to the displaySize rectangle origin.
+static inline float resolveTextureU(float2 contentCoord,
+                                    constant Uniforms& uniforms) {
+    float texV = contentCoord.y / uniforms.displaySize.y;
+    if (uniforms.regionCount > 1) {
+        int scanline = int(texV * uniforms.textureSize.y);
+        scanline = clamp(scanline, 0, int(uniforms.textureSize.y) - 1);
+        uint regionPixelWidth = uint(uniforms.textureSize.x);  // Fallback
+        for (uint i = 0; i < uniforms.regionCount && i < MAX_REGIONS; ++i) {
+            if (uint(scanline) >= uniforms.regions[i].startLine &&
+                uint(scanline) < uniforms.regions[i].endLine) {
+                regionPixelWidth = uniforms.regions[i].pixelWidth;
+                break;
+            }
+        }
+        return (contentCoord.x / uniforms.displaySize.x)
+             * float(regionPixelWidth) / uniforms.textureSize.x;
+    } else {
+        return contentCoord.x / uniforms.displaySize.x;
+    }
+}
+
 // Fragment shader: sample the emulator framebuffer texture with border rendering
 // Handles scaling from logical texture size to display size (e.g., 320->640 for MODE 1)
 // Supports split-screen modes via per-region horizontal scaling
@@ -135,37 +160,33 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]],
 
     // Inside content area - sample texture with scaling
     float2 contentCoord = pixelCoord - uniforms.borderOffset;
-    float texV = contentCoord.y / uniforms.displaySize.y;  // Normalize Y to [0,1]
-
-    // Determine texture U coordinate, accounting for split-screen regions
-    float texU;
-    if (uniforms.regionCount > 1) {
-        // Split-screen: find region for this scanline and scale accordingly
-        int scanline = int(texV * uniforms.textureSize.y);
-        scanline = clamp(scanline, 0, int(uniforms.textureSize.y) - 1);
-
-        // Find the region containing this scanline
-        uint regionPixelWidth = uint(uniforms.textureSize.x);  // Fallback
-        for (uint i = 0; i < uniforms.regionCount && i < MAX_REGIONS; ++i) {
-            if (uint(scanline) >= uniforms.regions[i].startLine &&
-                uint(scanline) < uniforms.regions[i].endLine) {
-                regionPixelWidth = uniforms.regions[i].pixelWidth;
-                break;
-            }
-        }
-
-        // Scale X: map display X [0, displaySize.x] to texture X [0, regionPixelWidth]
-        texU = (contentCoord.x / uniforms.displaySize.x) * float(regionPixelWidth) / uniforms.textureSize.x;
-    } else {
-        // Uniform mode: simple linear mapping
-        texU = contentCoord.x / uniforms.displaySize.x;
-    }
-
+    float texU = resolveTextureU(contentCoord, uniforms);
+    float texV = contentCoord.y / uniforms.displaySize.y;
     float2 texUV = float2(texU, texV);
 
     // Use nearest for magnification (sharp pixels when enlarged)
     // Use linear for minification (blend when shrunk) to prevent thin features
     // like the 2-scanline cursor from being skipped at certain window sizes
+    constexpr sampler textureSampler(mag_filter::nearest,
+                                      min_filter::linear,
+                                      address::clamp_to_edge);
+    return texture.sample(textureSampler, texUV);
+}
+
+// Standard fragment shader: no debug borders. The vertex shader has already
+// fitted displaySize into the drawable, so the fragment is fully inside the
+// active pixel area. Per-region horizontal scaling is identical to the debug
+// shader.
+fragment float4 fragmentShaderStandard(VertexOut in [[stage_in]],
+                                        constant Uniforms& uniforms [[buffer(0)]],
+                                        texture2d<float> texture [[texture(0)]]) {
+    // The Standard style sets totalSize == displaySize and borderOffset == 0,
+    // so contentCoord is just texCoord * displaySize.
+    float2 contentCoord = in.texCoord * uniforms.displaySize;
+    float texU = resolveTextureU(contentCoord, uniforms);
+    float texV = contentCoord.y / uniforms.displaySize.y;
+    float2 texUV = float2(texU, texV);
+
     constexpr sampler textureSampler(mag_filter::nearest,
                                       min_filter::linear,
                                       address::clamp_to_edge);

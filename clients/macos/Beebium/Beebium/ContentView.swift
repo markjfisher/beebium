@@ -68,6 +68,7 @@ struct ContentView: View {
     @StateObject private var audioMixerState = AudioMixerState()
     @StateObject private var econetClient = EconetClient()
     @StateObject private var extensionUiClient = ExtensionUiClient()
+    @StateObject private var videoSettings = VideoSettings()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
     let initialProvenanceUUID: String?
@@ -102,7 +103,8 @@ struct ContentView: View {
                     audioClient: audioClient,
                     audioMixerState: audioMixerState,
                     econetClient: econetClient,
-                    extensionUiClient: extensionUiClient
+                    extensionUiClient: extensionUiClient,
+                    videoSettings: videoSettings
                 )
             }
             .background(Color(nsColor: .windowBackgroundColor))
@@ -115,6 +117,7 @@ struct ContentView: View {
                         videoClient: videoClient,
                         keyboardClient: keyboardClient,
                         indicatorClient: indicatorClient,
+                        videoSettings: videoSettings,
                         bbcKeyCache: keyboardMappingManager.bbcKeyCache
                     )
 

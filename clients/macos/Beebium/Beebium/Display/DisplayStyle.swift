@@ -12,6 +12,7 @@
 
 import Foundation
 import Metal
+import SwiftUI
 import simd
 
 // MARK: - Shader-facing Value Types
@@ -128,6 +129,10 @@ protocol DisplayStyle: AnyObject {
     ///
     /// MUST be pure - no Metal calls, no side effects. Tests rely on this.
     func makeUniforms(frame: FrameContext, drawable: DrawableContext) -> Uniforms
+
+    /// SwiftUI options panel exposed under the Video sidebar when this style is
+    /// active. Return an empty view if the style has no tweakable options.
+    @MainActor func makeOptionsView() -> AnyView
 }
 
 /// Errors emitted while building a display style's pipeline.
