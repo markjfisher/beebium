@@ -15,6 +15,7 @@
 		03FCAEA23F2FF31EC7E07D29 /* KeyboardMappings in Resources */ = {isa = PBXBuildFile; fileRef = C9A1A70DB6662E96A6210970 /* KeyboardMappings */; };
 		06B9C1E897D9DB39E8392078 /* SidebarModeContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7386122C0E5009AE250FECD /* SidebarModeContent.swift */; };
 		07C91006D788A614860664BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4635C74CA6E1654868006CA6 /* Assets.xcassets */; };
+		0C9F21B8F3D60663F6BC11BD /* VideoSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E101DD75E1EF0B125CB46B1 /* VideoSettingsPane.swift */; };
 		0DA8A667A8A7A3861F00B88F /* MachineManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7319BB6A760A9042161B98EB /* MachineManager.swift */; };
 		116FC39CBA4CBBA8B1F63FD1 /* VideoSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E54D546E48798EB281A43A0 /* VideoSettings.swift */; };
 		15F75486C8BB6F0A605ED0C3 /* KeyboardMappingResolveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62D773CF34288E45A4CFCCF5 /* KeyboardMappingResolveTests.swift */; };
@@ -26,6 +27,7 @@
 		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
 		23DC1F33FE15F8CEABE9FBE2 /* BBCModifierState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 063CC2272D058D46784E181A /* BBCModifierState.swift */; };
 		23F3E03B298F6AB8A9B9924E /* EconetClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA006204A482FCD8B77F7549 /* EconetClient.swift */; };
+		26F83122590B987F48169D2D /* VideoSettingsLoadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74AEA0430FDD370E37C07678 /* VideoSettingsLoadTests.swift */; };
 		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
 		2E9C2894C04791EF7CCDE424 /* BeebiumTouchBarLEDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA112A053333004DAE316F9 /* BeebiumTouchBarLEDs.swift */; };
 		2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */; };
@@ -73,6 +75,7 @@
 		A2664558176937A26B30748C /* StorageConfigurationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90AFDA16D57D7C85C963EBC4 /* StorageConfigurationState.swift */; };
 		A4E82812655C69808291E22A /* StorageSchemaSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14137BA5B8968468AC84092 /* StorageSchemaSection.swift */; };
 		A577F46504594230B85A9932 /* AudioMixerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D1F9F6D43714BB3F5B5CEB /* AudioMixerView.swift */; };
+		A994E213FE38477C0CF26811 /* PixelShapeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D1D75896DF179CEC420018F /* PixelShapeTests.swift */; };
 		AE3969E0CE7F7D5F7C57513A /* StorageSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1724F99FA9BFDDE24FF4F8A /* StorageSectionView.swift */; };
 		AEFDACA93EC7747DF05C2447 /* DiscoveryClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */; };
 		B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 3C410D45C0D56B52B7405B54 /* Shaders.metal */; };
@@ -92,6 +95,7 @@
 		CBC5ABA53015DE535C5F17A4 /* video.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642BEA30A8664289314B2D9E /* video.pb.swift */; };
 		D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */; };
 		D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */; };
+		D5072BCBDC5F2D2DBAFFAF87 /* PixelShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */; };
 		D74BF8677E5A5731DC06D3FD /* keyboard.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2073A33AE028AF1DFA0983DC /* keyboard.grpc.swift */; };
 		D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */; };
 		D9718E6F6B0170B2E3BDDD45 /* extension_ui.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */; };
@@ -154,6 +158,7 @@
 		28ED949DB593C8353954F7B1 /* MachinePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinePreset.swift; sourceTree = "<group>"; };
 		2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindow.swift; sourceTree = "<group>"; };
 		2CE550723A13DFA9A20EB302 /* IndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorView.swift; sourceTree = "<group>"; };
+		2D1D75896DF179CEC420018F /* PixelShapeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelShapeTests.swift; sourceTree = "<group>"; };
 		3295FC427F5DC583E764C83B /* ExtensionUiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUiClient.swift; sourceTree = "<group>"; };
 		38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoClientTests.swift; sourceTree = "<group>"; };
 		3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardClient.swift; sourceTree = "<group>"; };
@@ -182,9 +187,11 @@
 		664E24EC940C75F69FE7E1E4 /* FloppyDriveConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloppyDriveConfigView.swift; sourceTree = "<group>"; };
 		69144892FD8EBDC0F0D9230E /* video.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = video.proto; sourceTree = "<group>"; };
 		7319BB6A760A9042161B98EB /* MachineManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachineManager.swift; sourceTree = "<group>"; };
+		74AEA0430FDD370E37C07678 /* VideoSettingsLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsLoadTests.swift; sourceTree = "<group>"; };
 		76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		7C5792BABD709C954B706793 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesSettingsPane.swift; sourceTree = "<group>"; };
+		7E101DD75E1EF0B125CB46B1 /* VideoSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsPane.swift; sourceTree = "<group>"; };
 		8061A3DD36CCF7976C8F41E1 /* PresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetTests.swift; sourceTree = "<group>"; };
 		82E3A09BFCE24979EE6EF47F /* SidebarModeToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeToolbar.swift; sourceTree = "<group>"; };
 		831E41582E1F4F7358C624E8 /* indicator.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = indicator.pb.swift; sourceTree = "<group>"; };
@@ -227,6 +234,7 @@
 		CA006204A482FCD8B77F7549 /* EconetClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconetClient.swift; sourceTree = "<group>"; };
 		CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = system.grpc.swift; sourceTree = "<group>"; };
 		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
+		D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelShape.swift; sourceTree = "<group>"; };
 		D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryClient.swift; sourceTree = "<group>"; };
 		D969BBA00E4077B69BBCACAF /* econet.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet.pb.swift; sourceTree = "<group>"; };
 		DA0CF5589888F672F43B52FD /* aun.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.pb.swift; sourceTree = "<group>"; };
@@ -291,6 +299,7 @@
 			children = (
 				5123F0FA32B3711748D351D7 /* DebugDisplayStyle.swift */,
 				10DDDBA41F04259ED4E39CF0 /* DisplayStyle.swift */,
+				D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */,
 				3B7611FB75A31FE7201B3F30 /* StandardDisplayStyle.swift */,
 				5E54D546E48798EB281A43A0 /* VideoSettings.swift */,
 			);
@@ -331,6 +340,7 @@
 				5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */,
 				7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */,
 				4A3FE1A20DF4E1D3707C33DE /* SettingsView.swift */,
+				7E101DD75E1EF0B125CB46B1 /* VideoSettingsPane.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -470,9 +480,11 @@
 				F0755375EDEB34B453D3E297 /* DebugDisplayStyleTests.swift */,
 				62D773CF34288E45A4CFCCF5 /* KeyboardMappingResolveTests.swift */,
 				9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */,
+				2D1D75896DF179CEC420018F /* PixelShapeTests.swift */,
 				8061A3DD36CCF7976C8F41E1 /* PresetTests.swift */,
 				8389EA15AADAB20C859E9702 /* StandardDisplayStyleTests.swift */,
 				38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */,
+				74AEA0430FDD370E37C07678 /* VideoSettingsLoadTests.swift */,
 				16524154FADCB403497AFB1F /* VideoSettingsTests.swift */,
 			);
 			path = BeebiumTests;
@@ -606,9 +618,11 @@
 				7265A179DAA4A0794D12FCE8 /* DebugDisplayStyleTests.swift in Sources */,
 				15F75486C8BB6F0A605ED0C3 /* KeyboardMappingResolveTests.swift in Sources */,
 				2296373E4C15F8C223E5CCF8 /* MachineManagerTests.swift in Sources */,
+				A994E213FE38477C0CF26811 /* PixelShapeTests.swift in Sources */,
 				62024A31F9AD52CA2676CCB2 /* PresetTests.swift in Sources */,
 				E309480FD076251390C77416 /* StandardDisplayStyleTests.swift in Sources */,
 				E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */,
+				26F83122590B987F48169D2D /* VideoSettingsLoadTests.swift in Sources */,
 				3E893BDCD15B92A2A29AD7EB /* VideoSettingsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -668,6 +682,7 @@
 				D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */,
 				DA2A617393E4BA1C28E528F7 /* ModalEditorView.swift in Sources */,
 				1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */,
+				D5072BCBDC5F2D2DBAFFAF87 /* PixelShape.swift in Sources */,
 				D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */,
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
 				02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */,
@@ -685,6 +700,7 @@
 				F27E0697D14CBC60E7BB945E /* TextInputField.swift in Sources */,
 				F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */,
 				116FC39CBA4CBBA8B1F63FD1 /* VideoSettings.swift in Sources */,
+				0C9F21B8F3D60663F6BC11BD /* VideoSettingsPane.swift in Sources */,
 				E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */,
 				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,
 				A005244A2347799984C194E6 /* audio.pb.swift in Sources */,

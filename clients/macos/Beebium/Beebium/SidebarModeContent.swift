@@ -93,12 +93,31 @@ struct VideoModeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                pixelShapeSection
+                Divider()
                 stylePickerSection
                 Divider()
                 styleOptionsSection
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Pixels (PAR)
+
+    private var pixelShapeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Pixels")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Picker("", selection: $videoSettings.pixelShape) {
+                ForEach(PixelShape.allCases) { shape in
+                    Text(shape.displayName).tag(shape)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
         }
     }
 

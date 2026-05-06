@@ -68,7 +68,7 @@ struct ContentView: View {
     @StateObject private var audioMixerState = AudioMixerState()
     @StateObject private var econetClient = EconetClient()
     @StateObject private var extensionUiClient = ExtensionUiClient()
-    @StateObject private var videoSettings = VideoSettings()
+    @StateObject private var videoSettings = VideoSettings.loadFromUserDefaults()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
     let initialProvenanceUUID: String?

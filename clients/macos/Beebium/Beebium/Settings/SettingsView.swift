@@ -16,6 +16,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case machines
     case keyboard
+    case video
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .machines: return "Machines"
         case .keyboard: return "Keyboard"
+        case .video: return "Video"
         }
     }
 
@@ -32,6 +34,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .machines: return "desktopcomputer"
         case .keyboard: return "keyboard"
+        case .video: return "display"
         }
     }
 }
@@ -52,6 +55,11 @@ struct SettingsView: View {
             KeyboardSettingsPane()
                 .tabItem {
                     Label("Keyboard", systemImage: "keyboard")
+                }
+
+            VideoSettingsPane()
+                .tabItem {
+                    Label("Video", systemImage: "display")
                 }
         }
         .frame(minWidth: 500, minHeight: 350)

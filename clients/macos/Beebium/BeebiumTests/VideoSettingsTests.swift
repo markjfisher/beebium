@@ -98,6 +98,31 @@ final class VideoSettingsTests: XCTestCase {
         settings.selectStyle(id: "standard")
         XCTAssertTrue(settings.activeStyle === standard)
     }
+
+    // MARK: - Pixel shape
+
+    func testDefaultPixelShapeIsAuthentic() {
+        // Authentic matches the original BBC PAL CRT and is what existing
+        // users will expect when the new toggle ships.
+        let settings = VideoSettings()
+        XCTAssertEqual(settings.pixelShape, .authentic)
+    }
+
+    func testParScaleConvenienceMatchesPixelShape() {
+        let settings = VideoSettings(initialPixelShape: .authentic)
+        XCTAssertEqual(settings.parScale, 0.96, accuracy: 1e-6)
+        settings.pixelShape = .crisp
+        XCTAssertEqual(settings.parScale, 1.0, accuracy: 1e-6)
+    }
+
+    func testPixelShapeChangeEmitsObservableObjectChange() {
+        let settings = VideoSettings()
+        let exp = expectation(description: "objectWillChange fires")
+        let cancellable = settings.objectWillChange.sink { _ in exp.fulfill() }
+        settings.pixelShape = .crisp
+        wait(for: [exp], timeout: 1.0)
+        _ = cancellable
+    }
 }
 
 // MARK: - Edge margin defaults

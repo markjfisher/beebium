@@ -48,6 +48,7 @@ struct EmulatorView: NSViewRepresentable {
         // initial pipeline. setActiveStyle handles subsequent style changes.
         if let renderer = MetalRenderer(device: device,
                                          initialStyle: videoSettings.activeStyle) {
+            renderer.parScale = videoSettings.parScale
             context.coordinator.renderer = renderer
             mtkView.delegate = renderer
 
@@ -80,9 +81,11 @@ struct EmulatorView: NSViewRepresentable {
 
     func updateNSView(_ nsView: KeyboardMTKView, context: Context) {
         // Frame updates happen directly via VideoClient -> MetalRenderer.
-        // The keyboard client reference is stable. We only need to react to
-        // display-style changes from the sidebar.
-        context.coordinator.renderer?.setActiveStyle(videoSettings.activeStyle)
+        // The keyboard client reference is stable. We do need to react to
+        // display-style and pixel-shape changes from the sidebar.
+        guard let renderer = context.coordinator.renderer else { return }
+        renderer.setActiveStyle(videoSettings.activeStyle)
+        renderer.parScale = videoSettings.parScale
     }
 
     func makeCoordinator() -> Coordinator {
