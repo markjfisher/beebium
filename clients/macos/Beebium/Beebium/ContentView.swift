@@ -81,7 +81,9 @@ struct ContentView: View {
     @State private var sidebarMode: SidebarMode = .storage
     @State private var currentWindow: NSWindow?
     @State private var closeCoordinator: WindowCloseCoordinator?
+    @State private var lastSeenMachineUUID: String = ""
     private let clientGroup = ClientGroup()
+    private let videoSettingsCache = VideoSettingsCache.shared
     @Environment(\.openWindow) private var openWindow
 
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -323,6 +325,30 @@ struct ContentView: View {
                 )
             }
         }
+        // Per-machine VideoSettings cache: when SystemClient receives the
+        // server's MachineIdentity for the first time (or for a different
+        // machine after a reconnect), look the UUID up in the cache and
+        // restore any previously-saved per-window settings for that machine.
+        .onChange(of: systemClient.machineUUID) { uuid in
+            guard !uuid.isEmpty, uuid != lastSeenMachineUUID else { return }
+            lastSeenMachineUUID = uuid
+            if let snapshot = videoSettingsCache.snapshot(forMachineUUID: uuid) {
+                videoSettings.apply(snapshot)
+            }
+        }
+        // Save the current per-window video settings back to the cache on
+        // every change so a sibling window opened on the same machine picks
+        // up the latest values immediately. The empty-UUID guard inside
+        // VideoSettingsCache.save makes pre-connection edits a no-op.
+        .onChange(of: videoSettings.activeStyleID) { _ in saveVideoSettingsSnapshot() }
+        .onChange(of: videoSettings.pixelShape) { _ in saveVideoSettingsSnapshot() }
+        .onChange(of: videoSettings.windowBackground) { _ in saveVideoSettingsSnapshot() }
+    }
+
+    private func saveVideoSettingsSnapshot() {
+        let uuid = systemClient.machineUUID
+        guard !uuid.isEmpty else { return }
+        videoSettingsCache.save(videoSettings.makeSnapshot(), forMachineUUID: uuid)
     }
 
     /// Toggle the deferred unlink request for this window's machine

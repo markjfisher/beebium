@@ -18,6 +18,7 @@
 		0C9F21B8F3D60663F6BC11BD /* VideoSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E101DD75E1EF0B125CB46B1 /* VideoSettingsPane.swift */; };
 		0DA8A667A8A7A3861F00B88F /* MachineManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7319BB6A760A9042161B98EB /* MachineManager.swift */; };
 		116FC39CBA4CBBA8B1F63FD1 /* VideoSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E54D546E48798EB281A43A0 /* VideoSettings.swift */; };
+		150640ADACCA6EFA9A60A624 /* VideoSettingsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ADC7C5C44D2AAF8D8920E36 /* VideoSettingsCache.swift */; };
 		15F75486C8BB6F0A605ED0C3 /* KeyboardMappingResolveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62D773CF34288E45A4CFCCF5 /* KeyboardMappingResolveTests.swift */; };
 		162D791FD0BE2D5F6E75CB72 /* FloppyDriveConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E24EC940C75F69FE7E1E4 /* FloppyDriveConfigView.swift */; };
 		1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */; };
@@ -46,6 +47,7 @@
 		4DD0F4094D0E603CFF35DF6C /* FileCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1031975F4050BF5875549DFA /* FileCommands.swift */; };
 		4F522FC6B586A81F9B0C6507 /* indicator.proto in Resources */ = {isa = PBXBuildFile; fileRef = 87E7F7F1255B32F8C85FAFDA /* indicator.proto */; };
 		4F70A7E16C384FDF27FB7DA7 /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = A6F79E0D4FC1B7716CD1EEB9 /* SwiftProtobuf */; };
+		51546794B48C64AC5EB80E80 /* VideoSettingsCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607580C54AA31C57AD9627C8 /* VideoSettingsCacheTests.swift */; };
 		517A5C299A144DD482FC9AC2 /* debugger.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A25B5AEA5BC043A1C1314DA /* debugger.grpc.swift */; };
 		524A3CDC4C24461BC89C6886 /* ComboBoxRepresentableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC8890240329736D55E651ED /* ComboBoxRepresentableTests.swift */; };
 		562B6F36BE2D62D913DB2A32 /* AVFAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9DE8C83B31D707C9E30C491D /* AVFAudio.framework */; };
@@ -184,6 +186,7 @@
 		5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSchema.swift; sourceTree = "<group>"; };
 		5E54D546E48798EB281A43A0 /* VideoSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettings.swift; sourceTree = "<group>"; };
 		5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
+		607580C54AA31C57AD9627C8 /* VideoSettingsCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsCacheTests.swift; sourceTree = "<group>"; };
 		62D773CF34288E45A4CFCCF5 /* KeyboardMappingResolveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMappingResolveTests.swift; sourceTree = "<group>"; };
 		639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Disconnectable.swift; sourceTree = "<group>"; };
 		642BEA30A8664289314B2D9E /* video.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.pb.swift; sourceTree = "<group>"; };
@@ -204,6 +207,7 @@
 		86F2683BAFB4C72B6644F473 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
 		87E7F7F1255B32F8C85FAFDA /* indicator.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = indicator.proto; sourceTree = "<group>"; };
 		899F340E434ACDCAA75F913F /* EditableChoiceField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditableChoiceField.swift; sourceTree = "<group>"; };
+		8ADC7C5C44D2AAF8D8920E36 /* VideoSettingsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsCache.swift; sourceTree = "<group>"; };
 		8B269A5937DAC1914CA8BF39 /* video.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.grpc.swift; sourceTree = "<group>"; };
 		8C179B6CADA71E65979BE60C /* BeebiumTouchBarEscapeKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumTouchBarEscapeKey.swift; sourceTree = "<group>"; };
 		8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
@@ -307,6 +311,7 @@
 				D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */,
 				3B7611FB75A31FE7201B3F30 /* StandardDisplayStyle.swift */,
 				5E54D546E48798EB281A43A0 /* VideoSettings.swift */,
+				8ADC7C5C44D2AAF8D8920E36 /* VideoSettingsCache.swift */,
 			);
 			path = Display;
 			sourceTree = "<group>";
@@ -490,6 +495,7 @@
 				8061A3DD36CCF7976C8F41E1 /* PresetTests.swift */,
 				8389EA15AADAB20C859E9702 /* StandardDisplayStyleTests.swift */,
 				38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */,
+				607580C54AA31C57AD9627C8 /* VideoSettingsCacheTests.swift */,
 				74AEA0430FDD370E37C07678 /* VideoSettingsLoadTests.swift */,
 				16524154FADCB403497AFB1F /* VideoSettingsTests.swift */,
 			);
@@ -629,6 +635,7 @@
 				62024A31F9AD52CA2676CCB2 /* PresetTests.swift in Sources */,
 				E309480FD076251390C77416 /* StandardDisplayStyleTests.swift in Sources */,
 				E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */,
+				51546794B48C64AC5EB80E80 /* VideoSettingsCacheTests.swift in Sources */,
 				26F83122590B987F48169D2D /* VideoSettingsLoadTests.swift in Sources */,
 				3E893BDCD15B92A2A29AD7EB /* VideoSettingsTests.swift in Sources */,
 			);
@@ -708,6 +715,7 @@
 				F27E0697D14CBC60E7BB945E /* TextInputField.swift in Sources */,
 				F4E79C3B365AB2D13A5B5984 /* VideoClient.swift in Sources */,
 				116FC39CBA4CBBA8B1F63FD1 /* VideoSettings.swift in Sources */,
+				150640ADACCA6EFA9A60A624 /* VideoSettingsCache.swift in Sources */,
 				0C9F21B8F3D60663F6BC11BD /* VideoSettingsPane.swift in Sources */,
 				E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */,
 				03F8C1AF54A149B3750029EE /* audio.grpc.swift in Sources */,

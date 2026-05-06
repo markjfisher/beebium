@@ -122,4 +122,26 @@ final class VideoSettings: ObservableObject {
         guard availableStyles.contains(where: { $0.id == id }) else { return }
         activeStyleID = id
     }
+
+    /// Capture the current per-window settings as a snapshot for caching.
+    func makeSnapshot() -> VideoSettingsSnapshot {
+        VideoSettingsSnapshot(
+            activeStyleID: activeStyleID,
+            pixelShapeRaw: pixelShape.rawValue,
+            windowBackgroundHex: windowBackground.sRGBHex
+        )
+    }
+
+    /// Apply a cached snapshot to this VideoSettings, ignoring fields whose
+    /// values are unrecognised (defensive against snapshots created by a
+    /// future or stale build).
+    func apply(_ snapshot: VideoSettingsSnapshot) {
+        selectStyle(id: snapshot.activeStyleID)
+        if let shape = PixelShape(rawValue: snapshot.pixelShapeRaw) {
+            pixelShape = shape
+        }
+        if let color = Color(sRGBHex: snapshot.windowBackgroundHex) {
+            windowBackground = color
+        }
+    }
 }
