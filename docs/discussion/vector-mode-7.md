@@ -335,3 +335,150 @@ The core emulation changes are minimal (~40 lines). The pixel rendering path is 
 ## Summary
 
 This proposal is feasible with modest effort. The key insight is that `Saa5050::byte()` already resolves all the attribute state needed for vector rendering -- the information is present, it just is not captured. Adding a parallel capture path alongside the existing pixel pipeline requires no changes to timing, pixel rendering, or the existing gRPC video service. The structured teletext stream is 240x smaller than the pixel stream, and clients gain resolution independence, accessibility features (reveal, custom palettes), and rendering flexibility.
+
+## Composition with the Display Style architecture (May 2026)
+
+The macOS client is mid-way through introducing a `DisplayStyle` abstraction
+(see `clients/macos/Beebium/Beebium/Display/`). Each style governs how a
+frame is *presented* -- which Metal pipeline runs, whether four debug borders
+are drawn, how the active pixel area is fitted into the drawable, and which
+SwiftUI options panel appears under the Video sidebar. Initial styles are
+**Standard** (active area only, letterbox/pillarbox fill) and **Debug**
+(today's coloured border behaviour); a future **CRT** style is planned.
+
+Vector MODE 7 sits orthogonally to that abstraction. Display styles answer
+"how is the frame presented?", whereas vector MODE 7 answers "where do the
+content pixels come from?". Rather than introducing a parallel set of
+"vector-MODE 7" Display Styles (which would force a Cartesian product of
+options), the cleaner shape is a single global toggle that interacts with
+whichever style happens to be active.
+
+### Where the toggle lives
+
+`VideoSettings` (introduced alongside the `DisplayStyle` protocol) is the
+per-window owner of cross-cutting display preferences. The natural addition
+is:
+
+```swift
+@MainActor
+final class VideoSettings: ObservableObject {
+    @Published var activeStyleID: String       // Standard / Debug / CRT
+    @Published var pixelShape: PixelShape       // Authentic / Crisp
+    @Published var windowBackground: Color
+    @Published var mode7VectorEnabled: Bool     // <-- new
+    // ...
+}
+```
+
+A sidebar checkbox under the Video pane toggles it. Per-machine cache (keyed
+by provenance UUID, planned for the same effort) picks it up automatically
+because it is just another field on `VideoSettings`.
+
+### Renderer dispatch
+
+The renderer becomes responsible for selecting the content path per frame.
+The active Display Style's pipeline keeps consuming a normal `MTLTexture`;
+what changes is *what is uploaded into that texture*:
+
+```
+For each incoming Frame:
+  if videoSettings.mode7VectorEnabled
+     and frame.teletext_data.active
+     and activeStyle accepts vector replacement:
+      rasterise teletext cells via Bedstead/Core Text into the frame texture
+  else:
+      upload frame.pixels into the frame texture
+  encode active DisplayStyle's uniforms; draw
+```
+
+Because the rasterisation lands in the same texture, the Display Style's
+existing geometry math -- aspect-fit, line-doubling skip for interlaced
+modes, per-region scaling for split-screen, the four debug borders if Debug
+is active -- continues to work without modification. Debug + vector MODE 7
+gives crisp text inside the coloured CRTC overscan borders. Standard +
+vector MODE 7 gives crisp text fitted edge-to-edge with the configured
+window background as letterbox.
+
+### A note on style consent
+
+A future CRT shader will probably want to opt out of vector replacement (the
+analog phosphor look depends on the SAA5050 raster output). The cleanest way
+to express that is a small protocol addition when CRT lands -- e.g. a
+`var supportsVectorContentReplacement: Bool { get }` defaulting to `true` --
+rather than special-casing CRT in the renderer. Standard and Debug both
+return `true`. Not needed for the first cut.
+
+### Reconsidering Open Question 1 in light of the per-window subscription model
+
+The original Open Question above asks whether vector MODE 7 should ride on a
+separate `TeletextService` or extend `VideoService`. With the Display Style
+architecture in place, the case for **extending `VideoService`** has
+strengthened:
+
+- Each emulator window already owns one `VideoClient` and one
+  `SubscribeFrames` stream. Adding a parallel `TeletextService` subscription
+  doubles the per-window stream count, the connection-tracker bookkeeping,
+  and the lifecycle wiring (disconnect coordination, error handling) for no
+  obvious gain.
+- The two streams must be kept frame-aligned. Bundling cell data into the
+  existing `Frame` message via an optional sub-message makes alignment
+  implicit (`frame_number` is shared; both arrive together in the same
+  proto). A separate service would have to reconstruct alignment from
+  sequence numbers.
+- 8 KB per frame is trivial next to the existing pixel payload. Even when a
+  vector-aware client is the only consumer, the bandwidth saving from
+  splitting the streams is small.
+- A client that does not care about teletext data (every current client) can
+  ignore the optional field with zero cost; proto3 default semantics handle
+  that cleanly.
+
+Concretely, this means adding to `video.proto`:
+
+```protobuf
+message Frame {
+  // ... existing fields ...
+  optional TeletextFrameData teletext_data = 14;  // populated when MODE 7 active
+}
+
+message TeletextFrameData {
+  bool active = 1;                       // MODE 7 was active for this frame
+  uint32 columns = 2;                    // Always 40
+  uint32 rows = 3;                       // Always 25
+  uint32 flash_phase = 4;
+  repeated TeletextCell cells = 5;       // 1000 entries, row-major
+}
+```
+
+The `TeletextCell` and `CharacterSet` definitions from the original
+proposal carry over unchanged. The per-RPC `SubscribeTeletextFrames` and
+`SubscribeTeletextFramesRequest` types become unnecessary.
+
+### PAR (Pixels: Authentic / Crisp) still applies
+
+The "Pixels" toggle on `VideoSettings` controls Pixel Aspect Ratio
+(0.96 = Authentic, 1.0 = Crisp), which determines how wide a BBC pixel is
+relative to its height. Vector text inherits the same concern: at PAR 0.96
+each character cell is the proportions a real BBC produced; at PAR 1.0 each
+cell is square, giving cleaner integer scaling on modern displays. The
+toggle stays meaningful in vector mode and applies to the rasterised text
+texture exactly as it does to bitmap-mode pixel textures.
+
+### What this means for sequencing the work
+
+The current Display Style work (Standard / Debug + sidebar picker + Pixels
+toggle + window background + per-machine cache) does not block, conflict
+with, or constrain the vector MODE 7 effort. The interception in
+`Saa5050::byte()`, the `TeletextGrid` data structure, and the `Frame`
+message extension can be implemented after the Display Style work lands,
+with the only client-side change being:
+
+1. A new `mode7VectorEnabled` field on `VideoSettings` and a sidebar
+   checkbox.
+2. A Bedstead-based rasteriser invoked by the renderer when the toggle is
+   on and `Frame.teletext_data.active` is set.
+3. (Optional, when CRT lands) the `supportsVectorContentReplacement`
+   protocol property.
+
+Everything else in the original proposal -- the emulation changes, the
+Unicode mapping table, the rendering and font sizing logic -- carries
+through unchanged.
