@@ -59,7 +59,7 @@ final class MetalRenderer: NSObject {
     ///   - device: Metal device to use for rendering.
     ///   - initialStyle: Display style to start with. Pipeline is built immediately;
     ///                   if pipeline creation fails, init returns nil.
-    init?(device: MTLDevice, initialStyle: any DisplayStyle = DebugDisplayStyle()) {
+    init?(device: MTLDevice, initialStyle: any DisplayStyle = StandardDisplayStyle()) {
         self.device = device
 
         guard let queue = device.makeCommandQueue() else {

@@ -21,9 +21,25 @@ import simd
 ///
 /// The active area's apparent size therefore stays constant when the BBC
 /// switches screen modes, even though the CRTC border tracking varies.
-final class StandardDisplayStyle: DisplayStyle {
+///
+/// `edgeMargin` shrinks the content rectangle inwards so a thin strip of
+/// window background appears around all four sides - lifts text away from
+/// the inner window edge.
+final class StandardDisplayStyle: DisplayStyle, ObservableObject {
     let id = "standard"
     let displayName = "Standard"
+
+    /// Per-edge margin as a fraction of the drawable axis. 0.02 = 2% per side
+    /// (content fills 96% of its aspect-fitted size). Range 0.0 - 0.10.
+    @Published var edgeMargin: Float = StandardDisplayStyle.defaultEdgeMargin
+
+    /// Default applied to new windows. Lifts text off the inner edge enough
+    /// to avoid the cramped feel without obviously cropping the picture.
+    static let defaultEdgeMargin: Float = 0.02
+
+    /// Maximum value the UI exposes. The shader additionally clamps to 0.45
+    /// to make a misconfigured uniform recoverable.
+    static let maximumEdgeMargin: Float = 0.10
 
     func makePipelineState(device: MTLDevice,
                            pixelFormat: MTLPixelFormat) throws -> MTLRenderPipelineState {
@@ -86,19 +102,54 @@ final class StandardDisplayStyle: DisplayStyle {
             topBorderColor: SIMD4<Float>(0, 0, 0, 0),
             bottomBorderColor: SIMD4<Float>(0, 0, 0, 0),
             regionCount: UInt32(regionCount),
+            edgeMargin: edgeMargin,
             regions: regionUniforms
         )
     }
 
     @MainActor
     func makeOptionsView() -> AnyView {
-        // No tweakable parameters yet; commit C adds the overscan amount.
-        AnyView(
+        AnyView(StandardOptionsView(style: self))
+    }
+}
+
+/// Sidebar options panel for the Standard display style.
+private struct StandardOptionsView: View {
+    @ObservedObject var style: StandardDisplayStyle
+
+    /// Binding that converts the Float-valued edgeMargin to a percentage Int
+    /// for the stepper. Keeps the arithmetic in one place and prevents
+    /// floating-point drift from clicking the stepper repeatedly.
+    private var edgeMarginPercentBinding: Binding<Int> {
+        Binding(
+            get: { Int((style.edgeMargin * 100).rounded()) },
+            set: { newPercent in
+                let clamped = max(0, min(Int(StandardDisplayStyle.maximumEdgeMargin * 100), newPercent))
+                style.edgeMargin = Float(clamped) / 100.0
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text("The active pixel area is fitted to the window. Blanking "
                  + "appears as the window background colour.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        )
+
+            HStack {
+                Text("Edge margin")
+                Spacer()
+                Text("\(edgeMarginPercentBinding.wrappedValue)%")
+                    .foregroundColor(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+                    .monospacedDigit()
+                Stepper("",
+                        value: edgeMarginPercentBinding,
+                        in: 0...Int(StandardDisplayStyle.maximumEdgeMargin * 100))
+                    .labelsHidden()
+            }
+        }
     }
 }

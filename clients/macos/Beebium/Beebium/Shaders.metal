@@ -27,7 +27,7 @@ struct Uniforms {
     float4 topBorderColor;    // offset 80: RGBA color for top border
     float4 bottomBorderColor; // offset 96: RGBA color for bottom border
     uint regionCount;         // Number of active display regions
-    uint _pad0;               // Padding for alignment
+    float edgeMargin;         // Per-edge margin as fraction (0.02 = 2% per side)
     uint _pad1;
     uint _pad2;
     RegionUniforms regions[MAX_REGIONS];
@@ -91,6 +91,12 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
         // Drawable is taller than content - letterbox (black bars top/bottom)
         scale = float2(1.0, drawableAspect / contentAspect);
     }
+
+    // Apply per-edge margin: shrink the content rectangle inwards so the
+    // window background shows as a thin frame. Clamped defensively so a
+    // misconfigured uniform cannot collapse the picture.
+    float margin = clamp(uniforms.edgeMargin, 0.0, 0.45);
+    scale *= (1.0 - 2.0 * margin);
 
     VertexOut out;
     out.position = float4(unitQuad[vertexID] * scale, 0, 1);

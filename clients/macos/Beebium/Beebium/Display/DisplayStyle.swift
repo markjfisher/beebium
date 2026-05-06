@@ -53,7 +53,11 @@ struct Uniforms {
     var topBorderColor: SIMD4<Float>
     var bottomBorderColor: SIMD4<Float>
     var regionCount: UInt32 = 0
-    var _pad0: UInt32 = 0
+    /// Per-edge margin as a fraction of the drawable axis (0.02 = 2% per edge,
+    /// content shrinks to 96% of its aspect-fitted size on each axis). The
+    /// vertex shader multiplies the fit scale by `(1 - 2 * edgeMargin)`.
+    /// Reuses the slot that was `_pad0` - same offset, same alignment.
+    var edgeMargin: Float = 0
     var _pad1: UInt32 = 0
     var _pad2: UInt32 = 0
     var regions: (RegionUniforms, RegionUniforms, RegionUniforms, RegionUniforms,

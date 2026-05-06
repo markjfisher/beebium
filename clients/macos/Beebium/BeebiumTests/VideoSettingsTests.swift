@@ -18,25 +18,26 @@ final class VideoSettingsTests: XCTestCase {
 
     // MARK: - Defaults
 
-    func testDefaultStylesAreDebugAndStandard() {
+    func testDefaultStylesAreStandardThenDebug() {
+        // Standard is the user-facing default; Debug is also offered. Order
+        // is the order that appears in the sidebar picker.
         let settings = VideoSettings()
-        XCTAssertEqual(settings.availableStyles.map { $0.id }, ["debug", "standard"])
+        XCTAssertEqual(settings.availableStyles.map { $0.id }, ["standard", "debug"])
     }
 
-    func testDefaultActiveStyleIsDebug() {
-        // For commit B, Debug is still the default. Commit C flips this to
-        // Standard; the test there will be updated to match.
+    func testDefaultActiveStyleIsStandard() {
+        // New windows start with the user-friendly Standard style.
         let settings = VideoSettings()
-        XCTAssertEqual(settings.activeStyleID, "debug")
-        XCTAssertEqual(settings.activeStyle.id, "debug")
+        XCTAssertEqual(settings.activeStyleID, "standard")
+        XCTAssertEqual(settings.activeStyle.id, "standard")
     }
 
     // MARK: - Custom initialisation
 
     func testCustomInitialStyleIsRespected() {
-        let settings = VideoSettings(initialStyleID: "standard")
-        XCTAssertEqual(settings.activeStyleID, "standard")
-        XCTAssertEqual(settings.activeStyle.id, "standard")
+        let settings = VideoSettings(initialStyleID: "debug")
+        XCTAssertEqual(settings.activeStyleID, "debug")
+        XCTAssertEqual(settings.activeStyle.id, "debug")
     }
 
     func testUnknownInitialStyleFallsBackToFirstAvailable() {
@@ -44,7 +45,9 @@ final class VideoSettingsTests: XCTestCase {
             styles: [DebugDisplayStyle(), StandardDisplayStyle()],
             initialStyleID: "definitely-not-a-real-style"
         )
-        XCTAssertEqual(settings.activeStyleID, "debug")  // First style in the list
+        // Falls back to the first style in the supplied list, which here is
+        // Debug because the test passes an explicit non-default order.
+        XCTAssertEqual(settings.activeStyleID, "debug")
     }
 
     func testCustomStyleListIsPreserved() {
@@ -60,9 +63,9 @@ final class VideoSettingsTests: XCTestCase {
 
     func testSelectStyleUpdatesActiveID() {
         let settings = VideoSettings()
-        settings.selectStyle(id: "standard")
-        XCTAssertEqual(settings.activeStyleID, "standard")
-        XCTAssertEqual(settings.activeStyle.id, "standard")
+        settings.selectStyle(id: "debug")
+        XCTAssertEqual(settings.activeStyleID, "debug")
+        XCTAssertEqual(settings.activeStyle.id, "debug")
     }
 
     func testSelectStyleIgnoresUnknownID() {
@@ -78,7 +81,7 @@ final class VideoSettingsTests: XCTestCase {
         let settings = VideoSettings()
         let exp = expectation(description: "objectWillChange fires")
         let cancellable = settings.objectWillChange.sink { _ in exp.fulfill() }
-        settings.selectStyle(id: "standard")
+        settings.selectStyle(id: "debug")
         wait(for: [exp], timeout: 1.0)
         _ = cancellable
     }
@@ -94,5 +97,66 @@ final class VideoSettingsTests: XCTestCase {
         XCTAssertTrue(settings.activeStyle === debug)
         settings.selectStyle(id: "standard")
         XCTAssertTrue(settings.activeStyle === standard)
+    }
+}
+
+// MARK: - Edge margin defaults
+
+@MainActor
+final class StandardDisplayStyleEdgeMarginTests: XCTestCase {
+    func testDefaultEdgeMarginIsNonZero() {
+        // The whole point of the default-on edge margin is to lift the BBC's
+        // active text area away from the inner window edge. A zero default
+        // would defeat that.
+        let style = StandardDisplayStyle()
+        XCTAssertGreaterThan(style.edgeMargin, 0)
+        XCTAssertEqual(style.edgeMargin, StandardDisplayStyle.defaultEdgeMargin)
+    }
+
+    func testDefaultEdgeMarginIsAReasonableValue() {
+        // Sanity check: default margin should be small enough that the
+        // picture is still clearly the dominant element of the window.
+        // Less than 5% per edge is comfortable.
+        XCTAssertLessThan(StandardDisplayStyle.defaultEdgeMargin, 0.05)
+    }
+
+    func testEdgeMarginPropagatesIntoUniforms() {
+        let style = StandardDisplayStyle()
+        style.edgeMargin = 0.05
+        let frame = FrameContext(
+            textureWidth: 320, textureHeight: 256,
+            displayWidth: 640, displayHeight: 256,
+            leftBorder: 0, rightBorder: 0,
+            topBorder: 0, bottomBorder: 0,
+            interlaced: false,
+            regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
+        )
+        let drawable = DrawableContext(
+            drawableSize: CGSize(width: 1920, height: 1080),
+            parScale: 0.96
+        )
+        let u = style.makeUniforms(frame: frame, drawable: drawable)
+        XCTAssertEqual(u.edgeMargin, 0.05, accuracy: 1e-6)
+    }
+
+    func testDebugStyleAlwaysSetsEdgeMarginToZero() {
+        // Debug fills the entire content rectangle with active+border content
+        // so an edge margin would create a margin around the borders, which
+        // is confusing.
+        let style = DebugDisplayStyle()
+        let frame = FrameContext(
+            textureWidth: 320, textureHeight: 256,
+            displayWidth: 640, displayHeight: 256,
+            leftBorder: 32, rightBorder: 32,
+            topBorder: 16, bottomBorder: 16,
+            interlaced: false,
+            regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
+        )
+        let drawable = DrawableContext(
+            drawableSize: CGSize(width: 1920, height: 1080),
+            parScale: 0.96
+        )
+        let u = style.makeUniforms(frame: frame, drawable: drawable)
+        XCTAssertEqual(u.edgeMargin, 0)
     }
 }

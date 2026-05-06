@@ -35,12 +35,12 @@ final class VideoSettings: ObservableObject {
     }
 
     /// - Parameters:
-    ///   - styles: Available styles. Default: Debug then Standard. Order is
+    ///   - styles: Available styles. Default: Standard then Debug. Order is
     ///             preserved in the sidebar picker.
     ///   - initialStyleID: Which style to select on first display. If unknown,
     ///                     falls back to the first style.
-    init(styles: [any DisplayStyle] = [DebugDisplayStyle(), StandardDisplayStyle()],
-         initialStyleID: String = "debug") {
+    init(styles: [any DisplayStyle] = [StandardDisplayStyle(), DebugDisplayStyle()],
+         initialStyleID: String = "standard") {
         precondition(!styles.isEmpty, "VideoSettings requires at least one display style")
         self.availableStyles = styles
         let isKnown = styles.contains { $0.id == initialStyleID }

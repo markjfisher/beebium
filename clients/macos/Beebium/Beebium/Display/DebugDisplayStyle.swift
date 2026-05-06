@@ -86,6 +86,10 @@ final class DebugDisplayStyle: DisplayStyle {
             topBorderColor: topBorderColor,
             bottomBorderColor: bottomBorderColor,
             regionCount: UInt32(regionCount),
+            // Debug fills the drawable with active+border content; an extra
+            // edge margin would be a margin around the borders, which is
+            // confusing. Always zero.
+            edgeMargin: 0,
             regions: regionUniforms
         )
     }
