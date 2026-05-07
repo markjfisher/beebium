@@ -111,21 +111,14 @@ struct VideoModeView: View {
     // MARK: - Background colour
 
     private var backgroundColourSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Window Background")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            HStack(alignment: .firstTextBaseline) {
-                ResettableColorPicker(
-                    accessibilityLabel: "Window background colour",
-                    color: $videoSettings.windowBackground,
-                    defaultColor: VideoSettings.defaultWindowBackground
-                )
-                Text("Shows around the picture as letterbox or pillarbox.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        HStack {
+            Text("Boxing Colour")
+            Spacer()
+            ResettableColorPicker(
+                accessibilityLabel: "Boxing colour",
+                color: $videoSettings.windowBackground,
+                defaultColor: VideoSettings.defaultWindowBackground
+            )
         }
     }
 

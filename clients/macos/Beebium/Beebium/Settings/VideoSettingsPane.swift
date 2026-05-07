@@ -70,10 +70,10 @@ struct VideoSettingsPane: View {
                 }
 
                 HStack {
-                    Text("Default window background")
+                    Text("Default boxing colour")
                     Spacer()
                     ResettableColorPicker(
-                        accessibilityLabel: "Default window background",
+                        accessibilityLabel: "Default boxing colour",
                         color: defaultWindowBackground,
                         defaultColor: VideoSettings.defaultWindowBackground
                     )
