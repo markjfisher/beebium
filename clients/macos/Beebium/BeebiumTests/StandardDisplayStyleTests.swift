@@ -64,6 +64,12 @@ final class StandardDisplayStyleTests: XCTestCase {
         XCTAssertEqual(style.displayName, "Standard")
     }
 
+    func testHasOptions() {
+        // Standard exposes Edge Margin Size and Colour, so the sidebar
+        // renders its options section.
+        XCTAssertTrue(StandardDisplayStyle().hasOptions)
+    }
+
     // MARK: - Geometry
 
     func testTotalSizeEqualsDisplaySize() {

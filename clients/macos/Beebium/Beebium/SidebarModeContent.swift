@@ -96,8 +96,10 @@ struct VideoModeView: View {
                 pixelShapeSection
                 Divider()
                 stylePickerSection
-                Divider()
-                styleOptionsSection
+                if videoSettings.activeStyle.hasOptions {
+                    Divider()
+                    styleOptionsSection
+                }
                 Divider()
                 backgroundColourSection
             }
@@ -173,15 +175,10 @@ struct VideoModeView: View {
     // MARK: - Per-style Options
 
     private var styleOptionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(videoSettings.activeStyle.displayName)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            videoSettings.activeStyle.makeOptionsView()
-        }
-        // Force the options view to rebuild when the active style changes,
-        // so styles with @Published parameters bind to the right instance.
-        .id(videoSettings.activeStyleID)
+        // .id() forces the view to rebuild when the active style changes, so
+        // styles with @Published parameters bind to the right instance.
+        videoSettings.activeStyle.makeOptionsView()
+            .id(videoSettings.activeStyleID)
     }
 }
 

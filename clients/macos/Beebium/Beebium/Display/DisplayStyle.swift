@@ -143,6 +143,17 @@ protocol DisplayStyle: AnyObject {
     /// SwiftUI options panel exposed under the Video sidebar when this style is
     /// active. Return an empty view if the style has no tweakable options.
     @MainActor func makeOptionsView() -> AnyView
+
+    /// Whether the style exposes any tweakable options. Drives whether the
+    /// Video sidebar renders the options section (and its preceding divider)
+    /// at all, so styles without options don't leave a visible empty band.
+    /// Defaults to `true` via a protocol extension; styles with no options
+    /// override to `false`.
+    var hasOptions: Bool { get }
+}
+
+extension DisplayStyle {
+    var hasOptions: Bool { true }
 }
 
 /// Errors emitted while building a display style's pipeline.

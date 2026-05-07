@@ -22,6 +22,7 @@ import simd
 final class DebugDisplayStyle: DisplayStyle {
     let id = "debug"
     let displayName = "Debug"
+    let hasOptions = false
 
     /// RGBA border colours. Defaults match the values that shipped before the
     /// display-style refactor so behaviour is unchanged after switching to this
@@ -100,14 +101,10 @@ final class DebugDisplayStyle: DisplayStyle {
 
     @MainActor
     func makeOptionsView() -> AnyView {
-        // Border-colour customisation is a future refinement; nothing to expose
-        // for now beyond an explanatory note.
-        AnyView(
-            Text("Coloured borders are drawn around the active pixel area "
-                 + "to show CRTC overscan tracking.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        )
+        // No tweakable options today; `hasOptions == false` means the sidebar
+        // does not render this view, but we provide an empty body to satisfy
+        // the protocol and to be defensive against future callers that
+        // forget to gate on `hasOptions`.
+        AnyView(EmptyView())
     }
 }

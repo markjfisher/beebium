@@ -67,6 +67,13 @@ final class DebugDisplayStyleTests: XCTestCase {
         XCTAssertEqual(style.displayName, "Debug")
     }
 
+    func testHasNoOptions() {
+        // Debug exposes no tweakable parameters today; the sidebar uses this
+        // to suppress the (otherwise empty) options section when Debug is
+        // active.
+        XCTAssertFalse(DebugDisplayStyle().hasOptions)
+    }
+
     // MARK: - Geometry
 
     func testTotalSizeIncludesBorders() {

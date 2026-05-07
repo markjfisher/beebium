@@ -155,38 +155,29 @@ private struct StandardOptionsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("The active pixel area is fitted to the window with an inner "
-                 + "edge margin frame. Outside the picture, the window "
-                 + "background shows as letterbox or pillarbox.")
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Edge margin")
+                .font(.subheadline)
                 .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Edge margin")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            HStack {
+                Text("Size")
+                Spacer()
+                ResettablePercentStepper(
+                    value: edgeMarginPercentBinding,
+                    defaultValue: Self.defaultEdgeMarginPercent,
+                    range: 0...Int(StandardDisplayStyle.maximumEdgeMargin * 100)
+                )
+            }
 
-                HStack {
-                    Text("Size")
-                    Spacer()
-                    ResettablePercentStepper(
-                        value: edgeMarginPercentBinding,
-                        defaultValue: Self.defaultEdgeMarginPercent,
-                        range: 0...Int(StandardDisplayStyle.maximumEdgeMargin * 100)
-                    )
-                }
-
-                HStack {
-                    Text("Colour")
-                    Spacer()
-                    ResettableColorPicker(
-                        accessibilityLabel: "Edge margin colour",
-                        color: $style.edgeMarginColor,
-                        defaultColor: StandardDisplayStyle.defaultEdgeMarginColor
-                    )
-                }
+            HStack {
+                Text("Colour")
+                Spacer()
+                ResettableColorPicker(
+                    accessibilityLabel: "Edge margin colour",
+                    color: $style.edgeMarginColor,
+                    defaultColor: StandardDisplayStyle.defaultEdgeMarginColor
+                )
             }
         }
     }
