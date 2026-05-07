@@ -85,6 +85,10 @@ final class DebugDisplayStyle: DisplayStyle {
             rightBorderColor: rightBorderColor,
             topBorderColor: topBorderColor,
             bottomBorderColor: bottomBorderColor,
+            // Debug's fragment shader does not read edgeMarginColor; zero
+            // for hygiene so a future shader change can't pick up stale
+            // values.
+            edgeMarginColor: SIMD4<Float>(0, 0, 0, 0),
             regionCount: UInt32(regionCount),
             // Debug fills the drawable with active+border content; an extra
             // edge margin would be a margin around the borders, which is

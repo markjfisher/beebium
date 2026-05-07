@@ -124,4 +124,23 @@ final class ColorExtensionsTests: XCTestCase {
         XCTAssertEqual(mtl.green, 0xB0 / 255.0, accuracy: 1e-3)
         XCTAssertEqual(mtl.blue, 0xC0 / 255.0, accuracy: 1e-3)
     }
+
+    // MARK: - SIMD4 packing
+
+    func testSimd4PreservesSRGBComponents() {
+        let color = Color(.sRGB, red: 0.25, green: 0.5, blue: 0.75, opacity: 1.0)
+        let v = color.simd4
+        XCTAssertEqual(v.x, 0.25, accuracy: 1e-3)
+        XCTAssertEqual(v.y, 0.5, accuracy: 1e-3)
+        XCTAssertEqual(v.z, 0.75, accuracy: 1e-3)
+        XCTAssertEqual(v.w, 1.0, accuracy: 1e-3)
+    }
+
+    func testSimd4OpaqueBlack() {
+        let v = Color(sRGBHex: "#000000")!.simd4
+        XCTAssertEqual(v.x, 0.0, accuracy: 1e-3)
+        XCTAssertEqual(v.y, 0.0, accuracy: 1e-3)
+        XCTAssertEqual(v.z, 0.0, accuracy: 1e-3)
+        XCTAssertEqual(v.w, 1.0, accuracy: 1e-3)
+    }
 }

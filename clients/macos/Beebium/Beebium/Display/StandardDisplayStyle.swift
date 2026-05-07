@@ -16,26 +16,44 @@ import SwiftUI
 import simd
 
 /// Display style that fits only the active pixel area into the drawable, with
-/// no coloured debug borders. The blanking around the active area appears as
-/// the window's background colour (letterbox/pillarbox).
+/// no coloured debug borders. The CRTC blanking outside the picture rectangle
+/// appears as the window's background colour (letterbox/pillarbox).
 ///
 /// The active area's apparent size therefore stays constant when the BBC
 /// switches screen modes, even though the CRTC border tracking varies.
 ///
-/// `edgeMargin` shrinks the content rectangle inwards so a thin strip of
-/// window background appears around all four sides - lifts text away from
-/// the inner window edge.
+/// `edgeMargin` reserves a fixed fraction of each edge of the picture
+/// rectangle as an inner frame in `edgeMarginColor`. By default this is a
+/// thin black frame between the active pixels and the window background -
+/// lifts text away from the inner window edge and gives the picture a
+/// definite border. Setting `edgeMarginColor` to the window background is the
+/// way to disable the frame visually without shrinking the active area.
 final class StandardDisplayStyle: DisplayStyle, ObservableObject {
     let id = "standard"
     let displayName = "Standard"
 
-    /// Per-edge margin as a fraction of the drawable axis. 0.02 = 2% per side
-    /// (content fills 96% of its aspect-fitted size). Range 0.0 - 0.10.
+    /// Per-edge margin as a fraction of the picture rectangle. 0.02 = 2% per
+    /// side (active area fills 96% of the aspect-fitted picture rectangle on
+    /// each axis). Range 0.0 - 0.10.
     @Published var edgeMargin: Float = StandardDisplayStyle.defaultEdgeMargin
+
+    /// Colour of the inner edge-margin frame. Defaults to opaque black so the
+    /// frame is visible against any reasonable window background.
+    @Published var edgeMarginColor: Color = StandardDisplayStyle.defaultEdgeMarginColor
 
     /// Default applied to new windows. Lifts text off the inner edge enough
     /// to avoid the cramped feel without obviously cropping the picture.
     static let defaultEdgeMargin: Float = 0.02
+
+    /// Default applied to new windows. Black frames the picture clearly
+    /// against any reasonable window background.
+    /// `nonisolated` so it can appear in default-argument expressions
+    /// evaluated outside the main actor under Swift 6 strict isolation.
+    nonisolated static let defaultEdgeMarginColor: Color = Color(.sRGB,
+                                                                  red: 0.0,
+                                                                  green: 0.0,
+                                                                  blue: 0.0,
+                                                                  opacity: 1.0)
 
     /// Maximum value the UI exposes. The shader additionally clamps to 0.45
     /// to make a misconfigured uniform recoverable.
@@ -101,6 +119,7 @@ final class StandardDisplayStyle: DisplayStyle, ObservableObject {
             rightBorderColor: SIMD4<Float>(0, 0, 0, 0),
             topBorderColor: SIMD4<Float>(0, 0, 0, 0),
             bottomBorderColor: SIMD4<Float>(0, 0, 0, 0),
+            edgeMarginColor: edgeMarginColor.simd4,
             regionCount: UInt32(regionCount),
             edgeMargin: edgeMargin,
             regions: regionUniforms
@@ -117,6 +136,11 @@ final class StandardDisplayStyle: DisplayStyle, ObservableObject {
 private struct StandardOptionsView: View {
     @ObservedObject var style: StandardDisplayStyle
 
+    /// Default percentage value derived from the static default. Cached so
+    /// the reset button can compare against it in O(1).
+    private static let defaultEdgeMarginPercent =
+        Int((StandardDisplayStyle.defaultEdgeMargin * 100).rounded())
+
     /// Binding that converts the Float-valued edgeMargin to a percentage Int
     /// for the stepper. Keeps the arithmetic in one place and prevents
     /// floating-point drift from clicking the stepper repeatedly.
@@ -132,23 +156,37 @@ private struct StandardOptionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("The active pixel area is fitted to the window. Blanking "
-                 + "appears as the window background colour.")
+            Text("The active pixel area is fitted to the window with an inner "
+                 + "edge margin frame. Outside the picture, the window "
+                 + "background shows as letterbox or pillarbox.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Edge margin")
-                Spacer()
-                Text("\(edgeMarginPercentBinding.wrappedValue)%")
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .frame(width: 36, alignment: .trailing)
-                    .monospacedDigit()
-                Stepper("",
+
+                HStack {
+                    Text("Size")
+                    Spacer()
+                    ResettablePercentStepper(
                         value: edgeMarginPercentBinding,
-                        in: 0...Int(StandardDisplayStyle.maximumEdgeMargin * 100))
-                    .labelsHidden()
+                        defaultValue: Self.defaultEdgeMarginPercent,
+                        range: 0...Int(StandardDisplayStyle.maximumEdgeMargin * 100)
+                    )
+                }
+
+                HStack {
+                    Text("Colour")
+                    Spacer()
+                    ResettableColorPicker(
+                        accessibilityLabel: "Edge margin colour",
+                        color: $style.edgeMarginColor,
+                        defaultColor: StandardDisplayStyle.defaultEdgeMarginColor
+                    )
+                }
             }
         }
     }

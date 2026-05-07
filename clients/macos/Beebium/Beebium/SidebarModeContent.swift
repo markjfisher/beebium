@@ -113,11 +113,12 @@ struct VideoModeView: View {
             Text("Window Background")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            HStack {
-                ColorPicker("",
-                            selection: $videoSettings.windowBackground,
-                            supportsOpacity: false)
-                    .labelsHidden()
+            HStack(alignment: .firstTextBaseline) {
+                ResettableColorPicker(
+                    accessibilityLabel: "Window background colour",
+                    color: $videoSettings.windowBackground,
+                    defaultColor: VideoSettings.defaultWindowBackground
+                )
                 Text("Shows around the picture as letterbox or pillarbox.")
                     .font(.caption)
                     .foregroundColor(.secondary)

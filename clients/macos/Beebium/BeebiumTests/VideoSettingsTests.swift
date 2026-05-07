@@ -155,6 +155,22 @@ final class VideoSettingsTests: XCTestCase {
 
 @MainActor
 final class StandardDisplayStyleEdgeMarginTests: XCTestCase {
+
+    private func makeFrame() -> FrameContext {
+        FrameContext(
+            textureWidth: 320, textureHeight: 256,
+            displayWidth: 640, displayHeight: 256,
+            leftBorder: 0, rightBorder: 0,
+            topBorder: 0, bottomBorder: 0,
+            interlaced: false,
+            regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
+        )
+    }
+
+    private func makeDrawable() -> DrawableContext {
+        DrawableContext(drawableSize: CGSize(width: 1920, height: 1080), parScale: 0.96)
+    }
+
     func testDefaultEdgeMarginIsNonZero() {
         // The whole point of the default-on edge margin is to lift the BBC's
         // active text area away from the inner window edge. A zero default
@@ -174,19 +190,7 @@ final class StandardDisplayStyleEdgeMarginTests: XCTestCase {
     func testEdgeMarginPropagatesIntoUniforms() {
         let style = StandardDisplayStyle()
         style.edgeMargin = 0.05
-        let frame = FrameContext(
-            textureWidth: 320, textureHeight: 256,
-            displayWidth: 640, displayHeight: 256,
-            leftBorder: 0, rightBorder: 0,
-            topBorder: 0, bottomBorder: 0,
-            interlaced: false,
-            regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
-        )
-        let drawable = DrawableContext(
-            drawableSize: CGSize(width: 1920, height: 1080),
-            parScale: 0.96
-        )
-        let u = style.makeUniforms(frame: frame, drawable: drawable)
+        let u = style.makeUniforms(frame: makeFrame(), drawable: makeDrawable())
         XCTAssertEqual(u.edgeMargin, 0.05, accuracy: 1e-6)
     }
 
@@ -195,19 +199,58 @@ final class StandardDisplayStyleEdgeMarginTests: XCTestCase {
         // so an edge margin would create a margin around the borders, which
         // is confusing.
         let style = DebugDisplayStyle()
-        let frame = FrameContext(
-            textureWidth: 320, textureHeight: 256,
-            displayWidth: 640, displayHeight: 256,
-            leftBorder: 32, rightBorder: 32,
-            topBorder: 16, bottomBorder: 16,
-            interlaced: false,
-            regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
+        let u = style.makeUniforms(
+            frame: FrameContext(
+                textureWidth: 320, textureHeight: 256,
+                displayWidth: 640, displayHeight: 256,
+                leftBorder: 32, rightBorder: 32,
+                topBorder: 16, bottomBorder: 16,
+                interlaced: false,
+                regions: [DisplayRegion(startLine: 0, endLine: 256, pixelWidth: 320)]
+            ),
+            drawable: makeDrawable()
         )
-        let drawable = DrawableContext(
-            drawableSize: CGSize(width: 1920, height: 1080),
-            parScale: 0.96
-        )
-        let u = style.makeUniforms(frame: frame, drawable: drawable)
         XCTAssertEqual(u.edgeMargin, 0)
+    }
+
+    // MARK: - Edge margin colour
+
+    func testDefaultEdgeMarginColorIsOpaqueBlack() {
+        // The default colour must clearly differ from any reasonable window
+        // background, otherwise users would not see the frame.
+        let style = StandardDisplayStyle()
+        let c = style.edgeMarginColor.simd4
+        XCTAssertEqual(c.x, 0.0, accuracy: 1e-6)
+        XCTAssertEqual(c.y, 0.0, accuracy: 1e-6)
+        XCTAssertEqual(c.z, 0.0, accuracy: 1e-6)
+        XCTAssertEqual(c.w, 1.0, accuracy: 1e-6)
+    }
+
+    func testEdgeMarginColorPropagatesIntoUniforms() {
+        let style = StandardDisplayStyle()
+        let cyan = Color(.sRGB, red: 0, green: 1, blue: 1, opacity: 1)
+        style.edgeMarginColor = cyan
+        let u = style.makeUniforms(frame: makeFrame(), drawable: makeDrawable())
+        XCTAssertEqual(u.edgeMarginColor.x, 0.0, accuracy: 1e-3)
+        XCTAssertEqual(u.edgeMarginColor.y, 1.0, accuracy: 1e-3)
+        XCTAssertEqual(u.edgeMarginColor.z, 1.0, accuracy: 1e-3)
+        XCTAssertEqual(u.edgeMarginColor.w, 1.0, accuracy: 1e-3)
+    }
+
+    func testEdgeMarginColorChangeEmitsObservableObjectChange() {
+        let style = StandardDisplayStyle()
+        let exp = expectation(description: "objectWillChange fires")
+        let cancellable = style.objectWillChange.sink { _ in exp.fulfill() }
+        style.edgeMarginColor = Color(.sRGB, red: 1, green: 0, blue: 0, opacity: 1)
+        wait(for: [exp], timeout: 1.0)
+        _ = cancellable
+    }
+
+    func testDebugStyleZeroesEdgeMarginColorForHygiene() {
+        // Debug's fragment shader does not read edgeMarginColor; zeroing it
+        // protects against future shader changes that might.
+        let style = DebugDisplayStyle()
+        let u = style.makeUniforms(frame: makeFrame(), drawable: makeDrawable())
+        XCTAssertEqual(u.edgeMarginColor, SIMD4<Float>(0, 0, 0, 0))
     }
 }

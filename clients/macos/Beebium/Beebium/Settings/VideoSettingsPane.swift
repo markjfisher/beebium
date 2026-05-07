@@ -69,9 +69,15 @@ struct VideoSettingsPane: View {
                     }
                 }
 
-                ColorPicker("Default window background",
-                            selection: defaultWindowBackground,
-                            supportsOpacity: false)
+                HStack {
+                    Text("Default window background")
+                    Spacer()
+                    ResettableColorPicker(
+                        accessibilityLabel: "Default window background",
+                        color: defaultWindowBackground,
+                        defaultColor: VideoSettings.defaultWindowBackground
+                    )
+                }
             } footer: {
                 Text("Defaults apply to new emulator windows. Existing "
                      + "windows keep their current settings.")

@@ -52,11 +52,17 @@ struct Uniforms {
     var rightBorderColor: SIMD4<Float>
     var topBorderColor: SIMD4<Float>
     var bottomBorderColor: SIMD4<Float>
+    /// Colour of the inset margin frame drawn between the active pixel area
+    /// and the picture rectangle's edge (Standard style only). Read by
+    /// `fragmentShaderStandard` when a fragment falls outside the inner
+    /// active rectangle but inside the picture rectangle.
+    var edgeMarginColor: SIMD4<Float>
     var regionCount: UInt32 = 0
-    /// Per-edge margin as a fraction of the drawable axis (0.02 = 2% per edge,
-    /// content shrinks to 96% of its aspect-fitted size on each axis). The
-    /// vertex shader multiplies the fit scale by `(1 - 2 * edgeMargin)`.
-    /// Reuses the slot that was `_pad0` - same offset, same alignment.
+    /// Per-edge margin as a fraction of the picture rectangle (0.02 = 2% per
+    /// edge: the inner active rectangle is 96% of the picture rectangle on
+    /// each axis). Standard's fragment shader uses this both to identify
+    /// margin fragments and to remap texture coordinates inside the active
+    /// rectangle.
     var edgeMargin: Float = 0
     var _pad1: UInt32 = 0
     var _pad2: UInt32 = 0

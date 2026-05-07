@@ -26,6 +26,7 @@ struct Uniforms {
     float4 rightBorderColor;  // offset 64: RGBA color for right border
     float4 topBorderColor;    // offset 80: RGBA color for top border
     float4 bottomBorderColor; // offset 96: RGBA color for bottom border
+    float4 edgeMarginColor;   // offset 112: RGBA inner margin frame (Standard)
     uint regionCount;         // Number of active display regions
     float edgeMargin;         // Per-edge margin as fraction (0.02 = 2% per side)
     uint _pad1;
@@ -92,12 +93,11 @@ vertex VertexOut vertexShader(uint vertexID [[vertex_id]],
         scale = float2(1.0, drawableAspect / contentAspect);
     }
 
-    // Apply per-edge margin: shrink the content rectangle inwards so the
-    // window background shows as a thin frame. Clamped defensively so a
-    // misconfigured uniform cannot collapse the picture.
-    float margin = clamp(uniforms.edgeMargin, 0.0, 0.45);
-    scale *= (1.0 - 2.0 * margin);
-
+    // The picture rectangle fills the aspect-fitted area at full size. Any
+    // edge margin requested by the active style is drawn by the fragment
+    // shader as an inner frame in `edgeMarginColor`, not by shrinking the
+    // quad here - this keeps the window background and the edge margin as
+    // independently controllable colours.
     VertexOut out;
     out.position = float4(unitQuad[vertexID] * scale, 0, 1);
     out.texCoord = quadTexCoords[vertexID];
@@ -179,16 +179,27 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]],
     return texture.sample(textureSampler, texUV);
 }
 
-// Standard fragment shader: no debug borders. The vertex shader has already
-// fitted displaySize into the drawable, so the fragment is fully inside the
-// active pixel area. Per-region horizontal scaling is identical to the debug
-// shader.
+// Standard fragment shader: draws an inner edge-margin frame in
+// `edgeMarginColor`, with the active pixel area sampled inside it. Per-region
+// horizontal scaling is identical to the debug shader.
 fragment float4 fragmentShaderStandard(VertexOut in [[stage_in]],
                                         constant Uniforms& uniforms [[buffer(0)]],
                                         texture2d<float> texture [[texture(0)]]) {
-    // The Standard style sets totalSize == displaySize and borderOffset == 0,
-    // so contentCoord is just texCoord * displaySize.
-    float2 contentCoord = in.texCoord * uniforms.displaySize;
+    float margin = clamp(uniforms.edgeMargin, 0.0, 0.45);
+
+    // The picture rectangle is the aspect-fitted quad; in.texCoord ranges
+    // (0, 0) to (1, 1) over it. The active pixel area occupies the inner
+    // `(margin, margin) - (1 - margin, 1 - margin)` rectangle.
+    if (in.texCoord.x < margin || in.texCoord.x > (1.0 - margin) ||
+        in.texCoord.y < margin || in.texCoord.y > (1.0 - margin)) {
+        return uniforms.edgeMarginColor;
+    }
+
+    // Inside the active rectangle - remap texCoord to (0,0)..(1,1) over it,
+    // then drive the same per-region scaling as the debug shader.
+    float scale = 1.0 - 2.0 * margin;
+    float2 activeCoord = (in.texCoord - float2(margin, margin)) / scale;
+    float2 contentCoord = activeCoord * uniforms.displaySize;
     float texU = resolveTextureU(contentCoord, uniforms);
     float texV = contentCoord.y / uniforms.displaySize.y;
     float2 texUV = float2(texU, texV);

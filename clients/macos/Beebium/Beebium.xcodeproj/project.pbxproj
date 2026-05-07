@@ -87,6 +87,7 @@
 		B58D72ABF01F173A208050E2 /* TouchBarGlyphs.svg in Resources */ = {isa = PBXBuildFile; fileRef = 5B097B8092C02F8851C2C5C9 /* TouchBarGlyphs.svg */; };
 		B672E2EC8D5D6BA89F11BF0B /* BeebiumTouchBarKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D68557079BA374D2FAD131 /* BeebiumTouchBarKeys.swift */; };
 		B778FD3CAB76C7B9AE5B7EF9 /* AudioMixerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */; };
+		BA7685640D333A974EF6D1F6 /* ResettableControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94EE5C7867F0B72F92C0F032 /* ResettableControls.swift */; };
 		BB411BA73F2726E174FF3054 /* AudioRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */; };
 		BCF37D406BB524784B611B47 /* ColorExtensionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31CA435023B19D31740E399C /* ColorExtensionsTests.swift */; };
 		BE8551008B3836CA24806130 /* KeyboardMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF12022B03E2794E9DDF6B3F /* KeyboardMapping.swift */; };
@@ -216,6 +217,7 @@
 		9141154B5BCF7C71635E62B2 /* disc.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = disc.proto; sourceTree = "<group>"; };
 		91EE41147FA34459F83B3130 /* ModalEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalEditorView.swift; sourceTree = "<group>"; };
 		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
+		94EE5C7867F0B72F92C0F032 /* ResettableControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResettableControls.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
 		992C39260909EB85C84D2C20 /* SidebarMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMode.swift; sourceTree = "<group>"; };
 		9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionViewRenderer.swift; sourceTree = "<group>"; };
@@ -309,6 +311,7 @@
 				5123F0FA32B3711748D351D7 /* DebugDisplayStyle.swift */,
 				10DDDBA41F04259ED4E39CF0 /* DisplayStyle.swift */,
 				D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */,
+				94EE5C7867F0B72F92C0F032 /* ResettableControls.swift */,
 				3B7611FB75A31FE7201B3F30 /* StandardDisplayStyle.swift */,
 				5E54D546E48798EB281A43A0 /* VideoSettings.swift */,
 				8ADC7C5C44D2AAF8D8920E36 /* VideoSettingsCache.swift */,
@@ -700,6 +703,7 @@
 				D5072BCBDC5F2D2DBAFFAF87 /* PixelShape.swift in Sources */,
 				D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */,
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
+				BA7685640D333A974EF6D1F6 /* ResettableControls.swift in Sources */,
 				02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */,
 				B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */,
 				8248344928EA9782B944178F /* SidebarMode.swift in Sources */,

@@ -12,6 +12,7 @@
 
 import AppKit
 import Metal
+import simd
 import SwiftUI
 
 /// sRGB hex parsing/formatting and Metal clear-colour conversion for SwiftUI
@@ -69,6 +70,13 @@ extension Color {
                              green: Double(c.green),
                              blue: Double(c.blue),
                              alpha: Double(c.alpha))
+    }
+
+    /// Pack into a SIMD4<Float> in sRGB order for shader uniforms.
+    var simd4: SIMD4<Float> {
+        let c = sRGBComponents
+        return SIMD4<Float>(Float(c.red), Float(c.green),
+                            Float(c.blue), Float(c.alpha))
     }
 
     /// Decompose into sRGB components in 0...1 range. Falls back to opaque
