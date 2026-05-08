@@ -5,13 +5,22 @@ status bar, no on-screen controls or chrome — just the emulation graphics
 occupying the screen, rendered with the user's current Display Style. Toggled
 via **View ▸ Enter Immersive Mode** (`Cmd+Shift+F`).
 
-This is **not** the macOS green-button (native) full-screen behaviour, which
-moves the window into its own Space and continues to draw the title bar /
-toolbar on hover. Immersive Mode is a single-window, in-place transformation:
-the window stays on its current display, in its current Space, but loses all
-chrome and grows to fill the screen.
+Implementation-wise, Immersive Mode is **macOS native fullscreen plus
+Beebium-specific customisation on top** rather than a hand-rolled in-place
+borderless transformation. The choice was driven by the visual quality of the
+result: an in-place borderless `.titled` window keeps the rounded top corners
+of the theme frame and a 1pt highlight at the top edge that AppKit draws even
+with the title-bar view hidden, both of which read as obviously-not-fullscreen.
+A truly borderless `.borderless` window avoids those artifacts but conflicts
+with SwiftUI's `WindowGroup` (key-window status and Metal rendering both broke
+under experimentation). Native fullscreen sidesteps both problems: the window
+moves to its own Space, expands to fill the display with no chrome artifacts,
+and AppKit handles screen connect/disconnect natively. The Beebium-specific
+behaviour — sidebar / status-bar overlays via existing keyboard shortcuts,
+cursor auto-hide on idle, automatic exit on disconnection — is layered on top
+of native fullscreen rather than re-implemented.
 
-Status: Design proposal. Not committed to implementation.
+Status: Implemented on `immersive` branch.
 
 ---
 
@@ -138,51 +147,58 @@ so the App-level View menu can read and toggle it on the focused window.
 
 ## Window-level transformation
 
-`NavigationSplitView` and the SwiftUI `WindowGroup` together do not give us
-direct access to the chrome we need to remove. The transformation is done
-by reaching into the underlying `NSWindow` (already available via
-`WindowAccessor` in `ContentView.swift`).
+The chrome-removal heavy lifting is delegated to macOS native fullscreen.
+`ImmersiveCoordinator` calls `NSWindow.toggleFullScreen(_:)`; AppKit handles
+the animation, the move to a dedicated Space, the menu-bar / Dock auto-hide,
+and the screen-frame fitting (no rounded corners, no top highlight, no title
+separator).
 
-### On entering
+The Beebium-specific bits layered on top of native fullscreen:
 
-1. **Snapshot** the window's current `frame`, `styleMask`, and screen.
-2. **Strip chrome** from the style mask: remove `.titled`, `.closable`,
-   `.miniaturizable`, `.resizable`. The result is `.borderless`.
-3. **Resize** to `screen.frame` (the whole `NSScreen`, including the area
-   behind the menu bar — the auto-hide presentation option will handle the
-   menu-bar overlap).
-4. **Activate** application-wide presentation auto-hide:
-   ```swift
-   NSApp.presentationOptions.formUnion([.autoHideMenuBar, .autoHideDock])
-   ```
-   Note: `presentationOptions` is process-global, not per-window. With
-   multiple immersive windows the policy is straightforward — the *first*
-   window to enter immersive sets the flags, the *last* window to leave
-   clears them. A simple counter on `MachineManager` (or a dedicated
-   `ImmersiveCoordinator`) keeps the bookkeeping honest.
+1. **Hide the standard window buttons** (close / miniaturise / zoom) before
+   entering, restored on exit. In native fullscreen the title bar reveals on
+   hover at the top of the screen; with the buttons hidden the reveal is an
+   empty transparent strip.
+2. **Hide the title text** (`titleVisibility = .hidden`), again so the
+   reveal-on-hover shows nothing.
+3. **Observe `NSWindow.didExitFullScreenNotification`** on the immersive
+   window. If fullscreen ends through any path other than our menu item
+   (e.g. `Cmd+Ctrl+F`, or the green button if it ever becomes accessible),
+   the coordinator posts an `immersiveCoordinatorDidExitUnexpectedly`
+   notification; ContentView observes that and flips `isImmersive` back to
+   `false`, which restores `navigationLayout` and the pre-immersive sidebar
+   / status-bar visibility.
 
-The window's level stays at `.normal`. Auxiliary windows (Settings, etc.)
-can therefore surface above it without special handling.
+### Why not in-place borderless
 
-### On exiting
+An earlier iteration kept the window in its current Space and stripped chrome
+manually:
 
-1. **Restore** the saved style mask (re-add `.titled`, `.closable`,
-   `.miniaturizable`, `.resizable`).
-2. **Restore** the saved frame.
-3. **Decrement** the immersive-window counter; if zero, clear
-   `.autoHideMenuBar` and `.autoHideDock` from `NSApp.presentationOptions`.
+- `styleMask = [.borderless]` — broke SwiftUI's `WindowGroup`: key-window
+  status was lost and the Metal-backed `EmulatorView` stopped rendering.
+  Class-swapping the window to a `canBecomeKey`-overriding subclass via the
+  Objective-C runtime did not reliably fix it.
+- `styleMask` retaining `.titled` plus `.fullSizeContentView`, transparent
+  title bar, hidden buttons, hidden `NSTitlebarView`, separator style `.none`,
+  zeroed corner radius on the theme frame, no shadow — closer, but still
+  left rounded top corners and a 1pt top highlight that AppKit draws on the
+  theme frame regardless.
+
+Neither path produced a result indistinguishable from native fullscreen.
+Native fullscreen does, at the cost of moving the window to its own Space —
+which is acceptable for the use case.
 
 ### Edge cases
 
-- **Screen disconnect**: if the user unplugs the display the immersive
-  window lives on, AppKit reparents the window to another screen and posts
-  `NSWindow.didChangeScreenNotification`. The handler resizes the window
-  to the new screen's frame.
-- **Resolution change**: same notification handles this case.
-- **`Cmd+M` (miniaturise)**: with `.miniaturizable` removed from the style
-  mask, the shortcut becomes a no-op. Acceptable.
-- **`Cmd+H` (hide app)**: works normally. On unhide the window returns to
-  Immersive Mode unchanged.
+- **Screen disconnect / resolution change**: AppKit handles these natively
+  for fullscreen windows; no extra code needed.
+- **Auxiliary windows opened while immersive** (Settings, Connect): they
+  open in their own Space; macOS switches to that Space. The user dismisses
+  the auxiliary window and swipes back to the immersive Space.
+- **`Cmd+H` (hide app)**: works normally; on unhide the immersive window
+  is back as it was.
+- **`Cmd+M` (miniaturise)**: native fullscreen disallows miniaturisation, so
+  the shortcut is a no-op without our intervention.
 
 ## Layout in Immersive Mode
 
@@ -342,32 +358,27 @@ ordering to AppKit imperative state in a way we'll regret.
 ## Multi-window and multi-screen
 
 - Each `ContentView` instance owns its own `isImmersive`. Two windows can
-  be immersive simultaneously (typically on different displays).
-- The presentation-options counter (mentioned above) makes
-  `autoHideMenuBar` / `autoHideDock` behave correctly across multiple
-  immersive windows: applied while at least one is immersive, cleared
-  when the last one exits.
-- `NSApp.presentationOptions` is process-global, so even when only one of
-  two displays hosts an immersive window, *both* displays will auto-hide
-  their menu bars while immersive. This is acceptable and matches how
-  native full-screen behaves on multi-display Macs with "Displays have
-  separate Spaces" disabled. If it's a problem in practice we can revisit
-  with `NSScreen`-targeted presentation control, but the API surface
-  there is awkward and not worth the up-front engineering.
+  be immersive simultaneously, each occupying its own Space on its own
+  display.
+- Native fullscreen handles screen disconnect, resolution changes, and
+  arrangement changes natively. No additional code in
+  `ImmersiveCoordinator`.
+- The cursor-auto-hide refcount on `ImmersiveCoordinator` ensures the
+  `NSEvent` monitor and idle timer activate while at least one window is
+  immersive and tear down cleanly when the last one leaves.
 
 ## Auxiliary windows
 
-Settings (`Cmd+,`), Connect (`Cmd+Shift+O` or however the menu wires it),
-and the New Machine dialog all open as separate `Window` / `Settings`
-scenes at the App level. Because the immersive window stays at
-`NSWindow.Level.normal`, these auxiliary windows surface above it
-naturally with their normal title bars and chrome. The user dismisses the
-auxiliary window and the immersive window returns to focus underneath,
-still chrome-free.
+Settings (`Cmd+,`), Connect, and the New Machine dialog open as separate
+`Window` / `Settings` scenes at the App level. Because the immersive
+window is in its own Space, opening one of these will switch the user to
+the Space the new window appears in (typically the main / non-fullscreen
+Space). The user dismisses the auxiliary window and swipes back to the
+immersive Space — the same interaction model macOS uses for any
+fullscreen app with auxiliary windows.
 
 No menu items are disabled while in Immersive Mode. The user can do
-anything they could do normally; the framing of the *current* machine
-window is the only thing that changes.
+anything they could do normally.
 
 ## Open questions / future work
 

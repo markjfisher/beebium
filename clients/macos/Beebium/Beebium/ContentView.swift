@@ -80,6 +80,12 @@ struct ContentView: View {
     @State private var isImmersive: Bool = false
     @State private var preImmersiveShowSidebar: Bool = true
     @State private var preImmersiveShowStatusBar: Bool = true
+    /// The NSWindow this ContentView is hosted in, captured once and never updated.
+    /// `currentWindow` (set asynchronously by `WindowAccessor.onWindowChanged`) is
+    /// transiently nil during the native fullscreen exit animation when AppKit moves
+    /// views through bridge windows -- which would otherwise cause Immersive Mode
+    /// enter/exit to operate on the wrong window or not at all on the second cycle.
+    @State private var stableWindow: NSWindow?
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
     @State private var currentWindow: NSWindow?
@@ -201,7 +207,7 @@ struct ContentView: View {
         .focusedValue(\.showStatusBar, $showStatusBar)
         .focusedValue(\.isImmersive, $isImmersive)
         .onChange(of: isImmersive) { newValue in
-            guard let window = currentWindow else { return }
+            guard let window = stableWindow else { return }
             if newValue {
                 preImmersiveShowSidebar = showSidebar
                 preImmersiveShowStatusBar = showStatusBar
@@ -212,6 +218,19 @@ struct ContentView: View {
                 ImmersiveCoordinator.shared.exitImmersive(window: window)
                 showSidebar = preImmersiveShowSidebar
                 showStatusBar = preImmersiveShowStatusBar
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .immersiveCoordinatorDidExitUnexpectedly)
+        ) { notification in
+            // Native fullscreen ended through some path other than our menu item
+            // (e.g. the green button on hover, or Cmd+Ctrl+F). Bring isImmersive back
+            // into agreement with the window's actual state, which restores
+            // navigationLayout and the pre-immersive sidebar / status-bar visibility.
+            if let window = notification.object as? NSWindow,
+               window === stableWindow,
+               isImmersive {
+                isImmersive = false
             }
         }
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
@@ -272,6 +291,11 @@ struct ContentView: View {
         .background(WindowAccessor(window: $currentWindow))
         .onChange(of: currentWindow) { window in
             guard let window = window else { return }
+            // Capture the NSWindow once; never update it. Used by Immersive Mode to
+            // sidestep the transient-nil currentWindow during fullscreen transitions.
+            if stableWindow == nil {
+                stableWindow = window
+            }
             // Install close-button interception for the multi-client dialog case.
             // SwiftUI's WindowGroup manages its own window delegate, so we cannot
             // rely on windowShouldClose. Instead, redirect the close button's action

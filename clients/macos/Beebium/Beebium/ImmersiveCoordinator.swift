@@ -12,19 +12,35 @@
 
 import AppKit
 
-/// Manages the AppKit-level transformation of NSWindows into and out of Immersive Mode.
+extension Notification.Name {
+    /// Posted by `ImmersiveCoordinator` when a window leaves native fullscreen by a path
+    /// other than `exitImmersive(window:)` (e.g. Cmd+Ctrl+F, or the user clicking the
+    /// green button if it ever becomes accessible). The notification's `object` is the
+    /// `NSWindow` that exited. ContentView observes this so its `isImmersive` flag stays
+    /// in sync with the window's actual fullscreen state.
+    static let immersiveCoordinatorDidExitUnexpectedly =
+        Notification.Name("ImmersiveCoordinatorDidExitUnexpectedly")
+}
+
+/// Manages Immersive Mode for Beebium machine windows.
 ///
-/// Per-window: snapshots frame, style mask, button visibility, and movability so they can
-/// be restored on exit. Process-global: refcounts the presentation options
-/// (autoHideMenuBar, autoHideDock) so multiple immersive windows compose correctly — the
-/// flags are applied while at least one window is immersive and cleared when the last one
-/// leaves.
+/// Immersive Mode uses macOS native fullscreen (`toggleFullScreen(_:)`) for the
+/// chrome-hiding window transformation: the window moves to its own Space, the menu bar
+/// and Dock auto-hide, the window expands to fill the entire display with no rounded
+/// corners or border artifacts, and AppKit handles screen disconnects natively.
 ///
-/// The window's `.titled` style mask is preserved (the window's title bar is already
-/// transparent and titleless via `titlebarAppearsTransparent` / `titleVisibility = .hidden`).
-/// `.fullSizeContentView` is added so the SwiftUI content view extends behind the title bar
-/// area, the standard buttons are hidden, and `isMovable` is set false. Going fully
-/// `.borderless` would risk losing key-window status for SwiftUI-managed NSWindows.
+/// We deliberately do not hide the title bar's title text or standard window buttons:
+/// in native fullscreen the title bar reveals on hover at the top of the screen, and
+/// hiding its content makes that reveal an empty translucent strip — uglier than just
+/// showing the title and buttons, and pointless when the user already needs the menu
+/// bar reachable.
+///
+/// The Beebium-specific behaviour layered on top of native fullscreen is:
+///
+///  * Hide the cursor after 3 s of idle activity, restored on any input event.
+///  * Observe `NSWindow.didExitFullScreenNotification` so the caller (ContentView) is
+///    told if fullscreen ends through any path other than our `exitImmersive` call,
+///    and can flip its `isImmersive` flag accordingly.
 @MainActor
 final class ImmersiveCoordinator {
     static let shared = ImmersiveCoordinator()
@@ -33,56 +49,49 @@ final class ImmersiveCoordinator {
 
     private struct WindowState {
         weak var window: NSWindow?
-        let frame: NSRect
-        let styleMask: NSWindow.StyleMask
-        let isMovable: Bool
-        let closeButtonHidden: Bool
-        let miniaturizeButtonHidden: Bool
-        let zoomButtonHidden: Bool
+        let titlebarSeparatorStyle: NSTitlebarSeparatorStyle
+        var didExitObserver: NSObjectProtocol?
         var willCloseObserver: NSObjectProtocol?
     }
 
     private var states: [ObjectIdentifier: WindowState] = [:]
     private var presentationCount: Int = 0
-    private var screenParamsObserver: NSObjectProtocol?
 
     private var cursorEventMonitor: Any?
     private var cursorIdleTimer: Timer?
     private var cursorHidden: Bool = false
     private static let cursorIdleSeconds: TimeInterval = 3.0
 
-    /// Transform `window` into Immersive Mode: hide all chrome, fill the current screen,
-    /// and apply the process-global menu-bar / Dock auto-hide presentation options if
-    /// this is the first immersive window. Idempotent for an already-immersive window.
+    /// Enter Immersive Mode for `window`: install observers for fullscreen lifecycle and
+    /// window close, start cursor auto-hide, and trigger native fullscreen.
+    /// Idempotent for an already-immersive window.
     func enterImmersive(window: NSWindow) {
         let id = ObjectIdentifier(window)
         guard states[id] == nil else { return }
 
         var state = WindowState(
             window: window,
-            frame: window.frame,
-            styleMask: window.styleMask,
-            isMovable: window.isMovable,
-            closeButtonHidden: window.standardWindowButton(.closeButton)?.isHidden ?? false,
-            miniaturizeButtonHidden: window.standardWindowButton(.miniaturizeButton)?.isHidden ?? false,
-            zoomButtonHidden: window.standardWindowButton(.zoomButton)?.isHidden ?? false,
+            titlebarSeparatorStyle: window.titlebarSeparatorStyle,
+            didExitObserver: nil,
             willCloseObserver: nil
         )
 
-        // Make content extend behind the (already-transparent) title bar.
-        window.styleMask.insert(.fullSizeContentView)
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        window.isMovable = false
+        // Suppress the 1pt separator AppKit otherwise draws between title-bar and
+        // content. In native fullscreen the title bar auto-retracts on hover-out, but
+        // empirically a thin highlight appears at the top of the screen a few seconds
+        // later — only on Beebium, not Terminal — which we suspect is this separator.
+        window.titlebarSeparatorStyle = .none
 
-        if let screen = window.screen ?? NSScreen.main {
-            window.setFrame(screen.frame, display: true)
+        state.didExitObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didExitFullScreenNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleNativeExit(id: id, window: window)
+            }
         }
 
-        // If the user closes the window while immersive, the snapshot must still be
-        // discarded and the presentation count decremented; otherwise the flags leak
-        // and the menu bar stays auto-hidden.
         state.willCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
@@ -97,39 +106,69 @@ final class ImmersiveCoordinator {
 
         presentationCount += 1
         if presentationCount == 1 {
-            NSApp.presentationOptions.formUnion([.autoHideMenuBar, .autoHideDock])
             startCursorAutoHide()
-            startScreenTracking()
+        }
+
+        if !window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
         }
     }
 
-    /// Reverse `enterImmersive(window:)`: restore the snapshotted style mask, frame,
-    /// button visibility, and movability, and decrement the presentation refcount.
-    /// No-op for a window that is not currently immersive.
+    /// Exit Immersive Mode for `window`: tear down observers, restore the snapshotted
+    /// title-bar separator style, and trigger the native fullscreen exit. No-op for a
+    /// window that is not currently immersive.
     func exitImmersive(window: NSWindow) {
         let id = ObjectIdentifier(window)
         guard let state = states.removeValue(forKey: id) else { return }
 
+        if let observer = state.didExitObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         if let observer = state.willCloseObserver {
             NotificationCenter.default.removeObserver(observer)
         }
 
-        window.setFrame(state.frame, display: true)
-        window.isMovable = state.isMovable
-        window.standardWindowButton(.closeButton)?.isHidden = state.closeButtonHidden
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = state.miniaturizeButtonHidden
-        window.standardWindowButton(.zoomButton)?.isHidden = state.zoomButtonHidden
-        window.styleMask = state.styleMask
+        window.titlebarSeparatorStyle = state.titlebarSeparatorStyle
 
         decrementPresentationCount()
+
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
     }
 
     func isImmersive(window: NSWindow) -> Bool {
         states[ObjectIdentifier(window)] != nil
     }
 
+    /// Called when the window leaves fullscreen via a path other than `exitImmersive`.
+    /// Tears down our state and posts a notification so ContentView can flip its
+    /// `isImmersive` flag — without it, our flag would say "immersive" while the
+    /// window is back in its windowed frame.
+    private func handleNativeExit(id: ObjectIdentifier, window: NSWindow) {
+        guard let state = states.removeValue(forKey: id) else { return }
+        if let observer = state.didExitObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = state.willCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
+        window.titlebarSeparatorStyle = state.titlebarSeparatorStyle
+
+        decrementPresentationCount()
+
+        NotificationCenter.default.post(
+            name: .immersiveCoordinatorDidExitUnexpectedly,
+            object: window
+        )
+    }
+
     private func handleWindowClosed(id: ObjectIdentifier) {
         guard let state = states.removeValue(forKey: id) else { return }
+        if let observer = state.didExitObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         if let observer = state.willCloseObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -139,9 +178,7 @@ final class ImmersiveCoordinator {
     private func decrementPresentationCount() {
         presentationCount -= 1
         if presentationCount == 0 {
-            NSApp.presentationOptions.subtract([.autoHideMenuBar, .autoHideDock])
             stopCursorAutoHide()
-            stopScreenTracking()
         }
     }
 
@@ -199,39 +236,5 @@ final class ImmersiveCoordinator {
         guard !cursorHidden, presentationCount > 0 else { return }
         NSCursor.hide()
         cursorHidden = true
-    }
-
-    // MARK: - Screen tracking
-
-    private func startScreenTracking() {
-        guard screenParamsObserver == nil else { return }
-        screenParamsObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshAllImmersiveFrames()
-            }
-        }
-    }
-
-    private func stopScreenTracking() {
-        if let observer = screenParamsObserver {
-            NotificationCenter.default.removeObserver(observer)
-            screenParamsObserver = nil
-        }
-    }
-
-    /// Re-apply the current `screen.frame` to every immersive window. Called when the
-    /// system reports a screen-parameters change (resolution change, monitor connect /
-    /// disconnect, arrangement change). Windows that have been deallocated are skipped.
-    private func refreshAllImmersiveFrames() {
-        for state in states.values {
-            guard let window = state.window else { continue }
-            if let screen = window.screen ?? NSScreen.main {
-                window.setFrame(screen.frame, display: true)
-            }
-        }
     }
 }
