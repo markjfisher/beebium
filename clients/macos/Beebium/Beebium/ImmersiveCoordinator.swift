@@ -32,6 +32,7 @@ final class ImmersiveCoordinator {
     private init() {}
 
     private struct WindowState {
+        weak var window: NSWindow?
         let frame: NSRect
         let styleMask: NSWindow.StyleMask
         let isMovable: Bool
@@ -43,6 +44,7 @@ final class ImmersiveCoordinator {
 
     private var states: [ObjectIdentifier: WindowState] = [:]
     private var presentationCount: Int = 0
+    private var screenParamsObserver: NSObjectProtocol?
 
     private var cursorEventMonitor: Any?
     private var cursorIdleTimer: Timer?
@@ -57,6 +59,7 @@ final class ImmersiveCoordinator {
         guard states[id] == nil else { return }
 
         var state = WindowState(
+            window: window,
             frame: window.frame,
             styleMask: window.styleMask,
             isMovable: window.isMovable,
@@ -96,6 +99,7 @@ final class ImmersiveCoordinator {
         if presentationCount == 1 {
             NSApp.presentationOptions.formUnion([.autoHideMenuBar, .autoHideDock])
             startCursorAutoHide()
+            startScreenTracking()
         }
     }
 
@@ -137,6 +141,7 @@ final class ImmersiveCoordinator {
         if presentationCount == 0 {
             NSApp.presentationOptions.subtract([.autoHideMenuBar, .autoHideDock])
             stopCursorAutoHide()
+            stopScreenTracking()
         }
     }
 
@@ -194,5 +199,39 @@ final class ImmersiveCoordinator {
         guard !cursorHidden, presentationCount > 0 else { return }
         NSCursor.hide()
         cursorHidden = true
+    }
+
+    // MARK: - Screen tracking
+
+    private func startScreenTracking() {
+        guard screenParamsObserver == nil else { return }
+        screenParamsObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshAllImmersiveFrames()
+            }
+        }
+    }
+
+    private func stopScreenTracking() {
+        if let observer = screenParamsObserver {
+            NotificationCenter.default.removeObserver(observer)
+            screenParamsObserver = nil
+        }
+    }
+
+    /// Re-apply the current `screen.frame` to every immersive window. Called when the
+    /// system reports a screen-parameters change (resolution change, monitor connect /
+    /// disconnect, arrangement change). Windows that have been deallocated are skipped.
+    private func refreshAllImmersiveFrames() {
+        for state in states.values {
+            guard let window = state.window else { continue }
+            if let screen = window.screen ?? NSScreen.main {
+                window.setFrame(screen.frame, display: true)
+            }
+        }
     }
 }
