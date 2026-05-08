@@ -109,9 +109,15 @@ struct BeebiumApp: App {
             CommandGroup(after: .sidebar) {
                 ForEach(SidebarMode.allCases) { mode in
                     Button(mode.label) {
-                        sidebarMode = mode
-                        if showSidebar == false {
-                            withAnimation { showSidebar = true }
+                        if showSidebar == true && sidebarMode == mode {
+                            // Same mode is already showing; second press hides.
+                            withAnimation { showSidebar = false }
+                        } else {
+                            // Either hidden, or showing a different mode.
+                            sidebarMode = mode
+                            if showSidebar == false {
+                                withAnimation { showSidebar = true }
+                            }
                         }
                     }
                     .keyboardShortcut(mode.shortcutKey, modifiers: .command)
