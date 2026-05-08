@@ -44,6 +44,11 @@ final class ImmersiveCoordinator {
     private var states: [ObjectIdentifier: WindowState] = [:]
     private var presentationCount: Int = 0
 
+    private var cursorEventMonitor: Any?
+    private var cursorIdleTimer: Timer?
+    private var cursorHidden: Bool = false
+    private static let cursorIdleSeconds: TimeInterval = 3.0
+
     /// Transform `window` into Immersive Mode: hide all chrome, fill the current screen,
     /// and apply the process-global menu-bar / Dock auto-hide presentation options if
     /// this is the first immersive window. Idempotent for an already-immersive window.
@@ -90,6 +95,7 @@ final class ImmersiveCoordinator {
         presentationCount += 1
         if presentationCount == 1 {
             NSApp.presentationOptions.formUnion([.autoHideMenuBar, .autoHideDock])
+            startCursorAutoHide()
         }
     }
 
@@ -130,6 +136,63 @@ final class ImmersiveCoordinator {
         presentationCount -= 1
         if presentationCount == 0 {
             NSApp.presentationOptions.subtract([.autoHideMenuBar, .autoHideDock])
+            stopCursorAutoHide()
         }
+    }
+
+    // MARK: - Cursor auto-hide
+
+    private func startCursorAutoHide() {
+        guard cursorEventMonitor == nil else { return }
+
+        cursorEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown,
+                       .otherMouseDown, .scrollWheel, .keyDown]
+        ) { [weak self] event in
+            Task { @MainActor in
+                self?.cursorActivity()
+            }
+            return event
+        }
+
+        // Start the idle countdown immediately so the cursor disappears
+        // after cursorIdleSeconds even if the user stops moving the mouse
+        // the moment they enter Immersive Mode.
+        cursorActivity()
+    }
+
+    private func stopCursorAutoHide() {
+        if let monitor = cursorEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            cursorEventMonitor = nil
+        }
+        cursorIdleTimer?.invalidate()
+        cursorIdleTimer = nil
+        if cursorHidden {
+            NSCursor.unhide()
+            cursorHidden = false
+        }
+    }
+
+    private func cursorActivity() {
+        if cursorHidden {
+            NSCursor.unhide()
+            cursorHidden = false
+        }
+        cursorIdleTimer?.invalidate()
+        cursorIdleTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.cursorIdleSeconds,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.hideCursorNow()
+            }
+        }
+    }
+
+    private func hideCursorNow() {
+        guard !cursorHidden, presentationCount > 0 else { return }
+        NSCursor.hide()
+        cursorHidden = true
     }
 }
