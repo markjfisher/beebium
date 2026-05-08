@@ -289,6 +289,16 @@ struct ContentView: View {
             }
         }
         .onChange(of: videoClient.connectionState) { newState in
+            // Immersive Mode is only meaningful while emulation is live. Any
+            // transition out of .connected (network blip, server shutdown,
+            // user-initiated disconnect) returns the window to its normal
+            // chrome so the user can see what's happening and act.
+            if isImmersive, case .connected = newState {
+                // still connected -- no-op
+            } else if isImmersive {
+                isImmersive = false
+            }
+
             // Connect clients when video client connects
             if case .connected = newState, let channel = videoClient.channel {
                 keyboardClient.connect(channel: channel)
