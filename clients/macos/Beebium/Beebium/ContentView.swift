@@ -78,6 +78,8 @@ struct ContentView: View {
     @State private var showStatusBar: Bool = true
     @State private var showSidebar: Bool = true
     @State private var isImmersive: Bool = false
+    @State private var preImmersiveShowSidebar: Bool = true
+    @State private var preImmersiveShowStatusBar: Bool = true
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
     @State private var currentWindow: NSWindow?
@@ -94,60 +96,106 @@ struct ContentView: View {
         )
     }
 
-    var body: some View {
+    private var sidebarPanel: some View {
+        VStack(spacing: 0) {
+            SidebarModeToolbar(selectedMode: $sidebarMode)
+            Divider()
+            SidebarModeContent(
+                mode: sidebarMode,
+                discClient: discClient,
+                keyboardMappingManager: keyboardMappingManager,
+                audioClient: audioClient,
+                audioMixerState: audioMixerState,
+                econetClient: econetClient,
+                extensionUiClient: extensionUiClient,
+                videoSettings: videoSettings
+            )
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var emulatorView: some View {
+        EmulatorView(
+            videoClient: videoClient,
+            keyboardClient: keyboardClient,
+            indicatorClient: indicatorClient,
+            videoSettings: videoSettings,
+            bbcKeyCache: keyboardMappingManager.bbcKeyCache
+        )
+    }
+
+    private var statusBar: some View {
+        StatusBarView(
+            systemClient: systemClient,
+            indicatorClient: indicatorClient,
+            keyboardClient: keyboardClient,
+            keyboardMappingManager: keyboardMappingManager,
+            machineManager: MachineManager.shared,
+            connectionTarget: videoClient.target,
+            onToggleUnlink: { toggleUnlinkCurrentMachine() }
+        )
+    }
+
+    private var navigationLayout: some View {
         NavigationSplitView(columnVisibility: columnVisibility) {
-            VStack(spacing: 0) {
-                SidebarModeToolbar(selectedMode: $sidebarMode)
-                Divider()
-                SidebarModeContent(
-                    mode: sidebarMode,
-                    discClient: discClient,
-                    keyboardMappingManager: keyboardMappingManager,
-                    audioClient: audioClient,
-                    audioMixerState: audioMixerState,
-                    econetClient: econetClient,
-                    extensionUiClient: extensionUiClient,
-                    videoSettings: videoSettings
-                )
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
-            .navigationSplitViewColumnWidth(min: 180, ideal: 260, max: 500)
+            sidebarPanel
+                .navigationSplitViewColumnWidth(min: 180, ideal: 260, max: 500)
         } detail: {
             VStack(spacing: 0) {
                 ZStack {
-                    // Emulator display (receives frames directly via videoClient.renderer)
-                    EmulatorView(
-                        videoClient: videoClient,
-                        keyboardClient: keyboardClient,
-                        indicatorClient: indicatorClient,
-                        videoSettings: videoSettings,
-                        bbcKeyCache: keyboardMappingManager.bbcKeyCache
-                    )
+                    emulatorView
 
-                    // Status overlay when not connected
                     if videoClient.connectionState != .connected {
                         statusOverlay
                     }
                 }
 
-                // Status bar at bottom
                 if showStatusBar {
-                    StatusBarView(
-                        systemClient: systemClient,
-                        indicatorClient: indicatorClient,
-                        keyboardClient: keyboardClient,
-                        keyboardMappingManager: keyboardMappingManager,
-                        machineManager: MachineManager.shared,
-                        connectionTarget: videoClient.target,
-                        onToggleUnlink: { toggleUnlinkCurrentMachine() }
-                    )
+                    statusBar
                 }
             }
             .frame(minWidth: 320, minHeight: 240)
         }
         .navigationSplitViewStyle(.balanced)
-        .navigationTitle("Beebium")
         .animation(.default, value: showSidebar)
+    }
+
+    private var immersiveLayout: some View {
+        ZStack(alignment: .topLeading) {
+            emulatorView
+                .ignoresSafeArea()
+
+            if showSidebar {
+                HStack(spacing: 0) {
+                    sidebarPanel
+                        .frame(width: 280)
+                    Spacer(minLength: 0)
+                }
+                .transition(.move(edge: .leading))
+            }
+
+            if showStatusBar {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    statusBar
+                        .background(Color(nsColor: .windowBackgroundColor))
+                }
+                .transition(.move(edge: .bottom))
+            }
+        }
+        .animation(.default, value: showSidebar)
+        .animation(.default, value: showStatusBar)
+    }
+
+    var body: some View {
+        Group {
+            if isImmersive {
+                immersiveLayout
+            } else {
+                navigationLayout
+            }
+        }
+        .navigationTitle("Beebium")
         .focusedValue(\.sidebarMode, $sidebarMode)
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)
@@ -155,9 +203,15 @@ struct ContentView: View {
         .onChange(of: isImmersive) { newValue in
             guard let window = currentWindow else { return }
             if newValue {
+                preImmersiveShowSidebar = showSidebar
+                preImmersiveShowStatusBar = showStatusBar
+                showSidebar = false
+                showStatusBar = false
                 ImmersiveCoordinator.shared.enterImmersive(window: window)
             } else {
                 ImmersiveCoordinator.shared.exitImmersive(window: window)
+                showSidebar = preImmersiveShowSidebar
+                showStatusBar = preImmersiveShowStatusBar
             }
         }
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
