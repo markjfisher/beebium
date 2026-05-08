@@ -38,6 +38,7 @@
 		3E893BDCD15B92A2A29AD7EB /* VideoSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16524154FADCB403497AFB1F /* VideoSettingsTests.swift */; };
 		40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */; };
 		42072CC836ABE4A92B2EF2AC /* BeebiumApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */; };
+		4257B00B6F393A93AD85649A /* ImmersiveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E94733F6E0E22EE3816394 /* ImmersiveCoordinator.swift */; };
 		44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4898953F0003B85113EC0 /* indicator.grpc.swift */; };
 		47FD133746DA2EEA77B73EDC /* econet.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969BBA00E4077B69BBCACAF /* econet.pb.swift */; };
 		4AD0CF022E27D94F9FB1FEDC /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB928B6093490D60EECA734 /* MetalKit.framework */; };
@@ -217,6 +218,7 @@
 		9141154B5BCF7C71635E62B2 /* disc.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = disc.proto; sourceTree = "<group>"; };
 		91EE41147FA34459F83B3130 /* ModalEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalEditorView.swift; sourceTree = "<group>"; };
 		92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.pb.swift; sourceTree = "<group>"; };
+		93E94733F6E0E22EE3816394 /* ImmersiveCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImmersiveCoordinator.swift; sourceTree = "<group>"; };
 		94EE5C7867F0B72F92C0F032 /* ResettableControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResettableControls.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
 		992C39260909EB85C84D2C20 /* SidebarMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMode.swift; sourceTree = "<group>"; };
@@ -438,6 +440,7 @@
 				9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */,
 				1031975F4050BF5875549DFA /* FileCommands.swift */,
 				C432ADD4B509CA5A4D3462C0 /* FocusedDialogKeys.swift */,
+				93E94733F6E0E22EE3816394 /* ImmersiveCoordinator.swift */,
 				F94659E7B330C00F11FC0E65 /* IndicatorClient.swift */,
 				2CE550723A13DFA9A20EB302 /* IndicatorView.swift */,
 				3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */,
@@ -685,6 +688,7 @@
 				162D791FD0BE2D5F6E75CB72 /* FloppyDriveConfigView.swift in Sources */,
 				B41DE38A258D6C2E68314C5D /* FocusedDialogKeys.swift in Sources */,
 				6115EAB5B469DD1B9242F92E /* GeneralSettingsPane.swift in Sources */,
+				4257B00B6F393A93AD85649A /* ImmersiveCoordinator.swift in Sources */,
 				40F2A089FF91784C67231853 /* IndicatorClient.swift in Sources */,
 				7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */,
 				94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */,

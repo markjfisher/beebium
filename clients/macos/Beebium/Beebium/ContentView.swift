@@ -152,6 +152,14 @@ struct ContentView: View {
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)
         .focusedValue(\.isImmersive, $isImmersive)
+        .onChange(of: isImmersive) { newValue in
+            guard let window = currentWindow else { return }
+            if newValue {
+                ImmersiveCoordinator.shared.enterImmersive(window: window)
+            } else {
+                ImmersiveCoordinator.shared.exitImmersive(window: window)
+            }
+        }
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
         .onAppear {
             // Capture openWindow into shared AppActions for FileCommands
