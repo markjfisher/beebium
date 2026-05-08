@@ -72,6 +72,7 @@ struct BeebiumApp: App {
     @FocusedBinding(\.showStatusBar) private var showStatusBar
     @FocusedBinding(\.showSidebar) private var showSidebar
     @FocusedBinding(\.sidebarMode) private var sidebarMode
+    @FocusedBinding(\.isImmersive) private var isImmersive
     @StateObject private var keyboardMappingManager = KeyboardMappingManager()
     @StateObject private var connectWindowState = ConnectWindowState.shared
 
@@ -91,6 +92,12 @@ struct BeebiumApp: App {
                 }
                 .keyboardShortcut("/", modifiers: .command)
                 .disabled(showStatusBar == nil)
+
+                Button(isImmersive == true ? "Exit Immersive Mode" : "Enter Immersive Mode") {
+                    isImmersive?.toggle()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(isImmersive == nil)
             }
             CommandGroup(before: .sidebar) {
                 Button(showSidebar == true ? "Hide Sidebar" : "Show Sidebar") {

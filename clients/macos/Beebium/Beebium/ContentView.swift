@@ -77,6 +77,7 @@ struct ContentView: View {
     @State private var needsRun: Bool = false
     @State private var showStatusBar: Bool = true
     @State private var showSidebar: Bool = true
+    @State private var isImmersive: Bool = false
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @State private var sidebarMode: SidebarMode = .storage
     @State private var currentWindow: NSWindow?
@@ -150,6 +151,7 @@ struct ContentView: View {
         .focusedValue(\.sidebarMode, $sidebarMode)
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)
+        .focusedValue(\.isImmersive, $isImmersive)
         .focusedValue(\.openNewWindow) { openWindow(id: "main") }
         .onAppear {
             // Capture openWindow into shared AppActions for FileCommands

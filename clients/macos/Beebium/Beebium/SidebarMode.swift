@@ -80,6 +80,10 @@ struct ShowStatusBarFocusedValueKey: FocusedValueKey {
     typealias Value = Binding<Bool>
 }
 
+struct IsImmersiveFocusedValueKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var sidebarMode: Binding<SidebarMode>? {
         get { self[SidebarModeFocusedValueKey.self] }
@@ -94,5 +98,10 @@ extension FocusedValues {
     var showStatusBar: Binding<Bool>? {
         get { self[ShowStatusBarFocusedValueKey.self] }
         set { self[ShowStatusBarFocusedValueKey.self] = newValue }
+    }
+
+    var isImmersive: Binding<Bool>? {
+        get { self[IsImmersiveFocusedValueKey.self] }
+        set { self[IsImmersiveFocusedValueKey.self] = newValue }
     }
 }
