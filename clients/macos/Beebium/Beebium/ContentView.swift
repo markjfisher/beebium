@@ -171,23 +171,29 @@ struct ContentView: View {
             emulatorView
                 .ignoresSafeArea()
 
-            if showSidebar {
-                HStack(spacing: 0) {
-                    sidebarPanel
-                        .frame(width: 280)
-                    Spacer(minLength: 0)
-                }
-                .transition(.move(edge: .leading))
+            // Sidebar and status bar are always in the view tree; visibility is
+            // driven by .offset / .opacity rather than `if` + `.transition`.
+            // SwiftUI's conditional-plus-transition combo can drop the removal
+            // animation, leaving a jarring asymmetry where reveal slides in but
+            // hide vanishes instantly. Translating an always-present view animates
+            // symmetrically in both directions.
+            HStack(spacing: 0) {
+                sidebarPanel
+                    .frame(width: 280)
+                Spacer(minLength: 0)
             }
+            .offset(x: showSidebar ? 0 : -280)
+            .opacity(showSidebar ? 1 : 0)
+            .allowsHitTesting(showSidebar)
 
-            if showStatusBar {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    statusBar
-                        .background(Color(nsColor: .windowBackgroundColor))
-                }
-                .transition(.move(edge: .bottom))
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                statusBar
+                    .background(Color(nsColor: .windowBackgroundColor))
             }
+            .offset(y: showStatusBar ? 0 : 100)
+            .opacity(showStatusBar ? 1 : 0)
+            .allowsHitTesting(showStatusBar)
         }
         .animation(.default, value: showSidebar)
         .animation(.default, value: showStatusBar)
