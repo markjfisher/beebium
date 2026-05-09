@@ -59,14 +59,15 @@ final class VideoSettings: ObservableObject {
     static let defaultPixelShapeKey = "video.defaultPixelShape"
     static let defaultWindowBackgroundKey = "video.defaultWindowBackgroundHex"
 
-    /// The dark-grey background colour used before this setting was
-    /// configurable. Acts as the built-in fallback when no preference is set.
+    /// Built-in default for `windowBackground`: a near-black dark grey (#0F0F0F).
+    /// Used when no preference is saved in UserDefaults; the same value is the
+    /// "Reset to default" target in the Settings > Video pane.
     /// `nonisolated` so it can be referenced from default argument
     /// expressions evaluated at the call site under Swift 6 strict isolation.
     nonisolated static let defaultWindowBackground: Color = Color(.sRGB,
-                                                                  red: 0.15,
-                                                                  green: 0.15,
-                                                                  blue: 0.15,
+                                                                  red: 15.0 / 255.0,
+                                                                  green: 15.0 / 255.0,
+                                                                  blue: 15.0 / 255.0,
                                                                   opacity: 1.0)
 
     /// Construct with explicit values. Tests use this so they are not
