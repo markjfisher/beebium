@@ -40,6 +40,7 @@ struct SidebarModeContent: View {
     @ObservedObject var audioMixerState: AudioMixerState
     @ObservedObject var econetClient: EconetClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var peripheralsClient: PeripheralsClient
     @ObservedObject var videoSettings: VideoSettings
 
     var body: some View {
@@ -52,7 +53,7 @@ struct SidebarModeContent: View {
             case .memory:
                 MemoryModeView()
             case .peripherals:
-                PeripheralsModeView()
+                PeripheralsModeView(client: peripheralsClient)
             case .video:
                 VideoModeView(videoSettings: videoSettings)
             case .sound:
@@ -79,12 +80,6 @@ struct MemoryModeView: View {
     }
 }
 
-/// Placeholder view for Peripherals mode (1MHz bus, user port, printer, serial, analogue)
-struct PeripheralsModeView: View {
-    var body: some View {
-        ModePlaceholder(mode: .peripherals)
-    }
-}
 
 /// Video mode: pick a display style and tweak its options.
 struct VideoModeView: View {
@@ -597,6 +592,7 @@ struct SidebarModeContent_Previews: PreviewProvider {
             audioMixerState: AudioMixerState(),
             econetClient: EconetClient(),
             extensionUiClient: ExtensionUiClient(),
+            peripheralsClient: PeripheralsClient(),
             videoSettings: VideoSettings()
         )
         .frame(width: 220, height: 300)

@@ -1,0 +1,139 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+import Foundation
+
+/// One configured peripheral extension and its descendants.
+///
+/// `primaryAttachment` names the extension point we mounted this node
+/// under (the first entry in its `attaches_to` list). `secondaryAttachments`
+/// holds any further extension points the device also occupies -- used
+/// for multi-port devices like the Voltmace Delta 14B/1, which plugs
+/// into the user port and the analogue port simultaneously. The node
+/// is rendered once (under the primary) with the secondaries shown as
+/// badges, so the conceptual DAG collapses cleanly to a tree.
+struct PeripheralNode: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let label: String
+    let description: String
+    let config: [String: String]
+    let primaryAttachment: String
+    let secondaryAttachments: [String]
+    let provides: [String]
+    var children: [PeripheralNode]
+}
+
+/// Hierarchical view of the configured peripherals, rooted at the built-in
+/// extension points (1mhz-bus, user-port, tube, ...).
+///
+/// `groups` is ordered alphabetically by extension point name for stable
+/// display; nodes within a group preserve the order returned by the server
+/// (which corresponds to command-line / preset configuration order).
+///
+/// `orphans` is a defensive bucket for extensions with an empty
+/// `attaches_to`; the server's PeripheralExtension contract requires at
+/// least one attachment so in practice it stays empty.
+struct PeripheralTree: Equatable {
+
+    struct ExtensionPointGroup: Equatable, Identifiable {
+        let extensionPoint: String
+        let nodes: [PeripheralNode]
+        var id: String { extensionPoint }
+    }
+
+    let groups: [ExtensionPointGroup]
+    let orphans: [PeripheralNode]
+
+    static func build(from extensions: [Beebium_ExtensionInfo]) -> PeripheralTree {
+        if extensions.isEmpty {
+            return PeripheralTree(groups: [], orphans: [])
+        }
+
+        // Map each extension point provided by some loaded extension to
+        // the id of that provider. Used to decide whether a child's
+        // primary attachment resolves to another extension (parent-child
+        // nesting) or to a built-in extension point (root group).
+        var providerIdByPoint: [String: String] = [:]
+        for ext in extensions {
+            for point in ext.provides {
+                providerIdByPoint[point] = ext.id
+            }
+        }
+
+        // Build the leaf-less nodes and index by id so the second pass
+        // can hang children off them in any input order.
+        var nodesById: [String: PeripheralNode] = [:]
+        for ext in extensions {
+            let primary = ext.attachesTo.first ?? ""
+            let secondary = ext.attachesTo.count > 1
+                ? Array(ext.attachesTo.dropFirst())
+                : []
+            nodesById[ext.id] = PeripheralNode(
+                id: ext.id,
+                name: ext.name,
+                label: ext.label.isEmpty ? ext.id : ext.label,
+                description: ext.description_p,
+                config: ext.config,
+                primaryAttachment: primary,
+                secondaryAttachments: secondary,
+                provides: ext.provides,
+                children: []
+            )
+        }
+
+        // Classify each extension as either a child of another loaded
+        // extension or a root under some extension point name. Empty
+        // `attaches_to` is treated as orphan rather than indexed under
+        // an empty group name.
+        var childIdsByParentId: [String: [String]] = [:]
+        var rootIdsByPoint: [String: [String]] = [:]
+        var orphanIds: [String] = []
+
+        for ext in extensions {
+            guard let primary = ext.attachesTo.first, !primary.isEmpty else {
+                orphanIds.append(ext.id)
+                continue
+            }
+            if let parentId = providerIdByPoint[primary] {
+                childIdsByParentId[parentId, default: []].append(ext.id)
+            } else {
+                rootIdsByPoint[primary, default: []].append(ext.id)
+            }
+        }
+
+        // Recursively walk from each root, attaching children. The
+        // server's topological init order guarantees no cycles, but the
+        // recursion would terminate naturally even without that
+        // guarantee because a node's children are looked up by its id,
+        // which never recurses back to itself.
+        func attachChildren(to nodeId: String) -> PeripheralNode {
+            var node = nodesById[nodeId]!
+            let childIds = childIdsByParentId[nodeId, default: []]
+            node.children = childIds.map { attachChildren(to: $0) }
+            return node
+        }
+
+        let sortedPoints = rootIdsByPoint.keys.sorted()
+        let groups = sortedPoints.map { point -> ExtensionPointGroup in
+            let ids = rootIdsByPoint[point] ?? []
+            return ExtensionPointGroup(
+                extensionPoint: point,
+                nodes: ids.map { attachChildren(to: $0) }
+            )
+        }
+
+        let orphans = orphanIds.compactMap { nodesById[$0] }
+
+        return PeripheralTree(groups: groups, orphans: orphans)
+    }
+}
