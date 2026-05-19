@@ -92,10 +92,17 @@ struct PeripheralsModeView: View {
     private var treeContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(client.tree.groups) { group in
+                ForEach(Array(client.tree.groups.enumerated()),
+                        id: \.element.id) { index, group in
+                    if index > 0 {
+                        Divider().padding(.horizontal, 12)
+                    }
                     ExtensionPointSection(group: group)
                 }
                 if !client.tree.orphans.isEmpty {
+                    if !client.tree.groups.isEmpty {
+                        Divider().padding(.horizontal, 12)
+                    }
                     OrphanSection(orphans: client.tree.orphans)
                 }
             }
