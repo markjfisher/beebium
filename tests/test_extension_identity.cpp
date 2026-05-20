@@ -132,6 +132,66 @@ TEST_CASE("Extension default_label() returns display_name when subclass does not
     REQUIRE(ext->default_label() == "Test Scratch RAM");
 }
 
+// MARK: - make_extension_id
+
+TEST_CASE("make_extension_id returns the manifest name when nothing collides",
+          "[extension][identity]") {
+    std::vector<std::string> existing;
+    REQUIRE(make_extension_id("acorn-scsi", existing) == "acorn-scsi");
+}
+
+TEST_CASE("make_extension_id appends -1 when the bare name is taken",
+          "[extension][identity]") {
+    std::vector<std::string> existing = {"scsi-hard-disc"};
+    REQUIRE(make_extension_id("scsi-hard-disc", existing) == "scsi-hard-disc-1");
+}
+
+TEST_CASE("make_extension_id walks suffixes until it finds a free one",
+          "[extension][identity]") {
+    std::vector<std::string> existing = {
+        "scsi-hard-disc",
+        "scsi-hard-disc-1",
+        "scsi-hard-disc-2",
+    };
+    REQUIRE(make_extension_id("scsi-hard-disc", existing) == "scsi-hard-disc-3");
+}
+
+TEST_CASE("make_extension_id fills gaps left by removed instances",
+          "[extension][identity]") {
+    // Predictable iteration: when the suffix sequence has a gap (e.g.
+    // a previous instance was removed, leaving "name" and "name-2"
+    // but no "name-1"), the next assignment fills the gap rather than
+    // jumping past it. Keeps ids stable across reconfigurations.
+    std::vector<std::string> existing = {
+        "scsi-hard-disc",
+        "scsi-hard-disc-2",
+    };
+    REQUIRE(make_extension_id("scsi-hard-disc", existing) == "scsi-hard-disc-1");
+}
+
+TEST_CASE("make_extension_id ignores ids of different extension types",
+          "[extension][identity]") {
+    // Only same-base-name ids matter for collision; an unrelated
+    // "acorn-rtc" doesn't bump the scsi-hard-disc counter.
+    std::vector<std::string> existing = {
+        "acorn-rtc",
+        "acorn-scsi",
+    };
+    REQUIRE(make_extension_id("scsi-hard-disc", existing) == "scsi-hard-disc");
+}
+
+TEST_CASE("make_extension_id steps around an explicit user-set id collision",
+          "[extension][identity]") {
+    // If a user passed --scsi-hdd id=scsi-hard-disc-1 explicitly,
+    // the auto-assigner should skip that id when handing out the
+    // next default rather than blowing up or overwriting.
+    std::vector<std::string> existing = {"scsi-hard-disc-1"};
+    REQUIRE(make_extension_id("scsi-hard-disc", existing) == "scsi-hard-disc");
+
+    std::vector<std::string> existing_both = {"scsi-hard-disc", "scsi-hard-disc-1"};
+    REQUIRE(make_extension_id("scsi-hard-disc", existing_both) == "scsi-hard-disc-2");
+}
+
 TEST_CASE("Extension config_value() returns value for known key", "[extension][identity]") {
     auto ext = TestScratchRam::create();
     ext->set_config({{"foo", "bar"}, {"baz", "42"}});

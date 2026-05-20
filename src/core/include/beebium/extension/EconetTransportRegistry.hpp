@@ -40,7 +40,23 @@ public:
 
     // Take ownership of a transport extension and append it to the
     // registry. Order of insertion is preserved.
+    //
+    // If the extension has no explicit `id` in its config, fill one
+    // in via make_extension_id() -- same scheme as ExtensionRegistry
+    // uses for peripheral extensions -- so transports are uniquely
+    // addressable (e.g. for ExtensionUiService subscriptions, which
+    // key by id since the type-name-only keying collided once a
+    // peripheral type could have multiple instances).
     void add(std::unique_ptr<EconetTransportExtension> extension) {
+        if (extension->id().empty()) {
+            std::vector<std::string> existing;
+            existing.reserve(extensions_.size());
+            for (const auto& e : extensions_) {
+                existing.emplace_back(e->id());
+            }
+            extension->set_config_value(
+                "id", make_extension_id(extension->name(), existing));
+        }
         extensions_.push_back(std::move(extension));
     }
 

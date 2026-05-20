@@ -23,6 +23,8 @@
 #include <string_view>
 #include <vector>
 
+// Forward decl + helper declaration; defined in Extension.cpp.
+
 namespace beebium {
 
 class ExtensionUi;  // forward decl; defined in ExtensionUi.hpp
@@ -59,6 +61,14 @@ public:
     // go here; list params (is_list=true in the schema) go into
     // list_config via set_list_config.
     void set_config(std::map<std::string, std::string> config) { config_ = std::move(config); }
+
+    // Set or replace a single config entry. Intended for framework use
+    // (the registries call this to auto-assign a default `id` when the
+    // user didn't supply one); extensions themselves should configure
+    // via set_config() with the full map.
+    void set_config_value(std::string key, std::string value) {
+        config_[std::move(key)] = std::move(value);
+    }
 
     // Set list-valued instance configuration (is_list params). Called by
     // the framework before init, alongside set_config.
@@ -150,6 +160,20 @@ protected:
     std::map<std::string, std::string> config_;
     std::map<std::string, std::vector<std::string>> list_config_;
 };
+
+// Compose a stable, unique instance id for an extension of the given
+// type. Used by both ExtensionRegistry::register_extension and
+// EconetTransportRegistry::add to fill in config["id"] when the user
+// didn't supply one.
+//
+// Algorithm: try `manifest_name` first; if that's in `existing_ids`,
+// try `manifest_name-1`, `-2`, ... until a free candidate is found.
+// Iteration order is deterministic and fills gaps left by previously
+// removed instances, so the ids assigned for a given configuration
+// are predictable run over run.
+BEEBIUM_EXT_API std::string make_extension_id(
+    std::string_view manifest_name,
+    std::span<const std::string> existing_ids);
 
 }  // namespace beebium
 

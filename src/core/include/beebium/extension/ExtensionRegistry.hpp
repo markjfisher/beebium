@@ -36,7 +36,23 @@ public:
     }
 
     // Register an extension for later initialisation.
+    //
+    // If the extension has no explicit `id` in its config (the usual
+    // case for any extension the user didn't tag with a CLI/preset
+    // `id=`), fill one in via make_extension_id() so that every
+    // registered extension is addressable by a unique, stable id.
+    // First instance of a type gets `id == manifest.name`; subsequent
+    // get the `name-N` suffix scheme.
     void register_extension(std::unique_ptr<PeripheralExtension> ext) {
+        if (ext->id().empty()) {
+            std::vector<std::string> existing;
+            existing.reserve(extensions_.size());
+            for (const auto& e : extensions_) {
+                existing.emplace_back(e->id());
+            }
+            ext->set_config_value(
+                "id", make_extension_id(ext->name(), existing));
+        }
         extensions_.push_back(std::move(ext));
     }
 

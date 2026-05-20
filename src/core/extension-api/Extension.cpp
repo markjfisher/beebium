@@ -19,8 +19,31 @@
 
 #include "beebium/extension/Extension.hpp"
 
+#include <algorithm>
+
 namespace beebium {
 
 Extension::~Extension() = default;
+
+std::string make_extension_id(
+    std::string_view manifest_name,
+    std::span<const std::string> existing_ids) {
+    auto is_taken = [&](std::string_view candidate) {
+        return std::any_of(
+            existing_ids.begin(), existing_ids.end(),
+            [&](const std::string& id) { return id == candidate; });
+    };
+
+    std::string candidate(manifest_name);
+    if (!is_taken(candidate)) {
+        return candidate;
+    }
+    for (std::size_t n = 1; ; ++n) {
+        candidate = std::string(manifest_name) + "-" + std::to_string(n);
+        if (!is_taken(candidate)) {
+            return candidate;
+        }
+    }
+}
 
 }  // namespace beebium

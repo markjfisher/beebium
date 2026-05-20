@@ -44,6 +44,17 @@ private:
     int marker_;
 };
 
+// Helper: produce a StubTransport with a manifest whose name is set,
+// so the registry's id auto-assignment has something to base its
+// candidate id on.
+std::unique_ptr<StubTransport> make_named_stub(std::string_view manifest_name) {
+    auto t = std::make_unique<StubTransport>();
+    ExtensionManifest m;
+    m.name = std::string(manifest_name);
+    t->set_manifest(std::move(m));
+    return t;
+}
+
 }  // namespace
 
 TEST_CASE("EconetTransportRegistry: starts empty", "[econet][transport][registry]") {
@@ -75,6 +86,40 @@ TEST_CASE("EconetTransportRegistry: preserves insertion order",
     REQUIRE(static_cast<StubTransport*>(exts[0].get())->marker() == 10);
     REQUIRE(static_cast<StubTransport*>(exts[1].get())->marker() == 20);
     REQUIRE(static_cast<StubTransport*>(exts[2].get())->marker() == 30);
+}
+
+TEST_CASE("EconetTransportRegistry: assigns id == manifest name for the first instance",
+          "[econet][transport][registry][identity]") {
+    EconetTransportRegistry registry;
+    auto t = make_named_stub("aun");
+    auto* ptr = t.get();
+    registry.add(std::move(t));
+    REQUIRE(ptr->id() == "aun");
+}
+
+TEST_CASE("EconetTransportRegistry: disambiguates multiple instances of the same type",
+          "[econet][transport][registry][identity]") {
+    // Future Acorn Econet Bridge machines will hold multiple
+    // transports; this test makes sure their auto-ids stay distinct.
+    EconetTransportRegistry registry;
+    auto a = make_named_stub("aun");
+    auto b = make_named_stub("aun");
+    auto* pa = a.get();
+    auto* pb = b.get();
+    registry.add(std::move(a));
+    registry.add(std::move(b));
+    REQUIRE(pa->id() == "aun");
+    REQUIRE(pb->id() == "aun-1");
+}
+
+TEST_CASE("EconetTransportRegistry: preserves an explicit user-set id",
+          "[econet][transport][registry][identity]") {
+    EconetTransportRegistry registry;
+    auto t = make_named_stub("aun");
+    t->set_config({{"id", "primary-link"}});
+    auto* ptr = t.get();
+    registry.add(std::move(t));
+    REQUIRE(ptr->id() == "primary-link");
 }
 
 TEST_CASE("EconetTransportRegistry: collect_grpc_services empty when extensions provide none",

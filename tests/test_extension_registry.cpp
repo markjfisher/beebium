@@ -62,6 +62,72 @@ int TrackingExtension::init_counter = 0;
 
 }  // namespace
 
+// MARK: - Auto-assignment of instance ids
+
+TEST_CASE("ExtensionRegistry assigns id == name for the first instance",
+          "[extension][registry][identity]") {
+    ExtensionRegistry registry;
+    auto ext = std::make_unique<TrackingExtension>("acorn-scsi");
+    auto* ptr = ext.get();
+    registry.register_extension(std::move(ext));
+
+    REQUIRE(ptr->id() == "acorn-scsi");
+}
+
+TEST_CASE("ExtensionRegistry disambiguates multiple instances of the same type",
+          "[extension][registry][identity]") {
+    ExtensionRegistry registry;
+
+    auto a = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    auto b = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    auto c = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    auto* pa = a.get();
+    auto* pb = b.get();
+    auto* pc = c.get();
+
+    registry.register_extension(std::move(a));
+    registry.register_extension(std::move(b));
+    registry.register_extension(std::move(c));
+
+    REQUIRE(pa->id() == "scsi-hard-disc");
+    REQUIRE(pb->id() == "scsi-hard-disc-1");
+    REQUIRE(pc->id() == "scsi-hard-disc-2");
+}
+
+TEST_CASE("ExtensionRegistry preserves an explicit user-set id",
+          "[extension][registry][identity]") {
+    ExtensionRegistry registry;
+    auto ext = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    ext->set_config({{"id", "boot-disc"}});
+    auto* ptr = ext.get();
+
+    registry.register_extension(std::move(ext));
+
+    REQUIRE(ptr->id() == "boot-disc");
+}
+
+TEST_CASE("ExtensionRegistry auto-id routes around an explicit collision",
+          "[extension][registry][identity]") {
+    ExtensionRegistry registry;
+
+    auto a = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    a->set_config({{"id", "scsi-hard-disc-1"}});  // explicit reservation
+
+    auto b = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    auto c = std::make_unique<TrackingExtension>("scsi-hard-disc");
+    auto* pa = a.get();
+    auto* pb = b.get();
+    auto* pc = c.get();
+
+    registry.register_extension(std::move(a));
+    registry.register_extension(std::move(b));
+    registry.register_extension(std::move(c));
+
+    REQUIRE(pa->id() == "scsi-hard-disc-1");
+    REQUIRE(pb->id() == "scsi-hard-disc");  // bare name is free
+    REQUIRE(pc->id() == "scsi-hard-disc-2");  // steps past the explicit -1
+}
+
 TEST_CASE("ExtensionRegistry inits extension with satisfied dependency",
           "[extension][registry]") {
     ExtensionRegistry registry;
