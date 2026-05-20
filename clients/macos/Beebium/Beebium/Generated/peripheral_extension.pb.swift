@@ -69,6 +69,12 @@ struct Beebium_ExtensionInfo: Sendable {
   /// from manifest
   var description_p: String = String()
 
+  /// True when the extension implements ExtensionUi (i.e. Extension::ui()
+  /// returns non-null). Frontends use this to decide which extensions are
+  /// worth opening an ExtensionUiService.SubscribeView stream to; ones
+  /// without a UI would just return NOT_FOUND.
+  var hasUi_p: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -153,7 +159,7 @@ extension Beebium_ListExtensionsResponse: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ExtensionInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}id\0\u{1}label\0\u{3}attaches_to\0\u{1}provides\0\u{1}config\0\u{1}parameters\0\u{1}description\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}id\0\u{1}label\0\u{3}attaches_to\0\u{1}provides\0\u{1}config\0\u{1}parameters\0\u{1}description\0\u{3}has_ui\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -169,6 +175,7 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       case 6: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.config) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.parameters) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.hasUi_p) }()
       default: break
       }
     }
@@ -199,6 +206,9 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.description_p.isEmpty {
       try visitor.visitSingularStringField(value: self.description_p, fieldNumber: 8)
     }
+    if self.hasUi_p != false {
+      try visitor.visitSingularBoolField(value: self.hasUi_p, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -211,6 +221,7 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if lhs.config != rhs.config {return false}
     if lhs.parameters != rhs.parameters {return false}
     if lhs.description_p != rhs.description_p {return false}
+    if lhs.hasUi_p != rhs.hasUi_p {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

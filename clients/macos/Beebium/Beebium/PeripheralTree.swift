@@ -30,6 +30,11 @@ struct PeripheralNode: Identifiable, Hashable {
     let primaryAttachment: String
     let secondaryAttachments: [String]
     let provides: [String]
+    /// True when the extension implements an ExtensionUi panel (i.e.
+    /// the server's Extension::ui() returned non-null). Drives whether
+    /// the sidebar opens an ExtensionUiService.SubscribeView stream
+    /// for this node; for `false`, the row is just the static label.
+    let hasUI: Bool
     var children: [PeripheralNode]
 
     /// Best human-readable name for the default (no-ExtensionUi) row.
@@ -151,6 +156,7 @@ struct PeripheralTree: Equatable {
                 primaryAttachment: primary,
                 secondaryAttachments: secondary,
                 provides: ext.provides,
+                hasUI: ext.hasUi_p,
                 children: []
             )
         }

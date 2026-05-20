@@ -23,7 +23,8 @@ final class PeripheralTreeTests: XCTestCase {
                       provides: [String] = [],
                       config: [String: String] = [:],
                       label: String? = nil,
-                      description: String = "") -> Beebium_ExtensionInfo {
+                      description: String = "",
+                      hasUI: Bool = false) -> Beebium_ExtensionInfo {
         var info = Beebium_ExtensionInfo()
         info.name = name
         info.id = id
@@ -32,6 +33,7 @@ final class PeripheralTreeTests: XCTestCase {
         info.attachesTo = attachesTo
         info.provides = provides
         info.config = config
+        info.hasUi_p = hasUI
         return info
     }
 
@@ -250,6 +252,41 @@ final class PeripheralTreeTests: XCTestCase {
     func testHumaniseTitleCasesUnknownTokens() {
         XCTAssertEqual(PeripheralNameFormatter.humanise("voltmace-delta-14b1"),
                        "Voltmace Delta 14b1")
+    }
+
+    // MARK: - has_ui propagation
+
+    func testHasUIPropagatesFromExtensionInfo() {
+        let withUI = info(name: "ui-bearing",
+                          id: "ui-bearing",
+                          attachesTo: ["1mhz-bus"],
+                          hasUI: true)
+        let withoutUI = info(name: "acorn-rtc",
+                             id: "acorn-rtc",
+                             attachesTo: ["user-port"],
+                             hasUI: false)
+
+        let tree = PeripheralTree.build(from: [withUI, withoutUI])
+
+        let pointMap = Dictionary(uniqueKeysWithValues:
+            tree.groups.map { ($0.extensionPoint, $0.nodes[0]) })
+
+        XCTAssertEqual(pointMap["1mhz-bus"]?.hasUI, true)
+        XCTAssertEqual(pointMap["user-port"]?.hasUI, false)
+    }
+
+    func testHasUIDefaultsToFalseWhenUnsetByServer() {
+        // Defensive: an info that never sets has_ui (a synthetic test
+        // input, or a server predating the field) must not silently
+        // claim to offer a UI panel.
+        var raw = Beebium_ExtensionInfo()
+        raw.name = "legacy"
+        raw.id = "legacy"
+        raw.attachesTo = ["1mhz-bus"]
+        // hasUi_p never assigned -- default is false.
+
+        let tree = PeripheralTree.build(from: [raw])
+        XCTAssertFalse(tree.groups[0].nodes[0].hasUI)
     }
 
     func testExtensionWithEmptyAttachesToBecomesOrphan() {

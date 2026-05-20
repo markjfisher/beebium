@@ -24,6 +24,11 @@ message ExtensionInfo {
     map<string, string> config = 6;         // current instance configuration
     repeated ParameterSchemaInfo parameters = 7;  // from manifest schema
     string description = 8;                 // from manifest
+    // True when the extension implements ExtensionUi (i.e. Extension::ui()
+    // returns non-null). Frontends use this to decide which extensions are
+    // worth opening an ExtensionUiService.SubscribeView stream to; ones
+    // without a UI would just return NOT_FOUND.
+    bool has_ui = 9;
 }
 
 message ParameterSchemaInfo {

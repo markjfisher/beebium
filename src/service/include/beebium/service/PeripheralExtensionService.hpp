@@ -38,6 +38,7 @@ public:
             info->set_id(std::string(ext->id()));
             info->set_label(std::string(ext->label()));
             info->set_description(std::string(ext->description()));
+            info->set_has_ui(ext->ui() != nullptr);
 
             for (auto dep : ext->attaches_to()) {
                 info->add_attaches_to(std::string(dep));
