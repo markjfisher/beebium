@@ -143,6 +143,16 @@ add_executable(test_scsi_hard_disc test_scsi_hard_disc.cpp)
 target_link_libraries(test_scsi_hard_disc PRIVATE beebium_scsi_core Catch2::Catch2WithMain)
 catch_discover_tests(test_scsi_hard_disc)
 
+# Tests for the ScsiHardDiscExtension wrapper (label composition,
+# config handling) -- separate from test_scsi_hard_disc which targets
+# the SCSI device itself.
+add_executable(test_scsi_hard_disc_extension test_scsi_hard_disc_extension.cpp)
+target_link_libraries(test_scsi_hard_disc_extension PRIVATE
+    beebium_ext_scsi_hard_disc
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_scsi_hard_disc_extension)
+
 # SCSI hard disc tests with real ADFS image
 add_executable(test_scsi_hard_disc_adfs test_scsi_hard_disc_adfs.cpp)
 target_link_libraries(test_scsi_hard_disc_adfs PRIVATE beebium_scsi_core Catch2::Catch2WithMain)

@@ -78,6 +78,60 @@ TEST_CASE("Extension label() still falls back to id when no label and no display
     REQUIRE(ext->label() == "my-id");
 }
 
+namespace {
+
+// Test fixture: a tiny Extension subclass that overrides default_label()
+// to compose a name from the manifest display_name + a config field.
+// Mirrors the pattern that ScsiHardDiscExtension uses for "(ID N)".
+class LabelComposingExtension : public Extension {
+public:
+    std::string default_label() const override {
+        auto base = Extension::default_label();
+        if (auto slot = config_value("slot")) {
+            return base + " #" + std::string(*slot);
+        }
+        return base;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("Extension subclass can override default_label() to fold in config",
+          "[extension][identity]") {
+    LabelComposingExtension ext;
+    ExtensionManifest m;
+    m.name = "thing";
+    m.display_name = "Thing";
+    ext.set_manifest(std::move(m));
+    ext.set_config({{"id", "thing-1"}, {"slot", "3"}});
+    REQUIRE(ext.label() == "Thing #3");
+}
+
+TEST_CASE("Extension explicit label still wins over a subclass-computed default",
+          "[extension][identity]") {
+    // The override is *only* consulted when no explicit per-instance
+    // label was given. Users can always force a name from the CLI.
+    LabelComposingExtension ext;
+    ExtensionManifest m;
+    m.name = "thing";
+    m.display_name = "Thing";
+    ext.set_manifest(std::move(m));
+    ext.set_config({{"id", "thing-1"}, {"slot", "3"},
+                    {"label", "Bespoke Name"}});
+    REQUIRE(ext.label() == "Bespoke Name");
+}
+
+TEST_CASE("Extension default_label() returns display_name when subclass does not override",
+          "[extension][identity]") {
+    // Verifies the base-class default_label() implementation: returns
+    // the manifest display_name (or id if no display_name). This is
+    // what the unaltered label() chain already exercises, but stating
+    // the contract explicitly makes the inheritance API obvious.
+    auto ext = TestScratchRam::create();
+    ext->set_config({{"id", "my-id"}});
+    REQUIRE(ext->default_label() == "Test Scratch RAM");
+}
+
 TEST_CASE("Extension config_value() returns value for known key", "[extension][identity]") {
     auto ext = TestScratchRam::create();
     ext->set_config({{"foo", "bar"}, {"baz", "42"}});

@@ -37,6 +37,13 @@ std::unique_ptr<ScsiHardDiscExtension> ScsiHardDiscExtension::create() {
     return ext;
 }
 
+std::string ScsiHardDiscExtension::default_label() const {
+    if (auto scsi_id = config_value("scsi-id")) {
+        return "Hard Disc (SCSI ID " + std::string(*scsi_id) + ")";
+    }
+    return Extension::default_label();
+}
+
 void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
     // Discover the SCSI adapter via the "scsi" extension point.
     // If adapter-id is specified, look up a specific adapter; otherwise use the default.

@@ -58,6 +58,12 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
+    // Fold the SCSI target ID into the default label so that multiple
+    // drives on the same adapter render distinguishably in the
+    // Peripherals sidebar. "SCSI" is omitted from the type word
+    // because the row sits under the parent SCSI Bus section already.
+    std::string default_label() const override;
+
 private:
     std::filesystem::path image_filepath_;
     uint8_t scsi_id_ = 0;

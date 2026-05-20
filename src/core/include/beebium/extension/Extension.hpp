@@ -100,25 +100,35 @@ public:
 
     // Display label for this instance.
     //
-    // Fallback chain:
+    // Resolution order:
     //   1. config["label"] -- user override (CLI: `--ext label="Foo"`)
-    //   2. manifest.display_name -- the type's friendly default
-    //   3. id() -- last resort when nothing else is set
+    //   2. default_label() -- subclass hook for type-specific defaults
     //
-    // Putting the type-level default here means every extension
-    // instance carries a sensible label out of the box, so frontends
-    // can render it directly without having to know about specific
-    // extension types or fall back to manifest descriptions (which
-    // are catalogue prose, not row labels).
-    std::string_view label() const {
+    // This is non-virtual so the "explicit label wins" rule cannot be
+    // accidentally broken by an override; subclasses customise via
+    // default_label() instead.
+    std::string label() const {
         auto it = config_.find("label");
         if (it != config_.end() && !it->second.empty()) {
-            return std::string_view(it->second);
+            return it->second;
         }
+        return default_label();
+    }
+
+    // Hook for subclasses that want to compose a label from manifest
+    // metadata + config (e.g. a SCSI HDD that folds its target ID
+    // into "Hard Disc (SCSI ID 0)" so multiple drives are visually
+    // distinct in the sidebar).
+    //
+    // The base implementation returns the manifest display_name, or
+    // the instance id if no display_name is set -- preserving the
+    // pre-override fallback chain for extensions that need no
+    // composition.
+    virtual std::string default_label() const {
         if (!manifest_.display_name.empty()) {
-            return std::string_view(manifest_.display_name);
+            return manifest_.display_name;
         }
-        return id();
+        return std::string(id());
     }
 
     // Extension name (default reads from manifest; can be overridden).
