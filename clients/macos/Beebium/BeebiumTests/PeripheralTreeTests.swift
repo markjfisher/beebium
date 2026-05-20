@@ -194,29 +194,43 @@ final class PeripheralTreeTests: XCTestCase {
         XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Spare-Parts SCSI")
     }
 
-    func testDisplayNameFallsBackToDescriptionWhenLabelEqualsId() {
+    func testDisplayNameUsesKnownTypeTableWhenLabelEqualsId() {
         // server falls back to id when no user-given label exists; the
         // tree's displayName must recognise that pattern and prefer
-        // the manifest description instead.
+        // the client-side known-type display name. Note that the
+        // manifest description -- often a verbose catalogue line --
+        // is deliberately NOT consulted.
         let scsi = info(name: "acorn-scsi",
                         id: "acorn-scsi-1234",
                         attachesTo: ["1mhz-bus"],
                         provides: ["scsi"],
                         label: "acorn-scsi-1234",
-                        description: "Acorn SCSI host adapter")
+                        description: "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)")
         let tree = PeripheralTree.build(from: [scsi])
-        XCTAssertEqual(tree.groups[0].nodes[0].displayName,
-                       "Acorn SCSI host adapter")
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "SCSI Adapter")
     }
 
-    func testDisplayNameFallsBackToHumanisedNameWhenLabelAndDescriptionAreUnhelpful() {
-        let rtc = info(name: "acorn-rtc",
-                       id: "acorn-rtc-1",
-                       attachesTo: ["user-port"],
-                       label: "acorn-rtc-1",
-                       description: "")
-        let tree = PeripheralTree.build(from: [rtc])
-        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Acorn RTC")
+    func testDisplayNameIgnoresDescription() {
+        // The description is catalogue prose, not a sidebar label. An
+        // unknown type with a useful description still falls through
+        // to humanise(name) rather than borrowing the description.
+        let unknown = info(name: "wacky-widget",
+                           id: "wacky-widget-1",
+                           attachesTo: ["1mhz-bus"],
+                           label: "wacky-widget-1",
+                           description: "A Most Splendid Widget")
+        let tree = PeripheralTree.build(from: [unknown])
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Wacky Widget")
+    }
+
+    func testDisplayNameFallsBackToHumanisedNameForUnknownType() {
+        let oddball = info(name: "frobnicator-mark-ii",
+                           id: "frobnicator-mark-ii-1",
+                           attachesTo: ["user-port"],
+                           label: "frobnicator-mark-ii-1")
+        let tree = PeripheralTree.build(from: [oddball])
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName,
+                       "Frobnicator Mark Ii")
     }
 
     func testHumaniseUpperCasesKnownAcronyms() {

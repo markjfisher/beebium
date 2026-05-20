@@ -38,23 +38,72 @@ struct PeripheralNode: Identifiable, Hashable {
     /// 1. `label` if it was explicitly set (i.e. distinct from `id`,
     ///    which is the server's default fallback when no label was
     ///    given by the user).
-    /// 2. `description` from the manifest (typically a short prose
-    ///    name like "Acorn SCSI host adapter").
-    /// 3. A humanised form of the manifest `name` slug.
+    /// 2. Built-in display name for the manifest `name` slug, if
+    ///    known to the client.
+    /// 3. A humanised form of the slug.
+    ///
+    /// The manifest `description` is deliberately NOT in this chain --
+    /// descriptions are catalogue prose (often with parenthetical
+    /// detail), too long for a sidebar row. If out-of-tree plugins
+    /// ever appear and want to ship their own display name, we can
+    /// add a `display_name` field to the manifest then.
     var displayName: String {
         if !label.isEmpty && label != id {
             return label
         }
-        if !description.isEmpty {
-            return description
+        if let known = PeripheralLabels.extensionType(name) {
+            return known
         }
         return PeripheralNameFormatter.humanise(name)
     }
 }
 
+/// Display-name lookup tables for the Peripherals sidebar.
+///
+/// Two distinct mappings, both keyed by the canonical slug:
+/// - `extensionPoint(_:)` for the section headers and multi-attach
+///   badges ("1mhz-bus" -> "1 MHz Bus").
+/// - `extensionType(_:)` for the default row, when no per-instance
+///   label has been set ("acorn-scsi" -> "SCSI Adapter").
+///
+/// Returning the slug unchanged (for `extensionPoint`) or nil (for
+/// `extensionType`) for unknown keys keeps the view honest: nothing
+/// silently disappears, and the displayName fallback chain in
+/// `PeripheralNode.displayName` falls through to a humanised slug if
+/// the type is unknown.
+enum PeripheralLabels {
+    private static let extensionPointNames: [String: String] = [
+        "1mhz-bus": "1 MHz Bus",
+        "user-port": "User Port",
+        "tube": "Tube",
+        "scsi": "SCSI Bus",
+        "analogue-port": "Analogue Port",
+        "printer-port": "Printer Port",
+        "serial-port": "Serial Port",
+    ]
+
+    private static let extensionTypeNames: [String: String] = [
+        "acorn-scsi": "SCSI Adapter",
+        "scsi-hard-disc": "SCSI HDD",
+        "acorn-rtc": "Real-Time Clock",
+        "piconet": "Piconet",
+        "acorn-65c02-coprocessor": "65C02 Co-processor",
+        "test-scratch-ram": "Test Scratch RAM",
+    ]
+
+    static func extensionPoint(_ name: String) -> String {
+        extensionPointNames[name] ?? name
+    }
+
+    static func extensionType(_ name: String) -> String? {
+        extensionTypeNames[name]
+    }
+}
+
 /// Title-cases a manifest name slug (kebab-case) into a human-friendly
 /// form, upper-casing well-known acronyms. Used as the last-resort
-/// fallback when an extension has no explicit label or description.
+/// fallback when an extension has no explicit label and isn't in the
+/// client's known-type table.
 enum PeripheralNameFormatter {
     private static let acronyms: Set<String> = [
         "scsi", "rtc", "usb", "aun", "adfs", "dfs", "nfs",

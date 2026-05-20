@@ -191,27 +191,6 @@ private struct PeripheralNodeRow: View {
     }
 }
 
-// MARK: - Labels
-
-/// Display-name lookup for built-in extension points. Returns the
-/// extension point name unchanged when nothing nicer is registered,
-/// so unknown / future points still render rather than vanishing.
-enum PeripheralLabels {
-    private static let names: [String: String] = [
-        "1mhz-bus": "1 MHz Bus",
-        "user-port": "User Port",
-        "tube": "Tube",
-        "scsi": "SCSI Bus",
-        "analogue-port": "Analogue Port",
-        "printer-port": "Printer Port",
-        "serial-port": "Serial Port",
-    ]
-
-    static func extensionPoint(_ name: String) -> String {
-        names[name] ?? name
-    }
-}
-
 #if DEBUG
 struct PeripheralsModeView_Previews: PreviewProvider {
     static var previews: some View {
