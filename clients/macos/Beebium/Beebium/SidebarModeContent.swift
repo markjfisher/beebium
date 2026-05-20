@@ -53,7 +53,8 @@ struct SidebarModeContent: View {
             case .memory:
                 MemoryModeView()
             case .peripherals:
-                PeripheralsModeView(client: peripheralsClient)
+                PeripheralsModeView(client: peripheralsClient,
+                                    extensionUiClient: extensionUiClient)
             case .video:
                 VideoModeView(videoSettings: videoSettings)
             case .sound:

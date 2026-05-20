@@ -18,12 +18,14 @@ import SwiftUI
 /// primary attachment with the other extension points shown as
 /// secondary badges.
 ///
-/// This first cut renders peripheral identity and configuration only.
-/// Future iterations will fold in per-peripheral ExtensionUi panels
-/// (Indicator, Button, etc.) using the same declarative framework the
-/// Network sidebar uses for AUN and Piconet.
+/// For each node whose extension implements ExtensionUi (the server-
+/// side has_ui flag arrives via PeripheralExtensionService), the row
+/// title is followed by the extension's declarative panel rendered
+/// via ExtensionPanelView -- the same framework the Network sidebar
+/// uses for AUN and Piconet.
 struct PeripheralsModeView: View {
     @ObservedObject var client: PeripheralsClient
+    @ObservedObject var extensionUiClient: ExtensionUiClient
 
     var body: some View {
         Group {
@@ -97,13 +99,15 @@ struct PeripheralsModeView: View {
                     if index > 0 {
                         Divider().padding(.horizontal, 12)
                     }
-                    ExtensionPointSection(group: group)
+                    ExtensionPointSection(group: group,
+                                          extensionUiClient: extensionUiClient)
                 }
                 if !client.tree.orphans.isEmpty {
                     if !client.tree.groups.isEmpty {
                         Divider().padding(.horizontal, 12)
                     }
-                    OrphanSection(orphans: client.tree.orphans)
+                    OrphanSection(orphans: client.tree.orphans,
+                                  extensionUiClient: extensionUiClient)
                 }
             }
             .padding(.vertical, 8)
@@ -115,6 +119,7 @@ struct PeripheralsModeView: View {
 
 private struct ExtensionPointSection: View {
     let group: PeripheralTree.ExtensionPointGroup
+    @ObservedObject var extensionUiClient: ExtensionUiClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -126,7 +131,9 @@ private struct ExtensionPointSection: View {
                 .padding(.bottom, 2)
 
             ForEach(group.nodes) { node in
-                PeripheralNodeRow(node: node, depth: 0)
+                PeripheralNodeRow(node: node,
+                                  depth: 0,
+                                  extensionUiClient: extensionUiClient)
             }
         }
     }
@@ -134,6 +141,7 @@ private struct ExtensionPointSection: View {
 
 private struct OrphanSection: View {
     let orphans: [PeripheralNode]
+    @ObservedObject var extensionUiClient: ExtensionUiClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -145,7 +153,9 @@ private struct OrphanSection: View {
                 .padding(.bottom, 2)
 
             ForEach(orphans) { node in
-                PeripheralNodeRow(node: node, depth: 0)
+                PeripheralNodeRow(node: node,
+                                  depth: 0,
+                                  extensionUiClient: extensionUiClient)
             }
         }
     }
@@ -156,6 +166,7 @@ private struct OrphanSection: View {
 private struct PeripheralNodeRow: View {
     let node: PeripheralNode
     let depth: Int
+    @ObservedObject var extensionUiClient: ExtensionUiClient
 
     private var leadingPadding: CGFloat {
         // 16pt base indent for the section + 16pt per nesting level.
@@ -184,8 +195,23 @@ private struct PeripheralNodeRow: View {
             .padding(.trailing, 16)
             .padding(.vertical, 4)
 
+            // ExtensionUi panel for this node, when the server signalled
+            // that the extension implements one. ExtensionPanelView
+            // manages its own subscribe/unsubscribe lifecycle via
+            // onAppear/onDisappear; switching sidebar mode tears down
+            // the view tree and releases the stream.
+            if node.hasUI {
+                ExtensionPanelView(client: extensionUiClient,
+                                   extensionID: node.id)
+                    .padding(.leading, leadingPadding + 16)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 4)
+            }
+
             ForEach(node.children) { child in
-                PeripheralNodeRow(node: child, depth: depth + 1)
+                PeripheralNodeRow(node: child,
+                                  depth: depth + 1,
+                                  extensionUiClient: extensionUiClient)
             }
         }
     }
@@ -194,7 +220,8 @@ private struct PeripheralNodeRow: View {
 #if DEBUG
 struct PeripheralsModeView_Previews: PreviewProvider {
     static var previews: some View {
-        PeripheralsModeView(client: PeripheralsClient())
+        PeripheralsModeView(client: PeripheralsClient(),
+                            extensionUiClient: ExtensionUiClient())
             .frame(width: 280, height: 400)
     }
 }
