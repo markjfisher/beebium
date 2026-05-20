@@ -115,6 +115,22 @@ struct PeripheralsModeView: View {
     }
 }
 
+// MARK: - View helpers
+
+private extension View {
+    /// Apply SwiftUI's `.help(_:)` modifier only when `text` is
+    /// non-empty. Avoids attaching an empty help string, which
+    /// accessibility tools may announce as an empty hint.
+    @ViewBuilder
+    func helpIfPresent(_ text: String) -> some View {
+        if text.isEmpty {
+            self
+        } else {
+            self.help(text)
+        }
+    }
+}
+
 // MARK: - Sections
 
 private struct ExtensionPointSection: View {
@@ -194,6 +210,16 @@ private struct PeripheralNodeRow: View {
             .padding(.leading, leadingPadding)
             .padding(.trailing, 16)
             .padding(.vertical, 4)
+            // The manifest description is verbose catalogue text --
+            // address ranges, chip part numbers, file-format notes --
+            // that's too long for the inline row but useful when
+            // someone genuinely wants to know what they're looking
+            // at. Surface it as hover help on the row title only
+            // (not on the whole VStack, which would catch the child
+            // panel and child rows too). Skip the modifier entirely
+            // for descriptionless extensions so accessibility tools
+            // don't announce a spurious empty help string.
+            .helpIfPresent(node.description)
 
             // ExtensionUi panel for this node, when the server signalled
             // that the extension implements one. ExtensionPanelView
