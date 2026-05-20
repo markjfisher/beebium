@@ -3,6 +3,7 @@
 # Static library (for tests and potential built-in use on Master AIV)
 add_library(beebium_ext_scsi_hard_disc STATIC
     ScsiHardDiscExtension.cpp
+    ScsiHardDiscUi.cpp
 )
 
 target_include_directories(beebium_ext_scsi_hard_disc
@@ -13,12 +14,16 @@ target_link_libraries(beebium_ext_scsi_hard_disc
     PUBLIC
         beebium_scsi_core
         beebium_ext_acorn_scsi
+        # ScsiHardDiscUi.cpp pulls in extension_ui.pb.h for the
+        # View / DispatchRequest types it composes.
+        beebium_extension_ui_proto
 )
 
 # Shared library (plugin)
 if(BEEBIUM_BUILD_SERVICE)
     add_library(beebium_ext_scsi_hard_disc_plugin SHARED
         ScsiHardDiscExtension.cpp
+        ScsiHardDiscUi.cpp
         plugin_entry.cpp
     )
 
@@ -34,6 +39,9 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(beebium_ext_scsi_hard_disc_plugin
         PRIVATE
             beebium_scsi_core
+            # ScsiHardDiscUi.cpp pulls in extension_ui.pb.h for the
+            # View / DispatchRequest types it composes.
+            beebium_extension_ui_proto
     )
 
     set_target_properties(beebium_ext_scsi_hard_disc_plugin PROPERTIES

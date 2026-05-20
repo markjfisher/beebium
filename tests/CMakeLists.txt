@@ -153,6 +153,15 @@ target_link_libraries(test_scsi_hard_disc_extension PRIVATE
 )
 catch_discover_tests(test_scsi_hard_disc_extension)
 
+# Tests for ScsiHardDiscUi (build_view shape, capacity formatter).
+add_executable(test_scsi_hard_disc_ui test_scsi_hard_disc_ui.cpp)
+target_link_libraries(test_scsi_hard_disc_ui PRIVATE
+    beebium_ext_scsi_hard_disc
+    beebium_extension_ui_proto
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_scsi_hard_disc_ui)
+
 # SCSI hard disc tests with real ADFS image
 add_executable(test_scsi_hard_disc_adfs test_scsi_hard_disc_adfs.cpp)
 target_link_libraries(test_scsi_hard_disc_adfs PRIVATE beebium_scsi_core Catch2::Catch2WithMain)

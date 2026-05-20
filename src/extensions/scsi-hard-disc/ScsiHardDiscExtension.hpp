@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_SCSI_HARD_DISC_EXTENSION_HPP
 #define BEEBIUM_SCSI_HARD_DISC_EXTENSION_HPP
 
+#include "ScsiHardDiscUi.hpp"
+
 #include <beebium/extension/PeripheralExtension.hpp>
 
 #include <cstdint>
@@ -64,11 +66,25 @@ public:
     // because the row sits under the parent SCSI Bus section already.
     std::string default_label() const override;
 
+    // ExtensionUi panel for the Peripherals sidebar. Returns a stable
+    // pointer (owned by this extension) showing the disc capacity.
+    ExtensionUi* ui() override { return &ui_; }
+
+    // Total capacity of the loaded disc image in 256-byte sectors.
+    // Set by init() from HardDiskImage::total_sectors() once the
+    // image is opened; remains 0 if no image was configured. Public
+    // for direct injection from tests that exercise the UI without
+    // going through init().
+    uint32_t total_sectors() const { return total_sectors_; }
+    void set_total_sectors(uint32_t n) { total_sectors_ = n; }
+
 private:
     std::filesystem::path image_filepath_;
     uint8_t scsi_id_ = 0;
+    uint32_t total_sectors_ = 0;
     std::unique_ptr<ScsiHardDisc> disc_;
     PeripheralExtension* adapter_ = nullptr;  // non-owning, from context
+    ScsiHardDiscUi ui_{*this};
 };
 
 }  // namespace beebium
