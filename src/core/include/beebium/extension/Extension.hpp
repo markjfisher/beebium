@@ -98,11 +98,25 @@ public:
         return (it != config_.end()) ? std::string_view(it->second) : std::string_view{};
     }
 
-    // Display label (from config["label"], falls back to id).
+    // Display label for this instance.
+    //
+    // Fallback chain:
+    //   1. config["label"] -- user override (CLI: `--ext label="Foo"`)
+    //   2. manifest.display_name -- the type's friendly default
+    //   3. id() -- last resort when nothing else is set
+    //
+    // Putting the type-level default here means every extension
+    // instance carries a sensible label out of the box, so frontends
+    // can render it directly without having to know about specific
+    // extension types or fall back to manifest descriptions (which
+    // are catalogue prose, not row labels).
     std::string_view label() const {
         auto it = config_.find("label");
         if (it != config_.end() && !it->second.empty()) {
             return std::string_view(it->second);
+        }
+        if (!manifest_.display_name.empty()) {
+            return std::string_view(manifest_.display_name);
         }
         return id();
     }

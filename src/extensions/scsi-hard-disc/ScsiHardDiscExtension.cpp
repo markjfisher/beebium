@@ -30,6 +30,7 @@ std::unique_ptr<ScsiHardDiscExtension> ScsiHardDiscExtension::create() {
     auto ext = std::unique_ptr<ScsiHardDiscExtension>(new ScsiHardDiscExtension());
     ext->set_manifest(ExtensionManifest{
         .name = "scsi-hard-disc",
+        .display_name = "SCSI Hard Disc",
         .description = "SCSI hard disc target (DAT+DSC image)",
         .library_stem = "scsi-hard-disc",
     });

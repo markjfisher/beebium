@@ -34,43 +34,31 @@ struct PeripheralNode: Identifiable, Hashable {
 
     /// Best human-readable name for the default (no-ExtensionUi) row.
     ///
-    /// Falls through in order:
-    /// 1. `label` if it was explicitly set (i.e. distinct from `id`,
-    ///    which is the server's default fallback when no label was
-    ///    given by the user).
-    /// 2. Built-in display name for the manifest `name` slug, if
-    ///    known to the client.
-    /// 3. A humanised form of the slug.
-    ///
-    /// The manifest `description` is deliberately NOT in this chain --
-    /// descriptions are catalogue prose (often with parenthetical
-    /// detail), too long for a sidebar row. If out-of-tree plugins
-    /// ever appear and want to ship their own display name, we can
-    /// add a `display_name` field to the manifest then.
+    /// The server's Extension::label() already implements the right
+    /// fallback chain (explicit per-instance label > manifest
+    /// display_name > id), so the client trusts whatever it receives
+    /// in `label`. The humaniser is a defensive last resort for the
+    /// degenerate case of a manifest with no display_name and an
+    /// instance with no explicit label and no id -- which the server
+    /// contract should never produce, but no point crashing if it
+    /// somehow does.
     var displayName: String {
         if !label.isEmpty && label != id {
             return label
-        }
-        if let known = PeripheralLabels.extensionType(name) {
-            return known
         }
         return PeripheralNameFormatter.humanise(name)
     }
 }
 
-/// Display-name lookup tables for the Peripherals sidebar.
+/// Display-name lookup for built-in extension points -- the parent
+/// sockets things plug into (1mhz-bus, user-port, ...). Unlike
+/// extension types, these names are not declared in any manifest;
+/// they're framework-level concepts owned by the server core, so it's
+/// appropriate for the client to spell them out.
 ///
-/// Two distinct mappings, both keyed by the canonical slug:
-/// - `extensionPoint(_:)` for the section headers and multi-attach
-///   badges ("1mhz-bus" -> "1 MHz Bus").
-/// - `extensionType(_:)` for the default row, when no per-instance
-///   label has been set ("acorn-scsi" -> "SCSI Adapter").
-///
-/// Returning the slug unchanged (for `extensionPoint`) or nil (for
-/// `extensionType`) for unknown keys keeps the view honest: nothing
-/// silently disappears, and the displayName fallback chain in
-/// `PeripheralNode.displayName` falls through to a humanised slug if
-/// the type is unknown.
+/// Returning the slug unchanged for unknown keys keeps the view
+/// honest: a future extension point we haven't named here still
+/// renders, just less prettily.
 enum PeripheralLabels {
     private static let extensionPointNames: [String: String] = [
         "1mhz-bus": "1 MHz Bus",
@@ -82,21 +70,8 @@ enum PeripheralLabels {
         "serial-port": "Serial Port",
     ]
 
-    private static let extensionTypeNames: [String: String] = [
-        "acorn-scsi": "Acorn SCSI Host Adapter",
-        "scsi-hard-disc": "SCSI Hard Disc",
-        "acorn-rtc": "Acorn Real-Time Clock",
-        "piconet": "Piconet",
-        "acorn-65c02-coprocessor": "65C02 Co-processor",
-        "test-scratch-ram": "Test Scratch RAM",
-    ]
-
     static func extensionPoint(_ name: String) -> String {
         extensionPointNames[name] ?? name
-    }
-
-    static func extensionType(_ name: String) -> String? {
-        extensionTypeNames[name]
     }
 }
 

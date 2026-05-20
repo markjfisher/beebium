@@ -28,7 +28,8 @@ namespace beebium {
 // The manifest is the single source of truth for extension metadata.
 struct BEEBIUM_EXT_API ExtensionManifest {
     std::string name;             // e.g. "scsi-hard-disc" (canonical type name)
-    std::string description;      // human-readable description
+    std::string display_name;     // short noun-phrase used as the default per-instance label
+    std::string description;      // human-readable description (longer prose / catalogue line)
     std::string library_stem;     // shared library filename stem (platform adds suffix)
     std::string cli_name;         // short CLI alias (e.g. "scsi-hdd"); defaults to name
     std::string extension_kind = "peripheral";  // "peripheral" | "econet-transport"

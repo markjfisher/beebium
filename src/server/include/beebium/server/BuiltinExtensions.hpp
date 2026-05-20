@@ -59,6 +59,7 @@ inline std::vector<Entry> make_entries() {
     {
         ExtensionManifest m;
         m.name = "acorn-65c02-coprocessor";
+        m.display_name = "Acorn 65C02 Co-processor";
         m.description = "Acorn 65C02 3 MHz second processor";
         m.cli_name = "tube-65c02";
         m.extension_kind = "peripheral";
@@ -83,6 +84,7 @@ inline std::vector<Entry> make_entries() {
     {
         ExtensionManifest m;
         m.name = "aun";
+        m.display_name = "AUN Transport";
         m.description = "AUN (Acorn Universal Networking) UDP econet transport";
         m.cli_name = "aun";
         m.extension_kind = "econet-transport";

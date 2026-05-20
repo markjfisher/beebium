@@ -107,6 +107,7 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
 
     ExtensionManifest manifest;
     manifest.name = j.value("name", "");
+    manifest.display_name = j.value("display_name", "");
     manifest.description = j.value("description", "");
     manifest.library_stem = j.value("library", "");
     manifest.cli_name = j.value("cli", "");

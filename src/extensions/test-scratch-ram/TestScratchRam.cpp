@@ -21,12 +21,10 @@ TestScratchRam::~TestScratchRam() = default;
 std::unique_ptr<TestScratchRam> TestScratchRam::create() {
     auto ext = std::unique_ptr<TestScratchRam>(new TestScratchRam());
     ext->set_manifest(ExtensionManifest{
-        "test-scratch-ram",
-        "8 bytes of scratch RAM at 0xFC80 (Test Hardware) for framework testing",
-        "test-scratch-ram",
-        {},   // cli_name (uses name)
-        {},   // manifest_dirpath (built-in, no manifest file)
-        {},   // parameters
+        .name = "test-scratch-ram",
+        .display_name = "Test Scratch RAM",
+        .description = "8 bytes of scratch RAM at 0xFC80 (Test Hardware) for framework testing",
+        .library_stem = "test-scratch-ram",
     });
     return ext;
 }

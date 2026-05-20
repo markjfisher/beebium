@@ -49,6 +49,9 @@ TEST_CASE("PluginLoader scan_manifests finds manifests in directory",
     REQUIRE(manifest->name == "test-scratch-ram");
     REQUIRE(manifest->library_stem == "test-scratch-ram");
     REQUIRE_FALSE(manifest->description.empty());
+    // display_name is parsed from the manifest and used as the per-instance
+    // label default by Extension::label() when no explicit label is given.
+    REQUIRE(manifest->display_name == "Test Scratch RAM");
     // Manifests without an explicit extension_kind default to "peripheral".
     REQUIRE(manifest->extension_kind == "peripheral");
 }

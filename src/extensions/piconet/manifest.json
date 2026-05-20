@@ -1,5 +1,6 @@
 {
     "name": "piconet",
+    "display_name": "Piconet",
     "description": "Piconet USB-CDC bridge to a real Econet network",
     "library": "piconet",
     "cli": "piconet",

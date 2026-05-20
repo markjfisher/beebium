@@ -24,6 +24,7 @@ std::unique_ptr<AcornScsiHostAdapter> AcornScsiHostAdapter::create() {
     auto adapter = std::unique_ptr<AcornScsiHostAdapter>(new AcornScsiHostAdapter());
     adapter->set_manifest(ExtensionManifest{
         .name = "acorn-scsi",
+        .display_name = "Acorn SCSI Host Adapter",
         .description = "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)",
         .library_stem = "acorn-scsi",
     });

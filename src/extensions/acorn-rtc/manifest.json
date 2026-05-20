@@ -1,5 +1,6 @@
 {
     "name": "acorn-rtc",
+    "display_name": "Acorn Real-Time Clock",
     "description": "Acorn User Port Real Time Clock Module (SAF3019P)",
     "library": "acorn-rtc",
     "cli": "acorn-rtc",

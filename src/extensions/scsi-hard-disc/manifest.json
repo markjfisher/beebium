@@ -1,5 +1,6 @@
 {
     "name": "scsi-hard-disc",
+    "display_name": "SCSI Hard Disc",
     "description": "SCSI hard disc target (DAT+DSC image)",
     "library": "scsi-hard-disc",
     "cli": "scsi-hdd",

@@ -1,5 +1,6 @@
 {
     "name": "acorn-scsi",
+    "display_name": "Acorn SCSI Host Adapter",
     "description": "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)",
     "library": "acorn-scsi",
     "cli": "acorn-scsi",

@@ -194,17 +194,15 @@ final class PeripheralTreeTests: XCTestCase {
         XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Spare-Parts SCSI")
     }
 
-    func testDisplayNameUsesKnownTypeTableWhenLabelEqualsId() {
-        // server falls back to id when no user-given label exists; the
-        // tree's displayName must recognise that pattern and prefer
-        // the client-side known-type display name. Note that the
-        // manifest description -- often a verbose catalogue line --
-        // is deliberately NOT consulted.
+    func testDisplayNameTrustsServerLabel() {
+        // The server's Extension::label() resolves the chain
+        // (explicit-label > manifest.display_name > id) and sends the
+        // result here. The client just uses what arrives.
         let scsi = info(name: "acorn-scsi",
                         id: "acorn-scsi-1234",
                         attachesTo: ["1mhz-bus"],
                         provides: ["scsi"],
-                        label: "acorn-scsi-1234",
+                        label: "Acorn SCSI Host Adapter",
                         description: "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)")
         let tree = PeripheralTree.build(from: [scsi])
         XCTAssertEqual(tree.groups[0].nodes[0].displayName,
@@ -212,9 +210,12 @@ final class PeripheralTreeTests: XCTestCase {
     }
 
     func testDisplayNameIgnoresDescription() {
-        // The description is catalogue prose, not a sidebar label. An
-        // unknown type with a useful description still falls through
-        // to humanise(name) rather than borrowing the description.
+        // The description is catalogue prose, not a sidebar label.
+        // When the server sends a label that equals the id (i.e.
+        // neither an explicit label nor a manifest display_name was
+        // available), the client falls through to humanise(name),
+        // NOT to the description -- even when the description would
+        // be more informative.
         let unknown = info(name: "wacky-widget",
                            id: "wacky-widget-1",
                            attachesTo: ["1mhz-bus"],
@@ -224,7 +225,10 @@ final class PeripheralTreeTests: XCTestCase {
         XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Wacky Widget")
     }
 
-    func testDisplayNameFallsBackToHumanisedNameForUnknownType() {
+    func testDisplayNameFallsBackToHumanisedNameForLabellessExtension() {
+        // Defensive last-resort path: an extension whose server-sent
+        // label is identical to its id (no manifest display_name, no
+        // explicit override) still renders as something readable.
         let oddball = info(name: "frobnicator-mark-ii",
                            id: "frobnicator-mark-ii-1",
                            attachesTo: ["user-port"],
