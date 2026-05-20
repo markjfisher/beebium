@@ -83,9 +83,9 @@ enum PeripheralLabels {
     ]
 
     private static let extensionTypeNames: [String: String] = [
-        "acorn-scsi": "SCSI Adapter",
-        "scsi-hard-disc": "SCSI HDD",
-        "acorn-rtc": "Real-Time Clock",
+        "acorn-scsi": "Acorn SCSI Host Adapter",
+        "scsi-hard-disc": "SCSI Hard Disc",
+        "acorn-rtc": "Acorn Real-Time Clock",
         "piconet": "Piconet",
         "acorn-65c02-coprocessor": "65C02 Co-processor",
         "test-scratch-ram": "Test Scratch RAM",

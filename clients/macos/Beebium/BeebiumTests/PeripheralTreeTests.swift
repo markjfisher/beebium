@@ -207,7 +207,8 @@ final class PeripheralTreeTests: XCTestCase {
                         label: "acorn-scsi-1234",
                         description: "Acorn SCSI Host Adapter for 1 MHz bus (0xFC40-0xFC43)")
         let tree = PeripheralTree.build(from: [scsi])
-        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "SCSI Adapter")
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName,
+                       "Acorn SCSI Host Adapter")
     }
 
     func testDisplayNameIgnoresDescription() {
