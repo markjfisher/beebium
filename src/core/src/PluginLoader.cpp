@@ -46,12 +46,36 @@ using CreateExtensionFn = Extension* (*)(const ExtensionManifest&);
 // available for subsequently loaded plugins to resolve against. This is
 // needed for provider plugins (e.g. acorn-scsi provides "scsi") whose
 // symbols are used by child plugins (e.g. scsi-hard-disc).
+//
+// RTLD_NODELETE: belt-and-braces with the no-op destructor below.
+//
+// The motivating reason is protobuf's global generated-descriptor pool:
+// every .pb.cc registers its file descriptor during static
+// initialisation, the pool has process-scope lifetime, and
+// AddDescriptors() abort()s on a duplicate file registration. Without
+// NODELETE, an innocent dlclose-then-dlopen cycle (two unrelated tests,
+// or any future hot-reload) re-runs the static init and crashes.
+//
+// As a bonus, vtables and other static state owned by plugin code stay
+// valid for objects that outlive any dlclose -- the failure mode the
+// scsi-hard-disc regression test (#42) was added to catch.
+//
+// In practice on the macOS dyld we test against, NODELETE alone is not
+// sufficient; calling dlclose with NODELETE still causes the lib to be
+// re-initialised on the next dlopen. So the destructor below also
+// declines to call dlclose at all. We keep NODELETE here as
+// documentation of intent and as a defence-in-depth backstop against
+// the error-path dlclose calls in load_extension.
+//
+// Cost is minimal: plugins are small, never more than a handful per
+// process, and at process exit the OS reclaims everything anyway.
 void* platform_dlopen(const std::filesystem::path& filepath, bool global = false) {
 #ifdef _WIN32
     (void)global;  // Windows DLLs always use explicit import/export
     return LoadLibraryW(filepath.c_str());
 #else
-    int flags = RTLD_NOW | (global ? RTLD_GLOBAL : RTLD_LOCAL);
+    int flags = RTLD_NOW | RTLD_NODELETE
+              | (global ? RTLD_GLOBAL : RTLD_LOCAL);
     return dlopen(filepath.c_str(), flags);
 #endif
 }
@@ -156,9 +180,11 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
 }  // namespace
 
 PluginLoader::~PluginLoader() {
-    for (auto& plugin : loaded_plugins_) {
-        platform_dlclose(plugin.handle);
-    }
+    // No dlclose. Once a plugin is loaded its proto descriptors are
+    // permanently registered in the process-global pool, so the lib
+    // must stay mapped for the lifetime of the process; calling
+    // dlclose just to have it undone by RTLD_NODELETE only adds noise.
+    // The OS reclaims the mapping at process exit.
 }
 
 std::vector<ExtensionManifest> PluginLoader::scan_manifests(

@@ -91,7 +91,11 @@ TEST_CASE("PluginLoader scan_manifests with MissingDirPolicy::Throw "
 TEST_CASE("PluginLoader find_manifest returns nullptr for unknown name",
           "[extension][plugin]") {
     std::vector<beebium::ExtensionManifest> manifests;
-    manifests.push_back({"test-scratch-ram", "desc", "test-scratch-ram", {}});
+    manifests.push_back({
+        .name = "test-scratch-ram",
+        .description = "desc",
+        .library_stem = "test-scratch-ram",
+    });
 
     REQUIRE(beebium::PluginLoader::find_manifest(manifests, "unknown") == nullptr);
 }
