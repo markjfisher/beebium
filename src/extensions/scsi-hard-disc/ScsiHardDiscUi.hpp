@@ -46,6 +46,14 @@ public:
     // drive is 20 x 10^6 bytes worth of sectors, not 20 x 2^20).
     static std::string format_capacity(std::uint32_t total_sectors);
 
+    // Format the disc geometry as "C cyl x H head(s) x 33 spt", used
+    // as the Capacity Label's tooltip. SPT is constant (Acorn
+    // convention) so it's hard-coded; if the geometry is unknown
+    // (cylinders == 0), callers should suppress the tooltip rather
+    // than render misleading zeros.
+    static std::string format_geometry(std::uint16_t cylinders,
+                                       std::uint8_t heads);
+
 private:
     const ScsiHardDiscExtension& ext_;
 };

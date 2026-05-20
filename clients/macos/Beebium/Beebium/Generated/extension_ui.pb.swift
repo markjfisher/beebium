@@ -84,6 +84,18 @@ struct Beebium_Control: @unchecked Sendable {
     set {_uniqueStorage()._id = newValue}
   }
 
+  /// Optional hover text. The platform-specific surfacing varies
+  /// (macOS uses the SwiftUI .help() modifier, web maps to the
+  /// `title` attribute, others may use a tooltip helper from their
+  /// toolkit). Use it for verbose / diagnostic detail that would
+  /// clutter the panel if rendered inline -- e.g. a disc geometry
+  /// breakdown on a Capacity Label, a memory-mapped address range
+  /// on an adapter's name Label. Empty / absent means no tooltip.
+  var tooltip: String {
+    get {return _storage._tooltip}
+    set {_uniqueStorage()._tooltip = newValue}
+  }
+
   var control: OneOf_Control? {
     get {return _storage._control}
     set {_uniqueStorage()._control = newValue}
@@ -766,10 +778,11 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
 
 extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Control"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0\u{3}modal_editor\0\u{3}editable_choice\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}indicator\0\u{1}toggle\0\u{1}button\0\u{1}choice\0\u{3}text_input\0\u{1}group\0\u{3}modal_editor\0\u{3}editable_choice\0\u{1}tooltip\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
+    var _tooltip: String = String()
     var _control: Beebium_Control.OneOf_Control?
 
       // This property is used as the initial default value for new instances of the type.
@@ -782,6 +795,7 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
 
     init(copying source: _StorageClass) {
       _id = source._id
+      _tooltip = source._tooltip
       _control = source._control
     }
   }
@@ -919,6 +933,7 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
             _storage._control = .editableChoice(v)
           }
         }()
+        case 11: try { try decoder.decodeSingularStringField(value: &_storage._tooltip) }()
         default: break
         }
       }
@@ -973,6 +988,9 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
       }()
       case nil: break
       }
+      if !_storage._tooltip.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._tooltip, fieldNumber: 11)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -983,6 +1001,7 @@ extension Beebium_Control: SwiftProtobuf.Message, SwiftProtobuf._MessageImplemen
         let _storage = _args.0
         let rhs_storage = _args.1
         if _storage._id != rhs_storage._id {return false}
+        if _storage._tooltip != rhs_storage._tooltip {return false}
         if _storage._control != rhs_storage._control {return false}
         return true
       }

@@ -64,17 +64,23 @@ TEST_CASE("format_capacity uses MB once bytes >= 1,000,000",
 
 namespace {
 
-// Helper: build a ScsiHardDiscExtension with a synthetic total_sectors
-// and config for the SCSI ID disambiguator. Skips init() (which would
+// Helper: build a ScsiHardDiscExtension with synthetic geometry and
+// config for the SCSI ID disambiguator. Skips init() (which would
 // need a SCSI host adapter and an on-disk image); the UI only cares
 // about the metadata exposed via accessors.
 std::unique_ptr<ScsiHardDiscExtension> make_fake_disc(
         uint32_t total_sectors,
+        uint16_t cylinders = 0,
+        uint8_t heads = 0,
+        bool write_protected = false,
         const std::string& scsi_id_str = "0") {
     auto ext = ScsiHardDiscExtension::create();
     ext->set_config({{"id", "scsi-hdd-" + scsi_id_str},
                      {"scsi-id", scsi_id_str}});
     ext->set_total_sectors(total_sectors);
+    ext->set_cylinders(cylinders);
+    ext->set_heads(heads);
+    ext->set_write_protected(write_protected);
     return ext;
 }
 
@@ -132,4 +138,68 @@ TEST_CASE("ScsiHardDiscUi build_view labels the 'No image' case",
     ui->build_view(&view);
 
     REQUIRE(view.root().group().controls(0).label().text() == "Capacity: No image");
+}
+
+// MARK: - format_geometry
+
+TEST_CASE("format_geometry composes cyl x heads x spt",
+          "[scsi][hard-disc][ui]") {
+    // ADFS-L test geometry: 615 cyl x 4 heads x 33 spt
+    REQUIRE(ScsiHardDiscUi::format_geometry(615, 4) == "615 cyl x 4 heads x 33 spt");
+}
+
+TEST_CASE("format_geometry handles single head / single cylinder cases",
+          "[scsi][hard-disc][ui]") {
+    REQUIRE(ScsiHardDiscUi::format_geometry(4, 1) == "4 cyl x 1 head x 33 spt");
+    REQUIRE(ScsiHardDiscUi::format_geometry(1, 1) == "1 cyl x 1 head x 33 spt");
+}
+
+// MARK: - tooltip and read-only Indicator
+
+TEST_CASE("Capacity Label carries the geometry as a tooltip",
+          "[scsi][hard-disc][ui]") {
+    auto ext = make_fake_disc(615u * 4u * 33u, 615, 4);
+    View view;
+    ext->ui()->build_view(&view);
+
+    const auto& capacity_ctrl = view.root().group().controls(0);
+    REQUIRE(capacity_ctrl.control_case() == Control::kLabel);
+    REQUIRE(capacity_ctrl.tooltip() == "615 cyl x 4 heads x 33 spt");
+}
+
+TEST_CASE("Tooltip is omitted when geometry is unknown (no image)",
+          "[scsi][hard-disc][ui]") {
+    // No image -> cyl/heads/sectors all zero. A "0 cyl x 0 heads x
+    // 33 spt" hover text would be misleading; emit no tooltip at all.
+    auto ext = make_fake_disc(0);
+    View view;
+    ext->ui()->build_view(&view);
+
+    const auto& capacity_ctrl = view.root().group().controls(0);
+    REQUIRE(capacity_ctrl.tooltip().empty());
+}
+
+TEST_CASE("Writable disc shows only the Capacity Label",
+          "[scsi][hard-disc][ui]") {
+    auto ext = make_fake_disc(615u * 4u * 33u, 615, 4, /*write_protected=*/false);
+    View view;
+    ext->ui()->build_view(&view);
+
+    REQUIRE(view.root().group().controls_size() == 1);
+    REQUIRE(view.root().group().controls(0).control_case() == Control::kLabel);
+}
+
+TEST_CASE("Read-only disc adds a WARN Indicator after the Capacity Label",
+          "[scsi][hard-disc][ui]") {
+    auto ext = make_fake_disc(615u * 4u * 33u, 615, 4, /*write_protected=*/true);
+    View view;
+    ext->ui()->build_view(&view);
+
+    REQUIRE(view.root().group().controls_size() == 2);
+    REQUIRE(view.root().group().controls(0).control_case() == Control::kLabel);
+
+    const auto& ind_ctrl = view.root().group().controls(1);
+    REQUIRE(ind_ctrl.control_case() == Control::kIndicator);
+    REQUIRE(ind_ctrl.indicator().state() == Indicator::WARN);
+    REQUIRE(ind_ctrl.indicator().text() == "Read-only");
 }

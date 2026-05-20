@@ -72,6 +72,15 @@ message Control {
     // (instead of rebuilding the panel each time).
     string id = 1;
 
+    // Optional hover text. The platform-specific surfacing varies
+    // (macOS uses the SwiftUI .help() modifier, web maps to the
+    // `title` attribute, others may use a tooltip helper from their
+    // toolkit). Use it for verbose / diagnostic detail that would
+    // clutter the panel if rendered inline -- e.g. a disc geometry
+    // breakdown on a Capacity Label, a memory-mapped address range
+    // on an adapter's name Label. Empty / absent means no tooltip.
+    string tooltip = 11;
+
     oneof control {
         Label          label           = 2;
         Indicator      indicator       = 3;

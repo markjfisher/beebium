@@ -54,6 +54,19 @@ struct ExtensionViewRenderer: View {
     // still keeps stable widget identity via the .id(control.id)
     // modifier on each leaf.
     private func renderControl(_ control: Beebium_Control) -> AnyView {
+        let body = renderControlBody(control)
+        // Wire Control.tooltip into the platform-native hover-text
+        // mechanism (SwiftUI .help()) when set. Empty / absent
+        // tooltip leaves the modifier off entirely rather than
+        // attaching an empty string, so accessibility tools don't
+        // announce a spurious empty help string.
+        if !control.tooltip.isEmpty {
+            return AnyView(body.help(control.tooltip))
+        }
+        return body
+    }
+
+    private func renderControlBody(_ control: Beebium_Control) -> AnyView {
         switch control.control {
         case .label(let label):
             return AnyView(renderLabel(id: control.id, label: label))

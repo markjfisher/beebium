@@ -88,11 +88,14 @@ void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
     // If an image filepath was configured, load it and install as a target
     if (!image_path.empty()) {
         auto image = HardDiskImage::open(image_path);
-        // Capture capacity for the ExtensionUi panel before moving
-        // ownership into the target. ScsiHardDisc holds the image
-        // privately and doesn't re-expose geometry, so this is our
-        // only chance to record it for display.
+        // Capture geometry + write-protect for the ExtensionUi panel
+        // before moving ownership into the target. ScsiHardDisc holds
+        // the image privately and doesn't re-expose any of this, so
+        // this is our only chance to record it for display.
         total_sectors_ = image->total_sectors();
+        cylinders_ = image->cylinders();
+        heads_ = image->heads();
+        write_protected_ = image->is_write_protected();
         disc_ = std::make_unique<ScsiHardDisc>(std::move(image));
         scsi_adapter->target_registry().install(target_id, std::move(disc_));
         scsi_adapter->target_registry().wire_to_bus(scsi_adapter->bus());

@@ -12,6 +12,7 @@
 
 #include "ScsiHardDiscUi.hpp"
 
+#include "HardDiskImage.hpp"
 #include "ScsiHardDiscExtension.hpp"
 #include "ScsiConstants.hpp"
 
@@ -25,7 +26,8 @@ namespace beebium {
 
 namespace {
 
-constexpr const char* CONTROL_CAPACITY = "capacity";
+constexpr const char* CONTROL_CAPACITY  = "capacity";
+constexpr const char* CONTROL_READ_ONLY = "read_only";
 
 // Trim a trailing ".0" from a fixed-point string so whole values
 // render as "4 MB" rather than "4.0 MB". Leaves "4.5" unchanged.
@@ -56,15 +58,40 @@ std::string ScsiHardDiscUi::format_capacity(std::uint32_t total_sectors) {
     return format_one_decimal(static_cast<double>(bytes) / 1'000'000.0) + " MB";
 }
 
+std::string ScsiHardDiscUi::format_geometry(std::uint16_t cylinders,
+                                            std::uint8_t heads) {
+    const char* heads_word = (heads == 1) ? "head" : "heads";
+    return std::to_string(cylinders) + " cyl x "
+         + std::to_string(static_cast<unsigned>(heads)) + " " + heads_word
+         + " x " + std::to_string(HardDiskImage::kSectorsPerTrack) + " spt";
+}
+
 void ScsiHardDiscUi::build_view(View* out) const {
     auto* root = out->mutable_root();
     root->set_id("root");
     auto* group = root->mutable_group();
 
-    auto* control = group->add_controls();
-    control->set_id(CONTROL_CAPACITY);
-    control->mutable_label()->set_text(
+    // Capacity Label, with geometry as hover-only detail when we
+    // actually know the geometry (cylinders == 0 means no image was
+    // loaded, so a "0 cyl x ..." tooltip would be misleading).
+    auto* capacity = group->add_controls();
+    capacity->set_id(CONTROL_CAPACITY);
+    capacity->mutable_label()->set_text(
         "Capacity: " + format_capacity(ext_.total_sectors()));
+    if (ext_.cylinders() > 0) {
+        capacity->set_tooltip(format_geometry(ext_.cylinders(), ext_.heads()));
+    }
+
+    // Read-only Indicator only appears when the host filesystem has
+    // marked the DAT file unwritable. Writable is the normal state;
+    // no need to clutter the panel with a green dot for it.
+    if (ext_.is_write_protected()) {
+        auto* lock = group->add_controls();
+        lock->set_id(CONTROL_READ_ONLY);
+        auto* ind = lock->mutable_indicator();
+        ind->set_state(Indicator::WARN);
+        ind->set_text("Read-only");
+    }
 }
 
 void ScsiHardDiscUi::handle_event(const DispatchRequest& /*request*/) {

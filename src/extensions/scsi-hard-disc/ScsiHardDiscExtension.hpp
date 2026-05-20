@@ -70,18 +70,32 @@ public:
     // pointer (owned by this extension) showing the disc capacity.
     ExtensionUi* ui() override { return &ui_; }
 
-    // Total capacity of the loaded disc image in 256-byte sectors.
-    // Set by init() from HardDiskImage::total_sectors() once the
-    // image is opened; remains 0 if no image was configured. Public
-    // for direct injection from tests that exercise the UI without
-    // going through init().
+    // Geometry + state of the loaded disc image. Captured by init()
+    // from HardDiskImage at open time; remain at defaults if no image
+    // was configured. Public setters so tests can drive the UI
+    // without standing up a full SCSI adapter and on-disk image.
     uint32_t total_sectors() const { return total_sectors_; }
     void set_total_sectors(uint32_t n) { total_sectors_ = n; }
+
+    uint16_t cylinders() const { return cylinders_; }
+    void set_cylinders(uint16_t n) { cylinders_ = n; }
+
+    uint8_t heads() const { return heads_; }
+    void set_heads(uint8_t n) { heads_ = n; }
+
+    // True when the host filesystem permissions on the DAT file
+    // disallow writes. The Peripherals sidebar surfaces this as a
+    // "Read-only" Indicator on the disc's panel.
+    bool is_write_protected() const { return write_protected_; }
+    void set_write_protected(bool b) { write_protected_ = b; }
 
 private:
     std::filesystem::path image_filepath_;
     uint8_t scsi_id_ = 0;
     uint32_t total_sectors_ = 0;
+    uint16_t cylinders_ = 0;
+    uint8_t heads_ = 0;
+    bool write_protected_ = false;
     std::unique_ptr<ScsiHardDisc> disc_;
     PeripheralExtension* adapter_ = nullptr;  // non-owning, from context
     ScsiHardDiscUi ui_{*this};
