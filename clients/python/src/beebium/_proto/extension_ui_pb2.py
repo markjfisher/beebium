@@ -36,7 +36,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x65xtension_ui.proto\x12\x07\x62\x65\x65\x62ium\".\n\x14SubscribeViewRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\"U\n\x04View\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x15\n\rview_revision\x18\x02 \x01(\x04\x12\x1e\n\x04root\x18\x03 \x01(\x0b\x32\x10.beebium.Control\"\x80\x03\n\x07\x43ontrol\x12\n\n\x02id\x18\x01 \x01(\t\x12\x1f\n\x05label\x18\x02 \x01(\x0b\x32\x0e.beebium.LabelH\x00\x12\'\n\tindicator\x18\x03 \x01(\x0b\x32\x12.beebium.IndicatorH\x00\x12!\n\x06toggle\x18\x04 \x01(\x0b\x32\x0f.beebium.ToggleH\x00\x12!\n\x06\x62utton\x18\x05 \x01(\x0b\x32\x0f.beebium.ButtonH\x00\x12!\n\x06\x63hoice\x18\x06 \x01(\x0b\x32\x0f.beebium.ChoiceH\x00\x12(\n\ntext_input\x18\x07 \x01(\x0b\x32\x12.beebium.TextInputH\x00\x12\x1f\n\x05group\x18\x08 \x01(\x0b\x32\x0e.beebium.GroupH\x00\x12,\n\x0cmodal_editor\x18\t \x01(\x0b\x32\x14.beebium.ModalEditorH\x00\x12\x32\n\x0f\x65\x64itable_choice\x18\n \x01(\x0b\x32\x17.beebium.EditableChoiceH\x00\x42\t\n\x07\x63ontrol\"-\n\x05Label\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x16\n\x0esecondary_text\x18\x02 \x01(\t\"u\n\tIndicator\x12\'\n\x05state\x18\x01 \x01(\x0e\x32\x18.beebium.Indicator.State\x12\x0c\n\x04text\x18\x02 \x01(\t\"1\n\x05State\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x06\n\x02OK\x10\x01\x12\x08\n\x04WARN\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"&\n\x06Toggle\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x08\"(\n\x06\x42utton\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x02 \x01(\x08\"@\n\x06\x43hoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x16\n\x0eselected_index\x18\x03 \x01(\r\">\n\tTextInput\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\"T\n\x0e\x45\x64itableChoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\x12\x0f\n\x07options\x18\x04 \x03(\t\"I\n\x05Group\x12\x12\n\x05label\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\"\n\x08\x63ontrols\x18\x02 \x03(\x0b\x32\x10.beebium.ControlB\x08\n\x06_label\"\xcf\x01\n\x0bModalEditor\x12 \n\x06\x61nchor\x18\x01 \x01(\x0b\x32\x10.beebium.Control\x12 \n\x06\x65\x64itor\x18\x02 \x01(\x0b\x32\x10.beebium.Control\x12\x10\n\x08\x65\x64itable\x18\x03 \x01(\x08\x12\x34\n\x0b\x63ommit_role\x18\x04 \x01(\x0e\x32\x1f.beebium.ModalEditor.CommitRole\x12\x13\n\x0bshow_cancel\x18\x05 \x01(\x08\"\x1f\n\nCommitRole\x12\x08\n\x04SAVE\x10\x00\x12\x07\n\x03\x41\x44\x44\x10\x01\"\xd4\x01\n\x0f\x44ispatchRequest\x12\x16\n\x0e\x65xtension_name\x18\x01 \x01(\t\x12\x12\n\ncontrol_id\x18\x02 \x01(\t\x12\x15\n\rview_revision\x18\x03 \x01(\x04\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x05 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x06 \x01(\rH\x00\x12.\n\reditor_commit\x18\x07 \x01(\x0b\x32\x15.beebium.EditorCommitH\x00\x42\t\n\x07payload\"r\n\x10\x45\x64itorFieldValue\x12\x10\n\x08\x66ield_id\x18\x01 \x01(\t\x12\x14\n\nbool_value\x18\x02 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x03 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x04 \x01(\rH\x00\x42\x07\n\x05value\"9\n\x0c\x45\x64itorCommit\x12)\n\x06\x66ields\x18\x01 \x03(\x0b\x32\x19.beebium.EditorFieldValue\"3\n\x10\x44ispatchResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\x96\x01\n\x12\x45xtensionUiService\x12?\n\rSubscribeView\x12\x1d.beebium.SubscribeViewRequest\x1a\r.beebium.View0\x01\x12?\n\x08\x44ispatch\x12\x18.beebium.DispatchRequest\x1a\x19.beebium.DispatchResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x65xtension_ui.proto\x12\x07\x62\x65\x65\x62ium\",\n\x14SubscribeViewRequest\x12\x14\n\x0c\x65xtension_id\x18\x01 \x01(\t\"S\n\x04View\x12\x14\n\x0c\x65xtension_id\x18\x01 \x01(\t\x12\x15\n\rview_revision\x18\x02 \x01(\x04\x12\x1e\n\x04root\x18\x03 \x01(\x0b\x32\x10.beebium.Control\"\x80\x03\n\x07\x43ontrol\x12\n\n\x02id\x18\x01 \x01(\t\x12\x1f\n\x05label\x18\x02 \x01(\x0b\x32\x0e.beebium.LabelH\x00\x12\'\n\tindicator\x18\x03 \x01(\x0b\x32\x12.beebium.IndicatorH\x00\x12!\n\x06toggle\x18\x04 \x01(\x0b\x32\x0f.beebium.ToggleH\x00\x12!\n\x06\x62utton\x18\x05 \x01(\x0b\x32\x0f.beebium.ButtonH\x00\x12!\n\x06\x63hoice\x18\x06 \x01(\x0b\x32\x0f.beebium.ChoiceH\x00\x12(\n\ntext_input\x18\x07 \x01(\x0b\x32\x12.beebium.TextInputH\x00\x12\x1f\n\x05group\x18\x08 \x01(\x0b\x32\x0e.beebium.GroupH\x00\x12,\n\x0cmodal_editor\x18\t \x01(\x0b\x32\x14.beebium.ModalEditorH\x00\x12\x32\n\x0f\x65\x64itable_choice\x18\n \x01(\x0b\x32\x17.beebium.EditableChoiceH\x00\x42\t\n\x07\x63ontrol\"-\n\x05Label\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x16\n\x0esecondary_text\x18\x02 \x01(\t\"u\n\tIndicator\x12\'\n\x05state\x18\x01 \x01(\x0e\x32\x18.beebium.Indicator.State\x12\x0c\n\x04text\x18\x02 \x01(\t\"1\n\x05State\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x06\n\x02OK\x10\x01\x12\x08\n\x04WARN\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"&\n\x06Toggle\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x08\"(\n\x06\x42utton\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07\x65nabled\x18\x02 \x01(\x08\"@\n\x06\x43hoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x16\n\x0eselected_index\x18\x03 \x01(\r\">\n\tTextInput\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\"T\n\x0e\x45\x64itableChoice\x12\r\n\x05label\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\x12\x13\n\x0bplaceholder\x18\x03 \x01(\t\x12\x0f\n\x07options\x18\x04 \x03(\t\"I\n\x05Group\x12\x12\n\x05label\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\"\n\x08\x63ontrols\x18\x02 \x03(\x0b\x32\x10.beebium.ControlB\x08\n\x06_label\"\xcf\x01\n\x0bModalEditor\x12 \n\x06\x61nchor\x18\x01 \x01(\x0b\x32\x10.beebium.Control\x12 \n\x06\x65\x64itor\x18\x02 \x01(\x0b\x32\x10.beebium.Control\x12\x10\n\x08\x65\x64itable\x18\x03 \x01(\x08\x12\x34\n\x0b\x63ommit_role\x18\x04 \x01(\x0e\x32\x1f.beebium.ModalEditor.CommitRole\x12\x13\n\x0bshow_cancel\x18\x05 \x01(\x08\"\x1f\n\nCommitRole\x12\x08\n\x04SAVE\x10\x00\x12\x07\n\x03\x41\x44\x44\x10\x01\"\xd2\x01\n\x0f\x44ispatchRequest\x12\x14\n\x0c\x65xtension_id\x18\x01 \x01(\t\x12\x12\n\ncontrol_id\x18\x02 \x01(\t\x12\x15\n\rview_revision\x18\x03 \x01(\x04\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x05 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x06 \x01(\rH\x00\x12.\n\reditor_commit\x18\x07 \x01(\x0b\x32\x15.beebium.EditorCommitH\x00\x42\t\n\x07payload\"r\n\x10\x45\x64itorFieldValue\x12\x10\n\x08\x66ield_id\x18\x01 \x01(\t\x12\x14\n\nbool_value\x18\x02 \x01(\x08H\x00\x12\x16\n\x0cstring_value\x18\x03 \x01(\tH\x00\x12\x15\n\x0bindex_value\x18\x04 \x01(\rH\x00\x42\x07\n\x05value\"9\n\x0c\x45\x64itorCommit\x12)\n\x06\x66ields\x18\x01 \x03(\x0b\x32\x19.beebium.EditorFieldValue\"3\n\x10\x44ispatchResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\x96\x01\n\x12\x45xtensionUiService\x12?\n\rSubscribeView\x12\x1d.beebium.SubscribeViewRequest\x1a\r.beebium.View0\x01\x12?\n\x08\x44ispatch\x12\x18.beebium.DispatchRequest\x1a\x19.beebium.DispatchResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -44,41 +44,41 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'extension_ui_pb2', _globals
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_SUBSCRIBEVIEWREQUEST']._serialized_start=31
-  _globals['_SUBSCRIBEVIEWREQUEST']._serialized_end=77
-  _globals['_VIEW']._serialized_start=79
-  _globals['_VIEW']._serialized_end=164
-  _globals['_CONTROL']._serialized_start=167
-  _globals['_CONTROL']._serialized_end=551
-  _globals['_LABEL']._serialized_start=553
-  _globals['_LABEL']._serialized_end=598
-  _globals['_INDICATOR']._serialized_start=600
-  _globals['_INDICATOR']._serialized_end=717
-  _globals['_INDICATOR_STATE']._serialized_start=668
-  _globals['_INDICATOR_STATE']._serialized_end=717
-  _globals['_TOGGLE']._serialized_start=719
-  _globals['_TOGGLE']._serialized_end=757
-  _globals['_BUTTON']._serialized_start=759
-  _globals['_BUTTON']._serialized_end=799
-  _globals['_CHOICE']._serialized_start=801
-  _globals['_CHOICE']._serialized_end=865
-  _globals['_TEXTINPUT']._serialized_start=867
-  _globals['_TEXTINPUT']._serialized_end=929
-  _globals['_EDITABLECHOICE']._serialized_start=931
-  _globals['_EDITABLECHOICE']._serialized_end=1015
-  _globals['_GROUP']._serialized_start=1017
-  _globals['_GROUP']._serialized_end=1090
-  _globals['_MODALEDITOR']._serialized_start=1093
-  _globals['_MODALEDITOR']._serialized_end=1300
-  _globals['_MODALEDITOR_COMMITROLE']._serialized_start=1269
-  _globals['_MODALEDITOR_COMMITROLE']._serialized_end=1300
-  _globals['_DISPATCHREQUEST']._serialized_start=1303
-  _globals['_DISPATCHREQUEST']._serialized_end=1515
-  _globals['_EDITORFIELDVALUE']._serialized_start=1517
-  _globals['_EDITORFIELDVALUE']._serialized_end=1631
-  _globals['_EDITORCOMMIT']._serialized_start=1633
-  _globals['_EDITORCOMMIT']._serialized_end=1690
-  _globals['_DISPATCHRESPONSE']._serialized_start=1692
-  _globals['_DISPATCHRESPONSE']._serialized_end=1743
-  _globals['_EXTENSIONUISERVICE']._serialized_start=1746
-  _globals['_EXTENSIONUISERVICE']._serialized_end=1896
+  _globals['_SUBSCRIBEVIEWREQUEST']._serialized_end=75
+  _globals['_VIEW']._serialized_start=77
+  _globals['_VIEW']._serialized_end=160
+  _globals['_CONTROL']._serialized_start=163
+  _globals['_CONTROL']._serialized_end=547
+  _globals['_LABEL']._serialized_start=549
+  _globals['_LABEL']._serialized_end=594
+  _globals['_INDICATOR']._serialized_start=596
+  _globals['_INDICATOR']._serialized_end=713
+  _globals['_INDICATOR_STATE']._serialized_start=664
+  _globals['_INDICATOR_STATE']._serialized_end=713
+  _globals['_TOGGLE']._serialized_start=715
+  _globals['_TOGGLE']._serialized_end=753
+  _globals['_BUTTON']._serialized_start=755
+  _globals['_BUTTON']._serialized_end=795
+  _globals['_CHOICE']._serialized_start=797
+  _globals['_CHOICE']._serialized_end=861
+  _globals['_TEXTINPUT']._serialized_start=863
+  _globals['_TEXTINPUT']._serialized_end=925
+  _globals['_EDITABLECHOICE']._serialized_start=927
+  _globals['_EDITABLECHOICE']._serialized_end=1011
+  _globals['_GROUP']._serialized_start=1013
+  _globals['_GROUP']._serialized_end=1086
+  _globals['_MODALEDITOR']._serialized_start=1089
+  _globals['_MODALEDITOR']._serialized_end=1296
+  _globals['_MODALEDITOR_COMMITROLE']._serialized_start=1265
+  _globals['_MODALEDITOR_COMMITROLE']._serialized_end=1296
+  _globals['_DISPATCHREQUEST']._serialized_start=1299
+  _globals['_DISPATCHREQUEST']._serialized_end=1509
+  _globals['_EDITORFIELDVALUE']._serialized_start=1511
+  _globals['_EDITORFIELDVALUE']._serialized_end=1625
+  _globals['_EDITORCOMMIT']._serialized_start=1627
+  _globals['_EDITORCOMMIT']._serialized_end=1684
+  _globals['_DISPATCHRESPONSE']._serialized_start=1686
+  _globals['_DISPATCHRESPONSE']._serialized_end=1737
+  _globals['_EXTENSIONUISERVICE']._serialized_start=1740
+  _globals['_EXTENSIONUISERVICE']._serialized_end=1890
 # @@protoc_insertion_point(module_scope)

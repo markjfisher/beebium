@@ -193,13 +193,13 @@ TEST_CASE("Piconet end-to-end: SubscribeView -> EditorCommit -> reopen -> next V
 
     grpc::ClientContext sub_ctx;
     beebium::SubscribeViewRequest sub_req;
-    sub_req.set_extension_name("piconet");
+    sub_req.set_extension_id("piconet");
     auto reader = fixture.stub().SubscribeView(&sub_ctx, sub_req);
 
     // Initial push: anchor reflects the original PTY's slave path.
     beebium::View initial;
     REQUIRE(reader->Read(&initial));
-    REQUIRE(initial.extension_name() == "piconet");
+    REQUIRE(initial.extension_id() == "piconet");
     REQUIRE(initial.root().control_case() == beebium::Control::kGroup);
     bool found_initial_anchor = false;
     std::uint64_t initial_revision = 0;
@@ -227,7 +227,7 @@ TEST_CASE("Piconet end-to-end: SubscribeView -> EditorCommit -> reopen -> next V
     // popover and clicks Save.
     grpc::ClientContext disp_ctx;
     beebium::DispatchRequest disp_req;
-    disp_req.set_extension_name("piconet");
+    disp_req.set_extension_id("piconet");
     disp_req.set_control_id("device_path");
     disp_req.set_view_revision(initial_revision);
     auto* commit = disp_req.mutable_editor_commit();
@@ -368,7 +368,7 @@ TEST_CASE("Piconet recovery: closed-state startup -> EditorCommit -> adapter res
 
     grpc::ClientContext sub_ctx;
     beebium::SubscribeViewRequest sub_req;
-    sub_req.set_extension_name("piconet");
+    sub_req.set_extension_id("piconet");
     auto reader = fixture.stub().SubscribeView(&sub_ctx, sub_req);
 
     // Initial View: anchor shows the bad path; Indicator is ERROR
@@ -407,7 +407,7 @@ TEST_CASE("Piconet recovery: closed-state startup -> EditorCommit -> adapter res
 
     grpc::ClientContext disp_ctx;
     beebium::DispatchRequest disp_req;
-    disp_req.set_extension_name("piconet");
+    disp_req.set_extension_id("piconet");
     disp_req.set_control_id("device_path");
     disp_req.set_view_revision(initial.view_revision());
     auto* commit = disp_req.mutable_editor_commit();

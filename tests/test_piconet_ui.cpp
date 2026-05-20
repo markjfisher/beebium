@@ -251,7 +251,7 @@ TEST_CASE("PiconetUi enable_action toggles mode between LISTEN and STOP",
     REQUIRE(fixture.backend().mode() == beebium::piconet::Mode::Listen);
 
     beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
+    req.set_extension_id("piconet");
     req.set_control_id("enable_action");
     req.set_view_revision(ui->current_revision());
     // Buttons take no payload.
@@ -289,7 +289,7 @@ TEST_CASE("PiconetUi enable_action dispatch bumps the view revision",
     auto initial = ui->current_revision();
 
     beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
+    req.set_extension_id("piconet");
     req.set_control_id("enable_action");
     req.set_view_revision(initial);
 
@@ -410,7 +410,7 @@ TEST_CASE("PiconetUi EditorCommit with the device_path field calls backend reque
     REQUIRE(fixture.wait_for_mode(beebium::piconet::Mode::Stop));
 
     beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
+    req.set_extension_id("piconet");
     req.set_control_id("device_path");
     req.set_view_revision(ui->current_revision());
     auto* commit = req.mutable_editor_commit();
@@ -438,7 +438,7 @@ TEST_CASE("PiconetUi EditorCommit with empty commit is a safe no-op",
     const auto before_rev = ui->current_revision();
 
     beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
+    req.set_extension_id("piconet");
     req.set_control_id("device_path");
     req.set_view_revision(before_rev);
     // Empty editor_commit: no fields. Should not trigger a reopen.

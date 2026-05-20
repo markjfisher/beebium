@@ -228,7 +228,7 @@ TEST_CASE("SubscribeView for unknown extension fails NOT_FOUND immediately",
 
     grpc::ClientContext ctx;
     beebium::SubscribeViewRequest req;
-    req.set_extension_name("nonexistent");
+    req.set_extension_id("nonexistent");
     auto reader = fixture.stub().SubscribeView(&ctx, req);
 
     beebium::View view;
@@ -247,12 +247,12 @@ TEST_CASE("SubscribeView pushes initial View, then a second after mark_dirty",
 
     grpc::ClientContext ctx;
     beebium::SubscribeViewRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     auto reader = fixture.stub().SubscribeView(&ctx, req);
 
     beebium::View view;
     REQUIRE(reader->Read(&view));
-    REQUIRE(view.extension_name() == "fake");
+    REQUIRE(view.extension_id() == "fake");
     REQUIRE(view.view_revision() == 1u);
     REQUIRE(view.root().id() == "root");
     REQUIRE(view.root().control_case() == beebium::Control::kGroup);
@@ -272,6 +272,62 @@ TEST_CASE("SubscribeView pushes initial View, then a second after mark_dirty",
     (void)reader->Finish();
 }
 
+TEST_CASE("SubscribeView distinguishes two instances of the same extension type by id",
+          "[grpc][extension-ui]") {
+    // ExtensionUiService keys subscriptions by Extension::id() rather
+    // than by manifest name, so multi-instance extensions (most
+    // obviously, multiple SCSI hard discs on the same adapter) are
+    // each addressable. Two FakeUiTransports with the same manifest
+    // name "fake" go in; the registry's Step-1 auto-id machinery
+    // hands them "fake" and "fake-1"; the service uses those.
+    beebium::EconetTransportRegistry registry;
+    auto a = std::make_unique<FakeUiTransport>("fake");
+    auto b = std::make_unique<FakeUiTransport>("fake");
+    auto* a_ptr = a.get();
+    auto* b_ptr = b.get();
+    registry.add(std::move(a));
+    registry.add(std::move(b));
+
+    REQUIRE(a_ptr->id() == "fake");
+    REQUIRE(b_ptr->id() == "fake-1");
+
+    ExtensionUiFixture fixture(registry);
+
+    // Initial state distinct so we can tell the views apart later.
+    b_ptr->fake_ui().handle_event([]{
+        beebium::DispatchRequest r;
+        r.set_extension_id("fake-1");
+        r.set_control_id("toggle1");
+        r.set_view_revision(1);
+        r.set_bool_value(true);
+        return r;
+    }());
+
+    auto subscribe = [&](const std::string& id,
+                         beebium::View* out_view) {
+        grpc::ClientContext ctx;
+        beebium::SubscribeViewRequest req;
+        req.set_extension_id(id);
+        auto reader = fixture.stub().SubscribeView(&ctx, req);
+        bool ok = reader->Read(out_view);
+        ctx.TryCancel();
+        beebium::View drain;
+        while (reader->Read(&drain)) {}
+        (void)reader->Finish();
+        return ok;
+    };
+
+    beebium::View view_a;
+    REQUIRE(subscribe("fake", &view_a));
+    REQUIRE(view_a.extension_id() == "fake");
+    REQUIRE(view_a.root().group().controls(0).toggle().value() == false);
+
+    beebium::View view_b;
+    REQUIRE(subscribe("fake-1", &view_b));
+    REQUIRE(view_b.extension_id() == "fake-1");
+    REQUIRE(view_b.root().group().controls(0).toggle().value() == true);
+}
+
 TEST_CASE("Dispatch on current revision with matching payload runs handle_event",
           "[grpc][extension-ui]") {
     beebium::EconetTransportRegistry registry;
@@ -282,7 +338,7 @@ TEST_CASE("Dispatch on current revision with matching payload runs handle_event"
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     req.set_control_id("toggle1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     req.set_bool_value(true);
@@ -310,7 +366,7 @@ TEST_CASE("Dispatch with stale view_revision is rejected",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     req.set_control_id("toggle1");
     req.set_view_revision(1);  // stale
     req.set_bool_value(true);
@@ -334,7 +390,7 @@ TEST_CASE("Dispatch with unknown control id is rejected",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     req.set_control_id("does-not-exist");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     req.set_bool_value(true);
@@ -356,7 +412,7 @@ TEST_CASE("Dispatch with wrong payload type for the addressed control is rejecte
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     req.set_control_id("toggle1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     // Wrong payload variant for a Toggle (which expects bool_value).
@@ -379,7 +435,7 @@ TEST_CASE("Dispatch EditorCommit to a ModalEditor runs handle_event",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("modal");
+    req.set_extension_id("modal");
     req.set_control_id("editor1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     auto* commit = req.mutable_editor_commit();
@@ -413,7 +469,7 @@ TEST_CASE("Dispatch EditorCommit rejected when the ModalEditor is not editable",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("modal");
+    req.set_extension_id("modal");
     req.set_control_id("editor1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     auto* commit = req.mutable_editor_commit();
@@ -438,7 +494,7 @@ TEST_CASE("Dispatch EditorCommit with unknown field_id is rejected",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("modal");
+    req.set_extension_id("modal");
     req.set_control_id("editor1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     auto* commit = req.mutable_editor_commit();
@@ -463,7 +519,7 @@ TEST_CASE("Dispatch EditorCommit with wrong value variant for a sub-control is r
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("modal");
+    req.set_extension_id("modal");
     req.set_control_id("editor1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     auto* commit = req.mutable_editor_commit();
@@ -531,7 +587,7 @@ TEST_CASE("Dispatch with string_value targets an EditableChoice",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("ec");
+    req.set_extension_id("ec");
     req.set_control_id("ec1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     req.set_string_value("custom-typed");
@@ -592,7 +648,7 @@ TEST_CASE("Dispatch with index_value to an EditableChoice is rejected",
 
     grpc::ClientContext ctx;
     beebium::DispatchRequest req;
-    req.set_extension_name("ec");
+    req.set_extension_id("ec");
     req.set_control_id("ec1");
     req.set_view_revision(fake_ptr->fake_ui().current_revision());
     req.set_index_value(0);  // wrong variant for EditableChoice
@@ -612,7 +668,7 @@ TEST_CASE("Cancelling the SubscribeView context exits the server poll loop clean
 
     grpc::ClientContext ctx;
     beebium::SubscribeViewRequest req;
-    req.set_extension_name("fake");
+    req.set_extension_id("fake");
     auto reader = fixture.stub().SubscribeView(&ctx, req);
 
     // Receive at least the initial push.

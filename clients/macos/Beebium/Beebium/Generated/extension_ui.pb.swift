@@ -25,10 +25,13 @@ struct Beebium_SubscribeViewRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Canonical extension name (e.g. "piconet", "aun") -- matches the
-  /// 'name' field on EconetTransportService.EconetTransport and the
-  /// equivalent on PeripheralExtensionService.
-  var extensionName: String = String()
+  /// Unique extension instance id (matches PeripheralExtensionService's
+  /// ExtensionInfo.id and EconetTransportService.EconetTransport.id).
+  /// For singleton extensions (AUN, Piconet) this is the manifest name;
+  /// for multi-instance extensions (e.g. SCSI hard discs sharing one
+  /// adapter) the registry auto-assigns disambiguated ids ("name",
+  /// "name-1", "name-2", ...).
+  var extensionID: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -42,7 +45,7 @@ struct Beebium_View: Sendable {
 
   /// Echoed back so clients can route updates by extension if they
   /// multiplex several streams onto one handler.
-  var extensionName: String = String()
+  var extensionID: String = String()
 
   /// Monotonic per-extension counter, bumped before each push. Clients
   /// must echo this in DispatchRequest so the server can reject stale
@@ -517,8 +520,8 @@ struct Beebium_DispatchRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Which extension the event targets (matches View.extension_name).
-  var extensionName: String = String()
+  /// Which extension instance the event targets (matches View.extension_id).
+  var extensionID: String = String()
 
   /// Which control inside that extension's view (matches Control.id).
   var controlID: String = String()
@@ -689,7 +692,7 @@ fileprivate let _protobuf_package = "beebium"
 
 extension Beebium_SubscribeViewRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SubscribeViewRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_name\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -697,21 +700,21 @@ extension Beebium_SubscribeViewRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionName) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionID) }()
       default: break
       }
     }
   }
 
   func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.extensionName.isEmpty {
-      try visitor.visitSingularStringField(value: self.extensionName, fieldNumber: 1)
+    if !self.extensionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.extensionID, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Beebium_SubscribeViewRequest, rhs: Beebium_SubscribeViewRequest) -> Bool {
-    if lhs.extensionName != rhs.extensionName {return false}
+    if lhs.extensionID != rhs.extensionID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -719,7 +722,7 @@ extension Beebium_SubscribeViewRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".View"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_name\0\u{3}view_revision\0\u{1}root\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_id\0\u{3}view_revision\0\u{1}root\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -727,7 +730,7 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionName) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionID) }()
       case 2: try { try decoder.decodeSingularUInt64Field(value: &self.viewRevision) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._root) }()
       default: break
@@ -740,8 +743,8 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.extensionName.isEmpty {
-      try visitor.visitSingularStringField(value: self.extensionName, fieldNumber: 1)
+    if !self.extensionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.extensionID, fieldNumber: 1)
     }
     if self.viewRevision != 0 {
       try visitor.visitSingularUInt64Field(value: self.viewRevision, fieldNumber: 2)
@@ -753,7 +756,7 @@ extension Beebium_View: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementat
   }
 
   static func ==(lhs: Beebium_View, rhs: Beebium_View) -> Bool {
-    if lhs.extensionName != rhs.extensionName {return false}
+    if lhs.extensionID != rhs.extensionID {return false}
     if lhs.viewRevision != rhs.viewRevision {return false}
     if lhs._root != rhs._root {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -1402,7 +1405,7 @@ extension Beebium_ModalEditor.CommitRole: SwiftProtobuf._ProtoNameProviding {
 
 extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".DispatchRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_name\0\u{3}control_id\0\u{3}view_revision\0\u{3}bool_value\0\u{3}string_value\0\u{3}index_value\0\u{3}editor_commit\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}extension_id\0\u{3}control_id\0\u{3}view_revision\0\u{3}bool_value\0\u{3}string_value\0\u{3}index_value\0\u{3}editor_commit\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1410,7 +1413,7 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionName) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.extensionID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.controlID) }()
       case 3: try { try decoder.decodeSingularUInt64Field(value: &self.viewRevision) }()
       case 4: try {
@@ -1460,8 +1463,8 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.extensionName.isEmpty {
-      try visitor.visitSingularStringField(value: self.extensionName, fieldNumber: 1)
+    if !self.extensionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.extensionID, fieldNumber: 1)
     }
     if !self.controlID.isEmpty {
       try visitor.visitSingularStringField(value: self.controlID, fieldNumber: 2)
@@ -1492,7 +1495,7 @@ extension Beebium_DispatchRequest: SwiftProtobuf.Message, SwiftProtobuf._Message
   }
 
   static func ==(lhs: Beebium_DispatchRequest, rhs: Beebium_DispatchRequest) -> Bool {
-    if lhs.extensionName != rhs.extensionName {return false}
+    if lhs.extensionID != rhs.extensionID {return false}
     if lhs.controlID != rhs.controlID {return false}
     if lhs.viewRevision != rhs.viewRevision {return false}
     if lhs.payload != rhs.payload {return false}

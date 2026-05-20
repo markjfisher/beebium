@@ -76,7 +76,7 @@ function makeViewProto(): ProtoView {
         },
     };
     return {
-        extensionName: "test",
+        extensionId: "test",
         viewRevision: 7,
         root,
     };
@@ -101,7 +101,7 @@ describe("ExtensionUi", () => {
 
             expect(views).toHaveLength(1);
             const view = views[0]!;
-            expect(view.extensionName).toBe("test");
+            expect(view.extensionId).toBe("test");
             expect(view.revision).toBe(7);
             expect(view.root.id).toBe("root");
             expect(view.root.kind).toBe(ControlKind.GROUP);
@@ -139,7 +139,7 @@ describe("ExtensionUi", () => {
             expect(inner!.group!.label).toBeUndefined();
         });
 
-        it("passes extensionName in the request", async () => {
+        it("passes extensionId in the request", async () => {
             const stream = new FakeStream();
             const stub = { subscribeView: vi.fn(() => stream) };
             const client = new ExtensionUi(stub as any);
@@ -149,7 +149,7 @@ describe("ExtensionUi", () => {
                 // drain
             }
             expect(stub.subscribeView).toHaveBeenCalledWith({
-                extensionName: "piconet",
+                extensionId: "piconet",
             });
         });
     });
@@ -169,7 +169,7 @@ describe("ExtensionUi", () => {
             const result = await client.dispatch("ext", "ctrl", 5, true);
             expect(result).toEqual<DispatchResult>({ accepted: true, error: "" });
             const sent = stub.dispatch.mock.calls[0]![0];
-            expect(sent.extensionName).toBe("ext");
+            expect(sent.extensionId).toBe("ext");
             expect(sent.controlId).toBe("ctrl");
             expect(sent.viewRevision).toBe(5);
             expect(sent.boolValue).toBe(true);
@@ -267,7 +267,7 @@ describe("ExtensionUi", () => {
             await new Promise((resolve) => setImmediate(resolve));
 
             expect(seen).toHaveLength(2);
-            expect(seen[0]!.extensionName).toBe("test");
+            expect(seen[0]!.extensionId).toBe("test");
             expect(handle.isRunning).toBe(false);
         });
 

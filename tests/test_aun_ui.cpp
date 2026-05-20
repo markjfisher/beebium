@@ -250,7 +250,7 @@ TEST_CASE("AunUi connect_action dispatch flips is_connected and the label",
     REQUIRE(fixture.backend().is_connected());
 
     beebium::DispatchRequest req;
-    req.set_extension_name("aun");
+    req.set_extension_id("aun");
     req.set_control_id("connect_action");
     req.set_view_revision(ui->current_revision());
     // Buttons take no payload.

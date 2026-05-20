@@ -56,7 +56,7 @@ public:
     // Populate `out` with the extension's current control tree. The
     // implementation should set Control ids, oneof payloads, and any
     // text/state fields it owns. The framework stamps view_revision
-    // and extension_name itself; implementations should leave those
+    // and extension_id itself; implementations should leave those
     // fields alone.
     virtual void build_view(View* out) const = 0;
 

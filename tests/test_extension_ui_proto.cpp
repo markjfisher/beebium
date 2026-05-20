@@ -32,7 +32,7 @@ namespace {
 // trip.
 beebium::View make_nested_view() {
     beebium::View view;
-    view.set_extension_name("test");
+    view.set_extension_id("test");
     view.set_view_revision(7);
 
     auto* root = view.mutable_root();
@@ -77,7 +77,7 @@ TEST_CASE("View with nested Group(Group(Toggle, Button), Label) round-trips",
     beebium::View parsed;
     REQUIRE(parsed.ParseFromString(wire));
 
-    REQUIRE(parsed.extension_name() == "test");
+    REQUIRE(parsed.extension_id() == "test");
     REQUIRE(parsed.view_revision() == 7u);
 
     const auto& root = parsed.root();
@@ -176,7 +176,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
           "[extension_ui][proto]") {
     SECTION("bool_value (Toggle)") {
         beebium::DispatchRequest req;
-        req.set_extension_name("piconet");
+        req.set_extension_id("piconet");
         req.set_control_id("mode_toggle");
         req.set_view_revision(42);
         req.set_bool_value(true);
@@ -186,7 +186,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
 
         beebium::DispatchRequest parsed;
         REQUIRE(parsed.ParseFromString(wire));
-        REQUIRE(parsed.extension_name() == "piconet");
+        REQUIRE(parsed.extension_id() == "piconet");
         REQUIRE(parsed.control_id() == "mode_toggle");
         REQUIRE(parsed.view_revision() == 42u);
         REQUIRE(parsed.payload_case() == beebium::DispatchRequest::kBoolValue);
@@ -195,7 +195,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
 
     SECTION("string_value (TextInput)") {
         beebium::DispatchRequest req;
-        req.set_extension_name("aun");
+        req.set_extension_id("aun");
         req.set_control_id("peer_host");
         req.set_view_revision(1);
         req.set_string_value("127.0.0.1");
@@ -211,7 +211,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
 
     SECTION("index_value (Choice)") {
         beebium::DispatchRequest req;
-        req.set_extension_name("piconet");
+        req.set_extension_id("piconet");
         req.set_control_id("mode_select");
         req.set_view_revision(99);
         req.set_index_value(2);
@@ -227,7 +227,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
 
     SECTION("no payload (Button)") {
         beebium::DispatchRequest req;
-        req.set_extension_name("aun");
+        req.set_extension_id("aun");
         req.set_control_id("add_peer");
         req.set_view_revision(5);
         // payload oneof intentionally not set
@@ -244,7 +244,7 @@ TEST_CASE("DispatchRequest round-trips each payload variant",
 TEST_CASE("View with view_revision = UINT64_MAX serializes correctly (boundary)",
           "[extension_ui][proto]") {
     beebium::View view;
-    view.set_extension_name("boundary");
+    view.set_extension_id("boundary");
     view.set_view_revision(std::numeric_limits<std::uint64_t>::max());
     view.mutable_root()->set_id("r");
     view.mutable_root()->mutable_label()->set_text("ok");
@@ -327,7 +327,7 @@ TEST_CASE("EditableChoice round-trips with options and value",
 TEST_CASE("DispatchRequest round-trips an EditorCommit with mixed field types",
           "[extension_ui][proto][modal_editor]") {
     beebium::DispatchRequest req;
-    req.set_extension_name("piconet");
+    req.set_extension_id("piconet");
     req.set_control_id("device_path");
     req.set_view_revision(7);
     auto* commit = req.mutable_editor_commit();

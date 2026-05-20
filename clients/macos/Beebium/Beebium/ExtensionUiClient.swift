@@ -82,28 +82,28 @@ final class ExtensionUiClient: ObservableObject, Disconnectable {
     /// no-op (the existing stream stays open). Streams that end (server
     /// disconnect, NOT_FOUND for a missing extension) clear the View
     /// entry and record an error message.
-    func subscribe(to extensionName: String) {
-        guard subscriptionTasks[extensionName] == nil else { return }
+    func subscribe(to extensionID: String) {
+        guard subscriptionTasks[extensionID] == nil else { return }
         guard let client = client else { return }
 
         var request = Beebium_SubscribeViewRequest()
-        request.extensionName = extensionName
+        request.extensionID = extensionID
 
         let task = Task<Void, Never> { [weak self] in
             guard let self = self else { return }
-            await self.runSubscription(extensionName: extensionName,
+            await self.runSubscription(extensionID: extensionID,
                                        request: request,
                                        client: client)
         }
-        subscriptionTasks[extensionName] = task
+        subscriptionTasks[extensionID] = task
     }
 
     /// Cancel a single extension's subscription and drop its View.
-    func unsubscribe(from extensionName: String) {
-        subscriptionTasks[extensionName]?.cancel()
-        subscriptionTasks.removeValue(forKey: extensionName)
-        views.removeValue(forKey: extensionName)
-        errors.removeValue(forKey: extensionName)
+    func unsubscribe(from extensionID: String) {
+        subscriptionTasks[extensionID]?.cancel()
+        subscriptionTasks.removeValue(forKey: extensionID)
+        views.removeValue(forKey: extensionID)
+        errors.removeValue(forKey: extensionID)
     }
 
     /// Send a Dispatch event to the server. Returns whether the
@@ -111,14 +111,14 @@ final class ExtensionUiClient: ObservableObject, Disconnectable {
     /// state change shows up on the SubscribeView stream as the next
     /// pushed View, not in this return value.
     @discardableResult
-    func dispatch(extension extensionName: String,
+    func dispatch(extension extensionID: String,
                   controlId: String,
                   viewRevision: UInt64,
                   payload: ExtensionDispatchPayload) async -> Bool {
         guard let client = client else { return false }
 
         var request = Beebium_DispatchRequest()
-        request.extensionName = extensionName
+        request.extensionID = extensionID
         request.controlID = controlId
         request.viewRevision = viewRevision
         switch payload {
@@ -152,25 +152,25 @@ final class ExtensionUiClient: ObservableObject, Disconnectable {
             let response = try await client.dispatch(request).response.get()
             if !response.accepted {
                 NSLog("[ExtensionUiClient] dispatch rejected (%@/%@): %@",
-                      extensionName, controlId, response.error)
+                      extensionID, controlId, response.error)
             }
             return response.accepted
         } catch {
             NSLog("[ExtensionUiClient] dispatch error (%@/%@): %@",
-                  extensionName, controlId, error.localizedDescription)
+                  extensionID, controlId, error.localizedDescription)
             return false
         }
     }
 
     // MARK: - Private
 
-    private func runSubscription(extensionName: String,
+    private func runSubscription(extensionID: String,
                                  request: Beebium_SubscribeViewRequest,
                                  client: Beebium_ExtensionUiServiceNIOClient) async {
         let call = client.subscribeView(request) { [weak self] view in
             Task { @MainActor [weak self] in
-                self?.views[view.extensionName] = view
-                self?.errors.removeValue(forKey: view.extensionName)
+                self?.views[view.extensionID] = view
+                self?.errors.removeValue(forKey: view.extensionID)
             }
         }
 
@@ -179,14 +179,14 @@ final class ExtensionUiClient: ObservableObject, Disconnectable {
             // Stream ended cleanly (e.g. server cancelled). Drop the
             // cached view so the UI stops showing stale data.
             await MainActor.run { [weak self] in
-                self?.views.removeValue(forKey: extensionName)
-                self?.subscriptionTasks.removeValue(forKey: extensionName)
+                self?.views.removeValue(forKey: extensionID)
+                self?.subscriptionTasks.removeValue(forKey: extensionID)
             }
         } catch {
             await MainActor.run { [weak self] in
-                self?.views.removeValue(forKey: extensionName)
-                self?.errors[extensionName] = error.localizedDescription
-                self?.subscriptionTasks.removeValue(forKey: extensionName)
+                self?.views.removeValue(forKey: extensionID)
+                self?.errors[extensionID] = error.localizedDescription
+                self?.subscriptionTasks.removeValue(forKey: extensionID)
             }
         }
     }

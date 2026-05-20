@@ -48,12 +48,12 @@ grpc::Status ExtensionUiServiceImpl::SubscribeView(
     const ::beebium::SubscribeViewRequest* request,
     grpc::ServerWriter<::beebium::View>* writer)
 {
-    Extension* ext = find_extension(request->extension_name());
+    Extension* ext = find_extension(request->extension_id());
     ExtensionUi* ui = ext ? ext->ui() : nullptr;
     if (!ui) {
         return grpc::Status(
             grpc::StatusCode::NOT_FOUND,
-            "Extension '" + request->extension_name() +
+            "Extension '" + request->extension_id() +
             "' not found or has no UI");
     }
 
@@ -67,7 +67,7 @@ grpc::Status ExtensionUiServiceImpl::SubscribeView(
         if (curr != last_pushed) {
             ::beebium::View view;
             ui->build_view(&view);
-            view.set_extension_name(request->extension_name());
+            view.set_extension_id(request->extension_id());
             view.set_view_revision(curr);
             if (!writer->Write(view)) {
                 break;  // client disconnected
@@ -84,18 +84,18 @@ grpc::Status ExtensionUiServiceImpl::Dispatch(
     const ::beebium::DispatchRequest* request,
     ::beebium::DispatchResponse* response)
 {
-    Extension* ext = find_extension(request->extension_name());
+    Extension* ext = find_extension(request->extension_id());
     if (!ext) {
         response->set_accepted(false);
         response->set_error(
-            "unknown extension: " + request->extension_name());
+            "unknown extension: " + request->extension_id());
         return grpc::Status::OK;
     }
     ExtensionUi* ui = ext->ui();
     if (!ui) {
         response->set_accepted(false);
         response->set_error(
-            "extension '" + request->extension_name() + "' has no UI");
+            "extension '" + request->extension_id() + "' has no UI");
         return grpc::Status::OK;
     }
 
@@ -150,15 +150,22 @@ grpc::Status ExtensionUiServiceImpl::Dispatch(
 }
 
 Extension* ExtensionUiServiceImpl::find_extension(
-    const std::string& name) const
+    const std::string& id) const
 {
+    // Lookup is by Extension::id(), not manifest name, so that
+    // multi-instance extensions (e.g. three SCSI hard discs on the
+    // same adapter) are each individually addressable. For
+    // single-instance extensions (AUN, Piconet) the auto-assigned id
+    // equals the manifest name, so existing clients are unaffected
+    // by the wire-level rename of the field from extension_name to
+    // extension_id.
     for (const auto& ext : transport_registry_.extensions()) {
-        if (ext->name() == name) {
+        if (ext->id() == id) {
             return ext.get();
         }
     }
     for (auto* ext : peripheral_registry_.extensions()) {
-        if (ext->name() == name) {
+        if (ext->id() == id) {
             return ext;
         }
     }

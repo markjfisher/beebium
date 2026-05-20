@@ -148,7 +148,7 @@ class Control:
 class View:
     """A complete view of an extension's UI at one revision."""
 
-    extension_name: str
+    extension_id: str
     revision: int
     root: Control
 
@@ -227,7 +227,7 @@ def _convert_control(proto: extension_ui_pb2.Control) -> Control:
 
 def _convert_view(proto: extension_ui_pb2.View) -> View:
     return View(
-        extension_name=proto.extension_name,
+        extension_id=proto.extension_id,
         revision=proto.view_revision,
         root=_convert_control(proto.root),
     )
@@ -273,7 +273,7 @@ class ExtensionUi:
     def __init__(self, stub: extension_ui_pb2_grpc.ExtensionUiServiceStub):
         self._stub = stub
 
-    def subscribe_view(self, extension_name: str) -> Iterator[View]:
+    def subscribe_view(self, extension_id: str) -> Iterator[View]:
         """Open a server-stream of View updates for one extension.
 
         The first View arrives immediately; subsequent Views arrive as
@@ -284,14 +284,14 @@ class ExtensionUi:
                 not exist or has no UI.
         """
         request = extension_ui_pb2.SubscribeViewRequest(
-            extension_name=extension_name
+            extension_id=extension_id
         )
         for proto_view in self._stub.SubscribeView(request):
             yield _convert_view(proto_view)
 
     def start_background_subscription(
         self,
-        extension_name: str,
+        extension_id: str,
         callback: Callable[[View], None],
     ) -> SubscriptionHandle:
         """Subscribe in a daemon thread; invoke callback on each View.
@@ -305,7 +305,7 @@ class ExtensionUi:
 
         def loop() -> None:
             try:
-                for view in self.subscribe_view(extension_name):
+                for view in self.subscribe_view(extension_id):
                     if stop_event.is_set():
                         break
                     callback(view)
@@ -318,7 +318,7 @@ class ExtensionUi:
 
     def dispatch(
         self,
-        extension_name: str,
+        extension_id: str,
         control_id: str,
         view_revision: int,
         payload: bool | str | int | None = None,
@@ -341,7 +341,7 @@ class ExtensionUi:
         not in the return value.
         """
         request = extension_ui_pb2.DispatchRequest(
-            extension_name=extension_name,
+            extension_id=extension_id,
             control_id=control_id,
             view_revision=view_revision,
         )

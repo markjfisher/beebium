@@ -19,7 +19,7 @@ import SwiftUI
 /// VStack regardless of whether the named extension is loaded.
 struct ExtensionPanelView: View {
     @ObservedObject var client: ExtensionUiClient
-    let extensionName: String
+    let extensionID: String
 
     var body: some View {
         // VStack rather than Group: Group is a transparent passthrough,
@@ -29,14 +29,14 @@ struct ExtensionPanelView: View {
         // when the panel has no content yet (which is the common case
         // before the first View arrives).
         VStack(alignment: .leading, spacing: 8) {
-            if let view = client.views[extensionName] {
+            if let view = client.views[extensionID] {
                 ExtensionViewRenderer(
                     control: view.root,
                     viewRevision: view.viewRevision,
                     dispatch: { controlId, payload in
                         Task {
                             await client.dispatch(
-                                extension: extensionName,
+                                extension: extensionID,
                                 controlId: controlId,
                                 viewRevision: view.viewRevision,
                                 payload: payload
@@ -44,7 +44,7 @@ struct ExtensionPanelView: View {
                         }
                     }
                 )
-            } else if let error = client.errors[extensionName] {
+            } else if let error = client.errors[extensionID] {
                 // Only show errors after a stream actually started; a
                 // missing extension produces NOT_FOUND from gRPC, which
                 // surfaces here as an error string. Callers that want
@@ -55,7 +55,7 @@ struct ExtensionPanelView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .onAppear { client.subscribe(to: extensionName) }
-        .onDisappear { client.unsubscribe(from: extensionName) }
+        .onAppear { client.subscribe(to: extensionID) }
+        .onDisappear { client.unsubscribe(from: extensionID) }
     }
 }

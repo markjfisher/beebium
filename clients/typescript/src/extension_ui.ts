@@ -128,7 +128,7 @@ export interface Control {
 
 /** A complete view of an extension's UI at one revision. */
 export interface View {
-    extensionName: string;
+    extensionId: string;
     revision: number;
     root: Control;
 }
@@ -221,7 +221,7 @@ function convertControl(proto: ProtoControl | undefined): Control {
 
 function convertView(proto: ProtoView): View {
     return {
-        extensionName: proto.extensionName,
+        extensionId: proto.extensionId,
         revision: proto.viewRevision,
         root: convertControl(proto.root),
     };
@@ -270,8 +270,8 @@ export class ExtensionUi {
      * the extension's state changes. The stream ends with NOT_FOUND
      * if the named extension does not exist or has no UI.
      */
-    async *subscribeView(extensionName: string): AsyncGenerator<View, void, undefined> {
-        const stream = this.stub.subscribeView({ extensionName });
+    async *subscribeView(extensionId: string): AsyncGenerator<View, void, undefined> {
+        const stream = this.stub.subscribeView({ extensionId });
         for await (const proto of toAsyncIterable(stream)) {
             yield convertView(proto);
         }
@@ -285,10 +285,10 @@ export class ExtensionUi {
      * -- check handle.isRunning if the caller needs to detect that.
      */
     startBackgroundSubscription(
-        extensionName: string,
+        extensionId: string,
         callback: (view: View) => void,
     ): SubscriptionHandle {
-        const stream = this.stub.subscribeView({ extensionName });
+        const stream = this.stub.subscribeView({ extensionId });
         const handle = new BackgroundStreamHandle(
             stream,
             (message: unknown) => callback(convertView(message as ProtoView)),
@@ -318,13 +318,13 @@ export class ExtensionUi {
      *     other unsupported type.
      */
     async dispatch(
-        extensionName: string,
+        extensionId: string,
         controlId: string,
         viewRevision: number,
         payload: boolean | string | number | null | undefined = undefined,
     ): Promise<DispatchResult> {
         const request: ProtoDispatchRequest = {
-            extensionName,
+            extensionId,
             controlId,
             viewRevision,
         };

@@ -412,12 +412,12 @@ struct NetworkModeView: View {
                 // AUN peer list; later slices extend the AUN panel
                 // with the Connect button + UDP port label.
                 ExtensionPanelView(client: extensionUiClient,
-                                   extensionName: "aun")
+                                   extensionID: "aun")
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
 
                 ExtensionPanelView(client: extensionUiClient,
-                                   extensionName: "piconet")
+                                   extensionID: "piconet")
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             }
@@ -484,7 +484,7 @@ struct NetworkModeView: View {
     }
 
     // Peers Section deleted: AUN's peer list is now rendered by
-    // ExtensionPanelView(extensionName: "aun") via AunUi (server-driven).
+    // ExtensionPanelView(extensionID: "aun") via AunUi (server-driven).
 }
 
 /// Popover for editing the Econet station ID

@@ -33,16 +33,19 @@ service ExtensionUiService {
 // --- View envelope ---
 
 message SubscribeViewRequest {
-    // Canonical extension name (e.g. "piconet", "aun") -- matches the
-    // 'name' field on EconetTransportService.EconetTransport and the
-    // equivalent on PeripheralExtensionService.
-    string extension_name = 1;
+    // Unique extension instance id (matches PeripheralExtensionService's
+    // ExtensionInfo.id and EconetTransportService.EconetTransport.id).
+    // For singleton extensions (AUN, Piconet) this is the manifest name;
+    // for multi-instance extensions (e.g. SCSI hard discs sharing one
+    // adapter) the registry auto-assigns disambiguated ids ("name",
+    // "name-1", "name-2", ...).
+    string extension_id = 1;
 }
 
 message View {
     // Echoed back so clients can route updates by extension if they
     // multiplex several streams onto one handler.
-    string extension_name = 1;
+    string extension_id = 1;
 
     // Monotonic per-extension counter, bumped before each push. Clients
     // must echo this in DispatchRequest so the server can reject stale
@@ -229,8 +232,8 @@ message ModalEditor {
 // --- Dispatch ---
 
 message DispatchRequest {
-    // Which extension the event targets (matches View.extension_name).
-    string extension_name = 1;
+    // Which extension instance the event targets (matches View.extension_id).
+    string extension_id = 1;
 
     // Which control inside that extension's view (matches Control.id).
     string control_id = 2;

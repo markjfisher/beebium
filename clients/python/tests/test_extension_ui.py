@@ -40,7 +40,7 @@ from beebium.extension_ui import (
 def _make_view_proto() -> extension_ui_pb2.View:
     """Build a moderately deep View proto exercising every primitive."""
     view = extension_ui_pb2.View()
-    view.extension_name = "test"
+    view.extension_id = "test"
     view.view_revision = 7
 
     root = view.root
@@ -101,7 +101,7 @@ class TestSubscribeView:
 
         view = views[0]
         assert isinstance(view, View)
-        assert view.extension_name == "test"
+        assert view.extension_id == "test"
         assert view.revision == 7
         assert view.root.id == "root"
         assert view.root.kind == ControlKind.GROUP
@@ -154,7 +154,7 @@ class TestDispatchPayloadDispatch:
         result = client.dispatch("ext", "ctrl", 5, payload=True)
         assert result == DispatchResult(accepted=True)
         sent = stub.Dispatch.call_args[0][0]
-        assert sent.extension_name == "ext"
+        assert sent.extension_id == "ext"
         assert sent.control_id == "ctrl"
         assert sent.view_revision == 5
         assert sent.WhichOneof("payload") == "bool_value"
