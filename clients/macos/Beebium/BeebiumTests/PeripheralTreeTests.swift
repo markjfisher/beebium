@@ -181,6 +181,58 @@ final class PeripheralTreeTests: XCTestCase {
         XCTAssertEqual(tree.groups[0].nodes[0].id, "weird#1")
     }
 
+    // MARK: - display name fallback
+
+    func testDisplayNameUsesExplicitLabelWhenSet() {
+        let scsi = info(name: "acorn-scsi",
+                        id: "acorn-scsi#1",
+                        attachesTo: ["1mhz-bus"],
+                        provides: ["scsi"],
+                        label: "Spare-Parts SCSI",
+                        description: "Acorn SCSI host adapter")
+        let tree = PeripheralTree.build(from: [scsi])
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Spare-Parts SCSI")
+    }
+
+    func testDisplayNameFallsBackToDescriptionWhenLabelEqualsId() {
+        // server falls back to id when no user-given label exists; the
+        // tree's displayName must recognise that pattern and prefer
+        // the manifest description instead.
+        let scsi = info(name: "acorn-scsi",
+                        id: "acorn-scsi-1234",
+                        attachesTo: ["1mhz-bus"],
+                        provides: ["scsi"],
+                        label: "acorn-scsi-1234",
+                        description: "Acorn SCSI host adapter")
+        let tree = PeripheralTree.build(from: [scsi])
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName,
+                       "Acorn SCSI host adapter")
+    }
+
+    func testDisplayNameFallsBackToHumanisedNameWhenLabelAndDescriptionAreUnhelpful() {
+        let rtc = info(name: "acorn-rtc",
+                       id: "acorn-rtc-1",
+                       attachesTo: ["user-port"],
+                       label: "acorn-rtc-1",
+                       description: "")
+        let tree = PeripheralTree.build(from: [rtc])
+        XCTAssertEqual(tree.groups[0].nodes[0].displayName, "Acorn RTC")
+    }
+
+    func testHumaniseUpperCasesKnownAcronyms() {
+        XCTAssertEqual(PeripheralNameFormatter.humanise("acorn-scsi"),
+                       "Acorn SCSI")
+        XCTAssertEqual(PeripheralNameFormatter.humanise("scsi-hard-disc"),
+                       "SCSI Hard Disc")
+        XCTAssertEqual(PeripheralNameFormatter.humanise("aun-transport"),
+                       "AUN Transport")
+    }
+
+    func testHumaniseTitleCasesUnknownTokens() {
+        XCTAssertEqual(PeripheralNameFormatter.humanise("voltmace-delta-14b1"),
+                       "Voltmace Delta 14b1")
+    }
+
     func testExtensionWithEmptyAttachesToBecomesOrphan() {
         // PeripheralExtension's contract is non-empty attachesTo. If
         // that's ever violated, surface the extension under `orphans`

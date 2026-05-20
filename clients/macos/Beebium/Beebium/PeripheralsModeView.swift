@@ -164,33 +164,20 @@ private struct PeripheralNodeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(node.label)
-                        .font(.body)
-                    Spacer()
-                    ForEach(node.secondaryAttachments, id: \.self) { point in
-                        Text("also: \(PeripheralLabels.extensionPoint(point))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(
-                                Capsule().stroke(Color.secondary.opacity(0.4),
-                                                 lineWidth: 1)
-                            )
-                    }
-                }
-
-                if !node.description.isEmpty {
-                    Text(node.description)
-                        .font(.caption)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(node.displayName)
+                    .font(.body)
+                Spacer()
+                ForEach(node.secondaryAttachments, id: \.self) { point in
+                    Text("also: \(PeripheralLabels.extensionPoint(point))")
+                        .font(.caption2)
                         .foregroundColor(.secondary)
-                        .lineLimit(2)
-                }
-
-                if !node.config.isEmpty {
-                    ConfigList(config: node.config)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule().stroke(Color.secondary.opacity(0.4),
+                                             lineWidth: 1)
+                        )
                 }
             }
             .padding(.leading, leadingPadding)
@@ -201,31 +188,6 @@ private struct PeripheralNodeRow: View {
                 PeripheralNodeRow(node: child, depth: depth + 1)
             }
         }
-    }
-}
-
-private struct ConfigList: View {
-    let config: [String: String]
-
-    private var sortedKeys: [String] { config.keys.sorted() }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(sortedKeys, id: \.self) { key in
-                HStack(spacing: 4) {
-                    Text("\(key):")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(config[key] ?? "")
-                        .font(.caption2)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                }
-            }
-        }
-        .padding(.top, 2)
     }
 }
 

@@ -31,6 +31,46 @@ struct PeripheralNode: Identifiable, Hashable {
     let secondaryAttachments: [String]
     let provides: [String]
     var children: [PeripheralNode]
+
+    /// Best human-readable name for the default (no-ExtensionUi) row.
+    ///
+    /// Falls through in order:
+    /// 1. `label` if it was explicitly set (i.e. distinct from `id`,
+    ///    which is the server's default fallback when no label was
+    ///    given by the user).
+    /// 2. `description` from the manifest (typically a short prose
+    ///    name like "Acorn SCSI host adapter").
+    /// 3. A humanised form of the manifest `name` slug.
+    var displayName: String {
+        if !label.isEmpty && label != id {
+            return label
+        }
+        if !description.isEmpty {
+            return description
+        }
+        return PeripheralNameFormatter.humanise(name)
+    }
+}
+
+/// Title-cases a manifest name slug (kebab-case) into a human-friendly
+/// form, upper-casing well-known acronyms. Used as the last-resort
+/// fallback when an extension has no explicit label or description.
+enum PeripheralNameFormatter {
+    private static let acronyms: Set<String> = [
+        "scsi", "rtc", "usb", "aun", "adfs", "dfs", "nfs",
+        "rom", "ram", "led", "vdu", "fdc", "ide", "spi",
+        "i2c", "uart", "io", "rs423", "bbc",
+    ]
+
+    static func humanise(_ slug: String) -> String {
+        slug.split(separator: "-").map { token -> String in
+            let lower = token.lowercased()
+            if acronyms.contains(lower) {
+                return lower.uppercased()
+            }
+            return lower.prefix(1).uppercased() + lower.dropFirst()
+        }.joined(separator: " ")
+    }
 }
 
 /// Hierarchical view of the configured peripherals, rooted at the built-in
