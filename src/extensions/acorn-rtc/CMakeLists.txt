@@ -45,6 +45,7 @@ if(BEEBIUM_BUILD_SERVICE)
     # Static library (built-in extension)
     add_library(beebium_ext_acorn_rtc STATIC
         AcornRtcExtension.cpp
+        AcornRtcUi.cpp
     )
 
     target_include_directories(beebium_ext_acorn_rtc
@@ -56,11 +57,15 @@ if(BEEBIUM_BUILD_SERVICE)
             beebium_rtc_core
             beebium_core
             beebium_ext_acorn_rtc_proto
+            # AcornRtcUi.cpp pulls in extension_ui.pb.h for the
+            # View / DispatchRequest types it composes.
+            beebium_extension_ui_proto
     )
 
     # Shared library (plugin extension)
     add_library(beebium_ext_acorn_rtc_plugin SHARED
         AcornRtcExtension.cpp
+        AcornRtcUi.cpp
         plugin_entry.cpp
     )
 
@@ -73,6 +78,9 @@ if(BEEBIUM_BUILD_SERVICE)
             beebium_rtc_core
             beebium_extension_api
             beebium_ext_acorn_rtc_proto
+            # AcornRtcUi.cpp pulls in extension_ui.pb.h for the
+            # View / DispatchRequest types it composes.
+            beebium_extension_ui_proto
     )
 
     set_target_properties(beebium_ext_acorn_rtc_plugin PROPERTIES

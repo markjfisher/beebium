@@ -502,6 +502,19 @@ add_executable(test_saf3019p_v126 test_saf3019p_v126.cpp)
 target_link_libraries(test_saf3019p_v126 PRIVATE beebium_rtc_core Catch2::Catch2WithMain)
 catch_discover_tests(test_saf3019p_v126)
 
+# AcornRtcUi tests (build_view shape, format helpers, worker lifecycle).
+# Gated on BEEBIUM_BUILD_SERVICE because the full AcornRtcExtension
+# (which the UI wraps) is only built when the service layer is in.
+if(BEEBIUM_BUILD_SERVICE)
+    add_executable(test_acorn_rtc_ui test_acorn_rtc_ui.cpp)
+    target_link_libraries(test_acorn_rtc_ui PRIVATE
+        beebium_ext_acorn_rtc
+        beebium_extension_ui_proto
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_acorn_rtc_ui)
+endif()
+
 # SN76489 sound chip tests
 add_executable(test_sn76489 test_sn76489.cpp)
 target_link_libraries(test_sn76489 PRIVATE beebium_core Catch2::Catch2WithMain)

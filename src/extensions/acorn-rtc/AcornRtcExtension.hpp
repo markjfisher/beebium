@@ -13,8 +13,9 @@
 #ifndef BEEBIUM_ACORN_RTC_EXTENSION_HPP
 #define BEEBIUM_ACORN_RTC_EXTENSION_HPP
 
-#include "Saf3019p.hpp"
 #include "AcornRtcService.hpp"
+#include "AcornRtcUi.hpp"
+#include "Saf3019p.hpp"
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/extension/UserPortDevice.hpp>
 
@@ -38,6 +39,11 @@ public:
     void shutdown() override;
     std::vector<grpc::Service*> grpc_services() override;
 
+    // ExtensionUi panel for the Peripherals sidebar. Returns a stable
+    // pointer (owned by this extension) showing the current chip
+    // time and active register layout.
+    ExtensionUi* ui() override { return &ui_; }
+
     // UserPortDevice interface
     uint8_t update_port_b(uint8_t output, uint8_t ddr) override;
 
@@ -48,6 +54,7 @@ private:
     Saf3019p chip_;
     bool ddr_reset_armed_ = false;
     std::unique_ptr<AcornRtcServiceImpl> service_;
+    AcornRtcUi ui_{*this};
 };
 
 }  // namespace beebium
