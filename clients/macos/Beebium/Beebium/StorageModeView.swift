@@ -207,6 +207,27 @@ private struct StorageDeviceRowView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(device.backingPath)
+                    // Same affordances as the floppy disc-name row
+                    // above (Copy Path / Reveal in Finder), available
+                    // on any storage device with a non-empty backing
+                    // path. The shortcut menu also serves to expose
+                    // the path verbatim when the truncated row text
+                    // isn't enough to read it.
+                    .contextMenu {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(device.backingPath,
+                                                           forType: .string)
+                        } label: {
+                            Label("Copy Path", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            let url = URL(fileURLWithPath: device.backingPath)
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } label: {
+                            Label("Reveal in Finder", systemImage: "folder")
+                        }
+                    }
             }
         }
         .padding(.horizontal, 16)
