@@ -75,7 +75,99 @@ struct Beebium_ExtensionInfo: Sendable {
   /// without a UI would just return NOT_FOUND.
   var hasUi_p: Bool = false
 
+  /// Storage devices published by this extension (typically empty;
+  /// populated when the extension implements ExtensionStorage on the
+  /// server). One extension can publish multiple devices -- e.g. a
+  /// future Opus Challenger would expose its floppy drive and RAM
+  /// disc as two entries here.
+  var storageDevices: [Beebium_StorageDevice] = []
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// A storage device published by a peripheral extension. Surfaced in
+/// the macOS Storage sidebar (and equivalents elsewhere) below the
+/// machine's built-in floppy drives. Activity LEDs continue to flow
+/// through IndicatorService; this message just names the indicator so
+/// the frontend knows which one to subscribe to.
+struct Beebium_StorageDevice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Stable identifier unique within the process. Conventionally the
+  /// owning extension's id, optionally suffixed when one extension
+  /// publishes multiple devices (e.g. "opus-challenger/ramdisc").
+  var id: String = String()
+
+  /// Display label, e.g. "Hard Disc (SCSI ID 0)". Frontends use this
+  /// verbatim as the row title.
+  var label: String = String()
+
+  var kind: Beebium_StorageDevice.Kind = .fixed
+
+  /// Semantic media class: "hard-disc", "floppy", "ram-disc",
+  /// "microdrive", etc. Frontends may use this for grouping or
+  /// iconography but should not parse it for behaviour -- the
+  /// kind field carries the behavioural distinction.
+  var mediaType: String = String()
+
+  /// Filesystem path to the backing store on the host. For FIXED
+  /// devices this is the always-present image file. For REMOVABLE
+  /// devices it is the currently-mounted image, or empty when no
+  /// media is inserted.
+  var backingPath: String = String()
+
+  /// Name of the per-device activity indicator in IndicatorService,
+  /// e.g. "hdd-0-activity-led" or "floppy-0-activity-led". The
+  /// frontend subscribes to that indicator to drive the row's
+  /// activity dot. Empty when the device has no activity LED.
+  var activityIndicatorName: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  enum Kind: SwiftProtobuf.Enum, Swift.CaseIterable {
+    typealias RawValue = Int
+
+    /// Non-removable media: no eject affordance, no path editing.
+    /// Hard discs, RAM discs, anything soldered or fitted in a way
+    /// that doesn't allow runtime swap.
+    case fixed // = 0
+
+    /// User-swappable media: future UIs will expose mount, eject,
+    /// and (when empty) a drop / browse target. Not exercised yet.
+    case removable // = 1
+    case UNRECOGNIZED(Int)
+
+    init() {
+      self = .fixed
+    }
+
+    init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .fixed
+      case 1: self = .removable
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    var rawValue: Int {
+      switch self {
+      case .fixed: return 0
+      case .removable: return 1
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    static let allCases: [Beebium_StorageDevice.Kind] = [
+      .fixed,
+      .removable,
+    ]
+
+  }
 
   init() {}
 }
@@ -159,7 +251,7 @@ extension Beebium_ListExtensionsResponse: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ExtensionInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}id\0\u{1}label\0\u{3}attaches_to\0\u{1}provides\0\u{1}config\0\u{1}parameters\0\u{1}description\0\u{3}has_ui\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}id\0\u{1}label\0\u{3}attaches_to\0\u{1}provides\0\u{1}config\0\u{1}parameters\0\u{1}description\0\u{3}has_ui\0\u{3}storage_devices\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -176,6 +268,7 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.parameters) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
       case 9: try { try decoder.decodeSingularBoolField(value: &self.hasUi_p) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.storageDevices) }()
       default: break
       }
     }
@@ -209,6 +302,9 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if self.hasUi_p != false {
       try visitor.visitSingularBoolField(value: self.hasUi_p, fieldNumber: 9)
     }
+    if !self.storageDevices.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.storageDevices, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -222,9 +318,69 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if lhs.parameters != rhs.parameters {return false}
     if lhs.description_p != rhs.description_p {return false}
     if lhs.hasUi_p != rhs.hasUi_p {return false}
+    if lhs.storageDevices != rhs.storageDevices {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
+}
+
+extension Beebium_StorageDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".StorageDevice"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{3}media_type\0\u{3}backing_path\0\u{3}activity_indicator_name\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.mediaType) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.backingPath) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.activityIndicatorName) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
+    }
+    if self.kind != .fixed {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 3)
+    }
+    if !self.mediaType.isEmpty {
+      try visitor.visitSingularStringField(value: self.mediaType, fieldNumber: 4)
+    }
+    if !self.backingPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.backingPath, fieldNumber: 5)
+    }
+    if !self.activityIndicatorName.isEmpty {
+      try visitor.visitSingularStringField(value: self.activityIndicatorName, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_StorageDevice, rhs: Beebium_StorageDevice) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.label != rhs.label {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.mediaType != rhs.mediaType {return false}
+    if lhs.backingPath != rhs.backingPath {return false}
+    if lhs.activityIndicatorName != rhs.activityIndicatorName {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_StorageDevice.Kind: SwiftProtobuf._ProtoNameProviding {
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FIXED\0\u{1}REMOVABLE\0")
 }
 
 extension Beebium_ParameterSchemaInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

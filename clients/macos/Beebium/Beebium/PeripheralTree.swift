@@ -21,6 +21,27 @@ import Foundation
 /// into the user port and the analogue port simultaneously. The node
 /// is rendered once (under the primary) with the secondaries shown as
 /// badges, so the conceptual DAG collapses cleanly to a tree.
+/// One storage device published by a peripheral extension. Surfaced
+/// in the Storage sidebar below the machine's built-in floppy drives.
+/// Activity LEDs continue to flow through IndicatorService; this
+/// struct just names the indicator so the view layer knows which one
+/// to subscribe to.
+struct PeripheralStorageDevice: Identifiable, Hashable {
+    enum Kind: Hashable {
+        /// Non-removable: no eject affordance, non-editable path.
+        case fixed
+        /// User-swappable media: future UIs add mount/eject.
+        case removable
+    }
+
+    let id: String
+    let label: String
+    let kind: Kind
+    let mediaType: String
+    let backingPath: String
+    let activityIndicatorName: String
+}
+
 struct PeripheralNode: Identifiable, Hashable {
     let id: String
     let name: String
@@ -35,6 +56,12 @@ struct PeripheralNode: Identifiable, Hashable {
     /// the sidebar opens an ExtensionUiService.SubscribeView stream
     /// for this node; for `false`, the row is just the static label.
     let hasUI: Bool
+    /// Storage devices the extension publishes (empty for the vast
+    /// majority). Used by the Storage sidebar to render rows below
+    /// the floppy drives. One extension may publish several devices
+    /// -- a future Opus Challenger would expose its floppy drive
+    /// and RAM disc here as two entries on the same node.
+    let storageDevices: [PeripheralStorageDevice]
     var children: [PeripheralNode]
 
     /// Best human-readable name for the default (no-ExtensionUi) row.
@@ -78,6 +105,27 @@ enum PeripheralLabels {
     static func extensionPoint(_ name: String) -> String {
         extensionPointNames[name] ?? name
     }
+}
+
+/// Bridge from the wire-level `Beebium_StorageDevice` proto to the
+/// view-friendly `PeripheralStorageDevice` value type, mapping the
+/// proto enum to the native Swift enum.
+private func makeStorageDevice(_ proto: Beebium_StorageDevice) -> PeripheralStorageDevice {
+    let kind: PeripheralStorageDevice.Kind
+    switch proto.kind {
+    case .removable:
+        kind = .removable
+    case .fixed, .UNRECOGNIZED:
+        kind = .fixed
+    }
+    return PeripheralStorageDevice(
+        id: proto.id,
+        label: proto.label,
+        kind: kind,
+        mediaType: proto.mediaType,
+        backingPath: proto.backingPath,
+        activityIndicatorName: proto.activityIndicatorName
+    )
 }
 
 /// Title-cases a manifest name slug (kebab-case) into a human-friendly
@@ -157,6 +205,7 @@ struct PeripheralTree: Equatable {
                 secondaryAttachments: secondary,
                 provides: ext.provides,
                 hasUI: ext.hasUi_p,
+                storageDevices: ext.storageDevices.map(makeStorageDevice),
                 children: []
             )
         }

@@ -24,7 +24,8 @@ final class PeripheralTreeTests: XCTestCase {
                       config: [String: String] = [:],
                       label: String? = nil,
                       description: String = "",
-                      hasUI: Bool = false) -> Beebium_ExtensionInfo {
+                      hasUI: Bool = false,
+                      storageDevices: [Beebium_StorageDevice] = []) -> Beebium_ExtensionInfo {
         var info = Beebium_ExtensionInfo()
         info.name = name
         info.id = id
@@ -34,7 +35,25 @@ final class PeripheralTreeTests: XCTestCase {
         info.provides = provides
         info.config = config
         info.hasUi_p = hasUI
+        info.storageDevices = storageDevices
         return info
+    }
+
+    private func storageDevice(id: String,
+                               label: String,
+                               kind: Beebium_StorageDevice.Kind = .fixed,
+                               mediaType: String = "hard-disc",
+                               backingPath: String = "/tmp/test.dat",
+                               activityIndicator: String = "")
+                              -> Beebium_StorageDevice {
+        var dev = Beebium_StorageDevice()
+        dev.id = id
+        dev.label = label
+        dev.kind = kind
+        dev.mediaType = mediaType
+        dev.backingPath = backingPath
+        dev.activityIndicatorName = activityIndicator
+        return dev
     }
 
     // MARK: - shape
@@ -287,6 +306,89 @@ final class PeripheralTreeTests: XCTestCase {
 
         let tree = PeripheralTree.build(from: [raw])
         XCTAssertFalse(tree.groups[0].nodes[0].hasUI)
+    }
+
+    // MARK: - storage device propagation
+
+    func testStorageDevicesDefaultToEmpty() {
+        // An extension that doesn't publish storage devices yields a
+        // node with an empty storageDevices array, not nil. The
+        // Storage sidebar iterates these freely without nil-handling.
+        let scsi = info(name: "acorn-scsi",
+                        id: "acorn-scsi",
+                        attachesTo: ["1mhz-bus"],
+                        provides: ["scsi"])
+        let tree = PeripheralTree.build(from: [scsi])
+        XCTAssertTrue(tree.groups[0].nodes[0].storageDevices.isEmpty)
+    }
+
+    func testStorageDevicePropagatesAllFields() {
+        let hdd = info(name: "scsi-hard-disc",
+                       id: "scsi-hard-disc",
+                       attachesTo: ["scsi"],
+                       storageDevices: [
+                           storageDevice(id: "scsi-hard-disc",
+                                         label: "Hard Disc (SCSI ID 0)",
+                                         kind: .fixed,
+                                         mediaType: "hard-disc",
+                                         backingPath: "/discs/boot.dat",
+                                         activityIndicator: "hdd-0-activity-led")
+                       ])
+        let scsi = info(name: "acorn-scsi",
+                        id: "acorn-scsi",
+                        attachesTo: ["1mhz-bus"],
+                        provides: ["scsi"])
+
+        let tree = PeripheralTree.build(from: [scsi, hdd])
+        let hddNode = tree.groups[0].nodes[0].children[0]
+
+        XCTAssertEqual(hddNode.storageDevices.count, 1)
+        let dev = hddNode.storageDevices[0]
+        XCTAssertEqual(dev.id, "scsi-hard-disc")
+        XCTAssertEqual(dev.label, "Hard Disc (SCSI ID 0)")
+        XCTAssertEqual(dev.kind, .fixed)
+        XCTAssertEqual(dev.mediaType, "hard-disc")
+        XCTAssertEqual(dev.backingPath, "/discs/boot.dat")
+        XCTAssertEqual(dev.activityIndicatorName, "hdd-0-activity-led")
+    }
+
+    func testStorageDeviceRemovableKindMaps() {
+        let oddball = info(name: "future-removable",
+                           id: "future-removable",
+                           attachesTo: ["1mhz-bus"],
+                           storageDevices: [
+                               storageDevice(id: "fr-0",
+                                             label: "Cartridge slot",
+                                             kind: .removable,
+                                             mediaType: "rom-cartridge",
+                                             backingPath: "")
+                           ])
+        let tree = PeripheralTree.build(from: [oddball])
+        XCTAssertEqual(tree.groups[0].nodes[0].storageDevices[0].kind, .removable)
+    }
+
+    func testStorageDeviceMultipleEntriesPreserveOrder() {
+        // The motivating case for "one extension, many devices":
+        // a future Opus Challenger would publish its floppy drive
+        // and RAM disc as two entries here, in declaration order.
+        let combo = info(name: "future-combo",
+                         id: "future-combo",
+                         attachesTo: ["1mhz-bus"],
+                         storageDevices: [
+                             storageDevice(id: "combo/floppy",
+                                           label: "Combo Floppy",
+                                           kind: .removable,
+                                           mediaType: "floppy"),
+                             storageDevice(id: "combo/ramdisc",
+                                           label: "Combo RAM Disc",
+                                           kind: .fixed,
+                                           mediaType: "ram-disc"),
+                         ])
+        let tree = PeripheralTree.build(from: [combo])
+        let devs = tree.groups[0].nodes[0].storageDevices
+        XCTAssertEqual(devs.count, 2)
+        XCTAssertEqual(devs[0].id, "combo/floppy")
+        XCTAssertEqual(devs[1].id, "combo/ramdisc")
     }
 
     func testExtensionWithEmptyAttachesToBecomesOrphan() {
