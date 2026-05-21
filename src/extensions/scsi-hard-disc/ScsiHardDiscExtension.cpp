@@ -50,10 +50,27 @@ std::vector<StorageDeviceInfo> ScsiHardDiscExtension::devices() const {
     dev.kind = StorageDeviceInfo::Kind::Fixed;
     dev.media_type = "hard-disc";
 
+    // Resolve to an absolute, normalised path so the macOS sidebar's
+    // Copy Path produces something the user can paste straight into
+    // a terminal or another app -- the server's cwd is the right
+    // reference (it's where init() opened the file from), and the
+    // client has no way to recover it. Deliberately uses absolute()
+    // + lexically_normal() rather than weakly_canonical / canonical
+    // so symlinks are preserved: a user who typed /tmp/foo.dat gets
+    // back /tmp/foo.dat (on macOS, where /tmp -> /private/tmp), not
+    // the symlink-resolved form they didn't ask for.
+    std::filesystem::path raw;
     if (auto image_str = config_value("image")) {
-        dev.backing_path = std::string(*image_str);
+        raw = std::filesystem::path(std::string(*image_str));
     } else if (!image_filepath_.empty()) {
-        dev.backing_path = image_filepath_.string();
+        raw = image_filepath_;
+    }
+    if (!raw.empty()) {
+        std::error_code ec;
+        auto abs = std::filesystem::absolute(raw, ec);
+        dev.backing_path = ec
+            ? raw.string()
+            : abs.lexically_normal().string();
     }
 
     if (auto scsi_id = config_value("scsi-id")) {

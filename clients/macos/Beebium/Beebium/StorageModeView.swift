@@ -201,18 +201,16 @@ private struct StorageDeviceRowView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             } else {
-                Text(device.backingPath)
+                // Show the filename only, matching the floppy row's
+                // disc-name convention. The full path stays available
+                // via the tooltip and the Copy Path context menu item.
+                Text(URL(fileURLWithPath: device.backingPath).lastPathComponent)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(device.backingPath)
-                    // Same affordances as the floppy disc-name row
-                    // above (Copy Path / Reveal in Finder), available
-                    // on any storage device with a non-empty backing
-                    // path. The shortcut menu also serves to expose
-                    // the path verbatim when the truncated row text
-                    // isn't enough to read it.
+                    // Same affordances as the floppy disc-name row.
                     .contextMenu {
                         Button {
                             NSPasteboard.general.clearContents()
@@ -320,12 +318,10 @@ private struct DriveRowView: View {
                             Label("Copy Path", systemImage: "doc.on.doc")
                         }
 
-                        if let url = fileURL {
-                            Button {
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            } label: {
-                                Label("Reveal in Finder", systemImage: "folder")
-                            }
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                        } label: {
+                            Label("Reveal in Finder", systemImage: "folder")
                         }
                     }
             }
@@ -345,14 +341,26 @@ private struct DriveRowView: View {
     }
 
     private var fullPath: String {
-        if let url = URL(string: drive.discURL) {
+        // drive.discURL can be either a file:// URL or a plain
+        // filesystem path depending on how the disc was mounted
+        // (drop vs CLI). URL(string:) parses both, but for the
+        // already-plain case it returns a URL with no scheme so
+        // url.path strips information; fall through to the raw
+        // string in that case.
+        if let url = URL(string: drive.discURL),
+           url.scheme != nil && !url.scheme!.isEmpty {
             return url.path
         }
         return drive.discURL
     }
 
-    private var fileURL: URL? {
-        URL(string: drive.discURL)
+    private var fileURL: URL {
+        // Always produce a file:// URL from the path string.
+        // URL(string:) succeeds for plain paths too but the result
+        // has no scheme, which NSWorkspace.activateFileViewerSelecting
+        // silently refuses to act on -- previously the Reveal in
+        // Finder menu item never fired for plain-path mounts.
+        URL(fileURLWithPath: fullPath)
     }
 
     private var ejectingContent: some View {
