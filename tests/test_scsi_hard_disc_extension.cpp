@@ -75,3 +75,64 @@ TEST_CASE("ScsiHardDiscExtension distinguishes multiple instances",
     REQUIRE(b->label() != c->label());
     REQUIRE(a->label() != c->label());
 }
+
+// MARK: - ExtensionStorage
+
+TEST_CASE("ScsiHardDiscExtension::storage() returns a non-null capability",
+          "[scsi][hard-disc][extension][storage]") {
+    auto ext = ScsiHardDiscExtension::create();
+    REQUIRE(ext->storage() != nullptr);
+}
+
+TEST_CASE("ScsiHardDiscExtension publishes exactly one FIXED hard-disc device",
+          "[scsi][hard-disc][extension][storage]") {
+    auto ext = ScsiHardDiscExtension::create();
+    ext->set_config({{"id", "scsi-hard-disc"},
+                     {"scsi-id", "0"},
+                     {"image", "/tmp/example.dat"}});
+
+    auto devices = ext->storage()->devices();
+    REQUIRE(devices.size() == 1);
+
+    const auto& dev = devices[0];
+    REQUIRE(dev.kind == beebium::StorageDeviceInfo::Kind::Fixed);
+    REQUIRE(dev.media_type == "hard-disc");
+    REQUIRE(dev.backing_path == "/tmp/example.dat");
+    // The id matches the extension's id so the frontend can associate
+    // the row back to the Peripherals tree node.
+    REQUIRE(dev.id == "scsi-hard-disc");
+    // Label matches the row title rendered in the Peripherals sidebar
+    // for visual continuity between the two places this drive shows up.
+    REQUIRE(dev.label == "Hard Disc (SCSI ID 0)");
+    // Activity LED name matches the existing IndicatorService convention
+    // (AcornScsiHostAdapter registers hdd-{N}-activity-led per LUN).
+    REQUIRE(dev.activity_indicator_name == "hdd-0-activity-led");
+}
+
+TEST_CASE("ScsiHardDiscExtension storage device id matches the SCSI ID suffix",
+          "[scsi][hard-disc][extension][storage]") {
+    auto ext = ScsiHardDiscExtension::create();
+    ext->set_config({{"id", "scsi-hard-disc-1"},
+                     {"scsi-id", "1"},
+                     {"image", "/tmp/two.dat"}});
+
+    auto devices = ext->storage()->devices();
+    REQUIRE(devices.size() == 1);
+    REQUIRE(devices[0].id == "scsi-hard-disc-1");
+    REQUIRE(devices[0].activity_indicator_name == "hdd-1-activity-led");
+    REQUIRE(devices[0].label == "Hard Disc (SCSI ID 1)");
+}
+
+TEST_CASE("ScsiHardDiscExtension publishes empty path when no image configured",
+          "[scsi][hard-disc][extension][storage]") {
+    // A drive declared without an image is still a physical drive in
+    // the bay; surface it with an empty backing_path rather than
+    // suppressing the entry entirely.
+    auto ext = ScsiHardDiscExtension::create();
+    ext->set_config({{"id", "scsi-hard-disc"},
+                     {"scsi-id", "0"}});
+
+    auto devices = ext->storage()->devices();
+    REQUIRE(devices.size() == 1);
+    REQUIRE(devices[0].backing_path.empty());
+}

@@ -44,6 +44,30 @@ std::string ScsiHardDiscExtension::default_label() const {
     return Extension::default_label();
 }
 
+std::vector<StorageDeviceInfo> ScsiHardDiscExtension::devices() const {
+    StorageDeviceInfo dev;
+    dev.id = std::string(id());
+    dev.label = label();
+    dev.kind = StorageDeviceInfo::Kind::Fixed;
+    dev.media_type = "hard-disc";
+
+    if (auto image_str = config_value("image")) {
+        dev.backing_path = std::string(*image_str);
+    } else if (!image_filepath_.empty()) {
+        dev.backing_path = image_filepath_.string();
+    }
+
+    if (auto scsi_id = config_value("scsi-id")) {
+        // Matches AcornScsiHostAdapter::register_target_indicator's
+        // naming convention so the macOS frontend (and the existing
+        // StatusBarView) subscribe to the same IndicatorService entry.
+        dev.activity_indicator_name =
+            "hdd-" + std::string(*scsi_id) + "-activity-led";
+    }
+
+    return {std::move(dev)};
+}
+
 void ScsiHardDiscExtension::init(ExtensionContext& ctx) {
     // Discover the SCSI adapter via the "scsi" extension point.
     // If adapter-id is specified, look up a specific adapter; otherwise use the default.

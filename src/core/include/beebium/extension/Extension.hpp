@@ -27,7 +27,8 @@
 
 namespace beebium {
 
-class ExtensionUi;  // forward decl; defined in ExtensionUi.hpp
+class ExtensionUi;       // forward decl; defined in ExtensionUi.hpp
+class ExtensionStorage;  // forward decl; defined in ExtensionStorage.hpp
 
 // Common base for all extension-point types. Holds manifest, instance
 // config, and identity accessors. No lifecycle methods -- those belong
@@ -154,6 +155,14 @@ public:
     // returned pointer must outlive the Extension instance; typically
     // the implementation is a member of the concrete extension class.
     virtual ExtensionUi* ui() { return nullptr; }
+
+    // Optional storage-capability hook. Returns nullptr by default;
+    // extensions that publish storage devices (hard discs, RAM discs,
+    // microdrives, ...) multiply-inherit ExtensionStorage and
+    // override this to return `this`. Mirrors the ui() pattern: a
+    // virtual accessor avoids requiring dynamic_cast (and its cross-
+    // plugin typeinfo dependency) at the framework level.
+    virtual ExtensionStorage* storage() { return nullptr; }
 
 protected:
     ExtensionManifest manifest_;

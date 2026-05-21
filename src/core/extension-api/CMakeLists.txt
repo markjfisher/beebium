@@ -203,6 +203,7 @@ add_library(beebium_extension_api SHARED
     IndicatorFilter.cpp
     OneMHzBusPort.cpp
     EconetTransportExtension.cpp
+    ExtensionStorage.cpp
     ExtensionUi.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/UserPort.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PluginLoader.cpp

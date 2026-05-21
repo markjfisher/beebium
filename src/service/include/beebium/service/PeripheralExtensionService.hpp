@@ -15,6 +15,7 @@
 
 #include "peripheral_extension.grpc.pb.h"
 #include "beebium/extension/ExtensionRegistry.hpp"
+#include "beebium/extension/ExtensionStorage.hpp"
 
 #include <grpcpp/grpcpp.h>
 
@@ -39,6 +40,25 @@ public:
             info->set_label(std::string(ext->label()));
             info->set_description(std::string(ext->description()));
             info->set_has_ui(ext->ui() != nullptr);
+
+            // Storage devices: extensions opt in by implementing
+            // ExtensionStorage and overriding Extension::storage()
+            // to return `this`. Empty for the typical extension.
+            if (auto* storage = ext->storage()) {
+                for (const auto& dev : storage->devices()) {
+                    auto* proto_dev = info->add_storage_devices();
+                    proto_dev->set_id(dev.id);
+                    proto_dev->set_label(dev.label);
+                    proto_dev->set_kind(
+                        dev.kind == StorageDeviceInfo::Kind::Removable
+                            ? StorageDevice::REMOVABLE
+                            : StorageDevice::FIXED);
+                    proto_dev->set_media_type(dev.media_type);
+                    proto_dev->set_backing_path(dev.backing_path);
+                    proto_dev->set_activity_indicator_name(
+                        dev.activity_indicator_name);
+                }
+            }
 
             for (auto dep : ext->attaches_to()) {
                 info->add_attaches_to(std::string(dep));

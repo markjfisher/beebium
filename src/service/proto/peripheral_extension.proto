@@ -29,6 +29,57 @@ message ExtensionInfo {
     // worth opening an ExtensionUiService.SubscribeView stream to; ones
     // without a UI would just return NOT_FOUND.
     bool has_ui = 9;
+    // Storage devices published by this extension (typically empty;
+    // populated when the extension implements ExtensionStorage on the
+    // server). One extension can publish multiple devices -- e.g. a
+    // future Opus Challenger would expose its floppy drive and RAM
+    // disc as two entries here.
+    repeated StorageDevice storage_devices = 10;
+}
+
+// A storage device published by a peripheral extension. Surfaced in
+// the macOS Storage sidebar (and equivalents elsewhere) below the
+// machine's built-in floppy drives. Activity LEDs continue to flow
+// through IndicatorService; this message just names the indicator so
+// the frontend knows which one to subscribe to.
+message StorageDevice {
+    // Stable identifier unique within the process. Conventionally the
+    // owning extension's id, optionally suffixed when one extension
+    // publishes multiple devices (e.g. "opus-challenger/ramdisc").
+    string id = 1;
+
+    // Display label, e.g. "Hard Disc (SCSI ID 0)". Frontends use this
+    // verbatim as the row title.
+    string label = 2;
+
+    enum Kind {
+        // Non-removable media: no eject affordance, no path editing.
+        // Hard discs, RAM discs, anything soldered or fitted in a way
+        // that doesn't allow runtime swap.
+        FIXED = 0;
+        // User-swappable media: future UIs will expose mount, eject,
+        // and (when empty) a drop / browse target. Not exercised yet.
+        REMOVABLE = 1;
+    }
+    Kind kind = 3;
+
+    // Semantic media class: "hard-disc", "floppy", "ram-disc",
+    // "microdrive", etc. Frontends may use this for grouping or
+    // iconography but should not parse it for behaviour -- the
+    // kind field carries the behavioural distinction.
+    string media_type = 4;
+
+    // Filesystem path to the backing store on the host. For FIXED
+    // devices this is the always-present image file. For REMOVABLE
+    // devices it is the currently-mounted image, or empty when no
+    // media is inserted.
+    string backing_path = 5;
+
+    // Name of the per-device activity indicator in IndicatorService,
+    // e.g. "hdd-0-activity-led" or "floppy-0-activity-led". The
+    // frontend subscribes to that indicator to drive the row's
+    // activity dot. Empty when the device has no activity LED.
+    string activity_indicator_name = 6;
 }
 
 message ParameterSchemaInfo {

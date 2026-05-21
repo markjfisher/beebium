@@ -15,6 +15,7 @@
 
 #include "ScsiHardDiscUi.hpp"
 
+#include <beebium/extension/ExtensionStorage.hpp>
 #include <beebium/extension/PeripheralExtension.hpp>
 
 #include <cstdint>
@@ -38,7 +39,8 @@ class ScsiHardDisc;
 // media: there is no facility to mount, swap, or eject at runtime.
 // If no image is configured the extension initialises but installs no
 // target.
-class ScsiHardDiscExtension : public PeripheralExtension {
+class ScsiHardDiscExtension : public PeripheralExtension,
+                              public ExtensionStorage {
 public:
     ScsiHardDiscExtension();
     ~ScsiHardDiscExtension() override;
@@ -69,6 +71,13 @@ public:
     // ExtensionUi panel for the Peripherals sidebar. Returns a stable
     // pointer (owned by this extension) showing the disc capacity.
     ExtensionUi* ui() override { return &ui_; }
+
+    // Storage capability: publishes this drive to the Storage
+    // sidebar. One device per extension instance.
+    ExtensionStorage* storage() override { return this; }
+
+    // ExtensionStorage interface
+    std::vector<StorageDeviceInfo> devices() const override;
 
     // Geometry + state of the loaded disc image. Captured by init()
     // from HardDiskImage at open time; remain at defaults if no image
