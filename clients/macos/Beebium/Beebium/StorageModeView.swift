@@ -26,17 +26,60 @@ private let discImageTypes: [UTType] = [
     UTType(filenameExtension: "img") ?? .data,  // Raw disc image
 ]
 
-/// Storage mode view showing floppy drives with insert/eject functionality
+/// Storage mode view: floppy drives at the top (powered by DiscClient
+/// as before), then a section per media type for storage devices
+/// published by peripheral extensions (hard discs today; RAM discs,
+/// microdrives, etc. once we have them).
+///
+/// Peripheral storage devices are read from PeripheralsClient.tree by
+/// walking the node hierarchy and collecting StorageDevice entries
+/// in tree order. Activity indicators stream through the existing
+/// IndicatorClient -- the StorageDevice.activityIndicatorName is the
+/// key into that client's published values dictionary.
 struct StorageModeView: View {
     @ObservedObject var discClient: DiscClient
+    @ObservedObject var peripheralsClient: PeripheralsClient
+    @ObservedObject var indicatorClient: IndicatorClient
 
     var body: some View {
-        if !discClient.isLoaded {
+        if !discClient.isLoaded || !peripheralsClient.isLoaded {
             loadingView
-        } else if !discClient.hasDiscController {
-            noControllerView
+        } else if !discClient.hasDiscController && peripheralStorage.isEmpty {
+            noStorageView
         } else {
-            driveListView
+            contentView
+        }
+    }
+
+    /// All peripheral storage devices reachable from the current
+    /// PeripheralTree, flattened in tree order. Recomputed on every
+    /// access; the tree itself doesn't change often.
+    private var peripheralStorage: [PeripheralStorageDevice] {
+        var out: [PeripheralStorageDevice] = []
+        for group in peripheralsClient.tree.groups {
+            for node in group.nodes {
+                collect(node, into: &out)
+            }
+        }
+        for orphan in peripheralsClient.tree.orphans {
+            collect(orphan, into: &out)
+        }
+        return out
+    }
+
+    /// Devices grouped by media type, in alphabetical media-type order
+    /// (deterministic, stable across runs). Each tuple is rendered as
+    /// one section in the sidebar.
+    private var peripheralStorageByMediaType: [(String, [PeripheralStorageDevice])] {
+        let groups = Dictionary(grouping: peripheralStorage, by: { $0.mediaType })
+        return groups.sorted { $0.key < $1.key }
+    }
+
+    private func collect(_ node: PeripheralNode,
+                         into out: inout [PeripheralStorageDevice]) {
+        out.append(contentsOf: node.storageDevices)
+        for child in node.children {
+            collect(child, into: &out)
         }
     }
 
@@ -63,38 +106,151 @@ struct StorageModeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var noControllerView: some View {
+    private var noStorageView: some View {
         VStack(spacing: 12) {
             Image(systemName: "internaldrive")
                 .font(.system(size: 32))
                 .foregroundColor(.secondary)
-            Text("No Disc Controller")
+            Text("No Storage Devices")
                 .font(.headline)
                 .foregroundColor(.secondary)
-            Text("This machine does not have a disc interface")
+            Text("This machine has no disc controller and no peripheral storage devices.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var driveListView: some View {
+    private var contentView: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(discClient.drives.enumerated()), id: \.offset) { index, drive in
-                    DriveRowView(
-                        drive: drive,
-                        discClient: discClient
-                    )
-                    if index < discClient.drives.count - 1 {
-                        Divider()
-                            .padding(.horizontal, 12)
+            VStack(alignment: .leading, spacing: 0) {
+                if discClient.hasDiscController {
+                    floppyList
+                }
+                if !peripheralStorage.isEmpty {
+                    if discClient.hasDiscController {
+                        Divider().padding(.horizontal, 12)
                     }
+                    peripheralStorageList
                 }
             }
             .padding(.vertical, 8)
         }
+    }
+
+    private var floppyList: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(Array(discClient.drives.enumerated()), id: \.offset) { index, drive in
+                DriveRowView(
+                    drive: drive,
+                    discClient: discClient
+                )
+                if index < discClient.drives.count - 1 {
+                    Divider()
+                        .padding(.horizontal, 12)
+                }
+            }
+        }
+    }
+
+    private var peripheralStorageList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(peripheralStorageByMediaType.enumerated()),
+                    id: \.element.0) { sectionIndex, group in
+                if sectionIndex > 0 {
+                    Divider().padding(.horizontal, 12)
+                }
+                StorageSectionHeader(
+                    title: storageSectionTitle(mediaType: group.0))
+                ForEach(Array(group.1.enumerated()), id: \.element.id) { i, device in
+                    StorageDeviceRowView(device: device,
+                                         indicatorClient: indicatorClient)
+                    if i < group.1.count - 1 {
+                        Divider().padding(.horizontal, 12)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Friendly section title for a storage device media-type slug.
+/// Falls back to humanising the slug with a trailing 's' so an
+/// unknown future media type ("flash-cartridge", say) still gets
+/// a readable heading.
+private func storageSectionTitle(mediaType: String) -> String {
+    switch mediaType {
+    case "hard-disc":  return "Hard Discs"
+    case "ram-disc":   return "RAM Discs"
+    case "floppy":     return "Floppy Discs"
+    case "microdrive": return "Microdrives"
+    default:
+        return PeripheralNameFormatter.humanise(mediaType) + "s"
+    }
+}
+
+private struct StorageSectionHeader: View {
+    let title: String
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Row for one peripheral-published storage device. Mirrors the visual
+/// layout of DriveRowView for floppies (header line with label +
+/// activity dot, secondary line with detail) but without the eject /
+/// browse buttons -- FIXED devices have no user-actionable affordance,
+/// and REMOVABLE-device UI isn't built yet.
+private struct StorageDeviceRowView: View {
+    let device: PeripheralStorageDevice
+    @ObservedObject var indicatorClient: IndicatorClient
+
+    /// The indicator value is a brightness 0-255; treat any non-zero
+    /// value as "active" for the simple dot rendering. The 250ms
+    /// pulse stretcher on the server side ensures brief bus
+    /// transactions still register as a visible blink.
+    private var isActive: Bool {
+        guard !device.activityIndicatorName.isEmpty else { return false }
+        return (indicatorClient.values[device.activityIndicatorName] ?? 0) > 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(device.label)
+                    .font(.headline)
+                if isActive {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 6))
+                        .foregroundColor(.green)
+                        .help("Disc activity")
+                }
+                Spacer()
+            }
+            if device.backingPath.isEmpty {
+                Text("No image")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                Text(device.backingPath)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(device.backingPath)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -327,7 +483,9 @@ private struct DriveRowView: View {
 #if DEBUG
 struct StorageModeView_Previews: PreviewProvider {
     static var previews: some View {
-        StorageModeView(discClient: DiscClient())
+        StorageModeView(discClient: DiscClient(),
+                        peripheralsClient: PeripheralsClient(),
+                        indicatorClient: IndicatorClient())
             .frame(width: 220, height: 300)
             .background(Color(nsColor: .windowBackgroundColor))
     }

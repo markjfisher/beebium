@@ -110,6 +110,7 @@ struct ContentView: View {
             SidebarModeContent(
                 mode: sidebarMode,
                 discClient: discClient,
+                indicatorClient: indicatorClient,
                 keyboardMappingManager: keyboardMappingManager,
                 audioClient: audioClient,
                 audioMixerState: audioMixerState,

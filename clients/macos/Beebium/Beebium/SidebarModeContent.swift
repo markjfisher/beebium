@@ -35,6 +35,7 @@ private struct SidebarHeader: View {
 struct SidebarModeContent: View {
     let mode: SidebarMode
     @ObservedObject var discClient: DiscClient
+    @ObservedObject var indicatorClient: IndicatorClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @ObservedObject var audioClient: AudioClient
     @ObservedObject var audioMixerState: AudioMixerState
@@ -49,7 +50,9 @@ struct SidebarModeContent: View {
 
             switch mode {
             case .storage:
-                StorageModeView(discClient: discClient)
+                StorageModeView(discClient: discClient,
+                                peripheralsClient: peripheralsClient,
+                                indicatorClient: indicatorClient)
             case .memory:
                 MemoryModeView()
             case .peripherals:
@@ -588,6 +591,7 @@ struct SidebarModeContent_Previews: PreviewProvider {
         SidebarModeContent(
             mode: .keyboard,
             discClient: DiscClient(),
+            indicatorClient: IndicatorClient(),
             keyboardMappingManager: KeyboardMappingManager(),
             audioClient: AudioClient(),
             audioMixerState: AudioMixerState(),
