@@ -40,7 +40,7 @@ final class PeripheralTreeTests: XCTestCase {
     }
 
     private func storageDevice(id: String,
-                               label: String,
+                               name: String,
                                kind: Beebium_StorageDevice.Kind = .fixed,
                                mediaType: String = "hard-disc",
                                backingPath: String = "/tmp/test.dat",
@@ -48,7 +48,7 @@ final class PeripheralTreeTests: XCTestCase {
                               -> Beebium_StorageDevice {
         var dev = Beebium_StorageDevice()
         dev.id = id
-        dev.label = label
+        dev.name = name
         dev.kind = kind
         dev.mediaType = mediaType
         dev.backingPath = backingPath
@@ -328,7 +328,7 @@ final class PeripheralTreeTests: XCTestCase {
                        attachesTo: ["scsi"],
                        storageDevices: [
                            storageDevice(id: "scsi-hard-disc",
-                                         label: "Hard Disc (SCSI ID 0)",
+                                         name: "Hard Disc Drive 0",
                                          kind: .fixed,
                                          mediaType: "hard-disc",
                                          backingPath: "/discs/boot.dat",
@@ -345,7 +345,7 @@ final class PeripheralTreeTests: XCTestCase {
         XCTAssertEqual(hddNode.storageDevices.count, 1)
         let dev = hddNode.storageDevices[0]
         XCTAssertEqual(dev.id, "scsi-hard-disc")
-        XCTAssertEqual(dev.label, "Hard Disc (SCSI ID 0)")
+        XCTAssertEqual(dev.name, "Hard Disc Drive 0")
         XCTAssertEqual(dev.kind, .fixed)
         XCTAssertEqual(dev.mediaType, "hard-disc")
         XCTAssertEqual(dev.backingPath, "/discs/boot.dat")
@@ -358,7 +358,7 @@ final class PeripheralTreeTests: XCTestCase {
                            attachesTo: ["1mhz-bus"],
                            storageDevices: [
                                storageDevice(id: "fr-0",
-                                             label: "Cartridge slot",
+                                             name: "Cartridge slot",
                                              kind: .removable,
                                              mediaType: "rom-cartridge",
                                              backingPath: "")
@@ -376,11 +376,11 @@ final class PeripheralTreeTests: XCTestCase {
                          attachesTo: ["1mhz-bus"],
                          storageDevices: [
                              storageDevice(id: "combo/floppy",
-                                           label: "Combo Floppy",
+                                           name: "Combo Floppy",
                                            kind: .removable,
                                            mediaType: "floppy"),
                              storageDevice(id: "combo/ramdisc",
-                                           label: "Combo RAM Disc",
+                                           name: "Combo RAM Disc",
                                            kind: .fixed,
                                            mediaType: "ram-disc"),
                          ])

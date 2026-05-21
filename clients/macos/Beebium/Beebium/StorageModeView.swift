@@ -67,14 +67,6 @@ struct StorageModeView: View {
         return out
     }
 
-    /// Devices grouped by media type, in alphabetical media-type order
-    /// (deterministic, stable across runs). Each tuple is rendered as
-    /// one section in the sidebar.
-    private var peripheralStorageByMediaType: [(String, [PeripheralStorageDevice])] {
-        let groups = Dictionary(grouping: peripheralStorage, by: { $0.mediaType })
-        return groups.sorted { $0.key < $1.key }
-    }
-
     private func collect(_ node: PeripheralNode,
                          into out: inout [PeripheralStorageDevice]) {
         out.append(contentsOf: node.storageDevices)
@@ -156,51 +148,20 @@ struct StorageModeView: View {
     }
 
     private var peripheralStorageList: some View {
+        // Flat list of rows in tree order, with the same inter-row
+        // divider treatment the floppy list uses above. No category
+        // headers: the row title itself carries the device class
+        // ("Hard Disc Drive 0", "RAM Disc Drive 0", ...).
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(peripheralStorageByMediaType.enumerated()),
-                    id: \.element.0) { sectionIndex, group in
-                if sectionIndex > 0 {
+            ForEach(Array(peripheralStorage.enumerated()),
+                    id: \.element.id) { i, device in
+                StorageDeviceRowView(device: device,
+                                     indicatorClient: indicatorClient)
+                if i < peripheralStorage.count - 1 {
                     Divider().padding(.horizontal, 12)
-                }
-                StorageSectionHeader(
-                    title: storageSectionTitle(mediaType: group.0))
-                ForEach(Array(group.1.enumerated()), id: \.element.id) { i, device in
-                    StorageDeviceRowView(device: device,
-                                         indicatorClient: indicatorClient)
-                    if i < group.1.count - 1 {
-                        Divider().padding(.horizontal, 12)
-                    }
                 }
             }
         }
-    }
-}
-
-/// Friendly section title for a storage device media-type slug.
-/// Falls back to humanising the slug with a trailing 's' so an
-/// unknown future media type ("flash-cartridge", say) still gets
-/// a readable heading.
-private func storageSectionTitle(mediaType: String) -> String {
-    switch mediaType {
-    case "hard-disc":  return "Hard Discs"
-    case "ram-disc":   return "RAM Discs"
-    case "floppy":     return "Floppy Discs"
-    case "microdrive": return "Microdrives"
-    default:
-        return PeripheralNameFormatter.humanise(mediaType) + "s"
-    }
-}
-
-private struct StorageSectionHeader: View {
-    let title: String
-    var body: some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -225,7 +186,7 @@ private struct StorageDeviceRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(device.label)
+                Text(device.name)
                     .font(.headline)
                 if isActive {
                     Image(systemName: "circle.fill")
@@ -277,7 +238,7 @@ private struct DriveRowView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Drive header
             HStack {
-                Text("Floppy \(drive.drive)")
+                Text("Floppy Disc Drive \(drive.drive)")
                     .font(.headline)
                 Spacer()
                 if drive.motorOn {

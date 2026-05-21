@@ -35,7 +35,11 @@ struct PeripheralStorageDevice: Identifiable, Hashable {
     }
 
     let id: String
-    let label: String
+    /// Storage-context name, e.g. "Hard Disc Drive 0", "Floppy Disc
+    /// Drive 1". See the proto comment on StorageDevice.name for the
+    /// numbering convention and why this is distinct from the owning
+    /// extension's label.
+    let name: String
     let kind: Kind
     let mediaType: String
     let backingPath: String
@@ -120,7 +124,7 @@ private func makeStorageDevice(_ proto: Beebium_StorageDevice) -> PeripheralStor
     }
     return PeripheralStorageDevice(
         id: proto.id,
-        label: proto.label,
+        name: proto.name,
         kind: kind,
         mediaType: proto.mediaType,
         backingPath: proto.backingPath,

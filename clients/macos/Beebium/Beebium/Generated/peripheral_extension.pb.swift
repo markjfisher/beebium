@@ -102,9 +102,18 @@ struct Beebium_StorageDevice: Sendable {
   /// publishes multiple devices (e.g. "opus-challenger/ramdisc").
   var id: String = String()
 
-  /// Display label, e.g. "Hard Disc (SCSI ID 0)". Frontends use this
-  /// verbatim as the row title.
-  var label: String = String()
+  /// Name of the device in storage-context terms, e.g. "Hard Disc
+  /// Drive 0", "Floppy Disc Drive 1". The numbering convention is
+  /// the device's natural number in its bus / drive-bay scheme
+  /// (SCSI ID for hard discs, drive number for floppies, etc.) so
+  /// it stays stable across reconfigurations and matches related
+  /// labels elsewhere (the "HDD N" entries in the status bar, the
+  /// hdd-N-activity-led indicator names). Distinct from the owning
+  /// extension's label, which may be richer ("Hard Disc (SCSI ID
+  /// 0)") -- that label belongs in the Peripherals sidebar where
+  /// SCSI-ID context matters; this name belongs in the Storage
+  /// sidebar where the device-class naming is the right register.
+  var name: String = String()
 
   var kind: Beebium_StorageDevice.Kind = .fixed
 
@@ -326,7 +335,7 @@ extension Beebium_ExtensionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
 extension Beebium_StorageDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".StorageDevice"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{3}media_type\0\u{3}backing_path\0\u{3}activity_indicator_name\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}kind\0\u{3}media_type\0\u{3}backing_path\0\u{3}activity_indicator_name\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -335,7 +344,7 @@ extension Beebium_StorageDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
       case 3: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.mediaType) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.backingPath) }()
@@ -349,8 +358,8 @@ extension Beebium_StorageDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
-    if !self.label.isEmpty {
-      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
     }
     if self.kind != .fixed {
       try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 3)
@@ -369,7 +378,7 @@ extension Beebium_StorageDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
   static func ==(lhs: Beebium_StorageDevice, rhs: Beebium_StorageDevice) -> Bool {
     if lhs.id != rhs.id {return false}
-    if lhs.label != rhs.label {return false}
+    if lhs.name != rhs.name {return false}
     if lhs.kind != rhs.kind {return false}
     if lhs.mediaType != rhs.mediaType {return false}
     if lhs.backingPath != rhs.backingPath {return false}

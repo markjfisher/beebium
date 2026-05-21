@@ -48,9 +48,18 @@ message StorageDevice {
     // publishes multiple devices (e.g. "opus-challenger/ramdisc").
     string id = 1;
 
-    // Display label, e.g. "Hard Disc (SCSI ID 0)". Frontends use this
-    // verbatim as the row title.
-    string label = 2;
+    // Name of the device in storage-context terms, e.g. "Hard Disc
+    // Drive 0", "Floppy Disc Drive 1". The numbering convention is
+    // the device's natural number in its bus / drive-bay scheme
+    // (SCSI ID for hard discs, drive number for floppies, etc.) so
+    // it stays stable across reconfigurations and matches related
+    // labels elsewhere (the "HDD N" entries in the status bar, the
+    // hdd-N-activity-led indicator names). Distinct from the owning
+    // extension's label, which may be richer ("Hard Disc (SCSI ID
+    // 0)") -- that label belongs in the Peripherals sidebar where
+    // SCSI-ID context matters; this name belongs in the Storage
+    // sidebar where the device-class naming is the right register.
+    string name = 2;
 
     enum Kind {
         // Non-removable media: no eject affordance, no path editing.

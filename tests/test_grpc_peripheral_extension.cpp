@@ -94,7 +94,7 @@ public:
     std::vector<beebium::StorageDeviceInfo> devices() const override {
         beebium::StorageDeviceInfo fixed;
         fixed.id = "test-fixed";
-        fixed.label = "Test Fixed Device";
+        fixed.name = "Test Fixed Device";
         fixed.kind = beebium::StorageDeviceInfo::Kind::Fixed;
         fixed.media_type = "test-fixed-media";
         fixed.backing_path = "/tmp/fixed.dat";
@@ -102,7 +102,7 @@ public:
 
         beebium::StorageDeviceInfo removable;
         removable.id = "test-removable";
-        removable.label = "Test Removable Device";
+        removable.name = "Test Removable Device";
         removable.kind = beebium::StorageDeviceInfo::Kind::Removable;
         removable.media_type = "test-removable-media";
         removable.backing_path = "";  // no media inserted
@@ -291,7 +291,7 @@ TEST_CASE("PeripheralExtensionService ListExtensions serialises storage devices"
 
     const auto& fixed = storage_info->storage_devices(0);
     REQUIRE(fixed.id() == "test-fixed");
-    REQUIRE(fixed.label() == "Test Fixed Device");
+    REQUIRE(fixed.name() == "Test Fixed Device");
     REQUIRE(fixed.kind() == beebium::StorageDevice::FIXED);
     REQUIRE(fixed.media_type() == "test-fixed-media");
     REQUIRE(fixed.backing_path() == "/tmp/fixed.dat");

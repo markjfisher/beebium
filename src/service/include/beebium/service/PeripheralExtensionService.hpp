@@ -48,7 +48,7 @@ public:
                 for (const auto& dev : storage->devices()) {
                     auto* proto_dev = info->add_storage_devices();
                     proto_dev->set_id(dev.id);
-                    proto_dev->set_label(dev.label);
+                    proto_dev->set_name(dev.name);
                     proto_dev->set_kind(
                         dev.kind == StorageDeviceInfo::Kind::Removable
                             ? StorageDevice::REMOVABLE

@@ -35,7 +35,7 @@ struct StorageDeviceInfo {
     };
 
     std::string id;
-    std::string label;
+    std::string name;          // storage-context display name; see proto comment
     Kind kind = Kind::Fixed;
     std::string media_type;             // "hard-disc", "floppy", "ram-disc", ...
     std::string backing_path;           // image filepath (or empty)

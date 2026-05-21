@@ -101,9 +101,11 @@ TEST_CASE("ScsiHardDiscExtension publishes exactly one FIXED hard-disc device",
     // The id matches the extension's id so the frontend can associate
     // the row back to the Peripherals tree node.
     REQUIRE(dev.id == "scsi-hard-disc");
-    // Label matches the row title rendered in the Peripherals sidebar
-    // for visual continuity between the two places this drive shows up.
-    REQUIRE(dev.label == "Hard Disc (SCSI ID 0)");
+    // Storage-context name uses the "Hard Disc Drive N" convention --
+    // device-class naming for the Storage sidebar -- with N == SCSI
+    // ID. Distinct from the extension's own label "Hard Disc (SCSI
+    // ID 0)", which the Peripherals sidebar shows.
+    REQUIRE(dev.name == "Hard Disc Drive 0");
     // Activity LED name matches the existing IndicatorService convention
     // (AcornScsiHostAdapter registers hdd-{N}-activity-led per LUN).
     REQUIRE(dev.activity_indicator_name == "hdd-0-activity-led");
@@ -120,7 +122,22 @@ TEST_CASE("ScsiHardDiscExtension storage device id matches the SCSI ID suffix",
     REQUIRE(devices.size() == 1);
     REQUIRE(devices[0].id == "scsi-hard-disc-1");
     REQUIRE(devices[0].activity_indicator_name == "hdd-1-activity-led");
-    REQUIRE(devices[0].label == "Hard Disc (SCSI ID 1)");
+    REQUIRE(devices[0].name == "Hard Disc Drive 1");
+}
+
+TEST_CASE("ScsiHardDiscExtension drive number stays the SCSI ID, not a positional index",
+          "[scsi][hard-disc][extension][storage]") {
+    // Independence check: a single HDD configured at SCSI ID 2
+    // (with no drives at 0 or 1) still names itself "Hard Disc
+    // Drive 2", not "Hard Disc Drive 0". The drive number is the
+    // bus address, not a positional ordinal.
+    auto ext = ScsiHardDiscExtension::create();
+    ext->set_config({{"id", "scsi-hard-disc"},
+                     {"scsi-id", "2"},
+                     {"image", "/tmp/two.dat"}});
+    auto devices = ext->storage()->devices();
+    REQUIRE(devices[0].name == "Hard Disc Drive 2");
+    REQUIRE(devices[0].activity_indicator_name == "hdd-2-activity-led");
 }
 
 TEST_CASE("ScsiHardDiscExtension publishes empty path when no image configured",

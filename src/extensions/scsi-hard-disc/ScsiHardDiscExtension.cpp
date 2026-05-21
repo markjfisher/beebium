@@ -47,7 +47,6 @@ std::string ScsiHardDiscExtension::default_label() const {
 std::vector<StorageDeviceInfo> ScsiHardDiscExtension::devices() const {
     StorageDeviceInfo dev;
     dev.id = std::string(id());
-    dev.label = label();
     dev.kind = StorageDeviceInfo::Kind::Fixed;
     dev.media_type = "hard-disc";
 
@@ -58,11 +57,21 @@ std::vector<StorageDeviceInfo> ScsiHardDiscExtension::devices() const {
     }
 
     if (auto scsi_id = config_value("scsi-id")) {
+        // Storage-context name: "Hard Disc Drive N" with N == SCSI
+        // ID. SCSI ID is the stable, user-meaningful drive number
+        // here -- the same number that appears in the status bar
+        // ("HDD N") and on the activity indicator.
+        dev.name = "Hard Disc Drive " + std::string(*scsi_id);
         // Matches AcornScsiHostAdapter::register_target_indicator's
         // naming convention so the macOS frontend (and the existing
         // StatusBarView) subscribe to the same IndicatorService entry.
         dev.activity_indicator_name =
             "hdd-" + std::string(*scsi_id) + "-activity-led";
+    } else {
+        // No SCSI ID configured: still publish the device, fall back
+        // to the extension's general label rather than fabricate a
+        // drive number we can't justify.
+        dev.name = label();
     }
 
     return {std::move(dev)};
