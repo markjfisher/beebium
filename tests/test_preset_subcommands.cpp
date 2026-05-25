@@ -521,3 +521,23 @@ TEST_CASE("Full preset workflow: create, export, import, delete", "[integration]
     auto imported_filepath = import_dir.path() / "exported.preset.beebium";
     REQUIRE(std::filesystem::exists(imported_filepath));
 }
+
+// ============================================================================
+// describe-preset-schema sideways_bank section
+// ============================================================================
+
+TEST_CASE("describe-preset-schema: includes sideways_bank section",
+          "[integration][preset][describe-preset-schema][sideways]") {
+    auto result = run_command(EXECUTABLE + " describe-preset-schema");
+
+    REQUIRE(result.exit_code == 0);
+    // The sideways bank section drives the frontend Memory tab.
+    REQUIRE(result.stdout_output.find("\"sideways_bank\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"sockets\"") != std::string::npos);
+    // Default ROM placements are advertised so the UI can show what is already
+    // in a slot; Model B ships BASIC in the language slot.
+    REQUIRE(result.stdout_output.find("\"default_roms\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("bbc-basic_2.rom") != std::string::npos);
+    // Model B's aliased sockets are labelled by IC designation.
+    REQUIRE(result.stdout_output.find("IC52") != std::string::npos);
+}

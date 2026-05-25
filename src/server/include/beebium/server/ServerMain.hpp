@@ -2624,6 +2624,57 @@ public:
             sections.push_back(networking);
         }
 
+        // Sideways ROM/RAM bank section, derived from the machine's slot
+        // topology so frontends can render a slot grid (the Memory tab) and
+        // show what each socket can hold. A catalogue of known ROMs and
+        // categories is deferred until a ROM library exists; for now we expose
+        // the topology and the machine's own default ROM placements.
+        if constexpr (requires { Memory::slot_topology(typename Memory::MotherboardLinks{}); }) {
+            auto topo = Memory::slot_topology(typename Memory::MotherboardLinks{});
+
+            ojson sideways;
+            sideways["type"] = "sideways_bank";
+            sideways["has_aliasing"] = topo.has_aliasing;
+
+            ojson sockets = ojson::array();
+            for (const auto& sock : topo.sockets) {
+                ojson capabilities = ojson::array();
+                if (sock.supports_rom) capabilities.push_back("rom");
+                if (sock.supports_ram) capabilities.push_back("ram");
+                if (sock.supports_empty) capabilities.push_back("empty");
+
+                sockets.push_back(ojson{
+                    {"label", sock.label},
+                    {"slots", sock.slots},
+                    {"capabilities", capabilities},
+                    {"runtime_configurable", sock.runtime_configurable}
+                });
+            }
+            sideways["sockets"] = sockets;
+
+            // Default ROM placements the machine applies unless a preset or
+            // --sideways overrides them, so the frontend can show what is
+            // already in a slot before the user changes anything.
+            ojson default_roms = ojson::array();
+            if constexpr (requires { Memory::DEFAULT_LANGUAGE_ROM; }) {
+                default_roms.push_back(ojson{
+                    {"slot", Memory::DEFAULT_LANGUAGE_SLOT},
+                    {"image", Memory::DEFAULT_LANGUAGE_ROM},
+                    {"role", "language"}
+                });
+            }
+            if constexpr (requires { Memory::DEFAULT_DFS_ROM; }) {
+                default_roms.push_back(ojson{
+                    {"slot", Memory::DEFAULT_DFS_SLOT},
+                    {"image", Memory::DEFAULT_DFS_ROM},
+                    {"role", "filing"}
+                });
+            }
+            sideways["default_roms"] = default_roms;
+
+            sections.push_back(sideways);
+        }
+
         output["sections"] = sections;
 
         std::cout << output.dump(2) << "\n";
