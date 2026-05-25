@@ -25,6 +25,7 @@
 		162D791FD0BE2D5F6E75CB72 /* FloppyDriveConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E24EC940C75F69FE7E1E4 /* FloppyDriveConfigView.swift */; };
 		1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 028EF03EDAC1D899B4771D1D /* NewMachineDialog.swift */; };
 		1AEDEA9B5B2CA4CC55909B84 /* BBCKeyCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C152853E7E4735D1E7994275 /* BBCKeyCache.swift */; };
+		1C6C1476609292CEC12F9374 /* RomHeaderInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C01C154181FCA2E13ECAF0 /* RomHeaderInfo.swift */; };
 		1F9774ADF4454EEA179ED3EA /* KeyboardSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */; };
 		2296373E4C15F8C223E5CCF8 /* MachineManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2D986E738350D95B4C5BFA /* MachineManagerTests.swift */; };
 		22DE4363A66E960D161ECD01 /* disc.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44DA8D133CDD247497229CA /* disc.grpc.swift */; };
@@ -239,6 +240,7 @@
 		9483385D371D21EC9020EC06 /* SidewaysSchemaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidewaysSchemaSection.swift; sourceTree = "<group>"; };
 		94EE5C7867F0B72F92C0F032 /* ResettableControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResettableControls.swift; sourceTree = "<group>"; };
 		94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioClient.swift; sourceTree = "<group>"; };
+		98C01C154181FCA2E13ECAF0 /* RomHeaderInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RomHeaderInfo.swift; sourceTree = "<group>"; };
 		992C39260909EB85C84D2C20 /* SidebarMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarMode.swift; sourceTree = "<group>"; };
 		9D59B36AC9E2A59CA68F4FD3 /* ExtensionViewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionViewRenderer.swift; sourceTree = "<group>"; };
 		9DE8C83B31D707C9E30C491D /* AVFAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFAudio.framework; path = System/Library/Frameworks/AVFAudio.framework; sourceTree = SDKROOT; };
@@ -399,6 +401,7 @@
 				5B3B8600BFD63BD1D99FFB60 /* ConfigurationSchema.swift */,
 				28ED949DB593C8353954F7B1 /* MachinePreset.swift */,
 				8C2AFB016D3C8A8EF789C4A9 /* PresetManager.swift */,
+				98C01C154181FCA2E13ECAF0 /* RomHeaderInfo.swift */,
 				9483385D371D21EC9020EC06 /* SidewaysSchemaSection.swift */,
 				E14137BA5B8968468AC84092 /* StorageSchemaSection.swift */,
 			);
@@ -749,6 +752,7 @@
 				D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */,
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
 				BA7685640D333A974EF6D1F6 /* ResettableControls.swift in Sources */,
+				1C6C1476609292CEC12F9374 /* RomHeaderInfo.swift in Sources */,
 				02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */,
 				B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */,
 				8248344928EA9782B944178F /* SidebarMode.swift in Sources */,

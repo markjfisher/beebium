@@ -343,6 +343,26 @@ class PresetManager: ObservableObject {
         return parsed.sidewaysBank?.slots ?? []
     }
 
+    /// Parse a ROM image's header via the `describe-rom` subcommand, so the UI
+    /// can show its real title/version. `image` is a ROM library name or path;
+    /// returns nil if it can't be read or parsed.
+    func fetchRomHeader(image: String, executablePath: String) async -> RomHeaderInfo? {
+        var arguments = ["describe-rom", image]
+        // Resolve bare ROM names against the bundled ROM directory when present;
+        // otherwise the server falls back to its own search path.
+        if let romDir = bundledRomDirpath() {
+            arguments.append(contentsOf: ["--rom-dir", romDir])
+        }
+
+        let (output, error) = await runCli(executable: executablePath, arguments: arguments)
+        if error != nil { return nil }
+        guard let data = output.data(using: .utf8),
+              let info = try? JSONDecoder().decode(RomHeaderInfo.self, from: data) else {
+            return nil
+        }
+        return info
+    }
+
     /// Fetch the sideways_bank section with full detail from the schema JSON.
     private func fetchSidewaysSectionFromSchema(executablePath: String) async -> SidewaysSchemaSection? {
         let process = Process()

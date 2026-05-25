@@ -102,8 +102,32 @@ class MemoryConfigurationState: ObservableObject {
         let initialContent: SocketContent
         /// Current (possibly edited) content.
         var content: SocketContent
+        /// Parsed ROM title/version for the loaded image, if it is a recognised
+        /// sideways ROM (resolved asynchronously via describe-rom).
+        var resolvedTitle: String? = nil
+        var resolvedVersion: String? = nil
 
         var isChanged: Bool { content != initialContent }
+
+        /// What to show for the contents: a recognised ROM's title (and version)
+        /// when known, otherwise the filename / RAM / Empty description.
+        var displayText: String {
+            switch content.kind {
+            case .empty:
+                return "Empty"
+            case .rom:
+                return romTitleAndVersion ?? content.displayLabel
+            case .ram:
+                if let info = romTitleAndVersion { return "Sideways RAM (\(info))" }
+                return content.displayLabel
+            }
+        }
+
+        private var romTitleAndVersion: String? {
+            guard let title = resolvedTitle, !title.isEmpty else { return nil }
+            if let version = resolvedVersion, !version.isEmpty { return "\(title) \(version)" }
+            return title
+        }
 
         /// Slot used when emitting `--sideways` for this socket. Using the
         /// slot the initial content occupied keeps the server's per-slot
@@ -189,5 +213,40 @@ class MemoryConfigurationState: ObservableObject {
             }
         }
         return arguments
+    }
+
+    // MARK: - ROM title resolution
+
+    /// Resolves a ROM image reference to its parsed header (runs describe-rom),
+    /// supplied by the host. Main-actor isolated so it can call PresetManager.
+    var headerResolver: (@MainActor (String) async -> RomHeaderInfo?)?
+
+    /// Resolve titles for every socket that holds an image.
+    @MainActor
+    func resolveTitles() async {
+        for index in sockets.indices {
+            await resolveTitle(at: index)
+        }
+    }
+
+    /// Resolve (or clear) the title/version for one socket's loaded image.
+    @MainActor
+    func resolveTitle(at index: Int) async {
+        guard sockets.indices.contains(index) else { return }
+        guard let resolver = headerResolver,
+              let image = sockets[index].content.image, !image.isEmpty else {
+            sockets[index].resolvedTitle = nil
+            sockets[index].resolvedVersion = nil
+            return
+        }
+        let info = await resolver(image)
+        guard sockets.indices.contains(index) else { return }
+        if let info = info, info.recognised, !info.title.isEmpty {
+            sockets[index].resolvedTitle = info.title
+            sockets[index].resolvedVersion = info.version
+        } else {
+            sockets[index].resolvedTitle = nil
+            sockets[index].resolvedVersion = nil
+        }
     }
 }

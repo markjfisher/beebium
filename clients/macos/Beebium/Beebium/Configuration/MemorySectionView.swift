@@ -76,8 +76,8 @@ struct MemorySectionView: View {
                     .fontWeight(.medium)
                     .frame(width: 52, alignment: .leading)
 
-                // Contents: filename only, given the bulk of the row width.
-                Text(socket.content.displayLabel)
+                // Contents: ROM title/version when known, else filename.
+                Text(socket.displayText)
                     .font(.subheadline)
                     .foregroundColor(socket.content.kind == .empty ? .secondary : .primary)
                     .lineLimit(1)
@@ -128,8 +128,12 @@ struct MemorySectionView: View {
         Menu {
             Button("Browse for ROM image…") { chooseImage(index: index) }
                 .disabled(socket.content.kind == .empty)
-            Button("Clear") { memoryConfig.sockets[index].content.image = nil }
-                .disabled(socket.content.image == nil)
+            Button("Clear") {
+                memoryConfig.sockets[index].content.image = nil
+                memoryConfig.sockets[index].resolvedTitle = nil
+                memoryConfig.sockets[index].resolvedVersion = nil
+            }
+            .disabled(socket.content.image == nil)
             Button("Copy Path") {
                 if let image = socket.content.image {
                     NSPasteboard.general.clearContents()
@@ -169,6 +173,9 @@ struct MemorySectionView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             memoryConfig.sockets[index].content.image = url.path
+            memoryConfig.sockets[index].resolvedTitle = nil
+            memoryConfig.sockets[index].resolvedVersion = nil
+            Task { await memoryConfig.resolveTitle(at: index) }
         }
     }
 }

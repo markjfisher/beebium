@@ -114,4 +114,46 @@ final class MemoryConfigurationStateTests: XCTestCase {
         XCTAssertEqual(state.sockets[1].content, Content(kind: .rom, image: "acorn-dfs_2_26.rom"))
         XCTAssertEqual(state.sockets[0].content, Content(kind: .rom, image: "bbc-basic_2.rom"))
     }
+
+    func testDisplayTextPrefersResolvedRomTitle() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(),
+                        presetSlots: [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")])
+
+        // IC100 holds the DFS image; before resolution, show the filename.
+        XCTAssertEqual(state.sockets[1].displayText, "acorn-dfs_2_26.rom")
+        // Once the header is parsed, show the title and version.
+        state.sockets[1].resolvedTitle = "DFS"
+        state.sockets[1].resolvedVersion = "2.26"
+        XCTAssertEqual(state.sockets[1].displayText, "DFS 2.26")
+        // An empty socket always reads "Empty".
+        XCTAssertEqual(state.sockets[3].displayText, "Empty")
+    }
+
+    func testDisplayTextForRamWithPreloadedRomTitle() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(), presetSlots: [])
+        let ic52 = state.sockets.firstIndex { $0.label == "IC52" }!
+
+        state.sockets[ic52].content = Content(kind: .ram, image: "/tmp/dev.rom")
+        XCTAssertEqual(state.sockets[ic52].displayText, "Sideways RAM (preload: dev.rom)")
+        state.sockets[ic52].resolvedTitle = "MYROM"
+        state.sockets[ic52].resolvedVersion = "1.0"
+        XCTAssertEqual(state.sockets[ic52].displayText, "Sideways RAM (MYROM 1.0)")
+    }
+
+    func testRomHeaderInfoDecodesDescribeRomOutput() throws {
+        let json = """
+        {
+          "recognised": true, "title": "DFS", "version": "2.26",
+          "copyright": "(C)1985 Acorn", "is_language": false, "is_service_only": true
+        }
+        """
+        let info = try JSONDecoder().decode(RomHeaderInfo.self, from: Data(json.utf8))
+        XCTAssertTrue(info.recognised)
+        XCTAssertEqual(info.title, "DFS")
+        XCTAssertEqual(info.version, "2.26")
+        XCTAssertTrue(info.isServiceOnly)
+        XCTAssertFalse(info.isLanguage)
+    }
 }

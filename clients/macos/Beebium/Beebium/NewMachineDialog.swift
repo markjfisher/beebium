@@ -274,6 +274,7 @@ struct NewMachineDialog: View {
 
         Task {
             let manager = presetManager
+            let executablePath = preset.coreExecutablePath
             let schema = await manager.fetchStorageSchema(for: preset)
             let sidewaysSchema = await manager.fetchSidewaysSchema(for: preset)
             let presetSlots = manager.sidewaysSlots(for: preset)
@@ -292,12 +293,20 @@ struct NewMachineDialog: View {
                 memorySchema = sidewaysSchema
                 if let sidewaysSchema = sidewaysSchema {
                     memoryConfig.configure(schema: sidewaysSchema, presetSlots: presetSlots)
+                    memoryConfig.headerResolver = { @MainActor image in
+                        await manager.fetchRomHeader(image: image, executablePath: executablePath)
+                    }
                 } else {
                     memoryConfig.sockets = []
+                    memoryConfig.headerResolver = nil
                 }
 
                 isLoadingSchema = false
             }
+
+            // Resolve ROM titles (one describe-rom per loaded image) so the
+            // Memory tab shows real ROM names rather than image filenames.
+            await memoryConfig.resolveTitles()
         }
     }
 
