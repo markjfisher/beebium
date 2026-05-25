@@ -1113,6 +1113,43 @@ TEST_CASE("parse_start_arguments: CLI --floppy overrides preset floppy", "[cli][
     REQUIRE(config.floppy_filepaths[0] == "file:///other/disc.ssd");  // CLI overrides preset
 }
 
+TEST_CASE("parse_start_arguments: --preset applies sideways_bank slots", "[cli][parse_start_arguments][preset][sideways]") {
+    auto preset_path = presets_dirpath() / "sideways.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str()};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    // Preset slot 14 ROM and slot 13 empty are folded into the active config
+    // and routed for loading (proves the merge is wired into parse).
+    REQUIRE(config.rom_slots[14] == "acorn-dfs_2_26.rom");
+    REQUIRE(config.rom_slots[13] == EMPTY_SLOT_MARKER);
+    int slot14_rom = 0;
+    for (const auto& c : config.sideways_configs) {
+        if (c.slot == 14 && c.type == SidewaysSlotType::Rom) ++slot14_rom;
+    }
+    REQUIRE(slot14_rom == 1);
+}
+
+TEST_CASE("parse_start_arguments: CLI --sideways overrides preset sideways slot", "[cli][parse_start_arguments][preset][sideways]") {
+    auto preset_path = presets_dirpath() / "sideways.preset.beebium";
+    ArgvHelper args{"beebium", "start", "--preset", preset_path.string().c_str(),
+                    "--sideways", "14:empty"};
+    ServerConfig<MachineType> config;
+
+    auto result = parse_start_arguments<MachineType>(args.argc(), args.data(), 2, config);
+
+    REQUIRE_FALSE(result.has_value());
+    // CLI wins for slot 14: empty, not the preset's DFS ROM, and no duplicate.
+    REQUIRE(config.rom_slots[14] == EMPTY_SLOT_MARKER);
+    int slot14_count = 0;
+    for (const auto& c : config.sideways_configs) {
+        if (c.slot == 14) ++slot14_count;
+    }
+    REQUIRE(slot14_count == 1);
+}
+
 TEST_CASE("parse_start_arguments: --preset before other options", "[cli][parse_start_arguments][preset]") {
     // Preset comes first, then CLI options override
     auto preset_path = presets_dirpath() / "storage.preset.beebium";
