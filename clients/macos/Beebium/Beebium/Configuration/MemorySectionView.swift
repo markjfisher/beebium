@@ -68,45 +68,44 @@ struct MemorySectionView: View {
 
     private func socketRow(index: Int) -> some View {
         let socket = memoryConfig.sockets[index]
-        return HStack(alignment: .top, spacing: 12) {
-            // Identity: socket label, slot numbers, priority.
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(socket.label)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    if socket.isChanged {
-                        Image(systemName: "pencil.circle.fill")
-                            .font(.caption2)
-                            .foregroundColor(.accentColor)
-                            .help("Changed from the preset's configuration")
-                    }
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                // Socket label: a narrow fixed column so the contents line up.
+                Text(socket.label)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .frame(width: 52, alignment: .leading)
+
+                // Contents: filename only, given the bulk of the row width.
+                Text(socket.content.displayLabel)
+                    .font(.subheadline)
+                    .foregroundColor(socket.content.kind == .empty ? .secondary : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if socket.isChanged {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                        .help("Changed from the preset's configuration")
                 }
-                Text(socket.slots.count > 1 ? "Slots \(socket.slotsLabel)" : "Slot \(socket.slotsLabel)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Priority \(socket.priority)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+
+                // Tri-state ROM / RAM / Empty control (socket writability),
+                // independent of any image loaded into it.
+                kindPicker(index: index, socket: socket)
+
+                // Verbs menu: browse / clear / copy / reveal the image, revert.
+                actionsMenu(index: index, socket: socket)
             }
-            .frame(width: 130, alignment: .leading)
 
-            // Current contents.
-            Text(socket.content.displayLabel)
-                .font(.subheadline)
-                .foregroundColor(socket.content.kind == .empty ? .secondary : .primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Tri-state ROM / RAM / Empty control (writability of the socket),
-            // independent of any image loaded into it.
-            kindPicker(index: index, socket: socket)
-
-            // Verbs menu: browse / clear the image, reveal it, revert.
-            actionsMenu(index: index, socket: socket)
+            // Slot number(s) and priority (the highest slot the socket answers).
+            Text("\(socket.slots.count > 1 ? "Slots" : "Slot") \(socket.slotsLabel) · priority \(socket.priority)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .padding(.leading, 60)  // align under the contents, past the label column
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
     }
 
     private func kindPicker(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
@@ -131,6 +130,13 @@ struct MemorySectionView: View {
                 .disabled(socket.content.kind == .empty)
             Button("Clear") { memoryConfig.sockets[index].content.image = nil }
                 .disabled(socket.content.image == nil)
+            Button("Copy Path") {
+                if let image = socket.content.image {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(image, forType: .string)
+                }
+            }
+            .disabled(socket.content.image == nil)
             if let filepath = socket.content.revealableFilepath {
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: filepath)])
