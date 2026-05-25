@@ -18,9 +18,9 @@ dependencies = [
     "pytest>=7.0.0",
     "pytest-timeout>=2.0.0",
     # `disc` CLI is used by the SCSI fixture to build the L3FS hard disc
-    # image on demand from FS3v126.ssd. 10.2.0 bundles the Library.adl
+    # image on demand from FS3v126.ssd. oaknut-disc bundles the Library.adl
     # and Library1.adl images required by `disc afs-init --emplace`.
-    "oaknut>=10.2.0",
+    "oaknut-disc>=11",
 ]
 
 [tool.hatch.build.targets.wheel]

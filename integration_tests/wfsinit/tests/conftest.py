@@ -157,7 +157,7 @@ def scsi_hdd_filepath(tmp_path):
     """
     disc_cli_filepath = shutil.which("disc")
     if disc_cli_filepath is None:
-        pytest.skip("oaknut `disc` CLI not on PATH (install with: uv tool install oaknut-disc)")
+        pytest.skip("oaknut `disc` CLI not on PATH (run under `uv run`, or `uv sync` this project)")
 
     dat_filepath = tmp_path / "l3fs-blank-20mb.dat"
     result = subprocess.run(

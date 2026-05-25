@@ -210,7 +210,7 @@ def l3fs_scsi_filepath(tmp_path):
 
     # 3. Write the !BOOT file (binary input -- bytes, not text).
     _run_disc(
-        "put", str(dat), "$.!BOOT", "-",
+        "put", f"{dat}:$.!BOOT", "-",
         input=b"*ADFS\r*RUN $.FS3v126\r",
     )
 

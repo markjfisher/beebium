@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from oaknut_dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
+from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
 from beebium.screen import screen_contains, read_mode7_screen, dump_screen
@@ -49,9 +49,9 @@ def _read_saved_file(ssd_filepath: Path) -> bytes | None:
     data = ssd_filepath.read_bytes()
     buf = bytearray(data)
     dfs = DFS.from_buffer(memoryview(buf), ACORN_DFS_40T_SINGLE_SIDED)
-    for entry in dfs.files:
-        if entry.filename == "TEST":
-            return dfs.load("$.TEST")
+    test_file = dfs.path("$.TEST")
+    if test_file.exists():
+        return test_file.read_bytes()
     return None
 
 

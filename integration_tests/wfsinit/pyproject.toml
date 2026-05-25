@@ -17,6 +17,9 @@ dependencies = [
     "protobuf>=4.0.0",
     "pytest>=7.0.0",
     "pytest-timeout>=2.0.0",
+    # `disc` CLI builds the blank 20MB ADFS hard disc image for the SCSI
+    # fixture on demand; declaring it here puts `disc` on PATH under `uv run`.
+    "oaknut-disc>=11",
 ]
 
 [tool.hatch.build.targets.wheel]

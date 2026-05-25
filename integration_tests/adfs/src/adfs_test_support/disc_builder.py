@@ -18,7 +18,7 @@ test programs into the emulator via the floppy drive.
 
 from __future__ import annotations
 
-from oaknut_dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
+from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 # BBC BASIC file metadata for DFS disc images.
 # BASIC programs are relocatable -- CHAIN/LOAD always load at the current
@@ -44,8 +44,7 @@ def build_test_disc(program_name: str, program_bytes: bytes) -> bytes:
     """
     buffer = bytearray(SSD_SIZE)
     dfs = DFS.from_buffer(memoryview(buffer), ACORN_DFS_40T_SINGLE_SIDED)
-    dfs.save(
-        f"$.{program_name}",
+    dfs.path(f"$.{program_name}").write_bytes(
         program_bytes,
         load_address=BASIC_LOAD_ADDRESS,
         exec_address=BASIC_EXEC_ADDRESS,

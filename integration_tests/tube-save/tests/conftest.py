@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from oaknut_dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
+from oaknut.dfs import DFS, ACORN_DFS_40T_SINGLE_SIDED
 
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
