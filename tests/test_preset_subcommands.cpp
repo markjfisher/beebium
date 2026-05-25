@@ -698,3 +698,35 @@ TEST_CASE("shipped system presets load, validate, and boot",
         std::filesystem::remove(screenshot_filepath);
     }
 }
+
+// ============================================================================
+// describe-rom parses sideways ROM headers
+// ============================================================================
+
+TEST_CASE("describe-rom parses a service ROM header", "[integration][describe-rom]") {
+    auto result = run_command(EXECUTABLE + " describe-rom acorn-dfs_2_26.rom");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(result.stdout_output.find("\"recognised\": true") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"title\": \"DFS\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"version\": \"2.26\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"is_service_only\": true") != std::string::npos);
+}
+
+TEST_CASE("describe-rom reports a language ROM", "[integration][describe-rom]") {
+    auto result = run_command(EXECUTABLE + " describe-rom bbc-basic_2.rom");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(result.stdout_output.find("\"title\": \"BASIC\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"is_language\": true") != std::string::npos);
+}
+
+TEST_CASE("describe-rom reports a non-sideways ROM as not recognised",
+          "[integration][describe-rom]") {
+    auto result = run_command(EXECUTABLE + " describe-rom acorn-mos_1_20.rom");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(result.stdout_output.find("\"recognised\": false") != std::string::npos);
+}
+
+TEST_CASE("describe-rom on a missing file returns NOINPUT", "[integration][describe-rom]") {
+    auto result = run_command(EXECUTABLE + " describe-rom no-such-rom-12345.rom");
+    REQUIRE(result.exit_code == 66);  // EX_NOINPUT
+}

@@ -28,6 +28,7 @@
 #include "beebium/service/PeripheralExtensionService.hpp"
 #include "SecondProcessor65C02Extension.hpp"
 #include "beebium/Machines.hpp"
+#include "beebium/SidewaysRomHeader.hpp"
 #include "beebium/PacingClock.hpp"
 #include "beebium/SleepQuantum.hpp"
 #include "beebium/disc/DiscLoader.hpp"
@@ -3645,6 +3646,96 @@ public:
 };
 
 // Help subcommand - shows help for other subcommands
+// DescribeRom subcommand - parse a sideways ROM header and print it as JSON.
+// Model-independent (ROM header parsing is generic). Used by frontends to show
+// proper ROM titles/versions instead of filenames.
+template<typename MachineType>
+class DescribeRomSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "describe-rom"; }
+    std::string_view description() const override {
+        return "Parse a sideways ROM image header and print it as JSON";
+    }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " describe-rom <rom> [--rom-dir <dir>]\n"
+                  << "\n"
+                  << "Parses the standard sideways ROM header of <rom> (a ROM library name or a\n"
+                  << "path to a ROM image) and prints it as JSON: whether it is a recognised\n"
+                  << "sideways ROM, its title, version and copyright, the type-byte flags, and\n"
+                  << "whether it is a language or a service ROM.\n"
+                  << "\n"
+                  << "  --rom-dir <dir>   Directory to resolve a bare ROM name against\n"
+                  << "\n"
+                  << "Output is always JSON regardless of the --format option.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+
+        std::string rom_ref;
+        std::string rom_dir;
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            } else if (arg == "--rom-dir" && i + 1 < argc) {
+                rom_dir = argv[++i];
+            } else if (!arg.empty() && arg[0] == '-') {
+                std::cerr << "Unknown argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            } else if (rom_ref.empty()) {
+                rom_ref = arg;
+            } else {
+                std::cerr << "Unexpected argument: " << arg << "\n";
+                help(argv[0]);
+                return ExitCode::USAGE;
+            }
+        }
+
+        if (rom_ref.empty()) {
+            std::cerr << "Error: a ROM name or path is required\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+        if (!rom_dir.empty()) {
+            RomPaths::set_rom_directory(rom_dir);
+        }
+
+        std::vector<uint8_t> data;
+        try {
+            data = load_file(RomPaths::find_rom(rom_ref));
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+            return ExitCode::NOINPUT;
+        }
+
+        auto header = beebium::parse_sideways_rom_header(data);
+
+        using ojson = nlohmann::ordered_json;
+        ojson out;
+        out["recognised"] = header.recognised;
+        out["title"] = header.title;
+        out["version"] = header.version;
+        out["copyright"] = header.copyright;
+        out["is_language"] = header.is_language();
+        out["is_service_only"] = header.is_service_only();
+        out["has_language_entry"] = header.has_language_entry;
+        out["has_service_entry"] = header.has_service_entry;
+        out["has_relocation_address"] = header.has_relocation_address;
+        out["supports_electron_firmkeys"] = header.supports_electron_firmkeys;
+        out["cpu_type"] = header.cpu_type;
+        out["binary_version"] = header.binary_version;
+        std::cout << out.dump(2) << "\n";
+        return ExitCode::OK;
+    }
+};
+
 template<typename MachineType>
 class HelpSubcommand : public Subcommand<MachineType> {
 public:
@@ -3676,6 +3767,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<DescribeExtensionSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
+        v.push_back(std::make_unique<DescribeRomSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListPresetsSubcommand<MachineType>>());
         v.push_back(std::make_unique<ShowPresetSubcommand<MachineType>>());
         v.push_back(std::make_unique<ReportPresetsDirpathSubcommand<MachineType>>());
