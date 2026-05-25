@@ -96,6 +96,17 @@ target_link_libraries(test_sideways_validation PRIVATE
 )
 catch_discover_tests(test_sideways_validation)
 
+# Sideways ROM header parsing
+add_executable(test_sideways_rom_header test_sideways_rom_header.cpp)
+target_link_libraries(test_sideways_rom_header PRIVATE
+    beebium_core
+    Catch2::Catch2WithMain
+)
+target_compile_definitions(test_sideways_rom_header PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+)
+catch_discover_tests(test_sideways_rom_header)
+
 # EconetTransportRegistry container tests
 add_executable(test_econet_transport_registry test_econet_transport_registry.cpp)
 target_link_libraries(test_econet_transport_registry PRIVATE beebium_core Catch2::Catch2WithMain)
