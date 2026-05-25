@@ -7,14 +7,25 @@ set(SERVER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(PRESETS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/presets")
 file(MAKE_DIRECTORY ${PRESETS_OUTPUT_DIR})
 
-# Function to generate a bare preset file for a model
-function(generate_bare_preset MODEL_ID RELEASE_DATE)
-    set(PRESET_FILEPATH "${PRESETS_OUTPUT_DIR}/${MODEL_ID}.preset.beebium")
-    if(RELEASE_DATE)
-        file(WRITE "${PRESET_FILEPATH}" "{\n  \"model\": \"${MODEL_ID}\",\n  \"release_date\": \"${RELEASE_DATE}\"\n}\n")
-    else()
-        file(WRITE "${PRESET_FILEPATH}" "{\n  \"model\": \"${MODEL_ID}\"\n}\n")
-    endif()
+# Generate a system preset and its thumbnail at build time, using the same
+# create-preset code path that users create their own presets with. Extra
+# create-preset arguments (e.g. --fdc, --sideways) are forwarded via ARGN.
+function(add_system_preset EXECUTABLE PRESET_ID PRESET_NAME RELEASE_DATE)
+    set(preset_filepath "${PRESETS_OUTPUT_DIR}/${PRESET_ID}.preset.beebium")
+    set(thumbnail_filepath "${PRESETS_OUTPUT_DIR}/${PRESET_ID}.thumbnail.png")
+    add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
+        COMMAND ${EXECUTABLE} create-preset
+            --name "${PRESET_NAME}"
+            --release-date "${RELEASE_DATE}"
+            ${ARGN}
+            --output "${preset_filepath}"
+        COMMAND ${EXECUTABLE} capture-screenshot
+            --preset "${preset_filepath}"
+            --output "${thumbnail_filepath}"
+            --rom-dir "${BEEBIUM_ROM_DIR}"
+        COMMENT "Generating preset ${PRESET_ID} and its thumbnail"
+        VERBATIM
+    )
 endfunction()
 
 # Function to create a beebium server executable for a specific machine type
@@ -55,15 +66,8 @@ add_beebium_server(beebium-model-b main_model_b.cpp)
 add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
 add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 
-# Generate bare preset files for each model (with historical release dates)
-# TODO: Replace with post-build commands once create-preset subcommand is implemented:
-#   add_custom_command(TARGET beebium-model-b POST_BUILD
-#       COMMAND beebium-model-b create-preset --name "BBC Model B" --output "${PRESETS_OUTPUT_DIR}/model-b.preset.beebium"
-#   )
-# This ensures presets are created using the same code path as user presets.
-generate_bare_preset("model-b" "1981-12")
-generate_bare_preset("model-b-plus" "1985-06")
-generate_bare_preset("model-b-romram" "1984")
+# System presets are generated below (after the ROM copy) via add_system_preset,
+# which runs the create-preset subcommand as a POST_BUILD step.
 
 # Convenience target to build all server executables and their bundled
 # extension plugins. Plugins are loaded at runtime from
@@ -101,28 +105,17 @@ add_custom_command(TARGET beebium-model-b POST_BUILD
     COMMENT "Copying ROMs to build directory"
 )
 
-# Generate preset thumbnails via capture-screenshot subcommand
-add_custom_command(TARGET beebium-model-b POST_BUILD
-    COMMAND beebium-model-b capture-screenshot
-        --preset "${PRESETS_OUTPUT_DIR}/model-b.preset.beebium"
-        --output "${PRESETS_OUTPUT_DIR}/model-b.thumbnail.png"
-        --rom-dir "${BEEBIUM_ROM_DIR}"
-    COMMENT "Generating thumbnail for model-b preset"
-)
-add_custom_command(TARGET beebium-model-b-plus POST_BUILD
-    COMMAND beebium-model-b-plus capture-screenshot
-        --preset "${PRESETS_OUTPUT_DIR}/model-b-plus.preset.beebium"
-        --output "${PRESETS_OUTPUT_DIR}/model-b-plus.thumbnail.png"
-        --rom-dir "${BEEBIUM_ROM_DIR}"
-    COMMENT "Generating thumbnail for model-b-plus preset"
-)
-add_custom_command(TARGET beebium-model-b-romram POST_BUILD
-    COMMAND beebium-model-b-romram capture-screenshot
-        --preset "${PRESETS_OUTPUT_DIR}/model-b-romram.preset.beebium"
-        --output "${PRESETS_OUTPUT_DIR}/model-b-romram.thumbnail.png"
-        --rom-dir "${BEEBIUM_ROM_DIR}"
-    COMMENT "Generating thumbnail for model-b-romram preset"
-)
+# Generate the shipped system presets (and their thumbnails). Model B serves
+# two presets: a bare cassette machine and a disc-equipped variant. A filing
+# system is provisioned explicitly via --sideways; no machine auto-loads DFS
+# except the Model B+, whose disc controller and DFS are integral hardware.
+add_system_preset(beebium-model-b "model-b" "BBC Model B" "1981-12")
+add_system_preset(beebium-model-b "model-b-disc" "BBC Model B (Disc)" "1982"
+    --fdc acorn-1770 --sideways 14:rom:acorn-dfs_2_26.rom)
+add_system_preset(beebium-model-b-romram "model-b-romram-disc"
+    "BBC Model B with ROM/RAM Board (Disc)" "1984"
+    --fdc acorn-1770 --sideways 14:rom:acorn-dfs_2_26.rom)
+add_system_preset(beebium-model-b-plus "model-b-plus" "BBC Model B+ 64K" "1985-06")
 
 # Install rules
 install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram

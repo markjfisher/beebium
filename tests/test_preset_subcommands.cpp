@@ -658,3 +658,43 @@ TEST_CASE("create-preset --fdc and --sideways build a loadable rich preset",
     std::filesystem::remove(output_filepath);
     std::filesystem::remove(screenshot_filepath);
 }
+
+// ============================================================================
+// shipped system presets load, validate, and boot
+// ============================================================================
+
+TEST_CASE("shipped system presets load, validate, and boot",
+          "[integration][preset][shipped]") {
+    struct PresetCase {
+        std::string executable;
+        std::string preset_id;
+        bool expect_dfs;  // disc-equipped (preset) or integral (B+)
+    };
+    const std::vector<PresetCase> cases = {
+        {"beebium-model-b",        "model-b",             false},  // bare cassette
+        {"beebium-model-b",        "model-b-disc",        true},   // 1770 + DFS via preset
+        {"beebium-model-b-romram", "model-b-romram-disc", true},   // 1770 + DFS via preset
+        {"beebium-model-b-plus",   "model-b-plus",        true},   // integral DFS
+    };
+
+    for (const auto& c : cases) {
+        auto executable = find_executable(c.executable);
+        auto preset_filepath =
+            executable.parent_path() / "presets" / (c.preset_id + ".preset.beebium");
+        INFO("preset: " << c.preset_id);
+        REQUIRE(std::filesystem::exists(preset_filepath));
+
+        auto screenshot_filepath =
+            std::filesystem::temp_directory_path() / ("beebium_shipped_" + c.preset_id + ".png");
+        auto result = run_command(
+            executable.string() + " capture-screenshot --preset \"" +
+            preset_filepath.string() + "\" --output \"" + screenshot_filepath.string() +
+            "\" --duration 0");
+        INFO("stderr: " << result.stderr_output);
+        REQUIRE(result.exit_code == 0);
+        if (c.expect_dfs) {
+            REQUIRE(result.stdout_output.find("acorn-dfs_2_26.rom") != std::string::npos);
+        }
+        std::filesystem::remove(screenshot_filepath);
+    }
+}
