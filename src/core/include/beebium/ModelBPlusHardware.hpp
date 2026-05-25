@@ -848,8 +848,8 @@ public:
             spec.label = entries[i].label;
             spec.slots = entries[i].slots;
             spec.supports_rom = true;
-            spec.supports_ram = false;
-            spec.supports_empty = false;
+            spec.supports_ram = false;   // No sideways RAM on the B+ 64K (it arrives with the B+ 128K's four banks)
+            spec.supports_empty = true;  // Any socket may be left unpopulated (pull the chip)
             spec.runtime_configurable = false;
             topo.sockets.push_back(std::move(spec));
         }

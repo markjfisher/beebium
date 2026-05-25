@@ -83,7 +83,7 @@ TEST_CASE("ModelBHardware topology has 4 sockets with 4-way aliasing",
     }
 }
 
-TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13 and is ROM-only",
+TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM or empty",
           "[sideways][topology][model_b_plus]") {
     auto topo = ModelBPlusHardware::slot_topology();
     REQUIRE(topo.has_aliasing);  // pairs share a socket
@@ -91,14 +91,30 @@ TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13 and is ROM-only",
 
     for (const auto& s : topo.sockets) {
         REQUIRE(s.supports_rom);
-        REQUIRE_FALSE(s.supports_ram);
-        REQUIRE_FALSE(s.supports_empty);
+        REQUIRE_FALSE(s.supports_ram);  // No sideways RAM on the B+ 64K
+        REQUIRE(s.supports_empty);      // Any socket may be left unpopulated
         REQUIRE_FALSE(s.runtime_configurable);
     }
 
     // The hardware does not wire any socket to slots 12 or 13.
     REQUIRE_FALSE(topo.slot_exists(12));
     REQUIRE_FALSE(topo.slot_exists(13));
+}
+
+TEST_CASE("Validation against Model B+ accepts emptying a socket (removing DFS)",
+          "[sideways][validate][model_b_plus]") {
+    auto topo = ModelBPlusHardware::slot_topology();
+    // Slot 11 is IC68 (DFS). A user may pull the chip, leaving it empty.
+    std::vector<SidewaysConfig> configs = { empty_cfg(11) };
+    REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
+}
+
+TEST_CASE("Validation against Model B+ still rejects sideways RAM",
+          "[sideways][validate][model_b_plus]") {
+    auto topo = ModelBPlusHardware::slot_topology();
+    // The B+ 64K has no sideways RAM (that arrives with the B+ 128K).
+    std::vector<SidewaysConfig> configs = { ram_cfg(11) };
+    REQUIRE(validate_sideways_configs(topo, configs).has_value());
 }
 
 TEST_CASE("Model B+ S13 link in default West position binds IC71 to slots 14, 15",
@@ -322,18 +338,6 @@ TEST_CASE("Validation rejects RAM on Model B+ (sockets are ROM-only)",
     REQUIRE_THAT(*err, ContainsSubstring("IC44"));
     REQUIRE_THAT(*err, ContainsSubstring("RAM"));
     REQUIRE_THAT(*err, ContainsSubstring("ROM-only"));
-}
-
-TEST_CASE("Validation rejects Empty on Model B+ (sockets are ROM-only)",
-          "[sideways][validate][model_b_plus]") {
-    auto topo = ModelBPlusHardware::slot_topology();
-    std::vector<SidewaysConfig> configs = {
-        empty_cfg(15),
-    };
-    auto err = validate_sideways_configs(topo, configs);
-    REQUIRE(err.has_value());
-    REQUIRE_THAT(*err, ContainsSubstring("IC71"));
-    REQUIRE_THAT(*err, ContainsSubstring("empty"));
 }
 
 // ============================================================================
