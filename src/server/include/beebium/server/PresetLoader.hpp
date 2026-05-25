@@ -13,6 +13,7 @@
 #pragma once
 
 #include <beebium/disc/DiscUrl.hpp>
+#include <beebium/server/CliArgParsers.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -68,7 +69,8 @@ struct PresetConfig {
     std::optional<PresetEconetConfig> econet;
     std::optional<double> thumbnail_capture_delay_seconds;  // For capture-screenshot subcommand
     std::vector<PresetExtensionConfig> extensions;
-    // Future: sideways_bank, startup_options, coprocessor, os_rom
+    std::vector<SidewaysConfig> sideways;         // sideways_bank.slots (slot/type/image)
+    // Future: startup_options, coprocessor, os_rom
 };
 
 // Result of loading a preset file
@@ -265,6 +267,87 @@ inline std::pair<std::optional<PresetEconetConfig>, std::string> parse_econet_se
     return {std::move(econet), ""};
 }
 
+// Parse the sideways_bank section from JSON.
+//
+// Shape: { "slots": [ { "slot": <0-15>, "type": "rom"|"ram"|"empty",
+//                       "image_uri": "<rom-name-or-path>" }, ... ] }
+//
+// ROM/RAM image references are stored verbatim and resolved downstream via
+// the ROM search path (like --sideways and the machine's default ROMs), so
+// they are NOT rewritten to file:// URIs the way disc images are. Slot
+// existence and per-machine topology are validated later against the
+// configured machine variant; here we only check structural validity and
+// the 0-15 slot range, mirroring parse_sideways_arg.
+//
+// Returns the parsed slots on success, or nullopt with an error message.
+inline std::pair<std::optional<std::vector<SidewaysConfig>>, std::string>
+parse_sideways_section(const nlohmann::json& sideways_json) {
+    std::vector<SidewaysConfig> slots;
+
+    if (!sideways_json.contains("slots")) {
+        return {std::move(slots), ""};  // No slots: nothing to configure.
+    }
+    if (!sideways_json["slots"].is_array()) {
+        return {std::nullopt, "Sideways 'slots' must be an array"};
+    }
+
+    for (const auto& slot_json : sideways_json["slots"]) {
+        if (!slot_json.is_object()) {
+            return {std::nullopt, "Sideways slot entry must be an object"};
+        }
+
+        SidewaysConfig cfg{};
+
+        // Slot number (required, 0-15).
+        if (!slot_json.contains("slot") || !slot_json["slot"].is_number_integer()) {
+            return {std::nullopt, "Sideways slot entry requires an integer 'slot' field"};
+        }
+        int slot = slot_json["slot"].get<int>();
+        if (slot < 0 || slot > 15) {
+            return {std::nullopt, "Sideways slot must be between 0 and 15, got " +
+                                  std::to_string(slot)};
+        }
+        cfg.slot = static_cast<std::uint8_t>(slot);
+
+        // Type (required).
+        if (!slot_json.contains("type") || !slot_json["type"].is_string()) {
+            return {std::nullopt, "Sideways slot entry requires a string 'type' field"};
+        }
+        std::string type_raw = slot_json["type"].get<std::string>();
+        std::string type_lc = ascii_to_lower(type_raw);
+
+        // Image (optional string).
+        std::string image;
+        if (slot_json.contains("image_uri") && slot_json["image_uri"].is_string()) {
+            image = slot_json["image_uri"].get<std::string>();
+        }
+
+        const std::string slot_label = "Sideways slot " + std::to_string(slot);
+        if (type_lc == "rom") {
+            cfg.type = SidewaysSlotType::Rom;
+            if (image.empty()) {
+                return {std::nullopt, slot_label + ": 'rom' type requires an 'image_uri'"};
+            }
+            cfg.image_filepath = image;
+        } else if (type_lc == "ram") {
+            cfg.type = SidewaysSlotType::Ram;
+            cfg.image_filepath = image;  // Optional preload image.
+        } else if (type_lc == "empty") {
+            cfg.type = SidewaysSlotType::Empty;
+            if (!image.empty()) {
+                return {std::nullopt, slot_label + ": 'empty' type cannot have an 'image_uri'"};
+            }
+        } else {
+            return {std::nullopt, slot_label + ": invalid type '" + type_raw +
+                                  "' (expected one of: rom, ram, empty)"};
+        }
+
+        slots.push_back(std::move(cfg));
+    }
+
+    return {std::move(slots), ""};
+}
+
 // Load and parse a preset file.
 //
 // Returns a PresetLoadResult containing either the parsed configuration or an error message.
@@ -371,6 +454,15 @@ inline PresetLoadResult load_preset(const std::filesystem::path& filepath) {
 
             config.extensions.push_back(std::move(ext_config));
         }
+    }
+
+    // Sideways bank section
+    if (json.contains("sideways_bank") && json["sideways_bank"].is_object()) {
+        auto [slots, error] = parse_sideways_section(json["sideways_bank"]);
+        if (!slots) {
+            return {std::nullopt, error + ": " + filepath.string()};
+        }
+        config.sideways = std::move(*slots);
     }
 
     // Note: Unknown keys are silently ignored for forward compatibility

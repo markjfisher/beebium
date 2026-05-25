@@ -576,3 +576,143 @@ TEST_CASE("PresetConfig: econet default state", "[preset][PresetConfig]") {
 
     REQUIRE_FALSE(config.econet.has_value());
 }
+
+// ============================================================================
+// load_preset() tests - sideways_bank section
+// ============================================================================
+
+TEST_CASE("load_preset: valid sideways_bank section", "[preset][load_preset][sideways]") {
+    auto result = load_preset(presets_dirpath() / "sideways.preset.beebium");
+
+    REQUIRE(result.success());
+    REQUIRE(result.config->model == "model-b");
+    REQUIRE(result.config->sideways.size() == 4);
+
+    // Slot 14: ROM with image (stored verbatim, resolved via ROM search path).
+    REQUIRE(result.config->sideways[0].slot == 14);
+    REQUIRE(result.config->sideways[0].type == SidewaysSlotType::Rom);
+    REQUIRE(result.config->sideways[0].image_filepath == "acorn-dfs_2_26.rom");
+
+    // Slot 13: empty.
+    REQUIRE(result.config->sideways[1].slot == 13);
+    REQUIRE(result.config->sideways[1].type == SidewaysSlotType::Empty);
+    REQUIRE(result.config->sideways[1].image_filepath.empty());
+
+    // Slot 4: RAM with no preload image.
+    REQUIRE(result.config->sideways[2].slot == 4);
+    REQUIRE(result.config->sideways[2].type == SidewaysSlotType::Ram);
+    REQUIRE(result.config->sideways[2].image_filepath.empty());
+
+    // Slot 5: RAM with a preload image.
+    REQUIRE(result.config->sideways[3].slot == 5);
+    REQUIRE(result.config->sideways[3].type == SidewaysSlotType::Ram);
+    REQUIRE(result.config->sideways[3].image_filepath == "preload.rom");
+}
+
+TEST_CASE("load_preset: sideways ROM image is not URI-normalized", "[preset][load_preset][sideways]") {
+    // Sideways ROM references are ROM-library names resolved via the ROM
+    // search path (like --sideways and DEFAULT_DFS_ROM), not disc-image
+    // paths, so they must NOT be rewritten to file:// URIs.
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_verbatim.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "slot": 14, "type": "rom", "image_uri": "acorn-dfs_2_26.rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE(result.success());
+    REQUIRE(result.config->sideways.size() == 1);
+    REQUIRE(result.config->sideways[0].image_filepath == "acorn-dfs_2_26.rom");
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways_bank present but no slots is empty", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_noslots.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": {}})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE(result.success());
+    REQUIRE(result.config->sideways.empty());
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways rom without image_uri is invalid", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_rom_noimage.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "slot": 14, "type": "rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("requires an 'image_uri'") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways empty with image_uri is invalid", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_empty_image.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "slot": 13, "type": "empty", "image_uri": "x.rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("cannot have an 'image_uri'") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways invalid type is rejected", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_badtype.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "slot": 14, "type": "flash", "image_uri": "x.rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("expected one of: rom, ram, empty") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways slot out of range is rejected", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_badslot.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "slot": 16, "type": "rom", "image_uri": "x.rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("between 0 and 15") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("load_preset: sideways slot entry missing slot is rejected", "[preset][load_preset][sideways]") {
+    std::filesystem::path temp_filepath = std::filesystem::temp_directory_path() / "sw_noslotfield.preset.beebium";
+    {
+        std::ofstream file(temp_filepath);
+        file << R"({"model": "model-b", "sideways_bank": { "slots": [ { "type": "rom", "image_uri": "x.rom" } ] }})";
+    }
+
+    auto result = load_preset(temp_filepath);
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.error.find("requires an integer 'slot'") != std::string::npos);
+
+    std::filesystem::remove(temp_filepath);
+}
+
+TEST_CASE("PresetConfig: sideways default state", "[preset][PresetConfig][sideways]") {
+    PresetConfig config;
+
+    REQUIRE(config.sideways.empty());
+}

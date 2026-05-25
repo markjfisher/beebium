@@ -1,0 +1,12 @@
+{
+  "name": "Sideways Test Preset",
+  "model": "model-b",
+  "sideways_bank": {
+    "slots": [
+      { "slot": 14, "type": "rom", "image_uri": "acorn-dfs_2_26.rom" },
+      { "slot": 13, "type": "empty" },
+      { "slot": 4, "type": "ram" },
+      { "slot": 5, "type": "ram", "image_uri": "preload.rom" }
+    ]
+  }
+}

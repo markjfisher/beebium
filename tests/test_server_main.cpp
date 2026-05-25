@@ -100,6 +100,77 @@ TEST_CASE("validate_config: both --screen-mode and --auto-boot without --links r
 }
 
 // ============================================================================
+// apply_preset() + merge_preset_sideways_configs() - sideways slots
+// ============================================================================
+
+TEST_CASE("apply_preset: records preset sideways slots as baseline",
+          "[server_main][preset][sideways]") {
+    ServerConfig<MachineType> config;
+    PresetConfig preset;
+    preset.sideways = {
+        SidewaysConfig{14, SidewaysSlotType::Rom, "acorn-dfs_2_26.rom"},
+    };
+
+    apply_preset(config, preset);
+
+    // apply_preset only stages the baseline; it does not yet touch the active
+    // sideways_configs or rom_slots (the merge does, after CLI parsing).
+    REQUIRE(config.preset_sideways_configs.size() == 1);
+    REQUIRE(config.preset_sideways_configs[0].slot == 14);
+    REQUIRE(config.sideways_configs.empty());
+    REQUIRE(config.rom_slots.count(14) == 0);
+}
+
+TEST_CASE("merge_preset_sideways_configs: applies a preset ROM slot",
+          "[server_main][preset][sideways]") {
+    ServerConfig<MachineType> config;
+    config.preset_sideways_configs = {
+        SidewaysConfig{14, SidewaysSlotType::Rom, "acorn-dfs_2_26.rom"},
+    };
+
+    merge_preset_sideways_configs(config);
+
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].slot == 14);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Rom);
+    REQUIRE(config.rom_slots[14] == "acorn-dfs_2_26.rom");
+}
+
+TEST_CASE("merge_preset_sideways_configs: empty and ram slots map to markers",
+          "[server_main][preset][sideways]") {
+    ServerConfig<MachineType> config;
+    config.preset_sideways_configs = {
+        SidewaysConfig{13, SidewaysSlotType::Empty, ""},
+        SidewaysConfig{4, SidewaysSlotType::Ram, ""},
+    };
+
+    merge_preset_sideways_configs(config);
+
+    REQUIRE(config.rom_slots[13] == EMPTY_SLOT_MARKER);
+    REQUIRE(config.rom_slots[4] == RAM_SLOT_MARKER);
+}
+
+TEST_CASE("merge_preset_sideways_configs: CLI --sideways overrides preset for same slot",
+          "[server_main][preset][sideways]") {
+    ServerConfig<MachineType> config;
+    // Simulate a CLI --sideways 14:empty already parsed, as the second pass of
+    // parse_start_arguments would leave it.
+    config.sideways_configs.push_back(SidewaysConfig{14, SidewaysSlotType::Empty, ""});
+    config.rom_slots[14] = EMPTY_SLOT_MARKER;
+    // The preset wants DFS in slot 14.
+    config.preset_sideways_configs = {
+        SidewaysConfig{14, SidewaysSlotType::Rom, "acorn-dfs_2_26.rom"},
+    };
+
+    merge_preset_sideways_configs(config);
+
+    // CLI wins: exactly one slot-14 entry, still Empty, no duplicate added.
+    REQUIRE(config.sideways_configs.size() == 1);
+    REQUIRE(config.sideways_configs[0].type == SidewaysSlotType::Empty);
+    REQUIRE(config.rom_slots[14] == EMPTY_SLOT_MARKER);
+}
+
+// ============================================================================
 // load_roms() tests
 // ============================================================================
 
@@ -199,6 +270,27 @@ TEST_CASE("load_roms: loads MOS ROM into machine memory", "[server_main][load_ro
 
     // MOS 1.20 reset vector should be in the range 0xC000-0xFFFF
     REQUIRE(reset_vector >= 0xC000);
+}
+
+TEST_CASE("load_roms: preset sideways DFS loads into slot 14",
+          "[server_main][load_roms][preset][sideways]") {
+    RomPaths::set_rom_directory(BEEBIUM_ROM_DIR);
+
+    MachineType machine;
+    ServerConfig<MachineType> config;
+    setup_test_config(config);
+
+    // A "Model B (Disc)" preset: plain Model B has no default DFS, so the
+    // preset must supply one. apply_preset stages it; merge folds it in.
+    PresetConfig preset;
+    preset.sideways = {
+        SidewaysConfig{14, SidewaysSlotType::Rom, "acorn-dfs_2_26.rom"},
+    };
+    apply_preset(config, preset);
+    merge_preset_sideways_configs(config);
+
+    REQUIRE(config.rom_slots[14] == "acorn-dfs_2_26.rom");
+    REQUIRE_NOTHROW(load_roms(machine, config));
 }
 
 // ============================================================================

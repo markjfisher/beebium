@@ -345,6 +345,10 @@ struct ServerConfig {
     std::string rom_dirpath;
     std::map<uint8_t, std::string> rom_slots;
     std::vector<SidewaysConfig> sideways_configs;
+    // Sideways slots supplied by a --preset, applied as a baseline after CLI
+    // parsing. A CLI --sideways for the same slot takes precedence. See the
+    // merge step at the end of parse_start_arguments().
+    std::vector<SidewaysConfig> preset_sideways_configs;
 
     // Motherboard link state (jumpers that affect sideways slot mapping).
     // Default-constructed to factory positions. For machine variants with no
@@ -591,6 +595,13 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
         // Cassette - future enhancement
     }
 
+    // Sideways slots: kept as a baseline so a later CLI --sideways for the
+    // same slot can override per-slot. Merged into sideways_configs at the
+    // end of parse_start_arguments, after all CLI args are known.
+    for (const auto& slot : preset.sideways) {
+        config.preset_sideways_configs.push_back(slot);
+    }
+
     // Econet
     if (preset.econet) {
         const auto& econet = *preset.econet;
@@ -616,6 +627,40 @@ void apply_preset(ServerConfig<MachineType>& config, const PresetConfig& preset)
         inst.config = ext.config;
         inst.list_config = ext.list_config;
         config.extension_instances.push_back(std::move(inst));
+    }
+}
+
+// Fold preset-supplied sideways slots (collected by apply_preset into
+// config.preset_sideways_configs) into the active configuration as a
+// baseline. A CLI --sideways for the same slot takes precedence: those
+// entries are already in config.sideways_configs, so a preset slot is applied
+// only when no CLI --sideways targets that exact slot. This keeps CLI-vs-CLI
+// duplicate detection in validate_config intact (we never add a second entry
+// for a slot the CLI already claimed) while letting presets supply defaults
+// the user can still override per slot. Cross-aliased conflicts (preset and
+// CLI naming different slots wired to one physical socket) are still surfaced
+// by validate_sideways_configs.
+//
+// Must run after CLI parsing; called at the end of parse_start_arguments.
+template<typename MachineType>
+void merge_preset_sideways_configs(ServerConfig<MachineType>& config) {
+    for (const auto& preset_slot : config.preset_sideways_configs) {
+        bool cli_claims_slot = std::any_of(
+            config.sideways_configs.begin(), config.sideways_configs.end(),
+            [&](const SidewaysConfig& c) { return c.slot == preset_slot.slot; });
+        if (cli_claims_slot) {
+            continue;
+        }
+        config.sideways_configs.push_back(preset_slot);
+        // Mirror the CLI --sideways path so the machine's default ROM for this
+        // slot is suppressed and the preset's choice is what gets loaded.
+        if (preset_slot.type == SidewaysSlotType::Rom) {
+            config.rom_slots[preset_slot.slot] = preset_slot.image_filepath;
+        } else if (preset_slot.type == SidewaysSlotType::Empty) {
+            config.rom_slots[preset_slot.slot] = EMPTY_SLOT_MARKER;
+        } else if (preset_slot.type == SidewaysSlotType::Ram) {
+            config.rom_slots[preset_slot.slot] = RAM_SLOT_MARKER;
+        }
     }
 }
 
@@ -925,6 +970,10 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             }
         }
     }
+
+    // Fold preset-supplied sideways slots in as a baseline now that all CLI
+    // --sideways flags have been parsed (CLI wins per slot).
+    merge_preset_sideways_configs(config);
 
     return std::nullopt;  // Success, continue execution
 }
