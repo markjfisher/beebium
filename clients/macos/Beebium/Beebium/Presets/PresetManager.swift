@@ -333,6 +333,16 @@ class PresetManager: ObservableObject {
         return await fetchSidewaysSectionFromSchema(executablePath: preset.coreExecutablePath)
     }
 
+    /// Read the sideways slot assignments a preset file declares (empty if none).
+    /// Lets the Memory tab show what the preset already configures.
+    func sidewaysSlots(for preset: MachinePreset) -> [PresetSidewaysSlot] {
+        guard let data = FileManager.default.contents(atPath: preset.presetFilepath),
+              let parsed = try? JSONDecoder().decode(PresetFileData.self, from: data) else {
+            return []
+        }
+        return parsed.sidewaysBank?.slots ?? []
+    }
+
     /// Fetch the sideways_bank section with full detail from the schema JSON.
     private func fetchSidewaysSectionFromSchema(executablePath: String) async -> SidewaysSchemaSection? {
         let process = Process()
@@ -545,7 +555,7 @@ class PresetManager: ObservableObject {
     ///   - preset: The preset to launch
     ///   - storageConfig: Optional storage configuration with drive images
     /// - Returns: LaunchedCore on success, or error on failure
-    func launchCore(_ preset: MachinePreset, storageConfig: StorageConfigurationState? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
+    func launchCore(_ preset: MachinePreset, storageConfig: StorageConfigurationState? = nil, memoryConfig: MemoryConfigurationState? = nil) async -> Result<LaunchedCore, CoreLaunchError> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: preset.coreExecutablePath)
 
@@ -573,6 +583,13 @@ class PresetManager: ObservableObject {
                     arguments.append(contentsOf: ["--floppy", "\(drive.id):\(filepath)"])
                 }
             }
+        }
+
+        // Add sideways arguments from memory config. Only sockets the user
+        // changed emit anything; they override the preset's own sideways_bank
+        // per slot on the server side.
+        if let memoryConfig = memoryConfig {
+            arguments.append(contentsOf: memoryConfig.sidewaysLaunchArguments())
         }
 
         process.arguments = arguments

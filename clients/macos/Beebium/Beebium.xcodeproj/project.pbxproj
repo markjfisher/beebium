@@ -124,6 +124,7 @@
 		E309480FD076251390C77416 /* StandardDisplayStyleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8389EA15AADAB20C859E9702 /* StandardDisplayStyleTests.swift */; };
 		E3426D82AD066B2F7FF0830F /* aun.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0CF5589888F672F43B52FD /* aun.pb.swift */; };
 		E487A1E602822CCC33215258 /* VideoClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38117A6A03CE78C8AC64C4C5 /* VideoClientTests.swift */; };
+		E529443D463B439E147AEDD0 /* MemorySectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87F51F70C1CA8A3C2CB01F4 /* MemorySectionView.swift */; };
 		E89BC098B23BC7953F1F7317 /* WelcomeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE9E7191CAFDC8E2EAE7ADA /* WelcomeWindow.swift */; };
 		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
 		EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */ = {isa = PBXBuildFile; fileRef = DFB1414298AE8F8261138293 /* keyboard.proto */; };
@@ -267,6 +268,7 @@
 		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
 		D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelShape.swift; sourceTree = "<group>"; };
 		D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryClient.swift; sourceTree = "<group>"; };
+		D87F51F70C1CA8A3C2CB01F4 /* MemorySectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionView.swift; sourceTree = "<group>"; };
 		D969BBA00E4077B69BBCACAF /* econet.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet.pb.swift; sourceTree = "<group>"; };
 		DA0CF5589888F672F43B52FD /* aun.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.pb.swift; sourceTree = "<group>"; };
 		DFB1414298AE8F8261138293 /* keyboard.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = keyboard.proto; sourceTree = "<group>"; };
@@ -409,6 +411,7 @@
 				FE9EEE0A8B69EEE0DCB2C385 /* ConfigurationEditor.swift */,
 				664E24EC940C75F69FE7E1E4 /* FloppyDriveConfigView.swift */,
 				8D3CAA48CAAC43745F077F26 /* MemoryConfigurationState.swift */,
+				D87F51F70C1CA8A3C2CB01F4 /* MemorySectionView.swift */,
 				90AFDA16D57D7C85C963EBC4 /* StorageConfigurationState.swift */,
 				E1724F99FA9BFDDE24FF4F8A /* StorageSectionView.swift */,
 			);
@@ -735,6 +738,7 @@
 				82E5C63F1FAF9D28F87F09BA /* MachinePreset.swift in Sources */,
 				2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */,
 				910A258FD1C89BFB7CFDFC71 /* MemoryConfigurationState.swift in Sources */,
+				E529443D463B439E147AEDD0 /* MemorySectionView.swift in Sources */,
 				D0360065AC6EC0990736FA5F /* MetalRenderer.swift in Sources */,
 				DA2A617393E4BA1C28E528F7 /* ModalEditorView.swift in Sources */,
 				1AE92C3076119A47291BD4D7 /* NewMachineDialog.swift in Sources */,

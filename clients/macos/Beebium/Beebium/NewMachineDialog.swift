@@ -27,6 +27,8 @@ struct NewMachineDialog: View {
     @State private var showConfiguration = false
     @StateObject private var storageConfig = StorageConfigurationState()
     @State private var storageSchema: StorageSchemaSection?
+    @StateObject private var memoryConfig = MemoryConfigurationState()
+    @State private var memorySchema: SidewaysSchemaSection?
     @State private var isLoadingSchema = false
 
     // Save as preset
@@ -179,6 +181,8 @@ struct NewMachineDialog: View {
                     ConfigurationEditor(
                         storageConfig: storageConfig,
                         storageSchema: storageSchema,
+                        memoryConfig: memoryConfig,
+                        memorySchema: memorySchema,
                         modelId: selectedPreset?.modelName ?? "model-b"
                     )
                     .frame(height: 220)
@@ -262,6 +266,7 @@ struct NewMachineDialog: View {
     private func loadSchemaForPreset(_ preset: MachinePreset) {
         isLoadingSchema = true
         storageSchema = nil
+        memorySchema = nil
 
         // Reset storage config to defaults
         storageConfig.fdcSocketId = "none"
@@ -270,6 +275,8 @@ struct NewMachineDialog: View {
         Task {
             let manager = presetManager
             let schema = await manager.fetchStorageSchema(for: preset)
+            let sidewaysSchema = await manager.fetchSidewaysSchema(for: preset)
+            let presetSlots = manager.sidewaysSlots(for: preset)
 
             await MainActor.run {
                 storageSchema = schema
@@ -278,6 +285,15 @@ struct NewMachineDialog: View {
                 let driveCount = schema?.floppyDrives?.count ?? 2
                 storageConfig.drives = (0..<driveCount).map {
                     StorageConfigurationState.DriveConfig(id: $0, imageFilepath: nil)
+                }
+
+                // Build the Memory tab from the machine's sockets and the
+                // preset's own sideways assignments.
+                memorySchema = sidewaysSchema
+                if let sidewaysSchema = sidewaysSchema {
+                    memoryConfig.configure(schema: sidewaysSchema, presetSlots: presetSlots)
+                } else {
+                    memoryConfig.sockets = []
                 }
 
                 isLoadingSchema = false
@@ -291,12 +307,13 @@ struct NewMachineDialog: View {
         isLaunching = true
         launchError = nil
 
-        // TODO: If saveAsNewPreset, create the preset first
-        // For now, just launch with the selected preset and storage config
+        // TODO: If saveAsNewPreset, create the preset first (shared follow-up
+        // with the Storage tab). For now, launch with the selected preset plus
+        // the storage and memory configuration applied via CLI overrides.
 
         // Capture the manager reference before async call to avoid @StateObject wrapper issues
         let manager = presetManager
-        let result = await manager.launchCore(preset, storageConfig: storageConfig)
+        let result = await manager.launchCore(preset, storageConfig: storageConfig, memoryConfig: memoryConfig)
 
         switch result {
         case .success(let core):

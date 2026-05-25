@@ -61,6 +61,7 @@ class MemoryConfigurationState: ObservableObject {
         let label: String
         let slots: [Int]        // logical slot numbers wired to this socket
         let priority: Int       // = max(slots); higher wins at boot
+        let supportsRom: Bool
         let supportsRam: Bool
         let supportsEmpty: Bool
         /// Slot the initial content occupies (from preset or default), if any.
@@ -109,6 +110,7 @@ class MemoryConfigurationState: ObservableObject {
                 label: socket.label,
                 slots: socket.slots,
                 priority: socket.priority,
+                supportsRom: socket.supportsRom,
                 supportsRam: socket.supportsRam,
                 supportsEmpty: socket.supportsEmpty,
                 sourceSlot: sourceSlot,

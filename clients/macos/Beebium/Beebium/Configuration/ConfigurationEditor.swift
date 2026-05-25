@@ -24,6 +24,12 @@ struct ConfigurationEditor: View {
     /// Storage schema describing available options
     let storageSchema: StorageSchemaSection?
 
+    /// Memory (sideways ROM/RAM) configuration state being edited
+    @ObservedObject var memoryConfig: MemoryConfigurationState
+
+    /// Sideways bank schema describing the machine's sockets
+    let memorySchema: SidewaysSchemaSection?
+
     /// Machine model ID (e.g., "model-b")
     let modelId: String
 
@@ -33,7 +39,7 @@ struct ConfigurationEditor: View {
     /// Available configuration sections
     enum ConfigSection: String, CaseIterable, Identifiable {
         case storage = "Storage"
-        // Future: case roms = "ROMs"
+        case memory = "Memory"
         // Future: case peripherals = "Peripherals"
         // Future: case display = "Display"
         // Future: case keyboard = "Keyboard"
@@ -43,6 +49,7 @@ struct ConfigurationEditor: View {
         var icon: String {
             switch self {
             case .storage: return "internaldrive"
+            case .memory: return "memorychip"
             }
         }
     }
@@ -112,6 +119,11 @@ struct ConfigurationEditor: View {
             StorageSectionView(
                 storageConfig: storageConfig,
                 schema: storageSchema
+            )
+        case .memory:
+            MemorySectionView(
+                memoryConfig: memoryConfig,
+                schema: memorySchema
             )
         }
     }
