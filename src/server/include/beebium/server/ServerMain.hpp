@@ -2934,6 +2934,9 @@ public:
                   << "  --name <name>     Display name for the preset (required)\n"
                   << "  --from <id>       Source preset to copy configuration from\n"
                   << "  --output <path>   Write to specified path instead of user directory\n"
+                  << "  --release-date <date>     Release date (YYYY, YYYY-MM, or YYYY-MM-DD)\n"
+                  << "  --fdc <id>                Disc controller for the FDC socket (e.g. acorn-1770)\n"
+                  << "  --sideways SLOT:TYPE[:IMAGE]  Sideways slot (repeatable); same grammar as 'start'\n"
                   << "\n"
                   << "The preset ID is derived by slugifying the name.\n"
                   << "Outputs the created preset ID (or path if --output used).\n";
@@ -2952,6 +2955,9 @@ public:
         std::string preset_name;
         std::string from_id;
         std::string output_filepath;
+        std::string release_date;
+        std::string fdc_id;
+        std::vector<std::string> sideways_args;
 
         for (int i = global.subcommand_argv_start; i < argc; ++i) {
             std::string arg = argv[i];
@@ -2964,6 +2970,12 @@ public:
                 from_id = argv[++i];
             } else if (arg == "--output" && i + 1 < argc) {
                 output_filepath = argv[++i];
+            } else if (arg == "--release-date" && i + 1 < argc) {
+                release_date = argv[++i];
+            } else if (arg == "--fdc" && i + 1 < argc) {
+                fdc_id = argv[++i];
+            } else if (arg == "--sideways" && i + 1 < argc) {
+                sideways_args.push_back(argv[++i]);
             } else {
                 std::cerr << "Unknown argument: " << arg << "\n";
                 help(argv[0]);
@@ -3008,6 +3020,40 @@ public:
                 std::cerr << "Error: invalid JSON in source preset: " << e.what() << "\n";
                 return ExitCode::DATAERR;
             }
+        }
+
+        // Explicit flags layer on top of any --from baseline.
+        if (!release_date.empty()) {
+            preset["release_date"] = release_date;
+        }
+        if (!fdc_id.empty()) {
+            preset["storage"]["fdc_socket"]["id"] = fdc_id;
+        }
+        if (!sideways_args.empty()) {
+            // Reuse the --sideways grammar so create-preset and start agree,
+            // and emit the sideways_bank shape that PresetLoader parses back.
+            nlohmann::ordered_json slots = nlohmann::ordered_json::array();
+            for (const auto& sw : sideways_args) {
+                SidewaysConfig cfg;
+                try {
+                    cfg = parse_sideways_arg(sw);
+                } catch (const std::runtime_error& e) {
+                    std::cerr << "Error: " << e.what() << "\n";
+                    return ExitCode::USAGE;
+                }
+                nlohmann::ordered_json slot;
+                slot["slot"] = cfg.slot;
+                switch (cfg.type) {
+                    case SidewaysSlotType::Rom:   slot["type"] = "rom"; break;
+                    case SidewaysSlotType::Ram:   slot["type"] = "ram"; break;
+                    case SidewaysSlotType::Empty: slot["type"] = "empty"; break;
+                }
+                if (!cfg.image_filepath.empty()) {
+                    slot["image_uri"] = cfg.image_filepath;
+                }
+                slots.push_back(slot);
+            }
+            preset["sideways_bank"]["slots"] = slots;
         }
 
         // Determine output path

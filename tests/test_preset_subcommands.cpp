@@ -620,3 +620,41 @@ TEST_CASE("model-b-romram boots without an auto-loaded DFS ROM",
 
     std::filesystem::remove(output_filepath);
 }
+
+// ============================================================================
+// create-preset builds rich presets from --fdc / --sideways flags
+// ============================================================================
+
+TEST_CASE("create-preset --fdc and --sideways build a loadable rich preset",
+          "[integration][preset][create-preset][sideways]") {
+    auto output_filepath =
+        std::filesystem::temp_directory_path() / "beebium_gen_disc.preset.beebium";
+
+    auto create_result = run_command(
+        EXECUTABLE + " create-preset --name \"Gen Disc\" --release-date 1982"
+        " --fdc acorn-1770 --sideways 14:rom:acorn-dfs_2_26.rom"
+        " --output \"" + output_filepath.string() + "\"");
+    REQUIRE(create_result.exit_code == 0);
+    REQUIRE(std::filesystem::exists(output_filepath));
+
+    std::ifstream f(output_filepath);
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    std::string contents = ss.str();
+    REQUIRE(contents.find("\"acorn-1770\"") != std::string::npos);
+    REQUIRE(contents.find("sideways_bank") != std::string::npos);
+    REQUIRE(contents.find("acorn-dfs_2_26.rom") != std::string::npos);
+    REQUIRE(contents.find("1982") != std::string::npos);
+
+    // The generated preset must load, validate, and boot end to end.
+    auto screenshot_filepath =
+        std::filesystem::temp_directory_path() / "beebium_gen_disc.png";
+    auto boot_result = run_command(
+        EXECUTABLE + " capture-screenshot --preset \"" + output_filepath.string() +
+        "\" --output \"" + screenshot_filepath.string() + "\" --duration 0");
+    REQUIRE(boot_result.exit_code == 0);
+    REQUIRE(boot_result.stdout_output.find("acorn-dfs_2_26.rom") != std::string::npos);
+
+    std::filesystem::remove(output_filepath);
+    std::filesystem::remove(screenshot_filepath);
+}
