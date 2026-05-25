@@ -598,3 +598,25 @@ TEST_CASE("create-preset --from and export-preset preserve sideways_bank",
     REQUIRE(export_contents.find("sideways_bank") != std::string::npos);
     REQUIRE(export_contents.find("acorn-dfs_2_26.rom") != std::string::npos);
 }
+
+// ============================================================================
+// model-b-romram no longer auto-provisions DFS
+// ============================================================================
+
+TEST_CASE("model-b-romram boots without an auto-loaded DFS ROM",
+          "[integration][romram][sideways]") {
+    const std::string romram = find_executable("beebium-model-b-romram").string();
+    auto output_filepath = std::filesystem::temp_directory_path() / "beebium_romram_bare.png";
+
+    auto result = run_command(
+        romram + " capture-screenshot --output \"" + output_filepath.string() + "\" --duration 0");
+    REQUIRE(result.exit_code == 0);
+
+    // BASIC still auto-loads: the language ROM ships in the machine.
+    REQUIRE(result.stdout_output.find("bbc-basic_2.rom") != std::string::npos);
+    // But DFS is no longer auto-provisioned for a ROM/RAM board; it must come
+    // from a preset's sideways_bank. Nothing should reference acorn-dfs here.
+    REQUIRE(result.stdout_output.find("acorn-dfs") == std::string::npos);
+
+    std::filesystem::remove(output_filepath);
+}

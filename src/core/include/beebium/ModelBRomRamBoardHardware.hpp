@@ -73,8 +73,9 @@ public:
     static constexpr std::string_view DEFAULT_MOS_ROM = "acorn-mos_1_20.rom";
     static constexpr std::string_view DEFAULT_LANGUAGE_ROM = "bbc-basic_2.rom";
     static constexpr uint8_t DEFAULT_LANGUAGE_SLOT = 15;
-    static constexpr std::string_view DEFAULT_DFS_ROM = "acorn-dfs_2_26.rom";
-    static constexpr uint8_t DEFAULT_DFS_SLOT = 14;
+    // No DEFAULT_DFS_ROM: a ROM/RAM board is empty expansion sockets with no
+    // filing system of its own. A DFS (or any other FS ROM) is provisioned by
+    // a preset via its sideways_bank section, not auto-loaded by the machine.
 
     // Default pacing configuration for this machine
     static constexpr PacingConfig default_pacing_config() {
@@ -404,12 +405,6 @@ public:
         sideways.configure_slot(DEFAULT_LANGUAGE_SLOT, SlotType::Rom);
         sideways.load_rom(DEFAULT_LANGUAGE_SLOT, data, size);
         sideways.set_slot_image_name(DEFAULT_LANGUAGE_SLOT, DEFAULT_LANGUAGE_ROM);
-    }
-
-    void load_dfs(const uint8_t* data, size_t size) {
-        sideways.configure_slot(DEFAULT_DFS_SLOT, SlotType::Rom);
-        sideways.load_rom(DEFAULT_DFS_SLOT, data, size);
-        sideways.set_slot_image_name(DEFAULT_DFS_SLOT, DEFAULT_DFS_ROM);
     }
 
     // Load ROM into a specific slot
