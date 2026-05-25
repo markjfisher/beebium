@@ -1,5 +1,60 @@
 # Sideways ROM/RAM Bank Schema
 
+## Implementation status
+
+Most of this design has landed (branch `preset-memory-tab`, off `master`).
+What exists today:
+
+- **Preset `sideways_bank` section** is parsed by `parse_sideways_section`
+  in `PresetLoader.hpp` into `PresetConfig::sideways`. Shape:
+  `{ "sideways_bank": { "slots": [ { "slot": 14, "type": "rom",
+  "image_uri": "acorn-dfs_2_26.rom" } ] } }`. A slot's `type` is
+  `rom`/`ram`/`empty`; `image_uri` is a ROM-library name or path, stored
+  **verbatim** and resolved via the ROM search path (like `--sideways` and
+  the machine defaults), not rewritten to a `file://` URI the way disc
+  images are.
+- **CLI overrides preset, per slot.** `apply_preset` stages preset slots;
+  `merge_preset_sideways_configs` (end of `parse_start_arguments`) folds
+  them into the active config only where a CLI `--sideways` hasn't claimed
+  that slot, addressing each socket at the slot its content occupies to
+  avoid aliased-socket conflicts.
+- **`describe-preset-schema`** emits a `sideways_bank` section built from
+  the machine's `SlotTopology`: per-socket `label`, wired `slots`,
+  `capabilities`, `runtime_configurable`, plus `has_aliasing` and the
+  machine's `default_roms`. (Every socket now supports ROM/RAM/empty - see
+  [sideways-slots.md](../../sideways-slots.md).)
+- **`create-preset`** gained `--fdc`, `--sideways`, and `--release-date`,
+  so the build generates the shipped presets through the same code path
+  users create their own with (CMake `add_system_preset`). Shipped set:
+  `model-b`, `model-b-disc`, `model-b-romram-disc`, `model-b-plus`.
+- **ROM titles.** `SidewaysRomHeader` (`src/core/include/beebium/`) parses
+  the standard ROM header (this document's sibling, `sidewrom.pdf`); the
+  `describe-rom` subcommand exposes it as JSON. The macOS New Machine
+  **Memory** tab is a socket-oriented configurator (highest priority first)
+  that shows real ROM titles/versions ("Acorn DFS 2.26") instead of
+  filenames, with a tri-state ROM/RAM/Empty control and a Browse/Clear/Copy
+  Path/Reveal menu, applying changes at launch via `--sideways`.
+
+Resolved design questions:
+
+- **Slot priority** derives from the slot number (highest slot wins the
+  language selection at reset); the UI orders sockets by it. Presets do not
+  set explicit priority.
+
+Still deferred:
+
+- **Known-ROM catalogue / `known_roms` / categories** in the schema - the
+  Memory tab uses a file picker plus parsed titles instead.
+- **Live-machine "Memory" sidebar** for a running core (read-only display
+  via `SidewaysService.GetSlotStatus`) - runtime mutation of sideways
+  contents is intentionally out of scope.
+- **Save-as-preset** persistence of Memory/Storage edits in the New Machine
+  dialog (a TODO shared with the Storage tab; `create-preset` already
+  accepts the flags).
+
+The sections below are the original design notes; treat them as background
+where they go beyond the above.
+
 ## Domain Concept
 
 The BBC Micro has 16 "sideways" ROM sockets (slots 0-15) that share a 16KB address space ($8000-$BFFF). Only one slot is active at a time, selected by writing to $FE30. This enables multiple ROMs (languages, filing systems, utilities) to coexist.

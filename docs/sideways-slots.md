@@ -56,14 +56,24 @@ Each socket carries four boolean capability flags:
 | `supports_empty` | The socket can be left vacant. |
 | `runtime_configurable` | The socket *type* (ROM/RAM/empty) can be changed at runtime via `SidewaysService.ConfigureSlot`, without restarting the server. |
 
-Real chip sockets are not runtime-reconfigurable: changing the type of
-the socket means powering off, swapping a chip, and powering back on.
-The flag therefore reflects emulator policy, not hardware capability:
+**Every present socket supports the ROM/RAM/empty trifecta.** Third-party
+sideways-RAM modules that plugged into a ROM socket (with a flying lead for
+the R/W line) were commonplace, so Beebium lets any socket hold a ROM, be
+sideways RAM, or be left vacant rather than encoding per-machine
+restrictions that buy little accuracy and would force a separate mechanism
+for configuring RAM in those sockets. This is the `SocketSpec` default; a
+machine only sets a capability `false` for a socket that genuinely cannot
+be it. (We favour this flexibility over strict historical accuracy.)
+
+`runtime_configurable` is an orthogonal axis. Real chip sockets are not
+runtime-reconfigurable: changing the type means powering off, swapping a
+chip, and powering back on. The flag reflects emulator policy, not hardware
+capability:
 
 | Variant | `runtime_configurable` |
 |---------|------------------------|
 | Model B | `false` (real-hardware-faithful) |
-| Model B+ | `false` (sockets are ROM-only by motherboard design) |
+| Model B+ | `false` (real-hardware-faithful) |
 | Model B with ROM/RAM board | `true` (fantasy hot-swap test bed) |
 
 Future Master 128 cartridge slots will be `runtime_configurable=true`
@@ -109,19 +119,22 @@ runtime-reconfigurable.
 ### Model B+
 
 ```
-| Socket | Slots               | Type     | Default content |
-|--------|---------------------|----------|-----------------|
-| IC35   | 2, 3                | ROM-only | (empty)         |
-| IC44   | 4, 5                | ROM-only | (empty)         |
-| IC57   | 6, 7                | ROM-only | (empty)         |
-| IC62   | 8, 9                | ROM-only | (empty)         |
-| IC68   | 10, 11              | ROM-only | DFS             |
-| IC71   | 14, 15 / 0, 1 (S13) | ROM-only | BASIC           |
+| Socket | Slots               | Default content |
+|--------|---------------------|-----------------|
+| IC35   | 2, 3                | (empty)         |
+| IC44   | 4, 5                | (empty)         |
+| IC57   | 6, 7                | (empty)         |
+| IC62   | 8, 9                | (empty)         |
+| IC68   | 10, 11              | DFS             |
+| IC71   | 14, 15 / 0, 1 (S13) | BASIC           |
 ```
 
 IC71's slot pair is selected by link S13; the inactive pair is
-electrically dead. Slots 12 and 13 do not exist on a stock B+. None
-of the sockets supports RAM or empty; none is runtime-reconfigurable.
+electrically dead. Slots 12 and 13 do not exist on a stock B+. Every
+socket supports ROM/RAM/empty (so the integral DFS or BASIC can be
+removed or replaced, and a sideways-RAM module fitted); none is
+runtime-reconfigurable. The B+ 64K has no built-in sideways RAM - that
+arrives with the B+ 128K's four RAM banks, a future variant.
 
 ### Model B with ROM/RAM expansion board
 
@@ -136,8 +149,9 @@ physical socket they target and rejects any of:
 
 - a slot that does not exist on the configured topology
   (e.g. `--sideways 12:rom:foo.rom` on a Model B+);
-- a type the socket does not support
-  (e.g. `--sideways 4:ram` on a Model B+ - all sockets are ROM-only);
+- a type the socket does not support (no current variant restricts this -
+  every present socket supports ROM/RAM/empty - so this rule guards future
+  variants with genuinely restricted sockets);
 - two requests targeting the same socket with different types
   (e.g. `--sideways 0:rom:foo.rom --sideways 4:ram` on a Model B - both
   reach IC52);
