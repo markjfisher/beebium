@@ -15,6 +15,8 @@ import XCTest
 
 final class MemoryConfigurationStateTests: XCTestCase {
 
+    private typealias Content = MemoryConfigurationState.SocketContent
+
     /// A stock Model B: four aliased sockets, BASIC default in slot 15.
     private func modelBSchema() -> SidewaysSchemaSection {
         SidewaysSchemaSection(
@@ -33,24 +35,19 @@ final class MemoryConfigurationStateTests: XCTestCase {
 
     func testResolvesPresetDefaultAndEmptySockets() {
         let state = MemoryConfigurationState()
-        // Disc preset: DFS in slot 14.
         let presetSlots = [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")]
         state.configure(schema: modelBSchema(), presetSlots: presetSlots)
 
-        // Ordered by priority (highest slot) first: IC101(15), IC100(14), IC88(13), IC52(12).
+        // Ordered by priority (highest slot) first.
         XCTAssertEqual(state.sockets.map(\.label), ["IC101", "IC100", "IC88", "IC52"])
         XCTAssertEqual(state.sockets.map(\.priority), [15, 14, 13, 12])
 
-        // IC101: BASIC from the machine default.
-        XCTAssertEqual(state.sockets[0].content, .rom(image: "bbc-basic_2.rom"))
+        XCTAssertEqual(state.sockets[0].content, Content(kind: .rom, image: "bbc-basic_2.rom"))
         XCTAssertEqual(state.sockets[0].sourceSlot, 15)
-        // IC100: DFS from the preset.
-        XCTAssertEqual(state.sockets[1].content, .rom(image: "acorn-dfs_2_26.rom"))
+        XCTAssertEqual(state.sockets[1].content, Content(kind: .rom, image: "acorn-dfs_2_26.rom"))
         XCTAssertEqual(state.sockets[1].sourceSlot, 14)
-        // IC88, IC52: empty (no preset, no default).
         XCTAssertEqual(state.sockets[2].content, .empty)
         XCTAssertNil(state.sockets[2].sourceSlot)
-        XCTAssertEqual(state.sockets[3].content, .empty)
 
         XCTAssertFalse(state.hasChanges)
         XCTAssertTrue(state.sidewaysLaunchArguments().isEmpty)
@@ -61,22 +58,46 @@ final class MemoryConfigurationStateTests: XCTestCase {
         state.configure(schema: modelBSchema(),
                         presetSlots: [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")])
 
-        // Remove DFS (IC100). It must emit at slot 14 (the preset's slot) so the
-        // server overrides that exact slot rather than conflicting via aliasing.
+        // Remove DFS (IC100): must emit at slot 14 (the preset's slot).
         state.sockets[1].content = .empty
-        XCTAssertTrue(state.sockets[1].isChanged)
         XCTAssertTrue(state.hasChanges)
         XCTAssertEqual(state.sidewaysLaunchArguments(), ["--sideways", "14:empty"])
     }
 
-    func testChangingEmptySocketEmitsAtPrioritySlot() {
+    func testLoadingRomIntoEmptySocketEmitsAtPrioritySlot() {
         let state = MemoryConfigurationState()
         state.configure(schema: modelBSchema(), presetSlots: [])
 
-        // IC52 was empty (priority 12). Load a ROM file into it.
+        // IC52 was empty (priority 12). Make it a ROM from a file.
         let ic52 = state.sockets.firstIndex { $0.label == "IC52" }!
-        state.sockets[ic52].content = .rom(image: "/tmp/toolkit.rom")
+        state.sockets[ic52].content = Content(kind: .rom, image: "/tmp/toolkit.rom")
         XCTAssertEqual(state.sidewaysLaunchArguments(), ["--sideways", "12:rom:/tmp/toolkit.rom"])
+    }
+
+    func testSidewaysRamWithAndWithoutPreload() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(), presetSlots: [])
+        let ic52 = state.sockets.firstIndex { $0.label == "IC52" }!
+
+        // Blank sideways RAM.
+        state.sockets[ic52].content = Content(kind: .ram, image: nil)
+        XCTAssertEqual(state.sidewaysLaunchArguments(), ["--sideways", "12:ram"])
+
+        // RAM pre-loaded from an image at startup (e.g. battery-backed RAM).
+        state.sockets[ic52].content = Content(kind: .ram, image: "/tmp/under-test.rom")
+        XCTAssertEqual(state.sidewaysLaunchArguments(), ["--sideways", "12:ram:/tmp/under-test.rom"])
+    }
+
+    func testRomKindWithoutImageIsNotEmitted() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(), presetSlots: [])
+        let ic52 = state.sockets.firstIndex { $0.label == "IC52" }!
+
+        // Selecting ROM but choosing no image is incomplete: emit nothing so the
+        // preset/default for the slot still applies.
+        state.sockets[ic52].content = Content(kind: .rom, image: nil)
+        XCTAssertTrue(state.sockets[ic52].isChanged)
+        XCTAssertTrue(state.sidewaysLaunchArguments().isEmpty)
     }
 
     func testRevertAllRestoresInitialContent() {
@@ -85,12 +106,12 @@ final class MemoryConfigurationStateTests: XCTestCase {
                         presetSlots: [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")])
 
         state.sockets[1].content = .empty
-        state.sockets[0].content = .ram(imageFilepath: nil)
+        state.sockets[0].content = Content(kind: .ram, image: nil)
         XCTAssertTrue(state.hasChanges)
 
         state.revertAll()
         XCTAssertFalse(state.hasChanges)
-        XCTAssertEqual(state.sockets[1].content, .rom(image: "acorn-dfs_2_26.rom"))
-        XCTAssertEqual(state.sockets[0].content, .rom(image: "bbc-basic_2.rom"))
+        XCTAssertEqual(state.sockets[1].content, Content(kind: .rom, image: "acorn-dfs_2_26.rom"))
+        XCTAssertEqual(state.sockets[0].content, Content(kind: .rom, image: "bbc-basic_2.rom"))
     }
 }

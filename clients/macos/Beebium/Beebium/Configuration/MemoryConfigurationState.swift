@@ -22,36 +22,68 @@ import Foundation
 /// `--sideways` at launch, layering over the preset.
 class MemoryConfigurationState: ObservableObject {
 
-    /// What a socket holds.
-    enum SocketContent: Equatable {
+    /// Whether a socket is empty, holds a ROM, or is sideways RAM. This is
+    /// orthogonal to whatever image is loaded: a ROM is read-only, RAM is
+    /// writable, but either can be populated from an image at startup.
+    enum SocketKind: String, CaseIterable, Identifiable, Equatable {
         case empty
-        case ram(imageFilepath: String?)  // optional pre-load image
-        case rom(image: String)           // ROM library name or file path
+        case rom
+        case ram
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .empty: return "Empty"
+            case .rom:   return "ROM"
+            case .ram:   return "RAM"
+            }
+        }
+    }
+
+    /// A socket's assignment: its kind plus an optional image. A ROM needs an
+    /// image; sideways RAM may optionally be pre-loaded from one at startup
+    /// (battery-backed RAM appears pre-loaded to the machine); empty has none.
+    struct SocketContent: Equatable {
+        var kind: SocketKind
+        var image: String?  // ROM image, or RAM pre-load image; nil for empty/blank RAM
+
+        static let empty = SocketContent(kind: .empty, image: nil)
+
+        init(kind: SocketKind, image: String? = nil) {
+            self.kind = kind
+            self.image = image
+        }
 
         /// Build from a preset slot's type/image strings.
         init(presetType: String, image: String?) {
             switch presetType {
-            case "rom": self = .rom(image: image ?? "")
-            case "ram": self = .ram(imageFilepath: image)
-            default:    self = .empty
+            case "rom": self.init(kind: .rom, image: image)
+            case "ram": self.init(kind: .ram, image: image)
+            default:    self.init(kind: .empty, image: nil)
             }
         }
 
         /// Human-readable summary for the row.
         var displayLabel: String {
-            switch self {
+            switch kind {
             case .empty:
                 return "Empty"
-            case .ram(let path):
-                if let path = path {
-                    return "Sideways RAM (preload: \(URL(fileURLWithPath: path).lastPathComponent))"
-                }
-                return "Sideways RAM"
-            case .rom(let image):
-                if image.isEmpty { return "ROM" }
-                // Show just the filename whether it's a bare name or a path.
+            case .rom:
+                guard let image = image, !image.isEmpty else { return "ROM (no image)" }
                 return URL(fileURLWithPath: image).lastPathComponent
+            case .ram:
+                guard let image = image, !image.isEmpty else { return "Sideways RAM" }
+                return "Sideways RAM (preload: \(URL(fileURLWithPath: image).lastPathComponent))"
             }
+        }
+
+        /// The image path if it is an existing file on disk, for Reveal in
+        /// Finder. Bare ROM-library names (from presets/defaults) return nil.
+        var revealableFilepath: String? {
+            guard let image = image, image.contains("/"),
+                  FileManager.default.fileExists(atPath: image) else { return nil }
+            return image
         }
     }
 
@@ -98,7 +130,7 @@ class MemoryConfigurationState: ObservableObject {
                 content = SocketContent(presetType: presetSlot.type, image: presetSlot.imageUri)
                 sourceSlot = presetSlot.slot
             } else if let defaultRom = defaultRom {
-                content = .rom(image: defaultRom.image)
+                content = SocketContent(kind: .rom, image: defaultRom.image)
                 sourceSlot = defaultRom.slot
             } else {
                 content = .empty
@@ -138,17 +170,22 @@ class MemoryConfigurationState: ObservableObject {
         var arguments: [String] = []
         for socket in sockets where socket.isChanged {
             let slot = socket.emitSlot
-            switch socket.content {
+            let image = socket.content.image
+            switch socket.content.kind {
             case .empty:
                 arguments.append(contentsOf: ["--sideways", "\(slot):empty"])
-            case .ram(let image):
+            case .rom:
+                // A ROM needs an image; skip an incomplete selection so the
+                // preset/default for the slot still applies.
+                if let image = image, !image.isEmpty {
+                    arguments.append(contentsOf: ["--sideways", "\(slot):rom:\(image)"])
+                }
+            case .ram:
                 if let image = image, !image.isEmpty {
                     arguments.append(contentsOf: ["--sideways", "\(slot):ram:\(image)"])
                 } else {
                     arguments.append(contentsOf: ["--sideways", "\(slot):ram"])
                 }
-            case .rom(let image):
-                arguments.append(contentsOf: ["--sideways", "\(slot):rom:\(image)"])
             }
         }
         return arguments

@@ -94,30 +94,46 @@ struct MemorySectionView: View {
             // Current contents.
             Text(socket.content.displayLabel)
                 .font(.subheadline)
-                .foregroundColor(socket.content == .empty ? .secondary : .primary)
+                .foregroundColor(socket.content.kind == .empty ? .secondary : .primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Change menu.
-            contentMenu(index: index, socket: socket)
+            // Tri-state ROM / RAM / Empty control (writability of the socket),
+            // independent of any image loaded into it.
+            kindPicker(index: index, socket: socket)
+
+            // Verbs menu: browse / clear the image, reveal it, revert.
+            actionsMenu(index: index, socket: socket)
         }
         .padding(.vertical, 8)
     }
 
-    private func contentMenu(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
+    private func kindPicker(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
+        Picker("", selection: Binding(
+            get: { memoryConfig.sockets[index].content.kind },
+            set: { memoryConfig.sockets[index].content.kind = $0 }
+        )) {
+            // Only offer kinds the physical socket can actually be.
+            if socket.supportsRom { Text("ROM").tag(MemoryConfigurationState.SocketKind.rom) }
+            if socket.supportsRam { Text("RAM").tag(MemoryConfigurationState.SocketKind.ram) }
+            if socket.supportsEmpty { Text("Empty").tag(MemoryConfigurationState.SocketKind.empty) }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(width: 88)
+        .help("ROM (read-only), RAM (writable), or empty")
+    }
+
+    private func actionsMenu(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
         Menu {
-            if socket.supportsRom {
-                Button("Load ROM File…") { chooseRom(index: index) }
-            }
-            if socket.supportsRam {
-                Button("Sideways RAM") {
-                    memoryConfig.sockets[index].content = .ram(imageFilepath: nil)
-                }
-            }
-            if socket.supportsEmpty {
-                Button("Empty") {
-                    memoryConfig.sockets[index].content = .empty
+            Button("Browse for ROM image…") { chooseImage(index: index) }
+                .disabled(socket.content.kind == .empty)
+            Button("Clear") { memoryConfig.sockets[index].content.image = nil }
+                .disabled(socket.content.image == nil)
+            if let filepath = socket.content.revealableFilepath {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: filepath)])
                 }
             }
             if socket.isChanged {
@@ -131,12 +147,14 @@ struct MemorySectionView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Change this socket's contents")
+        .help("Image actions for this socket")
     }
 
     // MARK: - Actions
 
-    private func chooseRom(index: Int) {
+    /// Browse for a ROM image to load into the socket. For a ROM socket this is
+    /// the ROM; for a RAM socket it is an optional startup pre-load image.
+    private func chooseImage(index: Int) {
         let panel = NSOpenPanel()
         panel.title = "Select ROM Image"
         panel.allowedContentTypes = [UTType(filenameExtension: "rom") ?? .data]
@@ -144,7 +162,7 @@ struct MemorySectionView: View {
         panel.canChooseDirectories = false
 
         if panel.runModal() == .OK, let url = panel.url {
-            memoryConfig.sockets[index].content = .rom(image: url.path)
+            memoryConfig.sockets[index].content.image = url.path
         }
     }
 }
