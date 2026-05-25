@@ -57,9 +57,29 @@ struct PresetFileData: Codable {
     let description: String?
     /// Release date for sorting, format: YYYY, YYYY-MM, or YYYY-MM-DD
     let releaseDate: String?
+    /// Sideways ROM/RAM slots the preset configures (absent if none)
+    let sidewaysBank: PresetSidewaysBank?
 
     enum CodingKeys: String, CodingKey {
         case model, name, description
         case releaseDate = "release_date"
+        case sidewaysBank = "sideways_bank"
+    }
+}
+
+/// Sideways slot assignments declared by a preset file's `sideways_bank` section.
+struct PresetSidewaysBank: Codable {
+    let slots: [PresetSidewaysSlot]
+}
+
+/// One slot assignment in a preset's `sideways_bank`.
+struct PresetSidewaysSlot: Codable {
+    let slot: Int
+    let type: String        // "rom", "ram", or "empty"
+    let imageUri: String?   // ROM/RAM image reference (absent for empty/blank RAM)
+
+    enum CodingKeys: String, CodingKey {
+        case slot, type
+        case imageUri = "image_uri"
     }
 }

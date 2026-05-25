@@ -325,6 +325,49 @@ class PresetManager: ObservableObject {
         }
     }
 
+    /// Fetch the sideways_bank schema section for a preset's model.
+    ///
+    /// Describes the machine's physical sideways sockets (and aliasing) plus the
+    /// ROMs it installs by default, used to build the Memory tab.
+    func fetchSidewaysSchema(for preset: MachinePreset) async -> SidewaysSchemaSection? {
+        return await fetchSidewaysSectionFromSchema(executablePath: preset.coreExecutablePath)
+    }
+
+    /// Fetch the sideways_bank section with full detail from the schema JSON.
+    private func fetchSidewaysSectionFromSchema(executablePath: String) async -> SidewaysSchemaSection? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = ["describe-preset-schema"]
+
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else { return nil }
+
+            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let sections = json["sections"] as? [[String: Any]] else {
+                return nil
+            }
+
+            guard let sidewaysSection = sections.first(where: { ($0["type"] as? String) == "sideways_bank" }) else {
+                return nil
+            }
+
+            let sectionData = try JSONSerialization.data(withJSONObject: sidewaysSection)
+            return try JSONDecoder().decode(SidewaysSchemaSection.self, from: sectionData)
+        } catch {
+            NSLog("[PresetManager] Failed to decode sideways schema: \(error)")
+            return nil
+        }
+    }
+
     /// Sort presets by release date (chronological), then by name (natural alphanumeric).
     private func sortPresets(_ presets: [MachinePreset]) -> [MachinePreset] {
         presets.sorted { lhs, rhs in
