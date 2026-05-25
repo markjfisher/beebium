@@ -541,3 +541,60 @@ TEST_CASE("describe-preset-schema: includes sideways_bank section",
     // Model B's aliased sockets are labelled by IC designation.
     REQUIRE(result.stdout_output.find("IC52") != std::string::npos);
 }
+
+// ============================================================================
+// sideways_bank round-trip through create-preset / export-preset
+// ============================================================================
+
+TEST_CASE("create-preset --from and export-preset preserve sideways_bank",
+          "[integration][preset][create-preset][export-preset][sideways]") {
+    TempDirectory user_dir;
+
+    // A source preset carrying a sideways_bank DFS slot.
+    auto source_filepath = user_dir.path() / "sideways-src.preset.beebium";
+    {
+        std::ofstream f(source_filepath);
+        f << R"({"name": "Sideways Source", "model": "model-b", )"
+             R"("sideways_bank": { "slots": [ )"
+             R"({ "slot": 14, "type": "rom", "image_uri": "acorn-dfs_2_26.rom" } ] }})";
+    }
+
+    auto read_file = [](const std::filesystem::path& p) {
+        std::ifstream f(p);
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        return ss.str();
+    };
+
+    // Copy via create-preset --from: the section should survive the copy.
+    auto create_result = run_command(
+        EXECUTABLE + " create-preset --from sideways-src --name \"Sideways Copy\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
+    REQUIRE(create_result.exit_code == 0);
+
+    std::string new_id = create_result.stdout_output;
+    while (!new_id.empty() &&
+           (new_id.back() == '\n' || new_id.back() == '\r' || new_id.back() == ' ')) {
+        new_id.pop_back();
+    }
+    REQUIRE_FALSE(new_id.empty());
+
+    auto copy_filepath = user_dir.path() / (new_id + ".preset.beebium");
+    REQUIRE(std::filesystem::exists(copy_filepath));
+    std::string copy_contents = read_file(copy_filepath);
+    REQUIRE(copy_contents.find("sideways_bank") != std::string::npos);
+    REQUIRE(copy_contents.find("acorn-dfs_2_26.rom") != std::string::npos);
+
+    // Export the copy: the section should survive export too.
+    auto export_filepath = user_dir.path() / "exported-sideways.preset.beebium";
+    auto export_result = run_command(
+        EXECUTABLE + " export-preset " + new_id + " --output \"" + export_filepath.string() + "\"",
+        {{"BEEBIUM_USER_PRESETS_DIRPATH", user_dir.path().string()}}
+    );
+    REQUIRE(export_result.exit_code == 0);
+    REQUIRE(std::filesystem::exists(export_filepath));
+    std::string export_contents = read_file(export_filepath);
+    REQUIRE(export_contents.find("sideways_bank") != std::string::npos);
+    REQUIRE(export_contents.find("acorn-dfs_2_26.rom") != std::string::npos);
+}
