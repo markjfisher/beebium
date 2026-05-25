@@ -640,10 +640,8 @@ public:
             for (uint8_t slot : AliasedBankedMemory::socket_aliased_slots(socket_idx)) {
                 spec.slots.push_back(slot);
             }
-            spec.supports_rom = true;
-            spec.supports_ram = true;     // a sideways-RAM module can be plugged in
-            spec.supports_empty = true;   // socket can be left vacant
-            spec.runtime_configurable = false;  // power-off operation in real life
+            // ROM/RAM/empty come from the SocketSpec defaults; the Model B has
+            // no runtime slot reconfiguration (changing a socket is power-off).
             topo.sockets.push_back(std::move(spec));
         }
         return topo;

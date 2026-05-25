@@ -847,10 +847,9 @@ public:
             spec.socket_index = static_cast<int>(i);
             spec.label = entries[i].label;
             spec.slots = entries[i].slots;
-            spec.supports_rom = true;
-            spec.supports_ram = false;   // No sideways RAM on the B+ 64K (it arrives with the B+ 128K's four banks)
-            spec.supports_empty = true;  // Any socket may be left unpopulated (pull the chip)
-            spec.runtime_configurable = false;
+            // ROM/RAM/empty come from the SocketSpec defaults: any socket can
+            // hold a ROM, take a third-party sideways-RAM module, or be vacated
+            // (the integral BASIC/DFS sit here but can be removed or replaced).
             topo.sockets.push_back(std::move(spec));
         }
         return topo;

@@ -83,17 +83,18 @@ TEST_CASE("ModelBHardware topology has 4 sockets with 4-way aliasing",
     }
 }
 
-TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM or empty",
+TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM/RAM/empty",
           "[sideways][topology][model_b_plus]") {
     auto topo = ModelBPlusHardware::slot_topology();
     REQUIRE(topo.has_aliasing);  // pairs share a socket
     REQUIRE(topo.sockets.size() == 6);
 
     for (const auto& s : topo.sockets) {
+        // Every present socket supports the ROM/RAM/empty trifecta.
         REQUIRE(s.supports_rom);
-        REQUIRE_FALSE(s.supports_ram);  // No sideways RAM on the B+ 64K
-        REQUIRE(s.supports_empty);      // Any socket may be left unpopulated
-        REQUIRE_FALSE(s.runtime_configurable);
+        REQUIRE(s.supports_ram);
+        REQUIRE(s.supports_empty);
+        REQUIRE_FALSE(s.runtime_configurable);  // not reconfigurable at runtime
     }
 
     // The hardware does not wire any socket to slots 12 or 13.
@@ -109,12 +110,12 @@ TEST_CASE("Validation against Model B+ accepts emptying a socket (removing DFS)"
     REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
 }
 
-TEST_CASE("Validation against Model B+ still rejects sideways RAM",
+TEST_CASE("Validation against Model B+ accepts sideways RAM (third-party module)",
           "[sideways][validate][model_b_plus]") {
     auto topo = ModelBPlusHardware::slot_topology();
-    // The B+ 64K has no sideways RAM (that arrives with the B+ 128K).
+    // A sideways-RAM module in a ROM socket was commonplace, so it is allowed.
     std::vector<SidewaysConfig> configs = { ram_cfg(11) };
-    REQUIRE(validate_sideways_configs(topo, configs).has_value());
+    REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
 }
 
 TEST_CASE("Model B+ S13 link in default West position binds IC71 to slots 14, 15",
@@ -327,19 +328,6 @@ TEST_CASE("Validation rejects nonexistent slot on Model B+",
 // Reject case 2: socket does not support the requested type.
 // ============================================================================
 
-TEST_CASE("Validation rejects RAM on Model B+ (sockets are ROM-only)",
-          "[sideways][validate][model_b_plus]") {
-    auto topo = ModelBPlusHardware::slot_topology();
-    std::vector<SidewaysConfig> configs = {
-        ram_cfg(4),
-    };
-    auto err = validate_sideways_configs(topo, configs);
-    REQUIRE(err.has_value());
-    REQUIRE_THAT(*err, ContainsSubstring("IC44"));
-    REQUIRE_THAT(*err, ContainsSubstring("RAM"));
-    REQUIRE_THAT(*err, ContainsSubstring("ROM-only"));
-}
-
 // ============================================================================
 // Reject case 3: aliased-socket type conflict (Model B specifically).
 // ============================================================================
@@ -429,11 +417,12 @@ TEST_CASE("Validation reports multiple distinct problems in one message",
           "[sideways][validate]") {
     auto topo = ModelBPlusHardware::slot_topology();
     std::vector<SidewaysConfig> configs = {
-        rom_cfg(12, "x.rom"),  // nonexistent slot
-        ram_cfg(4),            // unsupported type
+        rom_cfg(12, "x.rom"),  // nonexistent slot on the B+
+        rom_cfg(10, "a.rom"),  // IC68, aliased to slot 11...
+        rom_cfg(11, "b.rom"),  // ...with a conflicting ROM image
     };
     auto err = validate_sideways_configs(topo, configs);
     REQUIRE(err.has_value());
     REQUIRE_THAT(*err, ContainsSubstring("slot 12 does not exist"));
-    REQUIRE_THAT(*err, ContainsSubstring("IC44"));
+    REQUIRE_THAT(*err, ContainsSubstring("IC68"));
 }

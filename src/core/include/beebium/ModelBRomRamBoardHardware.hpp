@@ -486,9 +486,8 @@ public:
             spec.socket_index = slot;
             spec.label = "Slot " + std::to_string(slot);
             spec.slots = {slot};
-            spec.supports_rom = true;
-            spec.supports_ram = true;
-            spec.supports_empty = true;
+            // ROM/RAM/empty come from the SocketSpec defaults; the ROM/RAM
+            // board uniquely allows reconfiguring a slot's type at runtime.
             spec.runtime_configurable = true;
             topo.sockets.push_back(std::move(spec));
         }

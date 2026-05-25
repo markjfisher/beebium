@@ -26,15 +26,18 @@ namespace beebium {
 // On the BBC Model B, partial address decoding causes each socket to respond
 // to four slot numbers (e.g. IC52 -> {0, 4, 8, 12}). On machines with full
 // 4-bit decoding (Model B with ROM/RAM board) each socket responds to a
-// single slot. On the Model B+, each socket is wired to a fixed pair of
-// slots and is ROM-only by hardware.
+// single slot. On the Model B+, each socket is wired to a fixed pair of slots.
 struct SocketSpec {
     int socket_index = 0;            // 0..N-1, identifies the physical socket
     std::string label;               // Display label, e.g. "IC52" or "Slot 7"
     std::vector<int> slots;          // Logical slot numbers wired to this socket
+    // Every present socket can hold a ROM, be sideways RAM (third-party RAM in
+    // a ROM socket with a flying R/W lead was commonplace), or be left vacant.
+    // We favour this flexibility over strict per-machine historical accuracy; a
+    // machine only sets one of these false if a socket genuinely cannot be it.
     bool supports_rom = true;        // Socket may hold a ROM image
-    bool supports_ram = false;       // Socket may be configured as sideways RAM
-    bool supports_empty = false;     // Socket may be configured as empty
+    bool supports_ram = true;        // Socket may be configured as sideways RAM
+    bool supports_empty = true;      // Socket may be left empty
     bool runtime_configurable = false; // Type may change at runtime via the API
 };
 

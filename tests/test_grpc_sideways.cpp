@@ -689,12 +689,13 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
         CHECK(ic71.aliased_slots(0) == 14);
         CHECK(ic71.aliased_slots(1) == 15);
 
-        // B+ sockets are ROM-only and not runtime-reconfigurable.
+        // B+ sockets support the ROM/RAM/empty trifecta but are not
+        // runtime-reconfigurable.
         for (int i = 0; i < response.sockets_size(); ++i) {
             const auto& caps = response.sockets(i).capabilities();
             CHECK(caps.supports_rom());
-            CHECK_FALSE(caps.supports_ram());
-            CHECK_FALSE(caps.supports_empty());
+            CHECK(caps.supports_ram());
+            CHECK(caps.supports_empty());
             CHECK_FALSE(caps.runtime_configurable());
         }
     }
