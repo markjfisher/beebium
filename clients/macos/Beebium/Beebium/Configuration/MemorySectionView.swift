@@ -24,25 +24,33 @@ struct MemorySectionView: View {
     let schema: SidewaysSchemaSection?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
 
-                if memoryConfig.sockets.isEmpty {
-                    Text("This machine has no configurable sideways sockets.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    ForEach(memoryConfig.sockets.indices, id: \.self) { index in
-                        socketRow(index: index)
-                        if index < memoryConfig.sockets.count - 1 {
-                            Divider().padding(.horizontal, 4)
+            if memoryConfig.sockets.isEmpty {
+                Text("This machine has no configurable sideways sockets.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(12)
+                Spacer()
+            } else {
+                // Rows are draggable to reorder: dragging moves a socket's
+                // contents (image + kind), not its identity, so the sockets stay
+                // in priority order while the ROMs move between them.
+                List {
+                    ForEach(memoryConfig.sockets) { socket in
+                        if let index = memoryConfig.sockets.firstIndex(where: { $0.id == socket.id }) {
+                            socketRow(index: index)
                         }
                     }
+                    .onMove { source, destination in
+                        memoryConfig.moveContents(fromOffsets: source, toOffset: destination)
+                    }
                 }
+                .listStyle(.plain)
             }
-            .padding(12)
         }
     }
 

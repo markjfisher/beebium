@@ -144,6 +144,26 @@ final class MemoryConfigurationStateTests: XCTestCase {
         XCTAssertEqual(state.sockets[ic52].displayText, "MYROM 1.0")
     }
 
+    func testMoveContentsReordersPayloadsAndLaunchArgs() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(),
+                        presetSlots: [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")])
+        // Order by priority: IC101(BASIC), IC100(DFS), IC88(empty), IC52(empty).
+        // Drag DFS (index 1) to the bottom (lowest priority).
+        state.moveContents(fromOffsets: IndexSet(integer: 1), toOffset: 4)
+
+        // Socket identities stay in priority order; only the contents move.
+        XCTAssertEqual(state.sockets.map(\.label), ["IC101", "IC100", "IC88", "IC52"])
+        XCTAssertEqual(state.sockets[0].content, Content(kind: .rom, image: "bbc-basic_2.rom"))
+        XCTAssertEqual(state.sockets[1].content, .empty)                                  // IC100 lost DFS
+        XCTAssertEqual(state.sockets[3].content, Content(kind: .rom, image: "acorn-dfs_2_26.rom"))  // IC52 gained it
+
+        // Launch: IC100 emits empty at slot 14; IC52 emits DFS at slot 12.
+        let args = state.sidewaysLaunchArguments()
+        XCTAssertTrue(args.contains("14:empty"))
+        XCTAssertTrue(args.contains("12:rom:acorn-dfs_2_26.rom"))
+    }
+
     func testRomHeaderInfoDecodesDescribeRomOutput() throws {
         let json = """
         {

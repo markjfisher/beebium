@@ -186,6 +186,29 @@ class MemoryConfigurationState: ObservableObject {
         }
     }
 
+    /// Reorder the *contents* (kind + image + resolved title) among the fixed
+    /// sockets, leaving each socket's identity (label/slots/priority) in place.
+    /// Drag-to-reorder uses this to rearrange the priority order of loaded ROMs:
+    /// a socket that loses its content emits empty at launch and one that gains
+    /// it emits the new content, each at its own fixed slot.
+    func moveContents(fromOffsets source: IndexSet, toOffset destination: Int) {
+        struct Payload {
+            var content: SocketContent
+            var resolvedTitle: String?
+            var resolvedVersion: String?
+        }
+        var payloads = sockets.map {
+            Payload(content: $0.content, resolvedTitle: $0.resolvedTitle,
+                    resolvedVersion: $0.resolvedVersion)
+        }
+        payloads.move(fromOffsets: source, toOffset: destination)
+        for index in sockets.indices {
+            sockets[index].content = payloads[index].content
+            sockets[index].resolvedTitle = payloads[index].resolvedTitle
+            sockets[index].resolvedVersion = payloads[index].resolvedVersion
+        }
+    }
+
     /// `--sideways` arguments for the sockets the user changed. Unchanged
     /// sockets emit nothing, so the preset's own sideways_bank still applies;
     /// changed sockets override per slot via the server's merge.
