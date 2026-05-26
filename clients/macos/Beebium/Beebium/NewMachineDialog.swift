@@ -62,7 +62,7 @@ struct NewMachineDialog: View {
             // Buttons
             buttonBar
         }
-        .frame(width: dialogWidth)
+        .frame(minWidth: dialogWidth, maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showConfiguration)
         .task {
             if presetManager.systemPresets.isEmpty {
