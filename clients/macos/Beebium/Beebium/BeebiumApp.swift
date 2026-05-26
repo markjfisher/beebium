@@ -144,7 +144,9 @@ struct BeebiumApp: App {
         Window("New Machine", id: "new-machine") {
             NewMachineDialog()
         }
-        .windowResizability(.contentSize)
+        // contentMinSize (not contentSize) so the window can be made taller to
+        // show more of the sideways ROM/RAM list, with the content as a floor.
+        .windowResizability(.contentMinSize)
         .defaultPosition(.center)
 
         // Connect window (singleton, non-modal)

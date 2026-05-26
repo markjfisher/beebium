@@ -185,7 +185,9 @@ struct NewMachineDialog: View {
                         memorySchema: memorySchema,
                         modelId: selectedPreset?.modelName ?? "model-b"
                     )
-                    .frame(height: 220)
+                    // Grow with the window (resizable) so the sideways list can
+                    // show more rows; 220 is the floor.
+                    .frame(minHeight: 220, maxHeight: .infinity)
                 }
             }
         }
