@@ -109,18 +109,17 @@ class MemoryConfigurationState: ObservableObject {
 
         var isChanged: Bool { content != initialContent }
 
-        /// What to show for the contents: a recognised ROM's title (and version)
-        /// when known, otherwise the filename / RAM / Empty description.
+        /// What to show for the contents. The kind (ROM/RAM/Empty) is shown by
+        /// the adjacent control, so this describes the loaded image: a recognised
+        /// ROM's title (and version) when known, otherwise the filename - the
+        /// same for a ROM or a pre-loaded sideways-RAM image. With no image, it
+        /// falls back to the kind's own label.
         var displayText: String {
-            switch content.kind {
-            case .empty:
-                return "Empty"
-            case .rom:
-                return romTitleAndVersion ?? content.displayLabel
-            case .ram:
-                if let info = romTitleAndVersion { return "Sideways RAM (\(info))" }
+            guard let image = content.image, !image.isEmpty else {
                 return content.displayLabel
             }
+            if let titled = romTitleAndVersion { return titled }
+            return URL(fileURLWithPath: image).lastPathComponent
         }
 
         private var romTitleAndVersion: String? {

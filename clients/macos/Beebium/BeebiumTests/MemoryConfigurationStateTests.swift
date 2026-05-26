@@ -135,11 +135,13 @@ final class MemoryConfigurationStateTests: XCTestCase {
         state.configure(schema: modelBSchema(), presetSlots: [])
         let ic52 = state.sockets.firstIndex { $0.label == "IC52" }!
 
+        // The RAM/ROM distinction is shown by the dropdown, so the contents
+        // field just shows the image like a ROM: filename, then title.
         state.sockets[ic52].content = Content(kind: .ram, image: "/tmp/dev.rom")
-        XCTAssertEqual(state.sockets[ic52].displayText, "Sideways RAM (preload: dev.rom)")
+        XCTAssertEqual(state.sockets[ic52].displayText, "dev.rom")
         state.sockets[ic52].resolvedTitle = "MYROM"
         state.sockets[ic52].resolvedVersion = "1.0"
-        XCTAssertEqual(state.sockets[ic52].displayText, "Sideways RAM (MYROM 1.0)")
+        XCTAssertEqual(state.sockets[ic52].displayText, "MYROM 1.0")
     }
 
     func testRomHeaderInfoDecodesDescribeRomOutput() throws {
