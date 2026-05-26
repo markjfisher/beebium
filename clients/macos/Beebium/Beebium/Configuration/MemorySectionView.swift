@@ -135,7 +135,6 @@ struct MemorySectionView: View {
     private func actionsMenu(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
         Menu {
             Button("Browse for ROM image…") { chooseImage(index: index) }
-                .disabled(socket.content.kind == .empty)
             Button("Clear") {
                 memoryConfig.sockets[index].content.image = nil
                 memoryConfig.sockets[index].resolvedTitle = nil
@@ -180,6 +179,11 @@ struct MemorySectionView: View {
         panel.canChooseDirectories = false
 
         if panel.runModal() == .OK, let url = panel.url {
+            // Browsing into an empty socket loads it as a ROM (one less step);
+            // a RAM socket keeps its kind and treats the image as a preload.
+            if memoryConfig.sockets[index].content.kind == .empty {
+                memoryConfig.sockets[index].content.kind = .rom
+            }
             memoryConfig.sockets[index].content.image = url.path
             memoryConfig.sockets[index].resolvedTitle = nil
             memoryConfig.sockets[index].resolvedVersion = nil
