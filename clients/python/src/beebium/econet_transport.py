@@ -41,6 +41,16 @@ class TransportInfo:
     # backend behind EconetSocket on the server.
     active: bool
 
+    # Opaque, server-assigned instance id. This is the key to pass to
+    # ExtensionUiService (SubscribeView / Dispatch) to drive this
+    # transport's control panel; typically a UUID, with no relationship
+    # to ``name``. Discover it here rather than hardcoding names.
+    id: str
+
+    # True if this transport implements an Extension UI, so a frontend
+    # can decide whether to render an ExtensionUiService panel for it.
+    has_ui: bool
+
 
 class EconetTransport:
     """Discover which Econet transport extension is active.
@@ -68,7 +78,13 @@ class EconetTransport:
         request = econet_transport_pb2.ListTransportsRequest()
         response = self._stub.ListTransports(request)
         return [
-            TransportInfo(name=t.name, description=t.description, active=t.active)
+            TransportInfo(
+                name=t.name,
+                description=t.description,
+                active=t.active,
+                id=t.id,
+                has_ui=t.has_ui,
+            )
             for t in response.transports
         ]
 
@@ -80,4 +96,10 @@ class EconetTransport:
         if not response.HasField("active"):
             return None
         a = response.active
-        return TransportInfo(name=a.name, description=a.description, active=a.active)
+        return TransportInfo(
+            name=a.name,
+            description=a.description,
+            active=a.active,
+            id=a.id,
+            has_ui=a.has_ui,
+        )

@@ -36,7 +36,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x65\x63onet_transport.proto\x12\x07\x62\x65\x65\x62ium\"D\n\x0f\x45\x63onetTransport\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x0e\n\x06\x61\x63tive\x18\x03 \x01(\x08\"\x17\n\x15ListTransportsRequest\"F\n\x16ListTransportsResponse\x12,\n\ntransports\x18\x01 \x03(\x0b\x32\x18.beebium.EconetTransport\"\x1b\n\x19GetActiveTransportRequest\"F\n\x1aGetActiveTransportResponse\x12(\n\x06\x61\x63tive\x18\x01 \x01(\x0b\x32\x18.beebium.EconetTransport2\xca\x01\n\x16\x45\x63onetTransportService\x12Q\n\x0eListTransports\x12\x1e.beebium.ListTransportsRequest\x1a\x1f.beebium.ListTransportsResponse\x12]\n\x12GetActiveTransport\x12\".beebium.GetActiveTransportRequest\x1a#.beebium.GetActiveTransportResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x65\x63onet_transport.proto\x12\x07\x62\x65\x65\x62ium\"`\n\x0f\x45\x63onetTransport\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x0e\n\x06\x61\x63tive\x18\x03 \x01(\x08\x12\n\n\x02id\x18\x04 \x01(\t\x12\x0e\n\x06has_ui\x18\x05 \x01(\x08\"\x17\n\x15ListTransportsRequest\"F\n\x16ListTransportsResponse\x12,\n\ntransports\x18\x01 \x03(\x0b\x32\x18.beebium.EconetTransport\"\x1b\n\x19GetActiveTransportRequest\"F\n\x1aGetActiveTransportResponse\x12(\n\x06\x61\x63tive\x18\x01 \x01(\x0b\x32\x18.beebium.EconetTransport2\xca\x01\n\x16\x45\x63onetTransportService\x12Q\n\x0eListTransports\x12\x1e.beebium.ListTransportsRequest\x1a\x1f.beebium.ListTransportsResponse\x12]\n\x12GetActiveTransport\x12\".beebium.GetActiveTransportRequest\x1a#.beebium.GetActiveTransportResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -44,15 +44,15 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'econet_transport_pb2', _glo
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_ECONETTRANSPORT']._serialized_start=35
-  _globals['_ECONETTRANSPORT']._serialized_end=103
-  _globals['_LISTTRANSPORTSREQUEST']._serialized_start=105
-  _globals['_LISTTRANSPORTSREQUEST']._serialized_end=128
-  _globals['_LISTTRANSPORTSRESPONSE']._serialized_start=130
-  _globals['_LISTTRANSPORTSRESPONSE']._serialized_end=200
-  _globals['_GETACTIVETRANSPORTREQUEST']._serialized_start=202
-  _globals['_GETACTIVETRANSPORTREQUEST']._serialized_end=229
-  _globals['_GETACTIVETRANSPORTRESPONSE']._serialized_start=231
-  _globals['_GETACTIVETRANSPORTRESPONSE']._serialized_end=301
-  _globals['_ECONETTRANSPORTSERVICE']._serialized_start=304
-  _globals['_ECONETTRANSPORTSERVICE']._serialized_end=506
+  _globals['_ECONETTRANSPORT']._serialized_end=131
+  _globals['_LISTTRANSPORTSREQUEST']._serialized_start=133
+  _globals['_LISTTRANSPORTSREQUEST']._serialized_end=156
+  _globals['_LISTTRANSPORTSRESPONSE']._serialized_start=158
+  _globals['_LISTTRANSPORTSRESPONSE']._serialized_end=228
+  _globals['_GETACTIVETRANSPORTREQUEST']._serialized_start=230
+  _globals['_GETACTIVETRANSPORTREQUEST']._serialized_end=257
+  _globals['_GETACTIVETRANSPORTRESPONSE']._serialized_start=259
+  _globals['_GETACTIVETRANSPORTRESPONSE']._serialized_end=329
+  _globals['_ECONETTRANSPORTSERVICE']._serialized_start=332
+  _globals['_ECONETTRANSPORTSERVICE']._serialized_end=534
 # @@protoc_insertion_point(module_scope)

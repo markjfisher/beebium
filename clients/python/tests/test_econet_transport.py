@@ -22,10 +22,12 @@ from beebium.econet_transport import EconetTransport, TransportInfo
 
 
 class MockTransport:
-    def __init__(self, name, description, active):
+    def __init__(self, name, description, active, id="", has_ui=False):
         self.name = name
         self.description = description
         self.active = active
+        self.id = id
+        self.has_ui = has_ui
 
 
 class MockListResponse:
@@ -71,6 +73,25 @@ def test_list_returns_active_aun(mock_stub, transport):
     assert isinstance(transports[0], TransportInfo)
     assert transports[0].name == "aun"
     assert transports[0].active is True
+
+
+def test_list_surfaces_id_and_has_ui(mock_stub, transport):
+    # The instance id and has_ui flag are what a frontend needs to drive
+    # the transport's ExtensionUiService panel; they must flow through.
+    mock_stub.ListTransports.return_value = MockListResponse(
+        transports=[
+            MockTransport(
+                "aun",
+                "AUN UDP transport",
+                True,
+                id="42eba4e4-bcd5-4362-b8f5-6c7b44d333fc",
+                has_ui=True,
+            )
+        ]
+    )
+    info = transport.list()[0]
+    assert info.id == "42eba4e4-bcd5-4362-b8f5-6c7b44d333fc"
+    assert info.has_ui is True
 
 
 def test_active_none_when_unset(transport):

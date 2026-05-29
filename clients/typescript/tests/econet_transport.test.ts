@@ -30,7 +30,16 @@ describe("EconetTransport", () => {
             const stub = createMockStub({
                 listTransports: () => ({
                     transports: [
-                        { name: "aun", description: "AUN UDP transport", active: true },
+                        {
+                            name: "aun",
+                            description: "AUN UDP transport",
+                            active: true,
+                            // The id is what a frontend passes to
+                            // ExtensionUiService to drive the panel; it is
+                            // opaque (a UUID), never the extension name.
+                            id: "42eba4e4-bcd5-4362-b8f5-6c7b44d333fc",
+                            hasUi: true,
+                        },
                     ],
                 }),
             });
@@ -41,6 +50,8 @@ describe("EconetTransport", () => {
                 name: "aun",
                 description: "AUN UDP transport",
                 active: true,
+                id: "42eba4e4-bcd5-4362-b8f5-6c7b44d333fc",
+                hasUi: true,
             });
         });
 

@@ -42,6 +42,20 @@ message EconetTransport {
     // backend behind EconetSocket. False means the extension is
     // available but not active (or not loaded at all).
     bool active = 3;
+
+    // Opaque, stable per-instance id assigned by the server. This is
+    // the key clients pass to ExtensionUiService.SubscribeView /
+    // Dispatch to drive the transport's control panel -- the same role
+    // PeripheralExtensionService.ExtensionInfo.id plays for peripherals.
+    // Do not assume any relationship to `name`: it is typically a UUID,
+    // and multi-instance transports each get a distinct id. Frontends
+    // must discover it here rather than hardcoding extension names.
+    string id = 4;
+
+    // True if this transport implements an Extension UI (i.e. its
+    // ExtensionUi is non-null), so a frontend can decide whether to
+    // render an ExtensionUiService panel for it.
+    bool has_ui = 5;
 }
 
 message ListTransportsRequest {
