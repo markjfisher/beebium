@@ -2,6 +2,8 @@
 
 This document describes how Beebium server executables are deployed and how they locate ROM files at runtime.
 
+> For embedding the servers and their native dependencies inside the macOS `.app` bundle (and the path to a distributable, notarized build), see [macOS App Packaging](macos-app-packaging.md).
+
 ## ROM Files
 
 Beebium requires ROM files to operate. These are not included in the repository due to copyright.

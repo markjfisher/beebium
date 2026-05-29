@@ -160,7 +160,7 @@ class PresetManager: ObservableObject {
     ///
     /// Search order:
     /// 1. `BEEBIUM_SERVERS_DIRPATH` environment variable (for development/testing)
-    /// 2. App bundle Frameworks directory (for distribution)
+    /// 2. App bundle `Resources/servers` directory (for distribution)
     /// 3. Development fallback path
     private func serversDirpath() -> String {
         // 1. Environment variable override (for development/testing)
@@ -168,12 +168,15 @@ class PresetManager: ObservableObject {
             return envPath
         }
 
-        // 2. App bundle (for distribution)
-        if let bundlePath = Bundle.main.privateFrameworksPath {
-            let fm = FileManager.default
-            // Check if servers exist in bundle
-            if fm.fileExists(atPath: "\(bundlePath)/beebium-model-b") {
-                return bundlePath
+        // 2. App bundle (for distribution). The embedded servers, their
+        // plugin tree, and their bundled native dependencies live under
+        // Resources/servers -- not Frameworks, which codesign validates as
+        // code-only and would reject the plugins' manifest.json files. See
+        // the "Embed Server Executables" build phase in project.yml.
+        if let resourcePath = Bundle.main.resourcePath {
+            let serversPath = "\(resourcePath)/servers"
+            if FileManager.default.fileExists(atPath: "\(serversPath)/beebium-model-b") {
+                return serversPath
             }
         }
 
