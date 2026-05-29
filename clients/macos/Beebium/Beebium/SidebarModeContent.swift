@@ -42,6 +42,7 @@ struct SidebarModeContent: View {
     @ObservedObject var econetClient: EconetClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
     @ObservedObject var peripheralsClient: PeripheralsClient
+    @ObservedObject var transportsClient: EconetTransportsClient
     @ObservedObject var videoSettings: VideoSettings
 
     var body: some View {
@@ -69,7 +70,8 @@ struct SidebarModeContent: View {
             case .network:
                 NetworkModeView(econetClient: econetClient,
                                 keyboardMappingManager: keyboardMappingManager,
-                                extensionUiClient: extensionUiClient)
+                                extensionUiClient: extensionUiClient,
+                                transportsClient: transportsClient)
             }
         }
     }
@@ -341,6 +343,7 @@ struct NetworkModeView: View {
     @ObservedObject var econetClient: EconetClient
     @ObservedObject var keyboardMappingManager: KeyboardMappingManager
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var transportsClient: EconetTransportsClient
     @State private var showStationIdPopover = false
 
     var body: some View {
@@ -410,22 +413,21 @@ struct NetworkModeView: View {
                     .padding(.horizontal, 12)
 
                 // Per-transport panels driven by ExtensionUiService.
-                // At most one of these will produce content per BBC
-                // machine (transports are mutually exclusive); the
-                // other collapses to zero height. Slice 1 wires the
-                // AUN peer list; later slices extend the AUN panel
-                // with the Connect button + UDP port label.
-                ExtensionPanelView(client: extensionUiClient,
-                                   extensionID: "aun")
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-
-                ExtensionPanelView(client: extensionUiClient,
-                                   extensionID: "piconet")
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                // The active transports are discovered at runtime via
+                // EconetTransportService.ListTransports; for each one
+                // that implements an Extension UI we render its panel,
+                // keyed by the server-assigned instance id. The client
+                // holds no knowledge of specific transport types, so a
+                // new transport extension surfaces here automatically.
+                ForEach(transportsClient.transports.filter(\.hasUI)) { transport in
+                    ExtensionPanelView(client: extensionUiClient,
+                                       extensionID: transport.id)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
             }
         }
+        .task { await transportsClient.refresh() }
     }
 
     // MARK: - Status Section
@@ -598,6 +600,7 @@ struct SidebarModeContent_Previews: PreviewProvider {
             econetClient: EconetClient(),
             extensionUiClient: ExtensionUiClient(),
             peripheralsClient: PeripheralsClient(),
+            transportsClient: EconetTransportsClient(),
             videoSettings: VideoSettings()
         )
         .frame(width: 220, height: 300)

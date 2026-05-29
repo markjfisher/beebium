@@ -37,12 +37,9 @@ public:
                                 const ::beebium::ListTransportsRequest*,
                                 ::beebium::ListTransportsResponse* response) override {
         for (const auto& ext : registry_.extensions()) {
-            auto* t = response->add_transports();
-            t->set_name(std::string(ext->name()));
-            t->set_description(std::string(ext->description()));
             // For BBC machines at most one transport exists, so any
             // entry that's in the registry is by definition active.
-            t->set_active(true);
+            fill_transport(*ext, /*active=*/true, response->add_transports());
         }
         return grpc::Status::OK;
     }
@@ -55,15 +52,25 @@ public:
         }
         // BBC variants: at most one transport. Multi-transport machines
         // (future Acorn Econet Bridge) should use ListTransports.
-        const auto& ext = *registry_.extensions().front();
-        auto* t = response->mutable_active();
-        t->set_name(std::string(ext.name()));
-        t->set_description(std::string(ext.description()));
-        t->set_active(true);
+        auto& ext = *registry_.extensions().front();
+        fill_transport(ext, /*active=*/true, response->mutable_active());
         return grpc::Status::OK;
     }
 
 private:
+    // Populate a proto EconetTransport from a transport extension. The
+    // `id` and `has_ui` fields are what frontends use to drive the
+    // transport's Extension UI panel via ExtensionUiService: the id is
+    // the subscription key, has_ui says whether a panel exists at all.
+    static void fill_transport(EconetTransportExtension& ext, bool active,
+                               ::beebium::EconetTransport* out) {
+        out->set_name(std::string(ext.name()));
+        out->set_description(std::string(ext.description()));
+        out->set_active(active);
+        out->set_id(std::string(ext.id()));
+        out->set_has_ui(ext.ui() != nullptr);
+    }
+
     EconetTransportRegistry& registry_;
 };
 

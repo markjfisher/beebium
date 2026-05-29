@@ -35,6 +35,7 @@
 		281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */; };
 		2E9C2894C04791EF7CCDE424 /* BeebiumTouchBarLEDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA112A053333004DAE316F9 /* BeebiumTouchBarLEDs.swift */; };
 		2F912AE618B59A262F4FDC58 /* MachinesSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */; };
+		317D8650FFD239EF03206DA7 /* EconetTransportsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D454E8A8AE8B2ACA6340F /* EconetTransportsClient.swift */; };
 		345AA9A186D7CA962B5D31A1 /* DebuggerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDC80983751CFBC0D9B98A3 /* DebuggerClient.swift */; };
 		394059FE9C2A8CC58886CC50 /* PeripheralsModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F91689B09CACC55C956BA2 /* PeripheralsModeView.swift */; };
 		3A5F2C41B8468DD7E63EC414 /* audio.proto in Resources */ = {isa = PBXBuildFile; fileRef = A16BD17340EC98E2C5EF1127 /* audio.proto */; };
@@ -45,6 +46,7 @@
 		4257B00B6F393A93AD85649A /* ImmersiveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E94733F6E0E22EE3816394 /* ImmersiveCoordinator.swift */; };
 		44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03C4898953F0003B85113EC0 /* indicator.grpc.swift */; };
 		47FD133746DA2EEA77B73EDC /* econet.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D969BBA00E4077B69BBCACAF /* econet.pb.swift */; };
+		49FEE51472DA8FB96B3587EA /* econet_transport.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6020BCD62F9F79F3019AB3D /* econet_transport.pb.swift */; };
 		4AD0CF022E27D94F9FB1FEDC /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB928B6093490D60EECA734 /* MetalKit.framework */; };
 		4CF04CE9A5BFD96B5E1E4590 /* BiquadFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C511516BDB7D578CF5D63867 /* BiquadFilter.swift */; };
 		4CFAD53FAAACED77B5672A4F /* AudioClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94EE9DCF3D01CE98B029C0C3 /* AudioClient.swift */; };
@@ -73,6 +75,7 @@
 		7FF55ACE5A1B43545971258F /* IndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE550723A13DFA9A20EB302 /* IndicatorView.swift */; };
 		8248344928EA9782B944178F /* SidebarMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992C39260909EB85C84D2C20 /* SidebarMode.swift */; };
 		82E5C63F1FAF9D28F87F09BA /* MachinePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28ED949DB593C8353954F7B1 /* MachinePreset.swift */; };
+		8690CAE33C1969FE969DCD06 /* econet_transport.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5635C71D7BCFDC74AE40070B /* econet_transport.grpc.swift */; };
 		8BDB7D234471A8C37A8B027C /* econet.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2624275BB5D5286D790AF3 /* econet.grpc.swift */; };
 		8C6EF54139165E4D6F07941C /* ExtensionPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */; };
 		8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */ = {isa = PBXBuildFile; fileRef = 69144892FD8EBDC0F0D9230E /* video.proto */; };
@@ -193,6 +196,7 @@
 		4DB04E0AE6339BFE2928C6B1 /* PeripheralTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeripheralTreeTests.swift; sourceTree = "<group>"; };
 		4E0CD29C9A89B375C692C019 /* audio.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.pb.swift; sourceTree = "<group>"; };
 		5123F0FA32B3711748D351D7 /* DebugDisplayStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugDisplayStyle.swift; sourceTree = "<group>"; };
+		5635C71D7BCFDC74AE40070B /* econet_transport.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet_transport.grpc.swift; sourceTree = "<group>"; };
 		57967139EC7DEA91FCF67161 /* debugger.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = debugger.pb.swift; sourceTree = "<group>"; };
 		58E7A0E6AF52A2C316C7C419 /* BeebiumApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeebiumApp.swift; sourceTree = "<group>"; };
 		5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMixerState.swift; sourceTree = "<group>"; };
@@ -214,6 +218,7 @@
 		74AEA0430FDD370E37C07678 /* VideoSettingsLoadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsLoadTests.swift; sourceTree = "<group>"; };
 		757B84FAA1D1A37B1ABEB0A0 /* PeripheralsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeripheralsClient.swift; sourceTree = "<group>"; };
 		76BA8A6733683FD5607B8A29 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
+		7C0D454E8A8AE8B2ACA6340F /* EconetTransportsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconetTransportsClient.swift; sourceTree = "<group>"; };
 		7C5792BABD709C954B706793 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		7D34EDE9DFD8D58084F986AB /* peripheral_extension.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = peripheral_extension.grpc.swift; sourceTree = "<group>"; };
 		7DFCC16649DA95B51C6E1FDB /* MachinesSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesSettingsPane.swift; sourceTree = "<group>"; };
@@ -270,6 +275,7 @@
 		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
 		D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelShape.swift; sourceTree = "<group>"; };
 		D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryClient.swift; sourceTree = "<group>"; };
+		D6020BCD62F9F79F3019AB3D /* econet_transport.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet_transport.pb.swift; sourceTree = "<group>"; };
 		D87F51F70C1CA8A3C2CB01F4 /* MemorySectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemorySectionView.swift; sourceTree = "<group>"; };
 		D969BBA00E4077B69BBCACAF /* econet.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = econet.pb.swift; sourceTree = "<group>"; };
 		DA0CF5589888F672F43B52FD /* aun.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.pb.swift; sourceTree = "<group>"; };
@@ -356,6 +362,8 @@
 				57967139EC7DEA91FCF67161 /* debugger.pb.swift */,
 				A44DA8D133CDD247497229CA /* disc.grpc.swift */,
 				92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */,
+				5635C71D7BCFDC74AE40070B /* econet_transport.grpc.swift */,
+				D6020BCD62F9F79F3019AB3D /* econet_transport.pb.swift */,
 				5B2624275BB5D5286D790AF3 /* econet.grpc.swift */,
 				D969BBA00E4077B69BBCACAF /* econet.pb.swift */,
 				22E1A6F06137647B3CB8F6C8 /* extension_ui.grpc.swift */,
@@ -463,6 +471,7 @@
 				639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */,
 				D1E33FE42096EF584FC8D538 /* DiscoveryClient.swift */,
 				CA006204A482FCD8B77F7549 /* EconetClient.swift */,
+				7C0D454E8A8AE8B2ACA6340F /* EconetTransportsClient.swift */,
 				899F340E434ACDCAA75F913F /* EditableChoiceField.swift */,
 				A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */,
 				EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */,
@@ -718,6 +727,7 @@
 				AEFDACA93EC7747DF05C2447 /* DiscoveryClient.swift in Sources */,
 				674B7623816974BB8C3E2255 /* DisplayStyle.swift in Sources */,
 				23F3E03B298F6AB8A9B9924E /* EconetClient.swift in Sources */,
+				317D8650FFD239EF03206DA7 /* EconetTransportsClient.swift in Sources */,
 				B18E97257A891E2AC24129ED /* EditableChoiceField.swift in Sources */,
 				D36CEEAAE7E54882BCC36508 /* EmulatorView.swift in Sources */,
 				8C6EF54139165E4D6F07941C /* ExtensionPanelView.swift in Sources */,
@@ -782,6 +792,8 @@
 				EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */,
 				8BDB7D234471A8C37A8B027C /* econet.grpc.swift in Sources */,
 				47FD133746DA2EEA77B73EDC /* econet.pb.swift in Sources */,
+				8690CAE33C1969FE969DCD06 /* econet_transport.grpc.swift in Sources */,
+				49FEE51472DA8FB96B3587EA /* econet_transport.pb.swift in Sources */,
 				D9718E6F6B0170B2E3BDDD45 /* extension_ui.grpc.swift in Sources */,
 				FB8C371C9D4C748FE2604B15 /* extension_ui.pb.swift in Sources */,
 				44FF38917718C8C09556A62A /* indicator.grpc.swift in Sources */,

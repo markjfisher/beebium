@@ -29,6 +29,20 @@ export interface TransportInfo {
      * backend behind EconetSocket on the server.
      */
     active: boolean;
+
+    /**
+     * Opaque, server-assigned instance id. This is the key to pass to
+     * ExtensionUiService (SubscribeView / Dispatch) to drive this
+     * transport's control panel; typically a UUID, with no relationship
+     * to `name`. Discover it here rather than hardcoding names.
+     */
+    id: string;
+
+    /**
+     * True if this transport implements an Extension UI, so a frontend
+     * can decide whether to render an ExtensionUiService panel for it.
+     */
+    hasUi: boolean;
 }
 
 /**
@@ -69,6 +83,8 @@ export class EconetTransport {
             name: t.name,
             description: t.description,
             active: t.active,
+            id: t.id,
+            hasUi: t.hasUi,
         }));
     }
 
@@ -86,6 +102,8 @@ export class EconetTransport {
             name: response.active.name,
             description: response.active.description,
             active: response.active.active,
+            id: response.active.id,
+            hasUi: response.active.hasUi,
         };
     }
 }

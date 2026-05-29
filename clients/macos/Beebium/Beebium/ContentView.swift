@@ -69,6 +69,7 @@ struct ContentView: View {
     @StateObject private var econetClient = EconetClient()
     @StateObject private var extensionUiClient = ExtensionUiClient()
     @StateObject private var peripheralsClient = PeripheralsClient()
+    @StateObject private var transportsClient = EconetTransportsClient()
     @StateObject private var videoSettings = VideoSettings.loadFromUserDefaults()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
@@ -117,6 +118,7 @@ struct ContentView: View {
                 econetClient: econetClient,
                 extensionUiClient: extensionUiClient,
                 peripheralsClient: peripheralsClient,
+                transportsClient: transportsClient,
                 videoSettings: videoSettings
             )
         }
@@ -288,6 +290,7 @@ struct ContentView: View {
             clientGroup.register(econetClient)
             clientGroup.register(extensionUiClient)
             clientGroup.register(peripheralsClient)
+            clientGroup.register(transportsClient)
             clientGroup.registerVideoClient(videoClient)
 
             // Connection target was passed from MainWindowRouter (which consumed the
@@ -344,6 +347,7 @@ struct ContentView: View {
                 econetClient.connect(channel: channel)
                 extensionUiClient.connect(channel: channel)
                 peripheralsClient.connect(channel: channel)
+                transportsClient.connect(channel: channel)
 
                 // Register this connection
                 if let window = currentWindow {
