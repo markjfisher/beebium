@@ -50,14 +50,24 @@ targets:
     postBuildScripts:
       - name: "Embed Server Executables, Presets, and ROMs"
         script: |
-          # Copy server executables to Frameworks (if BEEBIUM_SERVERS_BUILD_DIR is set)
+          # Embed the headless server executables, their plugin tree, and
+          # their native dependencies under Contents/Resources/servers/ (if
+          # BEEBIUM_SERVERS_BUILD_DIR is set). They live in Resources rather
+          # than Frameworks because the plugin tree carries non-code files
+          # (manifest.json) that codesign rejects in Frameworks, which it
+          # validates as code-only. The Swift side resolves this directory
+          # via Bundle.main.resourcePath (PresetManager.serversDirpath).
           SERVERS_DIR="${BEEBIUM_SERVERS_BUILD_DIR:-}"
           if [ -n "$SERVERS_DIR" ] && [ -d "$SERVERS_DIR" ]; then
             echo "Embedding servers from: $SERVERS_DIR"
-            mkdir -p "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+            SERVERS_DEST="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/servers"
+            # Rebuild from scratch each time so stale bundled dylibs from a
+            # previous build don't accumulate.
+            rm -rf "$SERVERS_DEST"
+            mkdir -p "$SERVERS_DEST"
             for server in beebium-model-b beebium-model-b-plus beebium-model-b-romram; do
               if [ -f "$SERVERS_DIR/$server" ]; then
-                cp "$SERVERS_DIR/$server" "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/"
+                cp "$SERVERS_DIR/$server" "$SERVERS_DEST/"
                 echo "  Copied $server"
               fi
             done
@@ -69,6 +79,25 @@ targets:
               cp "$SERVERS_DIR/presets/"*.thumbnail.png "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets/" 2>/dev/null || true
               echo "  Copied presets and thumbnails"
             fi
+
+            # Copy the extension plugin tree next to the embedded servers.
+            # The server resolves plugins from <exe-dir>/extensions/. Without
+            # this, only built-in transports (AUN) load from the packaged
+            # app; plugin transports like Piconet would be silently absent.
+            if [ -d "$SERVERS_DIR/extensions" ]; then
+              cp -R "$SERVERS_DIR/extensions" "$SERVERS_DEST/extensions"
+              echo "  Copied extension plugin tree"
+            fi
+
+            # Make the embedded servers and plugins self-contained: bundle
+            # their internal shared libraries and Homebrew dependencies
+            # (gRPC/protobuf/abseil) alongside them, rewrite install names to
+            # @rpath, and re-sign. Without this the app only runs on the
+            # build machine (deps reference the dev tree + /opt/homebrew).
+            # See docs/macos-app-packaging.md.
+            echo "  Bundling native dependencies into the app..."
+            /usr/bin/env python3 "${SRCROOT}/scripts/bundle_dependencies.py" \
+              "$SERVERS_DEST"
           else
             echo "BEEBIUM_SERVERS_BUILD_DIR not set or directory does not exist, skipping server embedding"
           fi
