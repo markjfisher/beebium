@@ -210,6 +210,25 @@ Tests: spin up two `AunBackend` instances on different ports, verify each appear
 
 Two Beebium instances on different declared nets (`--aun net=3` and `--aun net=5`), no `--aun map=` configuration, verify they discover each other via mDNS and route AUN traffic correctly. Exercises every layer: announcement production, announcement consumption, peer-table merging, net translation at the AUN/BBC boundary.
 
+## Implementation notes (as built)
+
+These are the non-obvious things the macOS implementation (`src/discovery/src/BonjourBrowser.cpp`) got wrong at least once; they are documented here so they aren't reintroduced. The browser drives all DNS-SD refs (browse + per-instance resolve + getaddrinfo) from a single background thread with `select()`.
+
+### A browse delivers each service once *per network interface*
+
+`DNSServiceBrowse` fires the Add callback once for every interface the service is visible on — on a machine with VPN/utun links that's several callbacks for a single peer. Two consequences:
+
+* **Resolve each instance only once.** Starting a fresh `DNSServiceResolve` for each duplicate Add would deallocate the previous, still-in-flight ref while the event loop holds it in its current `select()` snapshot, then call `DNSServiceProcessResult` on freed memory — a use-after-free that intermittently corrupted the whole DNS-SD pipeline so no peer resolved. `begin_resolve` therefore ignores an Add for an instance that already has a resolve/getaddrinfo in flight or is already announced.
+* **Re-validate refs after servicing the browse ref.** Processing the browse ref can start new resolves or, on a Remove, free resolve/addr refs that are still in the pre-`select` snapshot. The loop re-collects the set of still-live refs after servicing browse and only services those.
+
+### Resolve the address on `kDNSServiceInterfaceIndexAny`, not the arrival interface
+
+Because we resolve each instance only once (above), we hold exactly one interface index — whichever Add arrived first. Passing that index to `DNSServiceGetAddrInfo` is wrong: the first interface is often one whose A record never answers (a utun/VPN link), so the address query never completes, its callback never fires, and the peer is silently dropped. This specifically bit the *second* station launched, which sees the first as an already-present service and resolves it on whatever interface happened to arrive first; the first-launched station was unaffected because its two address resolutions (its own announcement, then the peer arriving live) happen sequentially. Use `kDNSServiceInterfaceIndexAny` so the daemon answers from whichever interface actually holds the record — one reachable address is all a UDP peer needs.
+
+### Testing limitation
+
+The end-to-end coverage (`tests/test_aun_mdns_e2e.cpp`, tag `[.mdns]`) includes a regression test for the already-present-peer case above (start one station, wait, start a second, assert the second discovers the first — verified to fail when the interface fix is reverted). But these are real-mDNS tests **excluded from the default CTest run**, because mDNS is not dependable in CI (no reliable responder; stray records leak between runs). They must be run explicitly (`ctest`/the binary with `[.mdns]`) on a machine with a working responder — a developer pre-release check, not per-commit CI. There is no deterministic CI equivalent: `BonjourBrowser` calls `dns_sd.h` directly with no mockable seam, and a unit test built on a fake DNS-SD layer would only assert "we pass the flag" rather than exercise real discovery, which was judged not worth the abstraction.
+
 ## Out of scope
 
 * **DSCP integration.** Tracked separately at [`dynamic-station-config-protocol.md`](dynamic-station-config-protocol.md). Layers naturally on top of mDNS but isn't a prerequisite.
