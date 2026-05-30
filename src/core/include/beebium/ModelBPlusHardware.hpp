@@ -694,7 +694,10 @@ public:
     //   IC57 (slots 6,7): User ROM
     //   IC44 (slots 4,5): User ROM
     //   IC35 (slots 2,3): User ROM
-    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
+    // image_name is accepted for API uniformity with Model B / ROM/RAM board
+    // but ignored: the B+ memory model has no per-socket image_name slot.
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
+                          std::string_view /*image_name*/ = "") {
         // All B+ ROM sockets are 16KB
         constexpr size_t rom_size = 16384;
         size_t copy_len = std::min(len, rom_size);
@@ -711,8 +714,9 @@ public:
 
     // Load data into a slot WITHOUT changing slot type.
     // For B+ this is the same as load_sideways_rom since slots are fixed ROM.
-    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
-        load_sideways_rom(slot, data, len);
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len,
+                           std::string_view image_name = "") {
+        load_sideways_rom(slot, data, len, image_name);
     }
 
     // Check if a slot can have ROM loaded.

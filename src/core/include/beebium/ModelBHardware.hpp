@@ -583,13 +583,15 @@ public:
     // =========================================================================
 
     // Load ROM data into a slot, automatically configuring as ROM type.
-    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
-        sideways.load_sideways_rom(slot, data, len);
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
+                          std::string_view image_name = "") {
+        sideways.load_sideways_rom(slot, data, len, image_name);
     }
 
     // Load data into a slot WITHOUT changing slot type.
-    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
-        sideways.load_sideways_data(slot, data, len);
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len,
+                           std::string_view image_name = "") {
+        sideways.load_sideways_data(slot, data, len, image_name);
     }
 
     // Check if a slot can have ROM loaded

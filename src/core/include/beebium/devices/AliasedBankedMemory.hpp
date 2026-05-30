@@ -204,17 +204,28 @@ public:
     // This is the primary method for loading ROMs - it encapsulates the
     // configure + load pattern to avoid the bug where load is called without
     // first setting the slot type.
-    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len) {
+    //
+    // image_name, when non-empty, is stored on the destination socket so that
+    // gRPC clients (e.g. the macOS Memory sidebar) can render and act on it.
+    void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
+                          std::string_view image_name = "") {
         uint8_t socket = slot_to_socket(slot);
         configure_socket(socket, SlotType::Rom);
         load_rom_to_socket(socket, data, len);
+        if (!image_name.empty()) {
+            sockets_[socket].set_image_name(image_name);
+        }
     }
 
     // Load data into a slot WITHOUT changing slot type.
     // Used for pre-initializing RAM with saved state (e.g., battery-backed RAM).
-    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len) {
+    void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len,
+                           std::string_view image_name = "") {
         uint8_t socket = slot_to_socket(slot);
         sockets_[socket].load(data, len);
+        if (!image_name.empty()) {
+            sockets_[socket].set_image_name(image_name);
+        }
     }
 
     // Check if a slot can have ROM loaded (always true for aliased memory)

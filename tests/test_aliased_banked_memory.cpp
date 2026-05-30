@@ -328,6 +328,23 @@ TEST_CASE("AliasedBankedMemory socket metadata", "[aliased_memory][metadata]") {
         REQUIRE(mem.socket_image_name(3) == "bbc-basic_2.rom");
     }
 
+    SECTION("load_sideways_rom stores the image_name on the destination socket") {
+        std::array<uint8_t, 16384> data;
+        data.fill(0x55);
+        mem.load_sideways_rom(15, data.data(), data.size(),
+                              "/roms/bbc-basic_2.rom");
+        // Slot 15 maps to socket 3 on Model B.
+        REQUIRE(mem.socket_image_name(3) == "/roms/bbc-basic_2.rom");
+    }
+
+    SECTION("load_sideways_rom with empty image_name does not clear an existing name") {
+        mem.set_socket_image_name(3, "existing.rom");
+        std::array<uint8_t, 16384> data;
+        data.fill(0x55);
+        mem.load_sideways_rom(15, data.data(), data.size());
+        REQUIRE(mem.socket_image_name(3) == "existing.rom");
+    }
+
     SECTION("Clear socket clears image name too") {
         mem.configure_socket(3, SlotType::Rom);
         mem.set_socket_image_name(3, "test.rom");

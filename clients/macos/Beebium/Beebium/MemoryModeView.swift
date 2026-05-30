@@ -78,12 +78,13 @@ struct MemoryModeView: View {
                 .help("Priority \(socket.priority) (slot\(socket.slots.count > 1 ? "s" : "") " +
                       socket.slots.map(String.init).joined(separator: ", ") + ")")
 
-            // ROM title (with version when known), else filename, else "Empty".
+            // ROM title (with version when known), else filename, else blank
+            // for empty slots - the "-" status column already signals empty.
             Text(displayName(for: socket))
                 .font(.subheadline)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundColor(socket.populated ? .primary : .secondary)
+                .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // ROM/RAM/- status, mirroring the running device.
@@ -92,7 +93,15 @@ struct MemoryModeView: View {
                 .foregroundColor(.secondary)
                 .frame(width: 32, alignment: .trailing)
 
-            actionsMenu(for: socket)
+            // Menu only when there's something to act on. Empty slots get a
+            // transparent placeholder so columns still line up.
+            if !socket.imageName.isEmpty {
+                actionsMenu(for: socket)
+            } else {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundColor(.clear)
+                    .fixedSize()
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
@@ -110,7 +119,7 @@ struct MemoryModeView: View {
         if socket.populated && !socket.imageName.isEmpty {
             return URL(fileURLWithPath: socket.imageName).lastPathComponent
         }
-        return "Empty"
+        return ""
     }
 
     private func statusText(for socket: SidewaysClient.Socket) -> String {
@@ -147,8 +156,7 @@ struct MemoryModeView: View {
     }
 
     private func isExistingFile(_ path: String) -> Bool {
-        guard path.contains("/") else { return false }
-        return FileManager.default.fileExists(atPath: path)
+        FileManager.default.fileExists(atPath: path)
     }
 
     // MARK: - Loading / empty states

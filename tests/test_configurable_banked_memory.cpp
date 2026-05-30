@@ -311,6 +311,23 @@ TEST_CASE("ConfigurableBankedMemory slot metadata", "[configurable_memory][metad
         REQUIRE(mem.slot_image_name(0).empty());
         REQUIRE(mem.read(0x0000) == 0x00);  // RAM cleared to 0x00
     }
+
+    SECTION("load_sideways_rom stores the image_name on the destination slot") {
+        std::array<uint8_t, 16384> data;
+        data.fill(0x55);
+        mem.load_sideways_rom(7, data.data(), data.size(),
+                              "/roms/some-rom.rom");
+        REQUIRE(mem.slot_image_name(7) == "/roms/some-rom.rom");
+    }
+
+    SECTION("load_sideways_data stores image_name for pre-loaded RAM") {
+        mem.configure_slot(3, SlotType::Ram);
+        std::array<uint8_t, 16384> data;
+        data.fill(0xAA);
+        mem.load_sideways_data(3, data.data(), data.size(),
+                               "/state/sideways_3.bin");
+        REQUIRE(mem.slot_image_name(3) == "/state/sideways_3.bin");
+    }
 }
 
 // =============================================================================

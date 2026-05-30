@@ -325,15 +325,16 @@ public:
                 std::vector<uint8_t> data(static_cast<size_t>(size));
                 file.read(reinterpret_cast<char*>(data.data()), size);
 
-                // Load data into slot
+                // Load data into slot. Store the full filepath as image_name
+                // so the Memory sidebar's Copy Path / Reveal in Finder actions
+                // have something useful; clients can take the basename for
+                // display when they want a name.
                 if constexpr (HasAliasedSideways<Memory>) {
                     sideways.load_rom_to_socket(actual_socket, data.data(), data.size());
-                    sideways.set_socket_image_name(actual_socket,
-                        std::filesystem::path(filepath).filename().string());
+                    sideways.set_socket_image_name(actual_socket, filepath);
                 } else {
                     sideways.load_rom(slot, data.data(), data.size());
-                    sideways.set_slot_image_name(slot,
-                        std::filesystem::path(filepath).filename().string());
+                    sideways.set_slot_image_name(slot, filepath);
                 }
 
                 response->set_image_name(

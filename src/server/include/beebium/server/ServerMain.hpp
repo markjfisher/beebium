@@ -1130,8 +1130,12 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
                       << " bytes, expected a power-of-two size up to 16384\n";
         }
 
-        // Unified API handles slot type configuration and loading together
-        machine.state().memory.load_sideways_rom(slot, rom_data.data(), rom_data.size());
+        // Unified API handles slot type configuration and loading together.
+        // Record the resolved filepath as image_name so gRPC clients (the
+        // Memory sidebar in particular) can report and act on it - Copy Path
+        // and Reveal in Finder both need the absolute path.
+        machine.state().memory.load_sideways_rom(
+            slot, rom_data.data(), rom_data.size(), rom_path.string());
     }
 
     // Handle RAM slots with pre-loaded images
@@ -1142,8 +1146,11 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
             auto ram_data = load_file(ram_path);
             std::cout << "Pre-loading RAM slot " << static_cast<int>(sideways_config.slot)
                       << " from " << ram_path << "\n";
-            // Use load_sideways_data to load without changing slot type
-            machine.state().memory.load_sideways_data(sideways_config.slot, ram_data.data(), ram_data.size());
+            // Use load_sideways_data to load without changing slot type.
+            // Record the resolved filepath as image_name (see load_sideways_rom).
+            machine.state().memory.load_sideways_data(
+                sideways_config.slot, ram_data.data(), ram_data.size(),
+                ram_path.string());
         }
     }
 }

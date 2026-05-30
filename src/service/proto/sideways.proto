@@ -53,7 +53,11 @@ message SocketStatus {
                                         // For non-aliased, contains only socket_index
     SidewaysSlotType type = 3;                  // empty/rom/ram
     bool populated = 4;                 // Has content loaded
-    string image_name = 5;              // Source filename/name if loaded
+    // Source filepath if loaded - absolute path on the server. Clients that
+    // want a short display name should take the basename. Empty for empty or
+    // blank-RAM slots, and on machines that have no per-slot image storage
+    // (e.g. Model B+).
+    string image_name = 5;
     string socket_label = 6;            // Physical label (e.g., "IC52", "IC88") for Model B
     // Capability flags describing what types this physical socket can hold
     // and whether the type can change at runtime via ConfigureSlot. Lets
