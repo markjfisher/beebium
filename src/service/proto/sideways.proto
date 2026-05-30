@@ -59,6 +59,24 @@ message SocketStatus {
     // and whether the type can change at runtime via ConfigureSlot. Lets
     // GUI clients gray out RAM/Empty options on ROM-only machines (Model B+).
     SocketCapabilities capabilities = 7;
+    // Parsed sideways ROM header for whatever is loaded in this socket.
+    // Populated only when the header is recognised (the MOS's "(C)" marker
+    // is present); absent / recognised=false for an empty socket, blank RAM,
+    // or a non-standard image. Mirrors the describe-rom JSON.
+    RomHeader rom_header = 8;
+}
+
+// Parsed sideways ROM header, when one is recognised in the slot's contents.
+// See docs/manuals/sidewrom.pdf for the canonical layout and
+// docs/romfs-detection.md for the ROMFS detection.
+message RomHeader {
+    bool recognised = 1;     // The MOS's "(C)" copyright marker was found
+    string title = 2;        // From offset 9 of the header
+    string version = 3;      // Optional version string
+    string copyright = 4;    // "(C)..." string
+    bool contains_romfs = 5; // A CRC-valid CFS block chain is present
+    // What the ROM is: any combination of "language", "service", "romfs".
+    repeated string kinds = 6;
 }
 
 // Capability flags for a physical socket. These reflect the hardware

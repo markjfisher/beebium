@@ -222,6 +222,34 @@ TEST_CASE("SidewaysService GetSlotStatus reports BASIC socket is populated", "[g
     CHECK(socket3.type() == beebium::SIDEWAYS_SLOT_TYPE_ROM);
 }
 
+TEST_CASE("SidewaysService GetSlotStatus reports parsed ROM header for BASIC",
+          "[grpc][sideways][rom_header]") {
+    ModelBSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 4);
+
+    // Socket 3 (IC101) holds BASIC; its rom_header should be recognised, with
+    // title "BASIC", the language kind, and no ROMFS content.
+    const auto& socket3 = response.sockets(3);
+    REQUIRE(socket3.has_rom_header());
+    const auto& header = socket3.rom_header();
+    CHECK(header.recognised() == true);
+    CHECK(header.title() == "BASIC");
+    CHECK(header.copyright() == "(C)1982 Acorn");
+    CHECK(header.contains_romfs() == false);
+    REQUIRE(header.kinds_size() == 1);
+    CHECK(header.kinds(0) == "language");
+
+    // The other Model B sockets are empty (open bus) - their rom_header is
+    // not populated.
+    CHECK_FALSE(response.sockets(0).has_rom_header());
+}
+
 TEST_CASE("SidewaysService ConfigureSlot with invalid slot returns error", "[grpc][sideways]") {
     ModelBSidewaysFixture fixture;
 

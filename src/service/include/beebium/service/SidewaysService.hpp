@@ -15,6 +15,7 @@
 
 #include "sideways.grpc.pb.h"
 #include "beebium/SlotTopology.hpp"
+#include "beebium/SidewaysRomHeader.hpp"
 #include "beebium/devices/ConfigurableSlot.hpp"
 #include "beebium/devices/AliasedBankedMemory.hpp"
 #include "beebium/devices/ConfigurableBankedMemory.hpp"
@@ -23,6 +24,7 @@
 #include <mutex>
 #include <fstream>
 #include <filesystem>
+#include <vector>
 
 namespace beebium::service {
 
@@ -179,6 +181,35 @@ public:
                             : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
                     socket_status->set_populated(false);
                     socket_status->set_image_name("");
+                }
+
+                // Parsed ROM header for whatever bytes are currently in this
+                // socket. Peek the 16 KiB block from a representative slot and
+                // run the standard sideways-ROM-header parser; an empty socket
+                // or non-standard image produces recognised=false (we leave
+                // rom_header unset). HasSideways gates this so a machine
+                // without a sideways memory device compiles cleanly.
+                if constexpr (HasSideways<Memory>) {
+                    if (!spec.slots.empty()) {
+                        auto& sw = machine_.state().memory.sideways;
+                        const auto probe = static_cast<uint8_t>(spec.slots[0]);
+                        std::vector<uint8_t> bytes(16384);
+                        for (uint16_t i = 0; i < 16384; ++i) {
+                            bytes[i] = sw.peek_bank(probe, i);
+                        }
+                        auto header = beebium::parse_sideways_rom_header(bytes);
+                        if (header.recognised) {
+                            auto* h = socket_status->mutable_rom_header();
+                            h->set_recognised(true);
+                            h->set_title(header.title);
+                            h->set_version(header.version);
+                            h->set_copyright(header.copyright);
+                            h->set_contains_romfs(header.contains_romfs);
+                            if (header.has_language_entry) h->add_kinds("language");
+                            if (header.has_service_entry) h->add_kinds("service");
+                            if (header.contains_romfs) h->add_kinds("romfs");
+                        }
+                    }
                 }
             }
             return grpc::Status::OK;
