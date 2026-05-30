@@ -55,7 +55,7 @@ bool AunDiscoverySubscriber::start() {
     cbs.on_removed = [this](const std::string& name) {
         handle_removed(name);
     };
-    return browser_->start("_aun._udp", std::move(cbs));
+    return browser_->start(service_type_, std::move(cbs));
 }
 
 void AunDiscoverySubscriber::stop() {
