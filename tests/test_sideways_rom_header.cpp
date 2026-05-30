@@ -117,6 +117,7 @@ TEST_CASE("parse_sideways_rom_header: BBC BASIC is a language ROM", "[rom][heade
     REQUIRE(h.title == "BASIC");
     REQUIRE(h.copyright == "(C)1982 Acorn");
     REQUIRE(h.is_language());
+    REQUIRE_FALSE(h.contains_romfs);
 }
 
 TEST_CASE("parse_sideways_rom_header: Acorn DFS is a service ROM", "[rom][header][roms]") {
@@ -127,6 +128,7 @@ TEST_CASE("parse_sideways_rom_header: Acorn DFS is a service ROM", "[rom][header
     REQUIRE(h.title == "DFS");
     REQUIRE(h.version == "2.26");
     REQUIRE(h.is_service_only());
+    REQUIRE_FALSE(h.contains_romfs);  // DFS is code, not a CFS block chain
 }
 
 TEST_CASE("parse_sideways_rom_header: Acorn ADFS title and version", "[rom][header][roms]") {
@@ -134,11 +136,58 @@ TEST_CASE("parse_sideways_rom_header: Acorn ADFS title and version", "[rom][head
     REQUIRE(h.recognised);
     REQUIRE(h.title == "Acorn ADFS");
     REQUIRE(h.version == "1.30");
+    REQUIRE_FALSE(h.contains_romfs);
 }
 
 TEST_CASE("parse_sideways_rom_header: an OS ROM is not a recognised sideways ROM",
           "[rom][header][roms]") {
     auto h = parse_sideways_rom_header(load_rom("acorn-mos_1_20.rom"));
     REQUIRE_FALSE(h.recognised);
+}
+#endif
+
+#ifdef BEEBIUM_TEST_ASSETS_DIR
+namespace {
+std::vector<uint8_t> load_romfs_image(const std::string& name) {
+    std::ifstream file(std::string(BEEBIUM_TEST_ASSETS_DIR) + "/roms/romfs/" + name,
+                       std::ios::binary);
+    return std::vector<uint8_t>(std::istreambuf_iterator<char>(file),
+                                std::istreambuf_iterator<char>());
+}
+}  // namespace
+
+TEST_CASE("parse_sideways_rom_header: Electron Hopper is language + service + ROMFS",
+          "[rom][header][romfs]") {
+    auto h = parse_sideways_rom_header(load_romfs_image("Electron_Hopper.rom"));
+    REQUIRE(h.recognised);
+    REQUIRE(h.has_service_entry);
+    REQUIRE(h.has_language_entry);  // type &C2: an Acornsoft auto-start cartridge
+    REQUIRE(h.contains_romfs);
+    REQUIRE(h.romfs_data_offset == 0xBB);  // documented title-block offset (&80BB)
+}
+
+TEST_CASE("parse_sideways_rom_header: SNAPPER (oaknut-authored) is service + ROMFS",
+          "[rom][header][romfs]") {
+    auto h = parse_sideways_rom_header(load_romfs_image("SNAPPER.rom"));
+    REQUIRE(h.recognised);
+    REQUIRE(h.is_service_only());
+    REQUIRE(h.contains_romfs);
+}
+
+TEST_CASE("parse_sideways_rom_header: Zalaga is ROMFS with no title block",
+          "[rom][header][romfs]") {
+    auto h = parse_sideways_rom_header(load_romfs_image("Zalaga.rom"));
+    REQUIRE(h.recognised);
+    REQUIRE(h.is_service_only());
+    REQUIRE(h.contains_romfs);
+}
+
+TEST_CASE("parse_sideways_rom_header: BBC Master Demonstration is service + ROMFS",
+          "[rom][header][romfs]") {
+    auto h = parse_sideways_rom_header(
+        load_romfs_image("BBC_Master_Demonstration_Cartridge_1.rom"));
+    REQUIRE(h.recognised);
+    REQUIRE(h.is_service_only());
+    REQUIRE(h.contains_romfs);
 }
 #endif

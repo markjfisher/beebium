@@ -730,3 +730,31 @@ TEST_CASE("describe-rom on a missing file returns NOINPUT", "[integration][descr
     auto result = run_command(EXECUTABLE + " describe-rom no-such-rom-12345.rom");
     REQUIRE(result.exit_code == 66);  // EX_NOINPUT
 }
+
+// ============================================================================
+// describe-rom reports ROMFS-bearing ROMs
+// ============================================================================
+
+#ifdef BEEBIUM_TEST_ASSETS_DIR
+TEST_CASE("describe-rom reports an Acornsoft cartridge as language + service + romfs",
+          "[integration][describe-rom][romfs]") {
+    auto rom_path = std::string(BEEBIUM_TEST_ASSETS_DIR) + "/roms/romfs/Electron_Hopper.rom";
+    auto result = run_command(EXECUTABLE + " describe-rom \"" + rom_path + "\"");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(result.stdout_output.find("\"contains_romfs\": true") != std::string::npos);
+    // Hopper is an auto-start cartridge (&C2): all three kinds.
+    REQUIRE(result.stdout_output.find("\"language\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"service\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"romfs\"") != std::string::npos);
+}
+
+TEST_CASE("describe-rom reports a non-ROMFS service ROM with kinds=[service]",
+          "[integration][describe-rom][romfs]") {
+    auto result = run_command(EXECUTABLE + " describe-rom acorn-dfs_2_26.rom");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(result.stdout_output.find("\"contains_romfs\": false") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"service\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"romfs\"") == std::string::npos);
+    REQUIRE(result.stdout_output.find("\"language\"") == std::string::npos);
+}
+#endif

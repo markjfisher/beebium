@@ -104,8 +104,21 @@ target_link_libraries(test_sideways_rom_header PRIVATE
 )
 target_compile_definitions(test_sideways_rom_header PRIVATE
     BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
 )
 catch_discover_tests(test_sideways_rom_header)
+
+# ROMFS detection (CFS block parsing + corpus validation)
+add_executable(test_romfs_detection test_romfs_detection.cpp)
+target_link_libraries(test_romfs_detection PRIVATE
+    beebium_core
+    Catch2::Catch2WithMain
+)
+target_compile_definitions(test_romfs_detection PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_romfs_detection)
 
 # EconetTransportRegistry container tests
 add_executable(test_econet_transport_registry test_econet_transport_registry.cpp)
@@ -1316,6 +1329,9 @@ if(BEEBIUM_BUILD_SERVICE)
     target_link_libraries(test_preset_subcommands PRIVATE
         beebium_core
         Catch2::Catch2WithMain
+    )
+    target_compile_definitions(test_preset_subcommands PRIVATE
+        BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
     )
     # Integration tests depend on executables being built
     add_dependencies(test_preset_subcommands beebium-servers)

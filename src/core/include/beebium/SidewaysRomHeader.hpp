@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "RomFsDetection.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -49,10 +51,17 @@ struct SidewaysRomHeader {
     std::string version;    // optional, between the title and the copyright
     std::string copyright;  // "(C)..." string
 
+    // ROM Filing System content. A ROMFS ROM is an ordinary service ROM whose
+    // body carries a CFS block chain (see docs/romfs-detection.md). This is
+    // orthogonal to has_language_entry: an Acornsoft cartridge is a language
+    // ROM AND a service ROM AND carries ROMFS data.
+    bool contains_romfs = false;
+    std::size_t romfs_data_offset = 0;  // image offset of the first valid CFS block
+
     // A ROM with a language entry is a "language" (BASIC, View, ...). One with
     // only a service entry is a "service" ROM (DFS, ADFS, utilities, ROM filing
-    // systems, ...). The header alone cannot distinguish, say, a ROM filing
-    // system from any other service ROM; that needs deeper inspection.
+    // systems, ...). The header alone cannot tell, say, a filing system from
+    // any other service ROM - that is what contains_romfs answers.
     bool is_language() const { return recognised && has_language_entry; }
     bool is_service_only() const {
         return recognised && has_service_entry && !has_language_entry;
@@ -125,6 +134,17 @@ inline SidewaysRomHeader parse_sideways_rom_header(std::span<const uint8_t> rom)
     }
 
     header.copyright = detail::read_rom_string(rom, copyright_offset + 1, rom.size());
+
+    // ROMFS detection: a service ROM may carry CFS data after its handler.
+    // (Treat the language bit as orthogonal - Acornsoft cartridges are also
+    // language ROMs.)
+    if (header.has_service_entry) {
+        if (auto block = romfs::find_first_block(rom)) {
+            header.contains_romfs = true;
+            header.romfs_data_offset = *block;
+        }
+    }
+
     return header;
 }
 

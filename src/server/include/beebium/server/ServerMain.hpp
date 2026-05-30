@@ -3731,6 +3731,15 @@ public:
         out["supports_electron_firmkeys"] = header.supports_electron_firmkeys;
         out["cpu_type"] = header.cpu_type;
         out["binary_version"] = header.binary_version;
+        out["contains_romfs"] = header.contains_romfs;
+        out["romfs_data_offset"] = header.romfs_data_offset;
+        // "kinds" is a convenience list for UIs: ROMs can be any combination
+        // of language / service / romfs (e.g. Acornsoft cartridges are all three).
+        ojson kinds = ojson::array();
+        if (header.has_language_entry) kinds.push_back("language");
+        if (header.has_service_entry) kinds.push_back("service");
+        if (header.contains_romfs) kinds.push_back("romfs");
+        out["kinds"] = kinds;
         std::cout << out.dump(2) << "\n";
         return ExitCode::OK;
     }
