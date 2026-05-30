@@ -261,3 +261,77 @@ TEST_CASE("AUN mDNS e2e: cross-net discovery routes via local_net translation",
     CHECK(received->dest_net == 5);
     CHECK(received->dest_stn == stn_b);
 }
+
+// Regression test for the "already-present peer" discovery gap: a
+// station that starts browsing AFTER another is already advertising
+// must still discover it (not only peers that arrive live while we are
+// already browsing). This reproduces a real bug where the second
+// machine launched never listed the first: the browser resolved the
+// already-present peer but then issued its getaddrinfo on the single
+// interface the browse Add arrived on, which could be one that never
+// answers -- so the address callback never fired and the peer was
+// dropped. The earlier same-net/cross-net cases start both peers at
+// once, so both arrive as live Adds and never exercise this path.
+//
+// NOTE: this is a real-mDNS test ([.mdns]) and is therefore EXCLUDED
+// from the default CTest run -- mDNS is not dependable in CI (no
+// reliable responder, and stray records leak between runs). It is the
+// behaviour-level guard for the interface-index regression, but it only
+// runs when the [.mdns] suite is invoked explicitly on a machine with a
+// working responder (e.g. a developer pre-release check or a dedicated
+// mDNS job), NOT per-commit. There is no deterministic CI equivalent
+// because BonjourBrowser calls dns_sd.h directly with no mockable seam;
+// the bug was a wrong interface argument to a syscall whose behaviour
+// depends on the host's live network interfaces.
+TEST_CASE("AUN mDNS e2e: late subscriber discovers an already-present peer",
+          "[aun][discovery][e2e][.mdns]") {
+    if (!platform_supports_mdns()) {
+        SKIP("mDNS responder not available on this platform");
+    }
+
+    auto [stn_a, stn_b] = pick_stations();
+    const std::string svc_type = unique_service_type();
+
+    // Peer A comes up first and is already advertising + browsing.
+    AunBackend backend_a(/*local_net=*/0, /*local_stn=*/stn_a, 0);
+    REQUIRE(backend_a.is_connected());
+    AunDiscoveryAnnouncer announce_a(0, stn_a, backend_a.local_port(),
+                                     "beebium-test", "1.0", "");
+    announce_a.set_service_type(svc_type);
+    REQUIRE(announce_a.start());
+    AunDiscoverySubscriber sub_a(backend_a, stn_a);
+    sub_a.set_service_type(svc_type);
+    REQUIRE(sub_a.start());
+
+    // Give A's advertisement time to propagate before B starts, so B
+    // sees A as an already-present service at browse start rather than
+    // as a live arrival.
+    std::this_thread::sleep_for(2s);
+
+    // Peer B starts second: it must discover the already-present A.
+    AunBackend backend_b(/*local_net=*/0, /*local_stn=*/stn_b, 0);
+    REQUIRE(backend_b.is_connected());
+    AunDiscoveryAnnouncer announce_b(0, stn_b, backend_b.local_port(),
+                                     "beebium-test", "1.0", "");
+    announce_b.set_service_type(svc_type);
+    REQUIRE(announce_b.start());
+    AunDiscoverySubscriber sub_b(backend_b, stn_b);
+    sub_b.set_service_type(svc_type);
+    REQUIRE(sub_b.start());
+
+    auto deadline = std::chrono::steady_clock::now() + MDNS_TIMEOUT;
+    bool b_sees_a = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        for (const auto& p : backend_b.list_peers()) {
+            if (p.net == 0 && p.stn == stn_a
+                    && p.port == backend_a.local_port()) {
+                b_sees_a = true;
+                break;
+            }
+        }
+        if (b_sees_a) break;
+        std::this_thread::sleep_for(POLL_INTERVAL);
+    }
+
+    REQUIRE(b_sees_a);
+}

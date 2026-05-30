@@ -375,11 +375,23 @@ private:
         // Update the per-instance state, then kick off an addrinfo
         // resolution. Replacing the resolve ref tears down this one
         // (we're done with it once the callback returned).
+        //
+        // Resolve the address on ANY interface rather than the single
+        // interface this resolve arrived on. A browse delivers each
+        // service once per interface, and begin_resolve deliberately
+        // resolves an instance only once (to avoid churning the
+        // in-flight ref); but the one interface we happen to pick first
+        // may be one on which the host's address record never answers
+        // (e.g. a utun/VPN interface), and then the getaddrinfo query
+        // would hang forever and the peer would never be reported. Using
+        // kDNSServiceInterfaceIndexAny lets the daemon answer from
+        // whichever interface actually has the record, which is what we
+        // want -- we only need one reachable address for the UDP peer.
         DNSServiceRef addr_ref = nullptr;
         DNSServiceErrorType ae = DNSServiceGetAddrInfo(
             &addr_ref,
             0,
-            interfaceIndex,
+            kDNSServiceInterfaceIndexAny,
             kDNSServiceProtocol_IPv4,
             hosttarget,
             addrinfo_callback,
