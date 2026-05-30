@@ -100,6 +100,14 @@ public:
     // _aun._udp.
     discovery::ServiceInfo build_service_info() const;
 
+    // Override the DNS-SD service type (default "_aun._udp"). Production
+    // always uses the default; this exists so real-mDNS tests can run on
+    // a per-test-unique type and stay isolated from any stray _aun._udp
+    // records on the machine. Call before start().
+    void set_service_type(std::string service_type) {
+        service_type_ = std::move(service_type);
+    }
+
 private:
     std::uint8_t local_net_;
     std::uint8_t local_stn_;
@@ -107,6 +115,7 @@ private:
     std::string impl_;
     std::string impl_version_;
     std::string impl_identity_;
+    std::string service_type_ = "_aun._udp";
     std::unique_ptr<discovery::Advertiser> advertiser_;
 };
 

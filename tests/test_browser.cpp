@@ -65,14 +65,17 @@ TEST_CASE("Bonjour browser sees an advertised service",
     auto advertiser = create_advertiser();
     REQUIRE(advertiser->state().available);
 
-    // Advertise a unique service type per test run so we don't pick
-    // up announcements from other test processes or stray daemons.
-    // _aun._udp is the type we'll consume in production; piggyback on
-    // it because the OS resolver caches per service type.
+    // Advertise on a per-run-unique service type so we don't pick up
+    // announcements from other test processes, stray daemons, or stale
+    // _aun._udp records left by prior runs -- the browser only ever sees
+    // this run's advertisement.
+    auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    std::string type = "_bbt"
+        + std::to_string(static_cast<unsigned long long>(stamp) % 1000000ULL)
+        + "._udp";
     ServiceInfo info;
-    info.service_type = "_aun._udp";
-    info.instance_name = "BrowserTest "
-        + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    info.service_type = type;
+    info.instance_name = "BrowserTest " + std::to_string(stamp);
     info.port = 32999;
     info.txt_records["version"] = "1";
     info.txt_records["net"] = "0";
@@ -103,7 +106,7 @@ TEST_CASE("Bonjour browser sees an advertised service",
             add_count.fetch_add(1);
         }
     };
-    REQUIRE(browser->start("_aun._udp", cbs));
+    REQUIRE(browser->start(type, cbs));
 
     // Generous timeout: real mDNS resolve + addrinfo can take
     // hundreds of ms even on loopback.
@@ -116,5 +119,61 @@ TEST_CASE("Bonjour browser sees an advertised service",
 
     browser->stop();
     advertiser->stop();
+}
+
+// Controlled analogue of the in-process two-peer scenario, but on a
+// per-run-unique service type so it is fully isolated from any stray
+// _aun._udp records (other Beebiums, prior crashed runs). Two advertisers
+// and two browsers in one process must cross-discover each other.
+TEST_CASE("Two advertisers and two browsers cross-discover in one process",
+          "[browser][macos][integration]") {
+    auto t = std::chrono::steady_clock::now().time_since_epoch().count();
+    std::string type = "_bbt" + std::to_string(t % 1000000ULL) + "._udp";
+
+    auto make_info = [&](const std::string& tag, uint16_t port) {
+        ServiceInfo info;
+        info.service_type = type;
+        info.instance_name = "Peer-" + tag + "-"
+            + std::to_string(t);
+        info.port = port;
+        info.txt_records["tag"] = tag;
+        return info;
+    };
+
+    auto adv_a = create_advertiser();
+    auto adv_b = create_advertiser();
+    REQUIRE(adv_a->start(make_info("A", 40001)));
+    REQUIRE(adv_b->start(make_info("B", 40002)));
+
+    auto saw_tag = [](std::atomic<bool>& flag, const std::string& want) {
+        BrowserCallbacks cbs;
+        cbs.on_added = [&flag, want](const DiscoveredService& svc) {
+            auto it = svc.txt_records.find("tag");
+            if (it != svc.txt_records.end() && it->second == want
+                    && svc.port != 0) {
+                flag.store(true);
+            }
+        };
+        return cbs;
+    };
+
+    std::atomic<bool> a_sees_b{false}, b_sees_a{false};
+    auto br_a = create_browser();
+    auto br_b = create_browser();
+    REQUIRE(br_a->start(type, saw_tag(a_sees_b, "B")));
+    REQUIRE(br_b->start(type, saw_tag(b_sees_a, "A")));
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline
+           && !(a_sees_b.load() && b_sees_a.load())) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    CHECK(a_sees_b.load());
+    CHECK(b_sees_a.load());
+
+    br_a->stop();
+    br_b->stop();
+    adv_a->stop();
+    adv_b->stop();
 }
 #endif
