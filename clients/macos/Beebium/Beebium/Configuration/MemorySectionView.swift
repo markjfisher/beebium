@@ -119,7 +119,16 @@ struct MemorySectionView: View {
     private func kindPicker(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
         Picker("", selection: Binding(
             get: { memoryConfig.sockets[index].content.kind },
-            set: { memoryConfig.sockets[index].content.kind = $0 }
+            set: { newKind in
+                memoryConfig.sockets[index].content.kind = newKind
+                // Setting Empty performs an implicit Clear: an empty socket
+                // holding an image is nonsensical and would mislead.
+                if newKind == .empty {
+                    memoryConfig.sockets[index].content.image = nil
+                    memoryConfig.sockets[index].resolvedTitle = nil
+                    memoryConfig.sockets[index].resolvedVersion = nil
+                }
+            }
         )) {
             // Only offer kinds the physical socket can actually be.
             if socket.supportsRom { Text("ROM").tag(MemoryConfigurationState.SocketKind.rom) }

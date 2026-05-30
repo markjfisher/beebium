@@ -112,10 +112,12 @@ class MemoryConfigurationState: ObservableObject {
         /// What to show for the contents. The kind (ROM/RAM/Empty) is shown by
         /// the adjacent control, so this describes the loaded image: a recognised
         /// ROM's title (and version) when known, otherwise the filename - the
-        /// same for a ROM or a pre-loaded sideways-RAM image. With no image, it
-        /// falls back to the kind's own label.
+        /// same for a ROM or a pre-loaded sideways-RAM image. An Empty socket
+        /// always reads "Empty" regardless of any image retained in the model
+        /// (so switching kind back to ROM/RAM restores the title cleanly).
         var displayText: String {
-            guard let image = content.image, !image.isEmpty else {
+            guard content.kind != .empty,
+                  let image = content.image, !image.isEmpty else {
                 return content.displayLabel
             }
             if let titled = romTitleAndVersion { return titled }

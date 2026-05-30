@@ -144,6 +144,26 @@ final class MemoryConfigurationStateTests: XCTestCase {
         XCTAssertEqual(state.sockets[ic52].displayText, "MYROM 1.0")
     }
 
+    func testDisplayTextReadsEmptyWhenKindIsEmptyEvenIfImageLingers() {
+        let state = MemoryConfigurationState()
+        state.configure(schema: modelBSchema(),
+                        presetSlots: [PresetSidewaysSlot(slot: 14, type: "rom", imageUri: "acorn-dfs_2_26.rom")])
+        // IC100 holds DFS; pretend its header has been resolved.
+        state.sockets[1].resolvedTitle = "DFS"
+        state.sockets[1].resolvedVersion = "2.26"
+        XCTAssertEqual(state.sockets[1].displayText, "DFS 2.26")
+
+        // User switches the kind to Empty. The image stays in the model
+        // (orthogonal kind/image), but the display must reflect the kind so
+        // it does not look like a ROM is still loaded.
+        state.sockets[1].content.kind = .empty
+        XCTAssertEqual(state.sockets[1].displayText, "Empty")
+
+        // Switching back to ROM brings the title back (clean round-trip).
+        state.sockets[1].content.kind = .rom
+        XCTAssertEqual(state.sockets[1].displayText, "DFS 2.26")
+    }
+
     func testMoveContentsReordersPayloadsAndLaunchArgs() {
         let state = MemoryConfigurationState()
         state.configure(schema: modelBSchema(),
