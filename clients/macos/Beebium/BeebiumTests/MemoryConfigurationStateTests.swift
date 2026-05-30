@@ -188,7 +188,8 @@ final class MemoryConfigurationStateTests: XCTestCase {
         let json = """
         {
           "recognised": true, "title": "DFS", "version": "2.26",
-          "copyright": "(C)1985 Acorn", "is_language": false, "is_service_only": true
+          "copyright": "(C)1985 Acorn", "is_language": false, "is_service_only": true,
+          "contains_romfs": false, "kinds": ["service"]
         }
         """
         let info = try JSONDecoder().decode(RomHeaderInfo.self, from: Data(json.utf8))
@@ -197,5 +198,21 @@ final class MemoryConfigurationStateTests: XCTestCase {
         XCTAssertEqual(info.version, "2.26")
         XCTAssertTrue(info.isServiceOnly)
         XCTAssertFalse(info.isLanguage)
+        XCTAssertFalse(info.containsRomfs)
+        XCTAssertEqual(info.kinds, ["service"])
+    }
+
+    func testRomHeaderInfoDecodesAcornsoftRomfsCartridge() throws {
+        let json = """
+        {
+          "recognised": true, "title": "Hopper", "version": "",
+          "copyright": "(C)1983 Acornsoft", "is_language": true, "is_service_only": false,
+          "contains_romfs": true, "kinds": ["language", "service", "romfs"]
+        }
+        """
+        let info = try JSONDecoder().decode(RomHeaderInfo.self, from: Data(json.utf8))
+        XCTAssertTrue(info.recognised)
+        XCTAssertTrue(info.containsRomfs)
+        XCTAssertEqual(info.kinds, ["language", "service", "romfs"])
     }
 }

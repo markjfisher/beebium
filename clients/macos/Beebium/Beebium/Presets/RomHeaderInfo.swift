@@ -24,10 +24,15 @@ struct RomHeaderInfo: Codable {
     let copyright: String
     let isLanguage: Bool
     let isServiceOnly: Bool
+    /// True if the ROM body carries a CFS block chain (ROM Filing System data).
+    let containsRomfs: Bool
+    /// Any combination of "language", "service", "romfs" - what the ROM is.
+    let kinds: [String]
 
     enum CodingKeys: String, CodingKey {
-        case recognised, title, version, copyright
+        case recognised, title, version, copyright, kinds
         case isLanguage = "is_language"
         case isServiceOnly = "is_service_only"
+        case containsRomfs = "contains_romfs"
     }
 }

@@ -116,8 +116,9 @@ struct MemorySectionView: View {
                 actionsMenu(index: index, socket: socket)
             }
 
-            // Slot number(s) and priority (the highest slot the socket answers).
-            Text("\(socket.slots.count > 1 ? "Slots" : "Slot") \(socket.slotsLabel) · priority \(socket.priority)")
+            // Slot number(s) and priority, with the resolved kinds
+            // (language / service / ROMFS) appended when known.
+            Text(captionText(for: socket))
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .padding(.leading, 82)  // align under the contents (past grip + label columns)
@@ -136,6 +137,7 @@ struct MemorySectionView: View {
                     memoryConfig.sockets[index].content.image = nil
                     memoryConfig.sockets[index].resolvedTitle = nil
                     memoryConfig.sockets[index].resolvedVersion = nil
+                    memoryConfig.sockets[index].resolvedKinds = []
                 }
             }
         )) {
@@ -157,6 +159,7 @@ struct MemorySectionView: View {
                 memoryConfig.sockets[index].content.image = nil
                 memoryConfig.sockets[index].resolvedTitle = nil
                 memoryConfig.sockets[index].resolvedVersion = nil
+                memoryConfig.sockets[index].resolvedKinds = []
             }
             .disabled(socket.content.image == nil)
             Button("Copy Path") {
@@ -185,6 +188,17 @@ struct MemorySectionView: View {
         .help("Image actions for this socket")
     }
 
+    /// Caption beneath each socket row: slot numbers + priority, with the
+    /// resolved ROM kinds appended when known. "romfs" is upper-cased as
+    /// "ROMFS"; the other kinds stay lowercase to read as descriptors.
+    private func captionText(for socket: MemoryConfigurationState.SocketConfig) -> String {
+        let slotsLabel = socket.slots.count > 1 ? "Slots" : "Slot"
+        let base = "\(slotsLabel) \(socket.slotsLabel) · priority \(socket.priority)"
+        if socket.resolvedKinds.isEmpty { return base }
+        let kinds = socket.resolvedKinds.map { $0 == "romfs" ? "ROMFS" : $0 }
+        return "\(base) · \(kinds.joined(separator: " · "))"
+    }
+
     // MARK: - Actions
 
     /// Browse for a ROM image to load into the socket. For a ROM socket this is
@@ -205,6 +219,7 @@ struct MemorySectionView: View {
             memoryConfig.sockets[index].content.image = url.path
             memoryConfig.sockets[index].resolvedTitle = nil
             memoryConfig.sockets[index].resolvedVersion = nil
+            memoryConfig.sockets[index].resolvedKinds = []
             Task { await memoryConfig.resolveTitle(at: index) }
         }
     }

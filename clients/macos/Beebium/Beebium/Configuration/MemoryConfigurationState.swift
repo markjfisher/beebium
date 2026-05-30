@@ -106,6 +106,9 @@ class MemoryConfigurationState: ObservableObject {
         /// sideways ROM (resolved asynchronously via describe-rom).
         var resolvedTitle: String? = nil
         var resolvedVersion: String? = nil
+        /// What the ROM is - any combination of "language", "service", "romfs".
+        /// Empty until resolved (or for an unrecognised image).
+        var resolvedKinds: [String] = []
 
         var isChanged: Bool { content != initialContent }
 
@@ -198,16 +201,18 @@ class MemoryConfigurationState: ObservableObject {
             var content: SocketContent
             var resolvedTitle: String?
             var resolvedVersion: String?
+            var resolvedKinds: [String]
         }
         var payloads = sockets.map {
             Payload(content: $0.content, resolvedTitle: $0.resolvedTitle,
-                    resolvedVersion: $0.resolvedVersion)
+                    resolvedVersion: $0.resolvedVersion, resolvedKinds: $0.resolvedKinds)
         }
         payloads.move(fromOffsets: source, toOffset: destination)
         for index in sockets.indices {
             sockets[index].content = payloads[index].content
             sockets[index].resolvedTitle = payloads[index].resolvedTitle
             sockets[index].resolvedVersion = payloads[index].resolvedVersion
+            sockets[index].resolvedKinds = payloads[index].resolvedKinds
         }
     }
 
@@ -261,6 +266,7 @@ class MemoryConfigurationState: ObservableObject {
               let image = sockets[index].content.image, !image.isEmpty else {
             sockets[index].resolvedTitle = nil
             sockets[index].resolvedVersion = nil
+            sockets[index].resolvedKinds = []
             return
         }
         let info = await resolver(image)
@@ -268,9 +274,11 @@ class MemoryConfigurationState: ObservableObject {
         if let info = info, info.recognised, !info.title.isEmpty {
             sockets[index].resolvedTitle = info.title
             sockets[index].resolvedVersion = info.version
+            sockets[index].resolvedKinds = info.kinds
         } else {
             sockets[index].resolvedTitle = nil
             sockets[index].resolvedVersion = nil
+            sockets[index].resolvedKinds = []
         }
     }
 }
