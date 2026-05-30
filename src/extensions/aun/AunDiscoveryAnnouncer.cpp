@@ -54,7 +54,7 @@ bool AunDiscoveryAnnouncer::is_advertising() const {
 
 discovery::ServiceInfo AunDiscoveryAnnouncer::build_service_info() const {
     discovery::ServiceInfo info;
-    info.service_type = "_aun._udp";
+    info.service_type = service_type_;
     // Instance name is human-readable; collisions are resolved by the
     // platform (Bonjour appends " (2)", DNS-SD on Windows similar).
     // Including impl + station makes parallel Beebium instances on the

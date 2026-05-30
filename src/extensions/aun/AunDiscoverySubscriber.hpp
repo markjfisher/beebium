@@ -76,6 +76,14 @@ public:
     // it must arrange their own synchronisation.
     void set_on_peers_changed(std::function<void()> cb);
 
+    // Override the DNS-SD service type to browse (default "_aun._udp").
+    // Production always uses the default; this exists so real-mDNS tests
+    // can run on a per-test-unique type and stay isolated from any stray
+    // _aun._udp records on the machine. Call before start().
+    void set_service_type(std::string service_type) {
+        service_type_ = std::move(service_type);
+    }
+
     // Test-only: parse a TXT record set into the (net, stn) pair the
     // subscriber would derive. Returns nullopt if the schema is
     // missing or invalid (so the subscriber can't safely act on it).
@@ -95,6 +103,7 @@ private:
     AunBackend& backend_;
     std::uint8_t local_stn_;
     std::unique_ptr<discovery::Browser> browser_;
+    std::string service_type_ = "_aun._udp";
 
     // Maps DNS-SD instance name -> (net, stn) it was registered as,
     // so on_removed can find which peer to drop. The browser only

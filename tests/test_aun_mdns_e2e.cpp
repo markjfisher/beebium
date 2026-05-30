@@ -36,6 +36,7 @@
 #include <netinet/in.h>
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <random>
 #include <string>
@@ -69,6 +70,20 @@ std::pair<uint8_t, uint8_t> pick_stations() {
     return {static_cast<uint8_t>(a), static_cast<uint8_t>(b)};
 }
 
+// A DNS-SD service type unique to this process and call. Running each
+// test case on its own type isolates it from production _aun._udp
+// records (other Beebiums, stray daemons, prior crashed runs) and from
+// the other test case, so discovery can't be starved by pollution. The
+// service-name label is capped at 15 characters, which "_bbt" + a short
+// time suffix + a call counter stays within.
+std::string unique_service_type() {
+    static std::atomic<unsigned> counter{0};
+    unsigned n = counter.fetch_add(1, std::memory_order_relaxed);
+    auto t = std::chrono::steady_clock::now().time_since_epoch().count();
+    return "_bbt" + std::to_string(static_cast<unsigned long long>(t) % 100000ULL)
+         + std::to_string(n) + "._udp";
+}
+
 }  // namespace
 
 TEST_CASE("AUN mDNS e2e: peers discover each other on the same net, no map=",
@@ -88,11 +103,16 @@ TEST_CASE("AUN mDNS e2e: peers discover each other on the same net, no map=",
                                      "beebium-test", "1.0", "");
     AunDiscoveryAnnouncer announce_b(0, stn_b, backend_b.local_port(),
                                      "beebium-test", "1.0", "");
+    const std::string svc_type = unique_service_type();
+    announce_a.set_service_type(svc_type);
+    announce_b.set_service_type(svc_type);
     REQUIRE(announce_a.start());
     REQUIRE(announce_b.start());
 
     AunDiscoverySubscriber sub_a(backend_a, stn_a);
     AunDiscoverySubscriber sub_b(backend_b, stn_b);
+    sub_a.set_service_type(svc_type);
+    sub_b.set_service_type(svc_type);
     REQUIRE(sub_a.start());
     REQUIRE(sub_b.start());
 
@@ -185,11 +205,16 @@ TEST_CASE("AUN mDNS e2e: cross-net discovery routes via local_net translation",
                                      "beebium-test", "1.0", "");
     AunDiscoveryAnnouncer announce_b(5, stn_b, backend_b.local_port(),
                                      "beebium-test", "1.0", "");
+    const std::string svc_type = unique_service_type();
+    announce_a.set_service_type(svc_type);
+    announce_b.set_service_type(svc_type);
     REQUIRE(announce_a.start());
     REQUIRE(announce_b.start());
 
     AunDiscoverySubscriber sub_a(backend_a, stn_a);
     AunDiscoverySubscriber sub_b(backend_b, stn_b);
+    sub_a.set_service_type(svc_type);
+    sub_b.set_service_type(svc_type);
     REQUIRE(sub_a.start());
     REQUIRE(sub_b.start());
 
