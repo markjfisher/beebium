@@ -78,6 +78,15 @@ struct MemorySectionView: View {
         let socket = memoryConfig.sockets[index]
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
+                // Drag grip: signals that rows can be reordered. The whole row
+                // is the drag target (via List .onMove); the icon is purely a
+                // discoverability cue.
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(width: 14)
+                    .help("Drag to reorder this socket's contents")
+
                 // Socket label: a narrow fixed column so the contents line up.
                 Text(socket.label)
                     .font(.subheadline)
@@ -111,7 +120,7 @@ struct MemorySectionView: View {
             Text("\(socket.slots.count > 1 ? "Slots" : "Slot") \(socket.slotsLabel) · priority \(socket.priority)")
                 .font(.caption2)
                 .foregroundColor(.secondary)
-                .padding(.leading, 60)  // align under the contents, past the label column
+                .padding(.leading, 82)  // align under the contents (past grip + label columns)
         }
         .padding(.vertical, 6)
     }
