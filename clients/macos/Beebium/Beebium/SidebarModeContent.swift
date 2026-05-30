@@ -43,6 +43,7 @@ struct SidebarModeContent: View {
     @ObservedObject var extensionUiClient: ExtensionUiClient
     @ObservedObject var peripheralsClient: PeripheralsClient
     @ObservedObject var transportsClient: EconetTransportsClient
+    @ObservedObject var sidewaysClient: SidewaysClient
     @ObservedObject var videoSettings: VideoSettings
 
     var body: some View {
@@ -55,7 +56,7 @@ struct SidebarModeContent: View {
                                 peripheralsClient: peripheralsClient,
                                 indicatorClient: indicatorClient)
             case .memory:
-                MemoryModeView()
+                MemoryModeView(sidewaysClient: sidewaysClient)
             case .peripherals:
                 PeripheralsModeView(client: peripheralsClient,
                                     extensionUiClient: extensionUiClient)
@@ -78,14 +79,6 @@ struct SidebarModeContent: View {
 }
 
 // MARK: - Placeholder Mode Views
-
-/// Placeholder view for Memory mode (sideways ROM slots, memory config)
-struct MemoryModeView: View {
-    var body: some View {
-        ModePlaceholder(mode: .memory)
-    }
-}
-
 
 /// Video mode: pick a display style and tweak its options.
 struct VideoModeView: View {
@@ -601,6 +594,7 @@ struct SidebarModeContent_Previews: PreviewProvider {
             extensionUiClient: ExtensionUiClient(),
             peripheralsClient: PeripheralsClient(),
             transportsClient: EconetTransportsClient(),
+            sidewaysClient: SidewaysClient(),
             videoSettings: VideoSettings()
         )
         .frame(width: 220, height: 300)

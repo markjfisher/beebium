@@ -70,6 +70,7 @@ struct ContentView: View {
     @StateObject private var extensionUiClient = ExtensionUiClient()
     @StateObject private var peripheralsClient = PeripheralsClient()
     @StateObject private var transportsClient = EconetTransportsClient()
+    @StateObject private var sidewaysClient = SidewaysClient()
     @StateObject private var videoSettings = VideoSettings.loadFromUserDefaults()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
@@ -119,6 +120,7 @@ struct ContentView: View {
                 extensionUiClient: extensionUiClient,
                 peripheralsClient: peripheralsClient,
                 transportsClient: transportsClient,
+                sidewaysClient: sidewaysClient,
                 videoSettings: videoSettings
             )
         }
@@ -291,6 +293,7 @@ struct ContentView: View {
             clientGroup.register(extensionUiClient)
             clientGroup.register(peripheralsClient)
             clientGroup.register(transportsClient)
+            clientGroup.register(sidewaysClient)
             clientGroup.registerVideoClient(videoClient)
 
             // Connection target was passed from MainWindowRouter (which consumed the
@@ -341,6 +344,7 @@ struct ContentView: View {
                 keyboardClient.connect(channel: channel)
                 systemClient.connect(channel: channel, provenanceUUID: initialProvenanceUUID)
                 indicatorClient.connect(channel: channel)
+                sidewaysClient.connect(channel: channel)
                 discClient.connect(channel: channel)
                 audioClient.connect(channel: channel)
                 debuggerClient.connect(channel: channel)
