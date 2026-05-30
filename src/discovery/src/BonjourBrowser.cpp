@@ -24,6 +24,7 @@
 #include <chrono>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -196,15 +197,41 @@ private:
                 DNSServiceProcessResult(browse_ref_);
                 if (!running_) break;
             }
+
+            // Processing the browse ref above may have started new
+            // resolves or, on a Remove, deallocated resolve/addr refs
+            // that are still in our pre-select snapshot. Re-collect the
+            // set of refs that are still live and only service those, so
+            // we never call DNSServiceProcessResult on freed memory.
+            std::set<DNSServiceRef> live;
+            {
+                std::lock_guard lock(mutex_);
+                for (auto& [name, inst] : instances_) {
+                    if (inst.resolve_ref) live.insert(inst.resolve_ref);
+                    if (inst.addr_ref) live.insert(inst.addr_ref);
+                }
+            }
             for (auto& [ref, fd] : aux_refs) {
-                if (FD_ISSET(fd, &readfds)) {
-                    // The ref may have been deallocated since the
-                    // snapshot if a remove fired; that's OK -- we
-                    // hold the ref pointer copy and DNS-SD is robust
-                    // against processing on a still-valid descriptor
-                    // we can confirm below.
+                if (FD_ISSET(fd, &readfds) && live.count(ref)) {
                     DNSServiceProcessResult(ref);
                     if (!running_) break;
+                }
+            }
+
+            // Reap address queries that have done their job. Once an
+            // instance is announced we have its IPv4 endpoint and don't
+            // need the getaddrinfo query open any longer; leaving them
+            // open accumulates active DNS-SD operations (one per peer
+            // ever seen) that bloat the select set and contend with new
+            // resolutions. Safe here: we've finished servicing aux_refs
+            // for this iteration, so we won't process a ref after freeing.
+            {
+                std::lock_guard lock(mutex_);
+                for (auto& [name, inst] : instances_) {
+                    if (inst.announced && inst.addr_ref) {
+                        DNSServiceRefDeallocate(inst.addr_ref);
+                        inst.addr_ref = nullptr;
+                    }
                 }
             }
         }
@@ -231,6 +258,24 @@ private:
 
     void begin_resolve(const std::string& name, const char* regtype,
                        const char* domain, uint32_t interfaceIndex) {
+        // A browse delivers the same service once per network interface,
+        // so we receive several Add callbacks for a single instance.
+        // Resolve each instance only once: starting a second resolve
+        // would deallocate the first, still-in-flight ref -- which the
+        // event loop may be holding in its current select() snapshot --
+        // and then process freed memory. Skip the duplicate if a resolve
+        // is already in flight, an address query is in flight, or the
+        // instance has already been announced.
+        {
+            std::lock_guard lock(mutex_);
+            auto it = instances_.find(name);
+            if (it != instances_.end() &&
+                (it->second.resolve_ref || it->second.addr_ref ||
+                 it->second.announced)) {
+                return;
+            }
+        }
+
         DNSServiceRef ref = nullptr;
         DNSServiceErrorType err = DNSServiceResolve(
             &ref,
@@ -245,9 +290,12 @@ private:
 
         std::lock_guard lock(mutex_);
         Instance& inst = instances_[name];
-        if (inst.resolve_ref) {
-            // Replace the previous in-flight resolver.
-            DNSServiceRefDeallocate(inst.resolve_ref);
+        if (inst.resolve_ref || inst.addr_ref || inst.announced) {
+            // Raced with another Add for the same instance between the
+            // check above and now; drop this duplicate rather than
+            // leaking or replacing the in-flight ref.
+            DNSServiceRefDeallocate(ref);
+            return;
         }
         inst.resolve_ref = ref;
         inst.service.instance_name = name;
