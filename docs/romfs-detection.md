@@ -15,6 +15,37 @@ corpus of real Electron and BBC ROMFS images plus images written by
 `mkromfs` and `oaknut`. Every offset and constant here is verified, not
 assumed.
 
+## Implementation status
+
+This algorithm has landed. Where it lives:
+
+- **C++ parser** — `src/core/include/beebium/RomFsDetection.hpp` provides
+  `crc16_xmodem`, `validate_cfs_header`, `find_first_block`, and
+  `contains_romfs`, exactly as drafted below. The header is included by
+  `SidewaysRomHeader.hpp`, which gains `contains_romfs` and
+  `romfs_data_offset`, set after the standard header is recognised (the
+  detector runs only when the service-entry bit is set; the language bit
+  is treated as orthogonal, so Acornsoft `&C2` cartridges are caught).
+- **CLI** — `describe-rom <rom>` JSON gains `contains_romfs`,
+  `romfs_data_offset`, and a convenience `kinds` array (any combination of
+  `"language"`, `"service"`, `"romfs"`).
+- **macOS frontend** — the New Machine dialog's Memory tab appends the
+  kinds to each socket's caption (e.g. `"... · language · service ·
+  ROMFS"` for an Acornsoft cartridge), via `RomHeaderInfo.kinds` decoded
+  from the CLI.
+- **Test corpus** — `tests/assets/roms/romfs/` holds 11 reference images
+  from oaknut plus an oaknut-authored `SNAPPER.rom`, exercising both the
+  Acornsoft `&C2` (language + service + ROMFS) and BBC / `mkromfs` `&82`
+  (service + ROMFS) patterns. The focused unit tests are in
+  `tests/test_romfs_detection.cpp`; the header-parser coverage including
+  Hopper's documented `&80BB` title-block offset is in
+  `tests/test_sideways_rom_header.cpp`.
+
+Still future: walking the CFS chain for file counts / completeness, and a
+runtime ROMFS readout in the live-machine view. The algorithm notes
+below are the design reference; treat them as background for those
+follow-ons where they go beyond the above.
+
 ## Why the header alone is not enough
 
 `SidewaysRomHeader` already says it: the standard paged-ROM header cannot

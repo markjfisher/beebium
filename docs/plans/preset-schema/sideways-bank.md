@@ -27,13 +27,19 @@ What exists today:
   so the build generates the shipped presets through the same code path
   users create their own with (CMake `add_system_preset`). Shipped set:
   `model-b`, `model-b-disc`, `model-b-romram-disc`, `model-b-plus`.
-- **ROM titles.** `SidewaysRomHeader` (`src/core/include/beebium/`) parses
-  the standard ROM header (this document's sibling, `sidewrom.pdf`); the
-  `describe-rom` subcommand exposes it as JSON. The macOS New Machine
-  **Memory** tab is a socket-oriented configurator (highest priority first)
-  that shows real ROM titles/versions ("Acorn DFS 2.26") instead of
-  filenames, with a tri-state ROM/RAM/Empty control and a Browse/Clear/Copy
-  Path/Reveal menu, applying changes at launch via `--sideways`.
+- **ROM titles and kinds.** `SidewaysRomHeader`
+  (`src/core/include/beebium/`) parses the standard ROM header (this
+  document's sibling, `sidewrom.pdf`) and, via `RomFsDetection.hpp`, also
+  detects whether a service ROM carries ROM Filing System data (see
+  [romfs-detection.md](../../romfs-detection.md)). The `describe-rom`
+  subcommand exposes both as JSON, including a convenience `kinds` array
+  (any combination of `"language"`, `"service"`, `"romfs"`). The macOS New
+  Machine **Memory** tab is a socket-oriented configurator (highest
+  priority first) that shows real ROM titles/versions ("Acorn DFS 2.26")
+  instead of filenames and appends the kinds to each socket's caption
+  ("... · language · service · ROMFS" for an Acornsoft cartridge), with a
+  tri-state ROM/RAM/Empty control and a Browse/Clear/Copy Path/Reveal
+  menu, applying changes at launch via `--sideways`.
 
 Resolved design questions:
 
