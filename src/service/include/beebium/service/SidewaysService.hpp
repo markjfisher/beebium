@@ -21,9 +21,18 @@
 #include "beebium/devices/ConfigurableBankedMemory.hpp"
 
 #include <grpcpp/grpcpp.h>
-#include <mutex>
-#include <fstream>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 namespace beebium::service {
@@ -93,9 +102,23 @@ public:
     using MotherboardLinks = typename Memory::MotherboardLinks;
 
     explicit SidewaysServiceImpl(MachineType& machine)
-        : machine_(machine) {}
+        : machine_(machine)
+    {
+        // Spin up the live header scanner. The tick is cheap when no
+        // subscriber has asked for it; the thread runs for the service's
+        // lifetime so subscribe/unsubscribe doesn't have to start/stop
+        // threads. See docs/discussion/sideways-live-header-updates.md.
+        if constexpr (HasSideways<Memory>) {
+            scanner_thread_ = std::thread([this] { run_header_scanner(); });
+        }
+    }
 
-    ~SidewaysServiceImpl() override = default;
+    ~SidewaysServiceImpl() override {
+        scanner_running_.store(false);
+        if (scanner_thread_.joinable()) {
+            scanner_thread_.join();
+        }
+    }
 
     // Non-copyable
     SidewaysServiceImpl(const SidewaysServiceImpl&) = delete;
@@ -439,32 +462,223 @@ public:
         const SubscribeEventsRequest* request,
         grpc::ServerWriter<SidewaysEvent>* writer) override
     {
-        using Memory = typename MachineType::Memory;
-
-        (void)request;
-        (void)writer;
         if constexpr (!HasSideways<Memory>) {
-            // No sideways memory - just return immediately.
+            (void)request;
+            (void)writer;
             return grpc::Status::OK;
         } else {
-            // The only events this stream is ever going to carry are
-            // SlotConfiguredEvent (after ConfigureSlot landed) and the
-            // forthcoming SlotHeaderChangedEvent (docs/discussion/
-            // sideways-live-header-updates.md). Neither emits yet, so for
-            // now this is a block-until-cancelled rendezvous - the stream
-            // exists so clients can hold it open and start receiving
-            // events as soon as the emitters are wired up.
+            auto sub = std::make_shared<HeaderSubscriber>();
+            sub->writer = writer;
+            sub->monitor_headers = request->monitor_header_changes();
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                subscribers_.push_back(sub);
+            }
+
+            // Block here until the RPC is cancelled. The scanner thread
+            // writes to `sub->writer` under `mutex_`; we drop the
+            // subscriber from the list under the same lock once the
+            // stream is closing so the scanner can never touch a stale
+            // writer.
             while (!context->IsCancelled()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                subscribers_.erase(
+                    std::remove(subscribers_.begin(), subscribers_.end(), sub),
+                    subscribers_.end());
             }
             return grpc::Status::OK;
         }
     }
 
 private:
+    // One open SubscribeEvents stream. Captured under mutex_ so the
+    // scanner can write to it concurrently with the RPC handler holding
+    // the stream open.
+    struct HeaderSubscriber {
+        grpc::ServerWriter<SidewaysEvent>* writer = nullptr;
+        bool monitor_headers = false;
+    };
+
+    // Per-slot scanner state. last_hash short-circuits the parse when
+    // bytes are unchanged; the last_emitted_* fields are the value last
+    // delivered to subscribers so we only emit on a real difference.
+    struct SlotState {
+        bool hash_valid = false;
+        size_t last_hash = 0;
+        bool emitted_recognised = false;
+        std::string emitted_title;
+        std::string emitted_version;
+        std::string emitted_copyright;
+        bool emitted_contains_romfs = false;
+        std::vector<std::string> emitted_kinds;
+    };
+
+    // 1 Hz scanner: while any subscriber has opted into
+    // monitor_header_changes, walk RAM-typed slots, hash-gate, parse,
+    // and emit SlotHeaderChangedEvent when the parsed RomHeader for any
+    // slot diverges from what we last broadcast.
+    //
+    // Threading: scanner_running_ is an atomic flag the destructor
+    // clears; the thread polls it every 100 ms so shutdown is prompt.
+    // Subscriber list and per-slot state are mutated under mutex_.
+    // ServerWriter::Write is called with mutex_ held - that serialises
+    // writes to any single subscriber (gRPC requires that) and also
+    // serialises against subscribe/unsubscribe.
+    void run_header_scanner() {
+        scanner_running_.store(true);
+        using namespace std::chrono_literals;
+        while (scanner_running_.load()) {
+            // Sleep in 100 ms slices so destruction never has to wait a
+            // full second for the thread to wake.
+            for (int slice = 0; slice < 10 && scanner_running_.load(); ++slice) {
+                std::this_thread::sleep_for(100ms);
+            }
+            if (!scanner_running_.load()) break;
+            try {
+                scan_tick();
+            } catch (...) {
+                // The scanner must never take the service down. Swallow
+                // any anomaly and retry on the next tick.
+            }
+        }
+    }
+
+    void scan_tick() {
+        if constexpr (HasSideways<Memory>) {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            // Refcount gate: any subscriber actually wants this work?
+            bool any_watcher = false;
+            for (const auto& sub : subscribers_) {
+                if (sub->monitor_headers) {
+                    any_watcher = true;
+                    break;
+                }
+            }
+            if (!any_watcher) {
+                return;
+            }
+
+            if constexpr (!requires { Memory::slot_topology(motherboard_links_); }) {
+                return;
+            } else {
+                auto topo = Memory::slot_topology(motherboard_links_);
+                auto& sw = machine_.state().memory.sideways;
+
+                for (const auto& spec : topo.sockets) {
+                    if (spec.slots.empty()) continue;
+                    const uint8_t probe_slot =
+                        static_cast<uint8_t>(spec.slots[0]);
+
+                    // Skip non-RAM slots. ROM contents don't change between
+                    // ConfigureSlot calls, and machines without per-socket
+                    // accessors (Model B+ BankedMemory) have no RAM at all.
+                    bool is_ram = false;
+                    if constexpr (HasAliasedSideways<Memory>) {
+                        is_ram = sw.socket(
+                            static_cast<uint8_t>(spec.socket_index)
+                        ).type() == beebium::SlotType::Ram;
+                    } else if constexpr (HasConfigurableSideways<Memory>) {
+                        is_ram = sw.slot(
+                            static_cast<uint8_t>(spec.socket_index)
+                        ).type() == beebium::SlotType::Ram;
+                    }
+                    if (!is_ram) continue;
+
+                    scan_slot(sw, probe_slot);
+                }
+            }
+        }
+    }
+
+    // Sample one RAM slot. Skip when bytes are unchanged (cheap hash
+    // gate). On change, parse the full bank and emit if the resulting
+    // RomHeader differs from the last value we broadcast for this slot.
+    template<typename Sideways>
+    void scan_slot(Sideways& sw, uint8_t slot) {
+        if (slot >= slot_states_.size()) return;
+
+        std::vector<uint8_t> bytes(16384);
+        for (uint16_t i = 0; i < 16384; ++i) {
+            bytes[i] = sw.peek_bank(slot, i);
+        }
+
+        const size_t h = std::hash<std::string_view>{}(
+            std::string_view(reinterpret_cast<const char*>(bytes.data()),
+                             bytes.size())
+        );
+
+        auto& state = slot_states_[slot];
+        if (state.hash_valid && state.last_hash == h) {
+            return;
+        }
+        state.last_hash = h;
+        state.hash_valid = true;
+
+        const auto parsed = beebium::parse_sideways_rom_header(bytes);
+        std::vector<std::string> parsed_kinds;
+        if (parsed.has_language_entry) parsed_kinds.emplace_back("language");
+        if (parsed.has_service_entry) parsed_kinds.emplace_back("service");
+        if (parsed.contains_romfs) parsed_kinds.emplace_back("romfs");
+
+        const bool same =
+            state.emitted_recognised == parsed.recognised
+            && state.emitted_title == parsed.title
+            && state.emitted_version == parsed.version
+            && state.emitted_copyright == parsed.copyright
+            && state.emitted_contains_romfs == parsed.contains_romfs
+            && state.emitted_kinds == parsed_kinds;
+        if (same) {
+            return;
+        }
+
+        state.emitted_recognised = parsed.recognised;
+        state.emitted_title = parsed.title;
+        state.emitted_version = parsed.version;
+        state.emitted_copyright = parsed.copyright;
+        state.emitted_contains_romfs = parsed.contains_romfs;
+        state.emitted_kinds = parsed_kinds;
+
+        SidewaysEvent event;
+        event.set_timestamp_cycles(machine_.cycle_count());
+        auto* slot_changed = event.mutable_slot_header_changed();
+        slot_changed->set_slot(slot);
+        if (parsed.recognised) {
+            auto* h_proto = slot_changed->mutable_rom_header();
+            h_proto->set_recognised(true);
+            h_proto->set_title(parsed.title);
+            h_proto->set_version(parsed.version);
+            h_proto->set_copyright(parsed.copyright);
+            h_proto->set_contains_romfs(parsed.contains_romfs);
+            for (const auto& kind : parsed_kinds) {
+                h_proto->add_kinds(kind);
+            }
+        }
+        // recognised=false case: leave rom_header unset so clients see a
+        // cleared header (RamHeader.recognised reads as false / has_field
+        // returns false).
+
+        for (const auto& sub : subscribers_) {
+            if (sub->monitor_headers && sub->writer) {
+                sub->writer->Write(event);
+            }
+        }
+    }
+
     MachineType& machine_;
     std::mutex mutex_;
     MotherboardLinks motherboard_links_{};
+
+    // Header scanner state. subscribers_ and slot_states_ are guarded
+    // by mutex_; scanner_running_ is an atomic flag for the thread.
+    std::vector<std::shared_ptr<HeaderSubscriber>> subscribers_;
+    std::array<SlotState, 16> slot_states_{};
+    std::atomic<bool> scanner_running_{false};
+    std::thread scanner_thread_;
 };
 
 } // namespace beebium::service

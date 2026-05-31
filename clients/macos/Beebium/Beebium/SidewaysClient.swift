@@ -101,6 +101,12 @@ final class SidewaysClient: ObservableObject, Disconnectable {
         guard let client = client else { return }
         var request = Beebium_SubscribeEventsRequest()
         request.minIntervalMs = 100
+        // Opt into the live header scanner so *SRLOAD (and any other
+        // CPU write to sideways RAM) shows up in the sidebar without
+        // re-fetching the whole GetSlotStatus snapshot. The flag is
+        // off on the wire by default precisely to make this an
+        // intentional choice on the client side.
+        request.monitorHeaderChanges = true
 
         let call = client.subscribeEvents(request) { [weak self] event in
             Task { @MainActor [weak self] in
@@ -122,7 +128,31 @@ final class SidewaysClient: ObservableObject, Disconnectable {
             // A slot was reconfigured via ConfigureSlot: re-fetch so the
             // parsed rom_header reflects the new contents.
             Task { [weak self] in await self?.fetchSlotStatus() }
+        case .slotHeaderChanged(let change):
+            // The live scanner detected that a RAM slot's parsed header
+            // changed (e.g. *SRLOAD into sideways RAM). Patch the
+            // affected socket's romHeader in place rather than doing a
+            // full re-fetch.
+            applyHeaderChange(slot: Int(change.slot),
+                              header: change.hasRomHeader
+                                ? Self.mapHeader(change.romHeader)
+                                : nil)
         }
+    }
+
+    private func applyHeaderChange(slot: Int, header: RomHeader?) {
+        guard let socketIndex = sockets.firstIndex(where: { $0.slots.contains(slot) }) else {
+            return
+        }
+        let existing = sockets[socketIndex]
+        sockets[socketIndex] = Socket(
+            socketIndex: existing.socketIndex,
+            label: existing.label,
+            slots: existing.slots,
+            kind: existing.kind,
+            populated: existing.populated || header != nil,
+            imageName: existing.imageName,
+            romHeader: header)
     }
 
     // MARK: - Proto -> Swift mapping
