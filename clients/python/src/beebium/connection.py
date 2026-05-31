@@ -26,6 +26,7 @@ from beebium._proto import (
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
     piconet_service_pb2_grpc,
+    sideways_pb2_grpc,
     system_pb2_grpc,
     tube_pb2_grpc,
     video_pb2_grpc,
@@ -62,6 +63,7 @@ class Connection:
         self._extension_ui_stub: extension_ui_pb2_grpc.ExtensionUiServiceStub | None = None
         self._indicator_stub: indicator_pb2_grpc.IndicatorServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
+        self._sideways_stub: sideways_pb2_grpc.SidewaysServiceStub | None = None
         self._system_stub: system_pb2_grpc.SystemServiceStub | None = None
         self._tube_stub: tube_pb2_grpc.TubeServiceStub | None = None
         self._video_stub: video_pb2_grpc.VideoServiceStub | None = None
@@ -95,6 +97,7 @@ class Connection:
         self._extension_ui_stub = extension_ui_pb2_grpc.ExtensionUiServiceStub(self._channel)
         self._indicator_stub = indicator_pb2_grpc.IndicatorServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
+        self._sideways_stub = sideways_pb2_grpc.SidewaysServiceStub(self._channel)
         self._system_stub = system_pb2_grpc.SystemServiceStub(self._channel)
         self._tube_stub = tube_pb2_grpc.TubeServiceStub(self._channel)
         self._video_stub = video_pb2_grpc.VideoServiceStub(self._channel)
@@ -194,6 +197,13 @@ class Connection:
         return self._indicator_stub
 
     @property
+    def sideways_stub(self) -> sideways_pb2_grpc.SidewaysServiceStub:
+        """The SidewaysService stub (slot topology, configuration, events)."""
+        if self._sideways_stub is None:
+            raise ConnectionError("Not connected")
+        return self._sideways_stub
+
+    @property
     def parasite_debugger_stub(self) -> debugger_pb2_grpc.ParasiteDebuggerControlStub:
         """The ParasiteDebuggerControl service stub."""
         if self._parasite_debugger_stub is None:
@@ -223,6 +233,7 @@ class Connection:
             self._extension_ui_stub = None
             self._indicator_stub = None
             self._keyboard_stub = None
+            self._sideways_stub = None
             self._system_stub = None
             self._tube_stub = None
             self._video_stub = None

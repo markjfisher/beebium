@@ -39,6 +39,7 @@ from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
 from beebium.memory import Memory
 from beebium.server import ServerProcess
+from beebium.sideways import Sideways
 from beebium.sound import Sound
 from beebium.system import System
 from beebium.tube import Tube
@@ -107,6 +108,7 @@ class Beebium:
         self._piconet: Piconet | None = None
         self._extension_ui: ExtensionUi | None = None
         self._indicators: Indicators | None = None
+        self._sideways: Sideways | None = None
         self._tube: Tube | None = None
         self._tube_ula: TubeUlaInspection | None = None
 
@@ -371,6 +373,13 @@ class Beebium:
         if self._indicators is None:
             self._indicators = Indicators(self._connection.indicator_stub)
         return self._indicators
+
+    @property
+    def sideways(self) -> Sideways:
+        """Access sideways ROM/RAM slot topology and configuration."""
+        if self._sideways is None:
+            self._sideways = Sideways(self._connection.sideways_stub)
+        return self._sideways
 
     @property
     def extension_ui(self) -> ExtensionUi:
