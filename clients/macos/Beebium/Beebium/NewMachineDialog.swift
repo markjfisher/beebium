@@ -82,17 +82,28 @@ struct NewMachineDialog: View {
             resizeWindowForMode(expanded: isExpanded)
         }
         .task {
-            // Belt-and-braces: the dialog window is a singleton and SwiftUI
-            // keeps its @State across hide/show. Any transient flag that
-            // outlives the dismiss() call (e.g. if a future path forgets
-            // to reset it) would leave the dialog wedged. Clear them
-            // here so re-opening the dialog always starts cleanly.
-            isLaunching = false
-            launchError = nil
+            // First-open initial setup. The dialog window is a singleton:
+            // SwiftUI doesn't re-fire .task when the window is re-shown
+            // after dismiss(), so anything that has to happen on EVERY
+            // open goes in the willCloseNotification reset path below.
             if presetManager.systemPresets.isEmpty {
                 await presetManager.discoverPresets()
             }
             restoreLastSelection()
+            if let preset = selectedPreset {
+                loadSchemaForPreset(preset)
+            }
+        }
+        // Reset transient state when the dialog closes so the next
+        // open is fresh. .task on a singleton Window doesn't re-fire,
+        // so we hook AppKit's close notification - it fires for every
+        // dismiss path (Cancel button, Create-success, red close
+        // button, Cmd-W) regardless of how the dialog goes away.
+        .onReceive(NotificationCenter.default
+            .publisher(for: NSWindow.willCloseNotification)) { note in
+            guard let window = note.object as? NSWindow,
+                  window === hostingWindow else { return }
+            resetForNewSession(in: window)
         }
         .onChange(of: selectedPreset) { newPreset in
             if let preset = newPreset {
@@ -236,16 +247,23 @@ struct NewMachineDialog: View {
     @ViewBuilder
     private var errorSection: some View {
         if let error = launchError {
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.yellow)
+                    .foregroundColor(.red)
+                    .imageScale(.large)
                 Text(error)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
+                    .font(.callout)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
             }
-            .padding(8)
-            .background(Color.yellow.opacity(0.1))
+            .padding(10)
+            .background(Color.red.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.red.opacity(0.25), lineWidth: 1)
+            )
             .cornerRadius(6)
         }
     }
@@ -275,6 +293,49 @@ struct NewMachineDialog: View {
     }
 
     // MARK: - Actions
+
+    /// Reset everything except the selected preset so that re-opening
+    /// the dialog feels fresh. Called from the AppKit
+    /// willCloseNotification handler so it covers every dismiss path
+    /// (Cancel, Create-success, red close button, Cmd-W) without us
+    /// having to instrument each one.
+    ///
+    /// The window is also resized back to the collapsed content height
+    /// so AppKit remembers a small frame and the next open doesn't
+    /// reappear at the previously-expanded size.
+    private func resetForNewSession(in window: NSWindow) {
+        showConfiguration = false
+        saveAsNewPreset = false
+        newPresetName = ""
+        isLaunching = false
+        launchError = nil
+        // Re-resolve selectedPreset against the current preset list.
+        // createPreset() calls discoverPresets() which rebuilds the
+        // systemPresets/userPresets arrays with fresh MachinePreset
+        // structs - the existing selectedPreset reference goes stale
+        // and the Picker can no longer match it, so the dropdown
+        // appears empty on next open. restoreLastSelection() looks
+        // up the preset by id (from AppStorage) and re-sets
+        // selectedPreset to a live struct in the current list.
+        restoreLastSelection()
+        // Configs revert to the preset's defaults the next time
+        // loadSchemaForPreset runs (triggered by .onChange of
+        // selectedPreset on next open if the value differs, or
+        // explicitly in .task on the first open of the app session).
+        // Force it here too, so even within a single app session a
+        // close-then-open clears any edits.
+        if let preset = selectedPreset {
+            loadSchemaForPreset(preset)
+        }
+        // AppKit remembers the window's frame across hide/show. Resize
+        // to the collapsed content height so the next open isn't
+        // stuck at whatever size the user had stretched to. The user
+        // can still resize manually after opening.
+        let width = window.frame.size.width
+        // setContentSize takes the content rect; the actual frame
+        // includes title bar etc. Use setContentSize for accuracy.
+        window.setContentSize(NSSize(width: width, height: collapsedContentHeight))
+    }
 
     /// Resize the hosting window when the Configuration disclosure toggles.
     /// Collapse: shrink to the natural collapsed height regardless of
@@ -360,12 +421,38 @@ struct NewMachineDialog: View {
         isLaunching = true
         launchError = nil
 
-        // TODO: If saveAsNewPreset, create the preset first (shared follow-up
-        // with the Storage tab). For now, launch with the selected preset plus
-        // the storage and memory configuration applied via CLI overrides.
-
-        // Capture the manager reference before async call to avoid @StateObject wrapper issues
+        // Capture the manager reference before async call to avoid
+        // @StateObject wrapper issues
         let manager = presetManager
+
+        // If "Save as new preset" is on with a non-empty name, snapshot
+        // the user's sideways configuration into a new user preset
+        // before launching. The launched machine is identical either
+        // way (same CLI args yield the same machine); the new preset
+        // simply makes the chosen configuration discoverable in the
+        // Machine Preset picker next time.
+        let trimmedName = newPresetName.trimmingCharacters(
+            in: .whitespacesAndNewlines)
+        if saveAsNewPreset && !trimmedName.isEmpty {
+            let (createdId, errorMessage) = await manager.createPreset(
+                basedOn: preset,
+                newName: trimmedName,
+                sidewaysArguments: memoryConfig.sidewaysLaunchArguments()
+            )
+            if createdId == nil {
+                // Surface the real stderr from the create-preset subcommand
+                // so the user can act on it. Don't guess - the actual failure
+                // mode varies (name conflict, validation error, write
+                // permissions on the user-presets directory, ...).
+                let detail = (errorMessage?.isEmpty == false)
+                    ? errorMessage!
+                    : "The create-preset subcommand failed with no error output."
+                launchError = "Couldn't save preset \"\(trimmedName)\":\n\(detail)"
+                isLaunching = false
+                return
+            }
+        }
+
         let result = await manager.launchCore(preset, storageConfig: storageConfig, memoryConfig: memoryConfig)
 
         switch result {

@@ -72,12 +72,18 @@ targets:
               fi
             done
 
-            # Copy presets and thumbnails to Resources
+            # Copy presets and thumbnails alongside the embedded servers
+            # (Resources/servers/presets/), matching what the server
+            # binary expects: PresetPaths::get_system_presets_dirpath()
+            # looks for a sibling 'presets/' directory next to the
+            # executable. Placing them in Resources/presets/ instead -
+            # which we did before - made create-preset's --from fail to
+            # resolve any system preset by ID.
             if [ -d "$SERVERS_DIR/presets" ]; then
-              mkdir -p "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets"
-              cp "$SERVERS_DIR/presets/"*.preset.beebium "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets/" 2>/dev/null || true
-              cp "$SERVERS_DIR/presets/"*.thumbnail.png "${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/presets/" 2>/dev/null || true
-              echo "  Copied presets and thumbnails"
+              mkdir -p "${SERVERS_DEST}/presets"
+              cp "$SERVERS_DIR/presets/"*.preset.beebium "${SERVERS_DEST}/presets/" 2>/dev/null || true
+              cp "$SERVERS_DIR/presets/"*.thumbnail.png "${SERVERS_DEST}/presets/" 2>/dev/null || true
+              echo "  Copied presets and thumbnails to ${SERVERS_DEST}/presets"
             fi
 
             # Copy the extension plugin tree next to the embedded servers.

@@ -195,9 +195,14 @@ class PresetManager: ObservableObject {
 
     /// Get the bundled presets directory path, if presets are bundled in the app.
     /// Returns nil if no bundled presets are found.
+    ///
+    /// Presets live alongside the embedded servers
+    /// (Resources/servers/presets/) so the server binary's own
+    /// PresetPaths::get_system_presets_dirpath() can resolve them by
+    /// ID for --from. The Swift side reads from the same directory.
     private func bundledPresetsDirpath() -> String? {
         guard let resourcePath = Bundle.main.resourcePath else { return nil }
-        let presetsPath = "\(resourcePath)/presets"
+        let presetsPath = "\(resourcePath)/servers/presets"
         return FileManager.default.fileExists(atPath: presetsPath) ? presetsPath : nil
     }
 
@@ -494,6 +499,55 @@ class PresetManager: ObservableObject {
         await discoverPresets()
 
         return newPresetId
+    }
+
+    /// Create a new user preset by snapshotting an existing one and
+    /// layering the user's CLI overrides on top.
+    ///
+    /// The user's sideways/FDC/etc. choices are baked into the new
+    /// preset so that selecting it later launches the same machine
+    /// without having to repeat the configuration. Storage state
+    /// (mounted disc images) is intentionally NOT folded in - those
+    /// are runtime concerns, not preset configuration.
+    ///
+    /// - Parameters:
+    ///   - basedOn: The preset to use as a starting point.
+    ///   - newName: Display name for the new preset.
+    ///   - sidewaysArguments: `--sideways SLOT:TYPE[:IMAGE]` pairs from
+    ///     the configurator. Each pair is two strings: the flag and the value.
+    /// - Returns: `(presetId, errorMessage)` - exactly one is non-nil.
+    ///   On success errorMessage is nil and presetId is the new preset's
+    ///   slug. On failure presetId is nil and errorMessage carries the
+    ///   actual stderr from the create-preset subcommand (name conflict,
+    ///   validation error, etc.) so the UI can surface it instead of
+    ///   guessing.
+    func createPreset(basedOn preset: MachinePreset,
+                      newName: String,
+                      sidewaysArguments: [String]) async -> (String?, String?) {
+        var arguments: [String] = [
+            "create-preset",
+            "--name", newName,
+            "--from", preset.presetId,
+        ]
+        arguments.append(contentsOf: sidewaysArguments)
+
+        let (output, error) = await runCli(
+            executable: preset.coreExecutablePath,
+            arguments: arguments
+        )
+        if let error = error {
+            NSLog("[PresetManager] Failed to create preset: \(error)")
+            return (nil, error.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        let newPresetId = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        NSLog("[PresetManager] Created preset: \(newPresetId) from \(preset.presetId)")
+
+        // Reload presets so the new one appears in the Machine Preset
+        // picker on the next New Machine open.
+        await discoverPresets()
+
+        return (newPresetId, nil)
     }
 
     /// Delete a user preset.
