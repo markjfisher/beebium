@@ -93,15 +93,17 @@ struct MemoryModeView: View {
                 .foregroundColor(.secondary)
                 .frame(width: 32, alignment: .trailing)
 
-            // Menu only when there's something to act on. Empty slots get a
-            // transparent placeholder so columns still line up.
-            if !socket.imageName.isEmpty {
-                actionsMenu(for: socket)
-            } else {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundColor(.clear)
-                    .fixedSize()
-            }
+            // Always render the menu so populated and empty rows have
+            // the exact same trailing column width; hide and disable
+            // it on rows with nothing to act on. Trying to substitute
+            // a bare Image as a placeholder dances the status column
+            // because the Menu's internal padding doesn't match a
+            // plain Image.
+            let actionable = !socket.imageName.isEmpty
+            actionsMenu(for: socket)
+                .opacity(actionable ? 1 : 0)
+                .allowsHitTesting(actionable)
+                .accessibilityHidden(!actionable)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
@@ -151,6 +153,12 @@ struct MemoryModeView: View {
                 .foregroundColor(.secondary)
         }
         .menuStyle(.borderlessButton)
+        // The disclosure chevron Menu renders by default would offset the
+        // trailing column on rows that have a menu versus those that
+        // don't, dancing the ROM/RAM status text out of alignment. The
+        // ellipsis already signals "menu available"; the chevron is
+        // redundant.
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Slot actions")
     }
