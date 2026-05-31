@@ -65,7 +65,7 @@ targets:
             # previous build don't accumulate.
             rm -rf "$SERVERS_DEST"
             mkdir -p "$SERVERS_DEST"
-            for server in beebium-model-b beebium-model-b-plus beebium-model-b-romram; do
+            for server in beebium-model-b beebium-model-b-plus beebium-model-b-plus-128k beebium-model-b-romram; do
               if [ -f "$SERVERS_DIR/$server" ]; then
                 cp "$SERVERS_DIR/$server" "$SERVERS_DEST/"
                 echo "  Copied $server"

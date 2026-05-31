@@ -127,16 +127,35 @@ public:
     // Socket IC57 (slots 6/7): User ROM
     // Socket IC44 (slots 4/5): User ROM
     // Socket IC35 (slots 2/3): User ROM
-    Rom<16384> basic_rom;          // IC71 - slots 1/15 (BASIC)
-    Rom<16384> dfs_rom;            // IC68 - slots 10/11 (DFS)
-    Rom<16384> rom_ic62;           // IC62 - slots 8/9
-    Rom<16384> rom_ic57;           // IC57 - slots 6/7
-    Rom<16384> rom_ic44;           // IC44 - slots 4/5
-    Rom<16384> rom_ic35;           // IC35 - slots 2/3
+    // IC71 is the system ROM: a 32K device holding the MOS in the high
+    // half (mapped to &C000-&FFFF, not sideways) and BASIC in the low
+    // half (sideways). The PCB wiring forces sideways accesses to read
+    // the BASIC half regardless of ROMSEL bit 0, so both slot numbers
+    // of the S13-selected pair return BASIC. We model this faithfully
+    // by binding `basic_rom` to both slots of the active pair.
+    Rom<16384> basic_rom;          // IC71 - slots 14/15 or 0/1 per S13 (aliased)
 
-    // Sideways banks type - each ROM device bound to both slots of its pair
-    // IC71 has a special arrangement: link S13 selects whether BASIC appears at
-    // slots 0/1 or 14/15. In the emulator, we bind all four slots to the same device.
+    // The five user ROM sockets each hold a 32K-capable chip mapped to
+    // two adjacent sideways slot numbers. On real hardware the chip's
+    // device-size link (S9..S18) selects 16K mode (the 16K image
+    // aliases across both slots) or 32K mode (the two slots address
+    // distinct halves). The emulator presents each slot as an
+    // independent 16K bank - i.e. the 32K-mode interpretation - so
+    // users can configure or *SRLOAD different ROMs into each slot
+    // independently. The hardware's 16K mode is simply the special
+    // case where both halves of the socket happen to hold identical
+    // content.
+    Rom<16384> rom_ic68_lo;        // IC68 - slot 10
+    Rom<16384> rom_ic68_hi;        // IC68 - slot 11 (DFS by default)
+    Rom<16384> rom_ic62_lo;        // IC62 - slot 8
+    Rom<16384> rom_ic62_hi;        // IC62 - slot 9
+    Rom<16384> rom_ic57_lo;        // IC57 - slot 6
+    Rom<16384> rom_ic57_hi;        // IC57 - slot 7
+    Rom<16384> rom_ic44_lo;        // IC44 - slot 4
+    Rom<16384> rom_ic44_hi;        // IC44 - slot 5
+    Rom<16384> rom_ic35_lo;        // IC35 - slot 2
+    Rom<16384> rom_ic35_hi;        // IC35 - slot 3
+
     using SidewaysType = BankedMemory<
         decltype(make_bank<15>(std::declval<Rom<16384>&>())),
         decltype(make_bank<14>(std::declval<Rom<16384>&>())),
@@ -155,20 +174,20 @@ public:
     >;
 
     SidewaysType sideways{
-        make_bank<15>(basic_rom),    // IC71 - slot 15 (BASIC, standard config via S13)
-        make_bank<14>(basic_rom),    // IC71 - slot 14 (BASIC, alternate S13 position)
-        make_bank<11>(dfs_rom),      // IC68 - slot 11 (DFS high)
-        make_bank<10>(dfs_rom),      // IC68 - slot 10 (DFS low, mirrored)
-        make_bank<9>(rom_ic62),      // IC62 - slot 9 (high)
-        make_bank<8>(rom_ic62),      // IC62 - slot 8 (low, mirrored)
-        make_bank<7>(rom_ic57),      // IC57 - slot 7 (high)
-        make_bank<6>(rom_ic57),      // IC57 - slot 6 (low, mirrored)
-        make_bank<5>(rom_ic44),      // IC44 - slot 5 (high)
-        make_bank<4>(rom_ic44),      // IC44 - slot 4 (low, mirrored)
-        make_bank<3>(rom_ic35),      // IC35 - slot 3 (high)
-        make_bank<2>(rom_ic35),      // IC35 - slot 2 (low, mirrored)
-        make_bank<1>(basic_rom),     // IC71 - slot 1 (BASIC, alternate S13 position)
-        make_bank<0>(basic_rom)      // IC71 - slot 0 (BASIC, alternate S13 position)
+        make_bank<15>(basic_rom),    // IC71 - slot 15 (BASIC, S13=South alias)
+        make_bank<14>(basic_rom),    // IC71 - slot 14 (BASIC, S13=South alias)
+        make_bank<11>(rom_ic68_hi),  // IC68 high
+        make_bank<10>(rom_ic68_lo),  // IC68 low
+        make_bank<9>(rom_ic62_hi),   // IC62 high
+        make_bank<8>(rom_ic62_lo),   // IC62 low
+        make_bank<7>(rom_ic57_hi),   // IC57 high
+        make_bank<6>(rom_ic57_lo),   // IC57 low
+        make_bank<5>(rom_ic44_hi),   // IC44 high
+        make_bank<4>(rom_ic44_lo),   // IC44 low
+        make_bank<3>(rom_ic35_hi),   // IC35 high
+        make_bank<2>(rom_ic35_lo),   // IC35 low
+        make_bank<1>(basic_rom),     // IC71 - slot 1 (BASIC, S13=North alias)
+        make_bank<0>(basic_rom)      // IC71 - slot 0 (BASIC, S13=North alias)
     };
 
     Via6522 system_via;
@@ -679,36 +698,50 @@ public:
     }
 
     void load_dfs(const uint8_t* data, size_t size) {
-        dfs_rom.load(data, size);
+        // DFS lives at slot 11 by default (IC68 high half).
+        rom_ic68_hi.load(data, size);
     }
 
     // =========================================================================
     // Unified ROM Loading API
     // =========================================================================
 
-    // Load ROM data into a slot, mapping to the appropriate physical ROM device.
-    // Model B+ has 6 ROM sockets, each covering a pair of slots:
-    //   IC71 (slots 0,1,14,15): BASIC/language ROM
-    //   IC68 (slots 10,11): DFS ROM
-    //   IC62 (slots 8,9): User ROM
-    //   IC57 (slots 6,7): User ROM
-    //   IC44 (slots 4,5): User ROM
-    //   IC35 (slots 2,3): User ROM
-    // image_name is accepted for API uniformity with Model B / ROM/RAM board
-    // but ignored: the B+ memory model has no per-socket image_name slot.
+    // Load ROM data into one of the B+'s sideways slots. The mapping:
+    //
+    //   slot 14, 15  -> IC71 (BASIC) - hardware-aliased to both slots of the
+    //                    S13-selected pair, so loading either fills the same
+    //                    16K BASIC bank.
+    //   slot 0, 1    -> same as above when S13=North.
+    //   slot 11      -> IC68 high half (DFS by default)
+    //   slot 10      -> IC68 low half
+    //   slot 9 / 8   -> IC62 high / low halves
+    //   slot 7 / 6   -> IC57 high / low halves
+    //   slot 5 / 4   -> IC44 high / low halves
+    //   slot 3 / 2   -> IC35 high / low halves
+    //
+    // The user ROM sockets each present two independent 16K banks (the
+    // emulator's permanent 32K-mode interpretation, giving the user
+    // separate slots to configure / *SRLOAD). image_name is accepted
+    // for API uniformity and ignored - the B+ memory model has no
+    // per-slot image_name storage.
     void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
                           std::string_view /*image_name*/ = "") {
-        // All B+ ROM sockets are 16KB
         constexpr size_t rom_size = 16384;
         size_t copy_len = std::min(len, rom_size);
         switch (slot) {
-            case 0: case 1: case 14: case 15: std::copy_n(data, copy_len, basic_rom.data()); break;
-            case 10: case 11: std::copy_n(data, copy_len, dfs_rom.data()); break;
-            case 8: case 9: std::copy_n(data, copy_len, rom_ic62.data()); break;
-            case 6: case 7: std::copy_n(data, copy_len, rom_ic57.data()); break;
-            case 4: case 5: std::copy_n(data, copy_len, rom_ic44.data()); break;
-            case 2: case 3: std::copy_n(data, copy_len, rom_ic35.data()); break;
-            default: break;  // Invalid slot for B+
+            case 0: case 1: case 14: case 15:
+                std::copy_n(data, copy_len, basic_rom.data()); break;
+            case 11: std::copy_n(data, copy_len, rom_ic68_hi.data()); break;
+            case 10: std::copy_n(data, copy_len, rom_ic68_lo.data()); break;
+            case  9: std::copy_n(data, copy_len, rom_ic62_hi.data()); break;
+            case  8: std::copy_n(data, copy_len, rom_ic62_lo.data()); break;
+            case  7: std::copy_n(data, copy_len, rom_ic57_hi.data()); break;
+            case  6: std::copy_n(data, copy_len, rom_ic57_lo.data()); break;
+            case  5: std::copy_n(data, copy_len, rom_ic44_hi.data()); break;
+            case  4: std::copy_n(data, copy_len, rom_ic44_lo.data()); break;
+            case  3: std::copy_n(data, copy_len, rom_ic35_hi.data()); break;
+            case  2: std::copy_n(data, copy_len, rom_ic35_lo.data()); break;
+            default: break;  // Invalid slot for B+ (12, 13 unused)
         }
     }
 
@@ -829,26 +862,38 @@ public:
         }
     };
 
-    // Topology of the six fixed ROM sockets on the Model B+ motherboard.
+    // Topology of the B+ motherboard's ROM positions.
     //
-    // Five sockets (IC35, IC44, IC57, IC62, IC68) are each wired to a fixed
-    // pair of slot numbers by the standard PCB decoding. The sixth socket,
-    // IC71 (BASIC), is wired through link S13 to one of two possible slot
-    // pairs -- the topology reflects the configured S13 position.
+    // IC71 (BASIC + MOS) is genuinely aliased on real hardware: the chip's
+    // sideways half is wired so both slot numbers of the S13-selected pair
+    // return the same BASIC content. We model that faithfully -- IC71
+    // contributes a single topology entry covering both slots.
     //
-    // No socket is assigned to slots 12 or 13 on a stock B+, and selecting
-    // them via ROMSEL reads as an empty slot (0xFF).
+    // The other five sockets (IC35, IC44, IC57, IC62, IC68) each hold a
+    // 32K-capable chip wired to two adjacent slot numbers. On real
+    // hardware the device-size links (S9, S11, S12, S15, S18) decide
+    // whether the chip is operated as a 16K device (image aliased
+    // across both slots) or a 32K device (two distinct halves at the
+    // two slots). The emulator presents each slot as an independent
+    // 16K bank -- equivalent to the 32K-mode interpretation -- giving
+    // each user socket two distinct topology entries so callers can
+    // configure / *SRLOAD different images at each slot. The 16K-mode
+    // case is the special case where both halves happen to hold the
+    // same image.
     //
-    // All B+ sockets are ROM-only and not runtime-configurable: the
-    // motherboard does not provide sideways RAM, and the ROM contents cannot
-    // change while the machine is running.
+    // No socket is wired to slots 12 or 13 on a stock B+; reads from
+    // those return open bus.
+    //
+    // All B+ slots are ROM-only and not runtime-configurable: the
+    // motherboard does not provide sideways RAM, and the chip contents
+    // cannot change while the machine is running.
     static SlotTopology slot_topology() {
         return slot_topology(MotherboardLinks{});
     }
 
     static SlotTopology slot_topology(MotherboardLinks links) {
         SlotTopology topo;
-        topo.has_aliasing = true;  // Each socket responds to >1 slot
+        topo.has_aliasing = true;  // IC71 answers two slot numbers as one bank
         std::vector<int> ic71_slots;
         switch (links.s13) {
             case MotherboardLinks::S13Position::South:
@@ -858,12 +903,19 @@ public:
         }
         struct Entry { const char* label; std::vector<int> slots; };
         const std::vector<Entry> entries = {
-            {"IC71", ic71_slots},      // BASIC (link S13 selects pair)
-            {"IC35", {2, 3}},
-            {"IC44", {4, 5}},
-            {"IC57", {6, 7}},
-            {"IC62", {8, 9}},
-            {"IC68", {10, 11}}        // DFS
+            {"IC71",         ic71_slots}, // BASIC (link S13 selects pair, aliased)
+            // User sockets: each 32K-capable chip presented as two
+            // independent 16K slot rows.
+            {"IC35 (slot 2)", {2}},
+            {"IC35 (slot 3)", {3}},
+            {"IC44 (slot 4)", {4}},
+            {"IC44 (slot 5)", {5}},
+            {"IC57 (slot 6)", {6}},
+            {"IC57 (slot 7)", {7}},
+            {"IC62 (slot 8)", {8}},
+            {"IC62 (slot 9)", {9}},
+            {"IC68 (slot 10)", {10}},
+            {"IC68 (slot 11)", {11}}   // DFS by default
         };
         for (size_t i = 0; i < entries.size(); ++i) {
             SocketSpec spec;

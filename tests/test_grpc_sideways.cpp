@@ -757,7 +757,9 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
 
         REQUIRE(status.ok());
         CHECK(response.has_aliasing() == true);
-        REQUIRE(response.sockets_size() == 6);
+        // 1 IC71 entry (aliased BASIC pair) + 10 independent user-socket
+        // slots (IC35/44/57/62/68 split low/high) = 11.
+        REQUIRE(response.sockets_size() == 11);
         REQUIRE(response.motherboard_links_size() == 1);
         CHECK(response.motherboard_links(0).name() == "S13");
         CHECK(response.motherboard_links(0).value() == "south");
@@ -841,7 +843,8 @@ TEST_CASE("SidewaysService GetSlotStatus reports populated Model B+ ROMs",
     auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
 
     REQUIRE(status.ok());
-    REQUIRE(response.sockets_size() == 6);
+    // 1 IC71 + 10 user-socket slots (5 sockets x low/high) = 11.
+    REQUIRE(response.sockets_size() == 11);
 
     // Build a label-keyed view because iteration order is topology-defined.
     auto find_socket = [&](const std::string& label)
@@ -866,19 +869,33 @@ TEST_CASE("SidewaysService GetSlotStatus reports populated Model B+ ROMs",
         CHECK(h.copyright() == "(C)1982 Acorn");
     }
 
-    SECTION("IC68 reports the loaded DFS ROM") {
-        const auto* ic68 = find_socket("IC68");
-        REQUIRE(ic68 != nullptr);
-        CHECK(ic68->type() == beebium::SIDEWAYS_SLOT_TYPE_ROM);
-        CHECK(ic68->populated());
-        REQUIRE(ic68->has_rom_header());
-        const auto& h = ic68->rom_header();
+    SECTION("IC68 slot 11 reports the loaded DFS ROM") {
+        const auto* ic68_hi = find_socket("IC68 (slot 11)");
+        REQUIRE(ic68_hi != nullptr);
+        CHECK(ic68_hi->type() == beebium::SIDEWAYS_SLOT_TYPE_ROM);
+        CHECK(ic68_hi->populated());
+        REQUIRE(ic68_hi->has_rom_header());
+        const auto& h = ic68_hi->rom_header();
         CHECK(h.recognised());
         CHECK(h.title() == "DFS");
     }
 
-    SECTION("Empty B+ user sockets report no ROM") {
-        for (const char* label : {"IC35", "IC44", "IC57", "IC62"}) {
+    SECTION("IC68 slot 10 is empty (DFS is at slot 11, low half unloaded)") {
+        const auto* ic68_lo = find_socket("IC68 (slot 10)");
+        REQUIRE(ic68_lo != nullptr);
+        CHECK(ic68_lo->type() == beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
+        CHECK_FALSE(ic68_lo->populated());
+    }
+
+    SECTION("Empty user socket halves report no ROM") {
+        const char* empty_labels[] = {
+            "IC35 (slot 2)", "IC35 (slot 3)",
+            "IC44 (slot 4)", "IC44 (slot 5)",
+            "IC57 (slot 6)", "IC57 (slot 7)",
+            "IC62 (slot 8)", "IC62 (slot 9)",
+            "IC68 (slot 10)",
+        };
+        for (const char* label : empty_labels) {
             const auto* sock = find_socket(label);
             REQUIRE(sock != nullptr);
             INFO("socket label: " << label);
@@ -915,21 +932,27 @@ TEST_CASE("SidewaysService GetSlotStatus reports B+ 128K topology, S13=South",
     beebium::GetSlotStatusResponse response;
     auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
     REQUIRE(status.ok());
-    // Six ROM sockets + four SRAM banks = 10 entries.
-    REQUIRE(response.sockets_size() == 10);
+    // 1 IC71 (aliased) + 10 user-socket slots (5 sockets x low/high)
+    //   + 4 SRAM banks (W/X/Y/Z) = 15 entries.
+    REQUIRE(response.sockets_size() == 15);
 
-    SECTION("ROM sockets are unchanged from the 64K layout") {
+    SECTION("IC71 is aliased; user sockets are split into low/high slots") {
         const auto* ic71 = find_socket_by_label(response, "IC71");
         REQUIRE(ic71 != nullptr);
         REQUIRE(ic71->aliased_slots_size() == 2);
         CHECK(ic71->aliased_slots(0) == 14);
         CHECK(ic71->aliased_slots(1) == 15);
 
-        const auto* ic68 = find_socket_by_label(response, "IC68");
-        REQUIRE(ic68 != nullptr);
-        REQUIRE(ic68->aliased_slots_size() == 2);
-        CHECK(ic68->aliased_slots(0) == 10);
-        CHECK(ic68->aliased_slots(1) == 11);
+        // IC68 is now two distinct rows for slots 10 and 11.
+        const auto* ic68_lo = find_socket_by_label(response, "IC68 (slot 10)");
+        REQUIRE(ic68_lo != nullptr);
+        REQUIRE(ic68_lo->aliased_slots_size() == 1);
+        CHECK(ic68_lo->aliased_slots(0) == 10);
+
+        const auto* ic68_hi = find_socket_by_label(response, "IC68 (slot 11)");
+        REQUIRE(ic68_hi != nullptr);
+        REQUIRE(ic68_hi->aliased_slots_size() == 1);
+        CHECK(ic68_hi->aliased_slots(0) == 11);
     }
 
     SECTION("SRAM W is always at slot 12") {

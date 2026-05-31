@@ -86,8 +86,10 @@ TEST_CASE("ModelBHardware topology has 4 sockets with 4-way aliasing",
 TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM/RAM/empty",
           "[sideways][topology][model_b_plus]") {
     auto topo = ModelBPlusHardware::slot_topology();
-    REQUIRE(topo.has_aliasing);  // pairs share a socket
-    REQUIRE(topo.sockets.size() == 6);
+    REQUIRE(topo.has_aliasing);  // IC71's BASIC pair shares a socket
+    // 1 IC71 (aliased) + 10 independent user-socket halves
+    // (IC35/44/57/62/68 split low/high) = 11.
+    REQUIRE(topo.sockets.size() == 11);
 
     for (const auto& s : topo.sockets) {
         // Every present socket supports the ROM/RAM/empty trifecta.
@@ -416,10 +418,15 @@ TEST_CASE("Validation flags pure duplicate slot specifications",
 TEST_CASE("Validation reports multiple distinct problems in one message",
           "[sideways][validate]") {
     auto topo = ModelBPlusHardware::slot_topology();
+    // Slots 10 and 11 are independent sockets on the post-split B+
+    // model (IC68 low / IC68 high), so the only way to provoke a
+    // socket-level conflict is two --sideways arguments for the same
+    // slot. Combine that with a nonexistent-slot error to exercise the
+    // multi-problem report.
     std::vector<SidewaysConfig> configs = {
         rom_cfg(12, "x.rom"),  // nonexistent slot on the B+
-        rom_cfg(10, "a.rom"),  // IC68, aliased to slot 11...
-        rom_cfg(11, "b.rom"),  // ...with a conflicting ROM image
+        rom_cfg(10, "a.rom"),  // IC68 slot 10, requested twice...
+        rom_cfg(10, "b.rom"),  // ...with a conflicting ROM image
     };
     auto err = validate_sideways_configs(topo, configs);
     REQUIRE(err.has_value());

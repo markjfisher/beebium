@@ -153,12 +153,22 @@ public:
     // Socket IC57 (slots 6/7): User ROM
     // Socket IC44 (slots 4/5): User ROM
     // Socket IC35 (slots 2/3): User ROM
-    Rom<16384> basic_rom;          // IC71 - slots 1/15 (BASIC)
-    Rom<16384> dfs_rom;            // IC68 - slots 10/11 (DFS)
-    Rom<16384> rom_ic62;           // IC62 - slots 8/9
-    Rom<16384> rom_ic57;           // IC57 - slots 6/7
-    Rom<16384> rom_ic44;           // IC44 - slots 4/5
-    Rom<16384> rom_ic35;           // IC35 - slots 2/3
+    // IC71 stays aliased per real hardware - see ModelBPlusHardware.hpp.
+    Rom<16384> basic_rom;          // IC71 - slots 14/15 or 0/1 per S13 (aliased)
+
+    // User ROM sockets - each presented as two independent 16K banks
+    // (32K-mode interpretation). See ModelBPlusHardware.hpp for the
+    // rationale.
+    Rom<16384> rom_ic68_lo;        // IC68 - slot 10
+    Rom<16384> rom_ic68_hi;        // IC68 - slot 11 (DFS by default)
+    Rom<16384> rom_ic62_lo;        // IC62 - slot 8
+    Rom<16384> rom_ic62_hi;        // IC62 - slot 9
+    Rom<16384> rom_ic57_lo;        // IC57 - slot 6
+    Rom<16384> rom_ic57_hi;        // IC57 - slot 7
+    Rom<16384> rom_ic44_lo;        // IC44 - slot 4
+    Rom<16384> rom_ic44_hi;        // IC44 - slot 5
+    Rom<16384> rom_ic35_lo;        // IC35 - slot 2
+    Rom<16384> rom_ic35_hi;        // IC35 - slot 3
 
     // The 128K's extra 64 KiB of sideways RAM as four 16 KiB banks.
     // Per AN 030 the DFS-level labels are W=slot 12, X=slot 13, Y/Z =
@@ -201,16 +211,16 @@ public:
         make_bank<14>(basic_rom),    // IC71 - slot 14 (BASIC, S13=South default)
         make_bank<13>(sram_x),       // SRAM X - slot 13 (always RAM)
         make_bank<12>(sram_w),       // SRAM W - slot 12 (always RAM)
-        make_bank<11>(dfs_rom),      // IC68 - slot 11 (DFS high)
-        make_bank<10>(dfs_rom),      // IC68 - slot 10 (DFS low, mirrored)
-        make_bank<9>(rom_ic62),      // IC62 - slot 9 (high)
-        make_bank<8>(rom_ic62),      // IC62 - slot 8 (low, mirrored)
-        make_bank<7>(rom_ic57),      // IC57 - slot 7 (high)
-        make_bank<6>(rom_ic57),      // IC57 - slot 6 (low, mirrored)
-        make_bank<5>(rom_ic44),      // IC44 - slot 5 (high)
-        make_bank<4>(rom_ic44),      // IC44 - slot 4 (low, mirrored)
-        make_bank<3>(rom_ic35),      // IC35 - slot 3 (high)
-        make_bank<2>(rom_ic35),      // IC35 - slot 2 (low, mirrored)
+        make_bank<11>(rom_ic68_hi),  // IC68 high
+        make_bank<10>(rom_ic68_lo),  // IC68 low
+        make_bank<9>(rom_ic62_hi),   // IC62 high
+        make_bank<8>(rom_ic62_lo),   // IC62 low
+        make_bank<7>(rom_ic57_hi),   // IC57 high
+        make_bank<6>(rom_ic57_lo),   // IC57 low
+        make_bank<5>(rom_ic44_hi),   // IC44 high
+        make_bank<4>(rom_ic44_lo),   // IC44 low
+        make_bank<3>(rom_ic35_hi),   // IC35 high
+        make_bank<2>(rom_ic35_lo),   // IC35 low
         make_bank<1>(sram_z),        // SRAM Z - slot 1 (S13=South default)
         make_bank<0>(sram_y)         // SRAM Y - slot 0 (S13=South default)
     };
@@ -723,36 +733,36 @@ public:
     }
 
     void load_dfs(const uint8_t* data, size_t size) {
-        dfs_rom.load(data, size);
+        rom_ic68_hi.load(data, size);
     }
 
     // =========================================================================
     // Unified ROM Loading API
     // =========================================================================
 
-    // Load ROM data into a slot, mapping to the appropriate physical ROM device.
-    // Model B+ has 6 ROM sockets, each covering a pair of slots:
-    //   IC71 (slots 0,1,14,15): BASIC/language ROM
-    //   IC68 (slots 10,11): DFS ROM
-    //   IC62 (slots 8,9): User ROM
-    //   IC57 (slots 6,7): User ROM
-    //   IC44 (slots 4,5): User ROM
-    //   IC35 (slots 2,3): User ROM
-    // image_name is accepted for API uniformity with Model B / ROM/RAM board
-    // but ignored: the B+ memory model has no per-socket image_name slot.
+    // Mirror of ModelBPlusHardware::load_sideways_rom - see that file
+    // for the slot -> physical bank mapping. Slots 12 and 13 are
+    // sideways RAM on the 128K; load_sideways_rom is the ROM loading
+    // path so they're not handled here (use load_sideways_data instead
+    // to pre-fill those, e.g. from a saved RAM image).
     void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
                           std::string_view /*image_name*/ = "") {
-        // All B+ ROM sockets are 16KB
         constexpr size_t rom_size = 16384;
         size_t copy_len = std::min(len, rom_size);
         switch (slot) {
-            case 0: case 1: case 14: case 15: std::copy_n(data, copy_len, basic_rom.data()); break;
-            case 10: case 11: std::copy_n(data, copy_len, dfs_rom.data()); break;
-            case 8: case 9: std::copy_n(data, copy_len, rom_ic62.data()); break;
-            case 6: case 7: std::copy_n(data, copy_len, rom_ic57.data()); break;
-            case 4: case 5: std::copy_n(data, copy_len, rom_ic44.data()); break;
-            case 2: case 3: std::copy_n(data, copy_len, rom_ic35.data()); break;
-            default: break;  // Invalid slot for B+
+            case 0: case 1: case 14: case 15:
+                std::copy_n(data, copy_len, basic_rom.data()); break;
+            case 11: std::copy_n(data, copy_len, rom_ic68_hi.data()); break;
+            case 10: std::copy_n(data, copy_len, rom_ic68_lo.data()); break;
+            case  9: std::copy_n(data, copy_len, rom_ic62_hi.data()); break;
+            case  8: std::copy_n(data, copy_len, rom_ic62_lo.data()); break;
+            case  7: std::copy_n(data, copy_len, rom_ic57_hi.data()); break;
+            case  6: std::copy_n(data, copy_len, rom_ic57_lo.data()); break;
+            case  5: std::copy_n(data, copy_len, rom_ic44_hi.data()); break;
+            case  4: std::copy_n(data, copy_len, rom_ic44_lo.data()); break;
+            case  3: std::copy_n(data, copy_len, rom_ic35_hi.data()); break;
+            case  2: std::copy_n(data, copy_len, rom_ic35_lo.data()); break;
+            default: break;  // slots 12, 13 are RAM (see load_sideways_data)
         }
     }
 
@@ -924,12 +934,19 @@ public:
             bool ram_only = false;  // when true, this entry is a 128K RAM bank
         };
         const std::vector<Entry> entries = {
-            {"IC71", ic71_slots, false},        // BASIC (link S13 selects pair)
-            {"IC35", {2, 3}, false},
-            {"IC44", {4, 5}, false},
-            {"IC57", {6, 7}, false},
-            {"IC62", {8, 9}, false},
-            {"IC68", {10, 11}, false},          // DFS
+            {"IC71",          ic71_slots, false}, // BASIC (S13-selected pair, aliased)
+            // User sockets: each 32K-capable chip presented as two
+            // independent 16K slot rows. See ModelBPlusHardware.hpp.
+            {"IC35 (slot 2)",  {2}, false},
+            {"IC35 (slot 3)",  {3}, false},
+            {"IC44 (slot 4)",  {4}, false},
+            {"IC44 (slot 5)",  {5}, false},
+            {"IC57 (slot 6)",  {6}, false},
+            {"IC57 (slot 7)",  {7}, false},
+            {"IC62 (slot 8)",  {8}, false},
+            {"IC62 (slot 9)",  {9}, false},
+            {"IC68 (slot 10)", {10}, false},
+            {"IC68 (slot 11)", {11}, false},     // DFS by default
             {"SRAM W", {12}, true},             // always RAM at slot 12
             {"SRAM X", {13}, true},             // always RAM at slot 13
             {"SRAM Y", sram_y_slots, true},     // RAM opposite IC71

@@ -306,6 +306,8 @@ struct ConnectWindowContent: View {
             return "Model B"
         case "model-b-plus":
             return "Model B+"
+        case "model-b-plus-128k":
+            return "Model B+ 128K"
         case "model-b-romram":
             return "Model B (ROM/RAM)"
         case "master-128":
