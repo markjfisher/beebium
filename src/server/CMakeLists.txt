@@ -64,6 +64,7 @@ endfunction()
 # Model-specific executables
 add_beebium_server(beebium-model-b main_model_b.cpp)
 add_beebium_server(beebium-model-b-plus main_model_b_plus.cpp)
+add_beebium_server(beebium-model-b-plus-128k main_model_b_plus_128k.cpp)
 add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 
 # System presets are generated below (after the ROM copy) via add_system_preset,
@@ -77,6 +78,7 @@ add_beebium_server(beebium-model-b-romram main_model_b_romram.cpp)
 set(BEEBIUM_SERVERS_DEPS
     beebium-model-b
     beebium-model-b-plus
+    beebium-model-b-plus-128k
     beebium-model-b-romram
 )
 if(BEEBIUM_BUILD_SERVICE)
@@ -116,9 +118,15 @@ add_system_preset(beebium-model-b-romram "model-b-romram-disc"
     "BBC Model B with ROM/RAM Board (Disc)" "1984"
     --fdc acorn-1770 --sideways 14:rom:acorn-dfs_2_26.rom)
 add_system_preset(beebium-model-b-plus "model-b-plus" "BBC Model B+ 64K" "1985-06")
+add_system_preset(beebium-model-b-plus-128k "model-b-plus-128k"
+    "BBC Model B+ 128K" "1985-06")
 
 # Install rules
-install(TARGETS beebium-model-b beebium-model-b-plus beebium-model-b-romram
+install(TARGETS
+        beebium-model-b
+        beebium-model-b-plus
+        beebium-model-b-plus-128k
+        beebium-model-b-romram
     RUNTIME DESTINATION bin
 )
 install(DIRECTORY ${BEEBIUM_ROM_DIR}/

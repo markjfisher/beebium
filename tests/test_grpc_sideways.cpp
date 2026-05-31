@@ -114,9 +114,49 @@ private:
     std::unique_ptr<beebium::DebuggerControl::Stub> debugger_stub_;
 };
 
+// Fixture for Model B+ 128K with optional motherboard link override.
+// Like the 64K but with four integral sideways RAM banks (W=slot 12,
+// X=slot 13, Y/Z opposite IC71 per S13).
+class ModelBPlus128KSidewaysFixture {
+public:
+    explicit ModelBPlus128KSidewaysFixture(
+        beebium::ModelBPlus128KHardware::MotherboardLinks links =
+            beebium::ModelBPlus128KHardware::MotherboardLinks{}) {
+#ifdef BEEBIUM_ROM_DIR
+        auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_2_0.rom");
+        auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
+        auto dfs = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-dfs_2_26.rom");
+        std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
+        machine_.state().memory.load_sideways_rom(15, basic.data(), basic.size());
+        machine_.state().memory.load_sideways_rom(11, dfs.data(), dfs.size());
+#endif
+        machine_.reset();
+        machine_.state().memory.apply_motherboard_links(links);
+        server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus128K>>(
+            machine_, "127.0.0.1", 0);
+        server_->set_motherboard_links(links);
+        server_->start({}, {});
+
+        std::string address = "127.0.0.1:" + std::to_string(server_->port());
+        channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
+        sideways_stub_ = beebium::SidewaysService::NewStub(channel_);
+    }
+
+    ~ModelBPlus128KSidewaysFixture() { server_->stop(); }
+
+    beebium::ModelBPlus128K& machine() { return machine_; }
+    beebium::SidewaysService::Stub& sideways() { return *sideways_stub_; }
+
+private:
+    beebium::ModelBPlus128K machine_;
+    std::unique_ptr<beebium::service::Server<beebium::ModelBPlus128K>> server_;
+    std::shared_ptr<grpc::Channel> channel_;
+    std::unique_ptr<beebium::SidewaysService::Stub> sideways_stub_;
+};
+
 // Fixture for Model B+ with optional motherboard link override. The B+
-// has S13, which reroutes IC71 (BASIC) between slots 14/15 (West) and
-// 0/1 (East).
+// has S13, which reroutes IC71 (BASIC) between slots 14/15 (South) and
+// 0/1 (North).
 class ModelBPlusSidewaysFixture {
 public:
     explicit ModelBPlusSidewaysFixture(
@@ -847,4 +887,161 @@ TEST_CASE("SidewaysService GetSlotStatus reports populated Model B+ ROMs",
             CHECK_FALSE(sock->has_rom_header());
         }
     }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Model B+ 128K Tests - integral sideways RAM at W/X/Y/Z per AN 030
+//////////////////////////////////////////////////////////////////////////////
+
+namespace {
+const beebium::SocketStatus* find_socket_by_label(
+    const beebium::GetSlotStatusResponse& response, const std::string& label)
+{
+    for (int i = 0; i < response.sockets_size(); ++i) {
+        if (response.sockets(i).socket_label() == label) {
+            return &response.sockets(i);
+        }
+    }
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("SidewaysService GetSlotStatus reports B+ 128K topology, S13=South",
+          "[grpc][sideways][model_b_plus_128k]") {
+    ModelBPlus128KSidewaysFixture fixture;  // default S13=South
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+    REQUIRE(status.ok());
+    // Six ROM sockets + four SRAM banks = 10 entries.
+    REQUIRE(response.sockets_size() == 10);
+
+    SECTION("ROM sockets are unchanged from the 64K layout") {
+        const auto* ic71 = find_socket_by_label(response, "IC71");
+        REQUIRE(ic71 != nullptr);
+        REQUIRE(ic71->aliased_slots_size() == 2);
+        CHECK(ic71->aliased_slots(0) == 14);
+        CHECK(ic71->aliased_slots(1) == 15);
+
+        const auto* ic68 = find_socket_by_label(response, "IC68");
+        REQUIRE(ic68 != nullptr);
+        REQUIRE(ic68->aliased_slots_size() == 2);
+        CHECK(ic68->aliased_slots(0) == 10);
+        CHECK(ic68->aliased_slots(1) == 11);
+    }
+
+    SECTION("SRAM W is always at slot 12") {
+        const auto* w = find_socket_by_label(response, "SRAM W");
+        REQUIRE(w != nullptr);
+        REQUIRE(w->aliased_slots_size() == 1);
+        CHECK(w->aliased_slots(0) == 12);
+        CHECK(w->type() == beebium::SIDEWAYS_SLOT_TYPE_RAM);
+        const auto& caps = w->capabilities();
+        CHECK_FALSE(caps.supports_rom());
+        CHECK(caps.supports_ram());
+        CHECK_FALSE(caps.supports_empty());
+        CHECK_FALSE(caps.runtime_configurable());
+    }
+
+    SECTION("SRAM X is always at slot 13") {
+        const auto* x = find_socket_by_label(response, "SRAM X");
+        REQUIRE(x != nullptr);
+        REQUIRE(x->aliased_slots_size() == 1);
+        CHECK(x->aliased_slots(0) == 13);
+        CHECK(x->type() == beebium::SIDEWAYS_SLOT_TYPE_RAM);
+    }
+
+    SECTION("SRAM Y is at slot 0 when S13=South") {
+        const auto* y = find_socket_by_label(response, "SRAM Y");
+        REQUIRE(y != nullptr);
+        REQUIRE(y->aliased_slots_size() == 1);
+        CHECK(y->aliased_slots(0) == 0);
+        CHECK(y->type() == beebium::SIDEWAYS_SLOT_TYPE_RAM);
+    }
+
+    SECTION("SRAM Z is at slot 1 when S13=South") {
+        const auto* z = find_socket_by_label(response, "SRAM Z");
+        REQUIRE(z != nullptr);
+        REQUIRE(z->aliased_slots_size() == 1);
+        CHECK(z->aliased_slots(0) == 1);
+        CHECK(z->type() == beebium::SIDEWAYS_SLOT_TYPE_RAM);
+    }
+}
+
+TEST_CASE("SidewaysService GetSlotStatus reports B+ 128K topology, S13=North",
+          "[grpc][sideways][model_b_plus_128k]") {
+    beebium::ModelBPlus128KHardware::MotherboardLinks links;
+    links.s13 = beebium::ModelBPlus128KHardware
+                    ::MotherboardLinks::S13Position::North;
+    ModelBPlus128KSidewaysFixture fixture{links};
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+    REQUIRE(status.ok());
+
+    SECTION("IC71 (BASIC) moves to slots 0, 1") {
+        const auto* ic71 = find_socket_by_label(response, "IC71");
+        REQUIRE(ic71 != nullptr);
+        REQUIRE(ic71->aliased_slots_size() == 2);
+        CHECK(ic71->aliased_slots(0) == 0);
+        CHECK(ic71->aliased_slots(1) == 1);
+    }
+
+    SECTION("SRAM Y/Z move opposite IC71 to slots 14, 15") {
+        const auto* y = find_socket_by_label(response, "SRAM Y");
+        REQUIRE(y != nullptr);
+        REQUIRE(y->aliased_slots_size() == 1);
+        CHECK(y->aliased_slots(0) == 14);
+
+        const auto* z = find_socket_by_label(response, "SRAM Z");
+        REQUIRE(z != nullptr);
+        REQUIRE(z->aliased_slots_size() == 1);
+        CHECK(z->aliased_slots(0) == 15);
+    }
+
+    SECTION("SRAM W/X stay at slots 12, 13 regardless of S13") {
+        const auto* w = find_socket_by_label(response, "SRAM W");
+        REQUIRE(w != nullptr);
+        CHECK(w->aliased_slots(0) == 12);
+        const auto* x = find_socket_by_label(response, "SRAM X");
+        REQUIRE(x != nullptr);
+        CHECK(x->aliased_slots(0) == 13);
+    }
+}
+
+TEST_CASE("B+ 128K SRAM banks accept and return bytes (smoke test)",
+          "[grpc][sideways][model_b_plus_128k]") {
+    ModelBPlus128KSidewaysFixture fixture;  // default S13=South
+
+    // Write a sentinel byte to each RAM bank via the CPU's bank-write
+    // path, then read it back through ReadSlotData. This proves the
+    // four banks are wired to the right slots and are read/writable.
+    auto& memory = fixture.machine().state().memory;
+    memory.sideways.write_bank(12, 0x0000, 0xAA);  // W
+    memory.sideways.write_bank(13, 0x1234, 0xBB);  // X
+    memory.sideways.write_bank(0,  0x2345, 0xCC);  // Y
+    memory.sideways.write_bank(1,  0x3456, 0xDD);  // Z
+
+    auto read_byte = [&](uint8_t slot, uint16_t offset) -> uint8_t {
+        grpc::ClientContext context;
+        beebium::ReadSlotDataRequest request;
+        beebium::ReadSlotDataResponse response;
+        request.set_slot(slot);
+        request.set_offset(offset);
+        request.set_length(1);
+        auto status = fixture.sideways().ReadSlotData(&context, request, &response);
+        REQUIRE(status.ok());
+        REQUIRE(response.success());
+        REQUIRE(response.data().size() == 1);
+        return static_cast<uint8_t>(response.data()[0]);
+    };
+
+    CHECK(read_byte(12, 0x0000) == 0xAA);
+    CHECK(read_byte(13, 0x1234) == 0xBB);
+    CHECK(read_byte(0,  0x2345) == 0xCC);
+    CHECK(read_byte(1,  0x3456) == 0xDD);
 }

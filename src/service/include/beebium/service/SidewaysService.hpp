@@ -215,17 +215,33 @@ public:
                     socket_status->set_populated(slot.is_populated());
                     socket_status->set_image_name(std::string(slot.image_name()));
                 } else {
-                    // Model B+ or similar BankedMemory<...> wiring: no
-                    // per-socket runtime accessors. A recognised header
-                    // is the cleanest signal that a ROM image was loaded;
-                    // an unrecognised peek means the socket is empty or
-                    // holds a non-standard image (rare on the B+, which
-                    // ships with recognised Acorn ROMs).
-                    socket_status->set_type(
-                        parsed.recognised
-                            ? beebium::SIDEWAYS_SLOT_TYPE_ROM
-                            : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
-                    socket_status->set_populated(parsed.recognised);
+                    // Model B+ or B+ 128K BankedMemory<...> wiring: no
+                    // per-socket runtime accessors. Two signals drive the
+                    // reported type:
+                    //
+                    //   1. If the topology marks this socket as fixed RAM
+                    //      (RAM-only, no ROM/empty), it's an integral
+                    //      sideways RAM bank - report SLOT_TYPE_RAM. The
+                    //      B+ 128K's SRAM W/X/Y/Z fit this.
+                    //
+                    //   2. Otherwise the slot is a ROM socket. A
+                    //      recognised header means a ROM image is loaded
+                    //      (SLOT_TYPE_ROM, populated); an unrecognised
+                    //      peek means it's empty/open-bus.
+                    const bool is_fixed_ram =
+                        spec.supports_ram && !spec.supports_rom
+                        && !spec.supports_empty;
+                    if (is_fixed_ram) {
+                        socket_status->set_type(
+                            beebium::SIDEWAYS_SLOT_TYPE_RAM);
+                        socket_status->set_populated(true);
+                    } else {
+                        socket_status->set_type(
+                            parsed.recognised
+                                ? beebium::SIDEWAYS_SLOT_TYPE_ROM
+                                : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
+                        socket_status->set_populated(parsed.recognised);
+                    }
                     socket_status->set_image_name("");
                 }
 

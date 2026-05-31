@@ -125,6 +125,29 @@ public:
         }
     }
 
+    // Late-bind a bank to a device at run-time. Used by hardware policies
+    // that need link-driven binding choices for slots that the template
+    // pack can't resolve at construction (e.g. Model B+ 128K, where the
+    // pair opposite IC71 hosts sideways RAM and the pair under IC71 hosts
+    // BASIC - which pair is which is decided by link S13 at startup).
+    //
+    // Like unbind_bank, this is intended to be called once during start-
+    // up; the typical pattern is to construct BankedMemory with the
+    // bindings that are fixed regardless of link state, then run
+    // rebind_bank() for each link-dependent slot before the BBC starts
+    // executing.
+    template<typename DeviceType>
+    void rebind_bank(uint8_t bank, DeviceType& device) {
+        if (bank >= 16) return;
+        device_ptrs_[bank] = &device;
+        read_table_[bank] = [](const void* ptr, uint16_t offset) -> uint8_t {
+            return static_cast<const DeviceType*>(ptr)->read(offset);
+        };
+        write_table_[bank] = [](void* ptr, uint16_t offset, uint8_t value) {
+            static_cast<DeviceType*>(ptr)->write(offset, value);
+        };
+    }
+
     // Direct bank access for debugger - side-effect free read
     uint8_t peek_bank(uint8_t bank, uint16_t offset) const {
         if (bank >= 16 || device_ptrs_[bank] == nullptr) return 0xFF;

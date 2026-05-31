@@ -17,6 +17,7 @@
 #include "CpuPolicy.hpp"
 #include "ModelBHardware.hpp"
 #include "ModelBPlusHardware.hpp"
+#include "ModelBPlus128KHardware.hpp"
 #include "ModelBRomRamBoardHardware.hpp"
 
 namespace beebium {
@@ -34,6 +35,10 @@ using ModelBRomRamBoard = Machine<Nmos6502, ModelBRomRamBoardHardware>;
 
 // BBC Model B+ 64K: NMOS 6502 + Model B+ hardware (64KB RAM with shadow/ANDY)
 using ModelBPlus = Machine<Nmos6502, ModelBPlusHardware>;
+
+// BBC Model B+ 128K: as Model B+ 64K plus four 16 KiB banks of integral
+// sideways RAM (AN 030 W/X/Y/Z; W=slot 12, X=slot 13, Y/Z opposite IC71).
+using ModelBPlus128K = Machine<Nmos6502, ModelBPlus128KHardware>;
 
 } // namespace beebium
 

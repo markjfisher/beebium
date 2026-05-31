@@ -118,24 +118,24 @@ TEST_CASE("Validation against Model B+ accepts sideways RAM (third-party module)
     REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
 }
 
-TEST_CASE("Model B+ S13 link in default West position binds IC71 to slots 14, 15",
+TEST_CASE("Model B+ S13 link in default South position binds IC71 to slots 14, 15",
           "[sideways][topology][model_b_plus][links]") {
-    // Default-constructed link state == S13 West (factory position).
+    // Default-constructed link state == S13 South (factory position).
     auto topo = ModelBPlusHardware::slot_topology();
     auto* ic71 = topo.find_socket_for_slot(15);
     REQUIRE(ic71 != nullptr);
     REQUIRE(ic71->label == "IC71");
     REQUIRE(ic71->slots == std::vector<int>{14, 15});
 
-    // With S13 West, slots 0 and 1 have no socket assigned.
+    // With S13 South, slots 0 and 1 have no socket assigned.
     REQUIRE_FALSE(topo.slot_exists(0));
     REQUIRE_FALSE(topo.slot_exists(1));
 }
 
-TEST_CASE("Model B+ S13 link in East position rebinds IC71 to slots 0, 1",
+TEST_CASE("Model B+ S13 link in North position rebinds IC71 to slots 0, 1",
           "[sideways][topology][model_b_plus][links]") {
     ModelBPlusHardware::MotherboardLinks links;
-    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::East;
+    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::North;
 
     auto topo = ModelBPlusHardware::slot_topology(links);
     auto* ic71 = topo.find_socket_for_slot(0);
@@ -143,7 +143,7 @@ TEST_CASE("Model B+ S13 link in East position rebinds IC71 to slots 0, 1",
     REQUIRE(ic71->label == "IC71");
     REQUIRE(ic71->slots == std::vector<int>{0, 1});
 
-    // With S13 East, slots 14 and 15 have no socket assigned.
+    // With S13 North, slots 14 and 15 have no socket assigned.
     REQUIRE_FALSE(topo.slot_exists(14));
     REQUIRE_FALSE(topo.slot_exists(15));
 }
@@ -151,19 +151,19 @@ TEST_CASE("Model B+ S13 link in East position rebinds IC71 to slots 0, 1",
 TEST_CASE("Model B+ MotherboardLinks::parse accepts case-insensitive S13 values",
           "[sideways][topology][model_b_plus][links]") {
     ModelBPlusHardware::MotherboardLinks links;
-    REQUIRE_FALSE(links.parse("s13", "east").has_value());
-    REQUIRE(links.s13 == ModelBPlusHardware::MotherboardLinks::S13Position::East);
-    REQUIRE_FALSE(links.parse("S13", "WEST").has_value());
-    REQUIRE(links.s13 == ModelBPlusHardware::MotherboardLinks::S13Position::West);
+    REQUIRE_FALSE(links.parse("s13", "north").has_value());
+    REQUIRE(links.s13 == ModelBPlusHardware::MotherboardLinks::S13Position::North);
+    REQUIRE_FALSE(links.parse("S13", "SOUTH").has_value());
+    REQUIRE(links.s13 == ModelBPlusHardware::MotherboardLinks::S13Position::South);
 }
 
 TEST_CASE("Model B+ MotherboardLinks::parse rejects unknown link or value",
           "[sideways][topology][model_b_plus][links]") {
     ModelBPlusHardware::MotherboardLinks links;
-    auto err1 = links.parse("s13", "north");
+    auto err1 = links.parse("s13", "east");
     REQUIRE(err1.has_value());
     REQUIRE_THAT(*err1, ContainsSubstring("S13"));
-    REQUIRE_THAT(*err1, ContainsSubstring("west, east"));
+    REQUIRE_THAT(*err1, ContainsSubstring("south, north"));
 
     auto err2 = links.parse("s99", "anything");
     REQUIRE(err2.has_value());
@@ -173,29 +173,29 @@ TEST_CASE("Model B+ MotherboardLinks::parse rejects unknown link or value",
 TEST_CASE("Model B has no configurable motherboard slot-mapping links",
           "[sideways][topology][model_b][links]") {
     ModelBHardware::MotherboardLinks links;
-    auto err = links.parse("s13", "east");
+    auto err = links.parse("s13", "south");
     REQUIRE(err.has_value());
     REQUIRE_THAT(*err, ContainsSubstring("no configurable slot-mapping links"));
 }
 
-TEST_CASE("Validation against Model B+ with S13 West rejects --sideways 0:rom",
+TEST_CASE("Validation against Model B+ with S13 South rejects --sideways 0:rom",
           "[sideways][validate][model_b_plus][links]") {
-    auto topo = ModelBPlusHardware::slot_topology();  // S13 = West (default)
+    auto topo = ModelBPlusHardware::slot_topology();  // S13 = South (default)
     std::vector<SidewaysConfig> configs = {
-        rom_cfg(0, "basic.rom"),  // slot 0 unwired with S13=West
+        rom_cfg(0, "basic.rom"),  // slot 0 unwired with S13=South
     };
     auto err = validate_sideways_configs(topo, configs);
     REQUIRE(err.has_value());
     REQUIRE_THAT(*err, ContainsSubstring("slot 0 does not exist"));
 }
 
-TEST_CASE("Validation against Model B+ with S13 East accepts --sideways 0:rom",
+TEST_CASE("Validation against Model B+ with S13 North accepts --sideways 0:rom",
           "[sideways][validate][model_b_plus][links]") {
     ModelBPlusHardware::MotherboardLinks links;
-    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::East;
+    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::North;
     auto topo = ModelBPlusHardware::slot_topology(links);
     std::vector<SidewaysConfig> configs = {
-        rom_cfg(0, "basic.rom"),  // slot 0 IS wired with S13=East
+        rom_cfg(0, "basic.rom"),  // slot 0 IS wired with S13=North
     };
     REQUIRE_FALSE(validate_sideways_configs(topo, configs).has_value());
 }
@@ -232,14 +232,14 @@ TEST_CASE("Model B+ S13 West unwires slots 0 and 1 in the memory dispatch",
     REQUIRE(hw.sideways.is_bank_populated(15));
 }
 
-TEST_CASE("Model B+ S13 East unwires slots 14 and 15 in the memory dispatch",
+TEST_CASE("Model B+ S13 North unwires slots 14 and 15 in the memory dispatch",
           "[sideways][model_b_plus][links][memory]") {
     ModelBPlusHardware hw;
     hw.basic_rom.data()[0x0000] = 0x55;
     hw.basic_rom.data()[0x0001] = 0xAA;
 
     ModelBPlusHardware::MotherboardLinks links;
-    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::East;
+    links.s13 = ModelBPlusHardware::MotherboardLinks::S13Position::North;
     hw.apply_motherboard_links(links);
 
     // Slots 0 and 1 are now the active pair.
