@@ -28,18 +28,24 @@
 
 namespace beebium::service {
 
-// Concept to detect if memory has aliased sideways (Model B)
+// Concept to detect if memory has aliased sideways with per-socket runtime
+// accessors (Model B's AliasedBankedMemory). Requires both the aliasing
+// trait and a socket() method - so a B+ BankedMemory<...> with aliasing
+// but no socket() accessor does NOT match.
 template<typename T>
-concept HasAliasedSideways = requires {
+concept HasAliasedSideways = requires(T t) {
     { T::SidewaysType::has_aliasing } -> std::convertible_to<bool>;
     requires T::SidewaysType::has_aliasing == true;
+    { t.sideways.socket(uint8_t{0}) };
 };
 
-// Concept to detect if memory has configurable sideways (ROM/RAM board)
+// Concept to detect if memory has configurable sideways with per-slot
+// runtime accessors (ROM/RAM board's ConfigurableBankedMemory).
 template<typename T>
-concept HasConfigurableSideways = requires {
+concept HasConfigurableSideways = requires(T t) {
     { T::SidewaysType::has_aliasing } -> std::convertible_to<bool>;
     requires T::SidewaysType::has_aliasing == false;
+    { t.sideways.slot(uint8_t{0}) };
 };
 
 // Concept to detect if memory has any type of configurable sideways
@@ -154,9 +160,30 @@ public:
                 fill_capabilities(
                     socket_status->mutable_capabilities(), spec);
 
+                // Peek the slot's 16 KiB and run the standard
+                // sideways-ROM-header parser. An empty socket or a
+                // non-standard image produces recognised=false. The parse
+                // result drives both rom_header and (in the fallback
+                // branch below) type/populated for machines that don't
+                // expose per-socket runtime accessors.
+                beebium::SidewaysRomHeader parsed;
+                if constexpr (HasSideways<Memory>) {
+                    if (!spec.slots.empty()) {
+                        auto& sw = machine_.state().memory.sideways;
+                        const auto probe = static_cast<uint8_t>(spec.slots[0]);
+                        std::vector<uint8_t> bytes(16384);
+                        for (uint16_t i = 0; i < 16384; ++i) {
+                            bytes[i] = sw.peek_bank(probe, i);
+                        }
+                        parsed = beebium::parse_sideways_rom_header(bytes);
+                    }
+                }
+
                 // Runtime fields: read from the live device when the device
-                // exposes per-socket / per-slot accessors. Otherwise fall
-                // back to topology defaults.
+                // exposes per-socket / per-slot accessors. Otherwise derive
+                // type/populated from the parsed header - if the parser
+                // recognised a ROM signature there are bytes there, if not
+                // the slot reads as open bus (empty).
                 if constexpr (HasAliasedSideways<Memory>) {
                     auto& sideways = machine_.state().memory.sideways;
                     const auto& slot = sideways.socket(
@@ -172,44 +199,30 @@ public:
                     socket_status->set_populated(slot.is_populated());
                     socket_status->set_image_name(std::string(slot.image_name()));
                 } else {
-                    // Model B+ or similar: no per-socket runtime accessors
-                    // on the device. Report ROM as the design-time type for
-                    // ROM-only sockets so clients see something sensible.
+                    // Model B+ or similar BankedMemory<...> wiring: no
+                    // per-socket runtime accessors. A recognised header
+                    // is the cleanest signal that a ROM image was loaded;
+                    // an unrecognised peek means the socket is empty or
+                    // holds a non-standard image (rare on the B+, which
+                    // ships with recognised Acorn ROMs).
                     socket_status->set_type(
-                        spec.supports_rom && !spec.supports_ram
+                        parsed.recognised
                             ? beebium::SIDEWAYS_SLOT_TYPE_ROM
                             : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
-                    socket_status->set_populated(false);
+                    socket_status->set_populated(parsed.recognised);
                     socket_status->set_image_name("");
                 }
 
-                // Parsed ROM header for whatever bytes are currently in this
-                // socket. Peek the 16 KiB block from a representative slot and
-                // run the standard sideways-ROM-header parser; an empty socket
-                // or non-standard image produces recognised=false (we leave
-                // rom_header unset). HasSideways gates this so a machine
-                // without a sideways memory device compiles cleanly.
-                if constexpr (HasSideways<Memory>) {
-                    if (!spec.slots.empty()) {
-                        auto& sw = machine_.state().memory.sideways;
-                        const auto probe = static_cast<uint8_t>(spec.slots[0]);
-                        std::vector<uint8_t> bytes(16384);
-                        for (uint16_t i = 0; i < 16384; ++i) {
-                            bytes[i] = sw.peek_bank(probe, i);
-                        }
-                        auto header = beebium::parse_sideways_rom_header(bytes);
-                        if (header.recognised) {
-                            auto* h = socket_status->mutable_rom_header();
-                            h->set_recognised(true);
-                            h->set_title(header.title);
-                            h->set_version(header.version);
-                            h->set_copyright(header.copyright);
-                            h->set_contains_romfs(header.contains_romfs);
-                            if (header.has_language_entry) h->add_kinds("language");
-                            if (header.has_service_entry) h->add_kinds("service");
-                            if (header.contains_romfs) h->add_kinds("romfs");
-                        }
-                    }
+                if (parsed.recognised) {
+                    auto* h = socket_status->mutable_rom_header();
+                    h->set_recognised(true);
+                    h->set_title(parsed.title);
+                    h->set_version(parsed.version);
+                    h->set_copyright(parsed.copyright);
+                    h->set_contains_romfs(parsed.contains_romfs);
+                    if (parsed.has_language_entry) h->add_kinds("language");
+                    if (parsed.has_service_entry) h->add_kinds("service");
+                    if (parsed.contains_romfs) h->add_kinds("romfs");
                 }
             }
             return grpc::Status::OK;
@@ -287,10 +300,13 @@ public:
             }
             response->set_actual_socket(actual_socket);
 
-            // Configure the slot type
+            // Configure the slot type. The runtime_configurable check above
+            // returns an error for machines whose sockets don't support
+            // runtime reconfiguration (Model B, Model B+), so only the two
+            // configurable-memory branches need to compile here.
             if constexpr (HasAliasedSideways<Memory>) {
                 sideways.configure_socket(actual_socket, new_type);
-            } else {
+            } else if constexpr (HasConfigurableSideways<Memory>) {
                 sideways.configure_slot(slot, new_type);
             }
 
@@ -332,7 +348,7 @@ public:
                 if constexpr (HasAliasedSideways<Memory>) {
                     sideways.load_rom_to_socket(actual_socket, data.data(), data.size());
                     sideways.set_socket_image_name(actual_socket, filepath);
-                } else {
+                } else if constexpr (HasConfigurableSideways<Memory>) {
                     sideways.load_rom(slot, data.data(), data.size());
                     sideways.set_slot_image_name(slot, filepath);
                 }
@@ -352,7 +368,7 @@ public:
                 if constexpr (HasAliasedSideways<Memory>) {
                     sideways.load_rom_to_socket(actual_socket,
                         reinterpret_cast<const uint8_t*>(data.data()), data.size());
-                } else {
+                } else if constexpr (HasConfigurableSideways<Memory>) {
                     sideways.load_rom(slot,
                         reinterpret_cast<const uint8_t*>(data.data()), data.size());
                 }
@@ -415,7 +431,14 @@ public:
 
             response->set_success(true);
             response->set_data(std::move(data));
-            response->set_type(slot_type_to_proto(sideways.bank_type(slot)));
+            if constexpr (HasAliasedSideways<Memory>
+                          || HasConfigurableSideways<Memory>) {
+                response->set_type(slot_type_to_proto(sideways.bank_type(slot)));
+            } else {
+                // BankedMemory<...> (Model B+): every wired slot holds a ROM,
+                // no runtime configurability.
+                response->set_type(beebium::SIDEWAYS_SLOT_TYPE_ROM);
+            }
 
             return grpc::Status::OK;
         }

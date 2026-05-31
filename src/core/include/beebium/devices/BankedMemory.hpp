@@ -103,6 +103,13 @@ public:
         return bank < 16 && device_ptrs_[bank] != nullptr;
     }
 
+    // Trait used by SidewaysService to detect that this device exposes
+    // peek_bank() and the rest of the BankedMemory interface. B+ wiring
+    // does alias ROM sockets to a pair of logical slots (IC71 -> 14/15 or
+    // 0/1, IC68 -> 10/11, etc.) so this is true; the value is otherwise
+    // unused by gRPC code on machines that pick this device.
+    static constexpr bool has_aliasing = true;
+
     // Drop a bank's binding so it behaves as an empty slot (reads return
     // 0xFF, writes are ignored). Used by hardware policies whose physical
     // wiring depends on motherboard link state -- e.g. on the Model B+

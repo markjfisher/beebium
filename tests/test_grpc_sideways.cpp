@@ -122,6 +122,17 @@ public:
     explicit ModelBPlusSidewaysFixture(
         beebium::ModelBPlusHardware::MotherboardLinks links =
             beebium::ModelBPlusHardware::MotherboardLinks{}) {
+#ifdef BEEBIUM_ROM_DIR
+        // A stock Model B+ ships with integral BASIC (IC71) and DFS (IC68);
+        // the preset loads those at boot. The fixture mirrors that so that
+        // GetSlotStatus has something realistic to report.
+        auto mos = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-mos_1_20.rom");
+        auto basic = load_rom(std::string(BEEBIUM_ROM_DIR) + "/bbc-basic_2.rom");
+        auto dfs = load_rom(std::string(BEEBIUM_ROM_DIR) + "/acorn-dfs_2_26.rom");
+        std::copy(mos.begin(), mos.end(), machine_.state().memory.mos_rom.data());
+        machine_.state().memory.load_sideways_rom(15, basic.data(), basic.size());
+        machine_.state().memory.load_sideways_rom(11, dfs.data(), dfs.size());
+#endif
         machine_.reset();
         // Apply the link state to the memory wiring so that, at the
         // dispatch level, IC71 only responds at the slots S13 selected.
@@ -143,6 +154,7 @@ public:
 
     ~ModelBPlusSidewaysFixture() { server_->stop(); }
 
+    beebium::ModelBPlus& machine() { return machine_; }
     beebium::SidewaysService::Stub& sideways() { return *sideways_stub_; }
 
 private:
@@ -772,5 +784,66 @@ TEST_CASE("SidewaysService GetSlotStatus reports ROM/RAM board socket capabiliti
         CHECK(caps.supports_ram());
         CHECK(caps.supports_empty());
         CHECK(caps.runtime_configurable());
+    }
+}
+
+// Regression: the sidebar showed every Model B+ socket as empty even when
+// BASIC and DFS were loaded (the integral B+ configuration). GetSlotStatus
+// must report the loaded ROMs with their parsed headers.
+TEST_CASE("SidewaysService GetSlotStatus reports populated Model B+ ROMs",
+          "[grpc][sideways][model_b_plus][rom_header]") {
+    ModelBPlusSidewaysFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::GetSlotStatusRequest request;
+    beebium::GetSlotStatusResponse response;
+    auto status = fixture.sideways().GetSlotStatus(&context, request, &response);
+
+    REQUIRE(status.ok());
+    REQUIRE(response.sockets_size() == 6);
+
+    // Build a label-keyed view because iteration order is topology-defined.
+    auto find_socket = [&](const std::string& label)
+        -> const beebium::SocketStatus* {
+        for (int i = 0; i < response.sockets_size(); ++i) {
+            if (response.sockets(i).socket_label() == label) {
+                return &response.sockets(i);
+            }
+        }
+        return nullptr;
+    };
+
+    SECTION("IC71 reports the loaded BASIC ROM") {
+        const auto* ic71 = find_socket("IC71");
+        REQUIRE(ic71 != nullptr);
+        CHECK(ic71->type() == beebium::SIDEWAYS_SLOT_TYPE_ROM);
+        CHECK(ic71->populated());
+        REQUIRE(ic71->has_rom_header());
+        const auto& h = ic71->rom_header();
+        CHECK(h.recognised());
+        CHECK(h.title() == "BASIC");
+        CHECK(h.copyright() == "(C)1982 Acorn");
+    }
+
+    SECTION("IC68 reports the loaded DFS ROM") {
+        const auto* ic68 = find_socket("IC68");
+        REQUIRE(ic68 != nullptr);
+        CHECK(ic68->type() == beebium::SIDEWAYS_SLOT_TYPE_ROM);
+        CHECK(ic68->populated());
+        REQUIRE(ic68->has_rom_header());
+        const auto& h = ic68->rom_header();
+        CHECK(h.recognised());
+        CHECK(h.title() == "DFS");
+    }
+
+    SECTION("Empty B+ user sockets report no ROM") {
+        for (const char* label : {"IC35", "IC44", "IC57", "IC62"}) {
+            const auto* sock = find_socket(label);
+            REQUIRE(sock != nullptr);
+            INFO("socket label: " << label);
+            CHECK(sock->type() == beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
+            CHECK_FALSE(sock->populated());
+            CHECK_FALSE(sock->has_rom_header());
+        }
     }
 }
