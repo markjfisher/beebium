@@ -180,6 +180,14 @@ public:
     Ram<16384> sram_y;             // SRAM Y - slot 0 or 14 per S13
     Ram<16384> sram_z;             // SRAM Z - slot 1 or 15 per S13
 
+    // Reflects the currently-applied S13 setting. Default false ==
+    // S13=South (factory default: BASIC at slots 14/15, SRAM Y/Z at
+    // 0/1). apply_motherboard_links() updates it; load_sideways_rom /
+    // load_sideways_data consult it to route slots 0/1/14/15 to the
+    // right physical device (those four slots are shared between
+    // IC71 BASIC and SRAM Y/Z, with S13 picking the assignment).
+    bool s13_is_north_ = false;
+
     // Sideways banks type - each ROM device bound to both slots of its pair
     // IC71 has a special arrangement: link S13 selects whether BASIC appears at
     // slots 0/1 or 14/15. In the emulator, we bind all four slots to the same device.
@@ -740,29 +748,52 @@ public:
     // Unified ROM Loading API
     // =========================================================================
 
-    // Mirror of ModelBPlusHardware::load_sideways_rom - see that file
-    // for the slot -> physical bank mapping. Slots 12 and 13 are
-    // sideways RAM on the 128K; load_sideways_rom is the ROM loading
-    // path so they're not handled here (use load_sideways_data instead
-    // to pre-fill those, e.g. from a saved RAM image).
+    // Load bytes into whatever physical device backs `slot`. Unlike
+    // the 64K, slots 0/1/14/15 are shared between IC71 (BASIC) and
+    // SRAM Y/Z, with S13 deciding which pair gets IC71 and which
+    // gets the SRAM banks - so we consult s13_is_north_ (set by
+    // apply_motherboard_links) to route correctly. Slots 12 and 13
+    // are always SRAM W/X.
+    //
+    // Earlier versions routed slots 0/1/14/15 unconditionally to
+    // basic_rom (a copy-paste from the 64K), which silently
+    // overwrote BASIC whenever the user pre-loaded a ROM into SRAM Y
+    // or SRAM Z and made the B+ 128K hang on boot with "Language?".
     void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
                           std::string_view /*image_name*/ = "") {
         constexpr size_t rom_size = 16384;
         size_t copy_len = std::min(len, rom_size);
-        switch (slot) {
-            case 0: case 1: case 14: case 15:
-                std::copy_n(data, copy_len, basic_rom.data()); break;
-            case 11: std::copy_n(data, copy_len, rom_ic68_hi.data()); break;
-            case 10: std::copy_n(data, copy_len, rom_ic68_lo.data()); break;
-            case  9: std::copy_n(data, copy_len, rom_ic62_hi.data()); break;
-            case  8: std::copy_n(data, copy_len, rom_ic62_lo.data()); break;
-            case  7: std::copy_n(data, copy_len, rom_ic57_hi.data()); break;
-            case  6: std::copy_n(data, copy_len, rom_ic57_lo.data()); break;
-            case  5: std::copy_n(data, copy_len, rom_ic44_hi.data()); break;
-            case  4: std::copy_n(data, copy_len, rom_ic44_lo.data()); break;
-            case  3: std::copy_n(data, copy_len, rom_ic35_hi.data()); break;
-            case  2: std::copy_n(data, copy_len, rom_ic35_lo.data()); break;
-            default: break;  // slots 12, 13 are RAM (see load_sideways_data)
+        // The four S13-controlled slots: route to BASIC half of IC71 or
+        // SRAM Y/Z depending on link state.
+        auto* destination = [&]() -> uint8_t* {
+            switch (slot) {
+                case 0:
+                    return s13_is_north_ ? basic_rom.data() : sram_y.data();
+                case 1:
+                    return s13_is_north_ ? basic_rom.data() : sram_z.data();
+                case 14:
+                    return s13_is_north_ ? sram_y.data() : basic_rom.data();
+                case 15:
+                    return s13_is_north_ ? sram_z.data() : basic_rom.data();
+                case 11: return rom_ic68_hi.data();
+                case 10: return rom_ic68_lo.data();
+                case  9: return rom_ic62_hi.data();
+                case  8: return rom_ic62_lo.data();
+                case  7: return rom_ic57_hi.data();
+                case  6: return rom_ic57_lo.data();
+                case  5: return rom_ic44_hi.data();
+                case  4: return rom_ic44_lo.data();
+                case  3: return rom_ic35_hi.data();
+                case  2: return rom_ic35_lo.data();
+                // Slots 12, 13 are SRAM W/X (always RAM); the preset
+                // loader writes there via load_sideways_data.
+                case 12: return sram_w.data();
+                case 13: return sram_x.data();
+                default: return nullptr;
+            }
+        }();
+        if (destination != nullptr) {
+            std::copy_n(data, copy_len, destination);
         }
     }
 
@@ -983,6 +1014,12 @@ public:
     // but before the BBC is allowed to fetch ROMs. Calling more than once
     // is harmless but unnecessary.
     void apply_motherboard_links(const MotherboardLinks& links) {
+        // Stash the S13 position so load_sideways_rom and
+        // load_sideways_data can route slots 0/1/14/15 to the correct
+        // physical device. Those slots are shared between IC71's BASIC
+        // half and the movable SRAM Y/Z banks; S13 picks who goes where.
+        s13_is_north_ = (links.s13 == MotherboardLinks::S13Position::North);
+
         // Construction-time binding is the S13=South default - SRAM Y at
         // slot 0, SRAM Z at slot 1, BASIC at slots 14/15. For S13=North
         // the pairs swap: BASIC moves to slots 0/1 and SRAM Y/Z move to

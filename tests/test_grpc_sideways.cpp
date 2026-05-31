@@ -1068,3 +1068,68 @@ TEST_CASE("B+ 128K SRAM banks accept and return bytes (smoke test)",
     CHECK(read_byte(0,  0x2345) == 0xCC);
     CHECK(read_byte(1,  0x3456) == 0xDD);
 }
+
+// Regression: when the user pre-loaded a ROM into slot 0 of a B+ 128K
+// (SRAM Y with S13=South), load_sideways_rom routed the bytes to
+// basic_rom rather than sram_y, silently overwriting BASIC. The
+// machine then hung on boot with "Language?" because the MOS couldn't
+// find a language ROM. load_sideways_rom must consult S13 to pick the
+// right destination for the slots IC71 and SRAM Y/Z share.
+TEST_CASE("B+ 128K load_sideways_rom routes slots 0/1/14/15 by S13",
+          "[sideways][model_b_plus_128k][regression]") {
+    using Links = beebium::ModelBPlus128KHardware::MotherboardLinks;
+
+    auto fill = [](uint8_t byte) {
+        std::vector<uint8_t> data(16384, byte);
+        return data;
+    };
+
+    SECTION("S13=South: slots 0/1 are SRAM Y/Z, slots 14/15 are BASIC") {
+        beebium::ModelBPlus128K machine;
+        machine.reset();
+        machine.state().memory.apply_motherboard_links(Links{});  // South
+
+        auto basic = fill(0xBA);
+        auto y = fill(0x5A);
+        auto z = fill(0x5B);
+
+        machine.state().memory.load_sideways_rom(
+            15, basic.data(), basic.size());  // BASIC at 14/15
+        machine.state().memory.load_sideways_rom(
+            0, y.data(), y.size());           // SRAM Y at slot 0
+        machine.state().memory.load_sideways_rom(
+            1, z.data(), z.size());           // SRAM Z at slot 1
+
+        // Verify each underlying device received the right bytes.
+        CHECK(machine.state().memory.basic_rom.read(0) == 0xBA);
+        CHECK(machine.state().memory.sram_y.read(0)   == 0x5A);
+        CHECK(machine.state().memory.sram_z.read(0)   == 0x5B);
+
+        // The most important assertion: SRAM Y's load didn't overwrite
+        // BASIC (the original bug).
+        CHECK(machine.state().memory.basic_rom.read(0) == 0xBA);
+    }
+
+    SECTION("S13=North: slots 0/1 are BASIC, slots 14/15 are SRAM Y/Z") {
+        beebium::ModelBPlus128K machine;
+        machine.reset();
+        Links links;
+        links.s13 = Links::S13Position::North;
+        machine.state().memory.apply_motherboard_links(links);
+
+        auto basic = fill(0xBA);
+        auto y = fill(0x5A);
+        auto z = fill(0x5B);
+
+        machine.state().memory.load_sideways_rom(
+            0, basic.data(), basic.size());   // BASIC at 0/1
+        machine.state().memory.load_sideways_rom(
+            14, y.data(), y.size());          // SRAM Y at slot 14
+        machine.state().memory.load_sideways_rom(
+            15, z.data(), z.size());          // SRAM Z at slot 15
+
+        CHECK(machine.state().memory.basic_rom.read(0) == 0xBA);
+        CHECK(machine.state().memory.sram_y.read(0)   == 0x5A);
+        CHECK(machine.state().memory.sram_z.read(0)   == 0x5B);
+    }
+}
