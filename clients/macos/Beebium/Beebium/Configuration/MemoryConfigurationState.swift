@@ -198,28 +198,90 @@ class MemoryConfigurationState: ObservableObject {
         }
     }
 
-    /// Reorder the *contents* (kind + image + resolved title) among the fixed
-    /// sockets, leaving each socket's identity (label/slots/priority) in place.
-    /// Drag-to-reorder uses this to rearrange the priority order of loaded ROMs:
-    /// a socket that loses its content emits empty at launch and one that gains
-    /// it emits the new content, each at its own fixed slot.
+    /// Reorder *images* between the fixed sockets, leaving each socket's
+    /// identity (label/slots/priority) and hardware-fixed kind in place.
+    ///
+    /// Drag-to-reorder is fundamentally about priority - the user wants ROM
+    /// X to sit at a higher-priority slot than ROM Y. A reorder shouldn't
+    /// also try to mutate slot kinds, because some sockets have a fixed
+    /// hardware kind: the B+ 128K's SRAM W/X/Y/Z banks are forever RAM,
+    /// not configurable.
+    ///
+    /// Move semantics:
+    ///   1. The image (and its resolved title/version/kinds) follows the
+    ///      drag through the post-move row order. The drag carries the
+    ///      *originating* kind alongside it, used only as a hint.
+    ///   2. Each socket's kind is then adjusted just enough to make the
+    ///      assignment legal:
+    ///        - A socket receiving an image while currently Empty bumps to
+    ///          the source's kind if it can (RAM or ROM), else to whichever
+    ///          ROM/RAM the socket supports.
+    ///        - A socket losing its image becomes Empty if the hardware
+    ///          allows; otherwise (e.g. fixed-RAM bank) it stays its
+    ///          current kind with image cleared (blank RAM).
+    ///        - Any other case leaves the socket's kind unchanged.
     func moveContents(fromOffsets source: IndexSet, toOffset destination: Int) {
         struct Payload {
-            var content: SocketContent
+            // Kind of the socket the image came from - a hint for the
+            // destination when it has to bump out of Empty.
+            var sourceKind: SocketKind
+            var image: String?
             var resolvedTitle: String?
             var resolvedVersion: String?
             var resolvedKinds: [String]
         }
-        var payloads = sockets.map {
-            Payload(content: $0.content, resolvedTitle: $0.resolvedTitle,
-                    resolvedVersion: $0.resolvedVersion, resolvedKinds: $0.resolvedKinds)
+        var payloads = sockets.map { socket in
+            Payload(
+                sourceKind: socket.content.kind,
+                image: socket.content.image,
+                resolvedTitle: socket.resolvedTitle,
+                resolvedVersion: socket.resolvedVersion,
+                resolvedKinds: socket.resolvedKinds
+            )
         }
         payloads.move(fromOffsets: source, toOffset: destination)
+
         for index in sockets.indices {
-            sockets[index].content = payloads[index].content
-            sockets[index].resolvedTitle = payloads[index].resolvedTitle
-            sockets[index].resolvedVersion = payloads[index].resolvedVersion
-            sockets[index].resolvedKinds = payloads[index].resolvedKinds
+            let payload = payloads[index]
+            let socket = sockets[index]
+            let currentKind = socket.content.kind
+            let hasImage = !(payload.image ?? "").isEmpty
+
+            let newKind: SocketKind
+            if hasImage {
+                if currentKind == .empty {
+                    // Bump out of Empty to host the image. Prefer the kind
+                    // the image originated as; fall back if the destination
+                    // hardware can't be that kind.
+                    if payload.sourceKind == .ram, socket.supportsRam {
+                        newKind = .ram
+                    } else if payload.sourceKind == .rom, socket.supportsRom {
+                        newKind = .rom
+                    } else if socket.supportsRom {
+                        newKind = .rom
+                    } else if socket.supportsRam {
+                        newKind = .ram
+                    } else {
+                        newKind = currentKind  // unreachable in practice
+                    }
+                } else {
+                    newKind = currentKind
+                }
+            } else {
+                // No image arriving. Collapse to Empty if the socket can.
+                if currentKind != .empty, socket.supportsEmpty {
+                    newKind = .empty
+                } else {
+                    newKind = currentKind  // e.g. fixed-RAM stays RAM, blanked
+                }
+            }
+
+            sockets[index].content = SocketContent(
+                kind: newKind, image: payload.image
+            )
+            sockets[index].resolvedTitle = payload.resolvedTitle
+            sockets[index].resolvedVersion = payload.resolvedVersion
+            sockets[index].resolvedKinds = payload.resolvedKinds
         }
     }
 
