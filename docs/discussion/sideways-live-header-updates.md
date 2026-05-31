@@ -167,6 +167,95 @@ knows how many open streams asked for header monitoring.
   configurations, so the scanner has nothing to do. Verify that the iteration
   cleanly produces zero work rather than failing some constexpr branch.
 
+## Integration test: prove the lie stops
+
+The feature succeeds when, after the emulated BBC writes a new ROM image into
+a sideways RAM slot at runtime, the gRPC stream emits a `SlotHeaderChangedEvent`
+whose `rom_header.title` matches the freshly-loaded ROM. The most realistic way
+to drive that on an emulated machine is to use the BBC's own `*SRLOAD` command,
+which is exactly the user-facing path that motivated this work.
+
+### Why model-b-plus
+
+The `acorn-dfs_2_26.rom` shipped with the model-b-plus preset (at slot 11)
+includes the SRAM utilities -- `*SRLOAD`, `*SRWRITE`, `*SRSAVE`, `*SRDATA`,
+`*SRROM`, `*SRREAD` -- which let the emulated machine write a file from disc
+into a sideways RAM bank directly. `*SRLOAD R.ANFS 8000 7 Q` loads the file
+`R.ANFS` from the mounted DFS disc into bank 7 starting at &8000, using the
+quick (memory-corrupting) transfer. (`R.` is a conventional prefix for ROM-image
+files in DFS.) See
+`acornaeology/library/books/advanced_sideways_ram_user_guide/notes/chapter_3_service_roms.md`
+for the user-guide notes.
+
+We need slot 7 to be configured as RAM at boot. The standard model-b-plus
+preset has slot 7 as ROM (one of the user ROM sockets), so the test launches
+the server with `--sideways 7:ram` to override.
+
+### Shape of the test
+
+This belongs alongside the other heavyweight, disc-building integration
+suites under `integration_tests/`, not in `clients/python/tests/`. Suggested
+location: `integration_tests/sideways-srload/`, with its own
+`pyproject.toml` depending on `beebium`, `oaknut-dfs`, and `pytest` (same
+pattern as `integration_tests/tube-save/`).
+
+The disc-building side already has clean precedent: `oaknut-dfs` is on PyPI,
+`oaknut.dfs.DFS` writes SSDs directly in Python (see
+`integration_tests/adfs/src/adfs_test_support/disc_builder.py` and
+`integration_tests/tube-save/tests/conftest.py`), and the keyboard helpers
+needed to drive the BBC are already used by those suites.
+
+Test flow:
+
+1. **Build an SSD in a fixture.** Use `oaknut.dfs.DFS` to create a
+   40-track single-sided DFS image holding one file `R.ANFS` whose contents
+   are the bytes of `roms/acorn-anfs_4_18.rom`. Write to a tmp path.
+2. **Launch model-b-plus with the disc mounted and slot 7 forced to RAM.**
+   Extra args: `--fdc acorn-1770`, `--disc 0:<ssd_path>`,
+   `--sideways 7:ram`. (The stock model-b-plus preset has slot 7 as ROM;
+   the override puts RAM there so `*SRLOAD ... 7` has somewhere to land.)
+3. **Wait for the boot prompt.** Same pattern as the tube-save suite:
+   `bbc.run_until_or_timeout` against a screen-contains predicate.
+4. **Confirm slot 7 is empty / unrecognised.** Call `GetSlotStatus`, find
+   the socket whose `aliased_slots` contains 7, assert `type=RAM` and
+   `rom_header` either absent or `recognised=False`.
+5. **Subscribe to events with `monitor_header_changes=True`.** Drain the
+   stream into a thread-safe queue on a worker thread.
+6. **Type the command.** `bbc.keyboard.type("*SRLOAD R.ANFS 8000 7 Q")` +
+   `bbc.keyboard.press_return()`.
+7. **Wait up to ~5 emulated seconds for an event matching slot 7** whose
+   `rom_header.title` equals what `parse_sideways_rom_header` produces from
+   `acorn-anfs_4_18.rom` (parse the ROM in the test rather than hardcoding
+   the title, so the test survives a ROM-version bump).
+8. **Sanity-check via `GetSlotStatus`** that the post-state agrees with
+   the live event.
+
+This test is the strongest possible refutation of the original "sidebar
+lies" failure mode: a real OS, a real `*SRLOAD`, a real disc, and the gRPC
+contract observed end-to-end.
+
+### Prerequisites the test depends on
+
+- **Python `SidewaysClient`.** `clients/python/src/beebium/_proto/` has no
+  `sideways_pb2.py` today; the Sideways service has never been wrapped in
+  Python. The wrapper has to land before (or alongside) this test. Following
+  the pattern of `econet_transport.py` / `aun.py`, expose `get_slot_status()`,
+  `configure_slot()`, and a `subscribe_events(monitor_header_changes=...)`
+  generator. The proto file should be added to whatever build step generates
+  the other `_pb2.py` modules.
+- **`oaknut-dfs` test dep** in the new
+  `integration_tests/sideways-srload/pyproject.toml`. No new tooling beyond
+  what `tube-save` and `adfs` already pull in.
+- **Slot-7-as-RAM override.** Just a CLI arg at server launch; no code work.
+
+### Cost / pace
+
+The 1 Hz scanner means the event arrives within at most one second of the
+`*SRLOAD` completing; `*SRLOAD ... Q` itself takes well under a second for
+a 16 KiB file. A 5 s emulated-time timeout is generous. Total test
+wall-clock is dominated by server startup and disc mount (~2-3 s), not the
+feature.
+
 ## Future extensions
 
 - ROMSEL write as an event accelerator: when the OS flips ROMSEL away from a
