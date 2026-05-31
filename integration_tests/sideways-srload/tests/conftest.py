@@ -158,6 +158,108 @@ def srload_ssd_filepath(tmp_path: Path, sideways_rom_filepath: Path) -> Path:
 
 # ---- Emulator -------------------------------------------------------------
 
+@pytest.fixture(scope="session")
+def adfs_rom_filepath(beebium_roms_dirpath: Path) -> Path:
+    """Path to the ADFS ROM image."""
+    path = beebium_roms_dirpath / "acorn-adfs_1_30.rom"
+    if not path.exists():
+        pytest.skip(f"ADFS ROM not found: {path}")
+    return path
+
+
+@pytest.fixture
+def srload_ssd_with_adfs_filepath(
+    tmp_path: Path,
+    adfs_rom_filepath: Path,
+) -> Path:
+    """Fresh DFS SSD carrying R.ADFS - for *SRLOAD into SRAM tests."""
+    rom_bytes = adfs_rom_filepath.read_bytes()
+    buffer = bytearray(SSD_SIZE)
+    dfs = DFS.from_buffer(memoryview(buffer), ACORN_DFS_40T_SINGLE_SIDED)
+    dfs.path("R.ADFS").write_bytes(
+        rom_bytes,
+        load_address=0xFFFF8000,
+        exec_address=0xFFFF8000,
+    )
+    filepath = tmp_path / "srload-adfs.ssd"
+    filepath.write_bytes(bytes(buffer))
+    return filepath
+
+
+# ---- B+ 128K emulator -----------------------------------------------------
+
+@pytest.fixture(scope="session")
+def b_plus_128k_server_filepath() -> Path:
+    """Path to the beebium-model-b-plus-128k executable."""
+    env = os.environ.get("BEEBIUM_MODEL_B_PLUS_128K_SERVER")
+    if env:
+        path = Path(env)
+        if path.exists():
+            return path
+        pytest.skip(f"BEEBIUM_MODEL_B_PLUS_128K_SERVER set but not found: {path}")
+
+    server_dirpath = os.environ.get("BEEBIUM_SERVER_DIR")
+    if server_dirpath:
+        path = Path(server_dirpath) / "beebium-model-b-plus-128k"
+        if path.exists():
+            return path
+
+    model_b = os.environ.get("BEEBIUM_SERVER")
+    if model_b:
+        path = Path(model_b).parent / "beebium-model-b-plus-128k"
+        if path.exists():
+            return path
+
+    pytest.skip(
+        "beebium-model-b-plus-128k not found. Set "
+        "BEEBIUM_MODEL_B_PLUS_128K_SERVER or BEEBIUM_SERVER_DIR."
+    )
+
+
+@pytest.fixture(scope="session")
+def b_plus_mos_rom_filepath(beebium_roms_dirpath: Path) -> Path:
+    """The Model B+ MOS (different image from Model B's)."""
+    path = beebium_roms_dirpath / "acorn-mos_2_0.rom"
+    if not path.exists():
+        pytest.skip(f"B+ MOS not found: {path}")
+    return path
+
+
+@pytest.fixture
+def b_plus_128k_with_adfs_disc(
+    b_plus_mos_rom_filepath: Path,
+    b_plus_128k_server_filepath: Path,
+    srload_ssd_with_adfs_filepath: Path,
+):
+    """B+ 128K booted with an SSD carrying R.ADFS in floppy 0.
+
+    BASIC + DFS 2.26 load from the B+ defaults. Slot 12 (SRAM W) is
+    integral RAM on this variant, so no override is needed.
+    """
+    try:
+        with Beebium.launch(
+            mos_filepath=b_plus_mos_rom_filepath,
+            basic_filepath=None,
+            server_filepath=b_plus_128k_server_filepath,
+            extra_args=[
+                "--floppy", f"0:{srload_ssd_with_adfs_filepath}",
+            ],
+            startup_timeout=15.0,
+        ) as bbc:
+            ok = bbc.run_until_or_timeout(
+                lambda: screen_contains(bbc.memory, ">"),
+                emulated_seconds=10.0,
+            )
+            if not ok:
+                pytest.fail(
+                    "B+ 128K failed to reach BASIC prompt:\n"
+                    f"{dump_screen(bbc.memory)}"
+                )
+            yield bbc
+    except ServerNotFoundError as exc:
+        pytest.skip(str(exc))
+
+
 @pytest.fixture
 def romram_with_srload_disc(
     mos_rom_filepath: Path,

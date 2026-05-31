@@ -591,8 +591,17 @@ private:
                         static_cast<uint8_t>(spec.slots[0]);
 
                     // Skip non-RAM slots. ROM contents don't change between
-                    // ConfigureSlot calls, and machines without per-socket
-                    // accessors (Model B+ BankedMemory) have no RAM at all.
+                    // ConfigureSlot calls.
+                    //
+                    // Three distinct ways a slot can be flagged as RAM,
+                    // matching the three branches GetSlotStatus uses:
+                    //   1. Aliased-memory machines (Model B) - per-socket
+                    //      live type accessor.
+                    //   2. Configurable-memory machines (ROM/RAM board) -
+                    //      per-slot live type accessor.
+                    //   3. Plain BankedMemory<...> (Model B+ 128K's SRAM
+                    //      banks) - no live type, but the topology marks
+                    //      the socket as RAM-only at compile time.
                     bool is_ram = false;
                     if constexpr (HasAliasedSideways<Memory>) {
                         is_ram = sw.socket(
@@ -602,6 +611,10 @@ private:
                         is_ram = sw.slot(
                             static_cast<uint8_t>(spec.socket_index)
                         ).type() == beebium::SlotType::Ram;
+                    } else {
+                        // Fixed-RAM topology entry (e.g. B+ 128K SRAM banks).
+                        is_ram = spec.supports_ram && !spec.supports_rom
+                                 && !spec.supports_empty;
                     }
                     if (!is_ram) continue;
 
