@@ -23,6 +23,15 @@ class BeebiumAppDelegate: NSObject, NSApplicationDelegate {
     private static let hiddenWindowMenuTitles: Set<String> = ["New Machine", "Connect to Machine"]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Tooltips drive much of Beebium's secondary information (per-row
+        // socket details in the Memory sidebar, parsed ROM kinds, slot
+        // numbers, source filepaths). macOS's default tooltip delay is
+        // around 1.5 s, which is far too long for the discoverability
+        // role tooltips play here - users hover, expect to see the info
+        // quickly, and move on. Drop it to 400 ms app-wide. Note this is
+        // an undocumented-but-stable AppKit user default key.
+        UserDefaults.standard.set(400, forKey: "NSInitialToolTipDelay")
+
         // Beebium doesn't use tabbed windows. Disable macOS automatic window
         // tabbing to remove the Show Previous/Next Tab and Merge All Windows
         // items from the Window menu.

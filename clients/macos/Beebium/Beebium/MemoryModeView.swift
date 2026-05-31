@@ -119,6 +119,16 @@ struct MemoryModeView: View {
         let slotWord = socket.slots.count > 1 ? "Slots" : "Slot"
         let slotList = socket.slots.map(String.init).joined(separator: ", ")
         lines.append("\(slotWord) \(slotList)  (priority \(socket.priority))")
+        if let header = socket.romHeader {
+            // Display kinds as "Language / Service / ROMFS" - matches the
+            // header parser's output set, capitalised for readability.
+            let displayKinds = header.kinds.map { kind -> String in
+                kind == "romfs" ? "ROMFS" : kind.capitalized
+            }
+            if !displayKinds.isEmpty {
+                lines.append(displayKinds.joined(separator: " / "))
+            }
+        }
         if !socket.imageName.isEmpty {
             lines.append(socket.imageName)
         }
