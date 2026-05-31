@@ -771,14 +771,20 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
         CHECK(ic71.aliased_slots(0) == 14);
         CHECK(ic71.aliased_slots(1) == 15);
 
-        // B+ sockets support the ROM/RAM/empty trifecta but are not
-        // runtime-reconfigurable.
+        // IC71 (socket 0) is the soldered MOS+BASIC system ROM: ROM only,
+        // not removable. The user sockets (IC35..IC68) support the full
+        // ROM/RAM/empty trifecta. Nothing on the B+ is runtime-reconfigurable.
         for (int i = 0; i < response.sockets_size(); ++i) {
             const auto& caps = response.sockets(i).capabilities();
             CHECK(caps.supports_rom());
-            CHECK(caps.supports_ram());
-            CHECK(caps.supports_empty());
             CHECK_FALSE(caps.runtime_configurable());
+            if (i == 0) {
+                CHECK_FALSE(caps.supports_ram());
+                CHECK_FALSE(caps.supports_empty());
+            } else {
+                CHECK(caps.supports_ram());
+                CHECK(caps.supports_empty());
+            }
         }
     }
 
@@ -1093,12 +1099,17 @@ TEST_CASE("B+ 128K load_sideways_rom routes slots 0/1/14/15 by S13",
         auto y = fill(0x5A);
         auto z = fill(0x5B);
 
+        // load_sideways_rom is the ROM-load path: writes to basic_rom
+        // for the S13-active BASIC pair, no-op for fixed-RAM slots.
+        // load_sideways_data is the RAM preload path: writes to the
+        // SRAM banks. This split matches what the server's
+        // apply_sideways_configs does per --sideways grammar.
         machine.state().memory.load_sideways_rom(
-            15, basic.data(), basic.size());  // BASIC at 14/15
-        machine.state().memory.load_sideways_rom(
-            0, y.data(), y.size());           // SRAM Y at slot 0
-        machine.state().memory.load_sideways_rom(
-            1, z.data(), z.size());           // SRAM Z at slot 1
+            15, basic.data(), basic.size());   // BASIC at 14/15
+        machine.state().memory.load_sideways_data(
+            0, y.data(), y.size());            // SRAM Y at slot 0
+        machine.state().memory.load_sideways_data(
+            1, z.data(), z.size());            // SRAM Z at slot 1
 
         // Verify each underlying device received the right bytes.
         CHECK(machine.state().memory.basic_rom.read(0) == 0xBA);
@@ -1122,11 +1133,11 @@ TEST_CASE("B+ 128K load_sideways_rom routes slots 0/1/14/15 by S13",
         auto z = fill(0x5B);
 
         machine.state().memory.load_sideways_rom(
-            0, basic.data(), basic.size());   // BASIC at 0/1
-        machine.state().memory.load_sideways_rom(
-            14, y.data(), y.size());          // SRAM Y at slot 14
-        machine.state().memory.load_sideways_rom(
-            15, z.data(), z.size());          // SRAM Z at slot 15
+            0, basic.data(), basic.size());    // BASIC at 0/1
+        machine.state().memory.load_sideways_data(
+            14, y.data(), y.size());           // SRAM Y at slot 14
+        machine.state().memory.load_sideways_data(
+            15, z.data(), z.size());           // SRAM Z at slot 15
 
         CHECK(machine.state().memory.basic_rom.read(0) == 0xBA);
         CHECK(machine.state().memory.sram_y.read(0)   == 0x5A);

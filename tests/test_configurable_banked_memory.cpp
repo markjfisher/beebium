@@ -447,12 +447,6 @@ TEST_CASE("ConfigurableBankedMemory is_slot_loadable", "[configurable_memory][un
     }
 }
 
-TEST_CASE("ConfigurableBankedMemory supports_slot_configuration", "[configurable_memory][unified_api]") {
-    SECTION("Returns true for ConfigurableBankedMemory") {
-        REQUIRE(ConfigurableBankedMemory::supports_slot_configuration() == true);
-    }
-}
-
 TEST_CASE("ConfigurableBankedMemory peek_bank after load_sideways_rom", "[configurable_memory][unified_api]") {
     ConfigurableBankedMemory mem;
 

@@ -1095,27 +1095,20 @@ void load_roms(MachineType& machine, ServerConfig<MachineType>& config) {
     std::copy(mos_data.begin(), mos_data.end(),
               machine.state().memory.mos_rom.data());
 
-    // Process all slot configurations using the unified API
-    // This single loop handles ROM, RAM, and Empty slots
+    // Process all slot configurations using the unified API. The
+    // validation step above (validate_sideways_configs) already rejected
+    // unsupported (slot, type) pairs against the topology, so we can
+    // pass each request straight through.
     for (const auto& [slot, marker_or_filepath] : config.rom_slots) {
-        // Handle empty slots
         if (marker_or_filepath == EMPTY_SLOT_MARKER) {
             std::cout << "Slot " << static_cast<int>(slot) << ": empty\n";
-            if constexpr (Memory::supports_slot_configuration()) {
-                machine.state().memory.configure_slot_as_empty(slot);
-            }
+            machine.state().memory.configure_slot_as_empty(slot);
             continue;
         }
 
-        // Handle RAM slots
         if (marker_or_filepath == RAM_SLOT_MARKER) {
-            std::cout << "Slot " << static_cast<int>(slot) << ": RAM";
-            if constexpr (Memory::supports_slot_configuration()) {
-                machine.state().memory.configure_slot_as_ram(slot);
-            } else {
-                std::cerr << "\nWarning: RAM slots not supported on this machine type\n";
-            }
-            std::cout << "\n";
+            std::cout << "Slot " << static_cast<int>(slot) << ": RAM\n";
+            machine.state().memory.configure_slot_as_ram(slot);
             continue;
         }
 

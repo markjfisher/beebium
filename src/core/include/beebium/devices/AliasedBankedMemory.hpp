@@ -241,8 +241,12 @@ public:
         configure_socket(slot_to_socket(slot), SlotType::Empty);
     }
 
-    // Indicates this memory type supports runtime slot configuration
-    static constexpr bool supports_slot_configuration() { return true; }
+    // Uniform per-slot query. Aliased slots all reflect the same underlying
+    // socket - that is the physical reality, not a quirk of the API.
+    SlotInfo slot_info(uint8_t slot) const {
+        const auto& s = sockets_[slot_to_socket(slot)];
+        return {s.type(), s.is_populated(), std::string(s.image_name())};
+    }
 };
 
 } // namespace beebium

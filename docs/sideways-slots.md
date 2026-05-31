@@ -121,22 +121,29 @@ runtime-reconfigurable.
 ### Model B+
 
 ```
-| Socket | Slots               | Default content |
-|--------|---------------------|-----------------|
-| IC35   | 2, 3                | (empty)         |
-| IC44   | 4, 5                | (empty)         |
-| IC57   | 6, 7                | (empty)         |
-| IC62   | 8, 9                | (empty)         |
-| IC68   | 10, 11              | DFS             |
-| IC71   | 14, 15 / 0, 1 (S13) | BASIC           |
+| Socket | Slots               | Default content | Capabilities      |
+|--------|---------------------|-----------------|-------------------|
+| IC35   | 2, 3                | (empty)         | ROM / RAM / empty |
+| IC44   | 4, 5                | (empty)         | ROM / RAM / empty |
+| IC57   | 6, 7                | (empty)         | ROM / RAM / empty |
+| IC62   | 8, 9                | (empty)         | ROM / RAM / empty |
+| IC68   | 10, 11              | DFS             | ROM / RAM / empty |
+| IC71   | 14, 15 / 0, 1 (S13) | BASIC           | ROM (fixed)       |
 ```
 
 IC71's slot pair is selected by link S13; the inactive pair is
-electrically dead. Slots 12 and 13 do not exist on a stock B+. Every
-socket supports ROM/RAM/empty (so the integral DFS or BASIC can be
-removed or replaced, and a sideways-RAM module fitted); none is
-runtime-reconfigurable. The B+ 64K has no built-in sideways RAM - that
-arrives with the B+ 128K's four RAM banks, a future variant.
+electrically dead. Slots 12 and 13 do not exist on a stock B+.
+
+The five user ROM sockets (IC35..IC68) accept ROM, third-party
+sideways RAM, or an empty socket - so the integral DFS at IC68 can be
+removed or replaced and any user socket can be configured as RAM. IC71
+is the soldered MOS+BASIC system ROM and cannot be reconfigured: it
+reports `supports_rom=true, supports_ram=false, supports_empty=false`,
+so `--sideways 14:ram` or `--sideways 15:empty` are rejected at
+startup. None of the B+ sockets is runtime-reconfigurable.
+
+The B+ 64K has no built-in sideways RAM - that arrives with the B+
+128K, documented separately below.
 
 Each B+ ROM socket also has a **device-size link** (S9 IC35, S11 IC44,
 S12 IC57, S15 IC62, S18 IC68, S19 IC71) that selects 16K mode (West,
@@ -148,6 +155,38 @@ the 32K device; we don't model this today. IC71 is hardwired East
 because the stock B+ system ROM is a 32K MOS+BASIC combo, with the
 MOS in the high 16K (at &C000-&FFFF, not sideways) and BASIC in the
 low 16K (sideways, aliased across the S13-selected pair).
+
+### Model B+ 128K
+
+```
+| Socket | Slots                       | Default content | Capabilities      |
+|--------|-----------------------------|-----------------|-------------------|
+| IC35   | 2, 3                        | (empty)         | ROM / RAM / empty |
+| IC44   | 4, 5                        | (empty)         | ROM / RAM / empty |
+| IC57   | 6, 7                        | (empty)         | ROM / RAM / empty |
+| IC62   | 8, 9                        | (empty)         | ROM / RAM / empty |
+| IC68   | 10, 11                      | DFS             | ROM / RAM / empty |
+| IC71   | 14, 15 / 0, 1 (S13)         | BASIC           | ROM (fixed)       |
+| SRAM W | 12                          | (RAM, blank)    | RAM (fixed)       |
+| SRAM X | 13                          | (RAM, blank)    | RAM (fixed)       |
+| SRAM Y | 0 / 14 (opposite IC71, S13) | (RAM, blank)    | RAM (fixed)       |
+| SRAM Z | 1 / 15 (opposite IC71, S13) | (RAM, blank)    | RAM (fixed)       |
+```
+
+The B+ 128K adds 64K of soldered sideways RAM split into four 16K banks
+labelled W/X/Y/Z (Acorn AN 030). W and X are wired permanently to slots
+12 and 13. Y and Z share the same two slot numbers as IC71 (BASIC) and
+swap pairs based on link S13:
+
+- **S13=South** (factory default): BASIC at 14/15, SRAM Y/Z at 0/1.
+- **S13=North**: BASIC at 0/1, SRAM Y/Z at 14/15.
+
+The five user sockets (IC35..IC68) behave exactly as on the B+ 64K.
+IC71 is again ROM-only. The four SRAM banks report
+`supports_rom=false, supports_ram=true, supports_empty=false` - they
+are soldered RAM, so `--sideways 12:rom:foo.rom` is rejected at
+startup; pre-loading a RAM image with `--sideways 12:ram:foo.bin` is
+supported. None of the B+ 128K sockets is runtime-reconfigurable.
 
 ### Model B with ROM/RAM expansion board
 
@@ -161,10 +200,10 @@ When the server parses `--sideways` arguments, it groups them by the
 physical socket they target and rejects any of:
 
 - a slot that does not exist on the configured topology
-  (e.g. `--sideways 12:rom:foo.rom` on a Model B+);
-- a type the socket does not support (no current variant restricts this -
-  every present socket supports ROM/RAM/empty - so this rule guards future
-  variants with genuinely restricted sockets);
+  (e.g. `--sideways 12:rom:foo.rom` on a Model B+ 64K);
+- a type the socket does not support (`--sideways 14:ram` on a B+ -
+  IC71 is ROM-only; `--sideways 12:rom:foo.rom` on a B+ 128K - SRAM W
+  is RAM-only; etc.);
 - two requests targeting the same socket with different types
   (e.g. `--sideways 0:rom:foo.rom --sideways 4:ram` on a Model B - both
   reach IC52);

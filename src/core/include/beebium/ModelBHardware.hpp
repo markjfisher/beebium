@@ -609,9 +609,9 @@ public:
         sideways.configure_slot_as_empty(slot);
     }
 
-    // Indicates this memory type supports runtime slot configuration
-    static constexpr bool supports_slot_configuration() {
-        return AliasedBankedMemory::supports_slot_configuration();
+    // Uniform per-slot status query used by SidewaysService.
+    SlotInfo slot_info(uint8_t slot) const {
+        return sideways.slot_info(slot);
     }
 
     // The Model B has no motherboard links that affect sideways slot mapping;

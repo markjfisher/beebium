@@ -17,8 +17,6 @@
 #include "beebium/SlotTopology.hpp"
 #include "beebium/SidewaysRomHeader.hpp"
 #include "beebium/devices/ConfigurableSlot.hpp"
-#include "beebium/devices/AliasedBankedMemory.hpp"
-#include "beebium/devices/ConfigurableBankedMemory.hpp"
 
 #include <grpcpp/grpcpp.h>
 #include <algorithm>
@@ -37,32 +35,33 @@
 
 namespace beebium::service {
 
-// Concept to detect if memory has aliased sideways with per-socket runtime
-// accessors (Model B's AliasedBankedMemory). Requires both the aliasing
-// trait and a socket() method - so a B+ BankedMemory<...> with aliasing
-// but no socket() accessor does NOT match.
-template<typename T>
-concept HasAliasedSideways = requires(T t) {
-    { T::SidewaysType::has_aliasing } -> std::convertible_to<bool>;
-    requires T::SidewaysType::has_aliasing == true;
-    { t.sideways.socket(uint8_t{0}) };
-};
-
-// Concept to detect if memory has configurable sideways with per-slot
-// runtime accessors (ROM/RAM board's ConfigurableBankedMemory).
-template<typename T>
-concept HasConfigurableSideways = requires(T t) {
-    { T::SidewaysType::has_aliasing } -> std::convertible_to<bool>;
-    requires T::SidewaysType::has_aliasing == false;
-    { t.sideways.slot(uint8_t{0}) };
-};
-
-// Concept to detect if memory has any type of configurable sideways
-// Requires the has_aliasing static member to distinguish from legacy BankedMemory
+// Memory has a sideways memory device. The peek_bank/select_bank surface
+// of that device is used directly by ReadSlotData and the live header
+// scanner.
 template<typename T>
 concept HasSideways = requires(T t) {
     { t.sideways } -> std::convertible_to<typename T::SidewaysType&>;
     { T::SidewaysType::has_aliasing } -> std::convertible_to<bool>;
+};
+
+// Memory exposes the uniform per-slot status accessor. Every machine
+// variant with sideways memory implements this; SidewaysService uses
+// it as the single source of truth for type / populated / image_name.
+template<typename T>
+concept HasSlotInfo = requires(const T t) {
+    { t.slot_info(uint8_t{0}) } -> std::convertible_to<beebium::SlotInfo>;
+};
+
+// Memory exposes the uniform per-slot mutator surface used by
+// ConfigureSlot to apply runtime changes.
+template<typename T>
+concept HasSlotMutators = requires(T t,
+                                   const uint8_t* p,
+                                   std::size_t n,
+                                   std::string_view name) {
+    { t.configure_slot_as_ram(uint8_t{0}) };
+    { t.configure_slot_as_empty(uint8_t{0}) };
+    { t.load_sideways_rom(uint8_t{0}, p, n, name) };
 };
 
 // Helper to convert SlotType to protobuf enum
@@ -195,54 +194,18 @@ public:
                     }
                 }
 
-                // Runtime fields: read from the live device when the device
-                // exposes per-socket / per-slot accessors. Otherwise derive
-                // type/populated from the parsed header - if the parser
-                // recognised a ROM signature there are bytes there, if not
-                // the slot reads as open bus (empty).
-                if constexpr (HasAliasedSideways<Memory>) {
-                    auto& sideways = machine_.state().memory.sideways;
-                    const auto& slot = sideways.socket(
-                        static_cast<uint8_t>(spec.socket_index));
-                    socket_status->set_type(slot_type_to_proto(slot.type()));
-                    socket_status->set_populated(slot.is_populated());
-                    socket_status->set_image_name(std::string(slot.image_name()));
-                } else if constexpr (HasConfigurableSideways<Memory>) {
-                    auto& sideways = machine_.state().memory.sideways;
-                    const auto& slot = sideways.slot(
-                        static_cast<uint8_t>(spec.socket_index));
-                    socket_status->set_type(slot_type_to_proto(slot.type()));
-                    socket_status->set_populated(slot.is_populated());
-                    socket_status->set_image_name(std::string(slot.image_name()));
-                } else {
-                    // Model B+ or B+ 128K BankedMemory<...> wiring: no
-                    // per-socket runtime accessors. Two signals drive the
-                    // reported type:
-                    //
-                    //   1. If the topology marks this socket as fixed RAM
-                    //      (RAM-only, no ROM/empty), it's an integral
-                    //      sideways RAM bank - report SLOT_TYPE_RAM. The
-                    //      B+ 128K's SRAM W/X/Y/Z fit this.
-                    //
-                    //   2. Otherwise the slot is a ROM socket. A
-                    //      recognised header means a ROM image is loaded
-                    //      (SLOT_TYPE_ROM, populated); an unrecognised
-                    //      peek means it's empty/open-bus.
-                    const bool is_fixed_ram =
-                        spec.supports_ram && !spec.supports_rom
-                        && !spec.supports_empty;
-                    if (is_fixed_ram) {
-                        socket_status->set_type(
-                            beebium::SIDEWAYS_SLOT_TYPE_RAM);
-                        socket_status->set_populated(true);
-                    } else {
-                        socket_status->set_type(
-                            parsed.recognised
-                                ? beebium::SIDEWAYS_SLOT_TYPE_ROM
-                                : beebium::SIDEWAYS_SLOT_TYPE_EMPTY);
-                        socket_status->set_populated(parsed.recognised);
-                    }
-                    socket_status->set_image_name("");
+                // Runtime fields: ask the memory once for the unified
+                // SlotInfo. Every machine variant implements this in
+                // whatever way matches its layout (Model B reflects the
+                // physical socket through 4-way aliasing; the ROM/RAM
+                // board has a per-slot ConfigurableSlot; the B+ family
+                // assembles from user sockets + S13-routed BASIC/SRAM).
+                if constexpr (HasSlotInfo<Memory>) {
+                    const auto info = machine_.state().memory.slot_info(
+                        static_cast<uint8_t>(spec.slots[0]));
+                    socket_status->set_type(slot_type_to_proto(info.type));
+                    socket_status->set_populated(info.populated);
+                    socket_status->set_image_name(info.image_name);
                 }
 
                 if (parsed.recognised) {
@@ -319,38 +282,41 @@ public:
                 }
             }
 
-            auto& sideways = machine_.state().memory.sideways;
+            auto& memory = machine_.state().memory;
             beebium::SlotType new_type = proto_to_slot_type(request->type());
 
-            // Determine physical socket for response
+            // Report the physical socket index the request resolved to.
+            // The topology already knows: it's the socket that owns this
+            // slot. Reporting socket_index (rather than slot number) lets
+            // clients see when two slots aliased to the same socket.
             uint8_t actual_socket = slot;
-            if constexpr (HasAliasedSideways<Memory>) {
-                actual_socket = AliasedBankedMemory::slot_to_socket(slot);
+            if constexpr (requires { Memory::slot_topology(motherboard_links_); }) {
+                auto topo = Memory::slot_topology(motherboard_links_);
+                if (const auto* sp = topo.find_socket_for_slot(
+                        static_cast<int>(slot))) {
+                    actual_socket = static_cast<uint8_t>(sp->socket_index);
+                }
             }
             response->set_actual_socket(actual_socket);
 
-            // Configure the slot type. The runtime_configurable check above
-            // returns an error for machines whose sockets don't support
-            // runtime reconfiguration (Model B, Model B+), so only the two
-            // configurable-memory branches need to compile here.
-            if constexpr (HasAliasedSideways<Memory>) {
-                sideways.configure_socket(actual_socket, new_type);
-            } else if constexpr (HasConfigurableSideways<Memory>) {
-                sideways.configure_slot(slot, new_type);
+            // Set the slot's type via the uniform mutator surface that
+            // every Hardware class exposes. Aliasing, S13 routing, and
+            // any per-machine quirks are the Memory's problem.
+            if constexpr (HasSlotMutators<Memory>) {
+                if (new_type == beebium::SlotType::Ram) {
+                    memory.configure_slot_as_ram(slot);
+                } else if (new_type == beebium::SlotType::Empty) {
+                    memory.configure_slot_as_empty(slot);
+                }
+                // SlotType::Rom is handled below: load_sideways_rom both
+                // configures and writes the image.
             }
 
-            // Load image data if provided
+            // Load image data if provided.
             if (request->has_url()) {
-                // Load from file
                 std::string url = request->url();
-                std::string filepath;
-
-                // Strip file:// prefix if present
-                if (url.substr(0, 7) == "file://") {
-                    filepath = url.substr(7);
-                } else {
-                    filepath = url;
-                }
+                std::string filepath = (url.rfind("file://", 0) == 0)
+                    ? url.substr(7) : url;
 
                 std::ifstream file(filepath, std::ios::binary | std::ios::ate);
                 if (!file) {
@@ -370,23 +336,23 @@ public:
                 std::vector<uint8_t> data(static_cast<size_t>(size));
                 file.read(reinterpret_cast<char*>(data.data()), size);
 
-                // Load data into slot. Store the full filepath as image_name
-                // so the Memory sidebar's Copy Path / Reveal in Finder actions
-                // have something useful; clients can take the basename for
-                // display when they want a name.
-                if constexpr (HasAliasedSideways<Memory>) {
-                    sideways.load_rom_to_socket(actual_socket, data.data(), data.size());
-                    sideways.set_socket_image_name(actual_socket, filepath);
-                } else if constexpr (HasConfigurableSideways<Memory>) {
-                    sideways.load_rom(slot, data.data(), data.size());
-                    sideways.set_slot_image_name(slot, filepath);
+                // Store the full filepath as image_name so the Memory
+                // sidebar's Copy Path / Reveal in Finder actions have
+                // something useful; clients take the basename for display.
+                if constexpr (HasSlotMutators<Memory>) {
+                    if (new_type == beebium::SlotType::Ram) {
+                        memory.load_sideways_data(
+                            slot, data.data(), data.size(), filepath);
+                    } else {
+                        memory.load_sideways_rom(
+                            slot, data.data(), data.size(), filepath);
+                    }
                 }
 
                 response->set_image_name(
                     std::filesystem::path(filepath).filename().string());
 
             } else if (request->has_data()) {
-                // Load from raw bytes
                 const std::string& data = request->data();
                 if (data.size() > 16384) {
                     response->set_success(false);
@@ -394,12 +360,13 @@ public:
                     return grpc::Status::OK;
                 }
 
-                if constexpr (HasAliasedSideways<Memory>) {
-                    sideways.load_rom_to_socket(actual_socket,
-                        reinterpret_cast<const uint8_t*>(data.data()), data.size());
-                } else if constexpr (HasConfigurableSideways<Memory>) {
-                    sideways.load_rom(slot,
-                        reinterpret_cast<const uint8_t*>(data.data()), data.size());
+                const auto* bytes = reinterpret_cast<const uint8_t*>(data.data());
+                if constexpr (HasSlotMutators<Memory>) {
+                    if (new_type == beebium::SlotType::Ram) {
+                        memory.load_sideways_data(slot, bytes, data.size(), "");
+                    } else {
+                        memory.load_sideways_rom(slot, bytes, data.size(), "");
+                    }
                 }
             }
 
@@ -460,12 +427,10 @@ public:
 
             response->set_success(true);
             response->set_data(std::move(data));
-            if constexpr (HasAliasedSideways<Memory>
-                          || HasConfigurableSideways<Memory>) {
-                response->set_type(slot_type_to_proto(sideways.bank_type(slot)));
+            if constexpr (HasSlotInfo<Memory>) {
+                response->set_type(slot_type_to_proto(
+                    machine_.state().memory.slot_info(slot).type));
             } else {
-                // BankedMemory<...> (Model B+): every wired slot holds a ROM,
-                // no runtime configurability.
                 response->set_type(beebium::SIDEWAYS_SLOT_TYPE_ROM);
             }
 
@@ -591,28 +556,14 @@ private:
                         static_cast<uint8_t>(spec.slots[0]);
 
                     // Skip non-RAM slots. ROM contents don't change between
-                    // ConfigureSlot calls.
-                    //
-                    // Three distinct ways a slot can be flagged as RAM,
-                    // matching the three branches GetSlotStatus uses:
-                    //   1. Aliased-memory machines (Model B) - per-socket
-                    //      live type accessor.
-                    //   2. Configurable-memory machines (ROM/RAM board) -
-                    //      per-slot live type accessor.
-                    //   3. Plain BankedMemory<...> (Model B+ 128K's SRAM
-                    //      banks) - no live type, but the topology marks
-                    //      the socket as RAM-only at compile time.
+                    // ConfigureSlot calls. The unified slot_info() accessor
+                    // gives the live answer regardless of how the machine
+                    // implements its sideways memory.
                     bool is_ram = false;
-                    if constexpr (HasAliasedSideways<Memory>) {
-                        is_ram = sw.socket(
-                            static_cast<uint8_t>(spec.socket_index)
-                        ).type() == beebium::SlotType::Ram;
-                    } else if constexpr (HasConfigurableSideways<Memory>) {
-                        is_ram = sw.slot(
-                            static_cast<uint8_t>(spec.socket_index)
-                        ).type() == beebium::SlotType::Ram;
+                    if constexpr (HasSlotInfo<Memory>) {
+                        is_ram = machine_.state().memory.slot_info(probe_slot)
+                                     .type == beebium::SlotType::Ram;
                     } else {
-                        // Fixed-RAM topology entry (e.g. B+ 128K SRAM banks).
                         is_ram = spec.supports_ram && !spec.supports_rom
                                  && !spec.supports_empty;
                     }

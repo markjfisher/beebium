@@ -544,8 +544,3 @@ TEST_CASE("AliasedBankedMemory is_slot_loadable", "[aliased_memory][unified_api]
     }
 }
 
-TEST_CASE("AliasedBankedMemory supports_slot_configuration", "[aliased_memory][unified_api]") {
-    SECTION("Returns true for AliasedBankedMemory") {
-        REQUIRE(AliasedBankedMemory::supports_slot_configuration() == true);
-    }
-}

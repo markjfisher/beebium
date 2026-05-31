@@ -31,6 +31,8 @@
 #include "Via6522.hpp"
 #include "PixelBatch.hpp"
 #include "devices/BankedMemory.hpp"
+#include "devices/ConfigurableSlot.hpp"
+#include "devices/UserRomSocketBank.hpp"
 #include "devices/Crtc6845.hpp"
 #include "devices/Ram.hpp"
 #include "devices/Rom.hpp"
@@ -135,57 +137,56 @@ public:
     // by binding `basic_rom` to both slots of the active pair.
     Rom<16384> basic_rom;          // IC71 - slots 14/15 or 0/1 per S13 (aliased)
 
-    // The five user ROM sockets each hold a 32K-capable chip mapped to
-    // two adjacent sideways slot numbers. On real hardware the chip's
-    // device-size link (S9..S18) selects 16K mode (the 16K image
-    // aliases across both slots) or 32K mode (the two slots address
-    // distinct halves). The emulator presents each slot as an
-    // independent 16K bank - i.e. the 32K-mode interpretation - so
-    // users can configure or *SRLOAD different ROMs into each slot
-    // independently. The hardware's 16K mode is simply the special
-    // case where both halves of the socket happen to hold identical
-    // content.
-    Rom<16384> rom_ic68_lo;        // IC68 - slot 10
-    Rom<16384> rom_ic68_hi;        // IC68 - slot 11 (DFS by default)
-    Rom<16384> rom_ic62_lo;        // IC62 - slot 8
-    Rom<16384> rom_ic62_hi;        // IC62 - slot 9
-    Rom<16384> rom_ic57_lo;        // IC57 - slot 6
-    Rom<16384> rom_ic57_hi;        // IC57 - slot 7
-    Rom<16384> rom_ic44_lo;        // IC44 - slot 4
-    Rom<16384> rom_ic44_hi;        // IC44 - slot 5
-    Rom<16384> rom_ic35_lo;        // IC35 - slot 2
-    Rom<16384> rom_ic35_hi;        // IC35 - slot 3
+    // The five user ROM sockets (IC35..IC68) and their 10 16K halves
+    // are owned by UserRomSocketBank, shared by both B+ variants. See
+    // devices/UserRomSocketBank.hpp for the rationale (ConfigurableSlot
+    // backing per half, runtime kind, *SRLOAD support, etc.). The
+    // member must be declared before `sideways` so the make_bank<>
+    // references below capture stable storage.
+    UserRomSocketBank user_sockets_;
+
+    // Filepath of the BASIC ROM image loaded into IC71, captured at
+    // load time so GetSlotStatus can report it for the BASIC slots.
+    // The IC71 BASIC half is a plain Rom<16384>, not a
+    // ConfigurableSlot, so image_name lives here rather than on the
+    // device.
+    std::string basic_rom_image_name_;
+
+    // Cache of the S13 link state for use by slot_info() / load
+    // routing. apply_motherboard_links() updates it; default South
+    // matches factory configuration.
+    bool s13_is_south_ = true;
 
     using SidewaysType = BankedMemory<
         decltype(make_bank<15>(std::declval<Rom<16384>&>())),
         decltype(make_bank<14>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<11>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<10>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<9>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<8>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<7>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<6>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<5>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<4>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<3>(std::declval<Rom<16384>&>())),
-        decltype(make_bank<2>(std::declval<Rom<16384>&>())),
+        decltype(make_bank<11>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<10>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<9>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<8>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<7>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<6>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<5>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<4>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<3>(std::declval<ConfigurableSlot&>())),
+        decltype(make_bank<2>(std::declval<ConfigurableSlot&>())),
         decltype(make_bank<1>(std::declval<Rom<16384>&>())),
         decltype(make_bank<0>(std::declval<Rom<16384>&>()))
     >;
 
     SidewaysType sideways{
-        make_bank<15>(basic_rom),    // IC71 - slot 15 (BASIC, S13=South alias)
-        make_bank<14>(basic_rom),    // IC71 - slot 14 (BASIC, S13=South alias)
-        make_bank<11>(rom_ic68_hi),  // IC68 high
-        make_bank<10>(rom_ic68_lo),  // IC68 low
-        make_bank<9>(rom_ic62_hi),   // IC62 high
-        make_bank<8>(rom_ic62_lo),   // IC62 low
-        make_bank<7>(rom_ic57_hi),   // IC57 high
-        make_bank<6>(rom_ic57_lo),   // IC57 low
-        make_bank<5>(rom_ic44_hi),   // IC44 high
-        make_bank<4>(rom_ic44_lo),   // IC44 low
-        make_bank<3>(rom_ic35_hi),   // IC35 high
-        make_bank<2>(rom_ic35_lo),   // IC35 low
+        make_bank<15>(basic_rom),                          // IC71 - slot 15 (BASIC, S13=South alias)
+        make_bank<14>(basic_rom),                          // IC71 - slot 14 (BASIC, S13=South alias)
+        make_bank<11>(user_sockets_.at_slot(11)),          // IC68 high
+        make_bank<10>(user_sockets_.at_slot(10)),          // IC68 low
+        make_bank<9>(user_sockets_.at_slot(9)),            // IC62 high
+        make_bank<8>(user_sockets_.at_slot(8)),            // IC62 low
+        make_bank<7>(user_sockets_.at_slot(7)),            // IC57 high
+        make_bank<6>(user_sockets_.at_slot(6)),            // IC57 low
+        make_bank<5>(user_sockets_.at_slot(5)),             // IC44 high
+        make_bank<4>(user_sockets_.at_slot(4)),             // IC44 low
+        make_bank<3>(user_sockets_.at_slot(3)),             // IC35 high
+        make_bank<2>(user_sockets_.at_slot(2)),             // IC35 low
         make_bank<1>(basic_rom),     // IC71 - slot 1 (BASIC, S13=North alias)
         make_bank<0>(basic_rom)      // IC71 - slot 0 (BASIC, S13=North alias)
     };
@@ -699,57 +700,39 @@ public:
 
     void load_dfs(const uint8_t* data, size_t size) {
         // DFS lives at slot 11 by default (IC68 high half).
-        rom_ic68_hi.load(data, size);
+        user_sockets_.load_rom(11, data, size, "");
     }
 
     // =========================================================================
     // Unified ROM Loading API
     // =========================================================================
 
-    // Load ROM data into one of the B+'s sideways slots. The mapping:
-    //
-    //   slot 14, 15  -> IC71 (BASIC) - hardware-aliased to both slots of the
-    //                    S13-selected pair, so loading either fills the same
-    //                    16K BASIC bank.
-    //   slot 0, 1    -> same as above when S13=North.
-    //   slot 11      -> IC68 high half (DFS by default)
-    //   slot 10      -> IC68 low half
-    //   slot 9 / 8   -> IC62 high / low halves
-    //   slot 7 / 6   -> IC57 high / low halves
-    //   slot 5 / 4   -> IC44 high / low halves
-    //   slot 3 / 2   -> IC35 high / low halves
-    //
-    // The user ROM sockets each present two independent 16K banks (the
-    // emulator's permanent 32K-mode interpretation, giving the user
-    // separate slots to configure / *SRLOAD). image_name is accepted
-    // for API uniformity and ignored - the B+ memory model has no
-    // per-slot image_name storage.
+    // Load ROM data into one of the B+'s sideways slots, forcing the
+    // destination to ROM type. IC71 BASIC pair is special - it's a
+    // raw Rom<16384> aliased across both slots of the S13-selected
+    // pair, so loading either slot of that pair fills the same buffer.
     void load_sideways_rom(uint8_t slot, const uint8_t* data, size_t len,
-                          std::string_view /*image_name*/ = "") {
-        constexpr size_t rom_size = 16384;
-        size_t copy_len = std::min(len, rom_size);
-        switch (slot) {
-            case 0: case 1: case 14: case 15:
-                std::copy_n(data, copy_len, basic_rom.data()); break;
-            case 11: std::copy_n(data, copy_len, rom_ic68_hi.data()); break;
-            case 10: std::copy_n(data, copy_len, rom_ic68_lo.data()); break;
-            case  9: std::copy_n(data, copy_len, rom_ic62_hi.data()); break;
-            case  8: std::copy_n(data, copy_len, rom_ic62_lo.data()); break;
-            case  7: std::copy_n(data, copy_len, rom_ic57_hi.data()); break;
-            case  6: std::copy_n(data, copy_len, rom_ic57_lo.data()); break;
-            case  5: std::copy_n(data, copy_len, rom_ic44_hi.data()); break;
-            case  4: std::copy_n(data, copy_len, rom_ic44_lo.data()); break;
-            case  3: std::copy_n(data, copy_len, rom_ic35_hi.data()); break;
-            case  2: std::copy_n(data, copy_len, rom_ic35_lo.data()); break;
-            default: break;  // Invalid slot for B+ (12, 13 unused)
+                          std::string_view image_name = "") {
+        if (user_sockets_.load_rom(slot, data, len, image_name)) return;
+        if (slot == 0 || slot == 1 || slot == 14 || slot == 15) {
+            const size_t copy_len = std::min<size_t>(len, 16384);
+            std::copy_n(data, copy_len, basic_rom.data());
+            if (!image_name.empty()) {
+                basic_rom_image_name_ = std::string(image_name);
+            }
         }
+        // Slots 12 and 13 are not wired on the 64K B+ - quietly ignored.
     }
 
-    // Load data into a slot WITHOUT changing slot type.
-    // For B+ this is the same as load_sideways_rom since slots are fixed ROM.
+    // Load data into a slot WITHOUT changing slot type. Used by the
+    // server for RAM-typed slots: configure_slot_as_ram() is called
+    // first (setting kind=Ram), then load_sideways_data writes the
+    // preload image into the now-RAM slot's buffer.
     void load_sideways_data(uint8_t slot, const uint8_t* data, size_t len,
                            std::string_view image_name = "") {
-        load_sideways_rom(slot, data, len, image_name);
+        user_sockets_.load_data(slot, data, len, image_name);
+        // No fall-through: IC71 slots (0/1/14/15) and 12/13 don't make
+        // sense as RAM on a 64K B+.
     }
 
     // Check if a slot can have ROM loaded.
@@ -759,17 +742,43 @@ public:
         return slot <= 11 || slot >= 14;
     }
 
-    // B+ does not support runtime slot configuration - all slots are fixed ROM
-    void configure_slot_as_ram(uint8_t /*slot*/) {
-        // No-op: B+ cannot configure slots as RAM
+    // Configure a user-socket slot (IC35..IC68 half) as sideways RAM.
+    // Third-party SRAM modules in any of the user ROM sockets were
+    // commonplace on real B+s; the emulator honours that by letting
+    // these slots actually be RAM at runtime - writes from CPU code
+    // (including *SRLOAD) persist into the slot's buffer.
+    //
+    // IC71's BASIC half (slots 14/15 with S13=South or 0/1 with North)
+    // is the system ROM and cannot be reconfigured.
+    void configure_slot_as_ram(uint8_t slot) {
+        user_sockets_.configure_as_ram(slot);
+        // IC71 pair and 12/13 don't accept RAM configuration; quietly ignored.
     }
 
-    void configure_slot_as_empty(uint8_t /*slot*/) {
-        // No-op: B+ slots are always ROM
+    void configure_slot_as_empty(uint8_t slot) {
+        user_sockets_.configure_as_empty(slot);
     }
 
-    // Indicates this memory type does NOT support runtime slot configuration
-    static constexpr bool supports_slot_configuration() { return false; }
+    // Uniform per-slot status query (see SlotInfo in ConfigurableSlot.hpp).
+    //
+    // User sockets (slots 2..11) reflect their ConfigurableSlot directly.
+    //
+    // The IC71 pair holds BASIC. S13 selects which slot pair it responds
+    // at; the inactive pair is electrically unwired and reads as open
+    // bus, so we report it as Empty. The active pair always presents the
+    // BASIC ROM (Rom, populated, image_name = basic_rom_image_name_).
+    SlotInfo slot_info(uint8_t slot) const {
+        if (user_sockets_.owns(slot)) {
+            return user_sockets_.slot_info(slot);
+        }
+        const bool is_basic_pair =
+            s13_is_south_ ? (slot == 14 || slot == 15)
+                          : (slot == 0 || slot == 1);
+        if (is_basic_pair) {
+            return {SlotType::Rom, true, basic_rom_image_name_};
+        }
+        return {};
+    }
 
     // Motherboard links on the BBC Model B+ that affect sideways slot
     // mapping. Today we model link S13, which selects which slot pair the
@@ -922,9 +931,16 @@ public:
             spec.socket_index = static_cast<int>(i);
             spec.label = entries[i].label;
             spec.slots = entries[i].slots;
-            // ROM/RAM/empty come from the SocketSpec defaults: any socket can
-            // hold a ROM, take a third-party sideways-RAM module, or be vacated
-            // (the integral BASIC/DFS sit here but can be removed or replaced).
+            // IC71 (entry 0) is the soldered MOS+BASIC system ROM - it
+            // can't be configured as RAM or emptied. The user sockets
+            // (IC35..IC68, entries 1..10) accept ROM, third-party SRAM,
+            // or no chip at all - the SocketSpec defaults already say so.
+            if (i == 0) {
+                spec.supports_rom = true;
+                spec.supports_ram = false;
+                spec.supports_empty = false;
+                spec.runtime_configurable = false;
+            }
             topo.sockets.push_back(std::move(spec));
         }
         return topo;
@@ -941,6 +957,7 @@ public:
     // but before the BBC is allowed to fetch ROMs. Calling more than once
     // is harmless but unnecessary.
     void apply_motherboard_links(const MotherboardLinks& links) {
+        s13_is_south_ = (links.s13 == MotherboardLinks::S13Position::South);
         switch (links.s13) {
             case MotherboardLinks::S13Position::South:
                 // IC71 lives at slots 14/15; slots 0/1 are unwired.

@@ -459,9 +459,9 @@ public:
         sideways.configure_slot_as_empty(slot);
     }
 
-    // Indicates this memory type supports runtime slot configuration
-    static constexpr bool supports_slot_configuration() {
-        return ConfigurableBankedMemory::supports_slot_configuration();
+    // Uniform per-slot status query used by SidewaysService.
+    SlotInfo slot_info(uint8_t slot) const {
+        return sideways.slot_info(slot);
     }
 
     // The ROM/RAM expansion board has full 4-bit ROMSEL decoding and no

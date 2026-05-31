@@ -83,7 +83,7 @@ TEST_CASE("ModelBHardware topology has 4 sockets with 4-way aliasing",
     }
 }
 
-TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM/RAM/empty",
+TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13",
           "[sideways][topology][model_b_plus]") {
     auto topo = ModelBPlusHardware::slot_topology();
     REQUIRE(topo.has_aliasing);  // IC71's BASIC pair shares a socket
@@ -91,12 +91,23 @@ TEST_CASE("ModelBPlusHardware topology omits slots 12 and 13; sockets are ROM/RA
     // (IC35/44/57/62/68 split low/high) = 11.
     REQUIRE(topo.sockets.size() == 11);
 
-    for (const auto& s : topo.sockets) {
-        // Every present socket supports the ROM/RAM/empty trifecta.
+    // IC71 (the soldered MOS+BASIC system ROM) is the first socket and
+    // is ROM-only - it cannot be configured as RAM or emptied. The user
+    // sockets (IC35..IC68) support the full ROM/RAM/empty trifecta:
+    // any of them can accept a third-party sideways-RAM module or be
+    // left vacant. None of the B+ sockets are runtime-reconfigurable.
+    for (size_t i = 0; i < topo.sockets.size(); ++i) {
+        const auto& s = topo.sockets[i];
         REQUIRE(s.supports_rom);
-        REQUIRE(s.supports_ram);
-        REQUIRE(s.supports_empty);
-        REQUIRE_FALSE(s.runtime_configurable);  // not reconfigurable at runtime
+        REQUIRE_FALSE(s.runtime_configurable);
+        if (i == 0) {
+            REQUIRE(s.label == "IC71");
+            REQUIRE_FALSE(s.supports_ram);
+            REQUIRE_FALSE(s.supports_empty);
+        } else {
+            REQUIRE(s.supports_ram);
+            REQUIRE(s.supports_empty);
+        }
     }
 
     // The hardware does not wire any socket to slots 12 or 13.

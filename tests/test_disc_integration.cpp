@@ -567,16 +567,18 @@ TEST_CASE("DFS ROM loaded to slot 11 is accessible via sideways", "[disc][debug]
 
     // Copy ROM data to IC68 high half (slot 11, the standard DFS slot).
     // The B+'s IC68 socket is split into two independent 16K banks; DFS
-    // lives in the high half at slot 11.
-    std::copy(rom_data.begin(), rom_data.end(),
-              machine.memory().rom_ic68_hi.data());
+    // lives in the high half at slot 11. ConfigurableSlot defaults to
+    // Empty, so set the type to Rom before poking bytes - reads through
+    // the slot honour the type.
+    machine.memory().load_sideways_rom(11, rom_data.data(), rom_data.size());
 
-    INFO("Direct rom_ic68_hi read [6]: 0x"
-         << std::hex << (int)machine.memory().rom_ic68_hi.read(0x0006));
-    INFO("Direct rom_ic68_hi read [7]: 0x"
-         << std::hex << (int)machine.memory().rom_ic68_hi.read(0x0007));
-    REQUIRE(machine.memory().rom_ic68_hi.read(0x0006) == 0x82);
-    REQUIRE(machine.memory().rom_ic68_hi.read(0x0007) == 0x11);
+    auto& sideways = machine.memory().sideways;
+    INFO("Direct slot 11 read [6]: 0x"
+         << std::hex << (int)sideways.peek_bank(11, 0x0006));
+    INFO("Direct slot 11 read [7]: 0x"
+         << std::hex << (int)sideways.peek_bank(11, 0x0007));
+    REQUIRE(sideways.peek_bank(11, 0x0006) == 0x82);
+    REQUIRE(sideways.peek_bank(11, 0x0007) == 0x11);
 
     // Select slot 11 via ROMSEL (0xFE30)
     machine.write(0xFE30, 11);
@@ -625,7 +627,7 @@ TEST_CASE("Model B+ with DFS ROM shows DFS in boot message", "[disc][debug][boot
     // Load ROMs using same method as ServerMain
     std::copy(mos.begin(), mos.end(), machine.memory().mos_rom.data());
     std::copy(basic.begin(), basic.end(), machine.memory().basic_rom.data());
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     // Verify DFS ROM is accessible at slot 11 BEFORE reset
     machine.write(0xFE30, 11);
@@ -715,7 +717,7 @@ TEST_CASE("Model B+ ROM scanning checks all slots", "[disc][debug][boot]") {
     // Load ROMs into machine
     std::copy(mos.begin(), mos.end(), machine.memory().mos_rom.data());
     std::copy(basic.begin(), basic.end(), machine.memory().basic_rom.data());
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     // Now check all 16 slots
     INFO("Scanning all sideways slots for ROM headers:");
@@ -822,7 +824,7 @@ TEST_CASE("Model B+ DFS detection with modified type byte", "[disc][debug][boot]
     // Load all ROMs
     std::copy(mos.begin(), mos.end(), machine.memory().mos_rom.data());
     std::copy(basic.begin(), basic.end(), machine.memory().basic_rom.data());
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     // Verify modified DFS is at slot 11
     machine.write(0xFE30, 11);
@@ -889,7 +891,7 @@ TEST_CASE("Model B+ DFS ROM header format verification", "[disc][debug]") {
     REQUIRE(dfs.size() == 16384);
 
     // Load DFS ROM
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     // Select slot 11
     machine.write(0xFE30, 11);
@@ -983,7 +985,7 @@ TEST_CASE("ROMSEL bit 7 behavior during boot", "[disc][debug][boot]") {
 
     std::copy(mos.begin(), mos.end(), machine.memory().mos_rom.data());
     std::copy(basic.begin(), basic.end(), machine.memory().basic_rom.data());
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     machine.reset();
 
@@ -1801,7 +1803,7 @@ TEST_CASE("DFS *CAT command displays disc catalogue", "[disc][dfs][integration]"
     ModelBPlus machine;
     std::copy(mos.begin(), mos.end(), machine.memory().mos_rom.data());
     std::copy(basic.begin(), basic.end(), machine.memory().basic_rom.data());
-    std::copy(dfs.begin(), dfs.end(), machine.memory().rom_ic68_hi.data());
+    machine.memory().load_sideways_rom(11, dfs.data(), dfs.size());
 
     // Load and insert disc image
     auto result = load_disc_from_url_or_filepath(disc_filepath.string());

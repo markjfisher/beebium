@@ -27,6 +27,23 @@ enum class SlotType : uint8_t {
     Ram     // Returns data, accepts writes
 };
 
+// Uniform per-slot status, returned by Memory::slot_info(slot). Every
+// machine variant fills this in the same shape so that SidewaysService
+// (and any other consumer that wants to know "what's at slot N now?")
+// has a single, hardware-agnostic answer.
+//
+// - type:       what the slot currently presents (Empty / Rom / Ram).
+// - populated:  true when there is meaningful content - a loaded ROM
+//               image, a RAM bank with non-default contents, or a fixed
+//               soldered ROM/RAM. Empty sockets are not populated.
+// - image_name: identifier (typically a filepath) recorded when content
+//               was loaded; empty string when none.
+struct SlotInfo {
+    SlotType type = SlotType::Empty;
+    bool populated = false;
+    std::string image_name;
+};
+
 // Runtime-configurable 16KB memory slot.
 // Can be configured as Empty, Rom, or Ram at runtime.
 // This is used for sideways ROM/RAM sockets that can be dynamically configured.

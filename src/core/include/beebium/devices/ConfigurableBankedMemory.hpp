@@ -198,8 +198,12 @@ public:
         configure_slot(slot, SlotType::Empty);
     }
 
-    // Indicates this memory type supports runtime slot configuration
-    static constexpr bool supports_slot_configuration() { return true; }
+    // Uniform per-slot query (see SlotInfo in ConfigurableSlot.hpp).
+    SlotInfo slot_info(uint8_t slot) const {
+        if (slot >= num_banks) return {};
+        const auto& s = slots_[slot];
+        return {s.type(), s.is_populated(), std::string(s.image_name())};
+    }
 };
 
 } // namespace beebium
