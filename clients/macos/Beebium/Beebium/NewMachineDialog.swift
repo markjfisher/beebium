@@ -65,6 +65,13 @@ struct NewMachineDialog: View {
         .frame(minWidth: dialogWidth, maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showConfiguration)
         .task {
+            // Belt-and-braces: the dialog window is a singleton and SwiftUI
+            // keeps its @State across hide/show. Any transient flag that
+            // outlives the dismiss() call (e.g. if a future path forgets
+            // to reset it) would leave the dialog wedged. Clear them
+            // here so re-opening the dialog always starts cleanly.
+            isLaunching = false
+            launchError = nil
             if presetManager.systemPresets.isEmpty {
                 await presetManager.discoverPresets()
             }
@@ -338,6 +345,14 @@ struct NewMachineDialog: View {
             windowState.pendingNeedsRun = true
             windowState.pendingProvenanceUUID = core.provenanceUUID
             openWindow(id: "main")
+            // Reset transient state before dismissing. SwiftUI keeps the
+            // View (and its @State) alive across the singleton window's
+            // hide/show cycle, so without this the next File > New... shows
+            // the dialog still wedged in "Creating..." with controls
+            // disabled. The failure branch already resets isLaunching;
+            // mirror it here so success doesn't leak the in-flight state.
+            isLaunching = false
+            launchError = nil
             dismiss()
 
         case .failure(let error):
