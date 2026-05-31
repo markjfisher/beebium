@@ -91,13 +91,15 @@ clients via `GetSlotStatus`.
 
 The only link currently modelled is **Model B+ S13**:
 
-- `s13=west` (factory default) - IC71 answers slots 14 and 15. Slots
+- `s13=south` (factory default) - IC71 answers slots 14 and 15. Slots
   0 and 1 are not wired to any socket and read as open bus.
-- `s13=east` - IC71 answers slots 0 and 1. Slots 14 and 15 are not
+- `s13=north` - IC71 answers slots 0 and 1. Slots 14 and 15 are not
   wired and read as open bus.
 
+The compass directions match the Model B+ Service Manual (sec. 5.4.1).
+
 This is the link selecting where the standard 16K BASIC ROM appears.
-With S13=East, slot 15 is freed for a different language ROM, with
+With S13=North, slot 15 is freed for a different language ROM, with
 BASIC paged in at slot 0/1.
 
 ## Per-machine reference
@@ -135,6 +137,17 @@ socket supports ROM/RAM/empty (so the integral DFS or BASIC can be
 removed or replaced, and a sideways-RAM module fitted); none is
 runtime-reconfigurable. The B+ 64K has no built-in sideways RAM - that
 arrives with the B+ 128K's four RAM banks, a future variant.
+
+Each B+ ROM socket also has a **device-size link** (S9 IC35, S11 IC44,
+S12 IC57, S15 IC62, S18 IC68, S19 IC71) that selects 16K mode (West,
+default) or 32K mode (East). In 16K mode, ROMSEL bit 0 is not routed
+to the chip's A14, so the 16K image is aliased across both slots of
+the pair - this is what our emulator models for every user socket.
+In 32K mode, the two slots of the pair address different halves of
+the 32K device; we don't model this today. IC71 is hardwired East
+because the stock B+ system ROM is a 32K MOS+BASIC combo, with the
+MOS in the high 16K (at &C000-&FFFF, not sideways) and BASIC in the
+low 16K (sideways, aliased across the S13-selected pair).
 
 ### Model B with ROM/RAM expansion board
 
@@ -174,7 +187,7 @@ Error: Invalid --sideways configuration:
 
 The default-language and default-DFS ROMs are skipped automatically
 when the user's `--sideways` already targets the same socket (so a
-user `--sideways 0:rom:bas128.rom` under B+ S13=East is not silently
+user `--sideways 0:rom:bas128.rom` under B+ S13=North is not silently
 overwritten by the default BASIC at slot 15), and when the default
 slot does not exist on the configured topology.
 
@@ -255,15 +268,21 @@ References:
 
 ### Model B+
 
-Links **S9**, **S11**, **S12**, **S15** select between 16K and 32K
-EPROM modes for the user ROM sockets (IC35, IC44, IC57, IC62
-respectively). In 32K mode the chip's two halves appear at different
-slot numbers; modelling this requires a per-socket "16K vs 32K" enum
-in `MotherboardLinks` and topology entries that split the socket into
-two distinct logical entries when 32K mode is selected.
+Every B+ ROM socket has a device-size link selecting 16K mode (W,
+default - one image aliased across the slot pair) or 32K mode (E -
+two distinct halves at the two slot numbers): **S9** IC35, **S11**
+IC44, **S12** IC57, **S15** IC62, **S18** IC68, **S19** IC71. Per
+the Model B+ Service Manual sec. 5.4.1.
 
-Speed links **S18** and **S19** do not affect slot mapping and are out
-of scope for this mechanism.
+S19 is hardwired East at the factory because IC71 holds the 32K
+MOS+BASIC system ROM; the other five ship in W and our emulator
+matches that. Modelling 32K mode for user sockets requires a per-
+socket "16K vs 32K" enum in `MotherboardLinks` and topology entries
+that split the socket into two distinct logical entries when 32K
+mode is selected. Niche enough that it's left as future work.
+
+Earlier comments here described S18/S19 as speed links - they aren't;
+that was confusion with the Model B's links of the same number.
 
 ### Master 128
 

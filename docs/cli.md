@@ -264,7 +264,7 @@ current configuration without re-parsing CLI arguments.
 Example:
 
 ```bash
-beebium-model-b-plus --motherboard-link s13=east --sideways 0:rom:bbc-basic_2.rom
+beebium-model-b-plus --motherboard-link s13=north --sideways 0:rom:bbc-basic_2.rom
 ```
 
 See [sideways-slots.md](sideways-slots.md) for the full slot topology

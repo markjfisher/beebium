@@ -739,26 +739,45 @@ public:
     static constexpr bool supports_slot_configuration() { return false; }
 
     // Motherboard links on the BBC Model B+ that affect sideways slot
-    // mapping. Today we model link S13, which selects which slot number(s)
-    // the IC71 (BASIC) socket responds to:
+    // mapping. Today we model link S13, which selects which slot pair the
+    // BASIC half of the IC71 system ROM responds at:
     //
-    //   * West (default factory position): IC71 appears at slots 14 and 15.
-    //     This is the standard configuration -- BASIC sits in slot 15, where
-    //     the MOS searches for a language ROM.
+    //   * South (default factory position): BASIC appears at slots 14 and
+    //     15. The MOS scans from 15 downward for the language ROM, so this
+    //     gives BASIC the highest priority.
     //
-    //   * East: IC71 appears at slots 0 and 1. Used when slot 15 is needed
-    //     for a different language ROM and BASIC is paged in elsewhere.
+    //   * North: BASIC appears at slots 0 and 1. Used when slot 15 is
+    //     needed for a different language ROM and BASIC is paged in at
+    //     the lowest-priority pair.
     //
-    // The other slot-mapping links on the B+ (S9, S11, S12, S15) switch user
-    // sockets between 16K and 32K modes -- not yet modelled. Speed links
-    // S18/S19 do not affect slot mapping and are not covered by this struct.
+    // The directions match the Model B+ Service Manual (sec. 5.4.1, Fig 4).
+    //
+    // The other six links described in the service manual (S9, S11, S12,
+    // S15, S18, S19) are device-size links, one per ROM socket. They select
+    // whether the chip in that socket is operated as a 16K device (link
+    // West, ROMSEL bit 0 not routed to A14, the 16K image is aliased at
+    // both slots of the pair) or a 32K device (link East, ROMSEL bit 0 ->
+    // A14, two distinct 16K halves at the pair):
+    //
+    //     S9  IC35   |   S15 IC62
+    //     S11 IC44   |   S18 IC68
+    //     S12 IC57   |   S19 IC71 (hardwired East for the 32K MOS+BASIC)
+    //
+    // Earlier comments here described S18/S19 as speed links - they aren't,
+    // I'd confused them with the Model B's links of the same number. The
+    // stock B+ ships every user socket in West (16K mode), which matches
+    // our current behaviour (each socket aliased across both slots of the
+    // pair). 32K-device mode isn't modelled today; if a user installed a
+    // 32K dual-ROM chip in a user socket the emulator would alias the
+    // first 16K to both slot numbers instead of presenting two distinct
+    // halves. Rare enough that we leave it as future work.
     struct MotherboardLinks {
         // Compile-time flag: this machine has slot-mapping links the user
         // can configure with --motherboard-link.
         static constexpr bool has_slot_links = true;
 
-        enum class S13Position { West, East };
-        S13Position s13 = S13Position::West;
+        enum class S13Position { South, North };
+        S13Position s13 = S13Position::South;
 
         std::optional<std::string> parse(std::string_view key,
                                          std::string_view value) {
@@ -774,11 +793,11 @@ public:
             const std::string lkey = lower(key);
             const std::string lvalue = lower(value);
             if (lkey == "s13") {
-                if (lvalue == "west") { s13 = S13Position::West; return std::nullopt; }
-                if (lvalue == "east") { s13 = S13Position::East; return std::nullopt; }
+                if (lvalue == "south") { s13 = S13Position::South; return std::nullopt; }
+                if (lvalue == "north") { s13 = S13Position::North; return std::nullopt; }
                 std::ostringstream msg;
                 msg << "Invalid value for motherboard link S13: '" << value
-                    << "' (expected: west, east)";
+                    << "' (expected: south, north)";
                 return msg.str();
             }
             std::ostringstream msg;
@@ -793,8 +812,8 @@ public:
         std::vector<MotherboardLinkInfo> describe() const {
             return {{
                 "S13",
-                s13 == S13Position::West ? "west" : "east",
-                "IC71 (BASIC ROM) slot position: West=slots 14/15, East=slots 0/1"
+                s13 == S13Position::South ? "south" : "north",
+                "IC71 (BASIC) slot pair: South=slots 14/15 (default), North=slots 0/1"
             }};
         }
 
@@ -804,8 +823,8 @@ public:
         // with newlines without worrying about trailing blanks.
         static std::vector<std::string> help_lines() {
             return {
-                "s13=west|east   IC71 (BASIC) slot pair "
-                "(west=slots 14/15, east=slots 0/1; default: west)"
+                "s13=south|north  IC71 (BASIC) slot pair "
+                "(south=slots 14/15, north=slots 0/1; default: south)"
             };
         }
     };
@@ -832,9 +851,9 @@ public:
         topo.has_aliasing = true;  // Each socket responds to >1 slot
         std::vector<int> ic71_slots;
         switch (links.s13) {
-            case MotherboardLinks::S13Position::West:
+            case MotherboardLinks::S13Position::South:
                 ic71_slots = {14, 15}; break;
-            case MotherboardLinks::S13Position::East:
+            case MotherboardLinks::S13Position::North:
                 ic71_slots = {0, 1}; break;
         }
         struct Entry { const char* label; std::vector<int> slots; };
@@ -871,12 +890,12 @@ public:
     // is harmless but unnecessary.
     void apply_motherboard_links(const MotherboardLinks& links) {
         switch (links.s13) {
-            case MotherboardLinks::S13Position::West:
+            case MotherboardLinks::S13Position::South:
                 // IC71 lives at slots 14/15; slots 0/1 are unwired.
                 sideways.unbind_bank(0);
                 sideways.unbind_bank(1);
                 break;
-            case MotherboardLinks::S13Position::East:
+            case MotherboardLinks::S13Position::North:
                 // IC71 lives at slots 0/1; slots 14/15 are unwired.
                 sideways.unbind_bank(14);
                 sideways.unbind_bank(15);

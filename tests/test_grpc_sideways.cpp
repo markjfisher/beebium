@@ -706,8 +706,8 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B socket capabilities",
 
 TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13",
           "[grpc][sideways][model_b_plus][links]") {
-    SECTION("default S13=West binds IC71 to slots 14/15") {
-        ModelBPlusSidewaysFixture fixture;  // default links = S13 West
+    SECTION("default S13=South binds IC71 to slots 14/15") {
+        ModelBPlusSidewaysFixture fixture;  // default links = S13 South
 
         grpc::ClientContext context;
         beebium::GetSlotStatusRequest request;
@@ -720,7 +720,7 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
         REQUIRE(response.sockets_size() == 6);
         REQUIRE(response.motherboard_links_size() == 1);
         CHECK(response.motherboard_links(0).name() == "S13");
-        CHECK(response.motherboard_links(0).value() == "west");
+        CHECK(response.motherboard_links(0).value() == "south");
 
         // IC71 should be the first socket and own slots 14, 15.
         const auto& ic71 = response.sockets(0);
@@ -740,9 +740,9 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
         }
     }
 
-    SECTION("S13=East rebinds IC71 to slots 0/1") {
+    SECTION("S13=North rebinds IC71 to slots 0/1") {
         beebium::ModelBPlusHardware::MotherboardLinks links;
-        links.s13 = beebium::ModelBPlusHardware::MotherboardLinks::S13Position::East;
+        links.s13 = beebium::ModelBPlusHardware::MotherboardLinks::S13Position::North;
         ModelBPlusSidewaysFixture fixture{links};
 
         grpc::ClientContext context;
@@ -753,7 +753,7 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
 
         REQUIRE(status.ok());
         REQUIRE(response.motherboard_links_size() == 1);
-        CHECK(response.motherboard_links(0).value() == "east");
+        CHECK(response.motherboard_links(0).value() == "north");
 
         const auto& ic71 = response.sockets(0);
         CHECK(ic71.socket_label() == "IC71");
@@ -761,6 +761,7 @@ TEST_CASE("SidewaysService GetSlotStatus reports Model B+ topology including S13
         CHECK(ic71.aliased_slots(0) == 0);
         CHECK(ic71.aliased_slots(1) == 1);
     }
+
 }
 
 TEST_CASE("SidewaysService GetSlotStatus reports ROM/RAM board socket capabilities",

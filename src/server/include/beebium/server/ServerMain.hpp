@@ -1873,7 +1873,7 @@ public:
             // Push the configured motherboard link state into the server
             // so that the sideways service (constructed during start())
             // reports the actual topology to clients -- e.g. Model B+
-            // with --motherboard-link s13=east shows IC71 at slots 0/1.
+            // with --motherboard-link s13=north shows IC71 at slots 0/1.
             server.set_motherboard_links(config.motherboard_links);
 
             beebium::service::Provenance provenance{
