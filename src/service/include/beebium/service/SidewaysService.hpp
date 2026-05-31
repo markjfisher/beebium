@@ -143,13 +143,6 @@ public:
             response->set_num_physical_slots(
                 static_cast<uint32_t>(topo.sockets.size()));
 
-            if constexpr (HasSideways<Memory>) {
-                response->set_selected_bank(
-                    machine_.state().memory.sideways.selected_bank());
-            } else {
-                response->set_selected_bank(0);
-            }
-
             for (const auto& spec : topo.sockets) {
                 auto* socket_status = response->add_sockets();
                 socket_status->set_socket_index(spec.socket_index);
@@ -230,13 +223,10 @@ public:
             // Machine has no sideways memory and no topology.
             response->set_has_aliasing(false);
             response->set_num_physical_slots(0);
-            response->set_selected_bank(0);
             return grpc::Status::OK;
         } else {
             // Should be unreachable: any machine with sideways now also
             // provides slot_topology().
-            response->set_selected_bank(
-                machine_.state().memory.sideways.selected_bank());
             return grpc::Status::OK;
         }
     }
@@ -451,43 +441,22 @@ public:
     {
         using Memory = typename MachineType::Memory;
 
+        (void)request;
+        (void)writer;
         if constexpr (!HasSideways<Memory>) {
-            // No sideways memory - just return immediately
+            // No sideways memory - just return immediately.
             return grpc::Status::OK;
         } else {
-            uint32_t min_interval_ms = request->min_interval_ms();
-            if (min_interval_ms < 10) {
-                min_interval_ms = 10;  // Minimum 10ms between updates
-            }
-
-            uint8_t last_bank = 255;  // Invalid initial value
-
+            // The only events this stream is ever going to carry are
+            // SlotConfiguredEvent (after ConfigureSlot landed) and the
+            // forthcoming SlotHeaderChangedEvent (docs/discussion/
+            // sideways-live-header-updates.md). Neither emits yet, so for
+            // now this is a block-until-cancelled rendezvous - the stream
+            // exists so clients can hold it open and start receiving
+            // events as soon as the emitters are wired up.
             while (!context->IsCancelled()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(min_interval_ms));
-
-                std::lock_guard<std::mutex> lock(mutex_);
-
-                auto& sideways = machine_.state().memory.sideways;
-                uint8_t current_bank = sideways.selected_bank();
-
-                if (current_bank != last_bank) {
-                    SidewaysEvent event;
-                    event.set_timestamp_cycles(machine_.cycle_count());
-
-                    auto* bank_event = event.mutable_bank_selected();
-                    bank_event->set_bank(current_bank);
-
-                    if constexpr (HasAliasedSideways<Memory>) {
-                        bank_event->set_socket(AliasedBankedMemory::slot_to_socket(current_bank));
-                    } else {
-                        bank_event->set_socket(current_bank);
-                    }
-
-                    writer->Write(event);
-                    last_bank = current_bank;
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-
             return grpc::Status::OK;
         }
     }

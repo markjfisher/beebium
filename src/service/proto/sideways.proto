@@ -39,7 +39,11 @@ message GetSlotStatusResponse {
     bool has_aliasing = 1;              // True for Model B (4 sockets with aliasing)
     uint32 num_physical_slots = 2;      // 4 for Model B, 16 for ROM/RAM board
     repeated SocketStatus sockets = 3;  // Physical sockets/slots
-    uint32 selected_bank = 4;           // Currently selected ROMSEL bank (0-15)
+    // Tag 4 (selected_bank) was removed: the BBC's ROMSEL value changes
+    // faster than any client can usefully sample, and the field was
+    // never load-bearing for UI or tests. Do not reuse this tag.
+    reserved 4;
+    reserved "selected_bank";
     // Motherboard link (jumper) state on this server, when the machine
     // variant has slot-mapping links (e.g. Model B+ S13). Empty for
     // machines with no such links.
@@ -145,9 +149,13 @@ message SubscribeEventsRequest {
 
 message SidewaysEvent {
     uint64 timestamp_cycles = 1;        // Emulator cycle count
+    // Tag 3 (BankSelectedEvent) was removed: ROMSEL changes thousands
+    // of times per second during OS scans and intermediate samples have
+    // no observational value. Do not reuse this tag.
+    reserved 3;
+    reserved "bank_selected";
     oneof event {
         SlotConfiguredEvent slot_configured = 2;
-        BankSelectedEvent bank_selected = 3;
     }
 }
 
@@ -156,9 +164,4 @@ message SlotConfiguredEvent {
     uint32 socket = 2;                  // Physical socket number
     SidewaysSlotType type = 3;
     string image_name = 4;
-}
-
-message BankSelectedEvent {
-    uint32 bank = 1;                    // ROMSEL value (0-15)
-    uint32 socket = 2;                  // Physical socket being accessed
 }

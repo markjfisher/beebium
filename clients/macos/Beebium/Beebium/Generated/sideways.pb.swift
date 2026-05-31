@@ -90,9 +90,6 @@ struct Beebium_GetSlotStatusResponse: Sendable {
   /// Physical sockets/slots
   var sockets: [Beebium_SocketStatus] = []
 
-  /// Currently selected ROMSEL bank (0-15)
-  var selectedBank: UInt32 = 0
-
   /// Motherboard link (jumper) state on this server, when the machine
   /// variant has slot-mapping links (e.g. Model B+ S13). Empty for
   /// machines with no such links.
@@ -121,7 +118,10 @@ struct Beebium_SocketStatus: Sendable {
   /// Has content loaded
   var populated: Bool = false
 
-  /// Source filename/name if loaded
+  /// Source filepath if loaded - absolute path on the server. Clients that
+  /// want a short display name should take the basename. Empty for empty or
+  /// blank-RAM slots, and on machines that have no per-slot image storage
+  /// (e.g. Model B+).
   var imageName: String = String()
 
   /// Physical label (e.g., "IC52", "IC88") for Model B
@@ -368,19 +368,10 @@ struct Beebium_SidewaysEvent: Sendable {
     set {event = .slotConfigured(newValue)}
   }
 
-  var bankSelected: Beebium_BankSelectedEvent {
-    get {
-      if case .bankSelected(let v)? = event {return v}
-      return Beebium_BankSelectedEvent()
-    }
-    set {event = .bankSelected(newValue)}
-  }
-
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   enum OneOf_Event: Equatable, Sendable {
     case slotConfigured(Beebium_SlotConfiguredEvent)
-    case bankSelected(Beebium_BankSelectedEvent)
 
   }
 
@@ -401,22 +392,6 @@ struct Beebium_SlotConfiguredEvent: Sendable {
   var type: Beebium_SidewaysSlotType = .empty
 
   var imageName: String = String()
-
-  var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  init() {}
-}
-
-struct Beebium_BankSelectedEvent: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  /// ROMSEL value (0-15)
-  var bank: UInt32 = 0
-
-  /// Physical socket being accessed
-  var socket: UInt32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -452,7 +427,7 @@ extension Beebium_GetSlotStatusRequest: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Beebium_GetSlotStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".GetSlotStatusResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_aliasing\0\u{3}num_physical_slots\0\u{1}sockets\0\u{3}selected_bank\0\u{3}motherboard_links\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_aliasing\0\u{3}num_physical_slots\0\u{1}sockets\0\u{4}\u{2}motherboard_links\0\u{b}selected_bank\0\u{c}\u{4}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -463,7 +438,6 @@ extension Beebium_GetSlotStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
       case 1: try { try decoder.decodeSingularBoolField(value: &self.hasAliasing_p) }()
       case 2: try { try decoder.decodeSingularUInt32Field(value: &self.numPhysicalSlots) }()
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.sockets) }()
-      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.selectedBank) }()
       case 5: try { try decoder.decodeRepeatedMessageField(value: &self.motherboardLinks) }()
       default: break
       }
@@ -480,9 +454,6 @@ extension Beebium_GetSlotStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.sockets.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.sockets, fieldNumber: 3)
     }
-    if self.selectedBank != 0 {
-      try visitor.visitSingularUInt32Field(value: self.selectedBank, fieldNumber: 4)
-    }
     if !self.motherboardLinks.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.motherboardLinks, fieldNumber: 5)
     }
@@ -493,7 +464,6 @@ extension Beebium_GetSlotStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.hasAliasing_p != rhs.hasAliasing_p {return false}
     if lhs.numPhysicalSlots != rhs.numPhysicalSlots {return false}
     if lhs.sockets != rhs.sockets {return false}
-    if lhs.selectedBank != rhs.selectedBank {return false}
     if lhs.motherboardLinks != rhs.motherboardLinks {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -938,7 +908,7 @@ extension Beebium_SubscribeEventsRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SidewaysEvent"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}timestamp_cycles\0\u{3}slot_configured\0\u{3}bank_selected\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}timestamp_cycles\0\u{3}slot_configured\0\u{b}bank_selected\0\u{c}\u{3}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -960,19 +930,6 @@ extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
           self.event = .slotConfigured(v)
         }
       }()
-      case 3: try {
-        var v: Beebium_BankSelectedEvent?
-        var hadOneofValue = false
-        if let current = self.event {
-          hadOneofValue = true
-          if case .bankSelected(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.event = .bankSelected(v)
-        }
-      }()
       default: break
       }
     }
@@ -986,17 +943,9 @@ extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if self.timestampCycles != 0 {
       try visitor.visitSingularUInt64Field(value: self.timestampCycles, fieldNumber: 1)
     }
-    switch self.event {
-    case .slotConfigured?: try {
-      guard case .slotConfigured(let v)? = self.event else { preconditionFailure() }
+    try { if case .slotConfigured(let v)? = self.event {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    }()
-    case .bankSelected?: try {
-      guard case .bankSelected(let v)? = self.event else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
-    }()
-    case nil: break
-    }
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1048,41 +997,6 @@ extension Beebium_SlotConfiguredEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.socket != rhs.socket {return false}
     if lhs.type != rhs.type {return false}
     if lhs.imageName != rhs.imageName {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-extension Beebium_BankSelectedEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".BankSelectedEvent"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}bank\0\u{1}socket\0")
-
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.bank) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.socket) }()
-      default: break
-      }
-    }
-  }
-
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.bank != 0 {
-      try visitor.visitSingularUInt32Field(value: self.bank, fieldNumber: 1)
-    }
-    if self.socket != 0 {
-      try visitor.visitSingularUInt32Field(value: self.socket, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  static func ==(lhs: Beebium_BankSelectedEvent, rhs: Beebium_BankSelectedEvent) -> Bool {
-    if lhs.bank != rhs.bank {return false}
-    if lhs.socket != rhs.socket {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

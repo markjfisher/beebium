@@ -47,7 +47,6 @@ final class SidewaysClient: ObservableObject, Disconnectable {
     }
 
     @Published private(set) var sockets: [Socket] = []
-    @Published private(set) var selectedBank: UInt32 = 0
     @Published private(set) var hasAliasing: Bool = false
     @Published private(set) var isLoaded: Bool = false
     @Published private(set) var errorMessage: String?
@@ -71,7 +70,6 @@ final class SidewaysClient: ObservableObject, Disconnectable {
         subscriptionTask = nil
         client = nil
         sockets = []
-        selectedBank = 0
         hasAliasing = false
         isLoaded = false
         errorMessage = nil
@@ -88,7 +86,6 @@ final class SidewaysClient: ObservableObject, Disconnectable {
                 // Highest priority (highest slot) first - mirrors the MOS scan
                 // and the New Machine dialog's Memory tab ordering.
                 self.sockets = updated.sorted { $0.priority > $1.priority }
-                self.selectedBank = response.selectedBank
                 self.hasAliasing = response.hasAliasing_p
                 self.isLoaded = true
                 self.errorMessage = nil
@@ -121,8 +118,6 @@ final class SidewaysClient: ObservableObject, Disconnectable {
     private func handleEvent(_ event: Beebium_SidewaysEvent) {
         guard let payload = event.event else { return }
         switch payload {
-        case .bankSelected(let bs):
-            selectedBank = bs.bank
         case .slotConfigured:
             // A slot was reconfigured via ConfigureSlot: re-fetch so the
             // parsed rom_header reflects the new contents.

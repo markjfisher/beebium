@@ -122,7 +122,6 @@ class SlotStatusReport:
     has_aliasing: bool
     num_physical_slots: int
     sockets: tuple[SocketStatus, ...]
-    selected_bank: int
     motherboard_links: tuple[MotherboardLink, ...]
 
     def find_socket_for_slot(self, slot: int) -> SocketStatus | None:
@@ -144,20 +143,11 @@ class SlotConfiguredEvent:
     image_filepath: str
 
 
-@dataclasses.dataclass(frozen=True)
-class BankSelectedEvent:
-    """Emitted when the BBC writes a new value to ROMSEL (&FE30).
-
-    Fires only on actual bank changes, not on every write to ROMSEL.
-    """
-
-    timestamp_cycles: int
-    bank: int
-    socket: int
-
-
-# Union type for events emitted by SubscribeEvents.
-SidewaysEvent = SlotConfiguredEvent | BankSelectedEvent
+# Union type for events emitted by SubscribeEvents. The protocol is set up
+# to grow more event variants (e.g. SlotHeaderChangedEvent - see
+# docs/discussion/sideways-live-header-updates.md); for now SlotConfigured
+# is the only one.
+SidewaysEvent = SlotConfiguredEvent
 
 
 class Sideways:
@@ -171,7 +161,7 @@ class Sideways:
                 print(socket.label, socket.rom_header.title)
 
         for event in bbc.sideways.subscribe_events():
-            ...  # SlotConfiguredEvent, BankSelectedEvent
+            ...  # SlotConfiguredEvent
 
         # Reconfigure (errors on Model B / Model B+ - chip sockets).
         bbc.sideways.configure_slot(7, SlotType.RAM)
@@ -263,14 +253,15 @@ class Sideways:
     ) -> Iterator[SidewaysEvent]:
         """Stream sideways events from the server.
 
-        Yields each event as a typed :class:`SlotConfiguredEvent` or
-        :class:`BankSelectedEvent`. The stream runs until the caller
-        cancels (return / break out of the for-loop) or the server
-        closes it.
+        Yields each event as a typed :class:`SlotConfiguredEvent` (the
+        only variant defined today; the stream is structured to grow
+        more). The stream runs until the caller cancels (return / break
+        out of the for-loop) or the server closes it.
 
         Args:
             min_interval_ms: Minimum interval between events the server
-                will produce (debounce for rapid ROMSEL writes).
+                will produce. Reserved for future event types that need
+                debouncing; currently unused.
         """
         request = sideways_pb2.SubscribeEventsRequest(
             min_interval_ms=min_interval_ms,
@@ -288,7 +279,6 @@ def _map_status(response: sideways_pb2.GetSlotStatusResponse) -> SlotStatusRepor
         has_aliasing=response.has_aliasing,
         num_physical_slots=response.num_physical_slots,
         sockets=tuple(_map_socket(s) for s in response.sockets),
-        selected_bank=response.selected_bank,
         motherboard_links=tuple(
             MotherboardLink(
                 name=link.name,
@@ -336,11 +326,5 @@ def _map_event(event: sideways_pb2.SidewaysEvent) -> SidewaysEvent | None:
             socket=event.slot_configured.socket,
             type=SlotType(event.slot_configured.type),
             image_filepath=event.slot_configured.image_name,
-        )
-    if which == "bank_selected":
-        return BankSelectedEvent(
-            timestamp_cycles=event.timestamp_cycles,
-            bank=event.bank_selected.bank,
-            socket=event.bank_selected.socket,
         )
     return None
