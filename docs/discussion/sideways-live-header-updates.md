@@ -36,14 +36,20 @@ honest, with eventual consistency on the order of a second.
 
 ### Wire change: one new event, one new request flag
 
-Extend the existing `SidewaysEvent` oneof with a third variant:
+`SidewaysEvent` today defines `SlotConfiguredEvent` (declared in the proto
+but no server code emits it yet -- a separate piece of work). Add a second
+variant for the live header signal:
 
 ```proto
 message SidewaysEvent {
+    // Tag 3 (BankSelectedEvent) is reserved -- the previous ROMSEL-delta
+    // poller was removed because the underlying state turns over too fast
+    // for a sampled stream to carry useful information.
+    reserved 3;
+    reserved "bank_selected";
     oneof event {
-        SlotConfiguredEvent slot_configured = 1;
-        BankSelectedEvent bank_selected = 2;
-        SlotHeaderChangedEvent slot_header_changed = 3;
+        SlotConfiguredEvent slot_configured = 2;
+        SlotHeaderChangedEvent slot_header_changed = 4;
     }
 }
 
@@ -66,8 +72,9 @@ message SubscribeEventsRequest {
 }
 ```
 
-`SlotConfiguredEvent` and `BankSelectedEvent` keep flowing unconditionally on
-every stream, as today.
+`SlotConfiguredEvent` keeps flowing unconditionally on every stream (once
+its emitter is wired up). `SubscribeEvents` is today a block-until-cancelled
+stream with no live emitters; this work makes it carry real events.
 
 ### Server-side: refcounted 1 Hz scanner
 
@@ -123,8 +130,10 @@ How each client cashes that out today:
   cancels.
 - **TypeScript.** Same shape as Python or Swift depending on whether the
   consumer is a script or a UI.
-- **Future debugger.** Typically subscribes with the flag *off* -- it wants
-  `BankSelectedEvent` for breakpoint logic, not slot headers. It flips the
+- **Future debugger.** Typically subscribes with the flag *off*. The previous
+  `BankSelectedEvent` that might have served breakpoint logic was removed
+  (too lossy to be useful); when a debugger really needs to track bank
+  selection it will need a different mechanism, not this stream. Flips the
   flag on only if it ever surfaces a live memory inspector.
 
 The server doesn't know which kind of client is on the other end. It only
@@ -137,11 +146,15 @@ knows how many open streams asked for header monitoring.
   decoupling benefit. The events are already one oneof.
 - **Always-on monitoring.** Cheap doesn't mean free, and a machine that nobody
   is looking at shouldn't be doing arithmetic on its banks every second.
-- **A ROMSEL-write trigger.** Partial signal: `*SRLOAD` doesn't have to flip
-  ROMSEL during the write loop, so a ROMSEL-only design would miss steady
-  writes. A 1 Hz periodic scan over the (small) set of RAM slots is so cheap
-  that ROMSEL adds complexity without payoff. Revisit only if 1 Hz feels
-  laggy in practice.
+- **A ROMSEL-write trigger.** Partial signal even if implemented as a real
+  write hook: `*SRLOAD` doesn't have to flip ROMSEL during the write loop, so
+  a ROMSEL-only design would miss steady writes. (A previous ROMSEL-delta
+  *poller* existed and was removed for similar reasons -- ROMSEL turns over
+  thousands of times per second during OS scans and the sampled stream was
+  carrying no observational value. Any future ROMSEL trigger would need a
+  real write hook, not a poll.) A 1 Hz periodic scan over the (small) set of
+  RAM slots is so cheap that ROMSEL adds complexity without payoff. Revisit
+  only if 1 Hz feels laggy in practice.
 - **Per-slot subscription** (`watch_slots = [4, 12]`). Whole-machine
   monitoring is bounded by RAM-slot count, which is at most 16. Filtering
   client-side is fine.
@@ -258,9 +271,10 @@ feature.
 
 ## Future extensions
 
-- ROMSEL write as an event accelerator: when the OS flips ROMSEL away from a
-  RAM slot, prioritise that slot in the next tick. Same protocol; pure
-  server-side optimisation.
+- ROMSEL write as an event accelerator: hook the actual write path
+  (not a poll) and, when the OS flips ROMSEL away from a RAM slot,
+  prioritise that slot in the next tick. Same protocol; pure server-side
+  optimisation.
 - `interval_ms` field on `SubscribeEventsRequest` if a slow client wants
   fewer events.
 - Generalise to other live state that nobody currently asks for live (banked
