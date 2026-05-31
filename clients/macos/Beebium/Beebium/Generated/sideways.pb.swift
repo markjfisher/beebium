@@ -342,8 +342,15 @@ struct Beebium_SubscribeEventsRequest: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// Minimum interval between updates (0 = immediate)
+  /// Reserved for future per-event-type rate control.
   var minIntervalMs: UInt32 = 0
+
+  /// Opt in to SlotHeaderChangedEvent. Default off: emits at ~1 Hz
+  /// while RAM-slot header bytes change. Costs the server a periodic
+  /// rescan, so opt in only while you actually need live updates and
+  /// drop the subscription (or restart it without this flag) when you
+  /// don't. See docs/discussion/sideways-live-header-updates.md.
+  var monitorHeaderChanges: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -368,10 +375,19 @@ struct Beebium_SidewaysEvent: Sendable {
     set {event = .slotConfigured(newValue)}
   }
 
+  var slotHeaderChanged: Beebium_SlotHeaderChangedEvent {
+    get {
+      if case .slotHeaderChanged(let v)? = event {return v}
+      return Beebium_SlotHeaderChangedEvent()
+    }
+    set {event = .slotHeaderChanged(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   enum OneOf_Event: Equatable, Sendable {
     case slotConfigured(Beebium_SlotConfiguredEvent)
+    case slotHeaderChanged(Beebium_SlotHeaderChangedEvent)
 
   }
 
@@ -396,6 +412,35 @@ struct Beebium_SlotConfiguredEvent: Sendable {
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
+}
+
+/// Emitted by the live header scanner when the parsed ROM header for a
+/// RAM slot's current contents differs from the last value broadcast
+/// on this stream. Only fires for subscribers with
+/// SubscribeEventsRequest.monitor_header_changes = true.
+struct Beebium_SlotHeaderChangedEvent: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Logical slot whose header just changed
+  var slot: UInt32 = 0
+
+  /// Current parse result, same shape as SocketStatus.rom_header
+  var romHeader: Beebium_RomHeader {
+    get {return _romHeader ?? Beebium_RomHeader()}
+    set {_romHeader = newValue}
+  }
+  /// Returns true if `romHeader` has been explicitly set.
+  var hasRomHeader: Bool {return self._romHeader != nil}
+  /// Clears the value of `romHeader`. Subsequent reads from it will return its default value.
+  mutating func clearRomHeader() {self._romHeader = nil}
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _romHeader: Beebium_RomHeader? = nil
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -878,7 +923,7 @@ extension Beebium_ReadSlotDataResponse: SwiftProtobuf.Message, SwiftProtobuf._Me
 
 extension Beebium_SubscribeEventsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SubscribeEventsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}min_interval_ms\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}min_interval_ms\0\u{3}monitor_header_changes\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -887,6 +932,7 @@ extension Beebium_SubscribeEventsRequest: SwiftProtobuf.Message, SwiftProtobuf._
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularUInt32Field(value: &self.minIntervalMs) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.monitorHeaderChanges) }()
       default: break
       }
     }
@@ -896,11 +942,15 @@ extension Beebium_SubscribeEventsRequest: SwiftProtobuf.Message, SwiftProtobuf._
     if self.minIntervalMs != 0 {
       try visitor.visitSingularUInt32Field(value: self.minIntervalMs, fieldNumber: 1)
     }
+    if self.monitorHeaderChanges != false {
+      try visitor.visitSingularBoolField(value: self.monitorHeaderChanges, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Beebium_SubscribeEventsRequest, rhs: Beebium_SubscribeEventsRequest) -> Bool {
     if lhs.minIntervalMs != rhs.minIntervalMs {return false}
+    if lhs.monitorHeaderChanges != rhs.monitorHeaderChanges {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -908,7 +958,7 @@ extension Beebium_SubscribeEventsRequest: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SidewaysEvent"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}timestamp_cycles\0\u{3}slot_configured\0\u{b}bank_selected\0\u{c}\u{3}\u{1}")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}timestamp_cycles\0\u{3}slot_configured\0\u{4}\u{2}slot_header_changed\0\u{b}bank_selected\0\u{c}\u{3}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -930,6 +980,19 @@ extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
           self.event = .slotConfigured(v)
         }
       }()
+      case 4: try {
+        var v: Beebium_SlotHeaderChangedEvent?
+        var hadOneofValue = false
+        if let current = self.event {
+          hadOneofValue = true
+          if case .slotHeaderChanged(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.event = .slotHeaderChanged(v)
+        }
+      }()
       default: break
       }
     }
@@ -943,9 +1006,17 @@ extension Beebium_SidewaysEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if self.timestampCycles != 0 {
       try visitor.visitSingularUInt64Field(value: self.timestampCycles, fieldNumber: 1)
     }
-    try { if case .slotConfigured(let v)? = self.event {
+    switch self.event {
+    case .slotConfigured?: try {
+      guard case .slotConfigured(let v)? = self.event else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-    } }()
+    }()
+    case .slotHeaderChanged?: try {
+      guard case .slotHeaderChanged(let v)? = self.event else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case nil: break
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -997,6 +1068,45 @@ extension Beebium_SlotConfiguredEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.socket != rhs.socket {return false}
     if lhs.type != rhs.type {return false}
     if lhs.imageName != rhs.imageName {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SlotHeaderChangedEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SlotHeaderChangedEvent"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slot\0\u{3}rom_header\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.slot) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._romHeader) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.slot != 0 {
+      try visitor.visitSingularUInt32Field(value: self.slot, fieldNumber: 1)
+    }
+    try { if let v = self._romHeader {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_SlotHeaderChangedEvent, rhs: Beebium_SlotHeaderChangedEvent) -> Bool {
+    if lhs.slot != rhs.slot {return false}
+    if lhs._romHeader != rhs._romHeader {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

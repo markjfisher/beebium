@@ -144,7 +144,13 @@ message ReadSlotDataResponse {
 // --- Events ---
 
 message SubscribeEventsRequest {
-    uint32 min_interval_ms = 1;         // Minimum interval between updates (0 = immediate)
+    uint32 min_interval_ms = 1;         // Reserved for future per-event-type rate control.
+    // Opt in to SlotHeaderChangedEvent. Default off: emits at ~1 Hz
+    // while RAM-slot header bytes change. Costs the server a periodic
+    // rescan, so opt in only while you actually need live updates and
+    // drop the subscription (or restart it without this flag) when you
+    // don't. See docs/discussion/sideways-live-header-updates.md.
+    bool monitor_header_changes = 2;
 }
 
 message SidewaysEvent {
@@ -156,6 +162,7 @@ message SidewaysEvent {
     reserved "bank_selected";
     oneof event {
         SlotConfiguredEvent slot_configured = 2;
+        SlotHeaderChangedEvent slot_header_changed = 4;
     }
 }
 
@@ -164,4 +171,13 @@ message SlotConfiguredEvent {
     uint32 socket = 2;                  // Physical socket number
     SidewaysSlotType type = 3;
     string image_name = 4;
+}
+
+// Emitted by the live header scanner when the parsed ROM header for a
+// RAM slot's current contents differs from the last value broadcast
+// on this stream. Only fires for subscribers with
+// SubscribeEventsRequest.monitor_header_changes = true.
+message SlotHeaderChangedEvent {
+    uint32 slot = 1;        // Logical slot whose header just changed
+    RomHeader rom_header = 2;  // Current parse result, same shape as SocketStatus.rom_header
 }

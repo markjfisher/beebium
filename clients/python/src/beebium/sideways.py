@@ -143,11 +143,24 @@ class SlotConfiguredEvent:
     image_filepath: str
 
 
-# Union type for events emitted by SubscribeEvents. The protocol is set up
-# to grow more event variants (e.g. SlotHeaderChangedEvent - see
-# docs/discussion/sideways-live-header-updates.md); for now SlotConfigured
-# is the only one.
-SidewaysEvent = SlotConfiguredEvent
+@dataclasses.dataclass(frozen=True)
+class SlotHeaderChangedEvent:
+    """Emitted by the live header scanner when the parsed ROM header of
+    a RAM slot's current contents differs from the last value broadcast.
+
+    Fires only for subscribers who opted in with
+    ``monitor_header_changes=True`` on :meth:`Sideways.subscribe_events`.
+    Eventually-consistent at ~1 Hz: typical end-to-end latency after the
+    BBC writes a new ROM image (e.g. via ``*SRLOAD``) is well under two
+    seconds. See ``docs/discussion/sideways-live-header-updates.md``.
+    """
+
+    timestamp_cycles: int
+    slot: int
+    rom_header: RomHeader
+
+
+SidewaysEvent = SlotConfiguredEvent | SlotHeaderChangedEvent
 
 
 class Sideways:
@@ -249,22 +262,28 @@ class Sideways:
 
     def subscribe_events(
         self,
+        *,
+        monitor_header_changes: bool = False,
         min_interval_ms: int = 0,
     ) -> Iterator[SidewaysEvent]:
         """Stream sideways events from the server.
 
-        Yields each event as a typed :class:`SlotConfiguredEvent` (the
-        only variant defined today; the stream is structured to grow
-        more). The stream runs until the caller cancels (return / break
-        out of the for-loop) or the server closes it.
+        Yields typed events. The stream runs until the caller cancels
+        (return / break out of the for-loop) or the server closes it.
 
         Args:
-            min_interval_ms: Minimum interval between events the server
-                will produce. Reserved for future event types that need
-                debouncing; currently unused.
+            monitor_header_changes: Opt in to
+                :class:`SlotHeaderChangedEvent` at ~1 Hz for any RAM
+                slot whose contents change. Off by default; costs the
+                server a periodic rescan, so enable only while a
+                consumer is actively interested (and drop the stream
+                when they aren't).
+            min_interval_ms: Reserved for future per-event-type rate
+                control; currently unused.
         """
         request = sideways_pb2.SubscribeEventsRequest(
             min_interval_ms=min_interval_ms,
+            monitor_header_changes=monitor_header_changes,
         )
         for event_pb in self._stub.SubscribeEvents(request):
             event = _map_event(event_pb)
@@ -326,5 +345,18 @@ def _map_event(event: sideways_pb2.SidewaysEvent) -> SidewaysEvent | None:
             socket=event.slot_configured.socket,
             type=SlotType(event.slot_configured.type),
             image_filepath=event.slot_configured.image_name,
+        )
+    if which == "slot_header_changed":
+        header_pb = event.slot_header_changed.rom_header
+        return SlotHeaderChangedEvent(
+            timestamp_cycles=event.timestamp_cycles,
+            slot=event.slot_header_changed.slot,
+            rom_header=RomHeader(
+                title=header_pb.title,
+                version=header_pb.version,
+                copyright=header_pb.copyright,
+                contains_romfs=header_pb.contains_romfs,
+                kinds=tuple(header_pb.kinds),
+            ),
         )
     return None

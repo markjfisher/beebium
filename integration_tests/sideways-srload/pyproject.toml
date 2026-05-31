@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beebium-sideways-srload-tests"
+version = "0.1.0"
+description = "End-to-end live header monitoring test: *SRLOAD into sideways RAM"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    { name = "Robert Smallshire", email = "robert@smallshire.org.uk" }
+]
+dependencies = [
+    "beebium",
+    "oaknut-dfs",
+    "pytest>=7.0.0",
+    "pytest-timeout>=2.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+# No support package - the tests are self-contained.
+bypass-selection = true
+
+[tool.uv.sources]
+beebium = { path = "../../clients/python", editable = true }
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
