@@ -75,8 +75,6 @@ struct MemoryModeView: View {
                 .font(.caption.monospacedDigit())
                 .foregroundColor(.secondary)
                 .frame(width: 18, alignment: .trailing)
-                .help("Priority \(socket.priority) (slot\(socket.slots.count > 1 ? "s" : "") " +
-                      socket.slots.map(String.init).joined(separator: ", ") + ")")
 
             // ROM title (with version when known), else filename, else blank
             // for empty slots - the "-" status column already signals empty.
@@ -107,6 +105,24 @@ struct MemoryModeView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+        // Whole-row tooltip: socket label (e.g. "IC68 (slot 11)", "SRAM W",
+        // "IC71"), slot numbers, and source filepath when known. Keeps the
+        // sidebar visually compact while making the underlying topology
+        // discoverable on hover.
+        .help(tooltip(for: socket))
+        .contentShape(Rectangle())
+    }
+
+    private func tooltip(for socket: SidewaysClient.Socket) -> String {
+        var lines: [String] = []
+        lines.append(socket.label)
+        let slotWord = socket.slots.count > 1 ? "Slots" : "Slot"
+        let slotList = socket.slots.map(String.init).joined(separator: ", ")
+        lines.append("\(slotWord) \(slotList)  (priority \(socket.priority))")
+        if !socket.imageName.isEmpty {
+            lines.append(socket.imageName)
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Display helpers

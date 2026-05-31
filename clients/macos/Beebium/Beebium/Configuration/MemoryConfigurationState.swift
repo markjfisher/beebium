@@ -160,6 +160,13 @@ class MemoryConfigurationState: ObservableObject {
             } else if let defaultRom = defaultRom {
                 content = SocketContent(kind: .rom, image: defaultRom.image)
                 sourceSlot = defaultRom.slot
+            } else if !socket.supportsEmpty && socket.supportsRam && !socket.supportsRom {
+                // Fixed-RAM socket (e.g. B+ 128K's SRAM W/X/Y/Z): there is
+                // no "empty" or "rom" state available; the socket is always
+                // RAM. Reflect that in the initial content so the kind
+                // picker has a valid selection to display.
+                content = SocketContent(kind: .ram, image: nil)
+                sourceSlot = nil
             } else {
                 content = .empty
                 sourceSlot = nil

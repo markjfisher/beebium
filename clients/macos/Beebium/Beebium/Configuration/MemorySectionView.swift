@@ -127,7 +127,15 @@ struct MemorySectionView: View {
     }
 
     private func kindPicker(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
-        Picker("", selection: Binding(
+        // A socket only ever offers the kinds the hardware genuinely
+        // supports. When only one kind is available (e.g. B+ 128K's
+        // fixed sideways RAM banks), the picker is still visible -
+        // so rows stay aligned and the kind is plainly visible - but
+        // disabled because there's no decision to make.
+        let optionCount = (socket.supportsRom ? 1 : 0)
+            + (socket.supportsRam ? 1 : 0)
+            + (socket.supportsEmpty ? 1 : 0)
+        return Picker("", selection: Binding(
             get: { memoryConfig.sockets[index].content.kind },
             set: { newKind in
                 memoryConfig.sockets[index].content.kind = newKind
@@ -149,7 +157,10 @@ struct MemorySectionView: View {
         .pickerStyle(.menu)
         .labelsHidden()
         .frame(width: 88)
-        .help("ROM (read-only), RAM (writable), or empty")
+        .disabled(optionCount <= 1)
+        .help(optionCount <= 1
+              ? "This socket only ever holds \(socket.content.kind.label)"
+              : "ROM (read-only), RAM (writable), or empty")
     }
 
     private func actionsMenu(index: Int, socket: MemoryConfigurationState.SocketConfig) -> some View {
