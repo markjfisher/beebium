@@ -39,9 +39,22 @@ struct NewMachineDialog: View {
     @State private var isLaunching = false
     @State private var launchError: String?
 
+    // The hosting NSWindow, captured via WindowAccessor so we can resize
+    // it programmatically when the Configuration disclosure toggles. The
+    // window stays user-resizable; we just adjust the height to fit each
+    // mode so a previously-expanded window doesn't leave a sea of empty
+    // space after the user collapses Configuration.
+    @State private var hostingWindow: NSWindow?
+
     private var dialogWidth: CGFloat {
         showConfiguration ? 520 : 380
     }
+
+    // Empirical natural content heights for the two modes. Tuned so the
+    // dialog fits cleanly with no scrollbar and no large gap below the
+    // button bar.
+    private let collapsedContentHeight: CGFloat = 200
+    private let expandedContentHeight: CGFloat = 560
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,6 +77,10 @@ struct NewMachineDialog: View {
         }
         .frame(minWidth: dialogWidth, maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showConfiguration)
+        .background(WindowAccessor(window: $hostingWindow))
+        .onChange(of: showConfiguration) { isExpanded in
+            resizeWindowForMode(expanded: isExpanded)
+        }
         .task {
             // Belt-and-braces: the dialog window is a singleton and SwiftUI
             // keeps its @State across hide/show. Any transient flag that
@@ -258,6 +275,24 @@ struct NewMachineDialog: View {
     }
 
     // MARK: - Actions
+
+    /// Resize the hosting window when the Configuration disclosure toggles.
+    /// Collapse: shrink to the natural collapsed height regardless of
+    /// whatever larger size the user had stretched to - the collapsed
+    /// dialog has nothing to fill the extra space and looks broken.
+    /// Expand: grow to the expanded height only if the window is
+    /// currently smaller than that. If the user has already manually
+    /// stretched it taller, leave their choice alone.
+    private func resizeWindowForMode(expanded: Bool) {
+        guard let window = hostingWindow else { return }
+        let currentSize = window.contentLayoutRect.size
+        let targetHeight = expanded ? expandedContentHeight : collapsedContentHeight
+        let newHeight = expanded
+            ? max(currentSize.height, targetHeight)
+            : targetHeight
+        if abs(newHeight - currentSize.height) < 0.5 { return }
+        window.setContentSize(NSSize(width: currentSize.width, height: newHeight))
+    }
 
     private func restoreLastSelection() {
         let allPresets = presetManager.systemPresets + presetManager.userPresets
