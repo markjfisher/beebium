@@ -167,17 +167,61 @@ def adfs_rom_filepath(beebium_roms_dirpath: Path) -> Path:
     return path
 
 
+@pytest.fixture(scope="session")
+def amx_rom_filepath(beebium_roms_dirpath: Path) -> Path:
+    """AMX Super Rom 3.41 - a service ROM with no hardware probes.
+
+    Responds to *HELP with "AMX Super Rom V3.41 / By David Elliot",
+    making it a clean probe for whether *SRLOAD-then-Break delivers
+    a usable service ROM, without the confounding hardware checks
+    that ADFS performs.
+    """
+    path = beebium_roms_dirpath / "amx-super-rom_3_41.rom"
+    if not path.exists():
+        pytest.skip(f"AMX Super Rom not found: {path}")
+    return path
+
+
+@pytest.fixture(scope="session")
+def comal_rom_filepath(beebium_roms_dirpath: Path) -> Path:
+    """Acornsoft COMAL 1.0 - a language ROM that reports "COMAL" via
+    *HELP and has no hardware probes. Complements the AMX probe by
+    testing whether a *language* ROM (rather than a service ROM)
+    survives *SRLOAD-into-RAM intact.
+    """
+    path = beebium_roms_dirpath / "comal_1_0.rom"
+    if not path.exists():
+        pytest.skip(f"Acornsoft COMAL not found: {path}")
+    return path
+
+
 @pytest.fixture
 def srload_ssd_with_adfs_filepath(
     tmp_path: Path,
     adfs_rom_filepath: Path,
+    amx_rom_filepath: Path,
+    comal_rom_filepath: Path,
 ) -> Path:
-    """Fresh DFS SSD carrying R.ADFS - for *SRLOAD into SRAM tests."""
-    rom_bytes = adfs_rom_filepath.read_bytes()
+    """Fresh DFS SSD carrying R.ADFS, R.AMX, and R.COMAL.
+
+    AMX (service ROM, no hardware probes) and COMAL (language ROM,
+    no hardware probes) are clean probes for the *SRLOAD-into-RAM
+    path. ADFS is the bug-reproducer ROM whose self-test fails.
+    """
     buffer = bytearray(SSD_SIZE)
     dfs = DFS.from_buffer(memoryview(buffer), ACORN_DFS_40T_SINGLE_SIDED)
     dfs.path("R.ADFS").write_bytes(
-        rom_bytes,
+        adfs_rom_filepath.read_bytes(),
+        load_address=0xFFFF8000,
+        exec_address=0xFFFF8000,
+    )
+    dfs.path("R.AMX").write_bytes(
+        amx_rom_filepath.read_bytes(),
+        load_address=0xFFFF8000,
+        exec_address=0xFFFF8000,
+    )
+    dfs.path("R.COMAL").write_bytes(
+        comal_rom_filepath.read_bytes(),
         load_address=0xFFFF8000,
         exec_address=0xFFFF8000,
     )
@@ -223,6 +267,44 @@ def b_plus_mos_rom_filepath(beebium_roms_dirpath: Path) -> Path:
     if not path.exists():
         pytest.skip(f"B+ MOS not found: {path}")
     return path
+
+
+@pytest.fixture
+def b_plus_128k_with_adfs_at_startup(
+    b_plus_mos_rom_filepath: Path,
+    b_plus_128k_server_filepath: Path,
+    adfs_rom_filepath: Path,
+):
+    """B+ 128K with ADFS loaded at startup into IC62 high (slot 9).
+
+    Bypasses *SRLOAD entirely - ADFS is preloaded into a regular ROM
+    socket via --sideways. If ADFS boots cleanly here but not after
+    *SRLOAD, the issue is in the SRLOAD path or in how SRAM banks
+    behave. If it fails here too, ADFS itself has a problem in our
+    B+ emulation.
+    """
+    try:
+        with Beebium.launch(
+            mos_filepath=b_plus_mos_rom_filepath,
+            basic_filepath=None,
+            server_filepath=b_plus_128k_server_filepath,
+            extra_args=[
+                "--sideways", f"9:rom:{adfs_rom_filepath}",
+            ],
+            startup_timeout=15.0,
+        ) as bbc:
+            ok = bbc.run_until_or_timeout(
+                lambda: screen_contains(bbc.memory, ">"),
+                emulated_seconds=10.0,
+            )
+            if not ok:
+                pytest.fail(
+                    "B+ 128K with ADFS at slot 9 failed to reach BASIC prompt:\n"
+                    f"{dump_screen(bbc.memory)}"
+                )
+            yield bbc
+    except ServerNotFoundError as exc:
+        pytest.skip(str(exc))
 
 
 @pytest.fixture
