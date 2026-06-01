@@ -324,6 +324,14 @@ add_executable(test_serial_socket test_serial_socket.cpp)
 target_link_libraries(test_serial_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_serial_socket)
 
+# Serial PTY transport integration tests (POSIX-only: PtyMaster +
+# HostSerialEndpoint bridged through the SerialSocket to a PosixSerialPort).
+if(NOT WIN32)
+    add_executable(test_serial_pty test_serial_pty.cpp)
+    target_link_libraries(test_serial_pty PRIVATE beebium_core Catch2::Catch2WithMain)
+    catch_discover_tests(test_serial_pty)
+endif()
+
 # Econet socket tests
 add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)

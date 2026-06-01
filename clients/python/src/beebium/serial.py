@@ -45,6 +45,8 @@ class EndpointMode(IntEnum):
     NONE = serial_pb2.SERIAL_ENDPOINT_NONE
     LOOPBACK = serial_pb2.SERIAL_ENDPOINT_LOOPBACK
     SCRIPTABLE = serial_pb2.SERIAL_ENDPOINT_SCRIPTABLE
+    PTY = serial_pb2.SERIAL_ENDPOINT_PTY
+    DEVICE = serial_pb2.SERIAL_ENDPOINT_DEVICE
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,9 @@ class SerialStatus:
     endpoint_mode: EndpointMode
     tx_pending: int
     rx_pending: int
+    # PTY/DEVICE modes: the path a client attaches to, and whether it is open.
+    endpoint_path: str
+    endpoint_open: bool
 
 
 def _response_to_status(response: serial_pb2.SerialStatus) -> SerialStatus:
@@ -95,6 +100,8 @@ def _response_to_status(response: serial_pb2.SerialStatus) -> SerialStatus:
         endpoint_mode=EndpointMode(response.endpoint_mode),
         tx_pending=response.tx_pending,
         rx_pending=response.rx_pending,
+        endpoint_path=response.endpoint_path,
+        endpoint_open=response.endpoint_open,
     )
 
 
@@ -130,19 +137,33 @@ class Serial:
         response = self._stub.GetSerialStatus(request)
         return _response_to_status(response)
 
-    def set_endpoint_mode(self, mode: EndpointMode) -> None:
+    def set_endpoint_mode(
+        self, mode: EndpointMode, *, path: str = "", baud: int = 0
+    ) -> str:
         """Select the host transport endpoint attached to the serial port.
 
         Args:
-            mode: One of ``EndpointMode.NONE``, ``LOOPBACK``, or ``SCRIPTABLE``.
+            mode: One of the ``EndpointMode`` values.
+            path: For ``PTY`` an optional symlink to create pointing at the pty
+                slave; for ``DEVICE`` the device/serial path to open (required).
+            baud: For ``DEVICE`` the line speed for real serial hardware
+                (0 = default 19200). Ignored for a pseudo-terminal.
+
+        Returns:
+            For ``PTY``/``DEVICE`` the path a client should attach to (the pty
+            slave path or symlink, or the opened device path); empty otherwise.
 
         Raises:
-            SerialError: If the machine has no serial socket.
+            SerialError: On failure (no serial socket, pty creation failed,
+                device could not be opened, ...).
         """
-        request = serial_pb2.SetEndpointModeRequest(mode=int(mode))
+        request = serial_pb2.SetEndpointModeRequest(
+            mode=int(mode), path=path, baud=baud
+        )
         response = self._stub.SetEndpointMode(request)
         if not response.success:
             raise SerialError(response.error or "SetEndpointMode failed")
+        return response.advertised_path
 
     def send_to_device(self, data: bytes) -> int:
         """Queue bytes for the BBC to receive (device -> Beeb).

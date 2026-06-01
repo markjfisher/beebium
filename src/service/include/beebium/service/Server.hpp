@@ -94,6 +94,10 @@ public:
     /// Access the TubeService (for host startup to set shared memory pointer).
     TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
 
+    /// Access the SerialService (for --serial CLI wiring). Returns nullptr
+    /// until start() has been called.
+    SerialServiceImpl<MachineType>* serial_service() { return impl_->serial_service.get(); }
+
     /// Access the SidewaysService. Returns nullptr until start() has been
     /// called, since services are constructed during start. Use
     /// set_motherboard_links() before start() to configure link state.

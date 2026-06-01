@@ -29,6 +29,8 @@ enum SerialEndpointMode {
     SERIAL_ENDPOINT_NONE = 0;        // No transport: RX idles, TX discarded.
     SERIAL_ENDPOINT_LOOPBACK = 1;    // TX echoes back to RX.
     SERIAL_ENDPOINT_SCRIPTABLE = 2;  // Client-driven via SendToDevice/ReceiveFromDevice.
+    SERIAL_ENDPOINT_PTY = 3;         // Bridge to a freshly-created pseudo-terminal.
+    SERIAL_ENDPOINT_DEVICE = 4;      // Bridge to an existing device/serial path.
 }
 
 // --- Status ---
@@ -63,17 +65,31 @@ message SerialStatus {
     SerialEndpointMode endpoint_mode = 16;
     uint32 tx_pending = 17;    // bytes the Beeb has sent, awaiting ReceiveFromDevice
     uint32 rx_pending = 18;    // bytes queued (via SendToDevice) to deliver to the Beeb
+
+    // For PTY/DEVICE modes: the path a client should attach to (the pty slave
+    // path or symlink, or the opened device path). Empty otherwise.
+    string endpoint_path = 19;
+    // For PTY/DEVICE modes: whether the underlying host port is open/usable.
+    bool endpoint_open = 20;
 }
 
 // --- Endpoint mode ---
 
 message SetEndpointModeRequest {
     SerialEndpointMode mode = 1;
+    // PTY mode: optional symlink path to create pointing at the pty slave.
+    // DEVICE mode: the device/serial path to open (required).
+    string path = 2;
+    // DEVICE mode: line speed for real serial hardware (0 = default 19200).
+    // Ignored for a pseudo-terminal.
+    uint32 baud = 3;
 }
 
 message SetEndpointModeResponse {
     bool success = 1;
     string error = 2;
+    // PTY/DEVICE modes: the path a client should attach to.
+    string advertised_path = 3;
 }
 
 // --- Scriptable transport ---

@@ -12,7 +12,7 @@
 
 #ifdef _WIN32
 
-#include "beebium/econet/piconet/Win32SerialPort.hpp"
+#include "beebium/serial/Win32SerialPort.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -22,7 +22,7 @@
 #include <iostream>
 #include <string>
 
-namespace beebium::piconet {
+namespace beebium::serial {
 
 namespace {
 
@@ -110,7 +110,25 @@ std::string format_last_error(DWORD err) {
 // relayout. See docs/discussion/test-grpc-piconet-ui-windows-av.md
 // for the full investigation; the practical takeaway is "never call
 // any comm API on a handle that isn't a real COM port".
-void configure_comm(HANDLE handle, const std::string& path) {
+DWORD baud_to_cbr(int baud) {
+    switch (baud) {
+        case 75:     return CBR_110;     // no CBR_75; nearest legal constant
+        case 110:    return CBR_110;
+        case 300:    return CBR_300;
+        case 600:    return CBR_600;
+        case 1200:   return CBR_1200;
+        case 2400:   return CBR_2400;
+        case 4800:   return CBR_4800;
+        case 9600:   return CBR_9600;
+        case 19200:  return CBR_19200;
+        case 38400:  return CBR_38400;
+        case 57600:  return CBR_57600;
+        case 115200: return CBR_115200;
+        default:     return CBR_115200;
+    }
+}
+
+void configure_comm(HANDLE handle, const std::string& path, int baud) {
     DCB dcb{};
     dcb.DCBlength = sizeof(dcb);
     if (!::GetCommState(handle, &dcb)) {
@@ -129,7 +147,7 @@ void configure_comm(HANDLE handle, const std::string& path) {
         return;
     }
 
-    dcb.BaudRate = CBR_115200;
+    dcb.BaudRate = baud_to_cbr(baud);
     dcb.ByteSize = 8;
     dcb.Parity = NOPARITY;
     dcb.StopBits = ONESTOPBIT;
@@ -218,7 +236,7 @@ ReadResult map_read_error(DWORD err) {
 static_assert(std::atomic<std::uintptr_t>::is_always_lock_free,
               "Win32SerialPort needs lock-free atomic handle storage");
 
-Win32SerialPort::Win32SerialPort(const std::string& device_path)
+Win32SerialPort::Win32SerialPort(const std::string& device_path, int baud_rate)
     : device_path_(device_path) {
     std::string qualified = normalise_com_path(device_path);
     std::wstring wide = utf8_to_wide(qualified);
@@ -267,7 +285,7 @@ Win32SerialPort::Win32SerialPort(const std::string& device_path)
     // the gory details). PosixSerialPort skips its tcgetattr block
     // for non-tty handles for the same architectural reason.
     if (is_comm_handle(handle)) {
-        configure_comm(handle, qualified);
+        configure_comm(handle, qualified, baud_rate);
     }
 
     handle_raw_.store(reinterpret_cast<std::uintptr_t>(handle),
@@ -406,6 +424,6 @@ WriteResult Win32SerialPort::write(std::span<const std::uint8_t> bytes) {
     return WriteResult{total, false};
 }
 
-}  // namespace beebium::piconet
+}  // namespace beebium::serial
 
 #endif  // _WIN32

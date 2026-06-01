@@ -22,6 +22,15 @@ add_library(beebium_core STATIC
     $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsPosix.cpp>
     $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsWin32.cpp>
     include/beebium/serial/EnumeratePorts.hpp
+    # Host serial transport primitives (promoted from the piconet extension).
+    # POSIX compiles PosixSerialPort + PtyMaster; Windows compiles Win32SerialPort.
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PosixSerialPort.cpp>
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PtyMaster.cpp>
+    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/Win32SerialPort.cpp>
+    include/beebium/serial/SerialPort.hpp
+    include/beebium/serial/PosixSerialPort.hpp
+    include/beebium/serial/Win32SerialPort.hpp
+    include/beebium/serial/PtyMaster.hpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp

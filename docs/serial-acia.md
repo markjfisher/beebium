@@ -146,12 +146,20 @@ emulator core and the host transport. The core ships two endpoints:
   `TestBackend`: a deterministic, in-process transport that a client can drive
   from outside the emulation thread.
 
-A real transport — e.g. a threaded PTY/serial bridge to a running fujinet-nio
-instance, reusing the existing `piconet::SerialPort` POSIX/Win32 backends —
-plugs in at the application/server layer via `SerialSocket::set_source()` /
-`set_sink()`. Implementations that bridge to a background I/O thread must be
-internally thread-safe; the source/sink methods are called from the emulation
-thread.
+- `HostSerialEndpoint` — bridges the serial port to a host `SerialPort` (a
+  pseudo-terminal master or an opened device path). A dedicated reader thread
+  drains the OS port into a queue the ULA reads on the emulation thread;
+  transmitted bytes are written straight to the port. This is the generic
+  transport used by `--serial` and the gRPC `PTY`/`DEVICE` modes.
+
+The host serial primitives live in core under `beebium::serial`:
+`SerialPort` (interface), `PosixSerialPort` / `Win32SerialPort` (open an
+existing device path), and `PtyMaster` (create a pseudo-terminal and own the
+master end, advertising the slave path). The Piconet transport reuses the same
+`beebium::serial::SerialPort` via thin shim headers.
+
+Implementations that bridge to a background I/O thread must be internally
+thread-safe; the source/sink methods are called from the emulation thread.
 
 ### gRPC service and clients
 
@@ -162,10 +170,44 @@ and attaches a `ScriptableSerialEndpoint` by default. RPCs:
 
 | RPC | Purpose |
 |-----|---------|
-| `GetSerialStatus`   | ACIA + Serial ULA register snapshot, endpoint mode, pending byte counts. |
-| `SetEndpointMode`   | Select `NONE` / `LOOPBACK` / `SCRIPTABLE` (swaps source/sink with the emulation loop paused). |
+| `GetSerialStatus`   | ACIA + Serial ULA register snapshot, endpoint mode, pending byte counts, and (for PTY/DEVICE) the path a client attaches to. |
+| `SetEndpointMode`   | Select `NONE` / `LOOPBACK` / `SCRIPTABLE` / `PTY` / `DEVICE` (swaps source/sink with the emulation loop paused). Returns the advertised path for PTY/DEVICE. |
 | `SendToDevice`      | Inject bytes for the BBC to receive (scriptable mode). |
 | `ReceiveFromDevice` | Collect bytes the BBC has transmitted (scriptable mode). |
+
+### PTY / device transport
+
+`SetEndpointMode(PTY)` creates a pseudo-terminal, owns the master end, and
+returns the slave path (e.g. `/dev/pts/7`); pass a `path` to also create a
+stable symlink to the slave. `SetEndpointMode(DEVICE, path, baud)` opens an
+existing serial device or pty slave. Any serial client then attaches to the
+advertised path — beebium just shuttles raw bytes between the ACIA and that fd.
+
+The same transport is available at startup via the server flag:
+
+```
+--serial pty                 # create a pty, print "Serial endpoint ready at /dev/pts/N"
+--serial pty:/tmp/beeb-serial  # ... and symlink the slave to a stable path
+--serial device:/dev/ttyUSB0   # open an existing serial device (optionally :baud)
+--serial loopback | scriptable | none
+```
+
+### Generic end-to-end (any serial ROM)
+
+The serial path is entirely protocol-agnostic. To use a ROM that talks over
+the serial port:
+
+```bash
+beebium-model-b --mos roms/acorn-mos_1_20.rom \
+                --sideways 15:rom:your-rom.rom \
+                --serial pty            # prints: Serial endpoint ready at /dev/pts/N
+# attach your serial client/device to /dev/pts/N
+# in the BBC, a * command implemented by the ROM drives bytes:
+#   ROM -> ACIA (&FE09) -> Serial ULA -> HostSerialEndpoint -> pty -> your device
+```
+
+beebium has no knowledge of the ROM's command set or the device's protocol;
+the ROM and the device agree on the bytes, and beebium transports them.
 
 `SendToDevice`/`ReceiveFromDevice` operate only on the scriptable endpoint's
 mutex-protected queues, so they run without pausing the machine; the emulation
@@ -183,17 +225,19 @@ for mock-based unit tests plus real-server integration tests.
 |------|----------|
 | `tests/test_mc6850.cpp`       | ACIA reset/control decode, TX/RX bit framing, framing/parity errors, overrun, IRQ gating. |
 | `tests/test_serial_ula.cpp`   | ULA baud/motor/RS423 decode, bit-period derivation, byte↔bit shifting through the ACIA, full loopback. |
-| `tests/test_serial_socket.cpp`| `SerialSocket` behaviour and Model B memory-map integration (region mapping, mirroring, IRQ reaching the aggregator). |
+| `tests/test_serial_socket.cpp`| `SerialSocket` behaviour and Model B memory-map integration (region mapping, mirroring, IRQ reaching the aggregator), plus scriptable-endpoint round trips. |
+| `tests/test_serial_pty.cpp`   | POSIX PTY transport: `PtyMaster` + `HostSerialEndpoint` bridged through the socket to a `PosixSerialPort` on the slave (hardware-parity round trips). |
 
 ## Status / future work
 
 - **Done**: bit-level ACIA + Serial ULA, `SerialSocket`, wiring into all Model B
-  variants (memory map, IRQ, reset, clocking), the `SerialDataSource`/`Sink`
-  seam with loopback + scriptable endpoints, C++ unit tests, the `SerialService`
-  gRPC surface, the `beebium.serial` Python client, Python unit + integration
-  tests, the `serial_demo.py` example, and this document.
-- **Pending**: the host PTY/serial transport backend and the CLI / config wiring
-  to point it at a fujinet-nio PTY. This is where the final end-to-end
-  validation (and the TX-coalescing/"debounce" tuning observed in b2) belongs.
-  The `ScriptableSerialEndpoint` and `SerialService` already provide everything
-  needed to demo and test the serial stack without a real FujiNet.
+  variants (memory map, IRQ, reset, clocking); the `SerialDataSource`/`Sink`
+  seam with loopback, scriptable, and host (PTY/device) endpoints; the host
+  serial primitives promoted to `beebium::serial` core; the `SerialService`
+  gRPC surface (incl. PTY/DEVICE modes + path discovery); the `--serial` CLI;
+  the `beebium.serial` Python client; C++ and Python unit + integration tests
+  (incl. PTY round trips); the `serial_demo.py` example; and this document.
+- **Pending tuning**: some peers need transmitted frames coalesced (a short
+  debounce) to avoid packet splitting — b2 carried such a workaround. The hook
+  for that lives in `HostSerialEndpoint::add_byte()`; it is intentionally a
+  plain write-through for now, to be revisited under real-device testing.
