@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package beebium;
+
+// Serial port (MC6850 ACIA + Serial ULA) management service.
+//
+// Provides status queries for the on-board serial hardware and a scriptable,
+// in-process transport so clients can inject bytes for the BBC to receive and
+// collect bytes the BBC has transmitted -- without any PTY or external device.
+// This is the serial analogue of the Econet TestBackend, intended for demos
+// and integration tests. A real PTY/serial bridge to fujinet-nio is a separate
+// transport that plugs in at the application layer.
+service SerialService {
+    // Query serial hardware status (ACIA + Serial ULA registers, endpoint).
+    rpc GetSerialStatus(GetSerialStatusRequest) returns (SerialStatus);
+
+    // Select the host transport endpoint attached to the serial port.
+    rpc SetEndpointMode(SetEndpointModeRequest) returns (SetEndpointModeResponse);
+
+    // Inject bytes for the BBC to receive (device -> Beeb). Scriptable mode only.
+    rpc SendToDevice(SendToDeviceRequest) returns (SendToDeviceResponse);
+
+    // Collect bytes the BBC has transmitted (Beeb -> device). Scriptable mode only.
+    rpc ReceiveFromDevice(ReceiveFromDeviceRequest) returns (ReceiveFromDeviceResponse);
+}
+
+// Host transport endpoint attached to the serial port.
+enum SerialEndpointMode {
+    SERIAL_ENDPOINT_NONE = 0;        // No transport: RX idles, TX discarded.
+    SERIAL_ENDPOINT_LOOPBACK = 1;    // TX echoes back to RX.
+    SERIAL_ENDPOINT_SCRIPTABLE = 2;  // Client-driven via SendToDevice/ReceiveFromDevice.
+}
+
+// --- Status ---
+
+message GetSerialStatusRequest {
+    // Empty - returns full status.
+}
+
+message SerialStatus {
+    // True if this machine variant has the on-board serial socket.
+    bool has_serial_socket = 1;
+
+    // MC6850 ACIA state.
+    uint32 acia_control = 2;   // last control-register value written
+    uint32 acia_status = 3;    // current status-register value
+    bool tdre = 4;             // Transmit Data Register Empty
+    bool rdrf = 5;             // Receive Data Register Full
+    bool not_dcd = 6;          // /DCD pin (true = no carrier)
+    bool not_cts = 7;          // /CTS pin (true = not clear to send)
+    bool irq_pending = 8;      // ACIA interrupt output
+
+    // Serial ULA (SERPROC) state.
+    uint32 ula_control = 9;    // last latch value written
+    uint32 tx_baud = 10;       // decoded transmit baud rate
+    uint32 rx_baud = 11;       // decoded receive baud rate
+    bool rs423_selected = 12;  // RS423 (true) vs cassette (false)
+    bool motor_on = 13;        // cassette motor relay
+    uint32 tx_bit_period = 14; // transmit bit period in 2MHz cycles
+    uint32 rx_bit_period = 15; // receive bit period in 2MHz cycles
+
+    // Host transport endpoint.
+    SerialEndpointMode endpoint_mode = 16;
+    uint32 tx_pending = 17;    // bytes the Beeb has sent, awaiting ReceiveFromDevice
+    uint32 rx_pending = 18;    // bytes queued (via SendToDevice) to deliver to the Beeb
+}
+
+// --- Endpoint mode ---
+
+message SetEndpointModeRequest {
+    SerialEndpointMode mode = 1;
+}
+
+message SetEndpointModeResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// --- Scriptable transport ---
+
+message SendToDeviceRequest {
+    bytes data = 1;
+}
+
+message SendToDeviceResponse {
+    bool success = 1;
+    string error = 2;
+    uint32 queued = 3;  // number of bytes queued for the Beeb to receive
+}
+
+message ReceiveFromDeviceRequest {
+    uint32 max_bytes = 1;  // 0 = all currently available
+}
+
+message ReceiveFromDeviceResponse {
+    bool success = 1;
+    string error = 2;
+    bytes data = 3;  // bytes the Beeb transmitted
+}

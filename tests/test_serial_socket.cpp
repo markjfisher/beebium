@@ -11,10 +11,12 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/ModelBHardware.hpp>
+#include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialSocket.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <memory>
 
 using namespace beebium;
 
@@ -85,4 +87,46 @@ TEST_CASE("Model B serial ACIA IRQ reaches the IRQ aggregator", "[serial][socket
 
     REQUIRE(acia.irq_pending());
     CHECK((hw.poll_irq() & 0x10) != 0);
+}
+
+// =============================================================================
+// Scriptable endpoint end-to-end through the socket
+// =============================================================================
+
+TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][socket]") {
+    SerialSocket socket;
+    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
+    socket.set_sink(endpoint);
+
+    socket.write_acia(0, CONTROL_8N1);
+    socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
+    socket.write_acia(1, 0x5A);                      // write TDR
+
+    for (int i = 0; i < 4000 && endpoint->tx_pending() == 0; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+
+    auto drained = endpoint->drain();
+    REQUIRE(drained.size() == 1);
+    CHECK(drained[0] == 0x5A);
+}
+
+TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb", "[serial][socket]") {
+    SerialSocket socket;
+    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
+    socket.set_source(endpoint);
+
+    socket.write_acia(0, CONTROL_8N1);
+    socket.write_ula(0, SerialUla::RS423_SELECT);
+    uint8_t payload = 0x39;
+    endpoint->inject(&payload, 1);
+
+    for (int i = 0; i < 6000 && (socket.read_acia(0) & Mc6850::SR_RDRF) == 0; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+
+    REQUIRE((socket.read_acia(0) & Mc6850::SR_RDRF) != 0);
+    CHECK(socket.read_acia(1) == 0x39);
 }

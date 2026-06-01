@@ -26,6 +26,7 @@ from beebium._proto import (
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
     piconet_service_pb2_grpc,
+    serial_pb2_grpc,
     sideways_pb2_grpc,
     system_pb2_grpc,
     tube_pb2_grpc,
@@ -57,6 +58,7 @@ class Connection:
         self._device_inspection_stub: debugger_pb2_grpc.DeviceInspectionStub | None = None
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
+        self._serial_stub: serial_pb2_grpc.SerialServiceStub | None = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
         self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
         self._piconet_stub: piconet_service_pb2_grpc.PiconetServiceStub | None = None
@@ -91,6 +93,7 @@ class Connection:
         self._device_inspection_stub = debugger_pb2_grpc.DeviceInspectionStub(self._channel)
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
+        self._serial_stub = serial_pb2_grpc.SerialServiceStub(self._channel)
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
         self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
         self._piconet_stub = piconet_service_pb2_grpc.PiconetServiceStub(self._channel)
@@ -160,6 +163,13 @@ class Connection:
         if self._econet_stub is None:
             raise ConnectionError("Not connected")
         return self._econet_stub
+
+    @property
+    def serial_stub(self) -> serial_pb2_grpc.SerialServiceStub:
+        """The SerialService stub."""
+        if self._serial_stub is None:
+            raise ConnectionError("Not connected")
+        return self._serial_stub
 
     @property
     def econet_transport_stub(self) -> econet_transport_pb2_grpc.EconetTransportServiceStub:

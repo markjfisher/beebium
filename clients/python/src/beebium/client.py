@@ -32,6 +32,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.serial import Serial
 from beebium.extension_ui import ExtensionUi
 from beebium.indicators import Indicators
 from beebium.piconet import Piconet
@@ -103,6 +104,7 @@ class Beebium:
         self._system: System | None = None
         self._disc: Disc | None = None
         self._econet: Econet | None = None
+        self._serial: Serial | None = None
         self._econet_transport: EconetTransport | None = None
         self._aun: Aun | None = None
         self._piconet: Piconet | None = None
@@ -335,6 +337,18 @@ class Beebium:
         if self._econet is None:
             self._econet = Econet(self._connection.econet_stub)
         return self._econet
+
+    @property
+    def serial(self) -> Serial:
+        """Access the serial port (MC6850 ACIA + Serial ULA).
+
+        Provides status queries plus a scriptable in-process transport
+        for injecting bytes for the BBC to receive and collecting bytes
+        the BBC has transmitted.
+        """
+        if self._serial is None:
+            self._serial = Serial(self._connection.serial_stub)
+        return self._serial
 
     @property
     def transport(self) -> EconetTransport:

@@ -5,11 +5,7 @@ hardware: the **Motorola MC6850 ACIA** at `&FE08-&FE0F` and the **Ferranti
 Serial ULA (SERPROC)** at `&FE10-&FE1F`. Together these implement the BBC's
 RS423 / cassette serial interface.
 
-The original motivation was to let Beebium talk to
-[fujinet-nio](https://github.com/FujiNetWIFI) via the `fn-rom` BBC ROM, which
-communicates over the RS423 port at 19200 baud, 8N1. The emulation is a
-faithful bit-level model (in the style of b2's `MC6850`/`SERPROC`) so it is not
-specific to that use case.
+The emulation is a faithful bit-level model (in the style of b2's `MC6850`/`SERPROC`).
 
 ## Hardware overview
 
@@ -140,14 +136,46 @@ alongside the VIAs, Tube, and 1MHz bus.
 ### Host transport
 
 The `SerialDataSource`/`SerialDataSink` interfaces are the seam between the
-emulator core and the host transport. The core ships `LoopbackSerialEndpoint`
-(an in-memory queue used by the unit tests and as a simple echo). A real
-transport — e.g. a threaded PTY/serial bridge to a running fujinet-nio
+emulator core and the host transport. The core ships two endpoints:
+
+- `LoopbackSerialEndpoint` — an in-memory queue (used by unit tests and as a
+  simple echo: attach it as both source and sink and transmitted bytes come
+  back round to the receiver).
+- `ScriptableSerialEndpoint` — a thread-safe, two-channel endpoint (device→Beeb
+  and Beeb→device queues). It is the serial analogue of the Econet
+  `TestBackend`: a deterministic, in-process transport that a client can drive
+  from outside the emulation thread.
+
+A real transport — e.g. a threaded PTY/serial bridge to a running fujinet-nio
 instance, reusing the existing `piconet::SerialPort` POSIX/Win32 backends —
 plugs in at the application/server layer via `SerialSocket::set_source()` /
 `set_sink()`. Implementations that bridge to a background I/O thread must be
 internally thread-safe; the source/sink methods are called from the emulation
 thread.
+
+### gRPC service and clients
+
+`SerialService` (`src/service/proto/serial.proto`,
+`src/service/include/beebium/service/SerialService.hpp`) exposes the serial
+port over gRPC. It is registered in `Server.hpp` alongside the other services
+and attaches a `ScriptableSerialEndpoint` by default. RPCs:
+
+| RPC | Purpose |
+|-----|---------|
+| `GetSerialStatus`   | ACIA + Serial ULA register snapshot, endpoint mode, pending byte counts. |
+| `SetEndpointMode`   | Select `NONE` / `LOOPBACK` / `SCRIPTABLE` (swaps source/sink with the emulation loop paused). |
+| `SendToDevice`      | Inject bytes for the BBC to receive (scriptable mode). |
+| `ReceiveFromDevice` | Collect bytes the BBC has transmitted (scriptable mode). |
+
+`SendToDevice`/`ReceiveFromDevice` operate only on the scriptable endpoint's
+mutex-protected queues, so they run without pausing the machine; the emulation
+thread accesses the same queues under the same locks.
+
+The Python client wraps this as `beebium.serial.Serial` (exposed as
+`bbc.serial`), with an `EndpointMode` enum and a `SerialStatus` dataclass. See
+`clients/python/examples/serial_demo.py` for a runnable end-to-end demo
+(loopback echo + scriptable inject/collect) and `clients/python/tests/test_serial.py`
+for mock-based unit tests plus real-server integration tests.
 
 ## Tests
 
@@ -160,8 +188,12 @@ thread.
 ## Status / future work
 
 - **Done**: bit-level ACIA + Serial ULA, `SerialSocket`, wiring into all Model B
-  variants (memory map, IRQ, reset, clocking), the transport seam, unit tests,
-  and this document.
-- **Pending**: the host PTY/serial transport backend and the CLI / gRPC / config
-  wiring to point it at a fujinet-nio PTY. This is where the end-to-end
+  variants (memory map, IRQ, reset, clocking), the `SerialDataSource`/`Sink`
+  seam with loopback + scriptable endpoints, C++ unit tests, the `SerialService`
+  gRPC surface, the `beebium.serial` Python client, Python unit + integration
+  tests, the `serial_demo.py` example, and this document.
+- **Pending**: the host PTY/serial transport backend and the CLI / config wiring
+  to point it at a fujinet-nio PTY. This is where the final end-to-end
   validation (and the TX-coalescing/"debounce" tuning observed in b2) belongs.
+  The `ScriptableSerialEndpoint` and `SerialService` already provide everything
+  needed to demo and test the serial stack without a real FujiNet.

@@ -45,6 +45,7 @@ python -m grpc_tools.protoc \
     "$PROTO_DIR/disc.proto" \
     "$PROTO_DIR/econet.proto" \
     "$PROTO_DIR/econet_transport.proto" \
+    "$PROTO_DIR/serial.proto" \
     "$PROTO_DIR/indicator.proto" \
     "$PROTO_DIR/sideways.proto" \
     "$EXTENSION_API_PROTO_DIR/extension_ui.proto" \
