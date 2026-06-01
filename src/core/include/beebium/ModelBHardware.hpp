@@ -38,6 +38,7 @@
 #include "disc/DiscControllerSocket.hpp"
 #include "disc/DiscDrive.hpp"
 #include "econet/EconetSocket.hpp"
+#include "serial/SerialSocket.hpp"
 #include "tube/TubeSocket.hpp"
 #include "indicators/IndicatorFilter.hpp"
 #include "indicators/Indicators.hpp"
@@ -133,7 +134,8 @@ public:
         IrqBinding<Via6522, 0>,        // System VIA → bit 0
         IrqBinding<Via6522, 1>,        // User VIA → bit 1
         IrqBinding<TubeSocket, 2>,     // Tube HIRQ → bit 2
-        IrqBinding<OneMHzBusPort, 3>   // 1 MHz bus devices (e.g. SCSI) → bit 3
+        IrqBinding<OneMHzBusPort, 3>,  // 1 MHz bus devices (e.g. SCSI) → bit 3
+        IrqBinding<SerialSocket, 4>    // Serial ACIA (MC6850) → bit 4
     >;
 
     // Video hardware
@@ -174,6 +176,10 @@ public:
     // Econet subsystem -- optional networking hardware
     EconetSocket econet_socket;
 
+    // Serial subsystem -- on-board MC6850 ACIA (&FE08) + Serial ULA (&FE10).
+    // Always fitted on a real BBC; its IRQ output drives the shared CPU IRQ line.
+    SerialSocket serial_socket;
+
     // Tube subsystem -- optional second processor interface
     TubeSocket tube_socket;
 
@@ -204,6 +210,22 @@ public:
     EconetAdlcRegion econet_adlc_region_{econet_socket};
     VideoUlaWithInton video_ula_with_inton_{video_ula, econet_socket};
 
+    // Serial memory-mapped region adapters (thin wrappers for MemoryMappedDevice)
+    struct SerialAciaRegion {
+        SerialSocket& serial_socket;
+        uint8_t read(uint16_t offset) { return serial_socket.read_acia(offset); }
+        void write(uint16_t offset, uint8_t value) { serial_socket.write_acia(offset, value); }
+    };
+
+    struct SerialUlaRegion {
+        SerialSocket& serial_socket;
+        uint8_t read(uint16_t offset) { return serial_socket.read_ula(offset); }
+        void write(uint16_t offset, uint8_t value) { serial_socket.write_ula(offset, value); }
+    };
+
+    SerialAciaRegion serial_acia_region_{serial_socket};
+    SerialUlaRegion serial_ula_region_{serial_socket};
+
     // ROMSEL register wrapper - handles bank switching and returns 0xFF on read
     struct RomselRegister {
         SidewaysType& sideways;
@@ -227,6 +249,8 @@ public:
         MemoryMap{
             make_region<0xFC00, 0xFDFF>(std::declval<OneMHzBusPort&>()),   // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(std::declval<Crtc6845&>()),
+            make_region<0xFE08, 0xFE0F, Mirror<0x01>>(std::declval<SerialAciaRegion&>()),       // Serial ACIA (MC6850)
+            make_region<0xFE10, 0xFE17, Mirror<0x07>>(std::declval<SerialUlaRegion&>()),        // Serial ULA (SERPROC)
             make_region<0xFE18, 0xFE1F, Mirror<0x07>>(std::declval<EconetStationIdRegion&>()),  // Econet station ID + INTOFF
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(std::declval<VideoUlaWithInton&>()),       // Video ULA + INTON
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(std::declval<Via6522&>()),
@@ -267,6 +291,7 @@ public:
 
         // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        serial_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
         tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
@@ -283,6 +308,7 @@ public:
 
         // Wire 2MHz open bus regions to memory map's last bus value for open bus emulation
         econet_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
+        serial_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
         tube_socket.set_last_bus_value_ptr(memory_map_.last_bus_value_ptr());
     }
 
@@ -340,6 +366,7 @@ public:
         sideways.select_bank(0);
         disc_socket.reset();
         econet_socket.reset();
+        serial_socket.reset();
         tube_socket.reset();
     }
 
@@ -358,6 +385,7 @@ public:
         addressable_latch.reset();
         disc_socket.reset();
         econet_socket.reset();
+        serial_socket.reset();
         tube_socket.reset();
         // Do NOT clear RAM
         // Do NOT reset sideways bank selection
@@ -857,7 +885,8 @@ private:
             make_irq_binding<0>(system_via),
             make_irq_binding<1>(user_via),
             make_irq_binding<2>(tube_socket),
-            make_irq_binding<3>(one_mhz_bus_)
+            make_irq_binding<3>(one_mhz_bus_),
+            make_irq_binding<4>(serial_socket)
         );
     }
 
@@ -867,6 +896,8 @@ private:
         return MemoryMap{
             make_region<0xFC00, 0xFDFF>(one_mhz_bus_),                              // FRED/JIM (overlays MOS ROM)
             make_region<0xFE00, 0xFE07, Mirror<0x07>>(crtc),
+            make_region<0xFE08, 0xFE0F, Mirror<0x01>>(serial_acia_region_),       // Serial ACIA (MC6850)
+            make_region<0xFE10, 0xFE17, Mirror<0x07>>(serial_ula_region_),        // Serial ULA (SERPROC)
             make_region<0xFE18, 0xFE1F, Mirror<0x07>>(econet_station_id_region_), // Econet station ID + INTOFF
             make_region<0xFE20, 0xFE2F, Mirror<0x01>>(video_ula_with_inton_),     // Video ULA + INTON
             make_region<0xFE40, 0xFE5F, Mirror<0x0F>>(system_via),

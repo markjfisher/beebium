@@ -31,6 +31,11 @@ add_library(beebium_core STATIC
     include/beebium/Via6522Types.hpp
     include/beebium/MemoryMap.hpp
     include/beebium/BankBinding.hpp
+    include/beebium/devices/Mc6850.hpp
+    include/beebium/serial/SerialDevice.hpp
+    include/beebium/serial/SerialUla.hpp
+    include/beebium/serial/SerialSocket.hpp
+    include/beebium/serial/SerialConcepts.hpp
     include/beebium/devices/Ram.hpp
     include/beebium/devices/Rom.hpp
     include/beebium/devices/EmptySlot.hpp

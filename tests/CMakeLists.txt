@@ -309,6 +309,21 @@ add_executable(test_mc6854 test_mc6854.cpp)
 target_link_libraries(test_mc6854 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_mc6854)
 
+# MC6850 ACIA (serial) tests
+add_executable(test_mc6850 test_mc6850.cpp)
+target_link_libraries(test_mc6850 PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_mc6850)
+
+# Serial ULA (SERPROC) tests
+add_executable(test_serial_ula test_serial_ula.cpp)
+target_link_libraries(test_serial_ula PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_serial_ula)
+
+# Serial socket + Model B memory-map integration tests
+add_executable(test_serial_socket test_serial_socket.cpp)
+target_link_libraries(test_serial_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_serial_socket)
+
 # Econet socket tests
 add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
