@@ -120,3 +120,6 @@ disassembly/*
 !disassembly/*.py
 # Local machine-specific development notes
 docs/local-*.md
+
+# Local packaging build outputs (Linux bundle tarballs)
+_artifacts/
