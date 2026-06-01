@@ -1365,3 +1365,24 @@ catch_discover_tests(test_pacing_controller)
 add_executable(test_sleep_quantum test_sleep_quantum.cpp)
 target_link_libraries(test_sleep_quantum PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(test_sleep_quantum)
+
+# Install smoke test: verify a `cmake --install` tree is actually runnable --
+# ABI shared libraries resolve via the servers' INSTALL_RPATH, the plugin tree
+# is discovered from <prefix>/bin/extensions, ROMs resolve through the
+# <prefix>/share/beebium/roms fallback, and the gRPC server boots. This guards
+# every downstream package format (.deb, Homebrew, tarball) since they all rest
+# on the same install rules and runtime discovery paths. Requires a prior build
+# of the server and plugin targets (CTest does not build them). Labelled
+# "packaging" so it can be selected with `ctest -L packaging` or skipped with
+# `ctest -LE packaging`.
+if(BEEBIUM_BUILD_SERVER)
+    add_test(
+        NAME install_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DBINARY_DIR=${CMAKE_BINARY_DIR}
+            -DCONFIG=$<CONFIG>
+            -DEXE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_SOURCE_DIR}/cmake/InstallSmokeTest.cmake
+    )
+    set_tests_properties(install_smoke PROPERTIES LABELS "packaging")
+endif()
