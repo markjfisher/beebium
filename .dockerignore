@@ -1,0 +1,16 @@
+# Keep the Docker build context small and, critically, exclude the host build
+# tree (which may contain macOS artifacts that would collide with the in-container
+# `-B build` configure). vcpkg is cloned inside the image, so the repo .git is
+# not needed either.
+build/
+.git/
+_artifacts/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
+clients/macos/**/build/
+clients/macos/**/DerivedData/
+clients/typescript/dist/
+vcpkg_installed/
+*.tgz
