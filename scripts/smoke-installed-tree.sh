@@ -45,6 +45,22 @@ for plugin in scsi-hdd acorn-rtc piconet; do
         || fail "plugin '${plugin}' not discovered from the installed tree"
 done
 
+# Bare-command invocation through a PATH symlink: the shell passes only the
+# command name as argv[0] (as the .deb's /usr/bin/beebium-model-b symlink does),
+# so extension discovery must resolve the executable from the OS rather than
+# canonicalising argv[0]. Guards the regression where plugins silently vanish
+# under the package's primary entrypoint.
+echo "== bare-command discovery (PATH symlink, argv0 = command name) =="
+linkdir="$(mktemp -d)"
+ln -s "${server}" "${linkdir}/beebium-model-b"
+bare_out="$(PATH="${linkdir}:${PATH}" beebium-model-b list-extensions)" \
+    || fail "bare-command list-extensions exited non-zero"
+for plugin in scsi-hdd acorn-rtc piconet; do
+    echo "${bare_out}" | grep -q "${plugin}" \
+        || fail "plugin '${plugin}' not discovered under bare-command invocation -- argv[0]-based discovery has regressed"
+done
+rm -rf "${linkdir}"
+
 echo "== boot (ROM discovery via share fallback + gRPC bring-up) =="
 boot_log="$(mktemp)"
 "${server}" start \

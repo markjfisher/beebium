@@ -14,13 +14,18 @@
 #define BEEBIUM_PLATFORM_UTILS_HPP
 
 #include <cstdlib>
+#include <filesystem>
 #include <optional>
 #include <string>
+#include <system_error>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <process.h>
+#elif defined(__APPLE__)
+#include <unistd.h>
+#include <mach-o/dyld.h>
 #else
 #include <unistd.h>
 #endif
@@ -50,6 +55,48 @@ inline std::optional<std::string> get_env(const char* name) {
 #else
     if (const char* value = std::getenv(name)) {
         return std::string(value);
+    }
+    return std::nullopt;
+#endif
+}
+
+// Cross-platform path to the directory containing the running executable.
+//
+// Resolves the real on-disk location, following symlinks on POSIX, so it is
+// robust to a bare argv[0]: when a binary is invoked through a PATH-resolved
+// symlink (e.g. /usr/bin/beebium-model-b -> /opt/beebium/bin/...), the shell
+// passes only the command name as argv[0], which canonical(argv0) cannot
+// resolve. Reading the executable path from the OS avoids depending on argv[0]
+// at all. Returns nullopt if the path cannot be determined.
+inline std::optional<std::filesystem::path> executable_directory() {
+#if defined(_WIN32)
+    wchar_t path[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::filesystem::path(path).parent_path();
+    }
+    return std::nullopt;
+#elif defined(__APPLE__)
+    // First call with a null buffer to learn the required size, then fill it.
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        // _NSGetExecutablePath may yield a symlink path; canonicalise so a
+        // Homebrew bin/ symlink resolves to the real libexec/ location.
+        std::error_code ec;
+        auto resolved = std::filesystem::canonical(buffer.c_str(), ec);
+        if (!ec) {
+            return resolved.parent_path();
+        }
+        return std::filesystem::path(buffer.c_str()).parent_path();
+    }
+    return std::nullopt;
+#else
+    std::error_code ec;
+    auto self = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        return self.parent_path();
     }
     return std::nullopt;
 #endif

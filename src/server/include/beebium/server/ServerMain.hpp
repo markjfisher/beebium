@@ -43,6 +43,7 @@
 #include "beebium/server/PresetLoader.hpp"
 #include "beebium/server/PresetPaths.hpp"
 #include "beebium/server/RomPaths.hpp"
+#include "beebium/PlatformUtils.hpp"
 
 #include <nlohmann/json.hpp>
 #include "stb_image_write.h"
@@ -682,12 +683,22 @@ void merge_preset_sideways_configs(ServerConfig<MachineType>& config) {
 // subdirectory. The canonical install layout mirrors this: plugins
 // ship alongside the server binary. Absent on stripped-down installs.
 inline std::optional<std::string> resolve_default_extension_dirpath(const char* argv0) {
-    std::error_code ec;
-    auto exe_path = std::filesystem::canonical(std::filesystem::path(argv0), ec);
-    if (ec) {
-        return std::nullopt;
+    // Resolve the real executable directory from the OS (/proc/self/exe and
+    // platform equivalents), which is robust to a bare argv[0]. This matters
+    // for the installed layout: a /usr/bin/beebium-model-b symlink invoked by
+    // name gives argv[0] == "beebium-model-b", which canonical() cannot resolve
+    // against the cwd -- so a plain canonical(argv0) silently finds no
+    // extensions. Fall back to argv0 only if the OS lookup fails.
+    auto exe_dirpath = beebium::platform::executable_directory();
+    if (!exe_dirpath) {
+        std::error_code ec;
+        auto exe_path = std::filesystem::canonical(std::filesystem::path(argv0), ec);
+        if (ec) {
+            return std::nullopt;
+        }
+        exe_dirpath = exe_path.parent_path();
     }
-    auto candidate = exe_path.parent_path() / "extensions";
+    auto candidate = *exe_dirpath / "extensions";
     if (!std::filesystem::exists(candidate)) {
         return std::nullopt;
     }
