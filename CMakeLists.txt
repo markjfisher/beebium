@@ -101,6 +101,7 @@ endif()
 # gRPC Service Layer
 option(BEEBIUM_BUILD_SERVICE "Build gRPC service layer" ON)
 option(BEEBIUM_BUILD_SERVER "Build beebium-server executable" ON)
+option(BEEBIUM_BUILD_LINUX_CLIENT "Build native Linux Qt frontend" ON)
 
 # nlohmann-json for preset file parsing (header-only, fetched via FetchContent)
 include(FetchContent)
@@ -185,4 +186,8 @@ endif()
 
 if(BEEBIUM_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+if(BEEBIUM_BUILD_LINUX_CLIENT AND UNIX AND NOT APPLE)
+    add_subdirectory(clients/linux)
 endif()
