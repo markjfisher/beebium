@@ -76,15 +76,25 @@ RUN cmake -S . -B build -G Ninja \
         -DBEEBIUM_BUILD_TESTS=ON \
     && cmake --build build --target beebium-servers -j"$(nproc)"
 
+# Debian packaging tools, kept in a late layer so adding them does not
+# invalidate the cached vcpkg build above. dpkg-dev provides dpkg-shlibdeps,
+# which CPACK_DEBIAN_PACKAGE_SHLIBDEPS uses to derive the runtime dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        dpkg-dev fakeroot file \
+    && rm -rf /var/lib/apt/lists/*
+
 # Prove the freshly built tree installs and boots in the build-floor image
-# (the in-tree CTest), then install the relocatable bundle, validate the
-# *installed* tree directly (self-containment + boot), and emit the tarball.
-# The tarball is rooted at opt/beebium so it extracts cleanly to /opt.
+# (in-tree CTest), validate the *installed* tree directly (self-containment +
+# boot), then build the .deb and .tar.gz with CPack and collect them. Both are
+# rooted at /opt/beebium; the .deb additionally symlinks the servers into
+# /usr/bin via its maintainer scripts.
 RUN ctest --test-dir build -R install_smoke --output-on-failure \
     && cmake --install build --prefix /stage/opt/beebium \
     && bash scripts/smoke-installed-tree.sh /stage/opt/beebium \
-    && tar -C /stage -czf /beebium-linux-bundle.tgz opt/beebium
+    && ( cd build && cpack -G "DEB;TGZ" ) \
+    && mkdir -p /out \
+    && cp build/beebium-server*.tar.gz build/beebium-server*.deb /out/
 
-# Minimal stage whose only content is the tarball, for `buildx --output`.
+# Minimal stage whose only content is the packages, for `buildx --output`.
 FROM scratch AS artifact
-COPY --from=builder /beebium-linux-bundle.tgz /
+COPY --from=builder /out/ /

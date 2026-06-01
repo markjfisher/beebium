@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Remove the /usr/bin symlinks created by postinst.
+set -e
+
+SERVERS="beebium-model-b beebium-model-b-plus beebium-model-b-plus-128k beebium-model-b-romram"
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        for s in $SERVERS; do
+            rm -f "/usr/bin/$s"
+        done
+        ;;
+esac
+
+exit 0

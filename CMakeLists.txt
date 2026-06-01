@@ -186,3 +186,9 @@ endif()
 if(BEEBIUM_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+# CPack packaging for the self-contained Linux server bundle (.deb + .tar.gz).
+# Configured only with the server build; inert until `cpack` is invoked.
+if(BEEBIUM_BUILD_SERVER)
+    include(${CMAKE_SOURCE_DIR}/cmake/BeebiumPackaging.cmake)
+endif()
