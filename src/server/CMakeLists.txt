@@ -70,6 +70,19 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             nlohmann_json::nlohmann_json
             stb_image_write
     )
+
+    # Installed layout: server binaries live in <prefix>/bin and resolve the
+    # extension ABI shared libraries from <prefix>/lib via an $ORIGIN-relative
+    # RPATH (@loader_path on macOS). This only affects the installed binaries;
+    # the build-tree RPATH (auto-added by CMake to build/lib) is unaffected, so
+    # running from the build directory continues to work unchanged.
+    if(APPLE)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            INSTALL_RPATH "@loader_path/../lib")
+    elseif(NOT WIN32)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            INSTALL_RPATH "$ORIGIN/../lib")
+    endif()
 endfunction()
 
 # Model-specific executables

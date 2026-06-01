@@ -266,3 +266,13 @@ if(WIN32)
         COMMENT "Copying beebium_extension_api.dll to tests/$<CONFIG> for runtime loading"
     )
 endif()
+
+# Install the extension ABI shared libraries into <prefix>/lib. The server
+# executables carry an INSTALL_RPATH of $ORIGIN/../lib (@loader_path/../lib on
+# macOS) so they resolve these from the installed tree. Without these rules an
+# installed server cannot start: both libraries are direct runtime dependencies
+# of every server executable. (On POSIX these are LIBRARY artifacts; the Windows
+# RUNTIME case is handled by its own packaging path and is not covered here.)
+install(TARGETS beebium_extension_api beebium_extension_ui_proto
+    LIBRARY DESTINATION lib
+)
