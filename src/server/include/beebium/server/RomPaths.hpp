@@ -36,7 +36,7 @@ namespace beebium::server {
 // Search order for ROM directory:
 // 1. Explicit path from set_rom_directory() (if set)
 // 2. BEEBIUM_ROM_DIR environment variable
-// 3. ../roms/ relative to executable (build directory layout)
+// 3. a roms/ directory at or above the executable (build directory layout)
 // 4. ../share/beebium/roms/ relative to executable (installed layout)
 // 5. Compile-time BEEBIUM_DEFAULT_ROM_DIR (fallback for development)
 //
@@ -79,10 +79,24 @@ public:
         // Get executable directory for relative paths
         auto exe_dirpath = get_executable_directory();
 
-        // 3. Build directory layout: ../roms/ relative to executable
-        auto build_roms = exe_dirpath.parent_path().parent_path() / "roms";
-        if (std::filesystem::is_directory(build_roms)) {
-            return build_roms;
+        // 3. Build directory layout: a roms/ directory at or above the
+        //    executable's directory. We walk upward (bounded) rather than
+        //    assuming a fixed depth so the lookup still works under multi-config
+        //    generators (e.g. Visual Studio), which nest the executable in a
+        //    per-config subdirectory such as ".../Release/".
+        {
+            auto dir = exe_dirpath;
+            for (int level = 0; level < 6; ++level) {
+                auto build_roms = dir / "roms";
+                if (std::filesystem::is_directory(build_roms)) {
+                    return build_roms;
+                }
+                auto parent = dir.parent_path();
+                if (parent == dir) {
+                    break;  // reached the filesystem root
+                }
+                dir = parent;
+            }
         }
 
         // 4. Installed layout: ../share/beebium/roms/ relative to executable

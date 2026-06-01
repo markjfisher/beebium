@@ -3,17 +3,28 @@
 # Common include directory for server templates
 set(SERVER_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Presets output directory (alongside executables)
+# Presets output directory (alongside executables). On single-config
+# generators this equals $<TARGET_FILE_DIR:...> for the server executables; it
+# is used below by the install() rules, which cannot take generator
+# expressions.
 set(PRESETS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/presets")
 file(MAKE_DIRECTORY ${PRESETS_OUTPUT_DIR})
 
 # Generate a system preset and its thumbnail at build time, using the same
 # create-preset code path that users create their own presets with. Extra
 # create-preset arguments (e.g. --fdc, --sideways) are forwarded via ARGN.
+#
+# Presets are written into a presets/ directory next to the actual executable
+# (via $<TARGET_FILE_DIR:...>) so the server's own exe-relative discovery finds
+# them. Multi-config generators (e.g. Visual Studio) nest the executable in a
+# per-config subdirectory, so a fixed configure-time path would not sit beside
+# the binary.
 function(add_system_preset EXECUTABLE PRESET_ID PRESET_NAME RELEASE_DATE)
-    set(preset_filepath "${PRESETS_OUTPUT_DIR}/${PRESET_ID}.preset.beebium")
-    set(thumbnail_filepath "${PRESETS_OUTPUT_DIR}/${PRESET_ID}.thumbnail.png")
+    set(preset_dirpath "$<TARGET_FILE_DIR:${EXECUTABLE}>/presets")
+    set(preset_filepath "${preset_dirpath}/${PRESET_ID}.preset.beebium")
+    set(thumbnail_filepath "${preset_dirpath}/${PRESET_ID}.thumbnail.png")
     add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${preset_dirpath}"
         COMMAND ${EXECUTABLE} create-preset
             --name "${PRESET_NAME}"
             --release-date "${RELEASE_DATE}"
