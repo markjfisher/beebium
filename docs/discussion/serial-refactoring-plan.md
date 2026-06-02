@@ -168,11 +168,15 @@ members; tests keep locals).
     derive from it unchanged); the piconet shim keeps `beebium::piconet::SerialPort`
     as an alias to `HostSerialPort`, so Piconet code/tests are untouched. This
     frees `beebium::SerialPort` for the BBC port handle.
-9. Add the `beebium::SerialPort` port handle (the `UserPort` analogue) exposing
-   `attach(SerialPortDevice&)` + `is_occupied()`; have hardware variants expose
-   `serial_port()` -> `SerialPort&` with a `HasSerialPort` concept; add
-   `SerialPort*` to `ExtensionContext` (get/has). Make `SerialSocket`'s device
-   slot non-owning. Mirror `UserPort` exactly.
+9. DONE (commit ef5bda2, green macOS+Linux+Windows). Added `beebium::SerialPort`
+   (extension/SerialPort.hpp): `attach(SerialPortDevice&)` / `detach()` /
+   `is_occupied()`, single-device, throws on a second attach -- the `UserPort`
+   analogue, header-only, non-owning. `SerialSocket::set_device` is now
+   non-owning (raw `SerialPortDevice*`); SerialService keeps its endpoints alive
+   and passes `.get()`. All four Model B variants expose `serial_port()`;
+   `HasSerialPort` concept added; `ExtensionContext` gains `SerialPort*` (get/has),
+   wired from ServerMain. Handle unit test added (attach/occupancy/throw/detach/
+   round-trip). No consumer attaches yet -- that is step 10.
 10. Create a built-in `HostSerialExtension : PeripheralExtension, SerialPortDevice`
     that owns the `HostSerialEndpoint` + host port + `PtyMaster` and offers the
     pty / device / loopback / scriptable modes. `attaches_to()` the serial port;
