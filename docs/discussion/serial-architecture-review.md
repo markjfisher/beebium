@@ -29,63 +29,65 @@ can deal with the issues systematically rather than from memory.
   integration). Builds and passes on macOS including the PTY round trip, so the
   POSIX transport is already Mac-clean.
 
-## Correction 1: the serial port is NOT always fitted (and there are two axes)
+## Correction 1: the serial port is NOT always fitted (two axes we model)
 
 The PR (and my first-pass review) assumed the serial socket is always present.
-That is wrong, and the reality has TWO distinct presence axes that the design
-must keep separate:
+That is wrong. There are two capabilities we choose to model, which do not track
+each other across variants:
 
-Axis A - the chips (MC6850 ACIA + Serial ULA):
+- Axis A - the serial chips + RS423 (MC6850 ACIA + Serial ULA, and the RS423
+  port they drive). A both-or-neither pair, so a single `SerialSocket` container
+  is correct; we do NOT need separate sockets for the two chips.
+- Axis B - the cassette interface (driven by the same ULA: latch bit 6 select,
+  bit 7 motor relay).
 
-- These also drive the **cassette** interface, not just RS423. So they earn
-  their keep even when there is no RS423 port.
-- Model A: chips ARE fitted (cassette works). Model B / B+ / Master 128: fitted.
-- Master Compact: the chips are socketed and may be absent entirely (confirmed:
-  Rob's own Compact has no serial fitted). It is both-or-neither - the 6850 and
-  the ULA come as a pair - so a single `SerialSocket` container is correct; we
-  do NOT need separate sockets for the two chips.
-- (None of A / Compact are implemented in Beebium yet; B / B+ / Master 128 are.)
+Note on the real hardware vs what we model: the Model A actually fitted the chips
+(for cassette) but omitted the 5-pin domino DIN RS423 connector, so a real
+Model A had cassette without a usable serial port. We deliberately do NOT model
+that connector-absent case: Beebium treats the Model A as having serial support
+(RS423) alongside cassette, the same as a Model B. So "chips present" and "RS423
+usable" are one and the same in our model (Axis A). The only place chips and
+cassette come apart is the Master Compact.
 
-Axis B - the external RS423 connector (the 5-pin domino DIN socket):
+Per variant (none of A / Compact are implemented in Beebium yet; B / B+ /
+Master 128 are):
 
-- Model A: NOT fitted. The chips are present and cassette works, but there is no
-  RS423 socket, so nothing can be plugged into the serial port.
-- Model B / B+ / Master 128: fitted.
-- Master Compact: absent when the serial option is not fitted (tracks Axis A on
-  the Compact, but in general the connector is what decides whether an external
-  serial device can attach).
+| Variant        | A: chips + RS423 | B: cassette |
+|----------------|------------------|-------------|
+| Model A        | yes              | yes         |
+| Model B        | yes              | yes         |
+| Model B+       | yes              | yes         |
+| Master 128     | yes              | yes         |
+| Master Compact | optional         | NO (never)  |
 
-So "is there a serial chip to read/clock and a cassette path?" (Axis A) is a
-different question from "can an external RS423 device attach?" (Axis B). Model A
-is the case that proves they differ: chips yes, RS423 connector no.
+The instructive corner case is the Master Compact: no cassette at all (disc or
+Econet only), and the serial hardware is an option (Rob's own Compact has none).
+So on the Compact the chips serve RS423 only, and "chips fitted" is the same
+decision as "RS423 fitted" - but cassette is absent even when they are fitted.
+That is why Axis B cannot simply be derived from Axis A.
 
 Design implications:
 
-- One `SerialSocket` (chips + cassette path) gated by Axis A. The
-  `HasSerialSocket<Memory>` concept the PR uses is the right mechanism for this;
-  make every variant opt in/out correctly, and let the Compact express
-  "fitted or not" as configuration, not a compile-time fact.
-- The RS423 device-attachment point (the `SerialPortDevice` seam from
-  Correction 2) is gated by Axis B and can be absent even when the chips are
-  present (Model A). Don't conflate "has chips" with "has an RS423 port you can
-  plug a FujiNet into".
-- Cassette is in scope, not a footnote. Because the ULA/ACIA exist on Model A
-  purely for cassette, the cassette path belongs in core with the chips and is
-  the reason the chips are present at all on the low end. See the cassette note
-  under Correction 2.
+- One `SerialSocket` (chips + RS423) gated by Axis A. The `HasSerialSocket<Memory>`
+  concept the PR uses is the right mechanism; make every variant opt in/out
+  correctly, and let the Compact express "fitted or not" as configuration, not a
+  compile-time fact. The `SerialPortDevice` attachment point (Correction 2) is
+  present exactly when the `SerialSocket` is.
+- Cassette availability (Axis B) is its OWN per-variant property, not "wherever
+  the chips are". It is present on A/B/B+/Master128 and absent on the Compact.
+  When we add cassette, gate it separately (see the cassette note under
+  Correction 2) - do not derive it from chip presence.
 - The whole stack above core must tolerate absence gracefully:
   - `SerialService.GetSerialStatus` already returns `has_serial_socket=false` -
     good; keep that contract and make the clients honour it. We likely want a
-    second flag distinguishing "chips present" from "RS423 connector present".
+    second flag for cassette presence rather than a single has-serial bit.
   - Any future UI (panel/indicator) must hide or disable itself when the machine
-    has no RS423 port, the same way Econet UI keys off station config.
-  - `--serial` (RS423 transport) on a machine with no RS423 connector should be
-    a clear error, not a silent no-op - even if the chips are present for
-    cassette.
+    has no serial socket, the same way Econet UI keys off station config.
+  - `--serial` on a machine with no serial socket should be a clear error, not a
+    silent no-op.
 - This also weakens the "it's always there, so it's not pluggable" argument for
   keeping serial out of the extension framework. The chips are optional on the
-  Compact, and the RS423 connector is independently optional - closer to a
-  fitted option than to RAM.
+  Compact - closer to a fitted option than to RAM.
 
 ## Correction 2: the host-serial bridge belongs in an extension
 
@@ -181,16 +183,19 @@ seam needs a well-defined "nothing attached" behaviour (RX idle, TX discarded)
 in core, independent of any extension - the NONE case. Keep that in core and
 push everything else out to extensions.
 
-Cassette (in scope going forward, see Correction 1 Axis A): the Serial ULA also
+Cassette (in scope going forward, see Correction 1 Axis B): the Serial ULA also
 drives the cassette interface (latch bit 6 RS423/cassette select, bit 7 motor
-relay). Cassette is the reason the chips exist at all on a Model A, so it shares
-the `SerialSocket` and lives in core with the chips. The PR does not implement
-cassette I/O - only the RS423 byte transport - which is fine, but the seam shape
-should not foreclose cassette. The byte-level `SerialPortDevice` seam suits RS423
-but not cassette audio encoding, so cassette wants its OWN seam (a
-`CassetteDevice` attaching to the same chips via the cassette-select path), not
-to be forced through the serial-byte seam. Keep the RS423 seam RS423-shaped so it
-does not accidentally become the cassette path too; add the cassette seam later.
+relay). Cassette is the reason the chips exist at all on a Model A, so when
+present it shares the `SerialSocket` and lives in core with the chips. But its
+presence is its own per-variant axis - present on A/B/B+/Master128, absent on the
+Compact (disc/Econet only) - so gate it separately rather than deriving it from
+chip presence. The PR does not implement cassette I/O - only the RS423 byte
+transport - which is fine, but the seam shape should not foreclose cassette. The
+byte-level `SerialPortDevice` seam suits RS423 but not cassette audio encoding,
+so cassette wants its OWN seam (a `CassetteDevice` attaching to the same chips
+via the cassette-select path), not to be forced through the serial-byte seam.
+Keep the RS423 seam RS423-shaped so it does not accidentally become the cassette
+path too; add the cassette seam later.
 
 ## Other gaps (independent of the two corrections)
 
