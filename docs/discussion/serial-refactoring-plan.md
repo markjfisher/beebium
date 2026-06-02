@@ -155,17 +155,24 @@ See review Correction 1: Axis A = chips + RS423 (one `SerialSocket`,
 
 The core architectural move. Mirror the User Port / 1MHz bus pattern.
 
-8a. (Moved here from Phase 1) Resolve the `SerialPort` naming collision FIRST,
-    as the opening step of this phase, because step 9 introduces the BBC-side
-    `SerialPort` port handle that needs the name. Rename the host OS port family
-    `SerialPort` / `PosixSerialPort` / `Win32SerialPort` / `PtyMaster` to a
-    host-scoped family (e.g. `HostSerialPort`, or a `beebium::serial::host`
-    namespace), updating the Piconet shims and all includes. Pure rename; re-run
-    the triad before continuing. Doing this here keeps the churn with the work
-    that consumes the freed name.
-9. Expose a serial attachment point (the BBC `SerialPort` port handle) through
-   `ExtensionContext` (analogous to `UserPort` / `OneMHzBusPort`), backed by
-   `SerialSocket`'s `set_device`.
+Design decisions (confirmed with Rob): mirror `UserPort` / `UserPortDevice`, NOT
+the Tube (TubeSocket-in-ExtensionContext is a special coprocessor case, not the
+peripheral-attachment convention). Names: BBC handle = `beebium::SerialPort`,
+device = `beebium::SerialPortDevice`. Ownership: the device slot is NON-OWNING
+(`UserPort::attach(UserPortDevice&)` model) -- attachers own the device (the
+extension owns itself; SerialService keeps its scriptable/loopback in its own
+members; tests keep locals).
+
+8a. DONE (commit 11dbb2c, green macOS+Linux+Windows). Renamed the host OS serial
+    port `beebium::serial::SerialPort` -> `HostSerialPort` (Posix/Win32/Pty
+    derive from it unchanged); the piconet shim keeps `beebium::piconet::SerialPort`
+    as an alias to `HostSerialPort`, so Piconet code/tests are untouched. This
+    frees `beebium::SerialPort` for the BBC port handle.
+9. Add the `beebium::SerialPort` port handle (the `UserPort` analogue) exposing
+   `attach(SerialPortDevice&)` + `is_occupied()`; have hardware variants expose
+   `serial_port()` -> `SerialPort&` with a `HasSerialPort` concept; add
+   `SerialPort*` to `ExtensionContext` (get/has). Make `SerialSocket`'s device
+   slot non-owning. Mirror `UserPort` exactly.
 10. Create a built-in `HostSerialExtension : PeripheralExtension, SerialPortDevice`
     that owns the `HostSerialEndpoint` + host port + `PtyMaster` and offers the
     pty / device / loopback / scriptable modes. `attaches_to()` the serial port;
