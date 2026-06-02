@@ -59,8 +59,7 @@ public:
             // ReceiveFromDevice work out of the box (mirrors the demo flow).
             scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
             auto& serial = machine_.state().memory.serial_socket;
-            serial.set_source(scriptable_);
-            serial.set_sink(scriptable_);
+            serial.set_device(scriptable_);
             mode_ = SERIAL_ENDPOINT_SCRIPTABLE;
         }
     }
@@ -200,28 +199,24 @@ public:
 
                 switch (mode) {
                     case SERIAL_ENDPOINT_NONE:
-                        serial.set_source(nullptr);
-                        serial.set_sink(nullptr);
+                        serial.set_device(nullptr);
                         break;
                     case SERIAL_ENDPOINT_LOOPBACK:
                         loopback_ = std::make_shared<LoopbackSerialEndpoint>();
-                        serial.set_source(loopback_);
-                        serial.set_sink(loopback_);
+                        serial.set_device(loopback_);
                         break;
                     case SERIAL_ENDPOINT_PTY:
                     case SERIAL_ENDPOINT_DEVICE:
                         host_endpoint_ = new_host;
                         advertised_path_ = advertised;
-                        serial.set_source(host_endpoint_);
-                        serial.set_sink(host_endpoint_);
+                        serial.set_device(host_endpoint_);
                         break;
                     case SERIAL_ENDPOINT_SCRIPTABLE:
                     default:
                         if (!scriptable_) {
                             scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
                         }
-                        serial.set_source(scriptable_);
-                        serial.set_sink(scriptable_);
+                        serial.set_device(scriptable_);
                         mode = SERIAL_ENDPOINT_SCRIPTABLE;
                         break;
                 }

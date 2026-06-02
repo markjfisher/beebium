@@ -60,8 +60,7 @@ TEST_CASE("Serial socket transmits over a pty to a serial client", "[serial][pty
 
     SerialSocket socket;
     auto endpoint = std::make_shared<HostSerialEndpoint>(std::move(pty));
-    socket.set_source(endpoint);
-    socket.set_sink(endpoint);
+    socket.set_device(endpoint);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
@@ -91,8 +90,7 @@ TEST_CASE("Serial socket receives from a serial client over a pty", "[serial][pt
 
     SerialSocket socket;
     auto endpoint = std::make_shared<HostSerialEndpoint>(std::move(pty));
-    socket.set_source(endpoint);
-    socket.set_sink(endpoint);
+    socket.set_device(endpoint);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);

@@ -53,12 +53,21 @@ public:
     virtual void add_byte(uint8_t value) = 0;
 };
 
+// The seam a serial device attaches to: a single, bidirectional endpoint that
+// the Serial ULA both receives from (device -> Beeb) and transmits to
+// (Beeb -> device). This is the serial analogue of UserPortDevice /
+// OneMHzBusDevice -- the one interface an attached device implements, whether a
+// host-serial bridge or an emulated device (e.g. a FujiNet). It combines the two
+// half-seams the bit engine uses internally; SerialSocket accepts a
+// SerialPortDevice and wires it to the ULA as both source and sink.
+class SerialPortDevice : public SerialDataSource, public SerialDataSink {
+};
+
 // In-memory source/sink used by unit tests and as a simple loopback. Bytes
 // written via add_byte() become readable through has_data()/next_byte(),
 // so connecting it as both source and sink echoes transmitted bytes back to
 // the receiver.
-class LoopbackSerialEndpoint final : public SerialDataSource,
-                                     public SerialDataSink {
+class LoopbackSerialEndpoint final : public SerialPortDevice {
 public:
     bool has_data() override { return !queue_.empty(); }
 
@@ -95,8 +104,7 @@ private:
 // thread can use the endpoint concurrently without a global pause. This is the
 // serial analogue of the Econet TestBackend: a deterministic, in-process
 // transport for scripts and tests, with no PTY or external device involved.
-class ScriptableSerialEndpoint final : public SerialDataSource,
-                                       public SerialDataSink {
+class ScriptableSerialEndpoint final : public SerialPortDevice {
 public:
     // --- SerialDataSource (device -> Beeb), called on the emulation thread ---
     bool has_data() override {

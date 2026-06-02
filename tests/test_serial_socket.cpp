@@ -97,7 +97,7 @@ TEST_CASE("Model B serial ACIA IRQ reaches the IRQ aggregator", "[serial][socket
 TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][socket]") {
     SerialSocket socket;
     auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_sink(endpoint);
+    socket.set_device(endpoint);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
@@ -116,7 +116,7 @@ TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][
 TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb", "[serial][socket]") {
     SerialSocket socket;
     auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_source(endpoint);
+    socket.set_device(endpoint);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);
@@ -130,4 +130,23 @@ TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb"
 
     REQUIRE((socket.read_acia(0) & Mc6850::SR_RDRF) != 0);
     CHECK(socket.read_acia(1) == 0x39);
+}
+
+// A single SerialPortDevice wired via set_device() serves both directions: a
+// loopback device echoes a transmitted byte back so the Beeb receives it.
+TEST_CASE("SerialSocket set_device loopback round-trips a byte", "[serial][socket]") {
+    SerialSocket socket;
+    socket.set_device(std::make_shared<LoopbackSerialEndpoint>());
+
+    socket.write_acia(0, CONTROL_8N1);
+    socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
+    socket.write_acia(1, 0xC3);                      // transmit
+
+    for (int i = 0; i < 20000 && (socket.read_acia(0) & Mc6850::SR_RDRF) == 0; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+
+    REQUIRE((socket.read_acia(0) & Mc6850::SR_RDRF) != 0);
+    CHECK(socket.read_acia(1) == 0xC3);
 }

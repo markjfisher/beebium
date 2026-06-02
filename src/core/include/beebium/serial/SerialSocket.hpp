@@ -50,17 +50,14 @@ public:
 
     // --- Transport configuration ---
 
-    // Attach a host transport. The socket takes ownership; pass the same object
-    // as both source and sink (e.g. a LoopbackSerialEndpoint) to echo, or
-    // distinct objects for a full-duplex bridge.
-    void set_source(std::shared_ptr<SerialDataSource> source) {
-        source_ = std::move(source);
-        ula_.set_source(source_.get());
-    }
-
-    void set_sink(std::shared_ptr<SerialDataSink> sink) {
-        sink_ = std::move(sink);
-        ula_.set_sink(sink_.get());
+    // Attach the serial device (the bidirectional endpoint the ULA receives
+    // from and transmits to). The socket takes shared ownership and wires it to
+    // the ULA's receive and transmit seams. Pass nullptr to detach: the receive
+    // line idles and transmitted bytes are discarded.
+    void set_device(std::shared_ptr<SerialPortDevice> device) {
+        device_ = std::move(device);
+        ula_.set_source(device_.get());
+        ula_.set_sink(device_.get());
     }
 
     // Open-bus support for reads of the write-only Serial ULA latch.
@@ -101,8 +98,7 @@ private:
     Mc6850 acia_;
     SerialUla ula_{acia_};
 
-    std::shared_ptr<SerialDataSource> source_;
-    std::shared_ptr<SerialDataSink> sink_;
+    std::shared_ptr<SerialPortDevice> device_;
     const uint8_t* last_bus_value_ptr_ = nullptr;
 };
 

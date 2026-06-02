@@ -42,8 +42,7 @@ namespace beebium::serial {
 // b2 found that some peers need transmitted frames coalesced (a short
 // debounce) to avoid packet splitting; that tuning, if needed, belongs here in
 // add_byte()/a flush timer and is deliberately left out for now.
-class HostSerialEndpoint final : public beebium::SerialDataSource,
-                                 public beebium::SerialDataSink {
+class HostSerialEndpoint final : public beebium::SerialPortDevice {
 public:
     explicit HostSerialEndpoint(std::unique_ptr<SerialPort> port)
         : port_(std::move(port)) {
