@@ -71,3 +71,9 @@ class EconetError(BeebiumError):
     """An Econet operation failed."""
 
     pass
+
+
+class SerialError(BeebiumError):
+    """A serial port operation failed."""
+
+    pass

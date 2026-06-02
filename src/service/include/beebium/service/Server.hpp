@@ -23,6 +23,7 @@
 #include "beebium/service/AudioService.hpp"
 #include "beebium/service/SidewaysService.hpp"
 #include "beebium/service/EconetService.hpp"
+#include "beebium/service/SerialService.hpp"
 #include "beebium/service/TubeService.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
 #include "beebium/econet/EconetConcepts.hpp"
@@ -93,6 +94,10 @@ public:
     /// Access the TubeService (for host startup to set shared memory pointer).
     TubeServiceImpl<MachineType>* tube_service() { return impl_->tube_service.get(); }
 
+    /// Access the SerialService (for --serial CLI wiring). Returns nullptr
+    /// until start() has been called.
+    SerialServiceImpl<MachineType>* serial_service() { return impl_->serial_service.get(); }
+
     /// Access the SidewaysService. Returns nullptr until start() has been
     /// called, since services are constructed during start. Use
     /// set_motherboard_links() before start() to configure link state.
@@ -146,6 +151,7 @@ private:
         // sideways_service when it is constructed.
         typename MachineType::Memory::MotherboardLinks motherboard_links{};
         std::unique_ptr<EconetServiceImpl<MachineType>> econet_service;
+        std::unique_ptr<SerialServiceImpl<MachineType>> serial_service;
         std::unique_ptr<TubeServiceImpl<MachineType>> tube_service;
         std::unique_ptr<grpc::Server> grpc_server;
         std::unique_ptr<discovery::Advertiser> advertiser;
@@ -252,6 +258,9 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     impl_->econet_service = std::make_unique<EconetServiceImpl<MachineType>>(
         impl_->machine);
 
+    impl_->serial_service = std::make_unique<SerialServiceImpl<MachineType>>(
+        impl_->machine);
+
     impl_->tube_service = std::make_unique<TubeServiceImpl<MachineType>>(
         impl_->machine);
 
@@ -278,6 +287,7 @@ void Server<MachineType>::start(Provenance provenance, MachineIdentity identity,
     builder.RegisterService(impl_->audio_service.get());
     builder.RegisterService(impl_->sideways_service.get());
     builder.RegisterService(impl_->econet_service.get());
+    builder.RegisterService(impl_->serial_service.get());
     builder.RegisterService(impl_->tube_service.get());
 
     // Register extension-provided services
@@ -370,6 +380,7 @@ void Server<MachineType>::stop() {
     impl_->audio_service.reset();
     impl_->sideways_service.reset();
     impl_->econet_service.reset();
+    impl_->serial_service.reset();
     impl_->tube_service.reset();
 }
 

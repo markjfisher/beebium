@@ -12,14 +12,17 @@
 
 #pragma once
 
-// Compatibility shim -- canonical implementation now in beebium core.
+#include "SerialSocket.hpp"
 
-#ifndef _WIN32
+#include <concepts>
 
-#include "beebium/serial/PosixSerialPort.hpp"
+namespace beebium {
 
-namespace beebium::piconet {
-using beebium::serial::PosixSerialPort;
-}  // namespace beebium::piconet
+// Concept to detect if a hardware type has the on-board serial socket
+// (MC6850 ACIA + Serial ULA). All current Model B variants provide this.
+template<typename T>
+concept HasSerialSocket = requires(T& hw) {
+    { hw.serial_socket } -> std::same_as<SerialSocket&>;
+};
 
-#endif  // !_WIN32
+}  // namespace beebium
