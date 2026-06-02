@@ -5,12 +5,14 @@
 
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
 #include <kddockwidgets/MainWindow.h>
+#include <kddockwidgets/core/TitleBar.h>
 #else
 #include <QMainWindow>
 #endif
 
 #include "ConfigProfiles.hpp"
 #include "ConnectionTarget.hpp"
+#include "VideoWidget.hpp"
 
 class GrpcDiscClient;
 class GrpcIndicatorClient;
@@ -29,13 +31,14 @@ class QDockWidget;
 class QFormLayout;
 class QGroupBox;
 class QMenu;
+class QActionGroup;
+class QCheckBox;
 class QSlider;
 class QSpinBox;
 class QTableWidget;
 class QPushButton;
 class QAction;
 class QTextEdit;
-class VideoWidget;
 
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
 namespace KDDockWidgets {
@@ -64,6 +67,7 @@ private slots:
     void showError(const QString &message);
     void showAudioStatus(const QString &message);
     void resetMachine();
+    void disconnectUiSession();
     void attemptConfigReconnect();
     void refreshIndicatorsView();
     void refreshStorageView();
@@ -91,6 +95,9 @@ private:
     void updateAudioDetails(const QString &message = QString());
     void updateConfigSummary();
     void rebuildHardwareMenu();
+    void updateConnectionOwnershipUi();
+    void updateDisplayAspect(VideoWidget::AspectMode mode);
+    void updateTextureFilter(VideoWidget::TextureFilter filter);
     void addPanelDock(const QString &dockId, const QString &title, QWidget *widget, const QString &locationHint);
     void syncAudioDeviceChoices();
     void reconnectAudioStream();
@@ -102,6 +109,7 @@ private:
     QLineEdit *hostEdit_ = nullptr;
     QLineEdit *portEdit_ = nullptr;
     QPushButton *connectButton_ = nullptr;
+    QPushButton *disconnectButton_ = nullptr;
     QPushButton *resetButton_ = nullptr;
     QLabel *machineLabel_ = nullptr;
     QLabel *statusLabel_ = nullptr;
@@ -117,6 +125,8 @@ private:
     QLabel *serialHostBaudLabel_ = nullptr;
     QLabel *serialQueueLabel_ = nullptr;
     QLabel *configSummaryLabel_ = nullptr;
+    QLabel *connectionOwnershipLabel_ = nullptr;
+    QCheckBox *keepServerRunningCheck_ = nullptr;
     QComboBox *audioDeviceCombo_ = nullptr;
     QSlider *audioVolumeSlider_ = nullptr;
     QTableWidget *indicatorTable_ = nullptr;
@@ -150,5 +160,10 @@ private:
     bool serialControlsDirty_ = false;
     bool serialUiUpdating_ = false;
     bool applyingConfig_ = false;
+    bool restoringUiState_ = false;
+    bool keepServerRunningOnExit_ = false;
     int pendingReconnectAttempts_ = 0;
+    QAction *keepRunningAction_ = nullptr;
+    QActionGroup *displayAspectGroup_ = nullptr;
+    QActionGroup *textureFilterGroup_ = nullptr;
 };

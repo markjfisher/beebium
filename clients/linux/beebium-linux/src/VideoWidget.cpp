@@ -4,19 +4,18 @@
 #include "HostKeyMap.hpp"
 
 #include <QFocusEvent>
-#include <QGuiApplication>
 #include <QHash>
-#include <QLoggingCategory>
 #include <QPainter>
 #include <QRectF>
 #include <QTimer>
+
+#include <cmath>
 
 namespace {
 
 constexpr quint32 kIkShift = 0x00;
 constexpr quint32 kIkCapsLock = 0x40;
 constexpr float kDisplayMargin = 0.94f;
-Q_LOGGING_CATEGORY(videoKeyboardLog, "beebium.linux.keyboard")
 
 QString alphaKeyText(int qtKey) {
     if (qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z) {
@@ -75,6 +74,57 @@ void VideoWidget::setKeyboardClient(GrpcKeyboardClient *keyboardClient) {
     keyboardClient_ = keyboardClient;
 }
 
+void VideoWidget::setAspectMode(AspectMode mode) {
+    if (aspectMode_ == mode) {
+        return;
+    }
+    aspectMode_ = mode;
+    update();
+}
+
+VideoWidget::AspectMode VideoWidget::aspectMode() const {
+    return aspectMode_;
+}
+
+void VideoWidget::setTextureFilter(TextureFilter filter) {
+    if (textureFilter_ == filter) {
+        return;
+    }
+    textureFilter_ = filter;
+    if (texture_) {
+        applyTextureSampling();
+    }
+    update();
+}
+
+VideoWidget::TextureFilter VideoWidget::textureFilter() const {
+    return textureFilter_;
+}
+
+void VideoWidget::setIntegerScalingEnabled(bool enabled) {
+    if (integerScalingEnabled_ == enabled) {
+        return;
+    }
+    integerScalingEnabled_ = enabled;
+    update();
+}
+
+bool VideoWidget::integerScalingEnabled() const {
+    return integerScalingEnabled_;
+}
+
+void VideoWidget::setIntegerFitEnabled(bool enabled) {
+    if (integerFitEnabled_ == enabled) {
+        return;
+    }
+    integerFitEnabled_ = enabled;
+    update();
+}
+
+bool VideoWidget::integerFitEnabled() const {
+    return integerFitEnabled_;
+}
+
 void VideoWidget::setBbcCapsLockState(bool enabled) {
     bbcCapsLockOn_ = enabled;
 }
@@ -123,21 +173,15 @@ void VideoWidget::paintGL() {
 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    const float widgetAspect = height() > 0
-        ? static_cast<float>(width()) / static_cast<float>(height())
-        : 1.0f;
-    const float contentAspect = geometry.contentAspectRatio(parScale_);
-
-    float xScale = 1.0f;
-    float yScale = 1.0f;
-    if (widgetAspect > contentAspect) {
-        xScale = contentAspect / widgetAspect;
-    } else {
-        yScale = widgetAspect / contentAspect;
-    }
-
-    xScale *= kDisplayMargin;
-    yScale *= kDisplayMargin;
+    const QRectF target = targetRectForFrame(geometry, frameImage.size());
+    const float xScale = width() > 0 ? static_cast<float>(target.width()) / static_cast<float>(width()) : 1.0f;
+    const float yScale = height() > 0 ? static_cast<float>(target.height()) / static_cast<float>(height()) : 1.0f;
+    const float xOffset = width() > 0
+        ? static_cast<float>((target.x() + target.width() * 0.5) / width()) * 2.0f - 1.0f
+        : 0.0f;
+    const float yOffset = height() > 0
+        ? 1.0f - static_cast<float>((target.y() + target.height() * 0.5) / height()) * 2.0f
+        : 0.0f;
 
     if (shaderReady_ && !frameImage.isNull() && geometry.width > 0 && geometry.height > 0) {
         recreateTextureIfNeeded(frameImage.width(), frameImage.height());
@@ -146,12 +190,12 @@ void VideoWidget::paintGL() {
             texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, frameImage.constBits());
 
             const GLfloat vertices[] = {
-                -xScale, -yScale, 0.0f, 1.0f,
-                 xScale, -yScale, 1.0f, 1.0f,
-                -xScale,  yScale, 0.0f, 0.0f,
-                 xScale, -yScale, 1.0f, 1.0f,
-                 xScale,  yScale, 1.0f, 0.0f,
-                -xScale,  yScale, 0.0f, 0.0f,
+                xOffset - xScale, yOffset - yScale, 0.0f, 1.0f,
+                xOffset + xScale, yOffset - yScale, 1.0f, 1.0f,
+                xOffset - xScale, yOffset + yScale, 0.0f, 0.0f,
+                xOffset + xScale, yOffset - yScale, 1.0f, 1.0f,
+                xOffset + xScale, yOffset + yScale, 1.0f, 0.0f,
+                xOffset - xScale, yOffset + yScale, 0.0f, 0.0f,
             };
 
             program_->bind();
@@ -173,12 +217,6 @@ void VideoWidget::paintGL() {
         painter.setPen(Qt::white);
         const QString overlay = tr("Renderer fallback: %1").arg(shaderError_);
         if (!frameImage.isNull() && geometry.width > 0 && geometry.height > 0) {
-            const qreal drawWidth = width() * xScale;
-            const qreal drawHeight = height() * yScale;
-            const QRectF target((width() - drawWidth) / 2.0,
-                                (height() - drawHeight) / 2.0,
-                                 drawWidth,
-                                 drawHeight);
             painter.drawImage(target, frameImage);
         }
         painter.drawText(rect().adjusted(8, 8, -8, -8),
@@ -217,12 +255,6 @@ void VideoWidget::keyPressEvent(QKeyEvent *event) {
                 pressedQtKeys_.insert(syntheticKey);
                 pressedMappings_.insert(syntheticKey, mapping->ikNumber);
             }
-            qInfo(videoKeyboardLog).noquote() << QStringLiteral("[alpha] qt=") << event->key()
-                                              << QStringLiteral("text=") << event->text()
-                                              << QStringLiteral("mapped=") << alphaText
-                                              << QStringLiteral("hostShift=") << hostShiftHeld_
-                                              << QStringLiteral("bbcShift=") << bbcShiftDown_
-                                              << QStringLiteral("bbcCaps=") << bbcCapsLockOn_;
             event->accept();
             return;
         }
@@ -332,6 +364,59 @@ bool VideoWidget::focusNextPrevChild(bool) {
     return false;
 }
 
+QRectF VideoWidget::targetRectForFrame(const FrameGeometry &geometry, const QSize &frameSize) const {
+    float contentAspect = geometry.contentAspectRatio(parScale_);
+    if (aspectMode_ == AspectMode::FourThree) {
+        contentAspect = 4.0f / 3.0f;
+    } else if (aspectMode_ == AspectMode::SquarePixels) {
+        const int widthPixels = std::max(1, geometry.totalWidth());
+        int heightPixels = std::max(1, geometry.totalHeight());
+        if (!geometry.interlaced) {
+            heightPixels *= 2;
+        }
+        contentAspect = static_cast<float>(widthPixels) / static_cast<float>(heightPixels);
+    }
+
+    const qreal maxWidth = width() * kDisplayMargin;
+    const qreal maxHeight = height() * kDisplayMargin;
+    qreal drawWidth = maxWidth;
+    qreal drawHeight = maxHeight;
+    if (maxHeight > 0.0 && maxWidth / maxHeight > contentAspect) {
+        drawWidth = maxHeight * contentAspect;
+    } else {
+        drawHeight = maxWidth / std::max(0.01f, contentAspect);
+    }
+
+    const int sourceWidth = std::max(1, frameSize.width());
+    const int sourceHeight = std::max(1, frameSize.height());
+    const qreal integerScale = std::min(drawWidth / sourceWidth, drawHeight / sourceHeight);
+    if (integerScalingEnabled_) {
+        const int scale = std::max(1, static_cast<int>(std::floor(integerScale)));
+        drawWidth = sourceWidth * scale;
+        drawHeight = sourceHeight * scale;
+    } else if (integerFitEnabled_ && integerScale >= 1.0) {
+        const int scale = std::max(1, static_cast<int>(std::floor(integerScale)));
+        drawWidth = std::min(drawWidth, static_cast<qreal>(sourceWidth * scale));
+        drawHeight = std::min(drawHeight, static_cast<qreal>(sourceHeight * scale));
+    }
+
+    return QRectF((width() - drawWidth) / 2.0,
+                  (height() - drawHeight) / 2.0,
+                  drawWidth,
+                  drawHeight);
+}
+
+void VideoWidget::applyTextureSampling() {
+    if (!texture_) {
+        return;
+    }
+    const auto filter = textureFilter_ == TextureFilter::Nearest
+        ? QOpenGLTexture::Nearest
+        : QOpenGLTexture::Linear;
+    texture_->setMinificationFilter(filter);
+    texture_->setMagnificationFilter(filter);
+}
+
 bool VideoWidget::ensureProgram() {
     program_ = std::make_unique<QOpenGLShaderProgram>();
 
@@ -370,8 +455,7 @@ void VideoWidget::recreateTextureIfNeeded(int width, int height) {
         texture_->setSize(width, height);
         texture_->setMipLevels(1);
         texture_->allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
-        texture_->setMinificationFilter(QOpenGLTexture::Nearest);
-        texture_->setMagnificationFilter(QOpenGLTexture::Nearest);
+        applyTextureSampling();
         texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
     }
 }
@@ -478,8 +562,6 @@ void VideoWidget::releaseShift() {
 }
 
 void VideoWidget::syncCapsLockState() {
-    qInfo(videoKeyboardLog).noquote() << QStringLiteral("[caps] focus sync disabled, bbc=")
-                                      << bbcCapsLockOn_;
 }
 
 void VideoWidget::tapCapsLock() {
@@ -491,15 +573,12 @@ void VideoWidget::tapCapsLock() {
     }
     if (keyboardClient_->keyDown(kIkCapsLock)) {
         capsLockTapInFlight_ = true;
-        qInfo(videoKeyboardLog).noquote() << QStringLiteral("[caps] tap down host/bbc before=")
-                                          << bbcCapsLockOn_;
         QTimer::singleShot(35, this, [this]() {
             capsLockTapInFlight_ = false;
             if (!keyboardClient_) {
                 return;
             }
             keyboardClient_->keyUp(kIkCapsLock);
-            qInfo(videoKeyboardLog).noquote() << QStringLiteral("[caps] tap up, waiting for indicator update");
         });
     }
 }

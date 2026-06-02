@@ -3,8 +3,14 @@
 #include <algorithm>
 
 #include <QCloseEvent>
+#include <QActionGroup>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QFormLayout>
 #include <QDir>
 #include <QMenu>
@@ -12,7 +18,6 @@
 #include <QHeaderView>
 #include <QIntValidator>
 #include <QLabel>
-#include <QLoggingCategory>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
@@ -53,9 +58,7 @@
 
 namespace {
 
-constexpr int kUiLayoutVersion = 2;
-Q_LOGGING_CATEGORY(mainUiLog, "beebium.linux.ui")
-
+constexpr int kUiLayoutVersion = 3;
 std::unique_ptr<QSettings> makeSettings() {
     const QString configFolder = qApp->property("configFolder").toString();
     if (!configFolder.isEmpty()) {
@@ -70,6 +73,72 @@ QString layoutFilePath() {
         return QString();
     }
     return QDir(configFolder).filePath(QStringLiteral("beebium-linux-layout.json"));
+}
+
+bool migrateLayoutFileV2ToV3(const QString &layoutPath) {
+    if (layoutPath.isEmpty() || !QFileInfo::exists(layoutPath)) {
+        return false;
+    }
+
+    QFile file(layoutPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    file.close();
+    if (!document.isObject()) {
+        return false;
+    }
+
+    QJsonObject root = document.object();
+
+    auto filterDockNames = [](QJsonArray array) {
+        QJsonArray filtered;
+        for (const QJsonValue &value : array) {
+            const QJsonObject object = value.toObject();
+            const QString uniqueName = object.value(QStringLiteral("uniqueName")).toString();
+            if (uniqueName == QStringLiteral("display")) {
+                continue;
+            }
+            filtered.push_back(value);
+        }
+        return filtered;
+    };
+
+    root[QStringLiteral("allDockWidgets")] = filterDockNames(root.value(QStringLiteral("allDockWidgets")).toArray());
+
+    QJsonArray closedDockWidgets;
+    for (const QJsonValue &value : root.value(QStringLiteral("closedDockWidgets")).toArray()) {
+        if (value.toString() != QStringLiteral("display")) {
+            closedDockWidgets.push_back(value);
+        }
+    }
+    root[QStringLiteral("closedDockWidgets")] = closedDockWidgets;
+
+    QJsonArray mainWindows = root.value(QStringLiteral("mainWindows")).toArray();
+    for (int i = 0; i < mainWindows.size(); ++i) {
+        QJsonObject window = mainWindows.at(i).toObject();
+        window[QStringLiteral("options")] = 5;
+        mainWindows[i] = window;
+    }
+    root[QStringLiteral("mainWindows")] = mainWindows;
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    return true;
+}
+
+void quarantineIncompatibleLayoutFile(const QString &layoutPath) {
+    if (layoutPath.isEmpty() || !QFileInfo::exists(layoutPath)) {
+        return;
+    }
+    const QFileInfo info(layoutPath);
+    const QString backupPath = info.dir().filePath(
+        info.completeBaseName() + QStringLiteral("-incompatible-v1.json"));
+    QFile::remove(backupPath);
+    QFile::rename(layoutPath, backupPath);
 }
 
 QString serialModeName(int mode) {
@@ -103,11 +172,18 @@ QString audioParenthetical(const QString &message) {
     return QString();
 }
 
+bool isLocalHost(const QString &host) {
+    const QString normalized = host.trimmed().toLower();
+    return normalized == QStringLiteral("127.0.0.1")
+        || normalized == QStringLiteral("localhost")
+        || normalized == QStringLiteral("::1");
+}
+
 } // namespace
 
 MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
-    : KDDockWidgets::QtWidgets::MainWindow(QStringLiteral("BeebiumLinuxMainWindow"), KDDockWidgets::MainWindowOption_HasCentralFrame, parent)
+    : KDDockWidgets::QtWidgets::MainWindow(QStringLiteral("BeebiumLinuxMainWindow"), KDDockWidgets::MainWindowOption_HasCentralWidget, parent)
 #else
     : QMainWindow(parent)
 #endif
@@ -127,6 +203,7 @@ MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
     portEdit_ = new QLineEdit(QString::number(initialTarget.port), this);
     portEdit_->setValidator(new QIntValidator(1, 65535, portEdit_));
     connectButton_ = new QPushButton(tr("Connect"), this);
+    disconnectButton_ = new QPushButton(tr("Disconnect"), this);
     resetButton_ = new QPushButton(tr("Reset"), this);
     machineLabel_ = new QLabel(tr("Not connected"), this);
     statusLabel_ = new QLabel(tr("Idle"), this);
@@ -143,6 +220,8 @@ MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
     serialQueueLabel_ = new QLabel(tr("TX 0 / RX 0"), this);
     configSummaryLabel_ = new QLabel(this);
     configSummaryLabel_->setWordWrap(true);
+    connectionOwnershipLabel_ = new QLabel(tr("Local server not owned"), this);
+    keepServerRunningCheck_ = new QCheckBox(tr("Keep local server running on exit"), this);
     audioDeviceCombo_ = new QComboBox(this);
     audioVolumeSlider_ = new QSlider(Qt::Horizontal, this);
     indicatorTable_ = new QTableWidget(this);
@@ -161,6 +240,7 @@ MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
     statusBar()->showMessage(tr("Ready"));
 
     connect(connectButton_, &QPushButton::clicked, this, &MainWindow::connectToServer);
+    connect(disconnectButton_, &QPushButton::clicked, this, &MainWindow::disconnectUiSession);
     connect(resetButton_, &QPushButton::clicked, this, &MainWindow::resetMachine);
     connect(videoClient_, &GrpcVideoClient::frameReady, videoWidget_, &VideoWidget::presentFrame);
     connect(videoClient_, &GrpcVideoClient::connectionStateChanged, statusLabel_, &QLabel::setText);
@@ -197,6 +277,10 @@ MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
         disconnectFromServer();
         showError(message);
     });
+    connect(localServerManager_, &LocalServerManager::ownershipChanged, this, [this](bool) {
+        updateConnectionOwnershipUi();
+        rebuildHardwareMenu();
+    });
     connect(localServerManager_, &LocalServerManager::configApplied, this, [this](const QString &) {
         QTimer::singleShot(1000, this, &MainWindow::attemptConfigReconnect);
     });
@@ -222,6 +306,7 @@ MainWindow::MainWindow(const ConnectionTarget &initialTarget, QWidget *parent)
     audioVolumeSlider_->setValue(static_cast<int>(audioClient_->volume() * 100.0f));
     updateAudioDetails();
     updateConfigSummary();
+    updateConnectionOwnershipUi();
 }
 
 MainWindow::~MainWindow() = default;
@@ -229,6 +314,7 @@ MainWindow::~MainWindow() = default;
 void MainWindow::closeEvent(QCloseEvent *event) {
     saveUiState();
     disconnectFromServer();
+    localServerManager_->prepareForAppExit();
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
     KDDockWidgets::QtWidgets::MainWindow::closeEvent(event);
 #else
@@ -238,11 +324,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
 void MainWindow::buildDockLayout() {
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
-    displayDock_ = new KDDockWidgets::QtWidgets::DockWidget(QStringLiteral("display"));
-    displayDock_->setTitle(tr("Display"));
-    displayDock_->setWidget(videoWidget_);
-    docks_.insert(QStringLiteral("display"), displayDock_);
-    addDockWidgetAsTab(displayDock_);
+    setPersistentCentralWidget(videoWidget_);
 #else
     setCentralWidget(videoWidget_);
 #endif
@@ -263,11 +345,7 @@ void MainWindow::buildMenus() {
     auto *quitAction = fileMenu->addAction(tr("Quit"));
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
 
-    auto *editMenu = menuBar()->addMenu(tr("&Edit"));
-    auto *configsAction = editMenu->addAction(tr("Configs..."));
-    connect(configsAction, &QAction::triggered, this, &MainWindow::openConfigsWindow);
-
-    hardwareMenu_ = menuBar()->addMenu(tr("&Hardware"));
+    hardwareMenu_ = menuBar()->addMenu(tr("&Machine"));
     rebuildHardwareMenu();
 
     auto *emulatorMenu = menuBar()->addMenu(tr("&Emulator"));
@@ -275,11 +353,53 @@ void MainWindow::buildMenus() {
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetMachine);
 
     auto *viewMenu = menuBar()->addMenu(tr("&View"));
+    auto *aspectMenu = viewMenu->addMenu(tr("Display Aspect"));
+    displayAspectGroup_ = new QActionGroup(this);
+    displayAspectGroup_->setExclusive(true);
+    auto *autoAspectAction = aspectMenu->addAction(tr("Auto"));
+    auto *fourThreeAction = aspectMenu->addAction(tr("4:3"));
+    auto *squareAspectAction = aspectMenu->addAction(tr("Square Pixels"));
+    for (QAction *action : {autoAspectAction, fourThreeAction, squareAspectAction}) {
+        action->setCheckable(true);
+        displayAspectGroup_->addAction(action);
+    }
+    connect(autoAspectAction, &QAction::triggered, this, [this]() { updateDisplayAspect(VideoWidget::AspectMode::Auto); });
+    connect(fourThreeAction, &QAction::triggered, this, [this]() { updateDisplayAspect(VideoWidget::AspectMode::FourThree); });
+    connect(squareAspectAction, &QAction::triggered, this, [this]() { updateDisplayAspect(VideoWidget::AspectMode::SquarePixels); });
+
+    auto *presentationMenu = viewMenu->addMenu(tr("Display Presentation"));
+    auto *filterMenu = presentationMenu->addMenu(tr("Texture Sampling"));
+    textureFilterGroup_ = new QActionGroup(this);
+    textureFilterGroup_->setExclusive(true);
+    auto *nearestFilterAction = filterMenu->addAction(tr("Nearest"));
+    auto *linearFilterAction = filterMenu->addAction(tr("Linear"));
+    for (QAction *action : {nearestFilterAction, linearFilterAction}) {
+        action->setCheckable(true);
+        textureFilterGroup_->addAction(action);
+    }
+    connect(nearestFilterAction, &QAction::triggered, this, [this]() { updateTextureFilter(VideoWidget::TextureFilter::Nearest); });
+    connect(linearFilterAction, &QAction::triggered, this, [this]() { updateTextureFilter(VideoWidget::TextureFilter::Linear); });
+
+    auto *integerScalingAction = presentationMenu->addAction(tr("Integer Scale"));
+    integerScalingAction->setCheckable(true);
+    connect(integerScalingAction, &QAction::toggled, this, [this](bool checked) {
+        videoWidget_->setIntegerScalingEnabled(checked);
+        saveUiState();
+    });
+
+    auto *integerFitAction = presentationMenu->addAction(tr("Constrain To Integer Multiples"));
+    integerFitAction->setCheckable(true);
+    connect(integerFitAction, &QAction::toggled, this, [this](bool checked) {
+        videoWidget_->setIntegerFitEnabled(checked);
+        saveUiState();
+    });
+
+    auto *windowsMenu = viewMenu->addMenu(tr("Windows"));
     for (auto it = docks_.cbegin(); it != docks_.cend(); ++it) {
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
-        viewMenu->addAction(it.value()->toggleAction());
+        windowsMenu->addAction(it.value()->toggleAction());
 #else
-        viewMenu->addAction(it.value()->toggleViewAction());
+        windowsMenu->addAction(it.value()->toggleViewAction());
 #endif
     }
 
@@ -306,8 +426,17 @@ QWidget *MainWindow::createConnectionPanel() {
     auto *buttonLayout = new QHBoxLayout(buttonRow);
     buttonLayout->setContentsMargins(0, 0, 0, 0);
     buttonLayout->addWidget(connectButton_);
+    buttonLayout->addWidget(disconnectButton_);
     buttonLayout->addWidget(resetButton_);
     layout->addRow(buttonRow);
+    layout->addRow(tr("Ownership"), connectionOwnershipLabel_);
+    layout->addRow(keepServerRunningCheck_);
+
+    connect(keepServerRunningCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        keepServerRunningOnExit_ = checked;
+        localServerManager_->setKeepRunningOnExit(checked);
+        saveUiState();
+    });
     return panel;
 }
 
@@ -462,42 +591,67 @@ QWidget *MainWindow::createAudioPanel() {
 }
 
 void MainWindow::restoreUiState() {
+    restoringUiState_ = true;
     auto settings = makeSettings();
     hostEdit_->setText(settings->value(QStringLiteral("linuxUi/host"), hostEdit_->text()).toString());
     portEdit_->setText(settings->value(QStringLiteral("linuxUi/port"), portEdit_->text()).toString());
     audioClient_->setPreferredOutputDeviceDescription(settings->value(QStringLiteral("linuxUi/audioDevice")).toString());
     audioClient_->setVolume(settings->value(QStringLiteral("linuxUi/audioVolume"), 0.35).toFloat());
+    updateDisplayAspect(static_cast<VideoWidget::AspectMode>(settings->value(QStringLiteral("linuxUi/displayAspectMode"), static_cast<int>(VideoWidget::AspectMode::Auto)).toInt()));
+    updateTextureFilter(static_cast<VideoWidget::TextureFilter>(settings->value(QStringLiteral("linuxUi/textureFilter"), static_cast<int>(VideoWidget::TextureFilter::Nearest)).toInt()));
+    videoWidget_->setIntegerScalingEnabled(settings->value(QStringLiteral("linuxUi/integerScaling"), false).toBool());
+    videoWidget_->setIntegerFitEnabled(settings->value(QStringLiteral("linuxUi/integerFit"), false).toBool());
+    keepServerRunningOnExit_ = settings->value(QStringLiteral("linuxUi/keepServerRunningOnExit"), false).toBool();
+    localServerManager_->setKeepRunningOnExit(keepServerRunningOnExit_);
     currentConfigIndex_ = settings->value(QStringLiteral("linuxUi/currentConfigIndex"), 0).toInt();
     updateTargetSummary();
+    rebuildHardwareMenu();
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
+    const int savedVersion = settings->value(QStringLiteral("linuxUi/layoutVersion"), 0).toInt();
     const QString layoutPath = layoutFilePath();
     if (!layoutPath.isEmpty()) {
-        if (QFileInfo::exists(layoutPath)) {
+        if (savedVersion == 2 && migrateLayoutFileV2ToV3(layoutPath)) {
+            settings->setValue(QStringLiteral("linuxUi/layoutVersion"), kUiLayoutVersion);
             KDDockWidgets::LayoutSaver saver;
             saver.restoreFromFile(layoutPath);
+        } else if (savedVersion == kUiLayoutVersion && QFileInfo::exists(layoutPath)) {
+            KDDockWidgets::LayoutSaver saver;
+            saver.restoreFromFile(layoutPath);
+        } else if (savedVersion > 0 && savedVersion != kUiLayoutVersion) {
+            quarantineIncompatibleLayoutFile(layoutPath);
         }
     } else {
-        const int savedVersion = settings->value(QStringLiteral("linuxUi/layoutVersion"), 0).toInt();
         const QByteArray layout = savedVersion == kUiLayoutVersion
             ? settings->value(QStringLiteral("linuxUi/kddwLayout")).toByteArray()
             : QByteArray();
         if (!layout.isEmpty()) {
             KDDockWidgets::LayoutSaver saver;
             saver.restoreLayout(layout);
+        } else if (savedVersion > 0 && savedVersion != kUiLayoutVersion) {
+            settings->remove(QStringLiteral("linuxUi/kddwLayout"));
         }
     }
 #else
     restoreGeometry(settings->value(QStringLiteral("linuxUi/geometry")).toByteArray());
     restoreState(settings->value(QStringLiteral("linuxUi/windowState")).toByteArray());
 #endif
+    restoringUiState_ = false;
 }
 
 void MainWindow::saveUiState() {
+    if (restoringUiState_) {
+        return;
+    }
     auto settings = makeSettings();
     settings->setValue(QStringLiteral("linuxUi/host"), hostEdit_->text().trimmed());
     settings->setValue(QStringLiteral("linuxUi/port"), portEdit_->text().trimmed());
     settings->setValue(QStringLiteral("linuxUi/audioDevice"), audioClient_->preferredOutputDeviceDescription());
     settings->setValue(QStringLiteral("linuxUi/audioVolume"), audioClient_->volume());
+    settings->setValue(QStringLiteral("linuxUi/displayAspectMode"), static_cast<int>(videoWidget_->aspectMode()));
+    settings->setValue(QStringLiteral("linuxUi/textureFilter"), static_cast<int>(videoWidget_->textureFilter()));
+    settings->setValue(QStringLiteral("linuxUi/integerScaling"), videoWidget_->integerScalingEnabled());
+    settings->setValue(QStringLiteral("linuxUi/integerFit"), videoWidget_->integerFitEnabled());
+    settings->setValue(QStringLiteral("linuxUi/keepServerRunningOnExit"), keepServerRunningOnExit_);
     settings->setValue(QStringLiteral("linuxUi/currentConfigIndex"), currentConfigIndex_);
     settings->setValue(QStringLiteral("linuxUi/layoutVersion"), kUiLayoutVersion);
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
@@ -543,7 +697,7 @@ void MainWindow::updateAudioDetails(const QString &message) {
 
 void MainWindow::updateConfigSummary() {
     if (configProfiles_.isEmpty()) {
-        configSummaryLabel_->setText(tr("No saved configs. Use Edit > Configs to create one."));
+        configSummaryLabel_->setText(tr("No saved configs. Use Machine > Configs to create one."));
         return;
     }
     currentConfigIndex_ = std::clamp(currentConfigIndex_, 0, static_cast<int>(configProfiles_.size()) - 1);
@@ -609,6 +763,39 @@ void MainWindow::handleConfigsSaved(const QVector<ConfigProfile> &profiles, int 
     saveUiState();
 }
 
+void MainWindow::updateDisplayAspect(VideoWidget::AspectMode mode) {
+    videoWidget_->setAspectMode(mode);
+    if (displayAspectGroup_) {
+        const auto actions = displayAspectGroup_->actions();
+        if (actions.size() >= 3) {
+            actions.at(0)->setChecked(mode == VideoWidget::AspectMode::Auto);
+            actions.at(1)->setChecked(mode == VideoWidget::AspectMode::FourThree);
+            actions.at(2)->setChecked(mode == VideoWidget::AspectMode::SquarePixels);
+        }
+    }
+    saveUiState();
+}
+
+void MainWindow::updateTextureFilter(VideoWidget::TextureFilter filter) {
+    videoWidget_->setTextureFilter(filter);
+    if (textureFilterGroup_) {
+        const auto actions = textureFilterGroup_->actions();
+        if (actions.size() >= 2) {
+            actions.at(0)->setChecked(filter == VideoWidget::TextureFilter::Nearest);
+            actions.at(1)->setChecked(filter == VideoWidget::TextureFilter::Linear);
+        }
+    }
+    saveUiState();
+}
+
+void MainWindow::updateConnectionOwnershipUi() {
+    const bool owned = localServerManager_->ownsRunningServer();
+    connectionOwnershipLabel_->setText(owned ? tr("Local server owned by UI") : tr("External or no local server"));
+    keepServerRunningCheck_->setEnabled(owned);
+    keepServerRunningCheck_->setChecked(keepServerRunningOnExit_);
+    disconnectButton_->setEnabled(owned || !machineLabel_->text().isEmpty());
+}
+
 void MainWindow::selectConfigProfile(int index) {
     if (configProfiles_.isEmpty()) {
         return;
@@ -618,6 +805,41 @@ void MainWindow::selectConfigProfile(int index) {
     rebuildHardwareMenu();
     saveUiState();
     const ConfigProfile &profile = configProfiles_.at(currentConfigIndex_);
+
+    const ConnectionTarget existingTarget = currentTarget();
+    QString probeError;
+    const bool reachable = probeServerAvailable(existingTarget, &probeError);
+    const bool owned = localServerManager_->ownsRunningServer();
+
+    if (!owned && reachable) {
+        if (isLocalHost(existingTarget.host)) {
+            QMessageBox::information(
+                this,
+                tr("Local Server Already Running"),
+                tr("A local server is already running on %1 and is not owned by this UI. "
+                   "Stop that server manually before starting a different local configuration.")
+                    .arg(existingTarget.address()));
+            return;
+        }
+
+        QMessageBox prompt(this);
+        prompt.setWindowTitle(tr("External Server Connected"));
+        prompt.setIcon(QMessageBox::Question);
+        prompt.setText(tr("The current connection uses a server this UI does not own."));
+        prompt.setInformativeText(tr("Disconnect from %1 and start a new local server using '%2'?")
+                                      .arg(existingTarget.address(), profile.name));
+        auto *startLocalButton = prompt.addButton(tr("Disconnect And Start Local"), QMessageBox::AcceptRole);
+        prompt.addButton(QMessageBox::Cancel);
+        prompt.exec();
+        if (prompt.clickedButton() != startLocalButton) {
+            return;
+        }
+        disconnectUiSession();
+    }
+
+    hostEdit_->setText(QStringLiteral("127.0.0.1"));
+    portEdit_->setText(QStringLiteral("48875"));
+    updateTargetSummary();
     applyingConfig_ = true;
     pendingReconnectAttempts_ = 10;
     disconnectFromServer();
@@ -660,11 +882,11 @@ void MainWindow::addPanelDock(const QString &dockId, const QString &title, QWidg
     docks_.insert(dockId, dock);
 
     if (locationHint == QStringLiteral("left")) {
-        addDockWidget(dock, KDDockWidgets::Location_OnLeft, displayDock_);
+        addDockWidget(dock, KDDockWidgets::Location_OnLeft);
     } else if (locationHint == QStringLiteral("right")) {
-        addDockWidget(dock, KDDockWidgets::Location_OnRight, displayDock_);
+        addDockWidget(dock, KDDockWidgets::Location_OnRight);
     } else {
-        addDockWidget(dock, KDDockWidgets::Location_OnBottom, displayDock_);
+        addDockWidget(dock, KDDockWidgets::Location_OnBottom);
     }
 #else
     auto *dock = new QDockWidget(title, this);
@@ -691,6 +913,7 @@ void MainWindow::connectToServer() {
         disconnectFromServer();
         machineLabel_->setText(tr("Not connected"));
         statusLabel_->setText(tr("Disconnected"));
+        updateConnectionOwnershipUi();
         showError(probeError.isEmpty() ? tr("No server at %1").arg(target.address()) : probeError);
         return;
     }
@@ -704,6 +927,7 @@ void MainWindow::connectToServer() {
     serialClient_->connectToTarget(target);
     videoWidget_->setFocus();
     saveUiState();
+    updateConnectionOwnershipUi();
 }
 
 void MainWindow::disconnectFromServer() {
@@ -732,6 +956,14 @@ bool MainWindow::probeServerAvailable(const ConnectionTarget &target, QString *e
         *errorMessage = tr("No server at %1 (%2)").arg(target.address(), QString::fromStdString(status.error_message()));
     }
     return false;
+}
+
+void MainWindow::disconnectUiSession() {
+    disconnectFromServer();
+    machineLabel_->setText(tr("Not connected"));
+    statusLabel_->setText(tr("Disconnected"));
+    updateConnectionOwnershipUi();
+    statusBar()->showMessage(tr("Disconnected UI session"), 3000);
 }
 
 void MainWindow::updateMachineSummary(const QString &summary) {
@@ -794,7 +1026,6 @@ void MainWindow::refreshIndicatorsView() {
         indicatorTable_->setItem(row, 2, new QTableWidgetItem(indicator.relatedKey));
         if (indicator.name == QStringLiteral("caps-lock-led")
             && (indicator.value == 0 || indicator.value == 255)) {
-            qInfo(mainUiLog).noquote() << QStringLiteral("[caps] indicator=") << indicator.value;
             videoWidget_->setBbcCapsLockState(indicator.value == 255);
         }
     }
@@ -802,13 +1033,26 @@ void MainWindow::refreshIndicatorsView() {
 }
 
 void MainWindow::refreshStorageView() {
-    const auto &drives = discClient_->drives();
-    storageTable_->setRowCount(drives.size());
-    for (int row = 0; row < drives.size(); ++row) {
-        const auto &drive = drives.at(row);
+    QMap<int, DiscDriveInfo> driveMap;
+    for (const auto &drive : discClient_->drives()) {
+        driveMap.insert(drive.drive, drive);
+    }
+    for (int driveNumber = 0; driveNumber < 2; ++driveNumber) {
+        if (!driveMap.contains(driveNumber)) {
+            DiscDriveInfo placeholder;
+            placeholder.drive = driveNumber;
+            placeholder.state = tr("Empty");
+            driveMap.insert(driveNumber, placeholder);
+        }
+    }
+
+    const QList<int> orderedDrives = driveMap.keys();
+    storageTable_->setRowCount(orderedDrives.size());
+    for (int row = 0; row < orderedDrives.size(); ++row) {
+        const auto &drive = driveMap[orderedDrives.at(row)];
         storageTable_->setItem(row, 0, new QTableWidgetItem(QString::number(drive.drive)));
         storageTable_->setItem(row, 1, new QTableWidgetItem(drive.state));
-        storageTable_->setItem(row, 2, new QTableWidgetItem(drive.discName));
+        storageTable_->setItem(row, 2, new QTableWidgetItem(drive.discName.isEmpty() ? tr("-") : drive.discName));
         storageTable_->setItem(row, 3, new QTableWidgetItem(drive.motorOn ? tr("On") : tr("Off")));
         storageTable_->setItem(row, 4, new QTableWidgetItem(QString::number(drive.currentTrack)));
         storageTable_->setItem(row, 5, new QTableWidgetItem(drive.writeProtected ? tr("Yes") : tr("No")));

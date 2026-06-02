@@ -17,6 +17,10 @@ int main(int argc, char *argv[]) {
 
 #if defined(BEEBIUM_HAVE_KDDOCKWIDGETS)
     KDDockWidgets::initFrontend(KDDockWidgets::FrontendType::QtWidgets);
+    KDDockWidgets::Config::self().setFlags(
+        KDDockWidgets::Config::Flag_AlwaysShowTabs
+        | KDDockWidgets::Config::Flag_HideTitleBarWhenTabsVisible
+        | KDDockWidgets::Config::Flag_DisableDoubleClick);
 #endif
 
     QCommandLineParser parser;

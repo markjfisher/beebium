@@ -16,11 +16,30 @@ class VideoWidget final : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
 public:
+    enum class AspectMode {
+        Auto,
+        FourThree,
+        SquarePixels,
+    };
+
+    enum class TextureFilter {
+        Nearest,
+        Linear,
+    };
+
     explicit VideoWidget(QWidget *parent = nullptr);
     ~VideoWidget() override;
 
     void setKeyboardClient(class GrpcKeyboardClient *keyboardClient);
     void setBbcCapsLockState(bool enabled);
+    void setAspectMode(AspectMode mode);
+    [[nodiscard]] AspectMode aspectMode() const;
+    void setTextureFilter(TextureFilter filter);
+    [[nodiscard]] TextureFilter textureFilter() const;
+    void setIntegerScalingEnabled(bool enabled);
+    [[nodiscard]] bool integerScalingEnabled() const;
+    void setIntegerFitEnabled(bool enabled);
+    [[nodiscard]] bool integerFitEnabled() const;
 
 public slots:
     void presentFrame(const QByteArray &bgraPixels, const FrameGeometry &geometry, quint64 frameNumber);
@@ -44,12 +63,18 @@ private:
     void releaseShift();
     void syncCapsLockState();
     void tapCapsLock();
+    [[nodiscard]] QRectF targetRectForFrame(const FrameGeometry &geometry, const QSize &frameSize) const;
+    void applyTextureSampling();
 
     QMutex frameMutex_;
     QImage frameImage_;
     FrameGeometry geometry_;
     quint64 frameNumber_ = 0;
     float parScale_ = 0.96f;
+    AspectMode aspectMode_ = AspectMode::Auto;
+    TextureFilter textureFilter_ = TextureFilter::Nearest;
+    bool integerScalingEnabled_ = false;
+    bool integerFitEnabled_ = false;
     bool shaderReady_ = false;
     QString shaderError_;
     std::unique_ptr<QOpenGLShaderProgram> program_;

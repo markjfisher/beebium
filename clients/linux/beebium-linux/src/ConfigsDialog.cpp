@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -151,20 +152,6 @@ ConfigsDialog::ConfigsDialog(const QVector<ConfigProfile> &profiles, int current
     romLayout->addWidget(romButtons);
     rightLayout->addWidget(romBox, 1);
 
-    auto *hardwareBox = new QGroupBox(tr("Additional Hardware"), rightPanel);
-    auto *hardwareLayout = new QVBoxLayout(hardwareBox);
-    externalMemoryCheck_ = new QCheckBox(tr("External memory"), hardwareBox);
-    beebLinkCheck_ = new QCheckBox(tr("BeebLink"), hardwareBox);
-    videoNuLACheck_ = new QCheckBox(tr("Video NuLA"), hardwareBox);
-    mouseCheck_ = new QCheckBox(tr("Mouse"), hardwareBox);
-    romBoardCheck_ = new QCheckBox(tr("ROM board"), hardwareBox);
-    hardwareLayout->addWidget(externalMemoryCheck_);
-    hardwareLayout->addWidget(beebLinkCheck_);
-    hardwareLayout->addWidget(videoNuLACheck_);
-    hardwareLayout->addWidget(mouseCheck_);
-    hardwareLayout->addWidget(romBoardCheck_);
-    rightLayout->addWidget(hardwareBox);
-
     auto *tubeBox = new QGroupBox(tr("Tube"), rightPanel);
     auto *tubeLayout = new QFormLayout(tubeBox);
     tubeNoneRadio_ = new QRadioButton(tr("No second processor"), tubeBox);
@@ -191,8 +178,8 @@ ConfigsDialog::ConfigsDialog(const QVector<ConfigProfile> &profiles, int current
     serialLayout->addRow(tr("Baud"), serialBaudCombo_);
     rightLayout->addWidget(serialBox);
 
-    auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Close, this);
-    rootLayout->addWidget(buttonBox);
+    buttonBox_ = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Close, this);
+    rootLayout->addWidget(buttonBox_);
 
     connect(newButton, &QPushButton::clicked, this, &ConfigsDialog::newProfile);
     connect(duplicateButton, &QPushButton::clicked, this, &ConfigsDialog::duplicateProfile);
@@ -209,8 +196,32 @@ ConfigsDialog::ConfigsDialog(const QVector<ConfigProfile> &profiles, int current
             loadProfileIntoEditor(currentRow());
         }
     });
-    connect(buttonBox->button(QDialogButtonBox::Save), &QPushButton::clicked, this, &ConfigsDialog::saveAndClose);
-    connect(buttonBox->button(QDialogButtonBox::Close), &QPushButton::clicked, this, &QDialog::close);
+    connect(buttonBox_->button(QDialogButtonBox::Save), &QPushButton::clicked, this, &ConfigsDialog::saveAndClose);
+    connect(buttonBox_->button(QDialogButtonBox::Close), &QPushButton::clicked, this, &ConfigsDialog::requestClose);
+
+    connect(nameEdit_, &QLineEdit::textEdited, this, [this](const QString &text) {
+        if (loading_ || currentRow() < 0 || currentRow() >= profiles_.size()) {
+            return;
+        }
+        profiles_[currentRow()].name = text;
+        if (auto *item = profileList_->item(currentRow())) {
+            item->setText(text);
+        }
+        markDirty();
+    });
+    connect(hostOsEdit_, &QLineEdit::textChanged, this, [this]() {
+        if (!loading_) {
+            markDirty();
+        }
+    });
+    connect(tubeNoneRadio_, &QRadioButton::toggled, this, [this]() { if (!loading_) markDirty(); });
+    connect(tube6502Radio_, &QRadioButton::toggled, this, [this]() { if (!loading_) markDirty(); });
+    connect(tubeTurboRadio_, &QRadioButton::toggled, this, [this]() { if (!loading_) markDirty(); });
+    connect(tubeOsEdit_, &QLineEdit::textEdited, this, [this]() { if (!loading_) markDirty(); });
+    connect(serialModeCombo_, &QComboBox::currentIndexChanged, this, [this]() { if (!loading_) markDirty(); });
+    connect(serialBaudCombo_, &QComboBox::currentIndexChanged, this, [this]() { if (!loading_) markDirty(); });
+    connect(serialPathEdit_, &QLineEdit::textEdited, this, [this]() { if (!loading_) markDirty(); });
+    connect(romTable_, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) { if (!loading_) markDirty(); });
 
     rebuildList();
     profileList_->setCurrentRow(currentIndex >= 0 && currentIndex < profiles_.size() ? currentIndex : 0);
@@ -310,6 +321,7 @@ void ConfigsDialog::chooseRomContent() {
                 profiles_[profileIndex].romEntries[row].content = path;
                 addRecentRomPath(path);
                 loadProfileIntoEditor(profileIndex);
+                markDirty();
             });
         }
     }
@@ -322,6 +334,7 @@ void ConfigsDialog::chooseRomContent() {
             connect(choiceAction, &QAction::triggered, this, [this, profileIndex, row, choice]() {
                 profiles_[profileIndex].romEntries[row].content = choice.image;
                 loadProfileIntoEditor(profileIndex);
+                markDirty();
             });
         }
     }
@@ -333,10 +346,12 @@ void ConfigsDialog::chooseRomContent() {
             profiles_[profileIndex].romEntries[row].content = path;
             addRecentRomPath(path);
             loadProfileIntoEditor(profileIndex);
+            markDirty();
         }
     } else if (selected == emptyAction) {
         profiles_[profileIndex].romEntries[row].content.clear();
         loadProfileIntoEditor(profileIndex);
+        markDirty();
     }
 }
 
@@ -359,6 +374,7 @@ void ConfigsDialog::chooseHostOs() {
                 profiles_[profileIndex].hostOs = path;
                 addRecentRomPath(path);
                 loadProfileIntoEditor(profileIndex);
+                markDirty();
             });
         }
     }
@@ -369,6 +385,7 @@ void ConfigsDialog::chooseHostOs() {
         connect(choiceAction, &QAction::triggered, this, [this, profileIndex, choice]() {
             profiles_[profileIndex].hostOs = choice.image;
             loadProfileIntoEditor(profileIndex);
+            markDirty();
         });
     }
 
@@ -379,17 +396,21 @@ void ConfigsDialog::chooseHostOs() {
             profiles_[profileIndex].hostOs = path;
             addRecentRomPath(path);
             loadProfileIntoEditor(profileIndex);
+            markDirty();
         }
     }
 }
 
 void ConfigsDialog::saveAndClose() {
-    storeEditorIntoCurrentProfile();
-    if (!saveConfigProfiles(profiles_)) {
-        QMessageBox::warning(this, tr("Edit Configs"), tr("Failed to save config profiles."));
-        return;
+    if (saveProfiles()) {
+        accept();
     }
-    emit configsSaved(profiles_, currentRow());
+}
+
+void ConfigsDialog::requestClose() {
+    if (confirmClose()) {
+        reject();
+    }
 }
 
 void ConfigsDialog::rebuildList() {
@@ -414,15 +435,15 @@ void ConfigsDialog::loadProfileIntoEditor(int index) {
         const auto &entry = profile.romEntries.at(row);
         romTable_->setItem(row, 0, new QTableWidgetItem(entry.slotLabel));
         auto *ramItem = new QTableWidgetItem();
-        ramItem->setCheckState(entry.isRam ? Qt::Checked : Qt::Unchecked);
+        if (entry.slotNumber < 0) {
+            ramItem->setText(QStringLiteral("-"));
+            ramItem->setFlags(ramItem->flags() & ~Qt::ItemIsUserCheckable & ~Qt::ItemIsEnabled);
+        } else {
+            ramItem->setCheckState(entry.isRam ? Qt::Checked : Qt::Unchecked);
+        }
         romTable_->setItem(row, 1, ramItem);
         romTable_->setItem(row, 2, new QTableWidgetItem(displayRomValue(entry.content)));
     }
-    externalMemoryCheck_->setChecked(profile.externalMemory);
-    beebLinkCheck_->setChecked(profile.beebLink);
-    videoNuLACheck_->setChecked(profile.videoNuLA);
-    mouseCheck_->setChecked(profile.mouse);
-    romBoardCheck_->setChecked(profile.romBoard);
     tubeNoneRadio_->setChecked(profile.tubeMode == QStringLiteral("none"));
     tube6502Radio_->setChecked(profile.tubeMode == QStringLiteral("6502"));
     tubeTurboRadio_->setChecked(profile.tubeMode == QStringLiteral("turbo"));
@@ -443,16 +464,15 @@ void ConfigsDialog::storeEditorIntoCurrentProfile() {
     profile.name = nameEdit_->text().trimmed();
     profile.hostOs = canonicalRomValue(hostOsEdit_->text().trimmed());
     for (int row = 0; row < profile.romEntries.size() && row < romTable_->rowCount(); ++row) {
-        profile.romEntries[row].isRam = romTable_->item(row, 1) && romTable_->item(row, 1)->checkState() == Qt::Checked;
+        if (profile.romEntries[row].slotNumber >= 0) {
+            profile.romEntries[row].isRam = romTable_->item(row, 1) && romTable_->item(row, 1)->checkState() == Qt::Checked;
+        } else {
+            profile.romEntries[row].isRam = false;
+        }
         profile.romEntries[row].content = romTable_->item(row, 2)
             ? canonicalRomValue(romTable_->item(row, 2)->text().trimmed())
             : QString();
     }
-    profile.externalMemory = externalMemoryCheck_->isChecked();
-    profile.beebLink = beebLinkCheck_->isChecked();
-    profile.videoNuLA = videoNuLACheck_->isChecked();
-    profile.mouse = mouseCheck_->isChecked();
-    profile.romBoard = romBoardCheck_->isChecked();
     profile.tubeMode = tube6502Radio_->isChecked() ? QStringLiteral("6502") : (tubeTurboRadio_->isChecked() ? QStringLiteral("turbo") : QStringLiteral("none"));
     profile.tubeOs = tubeOsEdit_->text().trimmed();
     profile.serialMode = serialModeCombo_->currentText();
@@ -465,6 +485,54 @@ void ConfigsDialog::storeEditorIntoCurrentProfile() {
 
 int ConfigsDialog::currentRow() const {
     return profileList_->currentRow();
+}
+
+bool ConfigsDialog::saveProfiles() {
+    storeEditorIntoCurrentProfile();
+    rebuildList();
+    if (!saveConfigProfiles(profiles_)) {
+        QMessageBox::warning(this, tr("Edit Configs"), tr("Failed to save config profiles."));
+        return false;
+    }
+    dirty_ = false;
+    emit configsSaved(profiles_, currentRow());
+    return true;
+}
+
+bool ConfigsDialog::confirmClose() {
+    if (!dirty_) {
+        return true;
+    }
+
+    QMessageBox prompt(this);
+    prompt.setWindowTitle(tr("Unsaved Changes"));
+    prompt.setIcon(QMessageBox::Question);
+    prompt.setText(tr("This configuration window has unsaved changes."));
+    prompt.setInformativeText(tr("Do you want to save your changes before closing?"));
+    auto *saveButton = prompt.addButton(tr("Save"), QMessageBox::AcceptRole);
+    auto *discardButton = prompt.addButton(tr("Close Without Saving"), QMessageBox::DestructiveRole);
+    prompt.addButton(QMessageBox::Cancel);
+    prompt.exec();
+
+    if (prompt.clickedButton() == saveButton) {
+        return saveProfiles();
+    }
+    if (prompt.clickedButton() == discardButton) {
+        return true;
+    }
+    return false;
+}
+
+void ConfigsDialog::markDirty() {
+    dirty_ = true;
+}
+
+void ConfigsDialog::closeEvent(QCloseEvent *event) {
+    if (confirmClose()) {
+        event->accept();
+    } else {
+        event->ignore();
+    }
 }
 
 void ConfigsDialog::addRecentRomPath(const QString &path) {

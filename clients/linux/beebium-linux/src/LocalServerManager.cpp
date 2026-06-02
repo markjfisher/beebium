@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QStandardPaths>
 #include <QTimer>
 
 namespace {
@@ -21,6 +22,32 @@ QString executableNameForModel(const QString &modelId) {
     }
     if (modelId == QStringLiteral("model-b-romram")) {
         return QStringLiteral("beebium-model-b-romram");
+    }
+    return QString();
+}
+
+QString serialSpecForProfile(const ConfigProfile &profile) {
+    const QString mode = profile.serialMode.trimmed().toLower();
+    if (mode == QStringLiteral("none")) {
+        return QStringLiteral("none");
+    }
+    if (mode == QStringLiteral("loopback")) {
+        return QStringLiteral("loopback");
+    }
+    if (mode == QStringLiteral("scriptable")) {
+        return QStringLiteral("scriptable");
+    }
+    if (mode == QStringLiteral("pty")) {
+        return profile.serialPath.trimmed().isEmpty()
+            ? QStringLiteral("pty")
+            : QStringLiteral("pty:") + profile.serialPath.trimmed();
+    }
+    if (mode == QStringLiteral("device")) {
+        QString spec = QStringLiteral("device:") + profile.serialPath.trimmed();
+        if (profile.serialBaud > 0) {
+            spec += QStringLiteral(":") + QString::number(profile.serialBaud);
+        }
+        return spec;
     }
     return QString();
 }
@@ -54,7 +81,7 @@ LocalServerManager::LocalServerManager(QObject *parent)
 }
 
 LocalServerManager::~LocalServerManager() {
-    stop();
+    prepareForAppExit();
 }
 
 bool LocalServerManager::applyConfig(const ConfigProfile &profile) {
@@ -70,15 +97,22 @@ bool LocalServerManager::applyConfig(const ConfigProfile &profile) {
         return false;
     }
 
+    /* DEBUG to see what paths were being used for the server launch
     qInfo().noquote() << QStringLiteral("[local-server] model=") << profile.modelId;
     qInfo().noquote() << QStringLiteral("[local-server] executable=") << executablePath;
     qInfo().noquote() << QStringLiteral("[local-server] preset=") << presetPath;
     qInfo().noquote() << QStringLiteral("[local-server] argv=") << (executablePath + QStringLiteral(" --preset ") + presetPath);
     qInfo().noquote() << QStringLiteral("[local-server] cwd=") << QDir::currentPath();
+    */
 
     pendingExecutablePath_ = executablePath;
     pendingPresetPath_ = presetPath;
     pendingProfileName_ = profile.name;
+    runningArguments_.clear();
+    const QString serialSpec = serialSpecForProfile(profile);
+    if (!serialSpec.isEmpty()) {
+        runningArguments_ << QStringLiteral("--serial") << serialSpec;
+    }
     launchInProgress_ = true;
 
     if (process_->state() != QProcess::NotRunning) {
@@ -92,13 +126,37 @@ bool LocalServerManager::applyConfig(const ConfigProfile &profile) {
     return true;
 }
 
+void LocalServerManager::setKeepRunningOnExit(bool enabled) {
+    keepRunningOnExit_ = enabled;
+}
+
+void LocalServerManager::prepareForAppExit() {
+    if (keepRunningOnExit_ && process_->state() != QProcess::NotRunning && !runningExecutablePath_.isEmpty()) {
+        QProcess detached;
+        const QString logPath = detachedLogFilePath();
+        detached.setProgram(runningExecutablePath_);
+        detached.setArguments(runningArguments_);
+        detached.setWorkingDirectory(QDir::currentPath());
+        detached.setStandardOutputFile(logPath, QIODeviceBase::Append);
+        detached.setStandardErrorFile(logPath, QIODeviceBase::Append);
+        qInfo().noquote() << QStringLiteral("[local-server] detached-log=") << logPath;
+        detached.startDetached();
+        suppressNextExit_ = true;
+    }
+    stop();
+}
+
 void LocalServerManager::stop() {
+    const bool wasRunning = process_->state() != QProcess::NotRunning;
     if (process_->state() != QProcess::NotRunning) {
         process_->terminate();
         if (!process_->waitForFinished(3000)) {
             process_->kill();
             process_->waitForFinished(1000);
         }
+    }
+    if (wasRunning) {
+        emit ownershipChanged(false);
     }
 }
 
@@ -112,7 +170,9 @@ void LocalServerManager::startPendingLaunch() {
     }
 
     process_->setProgram(pendingExecutablePath_);
-    process_->setArguments({QStringLiteral("--preset"), pendingPresetPath_});
+    QStringList arguments = {QStringLiteral("--preset"), pendingPresetPath_};
+    arguments.append(runningArguments_);
+    process_->setArguments(arguments);
     process_->start();
     if (!process_->waitForStarted(3000)) {
         emit errorOccurred(tr("Failed to start local server '%1': %2").arg(pendingExecutablePath_, process_->errorString()));
@@ -125,6 +185,9 @@ void LocalServerManager::startPendingLaunch() {
 
     emit statusChanged(tr("Started local server for '%1'").arg(pendingProfileName_));
     emit configApplied(pendingProfileName_);
+    runningExecutablePath_ = process_->program();
+    runningArguments_ = process_->arguments();
+    emit ownershipChanged(true);
     pendingExecutablePath_.clear();
     pendingPresetPath_.clear();
     pendingProfileName_.clear();
@@ -152,4 +215,13 @@ QString LocalServerManager::resolveExecutablePath(const QString &modelId) const 
         }
     }
     return QString();
+}
+
+QString LocalServerManager::detachedLogFilePath() const {
+    const QString configFolder = qApp->property("configFolder").toString();
+    const QString baseDir = !configFolder.isEmpty()
+        ? configFolder
+        : QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir().mkpath(baseDir);
+    return QDir(baseDir).filePath(QStringLiteral("beebium-local-server.log"));
 }

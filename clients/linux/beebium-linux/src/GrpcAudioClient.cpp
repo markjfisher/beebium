@@ -345,7 +345,6 @@ void GrpcAudioClient::configureAudioSink(quint32 sampleRate) {
             return tr("Audio state changed");
         }();
 
-        qInfo().noquote() << QStringLiteral("[audio]") << status;
         switch (state) {
         case QtAudio::IdleState:
             pumpAudio();

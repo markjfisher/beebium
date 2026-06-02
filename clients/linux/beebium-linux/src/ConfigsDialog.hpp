@@ -22,6 +22,9 @@ class ConfigsDialog final : public QDialog {
 public:
     explicit ConfigsDialog(const QVector<ConfigProfile> &profiles, int currentIndex, QWidget *parent = nullptr);
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 signals:
     void configsSaved(const QVector<ConfigProfile> &profiles, int currentIndex);
 
@@ -35,17 +38,22 @@ private slots:
     void chooseRomContent();
     void chooseHostOs();
     void saveAndClose();
+    void requestClose();
 
 private:
     void rebuildList();
     void loadProfileIntoEditor(int index);
     void storeEditorIntoCurrentProfile();
+    bool saveProfiles();
+    bool confirmClose();
+    void markDirty();
     void addRecentRomPath(const QString &path);
     QStringList recentRomPaths() const;
     int currentRow() const;
 
     QVector<ConfigProfile> profiles_;
     bool loading_ = false;
+    bool dirty_ = false;
     QListWidget *profileList_ = nullptr;
     QLineEdit *nameEdit_ = nullptr;
     QLabel *modelLabel_ = nullptr;
@@ -53,11 +61,6 @@ private:
     QLineEdit *hostOsEdit_ = nullptr;
     QPushButton *hostOsButton_ = nullptr;
     QTableWidget *romTable_ = nullptr;
-    QCheckBox *externalMemoryCheck_ = nullptr;
-    QCheckBox *beebLinkCheck_ = nullptr;
-    QCheckBox *videoNuLACheck_ = nullptr;
-    QCheckBox *mouseCheck_ = nullptr;
-    QCheckBox *romBoardCheck_ = nullptr;
     QRadioButton *tubeNoneRadio_ = nullptr;
     QRadioButton *tube6502Radio_ = nullptr;
     QRadioButton *tubeTurboRadio_ = nullptr;
@@ -65,4 +68,5 @@ private:
     QComboBox *serialModeCombo_ = nullptr;
     QComboBox *serialBaudCombo_ = nullptr;
     QLineEdit *serialPathEdit_ = nullptr;
+    QDialogButtonBox *buttonBox_ = nullptr;
 };
