@@ -1,0 +1,139 @@
+# Build and smoke-test the self-contained Linux server packages.
+#
+# Manual only (workflow_dispatch) -- this is expensive (a from-source static
+# gRPC/protobuf build per architecture), so it is NOT run on push. Trigger it
+# from the Actions tab, or via the API / CLI:
+#
+#   gh workflow run linux-packages.yml
+#
+# Later this can be wired to a version-bump + tag flow (e.g. bump-my-version) to
+# build and publish release artifacts automatically.
+#
+# Runners are native per architecture (free on public repos): amd64 on
+# ubuntu-latest, arm64 on ubuntu-24.04-arm. No QEMU emulation.
+
+name: Linux packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            triplet: x64-linux-static
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            triplet: arm64-linux-static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build self-contained bundle (.deb + .tar.gz)
+        run: |
+          docker buildx build \
+            --platform linux/${{ matrix.arch }} \
+            -f docker/linux-bundle/Dockerfile \
+            --build-arg VCPKG_TRIPLET=${{ matrix.triplet }} \
+            --target artifact \
+            --output type=local,dest=./_artifacts \
+            --cache-from type=gha,scope=bundle-${{ matrix.arch }} \
+            --cache-to type=gha,mode=max,scope=bundle-${{ matrix.arch }} \
+            .
+
+      - name: List artifacts
+        run: ls -l _artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: _artifacts/*
+          if-no-files-found: error
+
+  # Install the .deb in a clean Debian, then drive the installed server through
+  # the Python client (the real user path: install -> launch -> gRPC -> ROMs).
+  smoke-deb:
+    name: smoke .deb (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: _artifacts
+
+      - name: Install .deb and run bundle + interaction smoke
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -e BEEBIUM_ROM_DIR=/opt/beebium/share/beebium/roms \
+            debian:bookworm bash -c '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq \
+                ./_artifacts/beebium-server_*_${{ matrix.arch }}.deb \
+                python3 python3-venv
+              echo "::group::bundle smoke (self-containment + boot + bare-command)"
+              bash scripts/smoke-installed-tree.sh /opt/beebium
+              echo "::endgroup::"
+              echo "::group::interaction smoke (client drives the installed server)"
+              python3 -m venv /venv
+              . /venv/bin/activate
+              pip install --quiet ./clients/python pytest pytest-timeout
+              pytest -q packaging/smoke/test_smoke.py
+              echo "::endgroup::"
+            '
+
+  # Extract the .tar.gz in a clean Arch (the non-dpkg path) and run the bundle
+  # smoke. Official archlinux is x86_64-only; arm64 uses Arch Linux ARM.
+  smoke-tarball:
+    name: smoke .tar.gz (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            image: archlinux:latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            image: menci/archlinuxarm:base
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: _artifacts
+
+      - name: Extract .tar.gz on Arch and run bundle smoke
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            ${{ matrix.image }} bash -c '
+              set -euo pipefail
+              tar -C / -xzf _artifacts/beebium-server-*-linux-${{ matrix.arch }}.tar.gz
+              bash scripts/smoke-installed-tree.sh /opt/beebium
+            '

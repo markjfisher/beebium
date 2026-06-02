@@ -10,11 +10,11 @@
 # only added on Linux (it needs dpkg).
 
 set(CPACK_PACKAGE_NAME "beebium-server")
-set(CPACK_PACKAGE_VENDOR "sixty-north")
+set(CPACK_PACKAGE_VENDOR "Robert Smallshire")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Beebium headless BBC Micro emulator server (self-contained)")
-set(CPACK_PACKAGE_CONTACT "Robert Smallshire <rob@sixty-north.com>")
+set(CPACK_PACKAGE_CONTACT "Robert Smallshire <robert@smallshire.org.uk>")
 
 # Lay the relocatable tree under /opt/beebium. The install() DESTINATIONs are
 # relative (bin/, lib/, share/), so this prefix yields /opt/beebium/{bin,lib,share}.
@@ -45,9 +45,10 @@ set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND CPACK_GENERATOR "DEB")
 
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Robert Smallshire <rob@sixty-north.com>")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Robert Smallshire <robert@smallshire.org.uk>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "otherosfs")
-    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/sixty-north/beebium")
+    # CPACK_DEBIAN_PACKAGE_HOMEPAGE intentionally unset until the project's
+    # public repository URL is settled.
     # Derive runtime dependencies from the binaries' actual dynamic links
     # (libc6, libstdc++6, libgcc-s1). gRPC/protobuf are statically linked and
     # contribute no package dependencies.
