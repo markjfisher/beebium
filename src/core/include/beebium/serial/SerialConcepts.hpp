@@ -19,8 +19,18 @@
 
 namespace beebium {
 
-// Concept to detect if a hardware type has the on-board serial socket
-// (MC6850 ACIA + Serial ULA). All current Model B variants provide this.
+// Does this hardware fit the on-board serial socket (MC6850 ACIA + Serial ULA,
+// with the RS423 port they drive)? This is "Axis A" of serial presence (see
+// docs/discussion/serial-architecture-review.md): chips + RS423, a both-or-
+// neither pair, detected by the presence of the serial_socket member. All
+// current Model B variants provide it; a future Master Compact may omit it
+// (the member is simply absent there), and the stack already guards on this
+// concept (e.g. SerialService reports has_serial_socket = false when absent).
+//
+// Cassette is a SEPARATE axis (Axis B: present on Model A/B/B+/Master 128,
+// absent on the Compact even when the chips are fitted). It must NOT be derived
+// from this concept; it will be modelled alongside the cassette seam in a later
+// follow-up, not here.
 template<typename T>
 concept HasSerialSocket = requires(T& hw) {
     { hw.serial_socket } -> std::same_as<SerialSocket&>;

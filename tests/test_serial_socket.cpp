@@ -12,6 +12,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/ModelBHardware.hpp>
+#include <beebium/serial/SerialConcepts.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialSocket.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -25,6 +26,17 @@ namespace {
 
 constexpr uint8_t CONTROL_8N1 = Mc6850::COUNTER_DIVIDE_16
     | (0x05 << Mc6850::CR_WORD_SELECT_SHIFT);
+
+// Phase 2 / Correction 1, Axis A: serial-socket presence is gated by detecting
+// the serial_socket member, so a hardware variant that does not fit the socket
+// (a future Master Compact without serial) is correctly excluded -- the rest of
+// the stack guards on this concept. Cassette is a separate axis, deliberately
+// NOT modelled here.
+struct NoSerialHardware {};
+static_assert(HasSerialSocket<ModelBHardware>,
+              "Model B fits the on-board serial socket");
+static_assert(!HasSerialSocket<NoSerialHardware>,
+              "hardware without serial_socket is excluded by the concept");
 
 }  // namespace
 

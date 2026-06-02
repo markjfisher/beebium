@@ -129,20 +129,27 @@ build on Windows.
    Deferred to Phase 3 (step 8a) so the rename lands together with the consumer
    that actually needs the freed name, rather than as speculative churn now.
 
-## Phase 2 -- Model presence correctly (two axes)
+## Phase 2 -- Model presence correctly (DONE)
 
 See review Correction 1: Axis A = chips + RS423 (one `SerialSocket`,
 `HasSerialSocket`), Axis B = cassette (own per-variant flag; absent on Compact).
 
-7. Confirm `HasSerialSocket` is wired true for Model B / B+ / Master 128 and is
-   expressible as absent/optional for the (future) Model A / Master Compact;
-   encode the policy now even though those variants are unimplemented.
-8. Add a cassette-presence concept to the model (a flag), independent of chip
-   presence, ready for a later cassette seam -- do not derive it from
-   `HasSerialSocket`.
-   Tests: assert `has_serial_socket` is true on Model B; assert the service and
-   any client path degrade cleanly when the socket is absent (a variant or a
-   compile-time stub without the socket). Triad.
+7. DONE. `HasSerialSocket` already gates Axis A correctly: it detects the
+   serial_socket member, so all current Model B variants satisfy it and a future
+   Master Compact that omits the member is automatically excluded; the stack
+   already guards on it (e.g. SerialService reports has_serial_socket = false,
+   and apply_endpoint_mode errors with "Machine has no serial socket"). Hardened
+   the concept's documentation to the two-axis model and added static_assert
+   coverage (positive: ModelBHardware; negative: a socket-less stub) so a future
+   socket-less variant is provably excluded.
+8. DEFERRED with cassette. Axis B (cassette presence) is its own per-variant
+   property, but there is no consumer for a cassette-presence flag yet and
+   inventing the per-variant mechanism now would pre-empt the cassette follow-up
+   (Phase 6). So the flag moves to that follow-up. The obligation discharged
+   here is only that cassette is NOT derived from `HasSerialSocket` -- recorded
+   in the concept's doc comment.
+   Tests: static_assert that `HasSerialSocket` is true for Model B and false for
+   a stub without the socket (the gating mechanism the whole stack relies on).
 
 ## Phase 3 -- Extract the host-serial bridge into a built-in PeripheralExtension
 
