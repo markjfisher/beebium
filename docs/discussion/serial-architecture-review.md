@@ -232,6 +232,9 @@ path too; add the cassette seam later.
 
 ## Proposed plan (on feature/serial)
 
+The detailed, phased, cross-platform-first execution plan lives in
+`docs/discussion/serial-refactoring-plan.md`. The high-level order is:
+
 1. Settle the extension boundary (Correction 2): define a `SerialPortDevice`
    seam and attach it via `PeripheralExtension`/`ExtensionContext`, the same way
    the RTC uses `UserPortDevice` and SCSI uses `OneMHzBusDevice`; resolve the
