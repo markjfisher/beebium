@@ -164,12 +164,13 @@ The core architectural move. Mirror the User Port / 1MHz bus pattern.
 13. Replace the polling `GetSerialStatus` snapshot with a server-pushed
     `WatchSerialStatus` stream, mirroring `WatchEconetStatus`
     ([[project_econet_status_streaming]]). Keep a one-shot status if useful.
-14. Decide service split: serial status/diagnostics stays a gRPC service;
-    transport configuration + UI go through `ExtensionUiService` so the GUI
-    clients get a panel + indicator for free
-    (`docs/discussion/extension-ui-architecture.md`,
-    [[project_serial_port_selector]]). Retire the bespoke transport RPCs from
-    `SerialService` if they are subsumed.
+14. Keep BOTH surfaces (decided): the bespoke typed `SerialService` RPCs for
+    programmatic/scripting clients (Python, tests) AND `ExtensionUiService` for
+    the GUI clients (panel + indicator for free). These serve different
+    audiences and are not redundant -- see [[feedback_extension_multi_api]] and
+    `docs/discussion/extension-ui-architecture.md`,
+    [[project_serial_port_selector]]. Do not retire the typed RPCs in favour of
+    the UI dispatch; tidy and align them, but keep them.
 15. Client parity: regenerate proto stubs; bring the Python client up to the new
     surface; add a TypeScript serial client (parity with AUN/Piconet/Econet,
     [[project_typescript_client_cutover]]); add the macOS Swift client + serial
@@ -189,14 +190,14 @@ The core architectural move. Mirror the User Port / 1MHz bus pattern.
 18. Update `docs/serial-acia.md` to the extension model and refresh CLI docs.
     Tests: a preset round-trip test that includes a serial transport. Triad.
 
-## Phase 6 -- Cassette seam (designed-for now, may be deferred)
+## Phase 6 -- Cassette seam (DEFERRED to an explicit later follow-up)
 
-19. Add a `CassetteDevice` seam attaching via the ULA cassette-select path,
-    gated by the cassette-presence axis -- NOT routed through the byte-level
-    `SerialPortDevice`. Implementing cassette I/O can be a separate effort; the
-    point of doing the seam (or at least reserving it) now is to keep the RS423
-    seam RS423-shaped. Decide with Rob whether this is in-scope for the first
-    master merge or a follow-up.
+19. Cassette is out of scope for this effort (decided). It will be a separate,
+    later piece of work: a `CassetteDevice` seam attaching via the ULA
+    cassette-select path, gated by the cassette-presence axis, NOT routed through
+    the byte-level `SerialPortDevice`. The only obligation on THIS effort is to
+    keep the RS423 seam RS423-shaped so it does not foreclose that future seam
+    (already covered in Phases 1-2); do not build cassette I/O now.
 
 ## Phase 7 -- CI integration and merge to master
 
@@ -208,13 +209,15 @@ The core architectural move. Mirror the User Port / 1MHz bus pattern.
 21. Final full-suite run across the triad + all client suites.
 22. Curate history as desired and merge `feature/serial` into `master`.
 
-## Decisions needed from Rob (do not block Phase 0)
+## Decisions (resolved with Rob)
 
-- Pushing `feature/serial`: Phase 0 Windows testing needs the branch on Slioch.
-  Default is a git bundle over SSH (no origin push). Confirm, or push the branch.
-- Phase 4: retire the bespoke serial transport RPCs in favour of extension-UI
-  configuration, or keep both surfaces?
-- Phase 6: cassette seam in this effort, or explicit follow-up?
+- Pushing `feature/serial`: YES. Rob granted explicit, scoped permission to push
+  and pull the `feature/serial` branch ONLY, between this machine and origin /
+  Slioch. So Slioch follows the normal `git pull` workflow in
+  `docs/local-windows-development.md`; no bundle needed.
+- Phase 4: KEEP BOTH the typed `SerialService` RPCs (programmatic clients) and
+  the `ExtensionUiService` path (GUIs). They serve different audiences.
+- Phase 6: cassette is an EXPLICIT LATER FOLLOW-UP, not part of this effort.
 
 ## References
 
