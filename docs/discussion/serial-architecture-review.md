@@ -68,49 +68,95 @@ Reasoning:
 - The BBC serial port is an *external interface*. What sits on the other end of
   it is open-ended. Connecting it to a real host serial device (via PTY or an
   opened device path) is only ONE option.
-- A very common case is to emulate a serial-connected *device* directly, inside
-  Beebium, never touching a real serial interface: e.g. a FujiNet device, a
-  modem, a serial printer, a mouse, or another emulated machine. These want to
-  speak to the ACIA/ULA over the same `SerialDataSource`/`SerialDataSink` seam,
-  but they are not "a host serial port".
-- This is exactly the core-vs-extension boundary we already drew for Econet: the
-  ADLC is core; the *backend* (AUN, Piconet, ...) is an extension behind a
-  `NetworkBackend` seam. Serial should follow suit.
+- The motivating case, FujiNet (https://fujinet.online), is a *real* hardware
+  device: the BBC FujiNet connects over the real RS423 serial port, and Mark is
+  driving a real FujiNet on his Linux host's serial port. So the host-serial
+  bridge is a genuine, first-class need - not a test crutch. It just should not
+  be the *only* way to populate the far end of the wire, nor a core concern.
+- An emulated serial-connected device is equally valid: emulating a FujiNet
+  (or a modem, serial printer, mouse, or another emulated machine) directly
+  inside Beebium, never touching a real serial interface. Such a device speaks
+  to the ACIA/ULA over the same seam but is not "a host serial port".
+- This is exactly the core-vs-extension boundary we already drew for Econet (the
+  ADLC is core; the AUN/Piconet *backend* is an extension behind a
+  `NetworkBackend` seam) AND the one we use for the User Port and 1MHz bus: core
+  exposes a device seam, extensions plug devices into it. Serial should follow
+  the same convention - see below.
 
-Target shape:
+### Align with the existing external-port convention
 
-- Core owns: the ACIA, the ULA, the `SerialSocket`, and the
-  `SerialDataSource`/`SerialDataSink` seam. Nothing about PTYs, device paths, or
-  host OS serial APIs.
-- A serial transport/device is selected via an extension (very likely a
-  built-in one for the common cases), analogous to `EconetTransportExtension`.
-  Sketch:
-  - A `SerialEndpointExtension` (name TBD) base class that produces something
-    implementing the source/sink seam, given configuration.
-  - A built-in "host serial" extension providing today's `pty` / `device` /
-    `loopback` modes (wrapping `PosixSerialPort` / `Win32SerialPort` /
-    `PtyMaster` / `HostSerialEndpoint`).
-  - Room for additional extensions that are *emulated devices* (FujiNet, modem,
-    etc.) plugging into the same seam without any host serial I/O.
-- The OS-level primitives (`SerialPort`, `PosixSerialPort`, `Win32SerialPort`,
-  `PtyMaster`) do not need to live in core just to be shared. The PR promoted
-  them from the Piconet extension to core to get a single source of truth; a
-  cleaner home may be a small shared library that both the Piconet extension and
-  the host-serial extension depend on, so neither core nor either extension owns
-  the other's transport. Decide where that shared code lands when we cut the
-  extension.
+We already have a settled vocabulary and mechanism for plugging external
+peripherals into the BBC's ports, and serial should reuse it rather than invent
+a parallel one. The convention (in `src/core/include/beebium/extension/`):
+
+- A `...Device` seam is the callback interface an extension implements:
+  - `UserPortDevice` (`update_port_b`, `update_control_lines`) attaches to the
+    `UserPort` handle.
+  - `OneMHzBusDevice` (`read`, `write`, `tick`, `irq_pending`) attaches to the
+    `OneMHzBusPort` handle (daisy-chained across address ranges).
+- A `...Socket` is an *optional-hardware container* that may be populated or
+  empty: `TubeSocket`, `EconetSocket`, `DiscControllerSocket`, and the PR's
+  `SerialSocket`. (This is the right vocabulary for Correction 1: a Socket is
+  allowed to be absent, which is precisely Model A / Master Compact.)
+- A `...Port` is an always-present multiplexer that dispatches to attached
+  Devices (`UserPort`, `OneMHzBusPort`).
+- Extensions derive from `PeripheralExtension`, declare `attaches_to()` /
+  `provides()`, and in `init(ExtensionContext& ctx)` attach themselves via
+  type-safe `ctx.get<UserPort>()` / `ctx.get<OneMHzBusPort>()`.
+
+Target shape for serial, by analogy:
+
+- Core owns: the ACIA, the ULA, and the `SerialSocket`. Nothing about PTYs,
+  device paths, or host OS serial APIs.
+- Introduce a `SerialPortDevice` seam (the far end of the RS423/cassette
+  connector), the serial analogue of `UserPortDevice` / `OneMHzBusDevice`. The
+  PR's `SerialDataSource` + `SerialDataSink` already ARE this seam, just split in
+  two and not named to the convention; fold them into a single bidirectional
+  `SerialPortDevice` (or keep the split but rename to the house pattern).
+- Expose the attachment point through `ExtensionContext` so a
+  `PeripheralExtension` can attach a `SerialPortDevice` exactly the way the RTC
+  attaches to the User Port and SCSI attaches to the 1MHz bus. The
+  `SerialSocket`'s existing `set_source`/`set_sink` is the wiring underneath.
+- Then "bridge to a real host serial port" and "emulated FujiNet" become two
+  ordinary `PeripheralExtension`s implementing the same `SerialPortDevice`
+  seam - which is the user's point that the real-serial bridge "should work the
+  same way". Likely a single built-in extension provides today's
+  `device` / `pty` / `loopback` host-serial modes; emulated devices are separate
+  extensions added later.
 - Configuration and UI then come "for free" via the extension framework and
   `ExtensionUiService` (see `docs/discussion/extension-ui-architecture.md`),
   which is how AUN/Piconet get macOS + TypeScript client panels and indicators.
-  See also `docs/discussion/serial-port-selector-control.md` for a proposed
+  See also `docs/discussion/serial-port-selector-control.md` for a
   domain-specific control we could reuse for device-path selection.
 
+Naming collision to resolve: the PR already uses `SerialPort` /
+`PosixSerialPort` / `Win32SerialPort` for the *host OS* serial port abstraction.
+That name will clash with a BBC-side serial seam. Rename the host-side primitive
+(e.g. `HostSerialPort`) and reserve serial/`SerialPort...` names for the BBC
+seam, or keep `SerialPortDevice` for the seam and leave the host primitives
+clearly host-scoped. Decide before cutting the extension.
+
+Where the OS primitives live: `SerialPort` / `PosixSerialPort` /
+`Win32SerialPort` / `PtyMaster` do not need to be in core just to be shared. The
+PR promoted them from the Piconet extension to core for a single source of
+truth; a cleaner home may be a small shared library that both the Piconet
+extension and the host-serial extension depend on, so neither core nor either
+extension owns the other's transport.
+
 Open question: the ACIA/ULA are genuinely core hardware and must stay core even
-when no transport extension is loaded (the BBC can still read/write the
-registers, get framing/parity/overrun, drive /DCD from the cassette/RS423
-select, etc.). So the seam must have a well-defined "nothing attached" behaviour
-(RX idle, TX discarded) independent of any extension. That is the NONE endpoint;
-keep it in core, push everything else out to extensions.
+with no device attached (the BBC can still read/write the registers, get
+framing/parity/overrun, drive /DCD from the cassette/RS423 select, etc.). So the
+seam needs a well-defined "nothing attached" behaviour (RX idle, TX discarded)
+in core, independent of any extension - the NONE case. Keep that in core and
+push everything else out to extensions.
+
+Cassette note: the Serial ULA also drives the cassette interface (latch bit 6
+RS423/cassette select, bit 7 motor relay), and there is no cassette device seam
+yet. The byte-level `SerialPortDevice` seam suits RS423 but not cassette audio
+encoding. If/when we add cassette, it likely wants its own seam (a
+`CassetteDevice`/`CassetteSocket`), not to be forced through the serial-byte
+seam. Out of scope for this PR but worth keeping the serial seam RS423-shaped so
+it does not accidentally become the cassette path too.
 
 ## Other gaps (independent of the two corrections)
 
@@ -147,9 +193,12 @@ keep it in core, push everything else out to extensions.
 
 ## Proposed plan (on feature/serial)
 
-1. Settle the extension boundary (Correction 2). This is the load-bearing
-   decision; it changes where the transport code lives, how it is configured,
-   and how the GUI clients see it.
+1. Settle the extension boundary (Correction 2): define a `SerialPortDevice`
+   seam and attach it via `PeripheralExtension`/`ExtensionContext`, the same way
+   the RTC uses `UserPortDevice` and SCSI uses `OneMHzBusDevice`; resolve the
+   `SerialPort` naming collision. This is the load-bearing decision; it changes
+   where the transport code lives, how it is configured, and how the GUI clients
+   see it.
 2. Make presence per-variant and absence-tolerant end to end (Correction 1).
 3. Replace the snapshot RPC with `WatchSerialStatus` streaming.
 4. Add TypeScript and macOS clients once the extension/UI shape is fixed.
@@ -165,3 +214,9 @@ keep it in core, push everything else out to extensions.
 - `docs/discussion/extension-ui-architecture.md`
 - `docs/discussion/serial-port-selector-control.md`
 - `docs/econet-integration.md` (the ADLC-core / backend-extension precedent).
+- The external-port device convention to mirror:
+  `src/core/include/beebium/extension/UserPortDevice.hpp` + `UserPort.hpp`,
+  `OneMHzBusDevice.hpp` + `OneMHzBusPort.hpp`, `PeripheralExtension.hpp`.
+  Worked examples: the Acorn RTC (User Port) and the Acorn SCSI host adapter
+  (1MHz bus) in `src/extensions/`.
+- FujiNet (the motivating real device): https://fujinet.online
