@@ -19,7 +19,7 @@
 #include "beebium/serial/SerialDevice.hpp"
 #include "beebium/serial/SerialSocket.hpp"
 #include "beebium/serial/HostSerialEndpoint.hpp"
-#include "beebium/serial/SerialPort.hpp"
+#include "beebium/serial/HostSerialPort.hpp"
 #ifndef _WIN32
 #include "beebium/serial/PosixSerialPort.hpp"
 #include "beebium/serial/PtyMaster.hpp"
@@ -150,7 +150,7 @@ public:
             // failure we report the error and leave the endpoint unchanged.
             std::shared_ptr<HostSerialEndpoint> new_host;
             if (mode == SERIAL_ENDPOINT_PTY || mode == SERIAL_ENDPOINT_DEVICE) {
-                std::unique_ptr<beebium::serial::SerialPort> port;
+                std::unique_ptr<beebium::serial::HostSerialPort> port;
 #ifndef _WIN32
                 if (mode == SERIAL_ENDPOINT_PTY) {
                     auto pty = std::make_unique<beebium::serial::PtyMaster>(path);

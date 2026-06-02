@@ -13,13 +13,13 @@
 
 #pragma once
 
-// Production Win32 SerialPort implementation: opens an existing device path
+// Production Win32 HostSerialPort implementation: opens an existing device path
 // (a real COM port, or a named pipe in tests) as a non-blocking raw port.
 // Mirrors PosixSerialPort's read/write/is_open/close contract one-for-one.
 
 #ifdef _WIN32
 
-#include "beebium/serial/SerialPort.hpp"
+#include "beebium/serial/HostSerialPort.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -27,7 +27,7 @@
 
 namespace beebium::serial {
 
-class Win32SerialPort : public SerialPort {
+class Win32SerialPort : public HostSerialPort {
 public:
     // Opens device_path as a non-blocking, raw, <baud_rate> 8N1 serial port.
     // The path may be a bare COM name ("COM3") or a qualified device path

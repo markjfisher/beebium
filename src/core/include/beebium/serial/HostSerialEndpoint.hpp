@@ -14,7 +14,7 @@
 #pragma once
 
 #include "SerialDevice.hpp"
-#include "SerialPort.hpp"
+#include "HostSerialPort.hpp"
 
 #include <array>
 #include <atomic>
@@ -27,14 +27,14 @@
 
 namespace beebium::serial {
 
-// Bridges the Serial ULA to a host SerialPort (a PTY master or an opened
+// Bridges the Serial ULA to a host HostSerialPort (a PTY master or an opened
 // device path), exposing the SerialDataSource / SerialDataSink interfaces the
 // ULA expects.
 //
 // A dedicated reader thread does the blocking-style reads from the OS port and
 // pushes received bytes into a mutex-protected queue, which the ULA drains on
 // the emulation thread (device -> Beeb). Transmitted bytes are written straight
-// to the port on the emulation thread (Beeb -> device); per the SerialPort
+// to the port on the emulation thread (Beeb -> device); per the HostSerialPort
 // threading contract the emulation thread is the sole writer, so no write lock
 // is needed.
 //
@@ -44,7 +44,7 @@ namespace beebium::serial {
 // add_byte()/a flush timer and is deliberately left out for now.
 class HostSerialEndpoint final : public beebium::SerialPortDevice {
 public:
-    explicit HostSerialEndpoint(std::unique_ptr<SerialPort> port)
+    explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port)
         : port_(std::move(port)) {
         if (port_ && port_->is_open()) {
             reader_ = std::thread([this] { reader_loop(); });
@@ -109,7 +109,7 @@ private:
         }
     }
 
-    std::unique_ptr<SerialPort> port_;
+    std::unique_ptr<HostSerialPort> port_;
     std::thread reader_;
     std::atomic<bool> stop_{false};
 

@@ -12,14 +12,16 @@
 
 #pragma once
 
-// Compatibility shim: the canonical SerialPort interface now lives in
-// beebium core (beebium::serial). The Piconet code keeps using the
-// beebium::piconet names via these aliases. See src/core/include/beebium/serial/.
+// Compatibility shim: the canonical host serial-port interface now lives in
+// beebium core as beebium::serial::HostSerialPort. The Piconet code keeps using
+// the beebium::piconet::SerialPort name via this alias. (The bare name
+// SerialPort is reserved in beebium:: for the BBC-side port handle, the
+// UserPort analogue.) See src/core/include/beebium/serial/.
 
-#include "beebium/serial/SerialPort.hpp"
+#include "beebium/serial/HostSerialPort.hpp"
 
 namespace beebium::piconet {
-using beebium::serial::SerialPort;
+using SerialPort = beebium::serial::HostSerialPort;
 using beebium::serial::ReadResult;
 using beebium::serial::WriteResult;
 }  // namespace beebium::piconet
