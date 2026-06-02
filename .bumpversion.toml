@@ -1,0 +1,60 @@
+# Single source of truth for the Beebium version, managed by bump-my-version.
+#
+# Beebium is a monorepo with one version across the server and all clients, so a
+# release bumps every embedded version string in lockstep, then commits and tags:
+#
+#   uvx bump-my-version bump minor      # 0.1.0 -> 0.2.0, edits files, commit + tag
+#   git push --follow-tags              # push the commit AND the v* tag
+#
+# Validate changes first with:
+#   uvx bump-my-version bump --dry-run --verbose minor
+#
+# current_version below is authoritative; the files listed are kept equal to it.
+
+[tool.bumpversion]
+current_version = "0.1.0"
+allow_dirty = false
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release v{new_version}"
+message = "Release v{new_version}"
+
+# --- Server / core (C++) ---------------------------------------------------
+[[tool.bumpversion.files]]
+filename = "CMakeLists.txt"
+search = "VERSION {current_version}"
+replace = "VERSION {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "vcpkg.json"
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'
+
+# --- Python client ---------------------------------------------------------
+[[tool.bumpversion.files]]
+filename = "clients/python/pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "clients/python/src/beebium/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+# --- TypeScript client -----------------------------------------------------
+[[tool.bumpversion.files]]
+filename = "clients/typescript/package.json"
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'
+
+# --- macOS GUI client (scenario 1, deferred -- kept in lockstep anyway) -----
+[[tool.bumpversion.files]]
+filename = "clients/macos/Beebium/project.yml"
+search = 'MARKETING_VERSION: "{current_version}"'
+replace = 'MARKETING_VERSION: "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "clients/macos/Beebium/Beebium.xcodeproj/project.pbxproj"
+search = "MARKETING_VERSION = {current_version};"
+replace = "MARKETING_VERSION = {new_version};"
