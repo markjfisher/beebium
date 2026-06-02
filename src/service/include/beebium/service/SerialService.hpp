@@ -57,9 +57,9 @@ public:
         if constexpr (HasSerialSocket<Memory>) {
             // Attach a scriptable endpoint by default so SendToDevice/
             // ReceiveFromDevice work out of the box (mirrors the demo flow).
+            // Attach through the SerialPort handle so is_occupied() is truthful.
             scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
-            auto& serial = machine_.state().memory.serial_socket;
-            serial.set_device(scriptable_.get());
+            machine_.state().memory.serial_port().attach(*scriptable_);
             mode_ = SERIAL_ENDPOINT_SCRIPTABLE;
         }
     }
@@ -142,7 +142,7 @@ public:
             error = "Machine has no serial socket";
             return false;
         } else {
-            auto& serial = machine_.state().memory.serial_socket;
+            auto& port_handle = machine_.state().memory.serial_port();
             const int line_baud = baud > 0 ? baud : 19200;  // DEVICE default
 
             // Build any host transport (PTY/DEVICE) outside the pause window so
@@ -190,33 +190,34 @@ public:
                 new_host = std::make_shared<HostSerialEndpoint>(std::move(port));
             }
 
-            // Swap source/sink with the emulation loop paused: the ULA reads
-            // these pointers on every tick.
+            // Swap the attached device with the emulation loop paused: the ULA
+            // reads the device pointer on every tick. Detach first so the port
+            // is free (attach() throws if occupied) and is_occupied() stays
+            // accurate; the service owns the endpoint objects it attaches.
             machine_.with_emulation_paused([&] {
-                // Drop any previous host transport (joins its reader thread).
-                host_endpoint_.reset();
+                port_handle.detach();
+                host_endpoint_.reset();  // drop previous host transport (joins its reader thread)
                 advertised_path_.clear();
 
                 switch (mode) {
                     case SERIAL_ENDPOINT_NONE:
-                        serial.set_device(nullptr);
-                        break;
+                        break;  // leave the port detached
                     case SERIAL_ENDPOINT_LOOPBACK:
                         loopback_ = std::make_shared<LoopbackSerialEndpoint>();
-                        serial.set_device(loopback_.get());
+                        port_handle.attach(*loopback_);
                         break;
                     case SERIAL_ENDPOINT_PTY:
                     case SERIAL_ENDPOINT_DEVICE:
                         host_endpoint_ = new_host;
                         advertised_path_ = advertised;
-                        serial.set_device(host_endpoint_.get());
+                        port_handle.attach(*host_endpoint_);
                         break;
                     case SERIAL_ENDPOINT_SCRIPTABLE:
                     default:
                         if (!scriptable_) {
                             scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
                         }
-                        serial.set_device(scriptable_.get());
+                        port_handle.attach(*scriptable_);
                         mode = SERIAL_ENDPOINT_SCRIPTABLE;
                         break;
                 }
