@@ -62,4 +62,4 @@ export {
 } from "./exceptions.js";
 
 export const DEFAULT_GRPC_PORT = 0xBEEB;
-export const VERSION = "0.1.0";
+export { VERSION } from "./version.js";
