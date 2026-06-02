@@ -106,21 +106,28 @@ Commit: "serial: cross-platform baseline green" (with any portability fixes).
 Tests: no new behaviour; ensure existing serial tests pass on macOS+Linux and
 build on Windows.
 
-## Phase 1 -- Lock seam vocabulary and naming (no behaviour change)
+## Phase 1 -- Introduce the device seam (DONE, commit 4d74a7f)
 
-5. Resolve the naming collision. The PR uses `SerialPort` / `PosixSerialPort` /
-   `Win32SerialPort` / `PtyMaster` for the HOST OS port. Rename these to a
-   host-scoped family (e.g. `HostSerialPort`, or a `beebium::serial::host`
-   namespace) so the `SerialPort...` names are free for the BBC-side seam. Update
-   the piconet shims and all includes. Pure rename.
 6. Introduce the `SerialPortDevice` seam -- the serial analogue of
-   `UserPortDevice` / `OneMHzBusDevice` -- folding `SerialDataSource` +
-   `SerialDataSink` into one bidirectional device interface (or renaming the
-   split pair to the house pattern). `Loopback`/`Scriptable`/host endpoints
-   implement it unchanged.
-   Tests: rename-only; all existing tests still pass on the triad. Add one small
-   test asserting a `SerialPortDevice` round-trips through loopback and
-   scriptable under the new names.
+   `UserPortDevice` / `OneMHzBusDevice`. Rather than folding `SerialDataSource` +
+   `SerialDataSink` away (which would break the ULA's per-direction unit tests,
+   since a single bidirectional loopback echoes a TX byte back mid-test), we
+   KEPT the two half-seams as the bit engine's internal interface and made
+   `SerialPortDevice` inherit both. So the ULA still pulls RX / pushes TX through
+   the split (tests untouched), while the socket and the outside world speak one
+   device. `SerialSocket` gained `set_device(shared_ptr<SerialPortDevice>)` in
+   place of `set_source`/`set_sink`; `Loopback`/`Scriptable`/`Host` endpoints and
+   `SerialService` updated to match. No behaviour change.
+   Tests: existing serial tests still pass on all three platforms; added a
+   socket-level `set_device` loopback round-trip test.
+
+5. (MOVED to Phase 3) Resolve the `SerialPort` naming collision. The PR uses
+   `SerialPort` / `PosixSerialPort` / `Win32SerialPort` / `PtyMaster` for the HOST
+   OS port. Renaming these to a host-scoped family frees `SerialPort` for the
+   BBC-side port handle -- but that handle is not introduced until Phase 3, and
+   the rename is large churn across the whole Piconet subsystem and its tests.
+   Deferred to Phase 3 (step 8a) so the rename lands together with the consumer
+   that actually needs the freed name, rather than as speculative churn now.
 
 ## Phase 2 -- Model presence correctly (two axes)
 
@@ -141,8 +148,17 @@ See review Correction 1: Axis A = chips + RS423 (one `SerialSocket`,
 
 The core architectural move. Mirror the User Port / 1MHz bus pattern.
 
-9. Expose a serial attachment point through `ExtensionContext` (analogous to
-   `UserPort` / `OneMHzBusPort`), backed by `SerialSocket`'s set_source/set_sink.
+8a. (Moved here from Phase 1) Resolve the `SerialPort` naming collision FIRST,
+    as the opening step of this phase, because step 9 introduces the BBC-side
+    `SerialPort` port handle that needs the name. Rename the host OS port family
+    `SerialPort` / `PosixSerialPort` / `Win32SerialPort` / `PtyMaster` to a
+    host-scoped family (e.g. `HostSerialPort`, or a `beebium::serial::host`
+    namespace), updating the Piconet shims and all includes. Pure rename; re-run
+    the triad before continuing. Doing this here keeps the churn with the work
+    that consumes the freed name.
+9. Expose a serial attachment point (the BBC `SerialPort` port handle) through
+   `ExtensionContext` (analogous to `UserPort` / `OneMHzBusPort`), backed by
+   `SerialSocket`'s `set_device`.
 10. Create a built-in `HostSerialExtension : PeripheralExtension, SerialPortDevice`
     that owns the `HostSerialEndpoint` + host port + `PtyMaster` and offers the
     pty / device / loopback / scriptable modes. `attaches_to()` the serial port;
@@ -228,3 +244,6 @@ The core architectural move. Mirror the User Port / 1MHz bus pattern.
 - `.github/workflows/ci.yml` (the platform/client matrix to extend).
 - External-port precedents: `src/core/include/beebium/extension/UserPortDevice.hpp`,
   `OneMHzBusDevice.hpp`, `PeripheralExtension.hpp`; Acorn RTC + SCSI extensions.
+- `docs/datasheets/MC6850_ACIA.pdf` -- the MC6850 ACIA datasheet; the
+  authority for validating register semantics (control/status bits, TDRE/RDRF,
+  /DCD, /CTS, IRQ behaviour) when reviewing and extending the ACIA tests.
