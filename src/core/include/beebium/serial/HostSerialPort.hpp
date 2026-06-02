@@ -47,9 +47,9 @@ struct WriteResult {
 // from a dedicated reader thread. No concurrent writes occur, so
 // implementations need no internal write mutex. Higher layers that mutate from
 // other threads must serialise themselves.
-class SerialPort {
+class HostSerialPort {
 public:
-    virtual ~SerialPort() = default;
+    virtual ~HostSerialPort() = default;
 
     // Non-blocking read with a short internal timeout (typically 100ms).
     // Returns the number of bytes read, or signals would_block on timeout.

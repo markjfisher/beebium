@@ -13,20 +13,20 @@
 
 #pragma once
 
-// Production POSIX SerialPort implementation: opens an existing device path
+// Production POSIX HostSerialPort implementation: opens an existing device path
 // (a real serial port such as /dev/ttyUSB0, or a pseudo-terminal slave such
 // as /dev/pts/N) as a non-blocking raw tty.
 
 #ifndef _WIN32
 
-#include "beebium/serial/SerialPort.hpp"
+#include "beebium/serial/HostSerialPort.hpp"
 
 #include <atomic>
 #include <string>
 
 namespace beebium::serial {
 
-class PosixSerialPort : public SerialPort {
+class PosixSerialPort : public HostSerialPort {
 public:
     // Opens device_path as a non-blocking, raw, <baud_rate> 8N1 serial port.
     // If the open or termios configuration fails, is_open() returns false and

@@ -27,7 +27,7 @@ add_library(beebium_core STATIC
     $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PosixSerialPort.cpp>
     $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PtyMaster.cpp>
     $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/Win32SerialPort.cpp>
-    include/beebium/serial/SerialPort.hpp
+    include/beebium/serial/HostSerialPort.hpp
     include/beebium/serial/PosixSerialPort.hpp
     include/beebium/serial/Win32SerialPort.hpp
     include/beebium/serial/PtyMaster.hpp

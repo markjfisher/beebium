@@ -13,7 +13,7 @@
 
 #pragma once
 
-// Creates a POSIX pseudo-terminal and owns the master end as a SerialPort.
+// Creates a POSIX pseudo-terminal and owns the master end as a HostSerialPort.
 //
 // Beebium calls posix_openpt/grantpt/unlockpt/ptsname to create the pair,
 // reads/writes the master fd, and advertises the slave path (e.g. /dev/pts/7)
@@ -23,14 +23,14 @@
 
 #ifndef _WIN32
 
-#include "beebium/serial/SerialPort.hpp"
+#include "beebium/serial/HostSerialPort.hpp"
 
 #include <atomic>
 #include <string>
 
 namespace beebium::serial {
 
-class PtyMaster : public SerialPort {
+class PtyMaster : public HostSerialPort {
 public:
     // Create a new pty. If symlink_path is non-empty, a symlink pointing at
     // the slave device is created there (an existing symlink is replaced) so
