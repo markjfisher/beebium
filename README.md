@@ -142,6 +142,16 @@ beebium/
 └── scripts/            # Development scripts
 ```
 
+## Documentation
+
+Component and subsystem documentation lives in [`docs/`](docs/). Some entry points:
+
+- [Deployment and Resource Discovery](docs/deployment.md) — installed layout and how a server finds ROMs and presets at runtime
+- [Packaging and Distribution](docs/packaging.md) — the self-contained static `.deb`/`.tar.gz` server bundles, supported platforms (incl. arm64 / Raspberry Pi and Arch), how they are built and validated, and what is done vs still to do
+- [Versioning and Protocol Compatibility](docs/versioning-and-compatibility.md) — monorepo single-version releases with `bump-my-version`, and the protocol fingerprint handshake that keeps clients and servers compatible
+- [gRPC Server Interface](docs/grpc-server.md) — the service API
+- [Building](docs/building.md) — build prerequisites and options
+
 ## Development
 
 After cloning, install the git hooks:
