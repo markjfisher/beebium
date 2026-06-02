@@ -43,6 +43,14 @@ endfunction()
 function(add_beebium_server TARGET_NAME SOURCE_FILE)
     add_executable(${TARGET_NAME} ${SOURCE_FILE})
 
+    # The server main is the single most memory-hungry TU in the tree (full
+    # Machine<Hardware> template + static gRPC/protobuf headers). Pin its
+    # compilation to the depth-1 beebium_heavy_compile pool (defined in the
+    # top-level CMakeLists) so a parallel Ninja build never compiles two of
+    # them at once and OOM-kills the compiler on memory-limited hosts.
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        JOB_POOL_COMPILE beebium_heavy_compile)
+
     target_include_directories(${TARGET_NAME}
         PRIVATE
             ${SERVER_INCLUDE_DIR}

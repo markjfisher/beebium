@@ -65,7 +65,15 @@ RUN --mount=type=cache,target=/root/.cache/vcpkg \
 # Now bring in the full source and build only the servers + plugins (the
 # beebium-servers aggregate skips the ~65 Catch2 test executables).
 # BEEBIUM_BUILD_TESTS stays ON purely so the install_smoke CTest is registered.
+#
+# BUILD_JOBS caps compile parallelism. The server TUs instantiate the full
+# Machine<Hardware> template against the static gRPC/protobuf headers and peak
+# at ~1.5 GB each, so -j(nproc) on a memory-limited Docker VM (e.g. 8 GB / 10
+# CPUs) OOM-kills cc1plus. Keep it well under MemGB/1.5; override for roomier
+# hosts. Emulated (amd64-on-arm64) builds carry extra overhead -- lower it
+# further there if needed.
 COPY . /src
+ARG BUILD_JOBS=4
 RUN cmake -S . -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
@@ -74,7 +82,7 @@ RUN cmake -S . -B build -G Ninja \
         -DVCPKG_TARGET_TRIPLET="${VCPKG_TRIPLET}" \
         -DVCPKG_MANIFEST_INSTALL=OFF \
         -DBEEBIUM_BUILD_TESTS=ON \
-    && cmake --build build --target beebium-servers -j"$(nproc)"
+    && cmake --build build --target beebium-servers -j"${BUILD_JOBS}"
 
 # Debian packaging tools, kept in a late layer so adding them does not
 # invalidate the cached vcpkg build above. dpkg-dev provides dpkg-shlibdeps,
