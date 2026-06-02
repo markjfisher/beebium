@@ -20,12 +20,27 @@ set(CPACK_PACKAGE_CONTACT "Robert Smallshire <rob@sixty-north.com>")
 # relative (bin/, lib/, share/), so this prefix yields /opt/beebium/{bin,lib,share}.
 set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/beebium")
 
+# Normalise the architecture to the Debian label (amd64/arm64) so the .deb and
+# the .tar.gz carry the same arch name and match the .deb's auto-detected
+# Architecture field.
+set(_beebium_pkg_arch "${CMAKE_SYSTEM_PROCESSOR}")
+if(_beebium_pkg_arch STREQUAL "x86_64")
+    set(_beebium_pkg_arch "amd64")
+elseif(_beebium_pkg_arch STREQUAL "aarch64")
+    set(_beebium_pkg_arch "arm64")
+endif()
+
+# Base package file name used by all generators: beebium-server-<ver>-linux-<arch>.
+# The DEB generator overrides this with the canonical Debian name below. Setting
+# CPACK_PACKAGE_FILE_NAME (rather than CPACK_ARCHIVE_FILE_NAME) is what reliably
+# names the archive across CPack versions.
+set(CPACK_PACKAGE_FILE_NAME
+    "beebium-server-${PROJECT_VERSION}-linux-${_beebium_pkg_arch}")
+
 # Archive (TGZ): root at the install prefix (opt/beebium/...) with no extra
 # <name>-<ver>-<sys> wrapper directory, so it extracts cleanly to /.
 set(CPACK_GENERATOR "TGZ")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-set(CPACK_ARCHIVE_FILE_NAME
-    "beebium-server-${PROJECT_VERSION}-linux-${CMAKE_SYSTEM_PROCESSOR}")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND CPACK_GENERATOR "DEB")
@@ -37,11 +52,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # (libc6, libstdc++6, libgcc-s1). gRPC/protobuf are statically linked and
     # contribute no package dependencies.
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # Canonical Debian file name: beebium-server_<version>_<arch>.deb, with the
+    # architecture auto-detected via dpkg --print-architecture.
+    set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
     # postinst/prerm create and remove the /usr/bin -> /opt/beebium/bin symlinks.
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_SOURCE_DIR}/packaging/debian/postinst"
         "${CMAKE_SOURCE_DIR}/packaging/debian/prerm")
-    # CPACK_DEBIAN_PACKAGE_ARCHITECTURE is auto-detected (dpkg --print-architecture).
 endif()
 
 include(CPack)
