@@ -242,6 +242,15 @@ export class System {
         return info.clockSpeedHz;
     }
 
+    /**
+     * Get the wire-protocol fingerprint the server was built against.
+     * Empty if the server predates protocol fingerprinting.
+     */
+    async getProtocolFingerprint(): Promise<string> {
+        const info = await this.getSystemInfo();
+        return info.protocolFingerprint;
+    }
+
     /** Get the number of connected clients. */
     async getClientCount(): Promise<number> {
         const info = await this.getSystemInfo();
