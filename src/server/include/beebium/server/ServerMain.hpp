@@ -1821,7 +1821,8 @@ public:
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
                 beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr,
                 beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr,
-                &machine.state().memory.indicators);
+                &machine.state().memory.indicators,
+                beebium::HasSerialPort<Memory> ? &machine.state().memory.serial_port() : nullptr);
             extension_registry.resolve_and_init(extension_context);
 
             // All registrations are complete -- close the registration window

@@ -14,6 +14,7 @@
 
 #include "extension/OneMHzBusPort.hpp"
 #include "extension/UserPort.hpp"
+#include "extension/SerialPort.hpp"
 #include "AddressableLatch.hpp"
 #include "AudioBuffer.hpp"
 #include "ClockTypes.hpp"
@@ -148,6 +149,10 @@ public:
     // Serial subsystem -- on-board MC6850 ACIA (&FE08) + Serial ULA (&FE10).
     // Always fitted on a real BBC; its IRQ output drives the shared CPU IRQ line.
     SerialSocket serial_socket;
+
+    // BBC serial port handle (RS423): attach point for a SerialPortDevice, the
+    // UserPort analogue. Exposed to extensions via ExtensionContext.
+    SerialPort serial_port_{serial_socket};
 
     // Tube subsystem -- optional second processor interface
     TubeSocket tube_socket;
@@ -359,6 +364,7 @@ public:
     OneMHzBusPort& one_mhz_bus() { return one_mhz_bus_; }
 
     UserPort& user_port() { return user_port_; }
+    SerialPort& serial_port() { return serial_port_; }
 
     // Startup Options
     void set_startup_options(uint8_t options) {

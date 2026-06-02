@@ -12,6 +12,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include <beebium/ModelBHardware.hpp>
+#include <beebium/extension/SerialPort.hpp>
 #include <beebium/serial/SerialConcepts.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialSocket.hpp>
@@ -109,7 +110,7 @@ TEST_CASE("Model B serial ACIA IRQ reaches the IRQ aggregator", "[serial][socket
 TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][socket]") {
     SerialSocket socket;
     auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_device(endpoint);
+    socket.set_device(endpoint.get());
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
@@ -128,7 +129,7 @@ TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][
 TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb", "[serial][socket]") {
     SerialSocket socket;
     auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_device(endpoint);
+    socket.set_device(endpoint.get());
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);
@@ -148,7 +149,8 @@ TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb"
 // loopback device echoes a transmitted byte back so the Beeb receives it.
 TEST_CASE("SerialSocket set_device loopback round-trips a byte", "[serial][socket]") {
     SerialSocket socket;
-    socket.set_device(std::make_shared<LoopbackSerialEndpoint>());
+    LoopbackSerialEndpoint endpoint;
+    socket.set_device(&endpoint);  // non-owning; endpoint outlives the socket use
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
@@ -161,4 +163,36 @@ TEST_CASE("SerialSocket set_device loopback round-trips a byte", "[serial][socke
 
     REQUIRE((socket.read_acia(0) & Mc6850::SR_RDRF) != 0);
     CHECK(socket.read_acia(1) == 0xC3);
+}
+
+// =============================================================================
+// SerialPort handle (the UserPort analogue)
+// =============================================================================
+
+TEST_CASE("SerialPort handle attaches a single device and round-trips", "[serial][port]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    CHECK_FALSE(port.is_occupied());
+
+    LoopbackSerialEndpoint endpoint;
+    port.attach(endpoint);
+    CHECK(port.is_occupied());
+
+    // The serial port has a single connector: a second attach throws.
+    LoopbackSerialEndpoint other;
+    CHECK_THROWS(port.attach(other));
+
+    // The attached device drives the round-trip through the socket/ULA.
+    socket.write_acia(0, CONTROL_8N1);
+    socket.write_ula(0, SerialUla::RS423_SELECT);
+    socket.write_acia(1, 0xC3);
+    for (int i = 0; i < 20000 && (socket.read_acia(0) & Mc6850::SR_RDRF) == 0; ++i) {
+        socket.tick_rising();
+        socket.tick_falling();
+    }
+    REQUIRE((socket.read_acia(0) & Mc6850::SR_RDRF) != 0);
+    CHECK(socket.read_acia(1) == 0xC3);
+
+    port.detach();
+    CHECK_FALSE(port.is_occupied());
 }
