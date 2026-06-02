@@ -51,6 +51,17 @@ void unset_env(const std::string& name) {
 #endif
 }
 
+// Best-effort removal of a temporary file produced by a test. On Windows a
+// file that was just written by a subprocess can be briefly held open by an
+// external scanner (e.g. Defender or the search indexer), so an immediate
+// delete may fail with "being used by another process". The file is in the
+// temp directory and harmless if left behind, so cleanup must never fail the
+// test. This mirrors TempDirectory's error_code-based remove_all().
+void remove_quietly(const std::filesystem::path& filepath) {
+    std::error_code ec;
+    std::filesystem::remove(filepath, ec);
+}
+
 ProcessResult run_command(const std::string& command,
                           const std::vector<std::pair<std::string, std::string>>& env_vars = {}) {
     ProcessResult result;
@@ -618,7 +629,7 @@ TEST_CASE("model-b-romram boots without an auto-loaded DFS ROM",
     // from a preset's sideways_bank. Nothing should reference acorn-dfs here.
     REQUIRE(result.stdout_output.find("acorn-dfs") == std::string::npos);
 
-    std::filesystem::remove(output_filepath);
+    remove_quietly(output_filepath);
 }
 
 // ============================================================================
@@ -655,8 +666,8 @@ TEST_CASE("create-preset --fdc and --sideways build a loadable rich preset",
     REQUIRE(boot_result.exit_code == 0);
     REQUIRE(boot_result.stdout_output.find("acorn-dfs_2_26.rom") != std::string::npos);
 
-    std::filesystem::remove(output_filepath);
-    std::filesystem::remove(screenshot_filepath);
+    remove_quietly(output_filepath);
+    remove_quietly(screenshot_filepath);
 }
 
 // ============================================================================
@@ -695,7 +706,7 @@ TEST_CASE("shipped system presets load, validate, and boot",
         if (c.expect_dfs) {
             REQUIRE(result.stdout_output.find("acorn-dfs_2_26.rom") != std::string::npos);
         }
-        std::filesystem::remove(screenshot_filepath);
+        remove_quietly(screenshot_filepath);
     }
 }
 
