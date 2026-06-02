@@ -19,7 +19,12 @@ from pathlib import Path
 import pytest
 
 import beebium.client
-from beebium import Beebium, PROTOCOL_FINGERPRINT, ProtocolMismatchError
+from beebium import (
+    Beebium,
+    PROTOCOL_FINGERPRINT,
+    ProtocolMismatchError,
+    ServerNotFoundError,
+)
 
 
 def test_server_reports_matching_fingerprint(bbc: Beebium) -> None:
@@ -35,10 +40,15 @@ def test_mismatched_client_is_rejected_at_connect(
 ) -> None:
     """A client whose fingerprint differs from the server's is refused."""
     monkeypatch.setattr(beebium.client, "PROTOCOL_FINGERPRINT", "mismatched-fingerprint")
-    with pytest.raises(ProtocolMismatchError):
-        with Beebium.launch(
-            mos_filepath=mos_filepath,
-            basic_filepath=basic_filepath,
-            server_filepath=beebium_server_filepath,
-        ):
-            pass
+    # This needs a real server (like the other integration tests); skip when one
+    # is not available, e.g. in the unit-test job that builds no server.
+    try:
+        with pytest.raises(ProtocolMismatchError):
+            with Beebium.launch(
+                mos_filepath=mos_filepath,
+                basic_filepath=basic_filepath,
+                server_filepath=beebium_server_filepath,
+            ):
+                pass
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
