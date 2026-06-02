@@ -16,6 +16,7 @@
 #include "Export.hpp"
 #include "OneMHzBusPort.hpp"
 #include "PeripheralExtension.hpp"
+#include "SerialPort.hpp"
 #include "UserPort.hpp"
 #include "../tube/TubeSocket.hpp"
 
@@ -43,11 +44,13 @@ public:
     explicit ExtensionContext(OneMHzBusPort* one_mhz_bus_port = nullptr,
                              UserPort* user_port = nullptr,
                              TubeSocket* tube_socket = nullptr,
-                             Indicators* indicators = nullptr)
+                             Indicators* indicators = nullptr,
+                             SerialPort* serial_port = nullptr)
         : one_mhz_bus_port_(one_mhz_bus_port)
         , user_port_(user_port)
         , tube_socket_(tube_socket)
-        , indicators_(indicators) {}
+        , indicators_(indicators)
+        , serial_port_(serial_port) {}
 
     // Type-safe port handle access.
     template<typename T>
@@ -70,6 +73,12 @@ public:
                     "ExtensionContext: tube connector not available on this machine");
             }
             return *tube_socket_;
+        } else if constexpr (std::is_same_v<T, SerialPort>) {
+            if (!serial_port_) {
+                throw std::runtime_error(
+                    "ExtensionContext: serial port not available on this machine");
+            }
+            return *serial_port_;
         } else {
             static_assert(!std::is_same_v<T, T>, "Unknown port type");
         }
@@ -84,6 +93,8 @@ public:
             return user_port_ != nullptr;
         } else if constexpr (std::is_same_v<T, TubeSocket>) {
             return tube_socket_ != nullptr;
+        } else if constexpr (std::is_same_v<T, SerialPort>) {
+            return serial_port_ != nullptr;
         } else {
             return false;
         }
@@ -128,6 +139,7 @@ private:
     UserPort* user_port_;
     TubeSocket* tube_socket_;
     Indicators* indicators_;
+    SerialPort* serial_port_;
     std::unordered_map<std::string, PeripheralExtension*> providers_;
 };
 

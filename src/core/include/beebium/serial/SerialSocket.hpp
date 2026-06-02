@@ -50,14 +50,16 @@ public:
 
     // --- Transport configuration ---
 
-    // Attach the serial device (the bidirectional endpoint the ULA receives
-    // from and transmits to). The socket takes shared ownership and wires it to
-    // the ULA's receive and transmit seams. Pass nullptr to detach: the receive
-    // line idles and transmitted bytes are discarded.
-    void set_device(std::shared_ptr<SerialPortDevice> device) {
-        device_ = std::move(device);
-        ula_.set_source(device_.get());
-        ula_.set_sink(device_.get());
+    // Wire the serial device (the bidirectional endpoint the ULA receives from
+    // and transmits to) into the ULA's receive and transmit seams. NON-OWNING:
+    // the caller owns the device and keeps it alive for as long as it is set
+    // (mirrors UserPort::attach). Pass nullptr to detach: the receive line idles
+    // and transmitted bytes are discarded. Normally driven via the beebium::
+    // SerialPort handle (attach/detach); the gRPC SerialService uses it directly
+    // for its own scriptable/loopback endpoints, which it keeps alive itself.
+    void set_device(SerialPortDevice* device) {
+        ula_.set_source(device);
+        ula_.set_sink(device);
     }
 
     // Open-bus support for reads of the write-only Serial ULA latch.
@@ -98,7 +100,6 @@ private:
     Mc6850 acia_;
     SerialUla ula_{acia_};
 
-    std::shared_ptr<SerialPortDevice> device_;
     const uint8_t* last_bus_value_ptr_ = nullptr;
 };
 
