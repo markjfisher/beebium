@@ -47,8 +47,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Robert Smallshire <robert@smallshire.org.uk>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "otherosfs")
-    # CPACK_DEBIAN_PACKAGE_HOMEPAGE intentionally unset until the project's
-    # public repository URL is settled.
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/rob-smallshire/beebium")
     # Derive runtime dependencies from the binaries' actual dynamic links
     # (libc6, libstdc++6, libgcc-s1). gRPC/protobuf are statically linked and
     # contribute no package dependencies.
