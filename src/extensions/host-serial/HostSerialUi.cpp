@@ -62,11 +62,13 @@ void HostSerialUi::build_view(View* out) const {
         snap = endpoint->ui_snapshot();
     }
 
-    // "Device" heading for the path/baud lines below it.
+    // Mode heading for the path/baud lines below it: "PTY Mode" for a startup
+    // pty, "Device Mode" for a real serial port.
     {
         auto* control = group->add_controls();
         control->set_id("device_heading");
-        control->mutable_label()->set_text("Device");
+        control->mutable_label()->set_text(snap.mode == "pty" ? "PTY Mode"
+                                                              : "Device Mode");
     }
 
     // The path on its own line, as the editable anchor: click it to re-point

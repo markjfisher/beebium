@@ -102,6 +102,7 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
     options.tx_back_pressure = tx_buffer;
     options.device_path = resolved_path;
     options.baud = baud;
+    options.mode = mode;  // "pty" | "device", surfaced as the panel heading
     // The Extension UI lets the user re-point the bridge at runtime. A reopen
     // always opens a *device* at the chosen path/baud (the "which serial port
     // does the bridge use" picker); pty creation is a startup-only mode.

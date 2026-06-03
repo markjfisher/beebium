@@ -39,11 +39,11 @@ TEST_CASE("HostSerialUi build_view exposes a device editor and a status indicato
     // attached -- a connection indicator surfacing the error.
     REQUIRE(group.controls_size() == 4);
 
-    // "Device" heading.
+    // Mode heading: no endpoint -> empty mode -> "Device Mode".
     const auto& heading = group.controls(0);
     CHECK(heading.id() == "device_heading");
     CHECK(heading.control_case() == Control::kLabel);
-    CHECK(heading.label().text() == "Device");
+    CHECK(heading.label().text() == "Device Mode");
 
     // Device ModalEditor: always editable; anchor shows the path on its own
     // line (no "Device:" prefix, no "@ baud" suffix -- those moved out).

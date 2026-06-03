@@ -77,6 +77,7 @@ public:
         std::function<void()> on_async_state_change;  // fired on hot-unplug / reopen
         std::string device_path;                    // for the UI snapshot
         int baud = 19200;                           // for the UI snapshot
+        std::string mode = "device";                // "pty" | "device", for the UI
     };
 
     explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port)
@@ -89,7 +90,8 @@ public:
           factory_(std::move(options.factory)),
           on_async_state_change_(std::move(options.on_async_state_change)),
           current_path_(std::move(options.device_path)),
-          current_baud_(options.baud) {
+          current_baud_(options.baud),
+          current_mode_(std::move(options.mode)) {
         start_io_threads();
     }
 
@@ -166,11 +168,12 @@ public:
         int baud = 0;
         bool serial_open = false;
         std::string open_error_message;
+        std::string mode;  // "pty" | "device"
     };
     UiSnapshot ui_snapshot() const {
         std::lock_guard<std::mutex> lock(ui_mutex_);
         return UiSnapshot{current_path_, current_baud_,
-                          port_ && port_->is_open(), open_error_};
+                          port_ && port_->is_open(), open_error_, current_mode_};
     }
 
     // Request the bridge re-point to a new device path + baud. Safe from any
@@ -247,6 +250,9 @@ private:
             current_path_ = std::move(path);
             current_baud_ = baud;
             open_error_ = std::move(error);
+            // The factory always opens a real device; re-pointing away from a
+            // startup pty therefore lands in device mode.
+            current_mode_ = "device";
         }
         start_io_threads();   // resets stop_, starts threads iff the new port opened
         notify_state_changed();
@@ -342,6 +348,7 @@ private:
     std::string current_path_;
     int current_baud_ = 0;
     std::string open_error_;
+    std::string current_mode_;
 };
 
 }  // namespace beebium::serial
