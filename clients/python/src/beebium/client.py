@@ -342,11 +342,12 @@ class Beebium:
 
     @property
     def serial(self) -> Serial:
-        """Access the serial port (MC6850 ACIA + Serial ULA).
+        """Access on-board serial hardware status (MC6850 ACIA + Serial ULA).
 
-        Provides status queries plus a scriptable in-process transport
-        for injecting bytes for the BBC to receive and collecting bytes
-        the BBC has transmitted.
+        Reports the ACIA/ULA register state. To act as the device on the far
+        end of the BBC's serial wire (inject bytes for it to receive, collect
+        bytes it transmits), launch the server with ``--rpc-serial`` and use
+        :attr:`rpc_serial`.
         """
         if self._serial is None:
             self._serial = Serial(self._connection.serial_stub)

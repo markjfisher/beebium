@@ -11,15 +11,15 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+#include "SerialTestDevice.hpp"
+
 #include <beebium/ModelBHardware.hpp>
 #include <beebium/extension/SerialPort.hpp>
 #include <beebium/serial/SerialConcepts.hpp>
-#include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialSocket.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
-#include <memory>
 
 using namespace beebium;
 
@@ -104,37 +104,35 @@ TEST_CASE("Model B serial ACIA IRQ reaches the IRQ aggregator", "[serial][socket
 }
 
 // =============================================================================
-// Scriptable endpoint end-to-end through the socket
+// Device end-to-end through the socket
 // =============================================================================
 
-TEST_CASE("SerialSocket scriptable endpoint transmits to the client", "[serial][socket]") {
+TEST_CASE("SerialSocket transmits a byte to the device", "[serial][socket]") {
     SerialSocket socket;
-    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_device(endpoint.get());
+    SerialTestDevice device;
+    socket.set_device(&device);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
     socket.write_acia(1, 0x5A);                      // write TDR
 
-    for (int i = 0; i < 4000 && endpoint->tx_pending() == 0; ++i) {
+    for (int i = 0; i < 4000 && device.sent().empty(); ++i) {
         socket.tick_rising();
         socket.tick_falling();
     }
 
-    auto drained = endpoint->drain();
-    REQUIRE(drained.size() == 1);
-    CHECK(drained[0] == 0x5A);
+    REQUIRE(device.sent().size() == 1);
+    CHECK(device.sent()[0] == 0x5A);
 }
 
-TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb", "[serial][socket]") {
+TEST_CASE("SerialSocket delivers a byte from the device to the Beeb", "[serial][socket]") {
     SerialSocket socket;
-    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_device(endpoint.get());
+    SerialTestDevice device;
+    socket.set_device(&device);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);
-    uint8_t payload = 0x39;
-    endpoint->inject(&payload, 1);
+    device.push_from_device(0x39);
 
     for (int i = 0; i < 6000 && (socket.read_acia(0) & Mc6850::SR_RDRF) == 0; ++i) {
         socket.tick_rising();
@@ -145,12 +143,12 @@ TEST_CASE("SerialSocket scriptable endpoint delivers injected bytes to the Beeb"
     CHECK(socket.read_acia(1) == 0x39);
 }
 
-// A single SerialPortDevice wired via set_device() serves both directions: a
-// loopback device echoes a transmitted byte back so the Beeb receives it.
+// A single SerialPortDevice wired via set_device() serves both directions: an
+// echoing device sends a transmitted byte back so the Beeb receives it.
 TEST_CASE("SerialSocket set_device loopback round-trips a byte", "[serial][socket]") {
     SerialSocket socket;
-    LoopbackSerialEndpoint endpoint;
-    socket.set_device(&endpoint);  // non-owning; endpoint outlives the socket use
+    SerialTestDevice device(/*echo=*/true);
+    socket.set_device(&device);  // non-owning; device outlives the socket use
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);  // 19200, carrier present
@@ -174,12 +172,12 @@ TEST_CASE("SerialPort handle attaches a single device and round-trips", "[serial
     SerialPort port(socket);
     CHECK_FALSE(port.is_occupied());
 
-    LoopbackSerialEndpoint endpoint;
+    SerialTestDevice endpoint(/*echo=*/true);
     port.attach(endpoint);
     CHECK(port.is_occupied());
 
     // The serial port has a single connector: a second attach throws.
-    LoopbackSerialEndpoint other;
+    SerialTestDevice other;
     CHECK_THROWS(port.attach(other));
 
     // The attached device drives the round-trip through the socket/ULA.
@@ -198,33 +196,18 @@ TEST_CASE("SerialPort handle attaches a single device and round-trips", "[serial
 }
 
 // =============================================================================
-// TX back-pressure (/CTS) and bounded queues
+// TX back-pressure (/CTS)
 // =============================================================================
 
-TEST_CASE("ScriptableSerialEndpoint bounds tx and signals back-pressure",
-          "[serial][backpressure]") {
-    ScriptableSerialEndpoint ep;
-    CHECK(ep.accepts_more());
-
-    for (size_t i = 0; i < ScriptableSerialEndpoint::kTxBackPressure; ++i) {
-        ep.add_byte(0x41);
-    }
-    CHECK_FALSE(ep.accepts_more());  // at the back-pressure mark -> /CTS
-
-    // Beyond the hard cap, bytes are dropped (a real ACIA loses data too) -- the
-    // queue never grows without bound.
-    for (size_t i = 0; i < 1000; ++i) ep.add_byte(0x42);
-    CHECK(ep.tx_pending() <= ScriptableSerialEndpoint::kTxHardCap);
-    CHECK(ep.tx_dropped() > 0);
-
-    ep.drain();  // client collects everything
-    CHECK(ep.accepts_more());  // back-pressure released
-}
-
+// The ULA drives the ACIA's /CTS input from the device's accepts_more() each TX
+// bit period: when the device stops accepting, /CTS is asserted, TDRE reads 0,
+// and the guest's transmit loop busy-waits until the device is ready again. (The
+// per-device bounding that backs accepts_more lives with each device and is
+// tested there.)
 TEST_CASE("SerialSocket drives /CTS from device back-pressure", "[serial][socket]") {
     SerialSocket socket;
-    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
-    socket.set_device(endpoint.get());
+    SerialTestDevice device;
+    socket.set_device(&device);
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);
 
@@ -236,17 +219,13 @@ TEST_CASE("SerialSocket drives /CTS from device back-pressure", "[serial][socket
     CHECK_FALSE(socket.acia().not_cts());                 // clear to send initially
     CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) != 0);  // TDRE available
 
-    // Fill the device's tx queue (client not draining) past the mark.
-    for (size_t i = 0; i < ScriptableSerialEndpoint::kTxBackPressure; ++i) {
-        endpoint->add_byte(0);
-    }
-    run_a_tx_bit_period();  // pump_transmit re-evaluates /CTS
+    device.set_accepts_more(false);                       // device back-pressures
+    run_a_tx_bit_period();                                // pump_transmit re-evaluates /CTS
     CHECK(socket.acia().not_cts());                       // /CTS asserted
     CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) == 0);  // TDRE masked -> guest stalls
 
-    // Client drains; /CTS releases and TDRE returns.
-    endpoint->drain();
+    device.set_accepts_more(true);                        // device ready again
     run_a_tx_bit_period();
-    CHECK_FALSE(socket.acia().not_cts());
-    CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) != 0);
+    CHECK_FALSE(socket.acia().not_cts());                 // /CTS released
+    CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) != 0);  // TDRE returns
 }

@@ -328,7 +328,11 @@ catch_discover_tests(test_serial_socket)
 # HostSerialEndpoint bridged through the SerialSocket to a PosixSerialPort).
 if(NOT WIN32)
     add_executable(test_serial_pty test_serial_pty.cpp)
-    target_link_libraries(test_serial_pty PRIVATE beebium_core Catch2::Catch2WithMain)
+    target_include_directories(test_serial_pty PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+    )
+    target_link_libraries(test_serial_pty PRIVATE
+        beebium_ext_host_serial Catch2::Catch2WithMain)
     catch_discover_tests(test_serial_pty)
 endif()
 

@@ -13,8 +13,9 @@
 #ifndef BEEBIUM_EXT_RPC_SERIAL_EXTENSION_HPP
 #define BEEBIUM_EXT_RPC_SERIAL_EXTENSION_HPP
 
+#include "RpcSerialEndpoint.hpp"
+
 #include <beebium/extension/PeripheralExtension.hpp>
-#include <beebium/serial/SerialDevice.hpp>
 
 #include <memory>
 #include <span>
@@ -32,7 +33,7 @@ class RpcSerialServiceImpl;  // forward; defined when the service layer is built
 // Built-in PeripheralExtension: a client-driven serial peer. The RPC client is
 // the device on the far end of the BBC serial wire -- it injects bytes for the
 // BBC to receive and collects bytes the BBC transmits, via the RpcSerial gRPC
-// service. The extension owns a ScriptableSerialEndpoint and attaches it to the
+// service. The extension owns an RpcSerialEndpoint and attaches it to the
 // serial port via the SerialPort handle.
 //
 // CLI: --rpc-serial (no parameters).
@@ -48,7 +49,7 @@ public:
     std::vector<grpc::Service*> grpc_services() override;
 
 private:
-    ScriptableSerialEndpoint endpoint_;
+    RpcSerialEndpoint endpoint_;
 #ifdef BEEBIUM_BUILD_SERVICE
     std::unique_ptr<RpcSerialServiceImpl> service_;  // lazily constructed
 #endif
