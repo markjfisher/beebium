@@ -14,7 +14,7 @@
 
 #include "HostSerialExtension.hpp"
 
-#include <beebium/serial/EnumeratePorts.hpp>
+#include <beebium/serial/SerialPortPickerControl.hpp>
 
 #include "extension_ui.pb.h"
 
@@ -85,33 +85,11 @@ void HostSerialUi::build_view(View* out) const {
         editor->set_id("device_editor");
         auto* editor_group = editor->mutable_group();
 
-        // Serial port: a dropdown (EditableChoice) of the discovered ports, or a
-        // plain text field when none are found -- an empty combobox reads oddly,
-        // and the device you want then (e.g. a socat pty) is one you type anyway.
-        // handle_event reads the same string value from either control type.
-        {
-            auto ports = serial::enumerate_ports();
-            auto* c = editor_group->add_controls();
-            c->set_id(FIELD_PATH);
-            if (ports.empty()) {
-                auto* ti = c->mutable_text_input();
-                ti->set_label("Serial port");
-                ti->set_value(snap.device_path);
-                ti->set_placeholder(snap.device_path.empty()
-                                        ? std::string("/dev/cu.usbserial... (none detected)")
-                                        : snap.device_path);
-            } else {
-                auto* ec = c->mutable_editable_choice();
-                ec->set_label("Serial port");
-                ec->set_value(snap.device_path);
-                ec->set_placeholder(snap.device_path.empty()
-                                        ? std::string("/dev/cu.usbserial...")
-                                        : snap.device_path);
-                for (auto& port : ports) {
-                    *ec->add_options() = std::move(port);
-                }
-            }
-        }
+        // Serial port: a dropdown of discovered ports, or a plain field to type
+        // a path when none are found (shared helper).
+        serial::build_port_picker_control(editor_group->add_controls(), FIELD_PATH,
+                                          "Serial port", snap.device_path,
+                                          "/dev/cu.usbserial...");
 
         // Baud: an EditableChoice rendered as a dropdown of standard rates,
         // carrying the chosen rate as a string (single source of truth on
