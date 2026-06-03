@@ -1328,6 +1328,9 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
         beebium_ext_aun
+        beebium_ext_host_serial
+        beebium_ext_loopback_serial
+        beebium_ext_rpc_serial
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain
@@ -1348,6 +1351,9 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
         beebium_ext_aun
+        beebium_ext_host_serial
+        beebium_ext_loopback_serial
+        beebium_ext_rpc_serial
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain

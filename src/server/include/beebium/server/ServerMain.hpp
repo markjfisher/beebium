@@ -363,11 +363,6 @@ struct ServerConfig {
     std::array<std::string, 2> floppy_filepaths;
     std::string fdc_type;
 
-    // Serial port host transport (--serial). Empty = leave the default
-    // (scriptable) endpoint in place. Forms: "pty", "pty:/symlink/path",
-    // "device:/dev/ttyX", "device:/dev/ttyX:19200", "loopback", "none".
-    std::string serial_spec;
-
     // Econet configuration
     int station_number = -1;                          // -1 = Econet not fitted
     // Both AUN (built-in) and Piconet (plugin) are selected via the
@@ -468,11 +463,6 @@ void print_usage(const char* program_name) {
         std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n";
     }
 
-    std::cerr << "  --serial <spec>          Serial port host transport. spec is one of:\n"
-              << "                             pty                 create a pty, print the slave path\n"
-              << "                             pty:<symlink>       create a pty + stable symlink\n"
-              << "                             device:<path>[:baud] open an existing serial device\n"
-              << "                             loopback | scriptable | none\n";
 
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
@@ -931,8 +921,6 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: --station must be 1-254\n";
                 return ExitCode::USAGE;
             }
-        } else if (arg == "--serial" && i + 1 < argc) {
-            config.serial_spec = argv[++i];
         } else if (arg == "--provenance-type" && i + 1 < argc) {
             config.provenance_type = argv[++i];
         } else if (arg == "--provenance-uuid" && i + 1 < argc) {
@@ -1937,61 +1925,6 @@ public:
             server.start(std::move(provenance), std::move(identity),
                         config.advertise, shutdown_policy_config, std::move(shutdown_callback),
                         extension_services);
-
-            // Configure the serial host transport if requested via --serial.
-            // The SerialService is constructed during start(), so this runs
-            // after server.start() and reuses the same code path as the
-            // SetEndpointMode RPC. The transport is entirely generic: it
-            // shuttles raw bytes between the ACIA and a PTY/device. Any ROM
-            // loaded via --sideways that drives the serial port talks to it
-            // without the emulator knowing anything about the protocol.
-            if (!config.serial_spec.empty()) {
-                if (auto* serial_svc = server.serial_service()) {
-                    beebium::SerialEndpointMode mode = beebium::SERIAL_ENDPOINT_SCRIPTABLE;
-                    std::string spec = config.serial_spec;
-                    std::string path;
-                    int baud = 0;
-                    if (spec == "none") {
-                        mode = beebium::SERIAL_ENDPOINT_NONE;
-                    } else if (spec == "loopback") {
-                        mode = beebium::SERIAL_ENDPOINT_LOOPBACK;
-                    } else if (spec == "scriptable") {
-                        mode = beebium::SERIAL_ENDPOINT_SCRIPTABLE;
-                    } else if (spec == "pty" || spec.rfind("pty:", 0) == 0) {
-                        mode = beebium::SERIAL_ENDPOINT_PTY;
-                        if (spec.size() > 4) path = spec.substr(4);  // symlink path
-                    } else if (spec.rfind("device:", 0) == 0) {
-                        mode = beebium::SERIAL_ENDPOINT_DEVICE;
-                        std::string rest = spec.substr(7);
-                        // Optional trailing ":<baud>". Split on the last ':'.
-                        auto colon = rest.rfind(':');
-                        if (colon != std::string::npos) {
-                            std::string tail = rest.substr(colon + 1);
-                            bool numeric = !tail.empty() &&
-                                tail.find_first_not_of("0123456789") == std::string::npos;
-                            if (numeric) {
-                                baud = std::atoi(tail.c_str());
-                                rest = rest.substr(0, colon);
-                            }
-                        }
-                        path = rest;
-                    } else {
-                        std::cerr << "Error: unrecognised --serial spec '" << spec
-                                  << "' (expected pty | pty:PATH | device:PATH[:BAUD] | "
-                                     "loopback | scriptable | none)\n";
-                        return ExitCode::USAGE;
-                    }
-
-                    std::string err, advertised;
-                    if (!serial_svc->apply_endpoint_mode(mode, path, baud, err, advertised)) {
-                        std::cerr << "Error: --serial: " << err << "\n";
-                        return ExitCode::USAGE;
-                    }
-                    if (!advertised.empty()) {
-                        std::cout << "Serial endpoint ready at " << advertised << std::endl;
-                    }
-                }
-            }
 
             // Print actual bound port (important when port 0 was requested for dynamic allocation)
             // Flush immediately so clients parsing stdout can detect the port before we block

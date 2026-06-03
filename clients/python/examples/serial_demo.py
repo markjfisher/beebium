@@ -1,24 +1,20 @@
 """Demonstrate the BBC Micro serial port (MC6850 ACIA + Serial ULA).
 
-  Exercises the serial port end to end through the SerialService, with no PTY
-  or real FujiNet involved:
+  Drives the serial port end to end via the rpc-serial extension, where the
+  script is the device on the far end of the wire (no PTY or real FujiNet):
 
     1. Prints a live status snapshot of the ACIA and Serial ULA registers.
-    2. Loopback: transmits a string from the BBC and shows it echo back into
-       the receiver.
-    3. Scriptable: injects bytes for the BBC to receive, and collects bytes the
-       BBC transmits -- the same seam a real fujinet-nio PTY bridge will use.
+    2. device -> Beeb: injects bytes for the BBC to receive.
+    3. Beeb -> device: the BBC transmits and the script collects the bytes.
 
-  This is the serial analogue of the Econet TestBackend: a deterministic,
-  in-process transport for demos and tests.
-
-  Two ways to run it:
+  The server must own the serial port with the rpc-serial extension
+  (--rpc-serial). Two ways to run it:
 
     # (a) Attach to an emulator you started yourself:
-    beebium-model-b --mos roms/acorn-mos_1_20.rom --port 50071
+    beebium-model-b start --mos roms/acorn-mos_1_20.rom --rpc-serial --port 50071
     python examples/serial_demo.py --port 50071
 
-    # (b) Let the demo launch (and stop) its own server:
+    # (b) Let the demo launch (and stop) its own --rpc-serial server:
     python examples/serial_demo.py --server ../../build/src/server/beebium-model-b \
                                    --mos ../../roms/acorn-mos_1_20.rom
 
@@ -32,7 +28,6 @@ import argparse
 from pathlib import Path
 
 from beebium.client import Beebium
-from beebium.serial import EndpointMode
 
 # MC6850 control: /16 divide, 8N1, /RTS low, no TX IRQ -- the MOS serial config.
 ACIA_8N1 = 0x15
@@ -77,21 +72,6 @@ def read_byte(bbc) -> int | None:
     return bbc.memory.address.bus[ACIA_DATA]
 
 
-def exchange(bbc, data: bytes) -> bytes:
-    """Send each byte and read the byte that comes back, one at a time.
-
-    Reading per byte avoids ACIA receiver overrun: the chip has a single
-    Receive Data Register, so a fast burst would otherwise drop characters.
-    """
-    out = bytearray()
-    for byte in data:
-        transmit_byte(bbc, byte)
-        received = read_byte(bbc)
-        if received is not None:
-            out.append(received)
-    return out
-
-
 def receive_only(bbc, count: int) -> bytes:
     """Read up to `count` bytes the BBC receives (one RDRF poll per byte)."""
     out = bytearray()
@@ -106,48 +86,37 @@ def receive_only(bbc, count: int) -> bytes:
 def print_status(bbc):
     s = bbc.serial.status
     print("  Serial status:")
-    print(f"    endpoint           : {s.endpoint_mode.name}")
     print(f"    ACIA control/status: ${s.acia_control:02X} / ${s.acia_status:02X}")
     print(f"    TDRE={s.tdre}  RDRF={s.rdrf}  /DCD={s.not_dcd}  IRQ={s.irq_pending}")
     print(f"    ULA control        : ${s.ula_control:02X}  RS423={s.rs423_selected}  motor={s.motor_on}")
     print(f"    baud (tx/rx)       : {s.tx_baud} / {s.rx_baud}")
-    print(f"    pending (tx/rx)    : {s.tx_pending} / {s.rx_pending}")
 
 
 def run_demo(bbc):
-    """Run the three-part serial demo against a connected Beebium instance."""
+    """Run the rpc-serial demo against a connected Beebium instance."""
     # Work with the machine stopped so we control exactly how many cycles run.
     bbc.debugger.stop()
+    program_serial(bbc)
 
     print("=== 1. Status snapshot ===")
     print_status(bbc)
 
-    print("\n=== 2. Loopback echo ===")
-    bbc.serial.set_endpoint_mode(EndpointMode.LOOPBACK)
-    program_serial(bbc)
-    message = b"HELLO"
-    print(f"  Transmitting {message!r} with TX wired back to RX ...")
-    echoed = exchange(bbc, message)
-    print(f"  Received back: {bytes(echoed)!r}")
-
-    print("\n=== 3. Scriptable transport ===")
-    bbc.serial.set_endpoint_mode(EndpointMode.SCRIPTABLE)
-    program_serial(bbc)
-
     # device -> Beeb: inject bytes from the script; the BBC receives them.
-    inbound = b"ExternalSerialService"
+    print("\n=== 2. device -> BBC (rpc-serial inject) ===")
+    inbound = b"ExternalDevice"
     print(f"  Injecting {inbound!r} for the BBC to receive ...")
-    bbc.serial.send_to_device(inbound)
+    bbc.rpc_serial.send(inbound)
     received_by_beeb = receive_only(bbc, len(inbound))
     print(f"  BBC received: {bytes(received_by_beeb)!r}")
 
     # Beeb -> device: the BBC transmits; the script collects the bytes.
+    print("\n=== 3. BBC -> device (rpc-serial collect) ===")
     outbound = b"BBC_Acorn"
     print(f"  BBC transmitting {outbound!r} ...")
     for byte in outbound:
         transmit_byte(bbc, byte)
     bbc.debugger.step_cycles(2000)  # let the last character finish shifting out
-    collected = bbc.serial.receive_from_device()
+    collected = bbc.rpc_serial.receive()
     print(f"  Script collected: {bytes(collected)!r}")
 
     print("\nDone. Resuming the machine.")
@@ -163,13 +132,13 @@ def _default_mos() -> Path | None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="BBC serial port (MC6850 ACIA + Serial ULA) demo.",
+        description="BBC serial port (MC6850 ACIA + Serial ULA) demo via rpc-serial.",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=None,
-        help="Connect to an already-running server on this gRPC port. "
+        help="Connect to an already-running --rpc-serial server on this gRPC port. "
         "If omitted, the demo launches its own server.",
     )
     parser.add_argument(
@@ -195,7 +164,7 @@ def main():
     args = parser.parse_args()
 
     if args.port is not None:
-        # Attach to a server the user started themselves.
+        # Attach to a server the user started themselves (with --rpc-serial).
         with Beebium.connect(target=f"localhost:{args.port}") as bbc:
             run_demo(bbc)
         return
@@ -213,6 +182,7 @@ def main():
         mos_filepath=mos,
         basic_filepath=args.basic,
         server_filepath=args.server,
+        extra_args=["--rpc-serial"],
     ) as bbc:
         run_demo(bbc)
 
