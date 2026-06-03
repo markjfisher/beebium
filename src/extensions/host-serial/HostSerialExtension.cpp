@@ -92,7 +92,7 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
 
 void HostSerialExtension::shutdown() {
     // Drops the endpoint, which stops and joins the reader thread. The machine
-    // is being torn down, so the ULA is no longer ticking through the handle.
+    // is being torn down, so the ULA is not ticking through the handle.
     endpoint_.reset();
 }
 
