@@ -29,7 +29,7 @@
 #include "HostSerialExtension.hpp"
 #include "RpcSerialExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
-#include "SerialLoopbackExtension.hpp"
+#include "LoopbackSerialExtension.hpp"
 #include "beebium/extension/Extension.hpp"
 #include "beebium/extension/ExtensionManifest.hpp"
 
@@ -144,15 +144,15 @@ inline std::vector<Entry> make_entries() {
     // reason as the other serial extensions. Zero config.
     {
         ExtensionManifest m;
-        m.name = "serial-loopback";
-        m.display_name = "Serial Loopback";
+        m.name = "loopback-serial";
+        m.display_name = "Loopback Serial Plug";
         m.description =
             "Echo bytes the BBC transmits straight back to its serial receiver";
-        m.cli_name = "serial-loopback";
+        m.cli_name = "loopback-serial";
         m.extension_kind = "peripheral";
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
-                              new SerialLoopbackExtension()); }});
+                              new LoopbackSerialExtension()); }});
     }
 
     // rpc-serial: client-driven serial peer (the RPC client is the device).

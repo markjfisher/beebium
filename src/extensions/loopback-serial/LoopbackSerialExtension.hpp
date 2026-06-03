@@ -10,8 +10,8 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef BEEBIUM_EXT_SERIAL_LOOPBACK_EXTENSION_HPP
-#define BEEBIUM_EXT_SERIAL_LOOPBACK_EXTENSION_HPP
+#ifndef BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
+#define BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
 
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/serial/SerialDevice.hpp>
@@ -28,11 +28,11 @@ namespace beebium {
 // connector, and a zero-config "does my serial path work at all" diagnostic.
 //
 // Unlike rpc-serial it is NOT driven by a client (no RPC); it is a self-
-// contained TX->RX echo. CLI: --serial-loopback (no parameters).
-class SerialLoopbackExtension : public PeripheralExtension {
+// contained TX->RX echo. CLI: --loopback-serial (no parameters).
+class LoopbackSerialExtension : public PeripheralExtension {
 public:
-    SerialLoopbackExtension() = default;
-    ~SerialLoopbackExtension() override = default;
+    LoopbackSerialExtension() = default;
+    ~LoopbackSerialExtension() override = default;
 
     std::span<const std::string_view> attaches_to() const override;
     std::span<const std::string_view> provides() const override;
@@ -45,4 +45,4 @@ private:
 
 }  // namespace beebium
 
-#endif  // BEEBIUM_EXT_SERIAL_LOOPBACK_EXTENSION_HPP
+#endif  // BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP

@@ -3,14 +3,14 @@
 # for the same CLI-test ergonomics reason as the other serial extensions (see
 # BuiltinExtensions.hpp). Zero config, no proto/gRPC service.
 
-add_library(beebium_ext_serial_loopback STATIC
-    SerialLoopbackExtension.cpp
+add_library(beebium_ext_loopback_serial STATIC
+    LoopbackSerialExtension.cpp
 )
 
-target_include_directories(beebium_ext_serial_loopback
+target_include_directories(beebium_ext_loopback_serial
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(beebium_ext_serial_loopback
+target_link_libraries(beebium_ext_loopback_serial
     PUBLIC beebium_core
 )
