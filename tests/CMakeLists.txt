@@ -917,6 +917,19 @@ target_compile_definitions(test_tube_extension PRIVATE
 )
 catch_discover_tests(test_tube_extension)
 
+# Host-serial extension test (POSIX-only: exercises a real pty).
+if(NOT WIN32)
+    add_executable(test_host_serial_extension test_host_serial_extension.cpp)
+    target_include_directories(test_host_serial_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+    )
+    target_link_libraries(test_host_serial_extension PRIVATE
+        beebium_ext_host_serial
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_host_serial_extension)
+endif()
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)

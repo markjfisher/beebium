@@ -26,6 +26,7 @@
 // see the acorn-65c02-coprocessor notes below.
 
 #include "AunEconetTransportExtension.hpp"
+#include "HostSerialExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
 #include "beebium/extension/Extension.hpp"
 #include "beebium/extension/ExtensionManifest.hpp"
@@ -103,6 +104,38 @@ inline std::vector<Entry> make_entries() {
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new AunEconetTransportExtension()); }});
+    }
+
+    // Host serial bridge.
+    //
+    // Built-in for the same CLI-test ergonomics reason as AUN: --host-serial
+    // must be recognised without a plugin directory. Attaches a HostSerial-
+    // Endpoint to the serial port; when it claims the port, SerialService sees
+    // is_occupied() and yields (reports status only).
+    {
+        ExtensionManifest m;
+        m.name = "host-serial";
+        m.display_name = "Host Serial Bridge";
+        m.description =
+            "Bridge the BBC serial port (RS423) to a host PTY or serial device";
+        m.cli_name = "host-serial";
+        m.extension_kind = "peripheral";
+        m.parameters.push_back(
+            {"mode", "string",
+             "'pty' (create a pseudo-terminal) or 'device' (open an existing "
+             "serial/pty device path)",
+             -1, false, false, "pty"});
+        m.parameters.push_back(
+            {"path", "string",
+             "pty: optional stable symlink to the pty slave; "
+             "device: the serial device path to open",
+             -1, false, false, ""});
+        m.parameters.push_back(
+            {"baud", "integer", "device line speed (ignored for pty)",
+             -1, false, false, "19200"});
+        result.push_back({std::move(m),
+                          [] { return std::unique_ptr<Extension>(
+                              new HostSerialExtension()); }});
     }
 
     return result;
