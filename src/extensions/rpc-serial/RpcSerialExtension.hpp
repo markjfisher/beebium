@@ -49,7 +49,7 @@ public:
     std::vector<grpc::Service*> grpc_services() override;
 
 private:
-    RpcSerialEndpoint endpoint_;
+    std::unique_ptr<RpcSerialEndpoint> endpoint_;  // constructed in init() from config
 #ifdef BEEBIUM_BUILD_SERVICE
     std::unique_ptr<RpcSerialServiceImpl> service_;  // lazily constructed
 #endif

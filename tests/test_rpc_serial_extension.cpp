@@ -114,7 +114,7 @@ TEST_CASE("RpcSerialEndpoint bounds tx and signals back-pressure",
     RpcSerialEndpoint endpoint;
     CHECK(endpoint.accepts_more());
 
-    for (std::size_t i = 0; i < RpcSerialEndpoint::kTxBackPressure; ++i) {
+    for (std::size_t i = 0; i < endpoint.tx_back_pressure(); ++i) {
         endpoint.add_byte(0x41);
     }
     CHECK_FALSE(endpoint.accepts_more());  // at the back-pressure mark -> /CTS
@@ -122,7 +122,7 @@ TEST_CASE("RpcSerialEndpoint bounds tx and signals back-pressure",
     // Beyond the hard cap, bytes are dropped (a real ACIA loses data too) -- the
     // queue never grows without bound.
     for (std::size_t i = 0; i < 1000; ++i) endpoint.add_byte(0x42);
-    CHECK(endpoint.tx_pending() <= RpcSerialEndpoint::kTxHardCap);
+    CHECK(endpoint.tx_pending() <= endpoint.tx_hard_cap());
     CHECK(endpoint.tx_dropped() > 0);
 
     endpoint.drain();  // client collects everything

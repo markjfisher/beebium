@@ -69,8 +69,7 @@ TEST_CASE("HostSerialEndpoint back-pressures a stuck peer without blocking",
     // Emulation-thread role: transmit far more than the queue can hold. The
     // writer thread can never drain it (stuck peer), but add_byte must return
     // immediately every time -- it never blocks on the OS write.
-    const std::size_t flood =
-        serial::HostSerialEndpoint::kTxHardCap + 4096;
+    const std::size_t flood = endpoint.tx_hard_cap() + 4096;
     for (std::size_t i = 0; i < flood; ++i) {
         endpoint.add_byte(0x55);
     }
@@ -78,6 +77,6 @@ TEST_CASE("HostSerialEndpoint back-pressures a stuck peer without blocking",
     // The queue is bounded and back-pressure is asserted, so the ULA would hold
     // /CTS and stall the guest -- not the host.
     CHECK_FALSE(endpoint.accepts_more());
-    CHECK(endpoint.tx_pending() <= serial::HostSerialEndpoint::kTxHardCap);
+    CHECK(endpoint.tx_pending() <= endpoint.tx_hard_cap());
     CHECK(endpoint.tx_dropped() > 0);
 }

@@ -22,6 +22,7 @@
 #include <beebium/serial/Win32SerialPort.hpp>
 #endif
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -86,7 +87,15 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
                                  + "' (expected 'pty' or 'device')");
     }
 
-    endpoint_ = std::make_unique<serial::HostSerialEndpoint>(std::move(port));
+    std::size_t tx_buffer = serial::kDefaultTxBackPressure;
+    if (auto value = config_value("tx_buffer"); value && !value->empty()) {
+        const long parsed = std::atol(std::string(*value).c_str());
+        if (parsed > 0) {
+            tx_buffer = static_cast<std::size_t>(parsed);
+        }
+    }
+
+    endpoint_ = std::make_unique<serial::HostSerialEndpoint>(std::move(port), tx_buffer);
     ctx.get<SerialPort>().attach(*endpoint_);
 }
 
