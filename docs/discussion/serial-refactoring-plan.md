@@ -400,12 +400,26 @@ up via the SAME mechanism as every other extension -- no client-side hardcoding.
 
 16. Make the serial transport presettable by folding it into extension config in
     presets ([[project_preset_sideways_config]] is the precedent).
-17. Consolidate `--serial` spec parsing into one place with a shell-safe
-    separator (the AUN `@` precedent, [[feedback_is_list_inner_separator]]);
-    remove the duplicated string/enum parsing across `ServerMain` and the
-    service.
-18. Update `docs/serial-acia.md` to the extension model and refresh CLI docs.
-    Tests: a preset round-trip test that includes a serial transport. Triad.
+17. DONE (mostly already accomplished by the 11c decomposition). There is no
+    `--serial` flag and no bespoke serial parser any more: all three serial
+    extensions (host-serial / rpc-serial / loopback-serial) are configured purely
+    through the single generic `parse_extension_args`
+    (`--<name> key=value:key=value...`), reading values via `config_value` only --
+    no parsing code in the extension dirs, and no `ServerMain`<->`SerialService`
+    duplication (the service is status-only). Cleanup done: removed the dead
+    `Server::serial_service()` accessor (a `--serial`-wiring vestige; commit
+    24f9d0d). Residual NON-issue, noted not fixed: `split_colon_args` protects
+    `://` but still splits a bare `:` inside a value, so a `path=` with a colon
+    (a Windows drive path, or a future `rfc2217://host:port`) would break -- no
+    current case hits it (POSIX `/dev/...`, Windows `COM3` have none), and
+    rfc2217 should use separate `host=`/`port=` params anyway.
+18. DONE (commit 24f9d0d): rewrote `docs/serial-acia.md` to the extension model
+    (seam + SerialPort handle in core; the three extensions + their CLI syntaxes;
+    /CTS flow control + configurable tx_buffer; status-only SerialService with
+    WatchSerialStatus + rpc-serial's own RpcSerial service; Python/TS clients +
+    generic macOS sidebar UI; current tests). Config is also self-documenting via
+    `list-extensions` / `describe-extension <name>`.
+    Remaining for Phase 5: step 16 (presets) + a preset round-trip test. Triad.
 
 ## Phase 6 -- Cassette seam (DEFERRED to an explicit later follow-up)
 
