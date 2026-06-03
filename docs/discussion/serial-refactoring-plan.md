@@ -398,8 +398,17 @@ up via the SAME mechanism as every other extension -- no client-side hardcoding.
 
 ## Phase 5 -- Presets, CLI tidy, docs
 
-16. Make the serial transport presettable by folding it into extension config in
-    presets ([[project_preset_sideways_config]] is the precedent).
+16. DONE (commits 7f721eb + 16911c4; macOS + Linux + Windows). Loading extensions
+    from a preset already worked via the generic "extensions" array; the gap was
+    that `create-preset` could only capture --fdc/--sideways. It now recognises
+    the same `--<name> [k=v:k=v]` flags as `start` (extension resolver +
+    parse_extension_args) and emits them into the preset's `extensions` array,
+    values typed per the manifest schema. Round-trip test in
+    test_preset_subcommands (create-preset --rpc-serial -> PresetLoader). Doc:
+    serial-acia.md preset section. (A Windows windows.h min/max macro collision in
+    CliArgParsers.hpp, exposed by the test's new include chain, fixed by
+    parenthesising numeric_limits.) Mutual exclusion: only one device owns the
+    serial port; a preset + conflicting CLI serial device is rejected at attach.
 17. DONE (mostly already accomplished by the 11c decomposition). There is no
     `--serial` flag and no bespoke serial parser any more: all three serial
     extensions (host-serial / rpc-serial / loopback-serial) are configured purely
