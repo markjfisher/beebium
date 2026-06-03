@@ -117,9 +117,9 @@ inline std::vector<Entry> make_entries() {
     {
         ExtensionManifest m;
         m.name = "host-serial";
-        m.display_name = "Host Serial Bridge";
+        m.display_name = "Host Serial";
         m.description =
-            "Bridge the BBC serial port (RS423) to a host PTY or serial device";
+            "Connect the BBC serial port (RS423) to a host PTY or serial device";
         m.cli_name = "host-serial";
         m.extension_kind = "peripheral";
         m.parameters.push_back(
@@ -149,7 +149,7 @@ inline std::vector<Entry> make_entries() {
     {
         ExtensionManifest m;
         m.name = "loopback-serial";
-        m.display_name = "Loopback Serial Plug";
+        m.display_name = "Loopback Serial";
         m.description =
             "Echo bytes the BBC transmits straight back to its serial receiver";
         m.cli_name = "loopback-serial";
@@ -165,7 +165,7 @@ inline std::vector<Entry> make_entries() {
     {
         ExtensionManifest m;
         m.name = "rpc-serial";
-        m.display_name = "RPC Serial Peer";
+        m.display_name = "RPC Serial";
         m.description =
             "Client-driven serial peer: inject/collect bytes via the RpcSerial service";
         m.cli_name = "rpc-serial";
