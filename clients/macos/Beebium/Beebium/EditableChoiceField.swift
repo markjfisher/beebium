@@ -73,6 +73,13 @@ struct ComboBoxRepresentable: NSViewRepresentable {
         combo.delegate = context.coordinator
         combo.target = context.coordinator
         combo.action = #selector(Coordinator.commitFromAction(_:))
+        // Seed items and the initial text at creation. updateNSView keeps them
+        // in sync afterwards, but inside a popover (the ModalEditor editor tree)
+        // the first updateNSView can land too late to populate the visible
+        // field -- so an unseeded combobox opens blank. The standalone field
+        // works around this with an onAppear seed; doing it here fixes both.
+        combo.addItems(withObjectValues: options)
+        combo.stringValue = value
         return combo
     }
 
