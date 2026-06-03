@@ -14,6 +14,7 @@
 #pragma once
 
 #include <beebium/serial/HostSerialPort.hpp>
+#include <beebium/serial/SerialBufferLimits.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 
 #include <array>
@@ -53,17 +54,21 @@ namespace beebium::serial {
 // single-writer threading contract.
 class HostSerialEndpoint final : public beebium::SerialPortDevice {
 public:
-    // Transmit-queue bounds (bytes), mirroring RpcSerialEndpoint.
-    static constexpr std::size_t kTxBackPressure = 4096;            // assert /CTS at/above
-    static constexpr std::size_t kTxHardCap = kTxBackPressure + 64;  // absolute cap
-
-    explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port)
-        : port_(std::move(port)) {
+    // The TX back-pressure mark is configurable (the host-serial extension wires
+    // it from the tx_buffer parameter); the hard cap tracks it plus the margin.
+    explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port,
+                                std::size_t tx_back_pressure = kDefaultTxBackPressure)
+        : port_(std::move(port)),
+          tx_back_pressure_(tx_back_pressure),
+          tx_hard_cap_(tx_back_pressure + kTxHardCapMargin) {
         if (port_ && port_->is_open()) {
             reader_ = std::thread([this] { reader_loop(); });
             writer_ = std::thread([this] { writer_loop(); });
         }
     }
+
+    std::size_t tx_back_pressure() const { return tx_back_pressure_; }
+    std::size_t tx_hard_cap() const { return tx_hard_cap_; }
 
     ~HostSerialEndpoint() override {
         stop_.store(true, std::memory_order_release);
@@ -99,7 +104,7 @@ public:
     // Enqueue only; the writer thread does the OS write. Never blocks.
     void add_byte(uint8_t value) override {
         std::lock_guard<std::mutex> lock(tx_mutex_);
-        if (tx_.size() >= kTxHardCap) {
+        if (tx_.size() >= tx_hard_cap_) {
             // Writer can't keep up AND the guest is ignoring /CTS (TDRE): a real
             // ACIA would lose data here too. Account it; never grow without bound.
             ++tx_dropped_;
@@ -114,7 +119,7 @@ public:
     // thread drains it to the port.
     bool accepts_more() override {
         std::lock_guard<std::mutex> lock(tx_mutex_);
-        return tx_.size() < kTxBackPressure;
+        return tx_.size() < tx_back_pressure_;
     }
 
     // True while the underlying port is usable.
@@ -200,6 +205,8 @@ private:
     std::condition_variable tx_cv_;
     std::deque<std::uint8_t> tx_;  // Beeb -> device
     std::size_t tx_dropped_ = 0;
+    const std::size_t tx_back_pressure_;
+    const std::size_t tx_hard_cap_;
 };
 
 }  // namespace beebium::serial

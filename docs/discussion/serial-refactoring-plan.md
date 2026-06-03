@@ -229,6 +229,20 @@ members; tests keep locals).
     a tests/ SerialTestDevice fixture; ScriptableSerialEndpoint was renamed
     RpcSerialEndpoint (the old name described the mechanism, not the peer).
 
+    CONFIGURABLE TX BUFFER + END-TO-END TEST: the TX back-pressure mark is now
+    configurable per extension via `tx_buffer=N` (rpc-serial and host-serial CLI
+    params; default 4096 from one shared constant serial::kDefaultTxBackPressure,
+    no longer duplicated). This also enables a full-stack /CTS test driven by real
+    BBC BASIC (clients/python tests/test_serial_cts.py): BASIC routes output to
+    RS423 (*FX3,1) and transmits past a shrunk tx_buffer; with the rpc-serial
+    client refusing to drain, the device buffer fills, the ULA asserts /CTS, and
+    the MOS OSWRCH path blocks -- the guest stalls, the host stays live; draining
+    unblocks it. The test synchronises by FEEDBACK (run_until_or_timeout polling
+    the BASIC prompt / buffer fill / a zero-page completion sentinel), advancing
+    emulated time -- no wall-clock sleeps, so it is robust on slow CI. Fixed the
+    bit-rotted clients/python basic.py helper (memory.peek -> memory.address.peek)
+    as part of this (it was unused and broken against the current memory API).
+
 ## Phase 4 -- gRPC and clients aligned with conventions
 
 ### Decompose Mark's SerialService (the gRPC-level expression of Correction 2)

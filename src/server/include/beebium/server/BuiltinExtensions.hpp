@@ -135,6 +135,10 @@ inline std::vector<Entry> make_entries() {
         m.parameters.push_back(
             {"baud", "integer", "device line speed (ignored for pty)",
              -1, false, false, "19200"});
+        m.parameters.push_back(
+            {"tx_buffer", "integer",
+             "transmit buffer size in bytes; the BBC's /CTS asserts at/above it",
+             -1, false, false, "4096"});
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new HostSerialExtension()); }});
@@ -166,6 +170,10 @@ inline std::vector<Entry> make_entries() {
             "Client-driven serial peer: inject/collect bytes via the RpcSerial service";
         m.cli_name = "rpc-serial";
         m.extension_kind = "peripheral";
+        m.parameters.push_back(
+            {"tx_buffer", "integer",
+             "transmit buffer size in bytes; the BBC's /CTS asserts at/above it",
+             -1, false, false, "4096"});
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new RpcSerialExtension()); }});

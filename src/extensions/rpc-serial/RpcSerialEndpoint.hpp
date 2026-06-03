@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXT_RPC_SERIAL_ENDPOINT_HPP
 #define BEEBIUM_EXT_RPC_SERIAL_ENDPOINT_HPP
 
+#include <beebium/serial/SerialBufferLimits.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 
 #include <algorithm>
@@ -44,9 +45,16 @@ public:
     // Queue bounds keep an undraining/over-injecting client from growing memory
     // unboundedly or stalling the emulator. TX back-pressure is via /CTS (see
     // accepts_more); RX via the accepted count returned by inject().
-    static constexpr size_t kRxCapacity = 4096;      // device -> Beeb cap
-    static constexpr size_t kTxBackPressure = 4096;  // assert /CTS at/above
-    static constexpr size_t kTxHardCap = kTxBackPressure + 64;  // absolute TX cap
+    static constexpr size_t kRxCapacity = serial::kDefaultRxCapacity;  // device -> Beeb cap
+
+    // The TX back-pressure mark is configurable (the rpc-serial extension wires
+    // it from the tx_buffer parameter); the hard cap tracks it plus the margin.
+    explicit RpcSerialEndpoint(size_t tx_back_pressure = serial::kDefaultTxBackPressure)
+        : tx_back_pressure_(tx_back_pressure),
+          tx_hard_cap_(tx_back_pressure + serial::kTxHardCapMargin) {}
+
+    size_t tx_back_pressure() const { return tx_back_pressure_; }
+    size_t tx_hard_cap() const { return tx_hard_cap_; }
 
     // --- SerialDataSource (device -> Beeb), called on the emulation thread ---
     bool has_data() override {
@@ -64,7 +72,7 @@ public:
     // --- SerialDataSink (Beeb -> device), called on the emulation thread ---
     void add_byte(uint8_t value) override {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (tx_.size() >= kTxHardCap) {
+        if (tx_.size() >= tx_hard_cap_) {
             // Client not draining AND guest ignoring /CTS (TDRE): a real ACIA
             // would lose data here too. Account it; never grow without bound.
             ++tx_dropped_;
@@ -77,7 +85,7 @@ public:
     // mark, so the guest's transmit loop stalls until the client drains.
     bool accepts_more() override {
         std::lock_guard<std::mutex> lock(mutex_);
-        return tx_.size() < kTxBackPressure;
+        return tx_.size() < tx_back_pressure_;
     }
 
     // --- Client side (gRPC thread) ---
@@ -134,6 +142,8 @@ private:
     std::deque<uint8_t> rx_;  // device -> Beeb
     std::deque<uint8_t> tx_;  // Beeb -> device
     size_t tx_dropped_ = 0;
+    const size_t tx_back_pressure_;
+    const size_t tx_hard_cap_;
 };
 
 }  // namespace beebium
