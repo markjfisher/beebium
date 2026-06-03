@@ -35,14 +35,23 @@ TEST_CASE("HostSerialUi build_view exposes a device editor and a status indicato
 
     REQUIRE(view.root().control_case() == Control::kGroup);
     const auto& group = view.root().group();
-    REQUIRE(group.controls_size() == 2);  // device editor + connection indicator
+    // "Device" heading, path editor, baud line, and -- because no endpoint is
+    // attached -- a connection indicator surfacing the error.
+    REQUIRE(group.controls_size() == 4);
 
-    // Device ModalEditor: always editable; anchor shows the (unset) device.
-    const auto& device = group.controls(0);
+    // "Device" heading.
+    const auto& heading = group.controls(0);
+    CHECK(heading.id() == "device_heading");
+    CHECK(heading.control_case() == Control::kLabel);
+    CHECK(heading.label().text() == "Device");
+
+    // Device ModalEditor: always editable; anchor shows the path on its own
+    // line (no "Device:" prefix, no "@ baud" suffix -- those moved out).
+    const auto& device = group.controls(1);
     REQUIRE(device.id() == "device");
     REQUIRE(device.control_case() == Control::kModalEditor);
     CHECK(device.modal_editor().editable());
-    CHECK(device.modal_editor().anchor().label().text().rfind("Device: ", 0) == 0);
+    CHECK(device.modal_editor().anchor().label().text() == "(unset)");
 
     // Editor body: a path EditableChoice and a baud EditableChoice.
     const auto& editor = device.modal_editor().editor();
@@ -64,8 +73,15 @@ TEST_CASE("HostSerialUi build_view exposes a device editor and a status indicato
     }
     CHECK(has_19200);
 
-    // Status indicator: no endpoint -> disconnected/error.
-    const auto& connected = group.controls(1);
+    // Baud shown on its own line below the path.
+    const auto& baud_line = group.controls(2);
+    CHECK(baud_line.id() == "baud_display");
+    CHECK(baud_line.control_case() == Control::kLabel);
+    CHECK(baud_line.label().text().find("baud") != std::string::npos);
+
+    // Status indicator: no endpoint -> disconnected/error. Only present in the
+    // not-open state; when the device is open the panel omits it entirely.
+    const auto& connected = group.controls(3);
     REQUIRE(connected.id() == "connected");
     REQUIRE(connected.control_case() == Control::kIndicator);
     CHECK(connected.indicator().state() == Indicator_State_ERROR);

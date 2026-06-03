@@ -52,7 +52,8 @@ void HostSerialUi::build_view(View* out) const {
     auto* root = out->mutable_root();
     root->set_id("root");
     auto* group = root->mutable_group();
-    group->set_label("Host Serial");
+    // No group label: the sidebar already names the extension ("Host Serial"),
+    // so a second "Host Serial" heading inside the panel only repeats it.
 
     // build_view runs on the gRPC SubscribeView thread; the endpoint's device
     // state is mutated on the emulation thread. Read one atomic snapshot.
@@ -61,9 +62,17 @@ void HostSerialUi::build_view(View* out) const {
         snap = endpoint->ui_snapshot();
     }
 
-    // Device editor: anchor Label showing path @ baud; editor body is a Group
-    // with an EditableChoice for the port (enumerated + custom) and one for the
-    // baud (standard rates). Always editable -- re-point any time.
+    // "Device" heading for the path/baud lines below it.
+    {
+        auto* control = group->add_controls();
+        control->set_id("device_heading");
+        control->mutable_label()->set_text("Device");
+    }
+
+    // The path on its own line, as the editable anchor: click it to re-point
+    // (the popover carries both the port picker and the baud rate). The baud
+    // shows on its own line below; splitting them off the anchor stops the long
+    // "path @ baud" string from wrapping awkwardly in a narrow sidebar.
     {
         auto* control = group->add_controls();
         control->set_id(CONTROL_DEVICE);
@@ -75,10 +84,8 @@ void HostSerialUi::build_view(View* out) const {
         {
             auto* anchor = modal->mutable_anchor();
             anchor->set_id(CONTROL_DEVICE);
-            std::string text = "Device: ";
-            text += snap.device_path.empty() ? std::string("(unset)") : snap.device_path;
-            text += "  @ " + std::to_string(snap.baud) + " baud";
-            anchor->mutable_label()->set_text(std::move(text));
+            anchor->mutable_label()->set_text(
+                snap.device_path.empty() ? std::string("(unset)") : snap.device_path);
         }
 
         auto* editor = modal->mutable_editor();
@@ -106,20 +113,25 @@ void HostSerialUi::build_view(View* out) const {
         }
     }
 
-    // Indicator: is the host port open? Surface the OS error when it is not.
+    // Baud on its own line below the path. Display-only here; it is edited via
+    // the path's popover (which carries the baud picker).
     {
+        auto* control = group->add_controls();
+        control->set_id("baud_display");
+        control->mutable_label()->set_text(std::to_string(snap.baud) + " baud");
+    }
+
+    // Indicator only when there is something to act on. A working device is the
+    // expected state and "Connected" would just be noise; an unopened device
+    // earns its line by surfacing the OS error so the user can fix it.
+    if (!snap.serial_open) {
         auto* control = group->add_controls();
         control->set_id(CONTROL_CONNECTED);
         auto* indicator = control->mutable_indicator();
-        indicator->set_state(snap.serial_open ? Indicator_State_OK
-                                              : Indicator_State_ERROR);
-        if (snap.serial_open) {
-            indicator->set_text("Connected");
-        } else if (!snap.open_error_message.empty()) {
-            indicator->set_text("Cannot open device: " + snap.open_error_message);
-        } else {
-            indicator->set_text("Disconnected");
-        }
+        indicator->set_state(Indicator_State_ERROR);
+        indicator->set_text(snap.open_error_message.empty()
+                                ? "Disconnected"
+                                : "Cannot open device: " + snap.open_error_message);
     }
 }
 

@@ -342,7 +342,7 @@ monolithic fixed-menu `SerialService` does not survive as-is.
       constructs the sidebar from whatever `ListExtensions` returns with no
       hardcoded extension whitelist; the `serial-port` extension point already
       has a display name; node labels come from the server (manifest display_name
-      -- "Host Serial Bridge" / "RPC Serial Peer" / "Loopback Serial Plug");
+      -- "Host Serial" / "RPC Serial" / "Loopback Serial");
       `hasUI` (= ui()!=nullptr) drives the panel; and `ExtensionViewRenderer`
       renders the generic Control tree (Label/Group, which is all our panels use)
       via a recursive switch. `PeripheralTreeTests` already exercises the tree
