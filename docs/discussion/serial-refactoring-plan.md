@@ -237,26 +237,30 @@ monolithic fixed-menu `SerialService` does not survive as-is.
     programmatic/scripting clients AND exposes `ExtensionUiService` for GUI
     clients (panel + indicator for free). Concretely:
     - host-serial bridge extension: owns pty/device config via CLI/preset +
-      ExtensionUi, replacing `SetEndpointMode(PTY|DEVICE)`.
-    - test-serial extension (name TBD; NOT "scriptable" -- that names the control
-      mechanism, not the role -- pick a domain term like virtual-/test-serial at
-      extraction): the synthetic in-process peers. It offers a `mode` parameter:
-      `echo` (loopback) and a client-driven mode that keeps `SendToDevice`/
-      `ReceiveFromDevice` as its own typed RPC (concern C). DECIDED: loopback is a
-      MODE of this extension, not its own extension (both are test/diagnostic
-      peers for the same audience; a whole extension for a five-line echo is
-      disproportionate). The underlying `LoopbackSerialEndpoint` and the
-      client-driven endpoint stay as lightweight core `SerialPortDevice` test
-      helpers in `serial/SerialDevice.hpp` -- C++ unit tests construct them
-      directly and attach via the `SerialPort` handle, no extension involved;
-      only the RUNTIME-selectable forms move into the extension.
+      ExtensionUi, replacing `SetEndpointMode(PTY|DEVICE)`. DONE (step 10).
+    - rpc-serial extension (renamed from the placeholder "test-serial"; and NOT
+      "scriptable" -- that named the control mechanism): the client-driven peer.
+      The RPC client IS the device on the other end of the wire; it owns
+      `SendToDevice`/`ReceiveFromDevice` as its own typed RPC (concern C).
+      "rpc-serial" names the domain role precisely and does not pigeonhole it as
+      test-only (a real automation/scripting client may drive it).
+    - serial-loopback extension: a SEPARATE, trivial built-in (DECIDED, revising
+      the earlier "loopback is a mode of test-serial" note). Loopback is a
+      self-contained TX->RX echo -- it is NOT RPC-driven, so it does not belong
+      under "rpc-serial". One device = one extension is the purer split. It is a
+      runtime "does my serial path work at all" smoke; zero config, no RPC.
     - future emulated FujiNet: its own typed RPC + UI.
+    The underlying `LoopbackSerialEndpoint` and the client-driven endpoint stay
+    as lightweight core `SerialPortDevice` test helpers in
+    `serial/SerialDevice.hpp` (C++ unit tests construct them directly and attach
+    via the `SerialPort` handle, no extension involved); the extensions wrap
+    those classes for the RUNTIME-selectable forms.
     Typed RPCs and UI dispatch serve different audiences and are not redundant
     ([[feedback_extension_multi_api]],
     `docs/discussion/extension-ui-architecture.md`,
     [[project_serial_port_selector]]); keep both, but per extension.
 15. Client parity: regenerate proto stubs; bring the Python client up to the new
-    surfaces (a thin serial-status client + the scriptable extension's client);
+    surfaces (a thin serial-status client + the rpc-serial extension's client);
     add TypeScript clients (parity with AUN/Piconet/Econet,
     [[project_typescript_client_cutover]]); add the macOS Swift client + serial
     UI panel/indicator (hidden when `has_serial_socket` is false).
