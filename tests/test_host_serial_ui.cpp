@@ -48,10 +48,16 @@ TEST_CASE("HostSerialUi build_view exposes a device editor and a status indicato
     const auto& editor = device.modal_editor().editor();
     REQUIRE(editor.control_case() == Control::kGroup);
     REQUIRE(editor.group().controls_size() == 2);
-    CHECK(editor.group().controls(0).id() == "path");
-    CHECK(editor.group().controls(0).control_case() == Control::kEditableChoice);
-    CHECK(editor.group().controls(1).id() == "baud");
+    // The port control is a dropdown (EditableChoice) when host ports are
+    // discovered, or a plain TextInput when none are -- depends on the test
+    // host, so accept either.
+    const auto& path = editor.group().controls(0);
+    CHECK(path.id() == "path");
+    CHECK((path.control_case() == Control::kEditableChoice
+           || path.control_case() == Control::kTextInput));
 
+    // Baud is always a dropdown of standard rates.
+    CHECK(editor.group().controls(1).id() == "baud");
     bool has_19200 = false;
     for (const auto& option : editor.group().controls(1).editable_choice().options()) {
         if (option == "19200") has_19200 = true;

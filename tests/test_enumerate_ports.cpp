@@ -108,6 +108,27 @@ TEST_CASE("enumerate_ports_from_dirs filters by the platform's tty prefixes",
 #endif
 }
 
+#ifdef __APPLE__
+TEST_CASE("enumerate_ports_from_dirs includes macOS call-out (cu.*) ports",
+          "[serial][enumerate]") {
+    TmpDir tmp;
+    auto dev = tmp.subdir("dev");
+
+    tmp.touch(dev / "cu.usbserial-A1B2");
+    tmp.touch(dev / "cu.usbmodem401");
+    // A socat virtual port named with a cu.usbserial- prefix is discoverable too.
+    tmp.touch(dev / "cu.usbserial-beeb");
+    // A non-USB call-out device is not matched (kept focused on USB serial).
+    tmp.touch(dev / "cu.Bluetooth-Incoming-Port");
+
+    auto result = beebium::serial::enumerate_ports_from_dirs(dev.string(), "");
+    REQUIRE(result.size() == 3);  // the three cu.usb* entries, sorted
+    CHECK(result[0] == (dev / "cu.usbmodem401").string());
+    CHECK(result[1] == (dev / "cu.usbserial-A1B2").string());
+    CHECK(result[2] == (dev / "cu.usbserial-beeb").string());
+}
+#endif
+
 TEST_CASE("enumerate_ports_from_dirs results are sorted lexicographically",
           "[serial][enumerate]") {
     TmpDir tmp;

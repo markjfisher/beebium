@@ -85,19 +85,31 @@ void HostSerialUi::build_view(View* out) const {
         editor->set_id("device_editor");
         auto* editor_group = editor->mutable_group();
 
-        // Serial port: EditableChoice over the enumerated host ports. An empty
-        // options list is fine -- the user still gets a plain editable field.
+        // Serial port: a dropdown (EditableChoice) of the discovered ports, or a
+        // plain text field when none are found -- an empty combobox reads oddly,
+        // and the device you want then (e.g. a socat pty) is one you type anyway.
+        // handle_event reads the same string value from either control type.
         {
+            auto ports = serial::enumerate_ports();
             auto* c = editor_group->add_controls();
             c->set_id(FIELD_PATH);
-            auto* ec = c->mutable_editable_choice();
-            ec->set_label("Serial port");
-            ec->set_value(snap.device_path);
-            ec->set_placeholder(snap.device_path.empty()
-                                    ? std::string("/dev/tty.usbserial...")
-                                    : snap.device_path);
-            for (auto& port : serial::enumerate_ports()) {
-                *ec->add_options() = std::move(port);
+            if (ports.empty()) {
+                auto* ti = c->mutable_text_input();
+                ti->set_label("Serial port");
+                ti->set_value(snap.device_path);
+                ti->set_placeholder(snap.device_path.empty()
+                                        ? std::string("/dev/cu.usbserial... (none detected)")
+                                        : snap.device_path);
+            } else {
+                auto* ec = c->mutable_editable_choice();
+                ec->set_label("Serial port");
+                ec->set_value(snap.device_path);
+                ec->set_placeholder(snap.device_path.empty()
+                                        ? std::string("/dev/cu.usbserial...")
+                                        : snap.device_path);
+                for (auto& port : ports) {
+                    *ec->add_options() = std::move(port);
+                }
             }
         }
 
