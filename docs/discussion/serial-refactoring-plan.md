@@ -343,6 +343,22 @@ monolithic fixed-menu `SerialService` does not survive as-is.
 
 ## Phase 4.5 -- Serial extensions in the Peripherals sidebar (Extension UI)
 
+DONE (simplest read-only status panels, macOS + Linux; the macOS Swift rendering
+rides along in step 15 Swift). Each serial extension now has an `ExtensionUi`
+(`HostSerialUi`, `RpcSerialUi`, `LoopbackSerialUi`) returned from `ui()`, built
+unconditionally with `beebium_extension_ui_proto` (the scsi-hard-disc pattern --
+the UI proto is always available, no BEEBIUM_BUILD_SERVICE gate). Panels:
+host-serial shows mode/path/baud + connected status; rpc-serial shows the role +
+tx/rx pending; loopback shows a single "echo active" line. All read-only
+(handle_event is a no-op), snapshot at build time (no background ticker yet).
+Verified: `PeripheralExtensionService.ListExtensions` reports each with
+`has_ui=true` (it is `ui() != nullptr`), so they surface via the SAME generic
+discovery (ListExtensions -> UUID id -> SubscribeView) as every other extension --
+no client-side change needed. Tests: test_{host,rpc,loopback}_serial_ui.cpp
+(build_view shape, per the acorn-rtc/scsi precedent). NOTE: Python has no
+peripheral-extension listing client, so the end-to-end discovery check lives in
+C++ (test_grpc_peripheral_extension / test_grpc_extension_ui_service), not Python.
+
 Inserted before Phases 5/6 (Rob's call). The three serial extensions have CLI
 config + (rpc-serial) a typed RPC, but NO `ExtensionUi` surface -- so unlike
 acorn-rtc / scsi-hard-disc / aun / piconet they do NOT appear in the macOS

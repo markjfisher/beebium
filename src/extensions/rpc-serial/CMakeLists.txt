@@ -10,6 +10,7 @@
 
 set(RPC_SERIAL_SOURCES
     RpcSerialExtension.cpp
+    RpcSerialUi.cpp
 )
 
 if(BEEBIUM_BUILD_SERVICE)
@@ -31,7 +32,11 @@ target_include_directories(beebium_ext_rpc_serial
 )
 
 target_link_libraries(beebium_ext_rpc_serial
-    PUBLIC beebium_core
+    PUBLIC
+        beebium_core
+        # RpcSerialUi.cpp pulls in extension_ui.pb.h for the
+        # View / DispatchRequest types it composes.
+        beebium_extension_ui_proto
 )
 
 if(BEEBIUM_BUILD_SERVICE)

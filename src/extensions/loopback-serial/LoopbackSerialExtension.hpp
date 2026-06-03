@@ -13,6 +13,8 @@
 #ifndef BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
 #define BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
 
+#include "LoopbackSerialUi.hpp"
+
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 
@@ -40,6 +42,9 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
+    // Peripherals-sidebar panel.
+    ExtensionUi* ui() override { return &ui_; }
+
     // --- SerialPortDevice: echo transmitted bytes back to the receiver. Only
     // touched on the emulation thread (no client), so no lock is needed. ---
     bool has_data() override { return !queue_.empty(); }
@@ -52,6 +57,7 @@ public:
 
 private:
     std::deque<uint8_t> queue_;
+    LoopbackSerialUi ui_;
 };
 
 }  // namespace beebium

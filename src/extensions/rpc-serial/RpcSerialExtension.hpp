@@ -14,9 +14,11 @@
 #define BEEBIUM_EXT_RPC_SERIAL_EXTENSION_HPP
 
 #include "RpcSerialEndpoint.hpp"
+#include "RpcSerialUi.hpp"
 
 #include <beebium/extension/PeripheralExtension.hpp>
 
+#include <cstddef>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -48,8 +50,16 @@ public:
     void shutdown() override;
     std::vector<grpc::Service*> grpc_services() override;
 
+    // Peripherals-sidebar panel.
+    ExtensionUi* ui() override { return &ui_; }
+
+    // Pending byte counts for the UI (0 before init() attaches the endpoint).
+    std::size_t tx_pending() { return endpoint_ ? endpoint_->tx_pending() : 0; }
+    std::size_t rx_pending() { return endpoint_ ? endpoint_->rx_pending() : 0; }
+
 private:
     std::unique_ptr<RpcSerialEndpoint> endpoint_;  // constructed in init() from config
+    RpcSerialUi ui_{*this};
 #ifdef BEEBIUM_BUILD_SERVICE
     std::unique_ptr<RpcSerialServiceImpl> service_;  // lazily constructed
 #endif

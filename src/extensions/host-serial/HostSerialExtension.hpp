@@ -14,6 +14,7 @@
 #define BEEBIUM_EXT_HOST_SERIAL_EXTENSION_HPP
 
 #include "HostSerialEndpoint.hpp"
+#include "HostSerialUi.hpp"
 
 #include <beebium/extension/PeripheralExtension.hpp>
 
@@ -49,8 +50,15 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
+    // Peripherals-sidebar panel.
+    ExtensionUi* ui() override { return &ui_; }
+
+    // True while the host port is open (false before init() or after shutdown()).
+    bool bridge_open() const { return endpoint_ && endpoint_->is_open(); }
+
 private:
     std::unique_ptr<serial::HostSerialEndpoint> endpoint_;
+    HostSerialUi ui_{*this};
 };
 
 }  // namespace beebium
