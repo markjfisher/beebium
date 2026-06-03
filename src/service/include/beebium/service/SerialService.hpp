@@ -55,12 +55,19 @@ public:
     {
         using Memory = typename MachineType::Memory;
         if constexpr (HasSerialSocket<Memory>) {
-            // Attach a scriptable endpoint by default so SendToDevice/
-            // ReceiveFromDevice work out of the box (mirrors the demo flow).
-            // Attach through the SerialPort handle so is_occupied() is truthful.
-            scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
-            machine_.state().memory.serial_port().attach(*scriptable_);
-            mode_ = SERIAL_ENDPOINT_SCRIPTABLE;
+            auto& port = machine_.state().memory.serial_port();
+            if (!port.is_occupied()) {
+                // No transport/device extension claimed the serial port, so
+                // attach a scriptable endpoint by default: SendToDevice/
+                // ReceiveFromDevice work out of the box. Extensions init before
+                // the server constructs its services, so is_occupied() already
+                // reflects any extension that took the port -- if one did, we
+                // leave it alone and only report status (mode NONE).
+                scriptable_ = std::make_shared<ScriptableSerialEndpoint>();
+                port.attach(*scriptable_);
+                service_owns_port_ = true;
+                mode_ = SERIAL_ENDPOINT_SCRIPTABLE;
+            }
         }
     }
 
@@ -143,6 +150,13 @@ public:
             return false;
         } else {
             auto& port_handle = machine_.state().memory.serial_port();
+            // If a transport/device extension owns the serial port, the service
+            // must not yank it out from under the extension.
+            if (port_handle.is_occupied() && !service_owns_port_) {
+                error = "serial port is owned by an extension; "
+                        "endpoint mode cannot be changed";
+                return false;
+            }
             const int line_baud = baud > 0 ? baud : 19200;  // DEVICE default
 
             // Build any host transport (PTY/DEVICE) outside the pause window so
@@ -222,6 +236,9 @@ public:
                         break;
                 }
             });
+            // NONE leaves the port detached (the service owns nothing); every
+            // other mode attaches a service-owned endpoint.
+            service_owns_port_ = (mode != SERIAL_ENDPOINT_NONE);
             mode_ = mode;
             return true;
         }
@@ -267,6 +284,11 @@ private:
     std::mutex mutex_;
 
     SerialEndpointMode mode_ = SERIAL_ENDPOINT_NONE;
+    // True when the device currently attached to the serial port is one the
+    // service created (scriptable/loopback/host). False when the port is free
+    // or owned by a transport/device extension -- in which case the service
+    // only reports status and refuses to change the endpoint mode.
+    bool service_owns_port_ = false;
     std::shared_ptr<ScriptableSerialEndpoint> scriptable_;
     std::shared_ptr<LoopbackSerialEndpoint> loopback_;
     std::shared_ptr<HostSerialEndpoint> host_endpoint_;
