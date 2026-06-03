@@ -307,6 +307,28 @@ monolithic fixed-menu `SerialService` does not survive as-is.
     manual Slioch validation).
 21. Final full-suite run across the triad + all client suites.
 22. Curate history as desired and merge `feature/serial` into `master`.
+    NOTE: squash the loopback-rename commits (9ffcdef captured only the git mv;
+    50c2fff applied the content) so each landed commit builds.
+
+## Phase 8 -- Network-serial extensions (POST-MERGE; validates the seam)
+
+After the core refactor is merged and working, investigate two network-backed
+serial peers as further `SerialPortDevice` PeripheralExtensions. They are not
+needed for the refactor; they are strong evidence that the open/extensible
+seam was the right call (each is "just another extension attaching to the
+serial port", alongside host-serial / rpc-serial / loopback-serial / a future
+emulated FujiNet). Do NOT research now -- this is a tail-end task.
+
+- IP232: a serial-over-TCP mode BeebEm supports (believed to map the emulated
+  Beeb's serial port to a socket; confirm the exact framing/escaping).
+- RFC 2217: a Telnet extension for remote control of serial ports over IP
+  (the `rfc2217://<host>:<port>` URL form). Likely an IP<->serial bridge
+  standard; pyserial implements a client.
+
+Open questions for that investigation: are IP232 and RFC 2217 the same thing or
+different; should Beebium offer one or both (e.g. an `ip232-serial` and/or
+`rfc2217-serial` extension); and do they share enough with host-serial to reuse
+the host-side primitives. Capturing here so it is not lost.
 
 ## Decisions (resolved with Rob)
 
