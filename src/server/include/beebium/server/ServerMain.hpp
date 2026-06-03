@@ -1708,6 +1708,9 @@ public:
             if constexpr (beebium::HasTubeSocket<Memory>) {
                 extension_registry.register_extension_point("tube");
             }
+            if constexpr (beebium::HasSerialPort<Memory>) {
+                extension_registry.register_extension_point("serial-port");
+            }
 
             // Note: extensions are loaded below from --<cli-name> flags
             // via the plugin path. test-scratch-ram used to be
