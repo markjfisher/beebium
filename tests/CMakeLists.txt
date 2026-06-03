@@ -934,6 +934,17 @@ if(NOT WIN32)
     catch_discover_tests(test_host_serial_extension)
 endif()
 
+# Host-serial endpoint test (cross-platform: stuck-peer back-pressure, no pty).
+add_executable(test_host_serial_endpoint test_host_serial_endpoint.cpp)
+target_include_directories(test_host_serial_endpoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+)
+target_link_libraries(test_host_serial_endpoint PRIVATE
+    beebium_ext_host_serial
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_host_serial_endpoint)
+
 # Serial-loopback extension test (cross-platform; no pty).
 add_executable(test_loopback_serial_extension test_loopback_serial_extension.cpp)
 target_include_directories(test_loopback_serial_extension PRIVATE
