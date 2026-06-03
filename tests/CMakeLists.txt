@@ -969,6 +969,31 @@ if(BEEBIUM_BUILD_SERVICE)
     catch_discover_tests(test_rpc_serial_extension)
 endif()
 
+# Serial extension UI panels (Peripherals sidebar; extension_ui.pb.h types).
+add_executable(test_loopback_serial_ui test_loopback_serial_ui.cpp)
+target_link_libraries(test_loopback_serial_ui PRIVATE
+    beebium_ext_loopback_serial
+    beebium_extension_ui_proto
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_loopback_serial_ui)
+
+add_executable(test_host_serial_ui test_host_serial_ui.cpp)
+target_link_libraries(test_host_serial_ui PRIVATE
+    beebium_ext_host_serial
+    beebium_extension_ui_proto
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_host_serial_ui)
+
+add_executable(test_rpc_serial_ui test_rpc_serial_ui.cpp)
+target_link_libraries(test_rpc_serial_ui PRIVATE
+    beebium_ext_rpc_serial
+    beebium_extension_ui_proto
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_rpc_serial_ui)
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
