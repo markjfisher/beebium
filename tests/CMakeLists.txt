@@ -941,6 +941,19 @@ target_link_libraries(test_serial_loopback_extension PRIVATE
 )
 catch_discover_tests(test_serial_loopback_extension)
 
+# rpc-serial extension test (needs the service layer for the RpcSerial proto).
+if(BEEBIUM_BUILD_SERVICE)
+    add_executable(test_rpc_serial_extension test_rpc_serial_extension.cpp)
+    target_include_directories(test_rpc_serial_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/rpc-serial
+    )
+    target_link_libraries(test_rpc_serial_extension PRIVATE
+        beebium_ext_rpc_serial
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_rpc_serial_extension)
+endif()
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)

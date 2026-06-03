@@ -27,6 +27,7 @@
 
 #include "AunEconetTransportExtension.hpp"
 #include "HostSerialExtension.hpp"
+#include "RpcSerialExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
 #include "SerialLoopbackExtension.hpp"
 #include "beebium/extension/Extension.hpp"
@@ -152,6 +153,22 @@ inline std::vector<Entry> make_entries() {
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new SerialLoopbackExtension()); }});
+    }
+
+    // rpc-serial: client-driven serial peer (the RPC client is the device).
+    // Built-in for the same CLI-test ergonomics reason as the other serial
+    // extensions. Drive it via the RpcSerial gRPC service.
+    {
+        ExtensionManifest m;
+        m.name = "rpc-serial";
+        m.display_name = "RPC Serial Peer";
+        m.description =
+            "Client-driven serial peer: inject/collect bytes via the RpcSerial service";
+        m.cli_name = "rpc-serial";
+        m.extension_kind = "peripheral";
+        result.push_back({std::move(m),
+                          [] { return std::unique_ptr<Extension>(
+                              new RpcSerialExtension()); }});
     }
 
     return result;
