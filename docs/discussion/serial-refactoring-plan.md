@@ -195,18 +195,60 @@ members; tests keep locals).
 
 ## Phase 4 -- gRPC and clients aligned with conventions
 
+### Decompose Mark's SerialService (the gRPC-level expression of Correction 2)
+
+Mark's PR added ONE gRPC service, `SerialService`, with four RPCs:
+`GetSerialStatus`, `SetEndpointMode`, `SendToDevice`, `ReceiveFromDevice`, plus a
+fixed transport enum `SerialEndpointMode { NONE, LOOPBACK, SCRIPTABLE, PTY,
+DEVICE }`. It is a fine working interim, but it conflates THREE concerns that
+belong in different places. We will decompose it along the `SerialPortDevice`
+seam:
+
+- (A) Hardware/diagnostics -- the ACIA + Serial ULA register state in
+  `SerialStatus`. This observes the on-board chips, independent of what is
+  attached to the wire, so it stays a thin CORE serial status surface (see
+  step 13). This is the only part that remains "a serial service".
+- (B) Transport SELECTION -- `SetEndpointMode`'s closed enum. "What is on the
+  other end of the wire" is determined by which `PeripheralExtension` is
+  configured (CLI/preset), attaching a `SerialPortDevice` via the `SerialPort`
+  handle. The set of transports is OPEN-ENDED (any extension), not a fixed enum.
+  `PTY`/`DEVICE` are really "the real host-serial bridge" -- one built-in
+  extension (Phase 3 step 10/11). A future emulated FujiNet is another. So
+  `SetEndpointMode` dissolves into per-extension configuration; it is NOT a
+  long-term RPC.
+- (C) A specific device's I/O -- `SendToDevice`/`ReceiveFromDevice` are not
+  generic serial operations; they are the API of ONE device, the in-process
+  SCRIPTABLE endpoint used by tests/automation. That endpoint is itself a
+  `SerialPortDevice` provided by a (built-in) scriptable/test extension, and
+  those two RPCs become THAT extension's own typed RPC -- not a monolithic
+  serial service's.
+
+Net target: one core serial status surface (A) + N transport/device extensions,
+each owning its configuration and, where useful, its own typed RPC. The
+monolithic fixed-menu `SerialService` does not survive as-is.
+
 13. Replace the polling `GetSerialStatus` snapshot with a server-pushed
-    `WatchSerialStatus` stream, mirroring `WatchEconetStatus`
-    ([[project_econet_status_streaming]]). Keep a one-shot status if useful.
-14. Keep BOTH surfaces (decided): the bespoke typed `SerialService` RPCs for
-    programmatic/scripting clients (Python, tests) AND `ExtensionUiService` for
-    the GUI clients (panel + indicator for free). These serve different
-    audiences and are not redundant -- see [[feedback_extension_multi_api]] and
+    `WatchSerialStatus` stream (concern A), mirroring `WatchEconetStatus`
+    ([[project_econet_status_streaming]]). Keep a one-shot status if useful. This
+    is the surviving core serial service; drop the transport fields from it once
+    transport moves to extensions (steps 10/11), leaving pure chip state.
+14. "Keep BOTH surfaces" (decided) is now a PER-EXTENSION statement, not a
+    monolith: each transport/device extension keeps a typed RPC for
+    programmatic/scripting clients AND exposes `ExtensionUiService` for GUI
+    clients (panel + indicator for free). Concretely:
+    - host-serial bridge extension: owns pty/device config via CLI/preset +
+      ExtensionUi, replacing `SetEndpointMode(PTY|DEVICE)`.
+    - scriptable/test extension: keeps `SendToDevice`/`ReceiveFromDevice` as its
+      own typed RPC (concern C); loopback likewise becomes a trivial device/mode
+      of this or the host extension.
+    - future emulated FujiNet: its own typed RPC + UI.
+    Typed RPCs and UI dispatch serve different audiences and are not redundant
+    ([[feedback_extension_multi_api]],
     `docs/discussion/extension-ui-architecture.md`,
-    [[project_serial_port_selector]]. Do not retire the typed RPCs in favour of
-    the UI dispatch; tidy and align them, but keep them.
+    [[project_serial_port_selector]]); keep both, but per extension.
 15. Client parity: regenerate proto stubs; bring the Python client up to the new
-    surface; add a TypeScript serial client (parity with AUN/Piconet/Econet,
+    surfaces (a thin serial-status client + the scriptable extension's client);
+    add TypeScript clients (parity with AUN/Piconet/Econet,
     [[project_typescript_client_cutover]]); add the macOS Swift client + serial
     UI panel/indicator (hidden when `has_serial_socket` is false).
     Tests: streaming test; Python integration (Linux + macOS + Windows, as the
