@@ -184,6 +184,16 @@ public:
     const TubeParasiteBackend& tube_port() const { return tube_port_; }
 
 private:
+    // Breakpoint check, performed before a tick at an instruction boundary.
+    // Returns true if a breakpoint paused execution (so the caller must stop
+    // before executing the instruction at the breakpoint PC). Shared by step()
+    // (the live tick path) and run() (tests) so they stay in lock-step.
+    bool check_breakpoints();
+
+    // Watchpoint check, performed after a tick (every bus access). Returns true
+    // if a watchpoint fired.
+    bool check_watchpoints();
+
     TubeParasiteBackend& tube_port_;                     // reference to active port
     ParasiteMemoryMap memory_;
     ParasiteCpu cpu_;

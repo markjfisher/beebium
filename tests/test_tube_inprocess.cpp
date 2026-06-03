@@ -153,3 +153,46 @@ TEST_CASE("In-process: R2 handshake with parasite", "[tube][inprocess]") {
     // If we got here without hang, the R2 handshake worked.
     CHECK(true);
 }
+
+// ===========================================================================
+// Breakpoints fire on the live tick() path (single-threaded ticking from
+// Machine::step()), not only in run().
+// ===========================================================================
+
+TEST_CASE("In-process: parasite breakpoint fires on the tick() path",
+          "[tube][inprocess]") {
+    auto rom = load_rom();
+    TubeUla tube;
+    ParasiteRunner runner(tube, rom);
+    runner.reset();
+
+    // Boot into real execution, then align to a clean instruction boundary so
+    // the next opcode to execute is well-defined.
+    runner.run(BOOT_CYCLES);
+    runner.step_instruction();
+    const uint16_t target_pc = runner.pc();
+
+    // A breakpoint at the about-to-execute PC, with a hit callback that pauses --
+    // exactly what the debugger service does to stop on a breakpoint.
+    bool fired = false;
+    uint16_t fired_pc = 0;
+    runner.set_breakpoint_entries(
+        {BreakpointEntry{/*id=*/1, /*start=*/target_pc,
+                         /*end=*/static_cast<uint32_t>(target_pc) + 1}});
+    runner.set_breakpoint_hit_callback(
+        [&](const BreakpointEntry& /*bp*/, uint16_t pc) {
+            fired = true;
+            fired_pc = pc;
+            runner.pause();
+        });
+
+    // tick() is the live path: TubeSocket::tick_parasite() -> tick() -> step().
+    // It must check the breakpoint BEFORE executing the instruction at target_pc.
+    // (Before the fix the check lived only in run(), so this never fired.)
+    runner.tick();
+
+    CHECK(fired);
+    CHECK(fired_pc == target_pc);
+    CHECK(runner.is_paused());
+    CHECK(runner.pc() == target_pc);  // paused before executing the breakpoint instruction
+}
