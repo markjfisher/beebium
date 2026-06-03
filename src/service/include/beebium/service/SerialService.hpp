@@ -35,9 +35,7 @@ using beebium::HasSerialSocket;
 //
 // Real host transports (pty / serial device) are NOT here: they are provided by
 // the host-serial PeripheralExtension, which attaches via the SerialPort handle.
-// When such an extension owns the port, this service only reports status. (The
-// in-process test endpoints are themselves slated to move into a test-serial
-// extension; see docs/discussion/serial-refactoring-plan.md.)
+// When such an extension owns the port, this service only reports status.
 //
 // Thread-safety: SendToDevice/ReceiveFromDevice touch the scriptable endpoint's
 // own mutex-protected queues; SetEndpointMode swaps the attached device with the
