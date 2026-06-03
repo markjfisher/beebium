@@ -122,7 +122,14 @@ public:
 
     // --- Transport wiring (non-owning; the SerialSocket owns the backend) ---
     void set_source(SerialDataSource* source) { source_ = source; }
-    void set_sink(SerialDataSink* sink) { sink_ = sink; }
+    void set_sink(SerialDataSink* sink) {
+        sink_ = sink;
+        if (sink_ == nullptr) {
+            // No device attached: clear to send (transmitted bytes are
+            // discarded), so the guest's TX loop never stalls.
+            acia_.set_not_cts(false);
+        }
+    }
 
     // --- Accessors for tests / debugging ---
     uint8_t control() const { return control_; }
@@ -146,6 +153,12 @@ private:
 
     // One transmit bit time: clock the ACIA and assemble the outgoing byte.
     void pump_transmit() {
+        // Drive /CTS from the device's flow-control state: when the device
+        // cannot accept more, the ACIA holds TDRE low so the guest's transmit
+        // loop busy-waits until the device drains. Refreshed each TX bit period,
+        // so /CTS releases promptly once the device reports ready again.
+        acia_.set_not_cts(sink_ != nullptr && !sink_->accepts_more());
+
         Mc6850::TransmitResult result = acia_.update_transmit();
         switch (result.type) {
             case Mc6850::BitType::Start:

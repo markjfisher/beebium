@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <mutex>
@@ -51,6 +52,13 @@ public:
 
     // Accept one transmitted byte.
     virtual void add_byte(uint8_t value) = 0;
+
+    // Flow control, modelling the /CTS line. Returns false when the device
+    // cannot accept more transmitted bytes right now; the Serial ULA then
+    // asserts the ACIA's /CTS input, which holds TDRE = 0 so the BBC's transmit
+    // loop busy-waits (it stalls the emulated guest, never the emulator host).
+    // Default: always clear to send.
+    virtual bool accepts_more() { return true; }
 };
 
 // The seam a serial device attaches to: a single, bidirectional endpoint that
@@ -106,6 +114,13 @@ private:
 // transport for scripts and tests, with no PTY or external device involved.
 class ScriptableSerialEndpoint final : public SerialPortDevice {
 public:
+    // Queue bounds keep an undraining/over-injecting client from growing memory
+    // unboundedly or stalling the emulator. TX back-pressure is via /CTS (see
+    // accepts_more); RX via the accepted count returned by inject().
+    static constexpr size_t kRxCapacity = 4096;      // device -> Beeb cap
+    static constexpr size_t kTxBackPressure = 4096;  // assert /CTS at/above
+    static constexpr size_t kTxHardCap = kTxBackPressure + 64;  // absolute TX cap
+
     // --- SerialDataSource (device -> Beeb), called on the emulation thread ---
     bool has_data() override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -122,15 +137,33 @@ public:
     // --- SerialDataSink (Beeb -> device), called on the emulation thread ---
     void add_byte(uint8_t value) override {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (tx_.size() >= kTxHardCap) {
+            // Client not draining AND guest ignoring /CTS (TDRE): a real ACIA
+            // would lose data here too. Account it; never grow without bound.
+            ++tx_dropped_;
+            return;
+        }
         tx_.push_back(value);
+    }
+
+    // Flow control (/CTS): not clear to send once tx_ reaches the back-pressure
+    // mark, so the guest's transmit loop stalls until the client drains.
+    bool accepts_more() override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return tx_.size() < kTxBackPressure;
     }
 
     // --- Client side (gRPC thread) ---
 
-    // Queue bytes for the Beeb to receive.
-    void inject(const uint8_t* data, size_t len) {
+    // Queue bytes for the Beeb to receive. Returns the number accepted, which is
+    // less than len when the receive queue is full (the client retries the
+    // unaccepted tail later). Never blocks.
+    size_t inject(const uint8_t* data, size_t len) {
         std::lock_guard<std::mutex> lock(mutex_);
-        for (size_t i = 0; i < len; ++i) rx_.push_back(data[i]);
+        const size_t space = rx_.size() >= kRxCapacity ? 0 : kRxCapacity - rx_.size();
+        const size_t accepted = std::min(len, space);
+        for (size_t i = 0; i < accepted; ++i) rx_.push_back(data[i]);
+        return accepted;
     }
 
     // Collect up to max_bytes that the Beeb has transmitted (0 = all available).
@@ -162,10 +195,18 @@ public:
         tx_.clear();
     }
 
+    // Bytes dropped because tx_ hit the hard cap (client not draining and the
+    // guest ignoring /CTS). Exposed for diagnostics and tests.
+    size_t tx_dropped() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return tx_dropped_;
+    }
+
 private:
     std::mutex mutex_;
     std::deque<uint8_t> rx_;  // device -> Beeb
     std::deque<uint8_t> tx_;  // Beeb -> device
+    size_t tx_dropped_ = 0;
 };
 
 }  // namespace beebium

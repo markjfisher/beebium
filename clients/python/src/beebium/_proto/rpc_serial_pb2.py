@@ -36,7 +36,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10rpc_serial.proto\x12\x07\x62\x65\x65\x62ium\"$\n\x14RpcSerialSendRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\'\n\x15RpcSerialSendResponse\x12\x0e\n\x06queued\x18\x01 \x01(\r\",\n\x17RpcSerialReceiveRequest\x12\x11\n\tmax_bytes\x18\x01 \x01(\r\"(\n\x18RpcSerialReceiveResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\x18\n\x16RpcSerialStatusRequest\"9\n\x0fRpcSerialStatus\x12\x12\n\ntx_pending\x18\x01 \x01(\r\x12\x12\n\nrx_pending\x18\x02 \x01(\r2\xea\x01\n\tRpcSerial\x12\x45\n\x04Send\x12\x1d.beebium.RpcSerialSendRequest\x1a\x1e.beebium.RpcSerialSendResponse\x12N\n\x07Receive\x12 .beebium.RpcSerialReceiveRequest\x1a!.beebium.RpcSerialReceiveResponse\x12\x46\n\tGetStatus\x12\x1f.beebium.RpcSerialStatusRequest\x1a\x18.beebium.RpcSerialStatusb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10rpc_serial.proto\x12\x07\x62\x65\x65\x62ium\"$\n\x14RpcSerialSendRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\")\n\x15RpcSerialSendResponse\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x01 \x01(\r\",\n\x17RpcSerialReceiveRequest\x12\x11\n\tmax_bytes\x18\x01 \x01(\r\"(\n\x18RpcSerialReceiveResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\x18\n\x16RpcSerialStatusRequest\"9\n\x0fRpcSerialStatus\x12\x12\n\ntx_pending\x18\x01 \x01(\r\x12\x12\n\nrx_pending\x18\x02 \x01(\r2\xea\x01\n\tRpcSerial\x12\x45\n\x04Send\x12\x1d.beebium.RpcSerialSendRequest\x1a\x1e.beebium.RpcSerialSendResponse\x12N\n\x07Receive\x12 .beebium.RpcSerialReceiveRequest\x1a!.beebium.RpcSerialReceiveResponse\x12\x46\n\tGetStatus\x12\x1f.beebium.RpcSerialStatusRequest\x1a\x18.beebium.RpcSerialStatusb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -46,15 +46,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_RPCSERIALSENDREQUEST']._serialized_start=29
   _globals['_RPCSERIALSENDREQUEST']._serialized_end=65
   _globals['_RPCSERIALSENDRESPONSE']._serialized_start=67
-  _globals['_RPCSERIALSENDRESPONSE']._serialized_end=106
-  _globals['_RPCSERIALRECEIVEREQUEST']._serialized_start=108
-  _globals['_RPCSERIALRECEIVEREQUEST']._serialized_end=152
-  _globals['_RPCSERIALRECEIVERESPONSE']._serialized_start=154
-  _globals['_RPCSERIALRECEIVERESPONSE']._serialized_end=194
-  _globals['_RPCSERIALSTATUSREQUEST']._serialized_start=196
-  _globals['_RPCSERIALSTATUSREQUEST']._serialized_end=220
-  _globals['_RPCSERIALSTATUS']._serialized_start=222
-  _globals['_RPCSERIALSTATUS']._serialized_end=279
-  _globals['_RPCSERIAL']._serialized_start=282
-  _globals['_RPCSERIAL']._serialized_end=516
+  _globals['_RPCSERIALSENDRESPONSE']._serialized_end=108
+  _globals['_RPCSERIALRECEIVEREQUEST']._serialized_start=110
+  _globals['_RPCSERIALRECEIVEREQUEST']._serialized_end=154
+  _globals['_RPCSERIALRECEIVERESPONSE']._serialized_start=156
+  _globals['_RPCSERIALRECEIVERESPONSE']._serialized_end=196
+  _globals['_RPCSERIALSTATUSREQUEST']._serialized_start=198
+  _globals['_RPCSERIALSTATUSREQUEST']._serialized_end=222
+  _globals['_RPCSERIALSTATUS']._serialized_start=224
+  _globals['_RPCSERIALSTATUS']._serialized_end=281
+  _globals['_RPCSERIAL']._serialized_start=284
+  _globals['_RPCSERIAL']._serialized_end=518
 # @@protoc_insertion_point(module_scope)

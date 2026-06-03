@@ -22,7 +22,9 @@ message RpcSerialSendRequest {
 }
 
 message RpcSerialSendResponse {
-    uint32 queued = 1;  // number of bytes queued for the BBC to receive
+    // Number of bytes accepted (<= request size). Fewer than requested means the
+    // receive queue is full; the client should retry the unaccepted tail later.
+    uint32 accepted = 1;
 }
 
 message RpcSerialReceiveRequest {

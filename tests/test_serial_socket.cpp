@@ -196,3 +196,57 @@ TEST_CASE("SerialPort handle attaches a single device and round-trips", "[serial
     port.detach();
     CHECK_FALSE(port.is_occupied());
 }
+
+// =============================================================================
+// TX back-pressure (/CTS) and bounded queues
+// =============================================================================
+
+TEST_CASE("ScriptableSerialEndpoint bounds tx and signals back-pressure",
+          "[serial][backpressure]") {
+    ScriptableSerialEndpoint ep;
+    CHECK(ep.accepts_more());
+
+    for (size_t i = 0; i < ScriptableSerialEndpoint::kTxBackPressure; ++i) {
+        ep.add_byte(0x41);
+    }
+    CHECK_FALSE(ep.accepts_more());  // at the back-pressure mark -> /CTS
+
+    // Beyond the hard cap, bytes are dropped (a real ACIA loses data too) -- the
+    // queue never grows without bound.
+    for (size_t i = 0; i < 1000; ++i) ep.add_byte(0x42);
+    CHECK(ep.tx_pending() <= ScriptableSerialEndpoint::kTxHardCap);
+    CHECK(ep.tx_dropped() > 0);
+
+    ep.drain();  // client collects everything
+    CHECK(ep.accepts_more());  // back-pressure released
+}
+
+TEST_CASE("SerialSocket drives /CTS from device back-pressure", "[serial][socket]") {
+    SerialSocket socket;
+    auto endpoint = std::make_shared<ScriptableSerialEndpoint>();
+    socket.set_device(endpoint.get());
+    socket.write_acia(0, CONTROL_8N1);
+    socket.write_ula(0, SerialUla::RS423_SELECT);
+
+    auto run_a_tx_bit_period = [&] {
+        for (int t = 0; t < 200; ++t) { socket.tick_rising(); socket.tick_falling(); }
+    };
+
+    run_a_tx_bit_period();
+    CHECK_FALSE(socket.acia().not_cts());                 // clear to send initially
+    CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) != 0);  // TDRE available
+
+    // Fill the device's tx queue (client not draining) past the mark.
+    for (size_t i = 0; i < ScriptableSerialEndpoint::kTxBackPressure; ++i) {
+        endpoint->add_byte(0);
+    }
+    run_a_tx_bit_period();  // pump_transmit re-evaluates /CTS
+    CHECK(socket.acia().not_cts());                       // /CTS asserted
+    CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) == 0);  // TDRE masked -> guest stalls
+
+    // Client drains; /CTS releases and TDRE returns.
+    endpoint->drain();
+    run_a_tx_bit_period();
+    CHECK_FALSE(socket.acia().not_cts());
+    CHECK((socket.read_acia(0) & Mc6850::SR_TDRE) != 0);
+}
