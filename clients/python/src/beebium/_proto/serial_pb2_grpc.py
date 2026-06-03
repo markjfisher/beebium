@@ -56,6 +56,11 @@ class SerialServiceStub(object):
                 request_serializer=serial__pb2.GetSerialStatusRequest.SerializeToString,
                 response_deserializer=serial__pb2.SerialStatus.FromString,
                 _registered_method=True)
+        self.WatchSerialStatus = channel.unary_stream(
+                '/beebium.SerialService/WatchSerialStatus',
+                request_serializer=serial__pb2.WatchSerialStatusRequest.SerializeToString,
+                response_deserializer=serial__pb2.SerialStatus.FromString,
+                _registered_method=True)
 
 
 class SerialServiceServicer(object):
@@ -73,12 +78,28 @@ class SerialServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def WatchSerialStatus(self, request, context):
+        """Server-pushed status stream. Writes an initial SerialStatus as soon as the
+        stream is established, then a fresh snapshot whenever the chip state
+        changes (sampled at min_interval_ms, so rapid TDRE/RDRF toggling during a
+        transfer is coalesced). The stream stays open until the client cancels;
+        use this instead of polling GetSerialStatus.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SerialServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetSerialStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.GetSerialStatus,
                     request_deserializer=serial__pb2.GetSerialStatusRequest.FromString,
+                    response_serializer=serial__pb2.SerialStatus.SerializeToString,
+            ),
+            'WatchSerialStatus': grpc.unary_stream_rpc_method_handler(
+                    servicer.WatchSerialStatus,
+                    request_deserializer=serial__pb2.WatchSerialStatusRequest.FromString,
                     response_serializer=serial__pb2.SerialStatus.SerializeToString,
             ),
     }
@@ -113,6 +134,33 @@ class SerialService(object):
             target,
             '/beebium.SerialService/GetSerialStatus',
             serial__pb2.GetSerialStatusRequest.SerializeToString,
+            serial__pb2.SerialStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WatchSerialStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/beebium.SerialService/WatchSerialStatus',
+            serial__pb2.WatchSerialStatusRequest.SerializeToString,
             serial__pb2.SerialStatus.FromString,
             options,
             channel_credentials,

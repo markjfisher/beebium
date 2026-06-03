@@ -20,6 +20,10 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include <chrono>
+#include <string>
+#include <thread>
+
 namespace beebium::service {
 
 using beebium::HasSerialSocket;
@@ -45,36 +49,75 @@ public:
         const GetSerialStatusRequest* /*request*/,
         SerialStatus* response) override
     {
+        populate_status_(*response);
+        return grpc::Status::OK;
+    }
+
+    // Server-pushed status stream: an initial snapshot, then a fresh one whenever
+    // the chip state changes. Sampled at min_interval_ms (default 50ms) so the
+    // per-byte TDRE/RDRF toggling during a transfer is coalesced rather than
+    // flooding the client. Reads are a benign racy snapshot (no machine pause).
+    grpc::Status WatchSerialStatus(
+        grpc::ServerContext* context,
+        const WatchSerialStatusRequest* request,
+        grpc::ServerWriter<SerialStatus>* writer) override
+    {
+        const auto interval = std::chrono::milliseconds(
+            request->min_interval_ms() > 0 ? request->min_interval_ms() : 50);
+
+        SerialStatus snapshot;
+        populate_status_(snapshot);
+        std::string last = snapshot.SerializeAsString();
+        if (!writer->Write(snapshot)) {
+            return grpc::Status::OK;  // Client disconnected during initial push.
+        }
+
+        while (!context->IsCancelled()) {
+            std::this_thread::sleep_for(interval);
+
+            SerialStatus current;
+            populate_status_(current);
+            std::string serialized = current.SerializeAsString();
+            if (serialized == last) {
+                continue;
+            }
+            if (!writer->Write(current)) {
+                break;  // Client disconnected.
+            }
+            last = std::move(serialized);
+        }
+        return grpc::Status::OK;
+    }
+
+private:
+    void populate_status_(SerialStatus& status) {
         using Memory = typename MachineType::Memory;
         if constexpr (!HasSerialSocket<Memory>) {
-            response->set_has_serial_socket(false);
-            return grpc::Status::OK;
+            status.set_has_serial_socket(false);
         } else {
-            response->set_has_serial_socket(true);
+            status.set_has_serial_socket(true);
             auto& serial = machine_.state().memory.serial_socket;
             const auto& acia = serial.acia();
             const auto& ula = serial.ula();
 
-            response->set_acia_control(acia.control());
-            response->set_acia_status(acia.status());
-            response->set_tdre(acia.tdre());
-            response->set_rdrf(acia.rdrf());
-            response->set_not_dcd(acia.not_dcd());
-            response->set_not_cts(acia.not_cts());
-            response->set_irq_pending(acia.irq_pending());
+            status.set_acia_control(acia.control());
+            status.set_acia_status(acia.status());
+            status.set_tdre(acia.tdre());
+            status.set_rdrf(acia.rdrf());
+            status.set_not_dcd(acia.not_dcd());
+            status.set_not_cts(acia.not_cts());
+            status.set_irq_pending(acia.irq_pending());
 
-            response->set_ula_control(ula.control());
-            response->set_tx_baud(ula.tx_baud());
-            response->set_rx_baud(ula.rx_baud());
-            response->set_rs423_selected(ula.rs423_selected());
-            response->set_motor_on(ula.motor_on());
-            response->set_tx_bit_period(ula.tx_bit_period());
-            response->set_rx_bit_period(ula.rx_bit_period());
-            return grpc::Status::OK;
+            status.set_ula_control(ula.control());
+            status.set_tx_baud(ula.tx_baud());
+            status.set_rx_baud(ula.rx_baud());
+            status.set_rs423_selected(ula.rs423_selected());
+            status.set_motor_on(ula.motor_on());
+            status.set_tx_bit_period(ula.tx_bit_period());
+            status.set_rx_bit_period(ula.rx_bit_period());
         }
     }
 
-private:
     MachineType& machine_;
 };
 
