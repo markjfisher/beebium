@@ -10,10 +10,22 @@ package beebium;
 service SerialService {
     // Query serial hardware status (ACIA + Serial ULA registers).
     rpc GetSerialStatus(GetSerialStatusRequest) returns (SerialStatus);
+
+    // Server-pushed status stream. Writes an initial SerialStatus as soon as the
+    // stream is established, then a fresh snapshot whenever the chip state
+    // changes (sampled at min_interval_ms, so rapid TDRE/RDRF toggling during a
+    // transfer is coalesced). The stream stays open until the client cancels;
+    // use this instead of polling GetSerialStatus.
+    rpc WatchSerialStatus(WatchSerialStatusRequest) returns (stream SerialStatus);
 }
 
 message GetSerialStatusRequest {
     // Empty - returns full status.
+}
+
+message WatchSerialStatusRequest {
+    // Minimum interval between change checks, in milliseconds (0 = default 50).
+    uint32 min_interval_ms = 1;
 }
 
 message SerialStatus {

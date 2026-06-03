@@ -277,11 +277,18 @@ Net target: one core serial status surface (A) + N transport/device extensions,
 each owning its configuration and, where useful, its own typed RPC. The
 monolithic fixed-menu `SerialService` does not survive as-is.
 
-13. Replace the polling `GetSerialStatus` snapshot with a server-pushed
-    `WatchSerialStatus` stream (concern A), mirroring `WatchEconetStatus`
-    ([[project_econet_status_streaming]]). Keep a one-shot status if useful. This
-    is the surviving core serial service; drop the transport fields from it once
-    transport moves to extensions (steps 10/11), leaving pure chip state.
+13. DONE (macOS + Linux; Windows pending Slioch). Added a server-pushed
+    `WatchSerialStatus` stream (concern A) alongside the one-shot `GetSerialStatus`
+    (kept -- still useful), mirroring `WatchEconetStatus`
+    ([[project_econet_status_streaming]]). The stream writes an initial snapshot
+    then pushes on change; rather than an Econet-style status-sequence counter
+    (the ACIA's TDRE/RDRF toggle per byte), it samples at `min_interval_ms`
+    (default 50) and pushes only when the serialized `SerialStatus` differs --
+    self-contained in the service, no core change, and it coalesces rapid toggles.
+    SerialService is already pure chip state (transport moved to extensions in
+    11c). Python `bbc.serial.watch_status()` added (mock unit tests + a live
+    integration test that pushes a ULA RS423/cassette change). TS/Swift clients
+    are step 15.
 14. "Keep BOTH surfaces" (decided) is now a PER-EXTENSION statement, not a
     monolith: each transport/device extension keeps a typed RPC for
     programmatic/scripting clients AND exposes `ExtensionUiService` for GUI

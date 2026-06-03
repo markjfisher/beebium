@@ -25,6 +25,7 @@ by this service: launch the server with ``--rpc-serial`` (and drive it via
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from beebium._proto import serial_pb2, serial_pb2_grpc
@@ -97,3 +98,19 @@ class Serial:
         request = serial_pb2.GetSerialStatusRequest()
         response = self._stub.GetSerialStatus(request)
         return _response_to_status(response)
+
+    def watch_status(self, *, min_interval_ms: int = 0) -> Iterator[SerialStatus]:
+        """Stream serial hardware status, pushed by the server on change.
+
+        Yields an initial snapshot immediately, then a fresh one whenever the
+        chip state changes (sampled at ``min_interval_ms``, so per-byte TDRE/RDRF
+        toggling is coalesced). The stream stays open until the iterator is
+        closed or the connection drops; prefer this over polling :attr:`status`.
+
+        Args:
+            min_interval_ms: Minimum interval between change checks (0 = server
+                default of 50ms).
+        """
+        request = serial_pb2.WatchSerialStatusRequest(min_interval_ms=min_interval_ms)
+        for response in self._stub.WatchSerialStatus(request):
+            yield _response_to_status(response)
