@@ -38,14 +38,11 @@ if _version_not_supported:
 
 
 class SerialServiceStub(object):
-    """Serial port (MC6850 ACIA + Serial ULA) management service.
+    """Serial port (MC6850 ACIA + Serial ULA) status service.
 
-    Provides status queries for the on-board serial hardware and a scriptable,
-    in-process transport so clients can inject bytes for the BBC to receive and
-    collect bytes the BBC has transmitted -- without any PTY or external device.
-    This is the serial analogue of the Econet TestBackend, intended for demos
-    and integration tests. A real PTY/serial bridge to fujinet-nio is a separate
-    transport that plugs in at the application layer.
+    Reports the live state of the on-board serial hardware. What is attached to
+    the far end of the wire is owned by a serial PeripheralExtension (host-serial,
+    rpc-serial, loopback-serial, ...), not by this service.
     """
 
     def __init__(self, channel):
@@ -59,57 +56,18 @@ class SerialServiceStub(object):
                 request_serializer=serial__pb2.GetSerialStatusRequest.SerializeToString,
                 response_deserializer=serial__pb2.SerialStatus.FromString,
                 _registered_method=True)
-        self.SetEndpointMode = channel.unary_unary(
-                '/beebium.SerialService/SetEndpointMode',
-                request_serializer=serial__pb2.SetEndpointModeRequest.SerializeToString,
-                response_deserializer=serial__pb2.SetEndpointModeResponse.FromString,
-                _registered_method=True)
-        self.SendToDevice = channel.unary_unary(
-                '/beebium.SerialService/SendToDevice',
-                request_serializer=serial__pb2.SendToDeviceRequest.SerializeToString,
-                response_deserializer=serial__pb2.SendToDeviceResponse.FromString,
-                _registered_method=True)
-        self.ReceiveFromDevice = channel.unary_unary(
-                '/beebium.SerialService/ReceiveFromDevice',
-                request_serializer=serial__pb2.ReceiveFromDeviceRequest.SerializeToString,
-                response_deserializer=serial__pb2.ReceiveFromDeviceResponse.FromString,
-                _registered_method=True)
 
 
 class SerialServiceServicer(object):
-    """Serial port (MC6850 ACIA + Serial ULA) management service.
+    """Serial port (MC6850 ACIA + Serial ULA) status service.
 
-    Provides status queries for the on-board serial hardware and a scriptable,
-    in-process transport so clients can inject bytes for the BBC to receive and
-    collect bytes the BBC has transmitted -- without any PTY or external device.
-    This is the serial analogue of the Econet TestBackend, intended for demos
-    and integration tests. A real PTY/serial bridge to fujinet-nio is a separate
-    transport that plugs in at the application layer.
+    Reports the live state of the on-board serial hardware. What is attached to
+    the far end of the wire is owned by a serial PeripheralExtension (host-serial,
+    rpc-serial, loopback-serial, ...), not by this service.
     """
 
     def GetSerialStatus(self, request, context):
-        """Query serial hardware status (ACIA + Serial ULA registers, endpoint).
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def SetEndpointMode(self, request, context):
-        """Select the host transport endpoint attached to the serial port.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def SendToDevice(self, request, context):
-        """Inject bytes for the BBC to receive (device -> Beeb). Scriptable mode only.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def ReceiveFromDevice(self, request, context):
-        """Collect bytes the BBC has transmitted (Beeb -> device). Scriptable mode only.
+        """Query serial hardware status (ACIA + Serial ULA registers).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -123,21 +81,6 @@ def add_SerialServiceServicer_to_server(servicer, server):
                     request_deserializer=serial__pb2.GetSerialStatusRequest.FromString,
                     response_serializer=serial__pb2.SerialStatus.SerializeToString,
             ),
-            'SetEndpointMode': grpc.unary_unary_rpc_method_handler(
-                    servicer.SetEndpointMode,
-                    request_deserializer=serial__pb2.SetEndpointModeRequest.FromString,
-                    response_serializer=serial__pb2.SetEndpointModeResponse.SerializeToString,
-            ),
-            'SendToDevice': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendToDevice,
-                    request_deserializer=serial__pb2.SendToDeviceRequest.FromString,
-                    response_serializer=serial__pb2.SendToDeviceResponse.SerializeToString,
-            ),
-            'ReceiveFromDevice': grpc.unary_unary_rpc_method_handler(
-                    servicer.ReceiveFromDevice,
-                    request_deserializer=serial__pb2.ReceiveFromDeviceRequest.FromString,
-                    response_serializer=serial__pb2.ReceiveFromDeviceResponse.SerializeToString,
-            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'beebium.SerialService', rpc_method_handlers)
@@ -147,14 +90,11 @@ def add_SerialServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class SerialService(object):
-    """Serial port (MC6850 ACIA + Serial ULA) management service.
+    """Serial port (MC6850 ACIA + Serial ULA) status service.
 
-    Provides status queries for the on-board serial hardware and a scriptable,
-    in-process transport so clients can inject bytes for the BBC to receive and
-    collect bytes the BBC has transmitted -- without any PTY or external device.
-    This is the serial analogue of the Econet TestBackend, intended for demos
-    and integration tests. A real PTY/serial bridge to fujinet-nio is a separate
-    transport that plugs in at the application layer.
+    Reports the live state of the on-board serial hardware. What is attached to
+    the far end of the wire is owned by a serial PeripheralExtension (host-serial,
+    rpc-serial, loopback-serial, ...), not by this service.
     """
 
     @staticmethod
@@ -174,87 +114,6 @@ class SerialService(object):
             '/beebium.SerialService/GetSerialStatus',
             serial__pb2.GetSerialStatusRequest.SerializeToString,
             serial__pb2.SerialStatus.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SetEndpointMode(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.SerialService/SetEndpointMode',
-            serial__pb2.SetEndpointModeRequest.SerializeToString,
-            serial__pb2.SetEndpointModeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SendToDevice(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.SerialService/SendToDevice',
-            serial__pb2.SendToDeviceRequest.SerializeToString,
-            serial__pb2.SendToDeviceResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def ReceiveFromDevice(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/beebium.SerialService/ReceiveFromDevice',
-            serial__pb2.ReceiveFromDeviceRequest.SerializeToString,
-            serial__pb2.ReceiveFromDeviceResponse.FromString,
             options,
             channel_credentials,
             insecure,
