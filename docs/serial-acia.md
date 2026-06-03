@@ -211,6 +211,34 @@ flag; colon-separated `key=value` pairs). `list-extensions` and
 --loopback-serial                                   # no parameters
 ```
 
+### In a preset
+
+A serial device can be pinned in a preset like any other extension. `create-preset`
+accepts the same `--<name> spec` flags as `start` and emits them into the preset's
+`extensions` array:
+
+```
+beebium-model-b create-preset --name "FujiNet" \
+    --host-serial mode=device:path=/dev/ttyUSB0:baud=9600
+```
+
+produces (and `--preset <file>` loads back):
+
+```json
+{
+  "model": "model-b",
+  "name": "FujiNet",
+  "extensions": [
+    { "name": "host-serial",
+      "config": { "mode": "device", "path": "/dev/ttyUSB0", "baud": 9600, "tx_buffer": 4096 } }
+  ]
+}
+```
+
+A CLI `--<name>` flag at `start` adds to the preset's extensions; since only one
+device can own the serial port, list just one serial extension (a preset serial
+device plus a conflicting CLI serial device is rejected at attach time).
+
 ## gRPC services and clients
 
 `SerialService` (`src/service/proto/serial.proto`) is now a **status-only**
