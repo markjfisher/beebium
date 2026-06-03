@@ -195,13 +195,28 @@ members; tests keep locals).
         `serial.proto` (status-only); update the Python serial client to
         status-only; retire the `--serial` CLI. Breaking, but the tests already
         moved in 11c-A.
-12. Fix the unbounded-TX default while here: default to NONE (TX discarded) or
-    cap the scriptable queue, rather than silently growing.
-    Tests: extension-load test per platform; PTY round-trip now exercised through
-    the extension (POSIX); scriptable round-trip; a test proving the serial host
-    primitives are still shared correctly with the piconet extension (no
-    regression). Triad. On Windows, validate `device:` against a `com0com` pair
-    on Slioch (manual) and record the result.
+12. DONE on macOS+Linux (Windows pending Slioch). Bound the rpc-serial queues so
+    no external client can leak memory or stall the emulator host (invariant:
+    only the guest may stall, via faithful hardware back-pressure):
+    - TX (Beeb -> device): `ScriptableSerialEndpoint` tx queue is bounded with a
+      back-pressure mark that drives the MC6850 `/CTS` line (new
+      `SerialDataSink::accepts_more()`, driven each TX bit period by the ULA).
+      `/CTS` holds TDRE low so the guest's transmit loop busy-waits; lossless. A
+      hard cap above the mark drops only if the guest also ignores `/CTS` (a real
+      ACIA loses data there too); drops are counted.
+    - RX (device -> Beeb): `RpcSerial.Send` is bounded and returns the `accepted`
+      count (POSIX-write idiom); returns immediately, never blocks. Client
+      retries the unaccepted tail.
+    Tests: endpoint back-pressure + bounding; socket-level `/CTS` assert/release;
+    `Send` cap returns `accepted`. Python `bbc.rpc_serial.send` returns accepted.
+
+    FOLLOW-UP (separate, required by the no-stall invariant): `HostSerialEndpoint::
+    add_byte` writes synchronously to the OS port on the emulation thread, so a
+    stuck real peer can freeze the emulator. Give it an async TX queue + writer
+    thread (mirroring its reader thread); reuse the same `/CTS` back-pressure seam
+    when the queue is full. Lock-free queues are NOT needed -- serial access is
+    baud-rate-bounded (<20k ops/s), uncontended-mutex cost is <0.1% of the 2 MHz
+    loop. See [[feedback_no_external_peer_stalls_emulator]].
 
 ## Phase 4 -- gRPC and clients aligned with conventions
 

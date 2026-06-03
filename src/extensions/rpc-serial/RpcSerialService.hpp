@@ -37,9 +37,9 @@ public:
                       const RpcSerialSendRequest* request,
                       RpcSerialSendResponse* response) override {
         const std::string& data = request->data();
-        endpoint_.inject(reinterpret_cast<const std::uint8_t*>(data.data()),
-                         data.size());
-        response->set_queued(static_cast<std::uint32_t>(data.size()));
+        const std::size_t accepted = endpoint_.inject(
+            reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
+        response->set_accepted(static_cast<std::uint32_t>(accepted));
         return grpc::Status::OK;
     }
 

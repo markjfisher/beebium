@@ -40,9 +40,14 @@ class RpcSerial:
         self._stub = stub
 
     def send(self, data: bytes) -> int:
-        """Inject bytes for the BBC to receive. Returns the number queued."""
+        """Inject bytes for the BBC to receive.
+
+        Returns the number of bytes accepted, which is fewer than ``len(data)``
+        when the receive queue is full; resend ``data[accepted:]`` after the BBC
+        has read some. Never blocks.
+        """
         response = self._stub.Send(rpc_serial_pb2.RpcSerialSendRequest(data=data))
-        return response.queued
+        return response.accepted
 
     def receive(self, max_bytes: int = 0) -> bytes:
         """Collect bytes the BBC has transmitted (0 = all currently available)."""
