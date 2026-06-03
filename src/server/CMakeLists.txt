@@ -69,6 +69,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             beebium_ext_aun
             beebium_ext_host_serial
             beebium_ext_serial_loopback
+            beebium_ext_rpc_serial
             nlohmann_json::nlohmann_json
             stb_image_write
     )
