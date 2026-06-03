@@ -62,13 +62,16 @@ void HostSerialUi::build_view(View* out) const {
         snap = endpoint->ui_snapshot();
     }
 
+    // A pty has no physical line rate, so baud is meaningless in PTY mode and is
+    // omitted entirely (display line and editor picker both).
+    const bool is_pty = snap.mode == "pty";
+
     // Mode heading for the path/baud lines below it: "PTY Mode" for a startup
     // pty, "Device Mode" for a real serial port.
     {
         auto* control = group->add_controls();
         control->set_id("device_heading");
-        control->mutable_label()->set_text(snap.mode == "pty" ? "PTY Mode"
-                                                              : "Device Mode");
+        control->mutable_label()->set_text(is_pty ? "PTY Mode" : "Device Mode");
     }
 
     // The path on its own line, as the editable anchor: click it to re-point
@@ -103,7 +106,10 @@ void HostSerialUi::build_view(View* out) const {
         // Baud: an EditableChoice rendered as a dropdown of standard rates,
         // carrying the chosen rate as a string (single source of truth on
         // commit; no index<->rate mapping to keep in sync with handle_event).
-        {
+        // Omitted in PTY mode -- a pty ignores the line rate. Re-pointing from a
+        // pty always opens a device (mode flips to device), and handle_event
+        // keeps the current baud when no baud field is committed.
+        if (!is_pty) {
             auto* c = editor_group->add_controls();
             c->set_id(FIELD_BAUD);
             auto* ec = c->mutable_editable_choice();
@@ -116,8 +122,8 @@ void HostSerialUi::build_view(View* out) const {
     }
 
     // Baud on its own line below the path. Display-only here; it is edited via
-    // the path's popover (which carries the baud picker).
-    {
+    // the path's popover (which carries the baud picker). Omitted in PTY mode.
+    if (!is_pty) {
         auto* control = group->add_controls();
         control->set_id("baud_display");
         control->mutable_label()->set_text(std::to_string(snap.baud) + " baud");

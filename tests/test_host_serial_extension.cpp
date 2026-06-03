@@ -14,6 +14,8 @@
 
 #include "HostSerialExtension.hpp"
 
+#include "extension_ui.pb.h"
+
 #include <beebium/devices/Mc6850.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
@@ -48,6 +50,36 @@ TEST_CASE("HostSerialExtension attaches to the serial port (pty mode)",
 
     ext.init(ctx);
     CHECK(port.is_occupied());
+
+    // The panel reflects pty mode: heading "PTY Mode", and -- because a pty has
+    // no physical line rate -- no baud anywhere (no display line, no editor
+    // picker).
+    View view;
+    ext.ui()->build_view(&view);
+    const auto& group = view.root().group();
+
+    bool saw_pty_heading = false;
+    bool saw_baud_display = false;
+    const Control* device_editor = nullptr;
+    for (const auto& control : group.controls()) {
+        if (control.id() == "device_heading") {
+            CHECK(control.label().text() == "PTY Mode");
+            saw_pty_heading = true;
+        }
+        if (control.id() == "baud_display") {
+            saw_baud_display = true;
+        }
+        if (control.id() == "device") {
+            device_editor = &control;
+        }
+    }
+    CHECK(saw_pty_heading);
+    CHECK_FALSE(saw_baud_display);
+
+    REQUIRE(device_editor != nullptr);
+    for (const auto& field : device_editor->modal_editor().editor().group().controls()) {
+        CHECK(field.id() != "baud");
+    }
 
     ext.shutdown();
 }

@@ -929,6 +929,7 @@ if(NOT WIN32)
     )
     target_link_libraries(test_host_serial_extension PRIVATE
         beebium_ext_host_serial
+        beebium_extension_ui_proto
         Catch2::Catch2WithMain
     )
     catch_discover_tests(test_host_serial_extension)
