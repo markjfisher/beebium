@@ -53,12 +53,16 @@ public:
     // Peripherals-sidebar panel.
     ExtensionUi* ui() override { return &ui_; }
 
-    // True while the host port is open (false before init() or after shutdown()).
-    bool bridge_open() const { return endpoint_ && endpoint_->is_open(); }
+    // Non-owning accessor used by HostSerialUi (snapshot + request_reopen).
+    // Null before init() / after shutdown().
+    serial::HostSerialEndpoint* endpoint() { return endpoint_.get(); }
 
 private:
-    std::unique_ptr<serial::HostSerialEndpoint> endpoint_;
+    // ui_ is declared before endpoint_ so endpoint_ is destroyed FIRST: tearing
+    // down its I/O threads (which may call ui_.mark_dirty via the async-state
+    // callback) before ui_ dies, avoiding a use-after-free.
     HostSerialUi ui_{*this};
+    std::unique_ptr<serial::HostSerialEndpoint> endpoint_;
 };
 
 }  // namespace beebium
