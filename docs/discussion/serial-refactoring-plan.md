@@ -181,10 +181,20 @@ members; tests keep locals).
     that owns the `HostSerialEndpoint` + host port + `PtyMaster` and offers the
     pty / device / loopback / scriptable modes. `attaches_to()` the serial port;
     register it in `BuiltinExtensions.hpp`.
-11. Move transport selection out of `SerialService` / `ServerMain` into the
-    extension's configuration (manifest parameters), folding `--serial` into the
-    existing extension-configuration mechanism ([[project_extension_config]]).
-    Keep `loopback` / `scriptable` available for tests and demos.
+11. Move transport selection out of `SerialService` into extensions. Done in
+    slices, each green:
+    - 11a DONE: removed pty/device from `SerialService` (host-serial owns them).
+    - 11b DONE: built the `serial-loopback` and `rpc-serial` extensions.
+    - 11c (TEARDOWN), in green-keeping order so no commit is broken:
+      - 11c-A: add the Python `rpc-serial` client (regen stubs incl. the
+        rpc_serial extension proto) and migrate the live-server scriptable/
+        loopback integration tests onto `--rpc-serial` / `--serial-loopback`
+        over the wire, while `SerialService` still has its endpoints. Additive.
+      - 11c-B: remove `SetEndpointMode`/`Send`/`Receive`/the endpoint enum +
+        transport fields and the default endpoint from `SerialService` and
+        `serial.proto` (status-only); update the Python serial client to
+        status-only; retire the `--serial` CLI. Breaking, but the tests already
+        moved in 11c-A.
 12. Fix the unbounded-TX default while here: default to NONE (TX discarded) or
     cap the scriptable queue, rather than silently growing.
     Tests: extension-load test per platform; PTY round-trip now exercised through

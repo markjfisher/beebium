@@ -32,6 +32,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.rpc_serial import RpcSerial
 from beebium.serial import Serial
 from beebium.extension_ui import ExtensionUi
 from beebium.indicators import Indicators
@@ -105,6 +106,7 @@ class Beebium:
         self._disc: Disc | None = None
         self._econet: Econet | None = None
         self._serial: Serial | None = None
+        self._rpc_serial: RpcSerial | None = None
         self._econet_transport: EconetTransport | None = None
         self._aun: Aun | None = None
         self._piconet: Piconet | None = None
@@ -349,6 +351,18 @@ class Beebium:
         if self._serial is None:
             self._serial = Serial(self._connection.serial_stub)
         return self._serial
+
+    @property
+    def rpc_serial(self) -> RpcSerial:
+        """Drive the client-driven serial peer (the rpc-serial extension).
+
+        The RPC client is the device on the far end of the serial wire: inject
+        bytes for the BBC to receive and collect bytes it transmits. Requires
+        the server to be launched with ``--rpc-serial``.
+        """
+        if self._rpc_serial is None:
+            self._rpc_serial = RpcSerial(self._connection.rpc_serial_stub)
+        return self._rpc_serial
 
     @property
     def transport(self) -> EconetTransport:
