@@ -238,9 +238,18 @@ monolithic fixed-menu `SerialService` does not survive as-is.
     clients (panel + indicator for free). Concretely:
     - host-serial bridge extension: owns pty/device config via CLI/preset +
       ExtensionUi, replacing `SetEndpointMode(PTY|DEVICE)`.
-    - scriptable/test extension: keeps `SendToDevice`/`ReceiveFromDevice` as its
-      own typed RPC (concern C); loopback likewise becomes a trivial device/mode
-      of this or the host extension.
+    - test-serial extension (name TBD; NOT "scriptable" -- that names the control
+      mechanism, not the role -- pick a domain term like virtual-/test-serial at
+      extraction): the synthetic in-process peers. It offers a `mode` parameter:
+      `echo` (loopback) and a client-driven mode that keeps `SendToDevice`/
+      `ReceiveFromDevice` as its own typed RPC (concern C). DECIDED: loopback is a
+      MODE of this extension, not its own extension (both are test/diagnostic
+      peers for the same audience; a whole extension for a five-line echo is
+      disproportionate). The underlying `LoopbackSerialEndpoint` and the
+      client-driven endpoint stay as lightweight core `SerialPortDevice` test
+      helpers in `serial/SerialDevice.hpp` -- C++ unit tests construct them
+      directly and attach via the `SerialPort` handle, no extension involved;
+      only the RUNTIME-selectable forms move into the extension.
     - future emulated FujiNet: its own typed RPC + UI.
     Typed RPCs and UI dispatch serve different audiences and are not redundant
     ([[feedback_extension_multi_api]],
