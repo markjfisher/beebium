@@ -325,6 +325,46 @@ monolithic fixed-menu `SerialService` does not survive as-is.
     matrix already does for other services); TS unit + integration (Linux +
     macOS); macOS `BeebiumTests`. Triad for the C++ side.
 
+    - Python: DONE -- `bbc.serial` (status + `watch_status` stream) and
+      `bbc.rpc_serial` (send/receive/status), with unit + live integration tests
+      (steps 11c/13 and earlier).
+    - TypeScript: DONE -- `src/serial.ts` (`Serial`: getStatus + watchStatus) and
+      `src/rpc_serial.ts` (`RpcSerial`: send/receive/getStatus), wired through
+      connection.ts/client.ts (`bbc.serial`, `bbc.rpcSerial`) + index.ts; serial
+      + rpc_serial protos added to generate-protos.sh. Tests: serial.test.ts,
+      rpc_serial.test.ts (8 unit) + serial-integration.test.ts (stream + rpc
+      round-trip over a real server). All pass; full TS suite green except two
+      pre-existing tube-system-integration parasite-breakpoint failures unrelated
+      to serial.
+    - Swift / macOS: TODO -- SerialClient + serial UI panel/indicator (overlaps
+      Phase 4.5: the EXTENSION sidebar UI is the serial extensions' ExtensionUi;
+      the SerialService status surface is a separate read-only panel). Do after
+      Phase 4.5 so both land coherently.
+
+## Phase 4.5 -- Serial extensions in the Peripherals sidebar (Extension UI)
+
+Inserted before Phases 5/6 (Rob's call). The three serial extensions have CLI
+config + (rpc-serial) a typed RPC, but NO `ExtensionUi` surface -- so unlike
+acorn-rtc / scsi-hard-disc / aun / piconet they do NOT appear in the macOS
+Peripherals sidebar. (This corrects the earlier "step 14 is done" note: only the
+typed-RPC half, concern C, landed; the GUI half lives here.) Give each extension
+an `ExtensionUi` (subclass with `build_view(View*)` + `handle_event` +
+`mark_dirty` to push, the AcornRtcUi/ScsiHardDiscUi pattern,
+`docs/discussion/extension-ui-architecture.md`), discovered dynamically by id
+like the transport panels ([[project_transport_ui_discovery]]), so serial shows
+up via the SAME mechanism as every other extension -- no client-side hardcoding.
+
+- host-serial: panel showing live config (mode pty/device, resolved path, baud,
+  tx_buffer) + a connected/idle indicator; later, open/close controls.
+- rpc-serial: indicator (tx/rx pending) + a panel noting it is client-driven.
+- loopback-serial: a minimal "echo active" indicator (zero config).
+- Live data from the extension's own state (and WatchSerialStatus where the chip
+  view helps); the serial group is absent when `has_serial_socket` is false.
+- Consider [[project_serial_port_selector]] (SerialPortSelector control) for the
+  host-serial device/pty picker rather than a raw text field.
+- Tests: per-extension `build_view` unit tests (acorn-rtc/scsi precedent) + macOS
+  sidebar discovery; triad for the C++ side.
+
 ## Phase 5 -- Presets, CLI tidy, docs
 
 16. Make the serial transport presettable by folding it into extension config in
