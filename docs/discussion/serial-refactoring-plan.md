@@ -336,10 +336,25 @@ monolithic fixed-menu `SerialService` does not survive as-is.
       round-trip over a real server). All pass; full TS suite green except two
       pre-existing tube-system-integration parasite-breakpoint failures unrelated
       to serial.
-    - Swift / macOS: TODO -- SerialClient + serial UI panel/indicator (overlaps
-      Phase 4.5: the EXTENSION sidebar UI is the serial extensions' ExtensionUi;
-      the SerialService status surface is a separate read-only panel). Do after
-      Phase 4.5 so both land coherently.
+    - Swift / macOS: NO WORK NEEDED (verified by code inspection; Rob's call --
+      "if our ducks are in a row, no Swift changes should be necessary"). The
+      macOS client is a thin, fully data-driven renderer: `PeripheralTree.build`
+      constructs the sidebar from whatever `ListExtensions` returns with no
+      hardcoded extension whitelist; the `serial-port` extension point already
+      has a display name; node labels come from the server (manifest display_name
+      -- "Host Serial Bridge" / "RPC Serial Peer" / "Loopback Serial Plug");
+      `hasUI` (= ui()!=nullptr) drives the panel; and `ExtensionViewRenderer`
+      renders the generic Control tree (Label/Group, which is all our panels use)
+      via a recursive switch. `PeripheralTreeTests` already exercises the tree
+      generically, so a serial-specific Swift test would be redundant. With
+      Phase 4.5 landed, the serial extensions surface in the Peripherals sidebar
+      with zero macOS changes -- visually confirmable by launching with
+      `--rpc-serial` / `--host-serial` / `--loopback-serial`.
+    - The bespoke "SerialService chip-status panel" once sketched here is NOT
+      needed: the extension panels cover the user-facing surface, and the chip
+      register state (WatchSerialStatus) is a diagnostic surface available to the
+      Python/TS clients. If ever wanted in the GUI it should be a generic
+      ExtensionUi-style surface, not hand-written Swift.
 
 ## Phase 4.5 -- Serial extensions in the Peripherals sidebar (Extension UI)
 
