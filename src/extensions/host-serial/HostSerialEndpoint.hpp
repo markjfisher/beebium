@@ -24,9 +24,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -52,43 +54,59 @@ namespace beebium::serial {
 //
 // The writer thread is the sole writer, honouring the HostSerialPort
 // single-writer threading contract.
+//
+// Re-pointing (Extension UI): the device path / baud can be changed at runtime.
+// request_reopen() (any thread) posts the new target; the emulation thread
+// applies it on its next has_data() tick (process_pending_reopen) -- tearing
+// down the I/O threads, building a fresh port via the SerialFactory, and
+// restarting -- so the emulation thread stays the sole owner of port_. The UI
+// reads state only through ui_snapshot() (under ui_mutex_); never the live
+// fields directly -- racing the path string across threads corrupted the heap
+// on Windows (the Piconet lesson, docs/discussion/grpc-windows-streaming-race.md).
 class HostSerialEndpoint final : public beebium::SerialPortDevice {
 public:
-    // The TX back-pressure mark is configurable (the host-serial extension wires
-    // it from the tx_buffer parameter); the hard cap tracks it plus the margin.
-    explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port,
-                                std::size_t tx_back_pressure = kDefaultTxBackPressure)
+    // Builds a replacement HostSerialPort for a (path, baud) on reopen. When
+    // null, request_reopen() is a no-op (the port handed in at construction is
+    // the only one this endpoint will own).
+    using SerialFactory =
+        std::function<std::unique_ptr<HostSerialPort>(const std::string& path, int baud)>;
+
+    struct Options {
+        std::size_t tx_back_pressure = kDefaultTxBackPressure;
+        SerialFactory factory;                      // null => reopen disabled
+        std::function<void()> on_async_state_change;  // fired on hot-unplug / reopen
+        std::string device_path;                    // for the UI snapshot
+        int baud = 19200;                           // for the UI snapshot
+    };
+
+    explicit HostSerialEndpoint(std::unique_ptr<HostSerialPort> port)
+        : HostSerialEndpoint(std::move(port), Options{}) {}
+
+    HostSerialEndpoint(std::unique_ptr<HostSerialPort> port, Options options)
         : port_(std::move(port)),
-          tx_back_pressure_(tx_back_pressure),
-          tx_hard_cap_(tx_back_pressure + kTxHardCapMargin) {
-        if (port_ && port_->is_open()) {
-            reader_ = std::thread([this] { reader_loop(); });
-            writer_ = std::thread([this] { writer_loop(); });
-        }
+          tx_back_pressure_(options.tx_back_pressure),
+          tx_hard_cap_(options.tx_back_pressure + kTxHardCapMargin),
+          factory_(std::move(options.factory)),
+          on_async_state_change_(std::move(options.on_async_state_change)),
+          current_path_(std::move(options.device_path)),
+          current_baud_(options.baud) {
+        start_io_threads();
     }
 
-    std::size_t tx_back_pressure() const { return tx_back_pressure_; }
-    std::size_t tx_hard_cap() const { return tx_hard_cap_; }
-
     ~HostSerialEndpoint() override {
-        stop_.store(true, std::memory_order_release);
-        tx_cv_.notify_all();  // wake the writer if it is waiting for data
-        if (port_) {
-            port_->close();  // unblock a pending read() so the reader can exit
-        }
-        if (reader_.joinable()) {
-            reader_.join();
-        }
-        if (writer_.joinable()) {
-            writer_.join();
-        }
+        stop_io_threads();
+        delete pending_reopen_.exchange(nullptr, std::memory_order_acq_rel);
     }
 
     HostSerialEndpoint(const HostSerialEndpoint&) = delete;
     HostSerialEndpoint& operator=(const HostSerialEndpoint&) = delete;
 
+    std::size_t tx_back_pressure() const { return tx_back_pressure_; }
+    std::size_t tx_hard_cap() const { return tx_hard_cap_; }
+
     // --- SerialDataSource (device -> Beeb), called on the emulation thread ---
     bool has_data() override {
+        process_pending_reopen();  // emulation-thread hook; cheap when idle
         std::lock_guard<std::mutex> lock(rx_mutex_);
         return !rx_.empty();
     }
@@ -122,7 +140,8 @@ public:
         return tx_.size() < tx_back_pressure_;
     }
 
-    // True while the underlying port is usable.
+    // True while the underlying port is usable. For the emulation thread / tests;
+    // the UI uses ui_snapshot() instead (cross-thread safe).
     bool is_open() const { return port_ && port_->is_open(); }
 
     // Diagnostics / tests: bytes queued for transmit, and bytes dropped at the
@@ -136,7 +155,103 @@ public:
         return tx_dropped_;
     }
 
+    // --- Runtime re-pointing (Extension UI) ---
+
+    // Atomic snapshot of the state the UI renders. Built under ui_mutex_ and
+    // returned by value, so the gRPC SubscribeView thread sees a consistent view
+    // without holding the lock. The only supported cross-thread read of the racy
+    // fields (port_, current_path_, current_baud_, open_error_).
+    struct UiSnapshot {
+        std::string device_path;
+        int baud = 0;
+        bool serial_open = false;
+        std::string open_error_message;
+    };
+    UiSnapshot ui_snapshot() const {
+        std::lock_guard<std::mutex> lock(ui_mutex_);
+        return UiSnapshot{current_path_, current_baud_,
+                          port_ && port_->is_open(), open_error_};
+    }
+
+    // Request the bridge re-point to a new device path + baud. Safe from any
+    // thread; the close/open/restart runs on the emulation thread at the next
+    // has_data() tick. Successive calls coalesce. No-op without a SerialFactory.
+    void request_reopen(std::string path, int baud) {
+        if (!factory_) {
+            return;
+        }
+        auto* req = new ReopenRequest{std::move(path), baud};
+        delete pending_reopen_.exchange(req, std::memory_order_acq_rel);
+    }
+
 private:
+    struct ReopenRequest {
+        std::string path;
+        int baud;
+    };
+
+    void start_io_threads() {
+        if (port_ && port_->is_open()) {
+            stop_.store(false, std::memory_order_release);
+            reader_ = std::thread([this] { reader_loop(); });
+            writer_ = std::thread([this] { writer_loop(); });
+        }
+    }
+
+    void stop_io_threads() {
+        stop_.store(true, std::memory_order_release);
+        tx_cv_.notify_all();  // wake the writer if it is waiting for data
+        if (port_) {
+            port_->close();  // unblock a pending read() so the reader can exit
+        }
+        if (reader_.joinable()) {
+            reader_.join();
+        }
+        if (writer_.joinable()) {
+            writer_.join();
+        }
+    }
+
+    void notify_state_changed() {
+        if (on_async_state_change_) {
+            on_async_state_change_();
+        }
+    }
+
+    // Emulation thread: apply a pending re-point. Tears down the I/O threads
+    // (so no thread touches port_), swaps the port under ui_mutex_, restarts.
+    void process_pending_reopen() {
+        if (pending_reopen_.load(std::memory_order_acquire) == nullptr) {
+            return;  // common case: nothing queued
+        }
+        ReopenRequest* req = pending_reopen_.exchange(nullptr, std::memory_order_acq_rel);
+        if (!req) {
+            return;
+        }
+        std::string path = std::move(req->path);
+        int baud = req->baud;
+        delete req;
+
+        stop_io_threads();  // join reader + writer; close the old port
+
+        std::unique_ptr<HostSerialPort> fresh = factory_ ? factory_(path, baud) : nullptr;
+        const bool open = fresh && fresh->is_open();
+        std::string error;
+        if (!open) {
+            error = fresh ? std::string(fresh->open_error())
+                          : std::string("reopen unavailable");
+        }
+        {
+            std::lock_guard<std::mutex> lock(ui_mutex_);
+            port_ = std::move(fresh);
+            current_path_ = std::move(path);
+            current_baud_ = baud;
+            open_error_ = std::move(error);
+        }
+        start_io_threads();   // resets stop_, starts threads iff the new port opened
+        notify_state_changed();
+    }
+
     void reader_loop() {
         std::array<std::uint8_t, 256> buf{};
         while (!stop_.load(std::memory_order_acquire)) {
@@ -154,6 +269,12 @@ private:
                 }
             }
             // would_block: the read already waited ~100ms, so just loop.
+        }
+        // Exited for a reason other than a teardown/reopen (hot-unplug, read
+        // error closing the port) -- tell the UI so it re-renders the offline
+        // state. Suppressed during stop_io_threads (the deliberate path).
+        if (!stop_.load(std::memory_order_acquire)) {
+            notify_state_changed();
         }
     }
 
@@ -207,6 +328,20 @@ private:
     std::size_t tx_dropped_ = 0;
     const std::size_t tx_back_pressure_;
     const std::size_t tx_hard_cap_;
+
+    // Re-pointing.
+    SerialFactory factory_;
+    std::function<void()> on_async_state_change_;
+    std::atomic<ReopenRequest*> pending_reopen_{nullptr};
+
+    // Guards the cross-thread read path (ui_snapshot on the gRPC thread) against
+    // the emulation thread's port_ swap in process_pending_reopen. Held only for
+    // the field swap / snapshot; the heavy work (thread teardown, port open,
+    // thread restart) runs outside the lock.
+    mutable std::mutex ui_mutex_;
+    std::string current_path_;
+    int current_baud_ = 0;
+    std::string open_error_;
 };
 
 }  // namespace beebium::serial

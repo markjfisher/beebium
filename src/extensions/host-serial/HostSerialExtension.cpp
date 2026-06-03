@@ -52,6 +52,7 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
     }
 
     std::unique_ptr<serial::HostSerialPort> port;
+    std::string resolved_path;
     if (mode == "pty") {
 #ifndef _WIN32
         // path (if given) is a stable symlink to the kernel-assigned slave.
@@ -61,6 +62,7 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
                                      + std::string(pty->open_error()));
         }
         std::cout << "host-serial: pty ready at " << pty->advertised_path() << "\n";
+        resolved_path = pty->advertised_path();
         port = std::move(pty);
 #else
         throw std::runtime_error(
@@ -81,6 +83,7 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
                                      + std::string(dev->open_error()));
         }
         std::cout << "host-serial: opened " << dev->device_path() << "\n";
+        resolved_path = dev->device_path();
         port = std::move(dev);
     } else {
         throw std::runtime_error("host-serial: unknown mode '" + mode
@@ -95,7 +98,26 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
         }
     }
 
-    endpoint_ = std::make_unique<serial::HostSerialEndpoint>(std::move(port), tx_buffer);
+    serial::HostSerialEndpoint::Options options;
+    options.tx_back_pressure = tx_buffer;
+    options.device_path = resolved_path;
+    options.baud = baud;
+    // The Extension UI lets the user re-point the bridge at runtime. A reopen
+    // always opens a *device* at the chosen path/baud (the "which serial port
+    // does the bridge use" picker); pty creation is a startup-only mode.
+    options.factory = [](const std::string& reopen_path, int reopen_baud)
+        -> std::unique_ptr<serial::HostSerialPort> {
+#ifndef _WIN32
+        return std::make_unique<serial::PosixSerialPort>(reopen_path, reopen_baud);
+#else
+        return std::make_unique<serial::Win32SerialPort>(reopen_path, reopen_baud);
+#endif
+    };
+    // Async state changes (hot-unplug, completed reopen) re-render the panel.
+    options.on_async_state_change = [this] { ui_.mark_dirty(); };
+
+    endpoint_ = std::make_unique<serial::HostSerialEndpoint>(std::move(port),
+                                                             std::move(options));
     ctx.get<SerialPort>().attach(*endpoint_);
 }
 

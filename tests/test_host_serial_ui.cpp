@@ -26,33 +26,41 @@ TEST_CASE("HostSerialExtension::ui() returns a non-null UI", "[host-serial][ui]"
     REQUIRE(ext.ui() != nullptr);
 }
 
-TEST_CASE("HostSerialUi build_view shows device config and status",
+TEST_CASE("HostSerialUi build_view exposes a device editor and a status indicator",
           "[host-serial][ui]") {
-    HostSerialExtension ext;
-    ext.set_config({{"mode", "device"}, {"path", "/dev/ttyUSB0"}, {"baud", "9600"}});
+    HostSerialExtension ext;  // not init()ed: endpoint null -> default snapshot
 
     View view;
     ext.ui()->build_view(&view);
 
     REQUIRE(view.root().control_case() == Control::kGroup);
     const auto& group = view.root().group();
-    REQUIRE(group.controls_size() == 4);  // mode, path, baud, status
+    REQUIRE(group.controls_size() == 2);  // device editor + connection indicator
 
-    CHECK(group.controls(0).label().text() == "Mode: device");
-    CHECK(group.controls(1).label().text() == "Path: /dev/ttyUSB0");
-    CHECK(group.controls(2).label().text() == "Baud: 9600");
-    CHECK(group.controls(3).label().text().find("not connected") != std::string::npos);
-}
+    // Device ModalEditor: always editable; anchor shows the (unset) device.
+    const auto& device = group.controls(0);
+    REQUIRE(device.id() == "device");
+    REQUIRE(device.control_case() == Control::kModalEditor);
+    CHECK(device.modal_editor().editable());
+    CHECK(device.modal_editor().anchor().label().text().rfind("Device: ", 0) == 0);
 
-TEST_CASE("HostSerialUi pty mode omits path and baud", "[host-serial][ui]") {
-    HostSerialExtension ext;
-    ext.set_config({{"mode", "pty"}});
+    // Editor body: a path EditableChoice and a baud EditableChoice.
+    const auto& editor = device.modal_editor().editor();
+    REQUIRE(editor.control_case() == Control::kGroup);
+    REQUIRE(editor.group().controls_size() == 2);
+    CHECK(editor.group().controls(0).id() == "path");
+    CHECK(editor.group().controls(0).control_case() == Control::kEditableChoice);
+    CHECK(editor.group().controls(1).id() == "baud");
 
-    View view;
-    ext.ui()->build_view(&view);
+    bool has_19200 = false;
+    for (const auto& option : editor.group().controls(1).editable_choice().options()) {
+        if (option == "19200") has_19200 = true;
+    }
+    CHECK(has_19200);
 
-    const auto& group = view.root().group();
-    REQUIRE(group.controls_size() == 2);  // mode, status
-    CHECK(group.controls(0).label().text() == "Mode: pty");
-    CHECK(group.controls(1).label().text().find("not connected") != std::string::npos);
+    // Status indicator: no endpoint -> disconnected/error.
+    const auto& connected = group.controls(1);
+    REQUIRE(connected.id() == "connected");
+    REQUIRE(connected.control_case() == Control::kIndicator);
+    CHECK(connected.indicator().state() == Indicator_State_ERROR);
 }
