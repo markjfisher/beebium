@@ -217,44 +217,8 @@ def test_loopback_echo(stopped_bbc):
     assert bbc.memory.address.bus[0xFE09] == ord("K")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="PTY endpoint is POSIX-only")
-def test_pty_endpoint_round_trip(stopped_bbc):
-    """PTY mode advertises a slave path that round-trips bytes with the BBC."""
-    import tty
-
-    bbc = stopped_bbc
-
-    # Switch to a freshly-created pseudo-terminal; the returned path is what a
-    # serial client (any ROM's device) attaches to.
-    slave_path = bbc.serial.set_endpoint_mode(EndpointMode.PTY)
-    assert slave_path
-
-    status = bbc.serial.status
-    assert status.endpoint_mode is EndpointMode.PTY
-    assert status.endpoint_path == slave_path
-    assert status.endpoint_open is True
-
-    fd = os.open(slave_path, os.O_RDWR | os.O_NOCTTY)
-    try:
-        tty.setraw(fd)  # raw: no echo / CR-LF cooking
-        _program_serial(bbc)
-
-        # BBC -> device: transmit a byte and read it from the slave.
-        bbc.memory.address.bus[0xFE09] = ord("B")
-        bbc.debugger.step_cycles(4000)
-        readable, _, _ = select.select([fd], [], [], 1.0)
-        assert readable, "device end never saw the transmitted byte"
-        assert os.read(fd, 16)[:1] == b"B"
-
-        # device -> BBC: write a byte to the slave and read it from the ACIA.
-        os.write(fd, b"D")
-        got = None
-        for _ in range(20):
-            bbc.debugger.step_cycles(2000)
-            if bbc.memory.address.peek[0xFE08] & 0x01:  # RDRF
-                got = bbc.memory.address.bus[0xFE09]
-                break
-            time.sleep(0.005)
-        assert got == ord("D"), "BBC never received the byte from the device"
-    finally:
-        os.close(fd)
+# Note: the PTY (and real serial device) round-trip is no longer a SerialService
+# concern -- it moved to the host-serial PeripheralExtension. It is covered by
+# the C++ test_host_serial_extension (a device-mode round trip through a real
+# pty). A Python integration test that launches the server with
+# --host-serial mode=pty belongs with the host-serial client work (plan step 15).

@@ -18,14 +18,6 @@
 #include "beebium/serial/SerialConcepts.hpp"
 #include "beebium/serial/SerialDevice.hpp"
 #include "beebium/serial/SerialSocket.hpp"
-#include "beebium/serial/HostSerialEndpoint.hpp"
-#include "beebium/serial/HostSerialPort.hpp"
-#ifndef _WIN32
-#include "beebium/serial/PosixSerialPort.hpp"
-#include "beebium/serial/PtyMaster.hpp"
-#else
-#include "beebium/serial/Win32SerialPort.hpp"
-#endif
 
 #include <grpcpp/grpcpp.h>
 #include <memory>
@@ -35,18 +27,21 @@
 namespace beebium::service {
 
 using beebium::HasSerialSocket;
-using beebium::serial::HostSerialEndpoint;
 
-// gRPC service exposing the BBC's on-board serial port (MC6850 ACIA + Serial
-// ULA). It serves status snapshots and provides a scriptable in-process
-// transport: clients inject bytes for the Beeb to receive (SendToDevice) and
-// collect bytes the Beeb has transmitted (ReceiveFromDevice).
+// gRPC service for the BBC's on-board serial port (MC6850 ACIA + Serial ULA).
+// It serves status snapshots and the in-process test endpoints: loopback, and a
+// scriptable endpoint (clients inject bytes for the Beeb via SendToDevice and
+// collect transmitted bytes via ReceiveFromDevice).
 //
-// Thread-safety: SendToDevice/ReceiveFromDevice only touch the scriptable
-// endpoint's own mutex-protected queues, which the emulation thread accesses
-// through the same locks, so they need no machine pause. SetEndpointMode swaps
-// the source/sink pointers inside the Serial ULA, which the emulation thread
-// reads every tick, so it is performed with the emulation loop paused.
+// Real host transports (pty / serial device) are NOT here: they are provided by
+// the host-serial PeripheralExtension, which attaches via the SerialPort handle.
+// When such an extension owns the port, this service only reports status. (The
+// in-process test endpoints are themselves slated to move into a test-serial
+// extension; see docs/discussion/serial-refactoring-plan.md.)
+//
+// Thread-safety: SendToDevice/ReceiveFromDevice touch the scriptable endpoint's
+// own mutex-protected queues; SetEndpointMode swaps the attached device with the
+// emulation loop paused.
 template<typename MachineType>
 class SerialServiceImpl final : public SerialService::Service {
 public:
@@ -114,8 +109,8 @@ public:
                 response->set_tx_pending(static_cast<uint32_t>(scriptable_->tx_pending()));
                 response->set_rx_pending(static_cast<uint32_t>(scriptable_->rx_pending()));
             }
-            response->set_endpoint_path(advertised_path_);
-            response->set_endpoint_open(host_endpoint_ && host_endpoint_->is_open());
+            // endpoint_path/endpoint_open describe a host transport, which now
+            // lives in the host-serial extension, not this service.
             return grpc::Status::OK;
         }
     }
@@ -157,52 +152,16 @@ public:
                         "endpoint mode cannot be changed";
                 return false;
             }
-            const int line_baud = baud > 0 ? baud : 19200;  // DEVICE default
-
-            // Build any host transport (PTY/DEVICE) outside the pause window so
-            // the OS open/create syscalls don't stall the emulation loop. On
-            // failure we report the error and leave the endpoint unchanged.
-            std::shared_ptr<HostSerialEndpoint> new_host;
+            // pty/device transports are provided by the host-serial extension,
+            // not this service.
             if (mode == SERIAL_ENDPOINT_PTY || mode == SERIAL_ENDPOINT_DEVICE) {
-                std::unique_ptr<beebium::serial::HostSerialPort> port;
-#ifndef _WIN32
-                if (mode == SERIAL_ENDPOINT_PTY) {
-                    auto pty = std::make_unique<beebium::serial::PtyMaster>(path);
-                    if (!pty->is_open()) {
-                        error = std::string("failed to create pty: ") + std::string(pty->open_error());
-                    } else {
-                        advertised = pty->advertised_path();
-                        port = std::move(pty);
-                    }
-                } else {
-                    auto dev = std::make_unique<beebium::serial::PosixSerialPort>(path, line_baud);
-                    if (!dev->is_open()) {
-                        error = std::string("failed to open '") + path + "': "
-                              + std::string(dev->open_error());
-                    } else {
-                        advertised = dev->device_path();
-                        port = std::move(dev);
-                    }
-                }
-#else
-                if (mode == SERIAL_ENDPOINT_PTY) {
-                    error = "pty endpoint is not supported on this platform";
-                } else {
-                    auto dev = std::make_unique<beebium::serial::Win32SerialPort>(path, line_baud);
-                    if (!dev->is_open()) {
-                        error = std::string("failed to open '") + path + "': "
-                              + std::string(dev->open_error());
-                    } else {
-                        advertised = dev->device_path();
-                        port = std::move(dev);
-                    }
-                }
-#endif
-                if (!port) {
-                    return false;
-                }
-                new_host = std::make_shared<HostSerialEndpoint>(std::move(port));
+                error = "pty/device serial transports are provided by the "
+                        "host-serial extension; use --host-serial mode=pty|device";
+                return false;
             }
+            (void)path;
+            (void)baud;
+            (void)advertised;  // only pty/device had an advertised path
 
             // Swap the attached device with the emulation loop paused: the ULA
             // reads the device pointer on every tick. Detach first so the port
@@ -210,21 +169,12 @@ public:
             // accurate; the service owns the endpoint objects it attaches.
             machine_.with_emulation_paused([&] {
                 port_handle.detach();
-                host_endpoint_.reset();  // drop previous host transport (joins its reader thread)
-                advertised_path_.clear();
-
                 switch (mode) {
                     case SERIAL_ENDPOINT_NONE:
                         break;  // leave the port detached
                     case SERIAL_ENDPOINT_LOOPBACK:
                         loopback_ = std::make_shared<LoopbackSerialEndpoint>();
                         port_handle.attach(*loopback_);
-                        break;
-                    case SERIAL_ENDPOINT_PTY:
-                    case SERIAL_ENDPOINT_DEVICE:
-                        host_endpoint_ = new_host;
-                        advertised_path_ = advertised;
-                        port_handle.attach(*host_endpoint_);
                         break;
                     case SERIAL_ENDPOINT_SCRIPTABLE:
                     default:
@@ -291,8 +241,6 @@ private:
     bool service_owns_port_ = false;
     std::shared_ptr<ScriptableSerialEndpoint> scriptable_;
     std::shared_ptr<LoopbackSerialEndpoint> loopback_;
-    std::shared_ptr<HostSerialEndpoint> host_endpoint_;
-    std::string advertised_path_;
 };
 
 }  // namespace beebium::service
