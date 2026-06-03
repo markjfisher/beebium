@@ -88,10 +88,11 @@ Baud-rate select values (per the SERPROC encoding, as set via `OSBYTE 7`/`8`):
 
 | Component | File | Role |
 |-----------|------|------|
-| `Mc6850`        | `devices/Mc6850.hpp`       | Bit-level ACIA: control/status registers, TX/RX bit state machines, parity/framing/overrun, IRQ. |
-| `SerialUla`     | `serial/SerialUla.hpp`     | SERPROC latch decode + byte↔bit shifter between the ACIA and the host transport. |
-| `SerialSocket`  | `serial/SerialSocket.hpp`  | Owns the ACIA + ULA, exposes the two memory-mapped regions, clocking, IRQ, reset. |
-| `SerialDataSource` / `SerialDataSink` | `serial/SerialDevice.hpp` | Byte-oriented host-transport seam (+ `LoopbackSerialEndpoint` for tests). |
+| `Mc6850`        | `devices/Mc6850.hpp`       | Bit-level ACIA: control/status registers, TX/RX bit state machines, parity/framing/overrun, IRQ, `/CTS`-gated TDRE. |
+| `SerialUla`     | `serial/SerialUla.hpp`     | SERPROC latch decode + byte↔bit shifter between the ACIA and the attached device; drives `/CTS` from the device's flow-control state. |
+| `SerialSocket`  | `serial/SerialSocket.hpp`  | Owns the ACIA + ULA, exposes the two memory-mapped regions, clocking, IRQ, reset; `set_device()` wires a device in as source + sink. |
+| `SerialPortDevice` (`SerialDataSource`/`SerialDataSink`) | `serial/SerialDevice.hpp` | The byte-oriented device seam the bit engine talks to. The core holds only the seam; concrete devices live in extensions. |
+| `SerialPort` | `extension/SerialPort.hpp` | Non-owning attach/detach handle a PeripheralExtension uses to plug its device into the socket (the single-connector rule). |
 | `HasSerialSocket` | `serial/SerialConcepts.hpp` | Detects hardware variants that carry a `serial_socket`. |
 
 ### Bit-level model
@@ -133,111 +134,171 @@ flip-flop), the ACIA interrupt is wired to the **shared CPU IRQ line**.
 `IrqAggregator` (bit 4) and is sampled by `Machine::step()` via `poll_irq()`
 alongside the VIAs, Tube, and 1MHz bus.
 
-### Host transport
+## Device seam and extensions
 
-The `SerialDataSource`/`SerialDataSink` interfaces are the seam between the
-emulator core and the host transport. The core ships two endpoints:
+The byte-oriented seam between the bit engine and whatever is on the far end of
+the wire is `SerialPortDevice` (`serial/SerialDevice.hpp`) — the union of two
+half-interfaces, `SerialDataSource` (device → Beeb) and `SerialDataSink`
+(Beeb → device). It is the serial analogue of `UserPortDevice` /
+`OneMHzBusDevice`. `SerialSocket::set_device(SerialPortDevice*)` wires a device
+in as both source and sink; the non-owning `beebium::SerialPort` handle
+(`extension/SerialPort.hpp`) is how a PeripheralExtension attaches/detaches its
+device (`ctx.get<SerialPort>().attach(...)`), enforcing the single connector.
 
-- `LoopbackSerialEndpoint` — an in-memory queue (used by unit tests and as a
-  simple echo: attach it as both source and sink and transmitted bytes come
-  back round to the receiver).
-- `ScriptableSerialEndpoint` — a thread-safe, two-channel endpoint (device→Beeb
-  and Beeb→device queues). It is the serial analogue of the Econet
-  `TestBackend`: a deterministic, in-process transport that a client can drive
-  from outside the emulation thread.
+The **core holds only the seam and the bit engine**; the concrete devices are
+PeripheralExtensions, each owning its configuration and (where useful) its own
+typed gRPC service and a Peripherals-sidebar `ExtensionUi`:
 
-- `HostSerialEndpoint` — bridges the serial port to a host `SerialPort` (a
-  pseudo-terminal master or an opened device path). A dedicated reader thread
-  drains the OS port into a queue the ULA reads on the emulation thread;
-  transmitted bytes are written straight to the port. This is the generic
-  transport used by `--serial` and the gRPC `PTY`/`DEVICE` modes.
+| Extension | Device | What it is |
+|-----------|--------|------------|
+| `host-serial`     | `HostSerialEndpoint`   | Bridges the port to a host pty or serial device. |
+| `rpc-serial`      | `RpcSerialEndpoint`    | The RPC client *is* the device: inject/collect bytes over gRPC. |
+| `loopback-serial` | (the extension itself) | TX → RX echo plug; zero config, a "does my serial path work" smoke. |
 
-The host serial primitives live in core under `beebium::serial`:
-`SerialPort` (interface), `PosixSerialPort` / `Win32SerialPort` (open an
-existing device path), and `PtyMaster` (create a pseudo-terminal and own the
-master end, advertising the slave path). The Piconet transport reuses the same
-`beebium::serial::SerialPort` via thin shim headers.
+The shared OS-port primitives stay in core under `beebium::serial`:
+`HostSerialPort` (interface), `PosixSerialPort` / `Win32SerialPort` (open an
+existing device path), and `PtyMaster` (create a pseudo-terminal, own the master
+end, advertise the slave path). The Piconet transport reuses the same primitives
+via thin shim headers.
 
-Implementations that bridge to a background I/O thread must be internally
-thread-safe; the source/sink methods are called from the emulation thread.
+Only one device can own the single serial port at a time, so the three serial
+extensions are mutually exclusive on the command line.
 
-### gRPC service and clients
+## Flow control and bounded buffers
 
-`SerialService` (`src/service/proto/serial.proto`,
-`src/service/include/beebium/service/SerialService.hpp`) exposes the serial
-port over gRPC. It is registered in `Server.hpp` alongside the other services
-and attaches a `ScriptableSerialEndpoint` by default. RPCs:
+A core invariant: an external peer must never stall the *emulator host* — only
+the emulated *guest* may stall, and only via faithful hardware back-pressure.
+Both device endpoints bound their queues and surface fullness through the
+MC6850's `/CTS` line:
+
+- **TX (Beeb → device).** The device's transmit queue has a back-pressure mark
+  (`tx_buffer`, default 4096 bytes). At/above it the device reports
+  `!accepts_more()`, the Serial ULA asserts the ACIA's `/CTS`, and `TDRE` reads
+  0 — so the guest's transmit loop busy-waits (it stalls the guest, losslessly),
+  exactly as a real ACIA gates on `/CTS`. A small hard cap above the mark drops
+  bytes only if the guest *also* ignores `/CTS` (a real ACIA overruns there too).
+  `host-serial` additionally drains its queue on a dedicated **writer thread**,
+  so a stuck real peer blocks only that thread, never the emulation thread.
+- **RX (device → Beeb).** `RpcSerial.Send` is bounded and returns the number of
+  bytes *accepted* (the POSIX-write idiom); it never blocks. The client resends
+  the unaccepted tail.
+
+The `tx_buffer` size is configurable per extension (see below).
+
+## Configuring serial devices (CLI)
+
+Each serial extension is configured with the generic extension argument form —
+`--<name> key=value:key=value...` (the spec is the single argv token after the
+flag; colon-separated `key=value` pairs). `list-extensions` and
+`describe-extension <name>` print the live parameter schema.
+
+```
+# host-serial: bridge to a host pty or device
+--host-serial                                       # pty, defaults
+--host-serial mode=pty:path=/tmp/beeb-serial        # pty + stable slave symlink
+--host-serial mode=device:path=/dev/ttyUSB0:baud=9600
+#   mode = pty | device (default pty)
+#   path = pty: optional stable symlink to the slave; device: the path to open
+#   baud = device line speed (default 19200; ignored for pty)
+#   tx_buffer = transmit buffer bytes (default 4096)
+
+# rpc-serial: the gRPC client is the device on the far end of the wire
+--rpc-serial                                        # default 4096-byte TX buffer
+--rpc-serial tx_buffer=256
+#   tx_buffer = transmit buffer bytes (default 4096)
+
+# loopback-serial: TX -> RX echo
+--loopback-serial                                   # no parameters
+```
+
+## gRPC services and clients
+
+`SerialService` (`src/service/proto/serial.proto`) is now a **status-only**
+surface for the on-board chips — it observes the ACIA/ULA registers and never
+attaches a device:
 
 | RPC | Purpose |
 |-----|---------|
-| `GetSerialStatus`   | ACIA + Serial ULA register snapshot, endpoint mode, pending byte counts, and (for PTY/DEVICE) the path a client attaches to. |
-| `SetEndpointMode`   | Select `NONE` / `LOOPBACK` / `SCRIPTABLE` / `PTY` / `DEVICE` (swaps source/sink with the emulation loop paused). Returns the advertised path for PTY/DEVICE. |
-| `SendToDevice`      | Inject bytes for the BBC to receive (scriptable mode). |
-| `ReceiveFromDevice` | Collect bytes the BBC has transmitted (scriptable mode). |
+| `GetSerialStatus`   | One-shot ACIA + Serial ULA register snapshot. |
+| `WatchSerialStatus` | Server-pushed stream: an initial snapshot, then a fresh one whenever the chip state changes (sampled at `min_interval_ms`, default 50, so per-byte TDRE/RDRF churn is coalesced). |
 
-### PTY / device transport
+The `rpc-serial` extension carries its own typed service, `RpcSerial`
+(`src/extensions/rpc-serial/rpc_serial.proto`):
 
-`SetEndpointMode(PTY)` creates a pseudo-terminal, owns the master end, and
-returns the slave path (e.g. `/dev/pts/7`); pass a `path` to also create a
-stable symlink to the slave. `SetEndpointMode(DEVICE, path, baud)` opens an
-existing serial device or pty slave. Any serial client then attaches to the
-advertised path — beebium just shuttles raw bytes between the ACIA and that fd.
+| RPC | Purpose |
+|-----|---------|
+| `Send`      | Inject bytes for the BBC to receive; returns the accepted count. |
+| `Receive`   | Collect bytes the BBC has transmitted. |
+| `GetStatus` | Pending byte counts in each direction. |
 
-The same transport is available at startup via the server flag:
+Clients:
 
-```
---serial pty                 # create a pty, print "Serial endpoint ready at /dev/pts/N"
---serial pty:/tmp/beeb-serial  # ... and symlink the slave to a stable path
---serial device:/dev/ttyUSB0   # open an existing serial device (optionally :baud)
---serial loopback | scriptable | none
-```
+- **Python**: `bbc.serial` (`SerialStatus` + `watch_status()` stream) and
+  `bbc.rpc_serial` (`send` / `receive` / `status`).
+- **TypeScript**: `bbc.serial` (`Serial`: `getStatus` / `watchStatus`) and
+  `bbc.rpcSerial` (`RpcSerial`: `send` / `receive` / `getStatus`).
+- **macOS**: the serial extensions appear in the Peripherals sidebar through the
+  generic server-driven Extension UI — no serial-specific client code.
 
-### Generic end-to-end (any serial ROM)
+`clients/python/examples/serial_demo.py` is a runnable end-to-end demo over
+`--rpc-serial`.
 
-The serial path is entirely protocol-agnostic. To use a ROM that talks over
-the serial port:
+### Peripherals sidebar (Extension UI)
+
+Each serial extension exposes a read-only `ExtensionUi` status panel
+(`HostSerialUi` / `RpcSerialUi` / `LoopbackSerialUi`): host-serial shows
+mode/path/baud + connection status, rpc-serial shows the client-driven role +
+pending byte counts, loopback shows an "echo active" line. They surface via the
+same generic discovery (`PeripheralExtensionService.ListExtensions` → `has_ui`
+→ `ExtensionUiService.SubscribeView` by the server-assigned UUID id) as every
+other extension, so no frontend changes are needed for them to appear.
+
+## Generic end-to-end (any serial ROM)
+
+The serial path is protocol-agnostic. To use a ROM that talks over the serial
+port, bridge it to a host pty and attach your serial client to the advertised
+slave:
 
 ```bash
 beebium-model-b --mos roms/acorn-mos_1_20.rom \
                 --sideways 15:rom:your-rom.rom \
-                --serial pty            # prints: Serial endpoint ready at /dev/pts/N
-# attach your serial client/device to /dev/pts/N
-# in the BBC, a * command implemented by the ROM drives bytes:
+                --host-serial mode=pty   # prints: host-serial: pty ready at /dev/pts/N
+# attach your serial client/device to /dev/pts/N; the ROM's * commands drive bytes:
 #   ROM -> ACIA (&FE09) -> Serial ULA -> HostSerialEndpoint -> pty -> your device
 ```
 
-beebium has no knowledge of the ROM's command set or the device's protocol;
-the ROM and the device agree on the bytes, and beebium transports them.
-
-`SendToDevice`/`ReceiveFromDevice` operate only on the scriptable endpoint's
-mutex-protected queues, so they run without pausing the machine; the emulation
-thread accesses the same queues under the same locks.
-
-The Python client wraps this as `beebium.serial.Serial` (exposed as
-`bbc.serial`), with an `EndpointMode` enum and a `SerialStatus` dataclass. See
-`clients/python/examples/serial_demo.py` for a runnable end-to-end demo
-(loopback echo + scriptable inject/collect) and `clients/python/tests/test_serial.py`
-for mock-based unit tests plus real-server integration tests.
+beebium has no knowledge of the ROM's command set or the device's protocol; the
+ROM and the device agree on the bytes, and beebium transports them.
 
 ## Tests
 
 | Test | Coverage |
 |------|----------|
-| `tests/test_mc6850.cpp`       | ACIA reset/control decode, TX/RX bit framing, framing/parity errors, overrun, IRQ gating. |
-| `tests/test_serial_ula.cpp`   | ULA baud/motor/RS423 decode, bit-period derivation, byte↔bit shifting through the ACIA, full loopback. |
-| `tests/test_serial_socket.cpp`| `SerialSocket` behaviour and Model B memory-map integration (region mapping, mirroring, IRQ reaching the aggregator), plus scriptable-endpoint round trips. |
-| `tests/test_serial_pty.cpp`   | POSIX PTY transport: `PtyMaster` + `HostSerialEndpoint` bridged through the socket to a `PosixSerialPort` on the slave (hardware-parity round trips). |
+| `tests/test_mc6850.cpp`        | ACIA reset/control decode, TX/RX bit framing, framing/parity errors, overrun, IRQ gating, `/CTS` → TDRE. |
+| `tests/test_serial_ula.cpp`    | ULA baud/motor/RS423 decode, bit-period derivation, byte↔bit shifting through the ACIA. |
+| `tests/test_serial_socket.cpp` | `SerialSocket` + Model B memory-map integration (mapping, mirroring, IRQ to the aggregator), device round trips, and the ULA driving `/CTS` from device back-pressure. |
+| `tests/test_serial_pty.cpp`    | POSIX pty transport: `PtyMaster` + `HostSerialEndpoint` bridged through the socket to a `PosixSerialPort` (hardware-parity round trips). |
+| `tests/test_host_serial_endpoint.cpp` | Cross-platform: a stuck peer back-pressures via `/CTS` without blocking the emulation thread. |
+| `tests/test_{host,rpc,loopback}_serial_extension.cpp` | Each extension attaches its device; rpc-serial round-trips over its service. |
+| `tests/test_{host,rpc,loopback}_serial_ui.cpp` | Each extension's `build_view` panel shape. |
+| `clients/python/tests/test_serial*.py` | Status, the `watch_status` stream, the extension round trips over gRPC, and a real BBC-BASIC `/CTS` end-to-end test. |
 
 ## Status / future work
 
 - **Done**: bit-level ACIA + Serial ULA, `SerialSocket`, wiring into all Model B
-  variants (memory map, IRQ, reset, clocking); the `SerialDataSource`/`Sink`
-  seam with loopback, scriptable, and host (PTY/device) endpoints; the host
-  serial primitives promoted to `beebium::serial` core; the `SerialService`
-  gRPC surface (incl. PTY/DEVICE modes + path discovery); the `--serial` CLI;
-  the `beebium.serial` Python client; C++ and Python unit + integration tests
-  (incl. PTY round trips); the `serial_demo.py` example; and this document.
-- **Pending tuning**: some peers need transmitted frames coalesced (a short
-  debounce) to avoid packet splitting — b2 carried such a workaround. The hook
-  for that lives in `HostSerialEndpoint::add_byte()`; it is intentionally a
-  plain write-through for now, to be revisited under real-device testing.
+  variants (memory map, IRQ, reset, clocking); the `SerialPortDevice` seam +
+  `SerialPort` handle; the host-serial / rpc-serial / loopback-serial
+  extensions, each with configuration, `/CTS`-bounded buffers (configurable
+  `tx_buffer`), and an `ExtensionUi` panel; host-serial async reader + writer
+  threads; the shared OS-port primitives in `beebium::serial`; the status-only
+  `SerialService` with `WatchSerialStatus` streaming and the `rpc-serial`
+  extension's own `RpcSerial` service; Python and TypeScript clients; C++,
+  Python, and TypeScript tests (incl. pty round trips and a real BBC-BASIC
+  `/CTS` test); the `serial_demo.py` example; and this document.
+- **host-serial frame coalescing**: some peers need transmitted frames coalesced
+  (a short debounce) to avoid packet splitting — b2 carried such a workaround.
+  The hook lives in `HostSerialEndpoint`; deferred pending real-device testing.
+- **Cassette** (the ULA's other axis) is a separate future seam, gated by the
+  cassette-presence axis and *not* routed through `SerialPortDevice`.
+- **Network-serial** peers (IP232, RFC 2217) are candidate future extensions
+  attaching to the same seam.
