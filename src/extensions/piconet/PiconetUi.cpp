@@ -15,7 +15,7 @@
 #include "PiconetEconetTransportExtension.hpp"
 #include "beebium/econet/PiconetBackend.hpp"
 #include "beebium/econet/piconet/Mode.hpp"
-#include "beebium/serial/EnumeratePorts.hpp"
+#include "beebium/serial/SerialPortPickerControl.hpp"
 
 #include "extension_ui.pb.h"
 
@@ -108,27 +108,13 @@ void PiconetUi::build_view(View* out) const {
             anchor->mutable_label()->set_text(std::move(text));
         }
 
-        // Editor body: a single EditableChoice. Frontends render this
-        // as the platform's idiomatic combobox (NSComboBox on macOS,
-        // <input list> on the web, ...); the field is the single source
-        // of truth on commit, and the dropdown / list is a "pick from
-        // known" affordance.
-        {
-            auto* editor = modal->mutable_editor();
-            editor->set_id(FIELD_DEVICE_PATH);
-            auto* ec = editor->mutable_editable_choice();
-            ec->set_label("Serial port");
-            ec->set_value(current_path);
-            ec->set_placeholder(current_path.empty()
-                                    ? std::string("/dev/tty.usbmodem...")
-                                    : current_path);
-            // Best-effort enumeration. An empty options list is fine
-            // -- the frontend still gives the user a plain editable
-            // field.
-            for (auto& port : serial::enumerate_ports()) {
-                *ec->add_options() = std::move(port);
-            }
-        }
+        // Editor body: the shared port picker -- an EditableChoice combobox
+        // (NSComboBox on macOS, <input list> on the web, ...) over the
+        // enumerated ports, or a plain TextInput when none are found. The field
+        // is the single source of truth on commit (string_value either way).
+        serial::build_port_picker_control(modal->mutable_editor(), FIELD_DEVICE_PATH,
+                                          "Serial port", current_path,
+                                          "/dev/tty.usbmodem...");
     }
 
     // Indicator: USB-level health -- is the adapter physically there
