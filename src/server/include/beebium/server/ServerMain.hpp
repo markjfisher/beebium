@@ -510,7 +510,8 @@ void print_usage(const char* program_name) {
             const auto& entries = tmp.extension_resolver.entries();
             if (!entries.empty()) {
                 std::cerr << "\n"
-                          << "Extensions (use describe-extension <name> for parameter detail):\n";
+                          << "Extensions -- configure as: --<name> key=value:key=value ...\n"
+                          << "(run 'describe-extension <name>' for each one's parameters):\n";
                 for (const auto& e : entries) {
                     std::cerr << "  --" << e.manifest->effective_cli_name();
                     if (!e.manifest->description.empty()) {
@@ -2359,6 +2360,26 @@ public:
                 std::cout << " [" << source_label << "]\n";
                 if (!manifest->description.empty()) {
                     std::cout << "  " << manifest->description << "\n";
+                }
+                // Synthesised invocation form: the colon-separated key=value
+                // syntax the generic extension arg parser accepts. Required
+                // params are shown bare; optional ones are bracketed.
+                std::cout << "  Usage: --" << manifest->effective_cli_name();
+                if (!manifest->parameters.empty()) {
+                    std::cout << " ";
+                    bool first = true;
+                    for (const auto& p : manifest->parameters) {
+                        std::string token = p.key + "=<" + p.type + ">";
+                        if (p.required) {
+                            std::cout << (first ? "" : ":") << token;
+                        } else {
+                            std::cout << "[" << (first ? "" : ":") << token << "]";
+                        }
+                        first = false;
+                    }
+                    std::cout << "\n         (colon-separated key=value pairs)\n";
+                } else {
+                    std::cout << "\n";
                 }
                 std::cout << "  kind: " << manifest->extension_kind << "\n";
                 if (!manifest->provides.empty()) {

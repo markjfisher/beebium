@@ -161,6 +161,8 @@ TEST_CASE("describe-extension shows parameter detail for a known extension",
     INFO("stdout: " << r.stdout_output);
     REQUIRE(r.stdout_output.find("tube-65c02") != std::string::npos);
     REQUIRE(r.stdout_output.find("rom") != std::string::npos);  // parameter name
+    // The synthesised invocation form tells the user how to invoke it.
+    REQUIRE(r.stdout_output.find("Usage: --tube-65c02") != std::string::npos);
 }
 
 TEST_CASE("describe-extension errors for unknown extension",
