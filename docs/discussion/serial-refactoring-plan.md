@@ -374,6 +374,18 @@ no client-side change needed. Tests: test_{host,rpc,loopback}_serial_ui.cpp
 peripheral-extension listing client, so the end-to-end discovery check lives in
 C++ (test_grpc_peripheral_extension / test_grpc_extension_ui_service), not Python.
 
+UI REFINEMENT -- host-serial interactive re-pointing (commit 6511001; mac+linux+
+win): host-serial's panel is no longer read-only. HostSerialEndpoint is now
+re-pointable at runtime (device path + baud) via the PiconetBackend cross-thread
+pattern -- request_reopen (atomic slot) applied on the emulation thread's
+has_data() tick (build a fresh port via a SerialFactory, swap under ui_mutex_,
+restart the I/O threads), ui_snapshot() for the gRPC-thread read, and an
+on_async_state_change -> ui_.mark_dirty() for hot-unplug / reopen. HostSerialUi
+now offers a device ModalEditor (EditableChoice over serial::enumerate_ports() +
+a baud-rate dropdown) + an open/error Indicator; always editable, no mode /
+enable-disable (deferred). macOS renders ModalEditor/EditableChoice already, so
+no Swift. rpc-serial / loopback panels remain the simple read-only form.
+
 Inserted before Phases 5/6 (Rob's call). The three serial extensions have CLI
 config + (rpc-serial) a typed RPC, but NO `ExtensionUi` surface -- so unlike
 acorn-rtc / scsi-hard-disc / aun / piconet they do NOT appear in the macOS
