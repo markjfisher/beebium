@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include "SerialLoopbackExtension.hpp"
+#include "LoopbackSerialExtension.hpp"
 
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
@@ -20,22 +20,22 @@
 
 namespace beebium {
 
-std::span<const std::string_view> SerialLoopbackExtension::attaches_to() const {
+std::span<const std::string_view> LoopbackSerialExtension::attaches_to() const {
     static constexpr std::string_view deps[] = {"serial-port"};
     return deps;
 }
 
-std::span<const std::string_view> SerialLoopbackExtension::provides() const {
+std::span<const std::string_view> LoopbackSerialExtension::provides() const {
     return {};
 }
 
-void SerialLoopbackExtension::init(ExtensionContext& ctx) {
+void LoopbackSerialExtension::init(ExtensionContext& ctx) {
     endpoint_ = std::make_unique<LoopbackSerialEndpoint>();
     ctx.get<SerialPort>().attach(*endpoint_);
-    std::cout << "serial-loopback: echoing transmitted bytes back to the receiver\n";
+    std::cout << "loopback-serial: echoing transmitted bytes back to the receiver\n";
 }
 
-void SerialLoopbackExtension::shutdown() {
+void LoopbackSerialExtension::shutdown() {
     endpoint_.reset();
 }
 

@@ -29,7 +29,7 @@ namespace beebium {
 //
 // This is "the real host-serial bridge" -- one of potentially several serial
 // devices. An emulated device (e.g. a FujiNet) would be a sibling extension
-// attaching to the same seam; the synthetic test peers are the serial-loopback
+// attaching to the same seam; the synthetic test peers are the loopback-serial
 // and rpc-serial extensions.
 //
 // CLI: --host-serial mode=<pty|device>:path=<...>:baud=<n>

@@ -931,15 +931,15 @@ if(NOT WIN32)
 endif()
 
 # Serial-loopback extension test (cross-platform; no pty).
-add_executable(test_serial_loopback_extension test_serial_loopback_extension.cpp)
-target_include_directories(test_serial_loopback_extension PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/extensions/serial-loopback
+add_executable(test_loopback_serial_extension test_loopback_serial_extension.cpp)
+target_include_directories(test_loopback_serial_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/loopback-serial
 )
-target_link_libraries(test_serial_loopback_extension PRIVATE
-    beebium_ext_serial_loopback
+target_link_libraries(test_loopback_serial_extension PRIVATE
+    beebium_ext_loopback_serial
     Catch2::Catch2WithMain
 )
-catch_discover_tests(test_serial_loopback_extension)
+catch_discover_tests(test_loopback_serial_extension)
 
 # rpc-serial extension test (needs the service layer for the RpcSerial proto).
 if(BEEBIUM_BUILD_SERVICE)

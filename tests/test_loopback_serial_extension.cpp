@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-#include "SerialLoopbackExtension.hpp"
+#include "LoopbackSerialExtension.hpp"
 
 #include <beebium/devices/Mc6850.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
@@ -28,13 +28,13 @@ constexpr uint8_t CONTROL_8N1 =
     Mc6850::COUNTER_DIVIDE_16 | (0x05 << Mc6850::CR_WORD_SELECT_SHIFT);
 }  // namespace
 
-TEST_CASE("SerialLoopbackExtension attaches and echoes a transmitted byte",
-          "[serial][serial-loopback]") {
+TEST_CASE("LoopbackSerialExtension attaches and echoes a transmitted byte",
+          "[serial][loopback-serial]") {
     SerialSocket socket;
     SerialPort port(socket);
     ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
 
-    SerialLoopbackExtension ext;
+    LoopbackSerialExtension ext;
     REQUIRE(ext.attaches_to().size() == 1);
     CHECK(ext.attaches_to()[0] == "serial-port");
 
