@@ -11,8 +11,9 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+#include "SerialTestDevice.hpp"
+
 #include <beebium/devices/Mc6850.hpp>
-#include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialUla.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -82,31 +83,31 @@ TEST_CASE("SerialUla bit period derives from baud rate", "[serial][ula]") {
 TEST_CASE("SerialUla shifts a transmitted byte to the sink", "[serial][ula]") {
     Mc6850 acia;
     SerialUla ula(acia);
-    LoopbackSerialEndpoint endpoint;
-    ula.set_sink(&endpoint);
+    SerialTestDevice device;
+    ula.set_sink(&device);
 
     acia.write_control(CONTROL_8N1);
     ula.write(0, ULA_RS423_19200);
     acia.write_data(0x53);  // 'S'
 
     // Clock well past one character time (10 bits * 104 ticks/bit).
-    for (int i = 0; i < 4000 && endpoint.empty(); ++i) {
+    for (int i = 0; i < 4000 && device.sent().empty(); ++i) {
         ula.tick();
     }
 
-    REQUIRE_FALSE(endpoint.empty());
-    CHECK(endpoint.next_byte() == 0x53);
+    REQUIRE_FALSE(device.sent().empty());
+    CHECK(device.sent()[0] == 0x53);
 }
 
 TEST_CASE("SerialUla shifts a received byte into the ACIA", "[serial][ula]") {
     Mc6850 acia;
     SerialUla ula(acia);
-    LoopbackSerialEndpoint endpoint;
-    ula.set_source(&endpoint);
+    SerialTestDevice device;
+    ula.set_source(&device);
 
     acia.write_control(CONTROL_8N1);
     ula.write(0, ULA_RS423_19200);   // carrier present
-    endpoint.push_from_device(0x6A);
+    device.push_from_device(0x6A);
 
     for (int i = 0; i < 6000 && !acia.rdrf(); ++i) {
         ula.tick();
@@ -119,9 +120,9 @@ TEST_CASE("SerialUla shifts a received byte into the ACIA", "[serial][ula]") {
 TEST_CASE("SerialUla full loopback echoes transmitted bytes back", "[serial][ula]") {
     Mc6850 acia;
     SerialUla ula(acia);
-    auto endpoint = LoopbackSerialEndpoint{};
-    ula.set_sink(&endpoint);
-    ula.set_source(&endpoint);
+    SerialTestDevice device(/*echo=*/true);
+    ula.set_sink(&device);
+    ula.set_source(&device);
 
     acia.write_control(CONTROL_8N1);
     ula.write(0, ULA_RS423_19200);

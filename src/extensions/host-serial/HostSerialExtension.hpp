@@ -13,8 +13,9 @@
 #ifndef BEEBIUM_EXT_HOST_SERIAL_EXTENSION_HPP
 #define BEEBIUM_EXT_HOST_SERIAL_EXTENSION_HPP
 
+#include "HostSerialEndpoint.hpp"
+
 #include <beebium/extension/PeripheralExtension.hpp>
-#include <beebium/serial/HostSerialEndpoint.hpp>
 
 #include <memory>
 #include <span>

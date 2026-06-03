@@ -54,9 +54,9 @@ public:
     // and transmits to) into the ULA's receive and transmit seams. NON-OWNING:
     // the caller owns the device and keeps it alive for as long as it is set
     // (mirrors UserPort::attach). Pass nullptr to detach: the receive line idles
-    // and transmitted bytes are discarded. Normally driven via the beebium::
-    // SerialPort handle (attach/detach); the gRPC SerialService uses it directly
-    // for its own scriptable/loopback endpoints, which it keeps alive itself.
+    // and transmitted bytes are discarded. Driven via the beebium::SerialPort
+    // handle (attach/detach), which a serial PeripheralExtension uses to plug in
+    // its device (the host-serial bridge, loopback plug, rpc-serial peer, ...).
     void set_device(SerialPortDevice* device) {
         ula_.set_source(device);
         ula_.set_sink(device);

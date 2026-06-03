@@ -13,8 +13,8 @@
 
 #pragma once
 
-#include "SerialDevice.hpp"
-#include "HostSerialPort.hpp"
+#include <beebium/serial/HostSerialPort.hpp>
+#include <beebium/serial/SerialDevice.hpp>
 
 #include <array>
 #include <atomic>

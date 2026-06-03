@@ -10,13 +10,13 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+#include "RpcSerialEndpoint.hpp"
 #include "RpcSerialExtension.hpp"
 #include "RpcSerialService.hpp"
 
 #include <beebium/devices/Mc6850.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
-#include <beebium/serial/SerialDevice.hpp>
 #include <beebium/serial/SerialSocket.hpp>
 #include <beebium/serial/SerialUla.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -51,7 +51,7 @@ TEST_CASE("RpcSerialExtension attaches and exposes a service",
 
 TEST_CASE("RpcSerial service round-trips bytes through the BBC",
           "[serial][rpc-serial]") {
-    ScriptableSerialEndpoint endpoint;
+    RpcSerialEndpoint endpoint;
     SerialSocket socket;
     SerialPort port(socket);
     port.attach(endpoint);
@@ -91,20 +91,40 @@ TEST_CASE("RpcSerial service round-trips bytes through the BBC",
 
 TEST_CASE("RpcSerial Send caps the receive queue and reports accepted",
           "[serial][rpc-serial]") {
-    ScriptableSerialEndpoint endpoint;
+    RpcSerialEndpoint endpoint;
     RpcSerialServiceImpl service(endpoint);
 
     // Flood beyond the receive capacity with nothing draining it: Send accepts
     // only what fits and reports it -- it never blocks or grows unbounded.
-    const std::size_t flood = ScriptableSerialEndpoint::kRxCapacity + 1000;
+    const std::size_t flood = RpcSerialEndpoint::kRxCapacity + 1000;
     RpcSerialSendRequest req;
     req.set_data(std::string(flood, 'A'));
     RpcSerialSendResponse resp;
     service.Send(nullptr, &req, &resp);
-    CHECK(resp.accepted() == ScriptableSerialEndpoint::kRxCapacity);
+    CHECK(resp.accepted() == RpcSerialEndpoint::kRxCapacity);
 
     // The queue is now full; a further send accepts nothing.
     RpcSerialSendResponse resp2;
     service.Send(nullptr, &req, &resp2);
     CHECK(resp2.accepted() == 0);
+}
+
+TEST_CASE("RpcSerialEndpoint bounds tx and signals back-pressure",
+          "[serial][rpc-serial]") {
+    RpcSerialEndpoint endpoint;
+    CHECK(endpoint.accepts_more());
+
+    for (std::size_t i = 0; i < RpcSerialEndpoint::kTxBackPressure; ++i) {
+        endpoint.add_byte(0x41);
+    }
+    CHECK_FALSE(endpoint.accepts_more());  // at the back-pressure mark -> /CTS
+
+    // Beyond the hard cap, bytes are dropped (a real ACIA loses data too) -- the
+    // queue never grows without bound.
+    for (std::size_t i = 0; i < 1000; ++i) endpoint.add_byte(0x42);
+    CHECK(endpoint.tx_pending() <= RpcSerialEndpoint::kTxHardCap);
+    CHECK(endpoint.tx_dropped() > 0);
+
+    endpoint.drain();  // client collects everything
+    CHECK(endpoint.accepts_more());  // back-pressure released
 }

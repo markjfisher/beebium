@@ -17,7 +17,8 @@
 
 #ifndef _WIN32
 
-#include <beebium/serial/HostSerialEndpoint.hpp>
+#include "HostSerialEndpoint.hpp"
+
 #include <beebium/serial/PosixSerialPort.hpp>
 #include <beebium/serial/PtyMaster.hpp>
 #include <beebium/serial/SerialSocket.hpp>

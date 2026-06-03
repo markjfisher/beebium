@@ -13,8 +13,8 @@
 #ifndef BEEBIUM_EXT_RPC_SERIAL_SERVICE_HPP
 #define BEEBIUM_EXT_RPC_SERIAL_SERVICE_HPP
 
+#include "RpcSerialEndpoint.hpp"
 #include "rpc_serial.grpc.pb.h"
-#include <beebium/serial/SerialDevice.hpp>
 
 #include <grpcpp/grpcpp.h>
 
@@ -25,12 +25,12 @@
 namespace beebium {
 
 // gRPC service for the rpc-serial extension: the client is the serial device.
-// It forwards directly to the extension's ScriptableSerialEndpoint, whose
-// queues are mutex-protected, so the emulation thread and this service thread
-// can use it concurrently without a machine pause.
+// It forwards directly to the extension's RpcSerialEndpoint, whose queues are
+// mutex-protected, so the emulation thread and this service thread can use it
+// concurrently without a machine pause.
 class RpcSerialServiceImpl final : public RpcSerial::Service {
 public:
-    explicit RpcSerialServiceImpl(ScriptableSerialEndpoint& endpoint)
+    explicit RpcSerialServiceImpl(RpcSerialEndpoint& endpoint)
         : endpoint_(endpoint) {}
 
     grpc::Status Send(grpc::ServerContext* /*context*/,
@@ -60,7 +60,7 @@ public:
     }
 
 private:
-    ScriptableSerialEndpoint& endpoint_;
+    RpcSerialEndpoint& endpoint_;
 };
 
 }  // namespace beebium

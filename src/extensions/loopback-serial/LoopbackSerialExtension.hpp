@@ -16,20 +16,21 @@
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 
-#include <memory>
+#include <cstdint>
+#include <deque>
 #include <span>
 #include <string_view>
 
 namespace beebium {
 
-// Built-in PeripheralExtension: a serial loopback plug. Attaches a
-// LoopbackSerialEndpoint to the BBC serial port so bytes the Beeb transmits
-// echo straight back to its receiver -- the software equivalent of a loopback
-// connector, and a zero-config "does my serial path work at all" diagnostic.
+// Built-in PeripheralExtension: a serial loopback plug. The extension IS the
+// serial device -- bytes the Beeb transmits echo straight back to its receiver,
+// the software equivalent of a loopback connector and a zero-config "does my
+// serial path work at all" diagnostic.
 //
 // Unlike rpc-serial it is NOT driven by a client (no RPC); it is a self-
 // contained TX->RX echo. CLI: --loopback-serial (no parameters).
-class LoopbackSerialExtension : public PeripheralExtension {
+class LoopbackSerialExtension : public PeripheralExtension, public SerialPortDevice {
 public:
     LoopbackSerialExtension() = default;
     ~LoopbackSerialExtension() override = default;
@@ -39,8 +40,18 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
+    // --- SerialPortDevice: echo transmitted bytes back to the receiver. Only
+    // touched on the emulation thread (no client), so no lock is needed. ---
+    bool has_data() override { return !queue_.empty(); }
+    uint8_t next_byte() override {
+        uint8_t value = queue_.front();
+        queue_.pop_front();
+        return value;
+    }
+    void add_byte(uint8_t value) override { queue_.push_back(value); }
+
 private:
-    std::unique_ptr<LoopbackSerialEndpoint> endpoint_;
+    std::deque<uint8_t> queue_;
 };
 
 }  // namespace beebium

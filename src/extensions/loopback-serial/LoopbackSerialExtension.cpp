@@ -16,7 +16,6 @@
 #include <beebium/extension/SerialPort.hpp>
 
 #include <iostream>
-#include <memory>
 
 namespace beebium {
 
@@ -30,13 +29,12 @@ std::span<const std::string_view> LoopbackSerialExtension::provides() const {
 }
 
 void LoopbackSerialExtension::init(ExtensionContext& ctx) {
-    endpoint_ = std::make_unique<LoopbackSerialEndpoint>();
-    ctx.get<SerialPort>().attach(*endpoint_);
+    ctx.get<SerialPort>().attach(*this);
     std::cout << "loopback-serial: echoing transmitted bytes back to the receiver\n";
 }
 
 void LoopbackSerialExtension::shutdown() {
-    endpoint_.reset();
+    queue_.clear();
 }
 
 }  // namespace beebium
