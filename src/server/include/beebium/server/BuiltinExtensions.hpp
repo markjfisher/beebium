@@ -28,6 +28,7 @@
 #include "AunEconetTransportExtension.hpp"
 #include "HostSerialExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
+#include "SerialLoopbackExtension.hpp"
 #include "beebium/extension/Extension.hpp"
 #include "beebium/extension/ExtensionManifest.hpp"
 
@@ -136,6 +137,21 @@ inline std::vector<Entry> make_entries() {
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new HostSerialExtension()); }});
+    }
+
+    // Serial loopback (echo plug). Built-in for the same CLI-test ergonomics
+    // reason as the other serial extensions. Zero config.
+    {
+        ExtensionManifest m;
+        m.name = "serial-loopback";
+        m.display_name = "Serial Loopback";
+        m.description =
+            "Echo bytes the BBC transmits straight back to its serial receiver";
+        m.cli_name = "serial-loopback";
+        m.extension_kind = "peripheral";
+        result.push_back({std::move(m),
+                          [] { return std::unique_ptr<Extension>(
+                              new SerialLoopbackExtension()); }});
     }
 
     return result;

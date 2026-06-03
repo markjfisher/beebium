@@ -930,6 +930,17 @@ if(NOT WIN32)
     catch_discover_tests(test_host_serial_extension)
 endif()
 
+# Serial-loopback extension test (cross-platform; no pty).
+add_executable(test_serial_loopback_extension test_serial_loopback_extension.cpp)
+target_include_directories(test_serial_loopback_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/serial-loopback
+)
+target_link_libraries(test_serial_loopback_extension PRIVATE
+    beebium_ext_serial_loopback
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_serial_loopback_extension)
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
