@@ -358,21 +358,23 @@ monolithic fixed-menu `SerialService` does not survive as-is.
 
 ## Phase 4.5 -- Serial extensions in the Peripherals sidebar (Extension UI)
 
-DONE (simplest read-only status panels, macOS + Linux; the macOS Swift rendering
-rides along in step 15 Swift). Each serial extension now has an `ExtensionUi`
-(`HostSerialUi`, `RpcSerialUi`, `LoopbackSerialUi`) returned from `ui()`, built
-unconditionally with `beebium_extension_ui_proto` (the scsi-hard-disc pattern --
-the UI proto is always available, no BEEBIUM_BUILD_SERVICE gate). Panels:
-host-serial shows mode/path/baud + connected status; rpc-serial shows the role +
-tx/rx pending; loopback shows a single "echo active" line. All read-only
-(handle_event is a no-op), snapshot at build time (no background ticker yet).
-Verified: `PeripheralExtensionService.ListExtensions` reports each with
-`has_ui=true` (it is `ui() != nullptr`), so they surface via the SAME generic
-discovery (ListExtensions -> UUID id -> SubscribeView) as every other extension --
-no client-side change needed. Tests: test_{host,rpc,loopback}_serial_ui.cpp
-(build_view shape, per the acorn-rtc/scsi precedent). NOTE: Python has no
-peripheral-extension listing client, so the end-to-end discovery check lives in
-C++ (test_grpc_peripheral_extension / test_grpc_extension_ui_service), not Python.
+DONE (macOS + Linux; the macOS Swift rendering rides along in step 15 Swift).
+Only host-serial has an `ExtensionUi` (`HostSerialUi`) returned from `ui()`,
+built with `beebium_extension_ui_proto` (the scsi-hard-disc pattern -- the UI
+proto is always available, no BEEBIUM_BUILD_SERVICE gate). It shows the mode
+heading (PTY / Device), the device path, and -- in device mode -- the baud, with
+the path editable to re-point at runtime. rpc-serial and loopback-serial were
+trimmed back to NO panel (`ui()` returns the base-class nullptr): a client-driven
+peer and a fixed self-echo plug have nothing to show or configure (rpc-serial's
+queue depths are debugger detail, available via `RpcSerial.GetStatus`). They
+still surface in the sidebar BY NAME via the SAME generic discovery
+(`PeripheralExtensionService.ListExtensions`); the macOS sidebar renders the
+per-node panel only when `has_ui` (= `ui() != nullptr`) is set, so the panel-less
+extensions list without a body. No client-side change needed. Tests:
+test_host_serial_ui.cpp + a PTY-mode build_view assertion in
+test_host_serial_extension.cpp. NOTE: Python has no peripheral-extension listing
+client, so the end-to-end discovery check lives in C++
+(test_grpc_peripheral_extension / test_grpc_extension_ui_service), not Python.
 
 UI REFINEMENT -- host-serial interactive re-pointing (commit 6511001; mac+linux+
 win): host-serial's panel is no longer read-only. HostSerialEndpoint is now

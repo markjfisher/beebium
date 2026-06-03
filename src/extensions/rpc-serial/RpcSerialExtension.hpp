@@ -14,7 +14,6 @@
 #define BEEBIUM_EXT_RPC_SERIAL_EXTENSION_HPP
 
 #include "RpcSerialEndpoint.hpp"
-#include "RpcSerialUi.hpp"
 
 #include <beebium/extension/PeripheralExtension.hpp>
 
@@ -50,16 +49,14 @@ public:
     void shutdown() override;
     std::vector<grpc::Service*> grpc_services() override;
 
-    // Peripherals-sidebar panel.
-    ExtensionUi* ui() override { return &ui_; }
-
-    // Pending byte counts for the UI (0 before init() attaches the endpoint).
-    std::size_t tx_pending() { return endpoint_ ? endpoint_->tx_pending() : 0; }
-    std::size_t rx_pending() { return endpoint_ ? endpoint_->rx_pending() : 0; }
+    // No Peripherals-sidebar panel: a client-driven peer has nothing to show or
+    // configure here. Clients drive it through the unary RpcSerial RPCs (there
+    // is no persistent session to report), and the byte queues are debugger
+    // detail, exposed via RpcSerial.GetStatus rather than the sidebar. The
+    // sidebar still lists the extension by name via ListExtensions.
 
 private:
     std::unique_ptr<RpcSerialEndpoint> endpoint_;  // constructed in init() from config
-    RpcSerialUi ui_{*this};
 #ifdef BEEBIUM_BUILD_SERVICE
     std::unique_ptr<RpcSerialServiceImpl> service_;  // lazily constructed
 #endif

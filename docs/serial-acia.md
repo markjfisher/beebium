@@ -273,13 +273,16 @@ Clients:
 
 ### Peripherals sidebar (Extension UI)
 
-Each serial extension exposes a read-only `ExtensionUi` status panel
-(`HostSerialUi` / `RpcSerialUi` / `LoopbackSerialUi`): host-serial shows
-mode/path/baud + connection status, rpc-serial shows the client-driven role +
-pending byte counts, loopback shows an "echo active" line. They surface via the
-same generic discovery (`PeripheralExtensionService.ListExtensions` → `has_ui`
-→ `ExtensionUiService.SubscribeView` by the server-assigned UUID id) as every
-other extension, so no frontend changes are needed for them to appear.
+Only host-serial has an `ExtensionUi` panel (`HostSerialUi`): it shows the mode
+heading (PTY / Device), the device path, and -- in device mode -- the baud, with
+the path editable to re-point at runtime. rpc-serial and loopback-serial have no
+panel: a client-driven peer and a fixed self-echo plug have nothing to show or
+configure (rpc-serial's queue depths are debugger detail, available via
+`RpcSerial.GetStatus`). All three still appear in the sidebar by name through the
+generic discovery (`PeripheralExtensionService.ListExtensions`); the per-node
+panel is rendered only when `has_ui` is set (`ExtensionUiService.SubscribeView`
+by the server-assigned UUID id), so the panel-less ones simply list without a
+body. No frontend changes are needed either way.
 
 ## Generic end-to-end (any serial ROM)
 

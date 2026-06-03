@@ -5,7 +5,6 @@
 
 add_library(beebium_ext_loopback_serial STATIC
     LoopbackSerialExtension.cpp
-    LoopbackSerialUi.cpp
 )
 
 target_include_directories(beebium_ext_loopback_serial
@@ -15,7 +14,4 @@ target_include_directories(beebium_ext_loopback_serial
 target_link_libraries(beebium_ext_loopback_serial
     PUBLIC
         beebium_core
-        # LoopbackSerialUi.cpp pulls in extension_ui.pb.h for the
-        # View / DispatchRequest types it composes.
-        beebium_extension_ui_proto
 )

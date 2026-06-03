@@ -13,8 +13,6 @@
 #ifndef BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
 #define BEEBIUM_EXT_LOOPBACK_SERIAL_EXTENSION_HPP
 
-#include "LoopbackSerialUi.hpp"
-
 #include <beebium/extension/PeripheralExtension.hpp>
 #include <beebium/serial/SerialDevice.hpp>
 
@@ -42,8 +40,8 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
-    // Peripherals-sidebar panel.
-    ExtensionUi* ui() override { return &ui_; }
+    // No Peripherals-sidebar panel: a fixed self-echo plug has nothing to show
+    // or configure. The sidebar still lists it by name via ListExtensions.
 
     // --- SerialPortDevice: echo transmitted bytes back to the receiver. Only
     // touched on the emulation thread (no client), so no lock is needed. ---
@@ -57,7 +55,6 @@ public:
 
 private:
     std::deque<uint8_t> queue_;
-    LoopbackSerialUi ui_;
 };
 
 }  // namespace beebium
