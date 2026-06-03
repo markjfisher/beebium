@@ -210,13 +210,24 @@ members; tests keep locals).
     Tests: endpoint back-pressure + bounding; socket-level `/CTS` assert/release;
     `Send` cap returns `accepted`. Python `bbc.rpc_serial.send` returns accepted.
 
-    FOLLOW-UP (separate, required by the no-stall invariant): `HostSerialEndpoint::
-    add_byte` writes synchronously to the OS port on the emulation thread, so a
-    stuck real peer can freeze the emulator. Give it an async TX queue + writer
-    thread (mirroring its reader thread); reuse the same `/CTS` back-pressure seam
-    when the queue is full. Lock-free queues are NOT needed -- serial access is
-    baud-rate-bounded (<20k ops/s), uncontended-mutex cost is <0.1% of the 2 MHz
-    loop. See [[feedback_no_external_peer_stalls_emulator]].
+    DONE (no-stall invariant now holds for all three devices): `HostSerialEndpoint`
+    used to write synchronously to the OS port on the emulation thread, so a stuck
+    real peer could freeze the emulator. It now has an async TX queue + writer
+    thread (mirroring its reader thread): `add_byte` only enqueues and returns;
+    the writer drains to the port and backs off on EAGAIN. The queue is bounded
+    and drives the same `/CTS` back-pressure seam (accepts_more) + hard-cap drop
+    as RpcSerialEndpoint. Cross-platform `test_host_serial_endpoint` proves a
+    stuck peer back-pressures without blocking the emulation thread. Lock-free
+    queues are NOT needed -- serial is baud-rate-bounded (<20k ops/s), uncontended-
+    mutex cost is <0.1% of the 2 MHz loop. See
+    [[feedback_no_external_peer_stalls_emulator]].
+
+    LAYERING: the concrete device endpoints moved out of core/serial (which now
+    holds only the seam + bit engine + shared OS-port primitives) into their
+    extensions -- RpcSerialEndpoint (rpc-serial), the folded loopback device
+    (loopback-serial), HostSerialEndpoint (host-serial). Core ULA/socket tests use
+    a tests/ SerialTestDevice fixture; ScriptableSerialEndpoint was renamed
+    RpcSerialEndpoint (the old name described the mechanism, not the peer).
 
 ## Phase 4 -- gRPC and clients aligned with conventions
 
