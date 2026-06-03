@@ -12,6 +12,8 @@ import { KeyboardServiceClient } from "./generated/keyboard.js";
 import { VideoServiceClient } from "./generated/video.js";
 import { DiscServiceClient } from "./generated/disc.js";
 import { EconetServiceClient } from "./generated/econet.js";
+import { SerialServiceClient } from "./generated/serial.js";
+import { RpcSerialClient } from "./generated/rpc_serial.js";
 import { TubeServiceClient } from "./generated/tube.js";
 import { AunServiceClient } from "./generated/aun.js";
 import { PiconetServiceClient } from "./generated/piconet_service.js";
@@ -27,6 +29,8 @@ import type { KeyboardServiceClient as KeyboardServiceClientType } from "./gener
 import type { VideoServiceClient as VideoServiceClientType } from "./generated/video.js";
 import type { DiscServiceClient as DiscServiceClientType } from "./generated/disc.js";
 import type { EconetServiceClient as EconetServiceClientType } from "./generated/econet.js";
+import type { SerialServiceClient as SerialServiceClientType } from "./generated/serial.js";
+import type { RpcSerialClient as RpcSerialClientType } from "./generated/rpc_serial.js";
 import type { TubeServiceClient as TubeServiceClientType } from "./generated/tube.js";
 import type { AunServiceClient as AunServiceClientType } from "./generated/aun.js";
 import type { PiconetServiceClient as PiconetServiceClientType } from "./generated/piconet_service.js";
@@ -53,6 +57,8 @@ export class Connection {
     private _videoStub: VideoServiceClientType | null = null;
     private _discStub: DiscServiceClientType | null = null;
     private _econetStub: EconetServiceClientType | null = null;
+    private _serialStub: SerialServiceClientType | null = null;
+    private _rpcSerialStub: RpcSerialClientType | null = null;
     private _tubeStub: TubeServiceClientType | null = null;
     private _aunStub: AunServiceClientType | null = null;
     private _piconetStub: PiconetServiceClientType | null = null;
@@ -169,6 +175,28 @@ export class Connection {
             );
         }
         return this._econetStub;
+    }
+
+    get serialStub(): SerialServiceClientType {
+        this.ensureOpen();
+        if (!this._serialStub) {
+            this._serialStub = new SerialServiceClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._serialStub;
+    }
+
+    get rpcSerialStub(): RpcSerialClientType {
+        this.ensureOpen();
+        if (!this._rpcSerialStub) {
+            this._rpcSerialStub = new RpcSerialClient(
+                this._target,
+                this.credentials,
+            );
+        }
+        return this._rpcSerialStub;
     }
 
     get tubeStub(): TubeServiceClientType {
