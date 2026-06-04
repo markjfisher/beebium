@@ -2,13 +2,6 @@ name: CI
 
 on:
   push:
-    # TEMPORARY: skip automatic CI on feature/serial while it is used as an
-    # integration branch to shuffle changes around. Other branches still build
-    # on push. Trigger it manually when wanted:
-    #   gh workflow run ci.yml --ref feature/serial
-    # REMOVE this branches-ignore before merging feature/serial to master.
-    branches-ignore:
-      - feature/serial
   pull_request:
   schedule:
     # Run weekly on Monday at 6 AM UTC to keep caches alive (7-day expiry)
