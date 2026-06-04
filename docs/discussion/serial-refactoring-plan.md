@@ -468,6 +468,17 @@ up via the SAME mechanism as every other extension -- no client-side hardcoding.
 
 ## Phase 7.5 -- host-serial typed gRPC API (ON feature/serial, BEFORE delivery)
 
+DONE (commit 851f1ae; full parity: server + Python + TS + tests; green macOS +
+Linux locally, Windows via CI). Scope (Rob): "full parity now" -- the deferred
+piece is only the F2 client plugin restructure, not hand-written clients. Added
+the HostSerial service (host_serial.proto + HostSerialService.hpp wired via
+HostSerialExtension::grpc_services()): GetConfig + partial/diff SetConfig, driving
+the same request_reopen as the GUI editor; runtime mode=pty rejected. Python
+beebium.host_serial (bbc.host_serial) + TypeScript host_serial.ts (bbc.hostSerial).
+Tests: C++ in test_host_serial_extension.cpp; Python + TS in the serial integration
+suites (POSIX-gated for pty/device). The async reopen means SetConfig returns a
+snapshot taken at call time -- callers re-read GetConfig to confirm post-apply.
+
 SEQUENCING DECIDED (Rob): the host-serial typed gRPC API ships ON feature/serial,
 before the master merge. The broader Python/TS client extension-API restructure
 (F2 below) is deferred until AFTER delivery, with serial as its driving example.
