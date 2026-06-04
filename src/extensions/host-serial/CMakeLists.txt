@@ -8,13 +8,31 @@
 # AUN: many parse_start_arguments tests use a synthetic argv (argv[0] =
 # "beebium") that cannot auto-discover plugins via <exe-dir>/extensions/, so
 # --host-serial must be recognised without a plugin directory. See
-# BuiltinExtensions.hpp. No proto/gRPC service yet: serial status is served by
-# the core SerialService; a typed RPC for this extension can be added later.
+# BuiltinExtensions.hpp.
+#
+# When the service layer is being built, compiles host_serial.proto and links the
+# gRPC runtime; the HostSerial service (HostSerialService.hpp, header-only) is the
+# typed config API (GetConfig / SetConfig) parallel to the GUI panel. Without the
+# service layer the extension still attaches its endpoint and serves its GUI panel.
 
-add_library(beebium_ext_host_serial STATIC
+set(HOST_SERIAL_SOURCES
     HostSerialExtension.cpp
     HostSerialUi.cpp
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    beebium_compile_proto(
+        TARGET beebium_ext_host_serial
+        PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/host_serial.proto
+        PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    list(APPEND HOST_SERIAL_SOURCES
+        ${beebium_ext_host_serial_PROTO_SRCS}
+        ${beebium_ext_host_serial_GRPC_SRCS}
+    )
+endif()
+
+add_library(beebium_ext_host_serial STATIC ${HOST_SERIAL_SOURCES})
 
 target_include_directories(beebium_ext_host_serial
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
@@ -27,3 +45,15 @@ target_link_libraries(beebium_ext_host_serial
         # View / DispatchRequest types it composes.
         beebium_extension_ui_proto
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    target_include_directories(beebium_ext_host_serial
+        PUBLIC ${beebium_ext_host_serial_OUT_DIR}
+    )
+    target_compile_definitions(beebium_ext_host_serial PUBLIC BEEBIUM_BUILD_SERVICE)
+    target_link_libraries(beebium_ext_host_serial
+        PUBLIC
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
+endif()
