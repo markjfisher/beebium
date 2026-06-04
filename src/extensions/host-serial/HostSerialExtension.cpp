@@ -12,6 +12,10 @@
 
 #include "HostSerialExtension.hpp"
 
+#ifdef BEEBIUM_BUILD_SERVICE
+#include "HostSerialService.hpp"
+#endif
+
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
 #include <beebium/serial/HostSerialPort.hpp>
@@ -28,8 +32,12 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace beebium {
+
+HostSerialExtension::HostSerialExtension() = default;
+HostSerialExtension::~HostSerialExtension() = default;
 
 std::span<const std::string_view> HostSerialExtension::attaches_to() const {
     static constexpr std::string_view deps[] = {"serial-port"};
@@ -123,9 +131,27 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
 }
 
 void HostSerialExtension::shutdown() {
+#ifdef BEEBIUM_BUILD_SERVICE
+    // Drop the service before the endpoint it references.
+    service_.reset();
+#endif
     // Drops the endpoint, which stops and joins the reader thread. The machine
     // is being torn down, so the ULA is not ticking through the handle.
     endpoint_.reset();
+}
+
+std::vector<grpc::Service*> HostSerialExtension::grpc_services() {
+#ifdef BEEBIUM_BUILD_SERVICE
+    if (!endpoint_) {
+        return {};  // not initialised (or init failed): no service to expose
+    }
+    if (!service_) {
+        service_ = std::make_unique<HostSerialServiceImpl>(*endpoint_);
+    }
+    return {service_.get()};
+#else
+    return {};
+#endif
 }
 
 }  // namespace beebium

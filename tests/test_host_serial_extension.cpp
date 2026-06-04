@@ -14,6 +14,10 @@
 
 #include "HostSerialExtension.hpp"
 
+#ifdef BEEBIUM_BUILD_SERVICE
+#include "HostSerialService.hpp"
+#endif
+
 #include "extension_ui.pb.h"
 
 #include <beebium/devices/Mc6850.hpp>
@@ -136,3 +140,65 @@ TEST_CASE("HostSerialExtension bridges a transmitted byte to the host device",
 
     ext.shutdown();
 }
+
+#ifdef BEEBIUM_BUILD_SERVICE
+TEST_CASE("HostSerial gRPC config service reports and re-points the bridge",
+          "[serial][host-serial][grpc]") {
+    auto pty = std::make_unique<serial::PtyMaster>();
+    REQUIRE(pty->is_open());
+    const std::string slave = pty->slave_path();
+
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    HostSerialExtension ext;
+    ext.set_config({{"mode", "device"}, {"path", slave}, {"baud", "9600"}});
+    ext.init(ctx);
+    REQUIRE(port.is_occupied());
+
+    auto services = ext.grpc_services();
+    REQUIRE(services.size() == 1);
+    auto* svc = static_cast<HostSerialServiceImpl*>(services[0]);
+
+    // GetConfig reflects the launch configuration.
+    {
+        HostSerialGetConfigRequest req;
+        HostSerialConfig resp;
+        REQUIRE(svc->GetConfig(nullptr, &req, &resp).ok());
+        CHECK(resp.mode() == "device");
+        CHECK(resp.path() == slave);
+        CHECK(resp.baud() == 9600);
+        CHECK(resp.serial_open());
+    }
+
+    // SetConfig is a partial update: changing only baud keeps the path. The
+    // re-point applies on the next emulation tick (has_data()).
+    {
+        HostSerialSetConfigRequest req;
+        req.set_baud(19200);
+        HostSerialConfig resp;
+        REQUIRE(svc->SetConfig(nullptr, &req, &resp).ok());
+    }
+    ext.endpoint()->has_data();  // drive process_pending_reopen
+    {
+        HostSerialGetConfigRequest req;
+        HostSerialConfig resp;
+        REQUIRE(svc->GetConfig(nullptr, &req, &resp).ok());
+        CHECK(resp.baud() == 19200);
+        CHECK(resp.path() == slave);   // kept (absent from the SetConfig diff)
+        CHECK(resp.mode() == "device");
+    }
+
+    // A runtime switch to pty is rejected.
+    {
+        HostSerialSetConfigRequest req;
+        req.set_mode("pty");
+        HostSerialConfig resp;
+        CHECK(svc->SetConfig(nullptr, &req, &resp).error_code() ==
+              grpc::StatusCode::INVALID_ARGUMENT);
+    }
+
+    ext.shutdown();
+}
+#endif

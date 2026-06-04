@@ -462,8 +462,67 @@ up via the SAME mechanism as every other extension -- no client-side hardcoding.
     manual Slioch validation).
 21. Final full-suite run across the triad + all client suites.
 22. Curate history as desired and merge `feature/serial` into `master`.
-    NOTE: squash the loopback-rename commits (9ffcdef captured only the git mv;
-    50c2fff applied the content) so each landed commit builds.
+    DECIDED (Rob): NO squash; NO squash-merge; FAST-FORWARD merge (master is an
+    ancestor of feature/serial, 60 commits ahead, so `git merge --ff-only` works).
+    Rob does the merge + master push.
+
+## Phase 7.5 -- host-serial typed gRPC API (ON feature/serial, BEFORE delivery)
+
+SEQUENCING DECIDED (Rob): the host-serial typed gRPC API ships ON feature/serial,
+before the master merge. The broader Python/TS client extension-API restructure
+(F2 below) is deferred until AFTER delivery, with serial as its driving example.
+
+The gap: host-serial's runtime config (mode / path / baud) is currently reachable
+ONLY through the GUI ExtensionUi path (SubscribeView + Dispatch/EditorCommit), so
+a scripting client must understand the declarative control-tree just to change a
+baud rate. rpc-serial, by contrast, already has a clean typed service (RpcSerial).
+This is the [[feedback_extension_multi_api]] principle (typed RPC for scripting +
+Dispatch for GUIs, not redundant); host-serial should get a typed API too --
+e.g. GetConfig -> {mode, path, baud} and SetConfig(partial, diff-applied: only
+provided fields change), mirroring how the GUI EditorCommit ships just the edited
+fields (TWO calls, not six getters/setters). It is an extension-provided service
+(like RpcSerial), present only when --host-serial is loaded.
+
+DECIDED (Rob): make this an **extension-SPECIFIC (bespoke) API, NOT a generic
+schema-driven config RPC.** Rationale: a bespoke per-extension API better
+expresses domain-specific needs, and some extensions could be quite complex -- a
+flat generic config map would not do them justice. We already have ONE generic
+(special-purpose) API for the *UI* extensibility axis (ExtensionUi); we do not
+want to also funnel the *programmatic* axis through a generic shape. Revisit only
+if more examples show the bespoke approach is causing real duplication pain.
+(Assistant had recommended the generic route; Rob overruled -- bespoke it is.)
+
+The host-serial config endpoint and the GUI ModalEditor must drive the SAME
+underlying re-point path (HostSerialEndpoint::request_reopen), so a SetConfig and
+a GUI edit are equivalent and each is reflected in the other's view.
+
+## F2 -- Python (and later TypeScript) client extension-API design (AFTER delivery)
+
+A dedicated design activity Rob wants, to make the CLIENT APIs as extensible as
+the core. The core is open (new SerialPortDevice extensions need no core edits);
+the CLI / ListExtensions / ExtensionUi are all generic over the manifest schema --
+but the typed client APIs are hand-written per extension today.
+
+Rob's direction (Python first -- he's more familiar, and willing to restructure
+substantially; he has a lot of stevedore plugin/extension experience and thinks
+that's the right model):
+- A root `beebium` **namespace package**, functionally empty, registered on PyPI
+  to claim the namespace.
+- Probably an `emulator` package within it (e.g. `beebium.emulator`).
+- A system of Python extensions -- `beebium.ext.host_serial`,
+  `beebium.ext.acorn_scsi`, `beebium.ext.teletext_adapter`, ... -- each of which:
+  - provides a Pythonic API for the corresponding extension, AND
+  - crucially, can provide information to the core on HOW to launch beebium with
+    that extension enabled and configured (the client extension owns both the
+    "drive it" and the "spin it up with the right CLI" knowledge).
+  Likely discovered/loaded via a stevedore-style entry-point plugin system.
+- A TypeScript analogue is expected to be possible (entry-point / package-based
+  plugin discovery), but the details are TBD -- Rob has less TS experience here.
+
+This is deliberately ambitious. NOT pursued immediately; serial provides the
+first concrete extensions to design against. F1 (bespoke typed server APIs) and
+F2 (client plugin packaging) inform each other -- a `beebium.ext.host_serial`
+Python package would wrap host-serial's bespoke typed config API from F1.
 
 ## Phase 8 -- Network-serial extensions (POST-MERGE; validates the seam)
 

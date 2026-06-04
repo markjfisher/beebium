@@ -19,6 +19,11 @@ export { Disc, Drive, type DiscMetadata, type DriveStatus, type DiscControllerSt
 export { Econet, type EconetStatus, type AdlcStatus, type HandshakeStatus } from "./econet.js";
 export { Serial, type SerialStatus } from "./serial.js";
 export { RpcSerial, type RpcSerialStatus } from "./rpc_serial.js";
+export {
+    HostSerial,
+    type HostSerialConfig,
+    type HostSerialSetConfigOptions,
+} from "./host_serial.js";
 export { Tube, type TubeStatus } from "./tube.js";
 export { Aun, type AunStatus, type PeerInfo, PeerSource } from "./aun.js";
 export { Piconet, type PiconetStatus } from "./piconet.js";

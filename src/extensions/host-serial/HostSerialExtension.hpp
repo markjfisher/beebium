@@ -21,8 +21,15 @@
 #include <memory>
 #include <span>
 #include <string_view>
+#include <vector>
+
+namespace grpc { class Service; }
 
 namespace beebium {
+
+#ifdef BEEBIUM_BUILD_SERVICE
+class HostSerialServiceImpl;  // forward; defined when the service layer is built
+#endif
 
 // Built-in PeripheralExtension that bridges the BBC serial port (RS423) to a
 // host PTY or an existing serial device. It owns a HostSerialEndpoint (a
@@ -42,13 +49,18 @@ namespace beebium {
 //   baud  : device line speed (default 19200; ignored for pty)
 class HostSerialExtension : public PeripheralExtension {
 public:
-    HostSerialExtension() = default;
-    ~HostSerialExtension() override = default;
+    HostSerialExtension();
+    // Defined in the .cpp where HostSerialServiceImpl is complete (the
+    // unique_ptr<HostSerialServiceImpl> member needs it for destruction).
+    ~HostSerialExtension() override;
 
     std::span<const std::string_view> attaches_to() const override;
     std::span<const std::string_view> provides() const override;
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
+
+    // Typed config API (query + re-point), parallel to the GUI panel below.
+    std::vector<grpc::Service*> grpc_services() override;
 
     // Peripherals-sidebar panel.
     ExtensionUi* ui() override { return &ui_; }
@@ -63,6 +75,11 @@ private:
     // callback) before ui_ dies, avoiding a use-after-free.
     HostSerialUi ui_{*this};
     std::unique_ptr<serial::HostSerialEndpoint> endpoint_;
+#ifdef BEEBIUM_BUILD_SERVICE
+    // Declared after endpoint_ so it is destroyed FIRST (it holds an endpoint_
+    // reference). Lazily constructed in grpc_services().
+    std::unique_ptr<HostSerialServiceImpl> service_;
+#endif
 };
 
 }  // namespace beebium

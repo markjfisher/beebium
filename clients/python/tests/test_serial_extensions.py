@@ -18,10 +18,19 @@ drives the BBC's ACIA/Serial ULA through the bus, exactly as a ROM would.
 
 from __future__ import annotations
 
+import os
+import sys
+
+import grpc
 import pytest
 
 from beebium import Beebium
 from beebium.exceptions import ServerNotFoundError
+
+# host-serial pty/device modes rely on POSIX pseudo-terminals.
+_posix_only = pytest.mark.skipif(
+    sys.platform.startswith("win"), reason="host-serial pty/device is POSIX-only"
+)
 
 # MC6850 control: /16 divide, 8N1, /RTS low, no TX IRQ -- the MOS serial config.
 _ACIA_8N1 = 0x15
@@ -110,3 +119,73 @@ def test_loopback_serial_echo(loopback_serial_bbc):
             break
     assert got_rdrf, "loopback byte never arrived at the receiver"
     assert bbc.memory.address.bus[0xFE09] == ord("K")
+
+
+@pytest.fixture
+def host_serial_bbc(mos_filepath, basic_filepath, beebium_server_filepath):
+    """A BBC whose serial port is owned by the host-serial extension (pty mode)."""
+    try:
+        with Beebium.launch(
+            mos_filepath=mos_filepath,
+            basic_filepath=basic_filepath,
+            server_filepath=beebium_server_filepath,
+            extra_args=["--host-serial", "mode=pty"],
+        ) as instance:
+            instance.debugger.stop()
+            yield instance
+    except ServerNotFoundError as e:
+        pytest.skip(str(e))
+
+
+@_posix_only
+def test_host_serial_get_config_reports_pty(host_serial_bbc):
+    """GetConfig reports the pty bridge created at launch."""
+    config = host_serial_bbc.host_serial.get_config()
+    assert config.mode == "pty"
+    assert config.path  # the advertised pty slave path
+    assert config.serial_open
+
+
+@_posix_only
+def test_host_serial_set_config_rejects_runtime_pty(host_serial_bbc):
+    """A runtime switch to pty is rejected (a pty is startup-only)."""
+    with pytest.raises(grpc.RpcError) as excinfo:
+        host_serial_bbc.host_serial.set_config(mode="pty")
+    assert excinfo.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+
+@_posix_only
+def test_host_serial_set_config_repoints_to_device(host_serial_bbc):
+    """SetConfig re-points the bridge to a device path; a baud-only diff then
+    keeps the path. The re-point lands on the next emulation tick, so we step the
+    machine and poll GetConfig (feedback, not a fixed sleep)."""
+    bbc = host_serial_bbc
+
+    # A fresh pty to point the bridge at; keep both ends open for its lifetime.
+    master_fd, slave_fd = os.openpty()
+    try:
+        device_path = os.ttyname(slave_fd)
+
+        bbc.host_serial.set_config(mode="device", path=device_path, baud=9600)
+        config = None
+        for _ in range(20):
+            bbc.debugger.step_cycles(2000)  # let process_pending_reopen run
+            config = bbc.host_serial.get_config()
+            if config.path == device_path:
+                break
+        assert config is not None and config.path == device_path
+        assert config.mode == "device"
+        assert config.baud == 9600
+
+        # Partial update: change only the baud, path is kept.
+        bbc.host_serial.set_config(baud=2400)
+        for _ in range(20):
+            bbc.debugger.step_cycles(2000)
+            config = bbc.host_serial.get_config()
+            if config.baud == 2400:
+                break
+        assert config.baud == 2400
+        assert config.path == device_path  # unchanged by the baud-only diff
+    finally:
+        os.close(master_fd)
+        os.close(slave_fd)

@@ -32,6 +32,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.host_serial import HostSerial
 from beebium.rpc_serial import RpcSerial
 from beebium.serial import Serial
 from beebium.extension_ui import ExtensionUi
@@ -107,6 +108,7 @@ class Beebium:
         self._econet: Econet | None = None
         self._serial: Serial | None = None
         self._rpc_serial: RpcSerial | None = None
+        self._host_serial: HostSerial | None = None
         self._econet_transport: EconetTransport | None = None
         self._aun: Aun | None = None
         self._piconet: Piconet | None = None
@@ -364,6 +366,18 @@ class Beebium:
         if self._rpc_serial is None:
             self._rpc_serial = RpcSerial(self._connection.rpc_serial_stub)
         return self._rpc_serial
+
+    @property
+    def host_serial(self) -> HostSerial:
+        """Query and re-point the host-serial bridge (the host-serial extension).
+
+        The scripting-friendly equivalent of the GUI panel: read or change the
+        bridge's mode / path / baud. Requires the server to be launched with
+        ``--host-serial``.
+        """
+        if self._host_serial is None:
+            self._host_serial = HostSerial(self._connection.host_serial_stub)
+        return self._host_serial
 
     @property
     def transport(self) -> EconetTransport:
