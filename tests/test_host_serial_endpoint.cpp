@@ -95,13 +95,23 @@ TEST_CASE("HostSerialEndpoint back-pressures a stuck peer without blocking",
     // writer thread can never drain it (stuck peer), but add_byte must return
     // immediately every time -- it never blocks on the OS write.
     const std::size_t flood = endpoint.tx_hard_cap() + 4096;
-    for (std::size_t i = 0; i < flood; ++i) {
-        endpoint.add_byte(0x55);
+
+    // Back-pressure must end up asserted: the queue is bounded, so /CTS holds and
+    // the ULA stalls the guest -- not the host. We poll for it rather than check
+    // once, because the writer grabs the whole queue into one batch and clears
+    // tx_ before getting stuck on the peer, leaving a brief window where tx_ is
+    // empty and accepts_more() reads true. After that single grab the writer is
+    // stuck forever (the peer never drains), so the queue only refills -- back-
+    // pressure then asserts and stays asserted. (Was a flake on slow CI runners.)
+    bool back_pressured = false;
+    for (int round = 0; round < 100 && !back_pressured; ++round) {
+        for (std::size_t i = 0; i < flood; ++i) {
+            endpoint.add_byte(0x55);
+        }
+        back_pressured = !endpoint.accepts_more();
     }
 
-    // The queue is bounded and back-pressure is asserted, so the ULA would hold
-    // /CTS and stall the guest -- not the host.
-    CHECK_FALSE(endpoint.accepts_more());
+    CHECK(back_pressured);
     CHECK(endpoint.tx_pending() <= endpoint.tx_hard_cap());
     CHECK(endpoint.tx_dropped() > 0);
 }
