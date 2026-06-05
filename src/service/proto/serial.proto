@@ -32,6 +32,12 @@ message SerialStatus {
     // True if this machine variant has the on-board serial socket.
     bool has_serial_socket = 1;
 
+    // Static, machine-defined: the physical connector standard. "RS423" on the
+    // Model B / B+ / Master 128; "RS232" on a Master Compact fitted with serial
+    // (only the signal levels differ -- this is purely a label). Empty when the
+    // machine has no serial socket.
+    string connector = 16;
+
     // MC6850 ACIA state.
     uint32 acia_control = 2;   // last control-register value written
     uint32 acia_status = 3;    // current status-register value

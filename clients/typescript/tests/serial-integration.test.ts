@@ -27,6 +27,7 @@ describe("serial integration", () => {
             const first = await iter.next();
             expect(first.done).toBe(false);
             expect(first.value!.hasSerialSocket).toBe(true);
+            expect(first.value!.connector).toBe("RS423"); // Model B connector (static label)
 
             // Flip the Serial ULA's RS423/cassette select; the server pushes it.
             const wantRs423 = !first.value!.rs423Selected;

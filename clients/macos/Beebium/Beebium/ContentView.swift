@@ -67,6 +67,7 @@ struct ContentView: View {
     @StateObject private var debuggerClient = DebuggerClient()
     @StateObject private var audioMixerState = AudioMixerState()
     @StateObject private var econetClient = EconetClient()
+    @StateObject private var serialClient = SerialClient()
     @StateObject private var extensionUiClient = ExtensionUiClient()
     @StateObject private var peripheralsClient = PeripheralsClient()
     @StateObject private var transportsClient = EconetTransportsClient()
@@ -117,6 +118,7 @@ struct ContentView: View {
                 audioClient: audioClient,
                 audioMixerState: audioMixerState,
                 econetClient: econetClient,
+                serialClient: serialClient,
                 extensionUiClient: extensionUiClient,
                 peripheralsClient: peripheralsClient,
                 transportsClient: transportsClient,
@@ -290,6 +292,7 @@ struct ContentView: View {
             clientGroup.register(audioClient)
             clientGroup.register(debuggerClient)
             clientGroup.register(econetClient)
+            clientGroup.register(serialClient)
             clientGroup.register(extensionUiClient)
             clientGroup.register(peripheralsClient)
             clientGroup.register(transportsClient)
@@ -349,6 +352,7 @@ struct ContentView: View {
                 audioClient.connect(channel: channel)
                 debuggerClient.connect(channel: channel)
                 econetClient.connect(channel: channel)
+                serialClient.connect(channel: channel)
                 extensionUiClient.connect(channel: channel)
                 peripheralsClient.connect(channel: channel)
                 transportsClient.connect(channel: channel)

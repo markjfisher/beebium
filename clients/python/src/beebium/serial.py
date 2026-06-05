@@ -36,6 +36,8 @@ class SerialStatus:
     """Serial hardware status (MC6850 ACIA + Serial ULA)."""
 
     has_serial_socket: bool
+    # Physical connector standard ("RS423" / "RS232"); empty when no socket.
+    connector: str
     # MC6850 ACIA
     acia_control: int
     acia_status: int
@@ -58,6 +60,7 @@ def _response_to_status(response: serial_pb2.SerialStatus) -> SerialStatus:
     """Convert a SerialStatus proto into a SerialStatus dataclass."""
     return SerialStatus(
         has_serial_socket=response.has_serial_socket,
+        connector=response.connector,
         acia_control=response.acia_control,
         acia_status=response.acia_status,
         tdre=response.tdre,

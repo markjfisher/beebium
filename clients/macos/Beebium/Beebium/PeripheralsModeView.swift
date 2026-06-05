@@ -26,6 +26,7 @@ import SwiftUI
 struct PeripheralsModeView: View {
     @ObservedObject var client: PeripheralsClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var serialClient: SerialClient
 
     var body: some View {
         Group {
@@ -100,7 +101,8 @@ struct PeripheralsModeView: View {
                         Divider().padding(.horizontal, 12)
                     }
                     ExtensionPointSection(group: group,
-                                          extensionUiClient: extensionUiClient)
+                                          extensionUiClient: extensionUiClient,
+                                          serialClient: serialClient)
                 }
                 if !client.tree.orphans.isEmpty {
                     if !client.tree.groups.isEmpty {
@@ -136,6 +138,7 @@ private extension View {
 private struct ExtensionPointSection: View {
     let group: PeripheralTree.ExtensionPointGroup
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var serialClient: SerialClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -146,12 +149,34 @@ private struct ExtensionPointSection: View {
                 .padding(.top, 8)
                 .padding(.bottom, 2)
 
+            // Interface (port) details, shown before the extension details: the
+            // on-board serial hardware's own state (connector standard + the
+            // emulated BBC RS423 TX/RX baud, distinct from any host-side rate).
+            if group.extensionPoint == "serial-port", let label = serialPortInterface {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 2)
+            }
+
             ForEach(group.nodes) { node in
                 PeripheralNodeRow(node: node,
                                   depth: 0,
                                   extensionUiClient: extensionUiClient)
             }
         }
+    }
+
+    // The serial port's interface line, e.g. "RS423 Tx 75 / Rx 1200 baud".
+    // nil when the machine has no serial socket. The baud is the emulated BBC
+    // (Serial ULA) rate captured while RS423 is selected -- never the cassette
+    // rate. Until RS423 has been selected we show just the connector standard.
+    private var serialPortInterface: String? {
+        guard serialClient.hasSerialSocket else { return nil }
+        let connector = serialClient.connector.isEmpty ? "RS423" : serialClient.connector
+        guard serialClient.hasRs423Rates else { return connector }
+        return "\(connector) Tx \(serialClient.rs423TxBaud) / Rx \(serialClient.rs423RxBaud) baud"
     }
 }
 
@@ -247,7 +272,8 @@ private struct PeripheralNodeRow: View {
 struct PeripheralsModeView_Previews: PreviewProvider {
     static var previews: some View {
         PeripheralsModeView(client: PeripheralsClient(),
-                            extensionUiClient: ExtensionUiClient())
+                            extensionUiClient: ExtensionUiClient(),
+                            serialClient: SerialClient())
             .frame(width: 280, height: 400)
     }
 }

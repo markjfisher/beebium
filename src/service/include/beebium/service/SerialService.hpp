@@ -96,6 +96,8 @@ private:
             status.set_has_serial_socket(false);
         } else {
             status.set_has_serial_socket(true);
+            status.set_connector(
+                std::string(beebium::serial_connector_label<Memory>()));
             auto& serial = machine_.state().memory.serial_socket;
             const auto& acia = serial.acia();
             const auto& ula = serial.ula();
