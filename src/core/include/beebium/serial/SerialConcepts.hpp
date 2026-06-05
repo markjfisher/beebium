@@ -16,6 +16,7 @@
 #include "SerialSocket.hpp"
 
 #include <concepts>
+#include <string_view>
 
 namespace beebium {
 
@@ -35,5 +36,27 @@ template<typename T>
 concept HasSerialSocket = requires(T& hw) {
     { hw.serial_socket } -> std::same_as<SerialSocket&>;
 };
+
+// The physical connector standard of the on-board serial port. RS423 on the
+// Model B / B+ / Master 128; RS232 on a Master Compact fitted with serial (only
+// the signal levels differ -- it is purely a label). Static and machine-defined:
+// a hardware/memory type may declare
+//   static constexpr std::string_view serial_connector = "RS232";
+// otherwise it defaults to "RS423". Orthogonal to HasSerialSocket (whether the
+// port exists) and to the dynamic RS423/cassette select bit (which mode the
+// shared ULA baud bits currently drive).
+template<typename T>
+concept HasSerialConnectorLabel = requires {
+    { T::serial_connector } -> std::convertible_to<std::string_view>;
+};
+
+template<typename T>
+constexpr std::string_view serial_connector_label() {
+    if constexpr (HasSerialConnectorLabel<T>) {
+        return T::serial_connector;
+    } else {
+        return "RS423";
+    }
+}
 
 }  // namespace beebium

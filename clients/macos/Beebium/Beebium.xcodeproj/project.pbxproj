@@ -82,10 +82,12 @@
 		8C6EF54139165E4D6F07941C /* ExtensionPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */; };
 		8DE0B19A245E1C1C1E144E4F /* video.proto in Resources */ = {isa = PBXBuildFile; fileRef = 69144892FD8EBDC0F0D9230E /* video.proto */; };
 		8E648F53A0DD1B04A0E1F08E /* StorageModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A0228B7AD63C2E38A63080 /* StorageModeView.swift */; };
+		8F602AC748C18A556729FE2A /* serial.grpc.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC51B6CDDCA00180CC81969A /* serial.grpc.swift */; };
 		910A258FD1C89BFB7CFDFC71 /* MemoryConfigurationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3CAA48CAAC43745F077F26 /* MemoryConfigurationState.swift */; };
 		934D31B17454BE2697B2463D /* PeripheralTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DB04E0AE6339BFE2928C6B1 /* PeripheralTreeTests.swift */; };
 		94C93812FC0975970E7C7230 /* KeyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6041795434C164F849A27B /* KeyInput.swift */; };
 		987BD71FBAD1D69713DD3995 /* KeyboardClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A63D58ABA4C03E6D3AE1D51 /* KeyboardClient.swift */; };
+		9A8754B2F1CB725F4A296CDF /* SerialClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60AB5DB41408CC531369DC47 /* SerialClient.swift */; };
 		9F0D659309F36B7DD20F0070 /* KeyboardMappingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E27CCAEA2B3295D30B7E900 /* KeyboardMappingManager.swift */; };
 		A005244A2347799984C194E6 /* audio.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0CD29C9A89B375C692C019 /* audio.pb.swift */; };
 		A218ADC630D92D0A18D300CF /* PeripheralsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757B84FAA1D1A37B1ABEB0A0 /* PeripheralsClient.swift */; };
@@ -99,6 +101,7 @@
 		B18E97257A891E2AC24129ED /* EditableChoiceField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899F340E434ACDCAA75F913F /* EditableChoiceField.swift */; };
 		B26B3EEFA493E960103D6527 /* system.proto in Resources */ = {isa = PBXBuildFile; fileRef = 3D27B82F5650277464200982 /* system.proto */; };
 		B41DE38A258D6C2E68314C5D /* FocusedDialogKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = C432ADD4B509CA5A4D3462C0 /* FocusedDialogKeys.swift */; };
+		B49078C0DB0782133FA05F34 /* serial.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0120B84124735271034BFC9 /* serial.pb.swift */; };
 		B58D72ABF01F173A208050E2 /* TouchBarGlyphs.svg in Resources */ = {isa = PBXBuildFile; fileRef = 5B097B8092C02F8851C2C5C9 /* TouchBarGlyphs.svg */; };
 		B672E2EC8D5D6BA89F11BF0B /* BeebiumTouchBarKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D68557079BA374D2FAD131 /* BeebiumTouchBarKeys.swift */; };
 		B778FD3CAB76C7B9AE5B7EF9 /* AudioMixerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC8AB6C51EB3EDA7D26CE6F /* AudioMixerState.swift */; };
@@ -211,6 +214,7 @@
 		5E54D546E48798EB281A43A0 /* VideoSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettings.swift; sourceTree = "<group>"; };
 		5E556C71961C889896FAB4BD /* KeyboardSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSettingsPane.swift; sourceTree = "<group>"; };
 		607580C54AA31C57AD9627C8 /* VideoSettingsCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSettingsCacheTests.swift; sourceTree = "<group>"; };
+		60AB5DB41408CC531369DC47 /* SerialClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SerialClient.swift; sourceTree = "<group>"; };
 		62D773CF34288E45A4CFCCF5 /* KeyboardMappingResolveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMappingResolveTests.swift; sourceTree = "<group>"; };
 		639EC2DB9EC3CBA7F0E7A8CB /* Disconnectable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Disconnectable.swift; sourceTree = "<group>"; };
 		642BEA30A8664289314B2D9E /* video.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = video.pb.swift; sourceTree = "<group>"; };
@@ -278,6 +282,7 @@
 		C793157DDB8EFB24A11C7D63 /* SidewaysClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidewaysClient.swift; sourceTree = "<group>"; };
 		C9A1A70DB6662E96A6210970 /* KeyboardMappings */ = {isa = PBXFileReference; lastKnownFileType = folder; name = KeyboardMappings; path = Beebium/Resources/KeyboardMappings; sourceTree = SOURCE_ROOT; };
 		CA006204A482FCD8B77F7549 /* EconetClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EconetClient.swift; sourceTree = "<group>"; };
+		CC51B6CDDCA00180CC81969A /* serial.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = serial.grpc.swift; sourceTree = "<group>"; };
 		CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = system.grpc.swift; sourceTree = "<group>"; };
 		CF6562062957B62B8C099A42 /* DiscClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscClient.swift; sourceTree = "<group>"; };
 		D11753B4E23EE4B1DDDE7A19 /* PixelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelShape.swift; sourceTree = "<group>"; };
@@ -293,6 +298,7 @@
 		E5FAFDF7474D253DDBE042E3 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
 		E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = keyboard.pb.swift; sourceTree = "<group>"; };
 		EE9DB980150AF613F28EA04D /* ExtensionPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPanelView.swift; sourceTree = "<group>"; };
+		F0120B84124735271034BFC9 /* serial.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = serial.pb.swift; sourceTree = "<group>"; };
 		F0755375EDEB34B453D3E297 /* DebugDisplayStyleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugDisplayStyleTests.swift; sourceTree = "<group>"; };
 		F309AF35B280ABE8DDCE6E15 /* MemoryModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryModeView.swift; sourceTree = "<group>"; };
 		F4F91689B09CACC55C956BA2 /* PeripheralsModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeripheralsModeView.swift; sourceTree = "<group>"; };
@@ -382,6 +388,8 @@
 				E61C3011B028BF1FDAD579A4 /* keyboard.pb.swift */,
 				7D34EDE9DFD8D58084F986AB /* peripheral_extension.grpc.swift */,
 				6694597902ECB3A929A58055 /* peripheral_extension.pb.swift */,
+				CC51B6CDDCA00180CC81969A /* serial.grpc.swift */,
+				F0120B84124735271034BFC9 /* serial.pb.swift */,
 				8DC4EB31EFDD95098F6DE936 /* sideways.grpc.swift */,
 				94057CD054785189D20ACE11 /* sideways.pb.swift */,
 				CF33113C39D9E1D2BE649FF6 /* system.grpc.swift */,
@@ -507,6 +515,7 @@
 				F4F91689B09CACC55C956BA2 /* PeripheralsModeView.swift */,
 				5B4E1CC9ABAFFA92C4A74F5B /* PeripheralTree.swift */,
 				B5B19F4DD5A21B41C2CF9630 /* RecentConnections.swift */,
+				60AB5DB41408CC531369DC47 /* SerialClient.swift */,
 				3C410D45C0D56B52B7405B54 /* Shaders.metal */,
 				992C39260909EB85C84D2C20 /* SidebarMode.swift */,
 				A7386122C0E5009AE250FECD /* SidebarModeContent.swift */,
@@ -776,6 +785,7 @@
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
 				BA7685640D333A974EF6D1F6 /* ResettableControls.swift in Sources */,
 				1C6C1476609292CEC12F9374 /* RomHeaderInfo.swift in Sources */,
+				9A8754B2F1CB725F4A296CDF /* SerialClient.swift in Sources */,
 				02202BCE716C487C5A3D36FC /* SettingsView.swift in Sources */,
 				B0E52098A904B8D9EB8C8870 /* Shaders.metal in Sources */,
 				8248344928EA9782B944178F /* SidebarMode.swift in Sources */,
@@ -816,6 +826,8 @@
 				281A106F8708C92D91CD9240 /* keyboard.pb.swift in Sources */,
 				BB826699AAD95D5477C0D88F /* peripheral_extension.grpc.swift in Sources */,
 				4EF3D3F96612464D542D66F3 /* peripheral_extension.pb.swift in Sources */,
+				8F602AC748C18A556729FE2A /* serial.grpc.swift in Sources */,
+				B49078C0DB0782133FA05F34 /* serial.pb.swift in Sources */,
 				C29A1601A7336A71D236BAFB /* sideways.grpc.swift in Sources */,
 				F61126ACA1A3E0AD40E6FB14 /* sideways.pb.swift in Sources */,
 				5BFF6217532F7E4126E6A946 /* system.grpc.swift in Sources */,

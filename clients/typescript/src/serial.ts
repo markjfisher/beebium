@@ -17,6 +17,8 @@ import { toAsyncIterable } from "./stream-utils.js";
 
 export interface SerialStatus {
     hasSerialSocket: boolean;
+    /** Physical connector standard ("RS423" / "RS232"); empty when no socket. */
+    connector: string;
     // MC6850 ACIA
     aciaControl: number;
     aciaStatus: number;
@@ -38,6 +40,7 @@ export interface SerialStatus {
 function toSerialStatus(proto: ProtoSerialStatus): SerialStatus {
     return {
         hasSerialSocket: proto.hasSerialSocket,
+        connector: proto.connector,
         aciaControl: proto.aciaControl,
         aciaStatus: proto.aciaStatus,
         tdre: proto.tdre,

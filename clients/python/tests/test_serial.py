@@ -98,6 +98,8 @@ def test_watch_status_passes_interval():
 def test_serial_status_available(bbc):
     status = bbc.serial.status
     assert status.has_serial_socket is True
+    # Model B has an RS423 connector (static, machine-defined label).
+    assert status.connector == "RS423"
 
 
 def test_watch_status_stream_pushes_a_change(bbc):
