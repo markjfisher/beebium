@@ -298,18 +298,22 @@ describe("TubeSystem", () => {
             // Start host too (parasite may need it for Tube I/O)
             try { await host.debugger.run(); } catch { /* already running */ }
 
-            // Use the stream pattern to wait for the breakpoint to fire,
-            // then read the authoritative state via getState().
+            // Use the stream pattern to wait for the breakpoint to fire, then
+            // read the authoritative state via getState(). Filter on sequence so
+            // we only break on a stop that happened AFTER we resumed -- the
+            // parasite was stopped by coupled.stop() above, so a stale
+            // isRunning:false event is in flight; breaking on it would catch the
+            // parasite still running toward the breakpoint (a race that surfaced
+            // only on the slower macOS x86_64 runner). Same guard runUntil uses.
             const iter = parasite.debugger.watchExecutionState();
-            await iter.next(); // consume initial state
+            const initial = await iter.next(); // consume initial state
+            const runSequence = initial.value!.state.sequence;
             await parasite.debugger.run();
             for await (const event of iter) {
-                if (!event.state.isRunning) break;
+                if (!event.state.isRunning && event.state.sequence > runSequence) break;
             }
 
             // Read authoritative state after the stream confirms the stop.
-            // Don't use the stream event's snapshot (may be stale) or a
-            // separate isRunning() call (may race with restart).
             const finalState = await parasite.debugger.getState();
             expect(finalState.isRunning).toBe(false);
             expect(finalState.cycleCount).toBeGreaterThanOrEqual(BigInt(targetCycles));
