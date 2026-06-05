@@ -27,15 +27,21 @@ jobs:
           xcode-version: '16'
 
       - name: Set VCPKG_INSTALLED_DIR
-        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+        run: |
+          echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+          # Include the runner image version in the vcpkg cache key. An image bump
+          # changes the toolchain/SDK and thus vcpkg's ABI, so the cached binaries
+          # go stale; without this the (immutable) key never rotates, vcpkg rebuilds
+          # from source every run, and the rebuild can never be saved.
+          echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_installed
-          key: vcpkg-${{ runner.os }}-arm64-static-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-arm64-static-
+            vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -101,15 +107,21 @@ jobs:
           xcode-version: '16'
 
       - name: Set VCPKG_INSTALLED_DIR
-        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+        run: |
+          echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $GITHUB_ENV
+          # Include the runner image version in the vcpkg cache key. An image bump
+          # changes the toolchain/SDK and thus vcpkg's ABI, so the cached binaries
+          # go stale; without this the (immutable) key never rotates, vcpkg rebuilds
+          # from source every run, and the rebuild can never be saved.
+          echo "IMAGE_VERSION=$ImageVersion" >> $GITHUB_ENV
 
       - name: Cache vcpkg installed packages
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_installed
-          key: vcpkg-${{ runner.os }}-x64-static-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-x64-static-
+            vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
