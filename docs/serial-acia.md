@@ -149,12 +149,18 @@ The **core holds only the seam and the bit engine**; the concrete devices are
 PeripheralExtensions, each owning its configuration and (where useful) its own
 typed gRPC service and a Peripherals-sidebar `ExtensionUi`:
 
-| Extension | Device | What it is |
-|-----------|--------|------------|
-| `host-serial`     | `HostSerialEndpoint`   | Bridges the port to a host pty or serial device. |
-| `rpc-serial`      | `RpcSerialEndpoint`    | The RPC client *is* the device: inject/collect bytes over gRPC. |
-| `loopback-serial` | (the extension itself) | TX → RX echo plug; zero config, a "does my serial path work" smoke. |
-| `ip232-serial`    | `Ip232SerialEndpoint`  | Bridges the port to a tcpser-style IP232 server over TCP (retro modem / BBS dial-out). See [serial-ip232.md](serial-ip232.md). |
+| Extension | Device | Deployment | What it is |
+|-----------|--------|------------|------------|
+| `host-serial`     | `HostSerialEndpoint`   | **built-in** | Bridges the port to a host pty or serial device. |
+| `rpc-serial`      | `RpcSerialEndpoint`    | plugin | The RPC client *is* the device: inject/collect bytes over gRPC. |
+| `loopback-serial` | (the extension itself) | plugin | TX → RX echo plug; zero config, a "does my serial path work" smoke. |
+| `ip232-serial`    | `Ip232SerialEndpoint`  | plugin | Bridges the port to a tcpser-style IP232 server over TCP (retro modem / BBS dial-out). See [serial-ip232.md](serial-ip232.md). |
+
+Only `host-serial` is essential enough to be a **built-in** (statically linked
+into the server). The others ship as **dynamically-loaded plugins**, discovered
+at runtime from `<exe-dir>/extensions/<name>/` (a `.dylib`/`.so`/`.dll` +
+`manifest.json`), exactly like `acorn-rtc` / `acorn-scsi` / `piconet`. A
+user-specified `--extension-dir` layers *extra* plugins over those defaults.
 
 The shared OS-port primitives stay in core under `beebium::serial`:
 `HostSerialPort` (interface), `PosixSerialPort` / `Win32SerialPort` (open an
