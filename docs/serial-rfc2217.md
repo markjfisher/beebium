@@ -105,9 +105,9 @@ python -m serial.tools.miniterm rfc2217://127.0.0.1:4001
 Beebium implements the COM-PORT commands that fit its **byte-oriented** model.
 The plugin bridges two byte-streams — the BBC's serial port and the TCP peer —
 that the ULA has already framed into whole bytes, decoupled by bounded queues.
-Anything that is **sub-byte or out-of-band** (a line condition rather than a
-data value) cannot ride that byte queue, and carrying it would need extra
-side-channels into the ULA/ACIA; those are deliberately left out for now.
+Line conditions that are **sub-byte or out-of-band** (RTS/CTS, and BREAK) ride
+dedicated side-channels through the Serial ULA rather than the byte queue; the
+remaining line-state flags are left out (see below).
 
 **Supported**
 
@@ -119,8 +119,11 @@ side-channels into the ULA/ACIA; those are deliberately left out for now.
 | `SET-DATASIZE`/`PARITY`/`STOPSIZE` | sets the remote framing (`framing=`) | **cosmetic** — echo-accepted |
 | `SET-CONTROL` flow / DTR | sets the remote (`flow=`/`dtr=`) | echo-accepted |
 | `SET-CONTROL` RTS | the BBC's RTS → remote | client RTS → the BBC's CTS input |
+| `SET-CONTROL` BREAK | the BBC's transmitted break → remote | client break → the BBC's receiver |
 | `NOTIFY-MODEMSTATE` (CTS) | consumed as remote flow control | emitted from the BBC's RTS |
-| `PURGE-DATA`, the `*-MASK` requests | — | echo-accepted (so strict clients open) |
+| `NOTIFY-LINESTATE` (break) | a remote break → the BBC's receiver | the BBC's break → the client (if masked in) |
+| `SET-LINESTATE-MASK` | requests the break bit on connect | recorded; gates `NOTIFY-LINESTATE` |
+| `PURGE-DATA`, the other `*-MASK` requests | — | echo-accepted (so strict clients open) |
 
 The **server never changes the emulated BBC hardware.** A remote client's
 baud/parity/stop requests are acknowledged but **not applied**: the BBC's real
@@ -129,21 +132,37 @@ re-timing the hardware from the network would desync the OS's RAM copy of those
 settings. The queues absorb any rate mismatch (see [Baud and the rate
 mismatch](#baud-and-the-rate-mismatch)).
 
+**BREAK (both directions)**
+
+A BREAK is the line held in the space state longer than a character frame — a
+line *condition*, not a data byte — so it travels out of band, the way RFC 2217
+intends: `SET-CONTROL` BREAK-ON/OFF for the control direction and
+`NOTIFY-LINESTATE` (break bit) for the status direction. It matters because some
+frame-based protocols (DMX512, LIN) use a break as the frame delimiter.
+
+On the BBC/MC6850 a break is software-driven, so only its *occurrence* crosses
+the link, not its exact length:
+- **Transmit:** the guest sets the 6850 control-register Transmitter-Control
+  field (bits 5–6) to `11` (e.g. via `*FX` / OSBYTE &9C), holding the line low
+  until it clears the field. Beebium forwards the on/off edges.
+- **Receive:** a break is delivered to the 6850 as a **Framing Error** with data
+  `0x00` (the receiver's standard representation — there is no dedicated break
+  bit), which the guest reads from the status/data registers.
+
+*Caveat:* because the BBC times the break in software and RFC 2217 conveys it as
+on/off events, the precise duration is not preserved across the link; receivers
+that need only "a break happened" (most LIN/DMX framing) are unaffected.
+
 **Deliberately NOT implemented (with fall-backs)**
 
-- **`BREAK`.** A BREAK is the line held in the space state longer than a
-  character frame — a *condition*, not a byte — so it can't traverse the byte
-  queue. *Fall-back:* a BBC-transmitted break is silently not propagated to the
-  remote (no data flows while the guest holds break; normal data resumes when it
-  clears), and a `BREAK` request from a remote/client is ignored (not injected
-  into the BBC's receiver).
-- **`NOTIFY-LINESTATE`** (framing / parity / overrun / break flags). Also
-  sub-byte. *Fall-back:* line errors on the remote link are invisible to the BBC
-  (a corrupted byte arrives as-is or is dropped by the remote); the server emits
-  no line-state, so a client sees a steady "no errors" state.
-- **Honouring the line/modem-state masks and flow-control *enforcement*.** The
-  masks are echo-accepted but not used to filter notifications; flow control
-  beyond the connection-state + RTS/CTS gating is not enforced.
+- **The rest of `NOTIFY-LINESTATE`** (framing / parity / overrun flags). These
+  are sub-byte and not produced by the byte-oriented model. *Fall-back:* line
+  errors on the remote link are invisible to the BBC (a corrupted byte arrives
+  as-is or is dropped by the remote); the server reports only the break bit.
+- **Honouring the modem-state mask and flow-control *enforcement*.** The
+  modem-state mask is echo-accepted but not used to filter notifications; flow
+  control beyond the connection-state + RTS/CTS gating is not enforced. (The
+  line-state mask *is* honoured for the break bit.)
 
 These can be revisited if a concrete need appears; none of them is commonly used
 by BBC serial software.

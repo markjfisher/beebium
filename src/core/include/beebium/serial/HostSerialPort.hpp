@@ -66,6 +66,12 @@ public:
     // read() in progress returns promptly with error=true.
     virtual void close() = 0;
 
+    // Drive (assert true / clear false) a serial BREAK condition on the line: the
+    // TX line is held in the space state until cleared. Default: no-op (pseudo-
+    // terminals and test doubles have no real line to break). Real device ports
+    // override this. Called on the writer thread, like write().
+    virtual void set_break(bool /*asserted*/) {}
+
     // OS-level diagnosis recorded if the last open attempt failed. Empty on
     // success.
     virtual std::string_view open_error() const noexcept = 0;

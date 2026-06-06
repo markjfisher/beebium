@@ -330,6 +330,20 @@ void Win32SerialPort::close() {
     ::CancelIoEx(reinterpret_cast<HANDLE>(raw), nullptr);
 }
 
+void Win32SerialPort::set_break(bool asserted) {
+    std::uintptr_t raw = handle_raw_.load(std::memory_order_acquire);
+    if (raw == kInvalidHandle) {
+        return;
+    }
+    HANDLE handle = reinterpret_cast<HANDLE>(raw);
+    // SetCommBreak starts a continuous break; ClearCommBreak ends it.
+    if (asserted) {
+        ::SetCommBreak(handle);
+    } else {
+        ::ClearCommBreak(handle);
+    }
+}
+
 ReadResult Win32SerialPort::read(std::span<std::uint8_t> buffer) {
     std::uintptr_t raw = handle_raw_.load(std::memory_order_acquire);
     if (raw == kInvalidHandle) {

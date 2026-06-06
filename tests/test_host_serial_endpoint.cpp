@@ -78,10 +78,19 @@ public:
     }
     bool is_open() const override { return open_.load(std::memory_order_relaxed); }
     void close() override { open_.store(false, std::memory_order_relaxed); }
+    void set_break(bool asserted) override {
+        break_level_.store(asserted, std::memory_order_relaxed);
+        ++break_changes_;
+    }
     std::string_view open_error() const noexcept override { return {}; }
+
+    bool break_level() const { return break_level_.load(std::memory_order_relaxed); }
+    int break_changes() const { return break_changes_.load(std::memory_order_relaxed); }
 
 private:
     std::atomic<bool> open_{true};
+    std::atomic<bool> break_level_{false};
+    std::atomic<int> break_changes_{0};
 };
 
 }  // namespace
@@ -114,6 +123,25 @@ TEST_CASE("HostSerialEndpoint back-pressures a stuck peer without blocking",
     CHECK(back_pressured);
     CHECK(endpoint.tx_pending() <= endpoint.tx_hard_cap());
     CHECK(endpoint.tx_dropped() > 0);
+}
+
+TEST_CASE("HostSerialEndpoint drives the port's BREAK from set_break",
+          "[serial][host-serial]") {
+    auto* port = new OpenPort();
+    serial::HostSerialEndpoint endpoint{std::unique_ptr<serial::HostSerialPort>(port)};
+
+    auto wait_for = [&](bool level) {
+        for (int i = 0; i < 500; ++i) {
+            if (port->break_changes() > 0 && port->break_level() == level) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return port->break_changes() > 0 && port->break_level() == level;
+    };
+
+    endpoint.set_break(true);
+    CHECK(wait_for(true));   // the writer thread asserts the line break
+    endpoint.set_break(false);
+    CHECK(wait_for(false));  // and clears it
 }
 
 TEST_CASE("HostSerialEndpoint re-points to a new device on request_reopen",

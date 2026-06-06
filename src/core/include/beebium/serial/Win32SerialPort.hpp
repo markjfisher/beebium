@@ -44,6 +44,7 @@ public:
     WriteResult write(std::span<const std::uint8_t> bytes) override;
     bool is_open() const override;
     void close() override;
+    void set_break(bool asserted) override;
 
     const std::string& device_path() const { return device_path_; }
     std::string_view open_error() const noexcept override { return open_error_; }
