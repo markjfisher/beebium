@@ -52,11 +52,28 @@ inline constexpr std::uint8_t SET_LINESTATE_MASK = 10;
 inline constexpr std::uint8_t SET_MODEMSTATE_MASK = 11;
 inline constexpr std::uint8_t PURGE_DATA = 12;
 
-// SET-CONTROL values (minimal subset).
+// SET-CONTROL values.
+inline constexpr std::uint8_t CONTROL_FLOW_NONE = 1;      // outbound/both
+inline constexpr std::uint8_t CONTROL_FLOW_XONXOFF = 2;
+inline constexpr std::uint8_t CONTROL_FLOW_HARDWARE = 3;
 inline constexpr std::uint8_t CONTROL_DTR_ON = 8;
 inline constexpr std::uint8_t CONTROL_DTR_OFF = 9;
 inline constexpr std::uint8_t CONTROL_RTS_ON = 11;
 inline constexpr std::uint8_t CONTROL_RTS_OFF = 12;
+
+// SET-PARITY payload values.
+inline constexpr std::uint8_t PARITY_NONE = 1;
+inline constexpr std::uint8_t PARITY_ODD = 2;
+inline constexpr std::uint8_t PARITY_EVEN = 3;
+inline constexpr std::uint8_t PARITY_MARK = 4;
+inline constexpr std::uint8_t PARITY_SPACE = 5;
+
+// SET-STOPSIZE payload values.
+inline constexpr std::uint8_t STOPSIZE_ONE = 1;
+inline constexpr std::uint8_t STOPSIZE_TWO = 2;
+inline constexpr std::uint8_t STOPSIZE_ONE_HALF = 3;
+
+// SET-DATASIZE payload is the number of data bits (5..8) directly.
 
 // NOTIFY-MODEMSTATE bit for CTS.
 inline constexpr std::uint8_t MODEMSTATE_CTS = 0x10;
@@ -105,6 +122,10 @@ public:
                        std::vector<std::uint8_t>& out) const;
     // SET-BAUDRATE (4-byte big-endian); command code is role-adjusted.
     void encode_set_baudrate(std::uint32_t baud, std::vector<std::uint8_t>& out) const;
+    // SET-DATASIZE / SET-PARITY / SET-STOPSIZE (single-byte payloads).
+    void encode_set_datasize(std::uint8_t data_bits, std::vector<std::uint8_t>& out) const;
+    void encode_set_parity(std::uint8_t parity, std::vector<std::uint8_t>& out) const;
+    void encode_set_stopsize(std::uint8_t stop, std::vector<std::uint8_t>& out) const;
     // SET-CONTROL with a CONTROL_* value (client emits the request form).
     void encode_set_control(std::uint8_t value, std::vector<std::uint8_t>& out) const;
     // NOTIFY-MODEMSTATE (server only).
