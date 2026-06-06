@@ -348,6 +348,12 @@ target_include_directories(test_ip232_codec
 target_link_libraries(test_ip232_codec PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_ip232_codec)
 
+# RFC 2217 codec (pure, golden-vector unit tests)
+add_executable(test_rfc2217_codec test_rfc2217_codec.cpp)
+target_link_libraries(test_rfc2217_codec
+    PRIVATE beebium_ext_rfc2217_common Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_codec)
+
 # IP232 endpoint integration tests (against the in-process loopback server)
 add_executable(test_ip232_serial_endpoint test_ip232_serial_endpoint.cpp)
 target_link_libraries(test_ip232_serial_endpoint
