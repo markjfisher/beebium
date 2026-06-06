@@ -1265,9 +1265,23 @@ if(BEEBIUM_BUILD_SERVICE)
     # (MSBuild, Xcode) resolve the right $(Configuration) subdirectory.
     target_compile_definitions(test_plugin_loader PRIVATE
         BEEBIUM_PLUGIN_DIR="$<TARGET_FILE_DIR:beebium-model-b>/extensions/test-scratch-ram"
+        # The parent extensions/ dir holds every deployed plugin (for the
+        # manifest/code attaches_to drift guard).
+        BEEBIUM_EXTENSIONS_DIR="$<TARGET_FILE_DIR:beebium-model-b>/extensions"
     )
-    # Ensure the plugin is built before the test runs
-    add_dependencies(test_plugin_loader beebium_ext_test_scratch_ram_plugin)
+    # Ensure the plugins are deployed before the test runs: test-scratch-ram for
+    # the load tests, and every peripheral plugin for the attaches_to drift guard.
+    add_dependencies(test_plugin_loader
+        beebium_ext_test_scratch_ram_plugin
+        beebium_ext_acorn_rtc_plugin
+        beebium_ext_acorn_scsi_plugin
+        beebium_ext_scsi_hard_disc_plugin
+        beebium_ext_ip232_serial_plugin
+        beebium_ext_loopback_serial_plugin
+        beebium_ext_rpc_serial_plugin
+        beebium_ext_rfc2217_client_plugin
+        beebium_ext_rfc2217_server_plugin
+    )
     catch_discover_tests(test_plugin_loader)
 
     # Regression test for issue #42: SIGINT crash when shutting down

@@ -3,6 +3,7 @@
     "display_name": "SCSI Hard Disc",
     "description": "SCSI hard disc target (DAT+DSC image)",
     "library": "scsi-hard-disc",
+    "attaches_to": ["scsi"],
     "cli": "scsi-hdd",
     "parameters": [
         {

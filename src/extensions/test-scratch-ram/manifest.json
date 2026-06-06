@@ -2,5 +2,6 @@
     "name": "test-scratch-ram",
     "display_name": "Test Scratch RAM",
     "description": "8 bytes of scratch RAM at 0xFC50 for framework testing",
-    "library": "test-scratch-ram"
+    "library": "test-scratch-ram",
+    "attaches_to": ["1mhz-bus"]
 }
