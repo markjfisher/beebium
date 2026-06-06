@@ -73,6 +73,12 @@ what the hardware has:
   `handshake` it is conveyed to the server via the `0xFF` escape; in `raw` mode
   it drives the connect/disconnect lifecycle.
 
+A serial **BREAK is not carried** by IP232 (the protocol has no break
+signalling): a BBC-transmitted break is not propagated, and the BBC's receiver
+is never handed one. If you need break across the link — for frame-based
+protocols such as DMX512 or LIN — use the RFC 2217 endpoints, which carry it in
+both directions (see [serial-rfc2217.md](serial-rfc2217.md)).
+
 ### Never stalls the emulator
 
 All socket I/O runs on dedicated threads (a connection/reader thread and a writer
