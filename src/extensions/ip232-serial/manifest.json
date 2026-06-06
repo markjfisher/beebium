@@ -6,16 +6,19 @@
     "cli": "ip232-serial",
     "parameters": [
         {
+            "key": "url",
+            "type": "string",
+            "description": "IP232 server endpoint as [scheme://]host:port (e.g. url=\"ip232://bbs.example.com:25232\"); alternative to host/port, cannot be combined with them"
+        },
+        {
             "key": "host",
             "type": "string",
-            "default": "localhost",
-            "description": "IP232 server hostname or address"
+            "description": "IP232 server hostname or address (default localhost; alternative to url)"
         },
         {
             "key": "port",
             "type": "integer",
-            "default": "25232",
-            "description": "IP232 server TCP port"
+            "description": "IP232 server TCP port (default 25232; alternative to url)"
         },
         {
             "key": "mode",

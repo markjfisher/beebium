@@ -87,3 +87,48 @@ TEST_CASE("Ip232SerialExtension rejects an out-of-range port", "[serial][ip232]"
     ext.set_config({{"host", "127.0.0.1"}, {"port", "70000"}});
     CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
 }
+
+TEST_CASE("Ip232SerialExtension accepts a url= endpoint", "[serial][ip232]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Ip232SerialExtension ext;
+    // The arg parser strips the quotes; the extension sees the bare value.
+    ext.set_config({{"url", "ip232://127.0.0.1:1"}});
+    ext.init(ctx);
+    CHECK(port.is_occupied());
+    ext.shutdown();
+}
+
+TEST_CASE("Ip232SerialExtension accepts a bare host:port url=", "[serial][ip232]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Ip232SerialExtension ext;
+    ext.set_config({{"url", "127.0.0.1:1"}});
+    ext.init(ctx);
+    CHECK(port.is_occupied());
+    ext.shutdown();
+}
+
+TEST_CASE("Ip232SerialExtension rejects url= combined with host=", "[serial][ip232]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Ip232SerialExtension ext;
+    ext.set_config({{"url", "127.0.0.1:1"}, {"host", "elsewhere"}});
+    CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
+}
+
+TEST_CASE("Ip232SerialExtension rejects an unparseable url=", "[serial][ip232]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Ip232SerialExtension ext;
+    ext.set_config({{"url", "no-port-here"}});
+    CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
+}
