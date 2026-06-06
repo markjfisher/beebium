@@ -205,6 +205,13 @@ Each serial extension is configured with the generic extension argument form —
 flag; colon-separated `key=value` pairs). `list-extensions` and
 `describe-extension <name>` print the live parameter schema.
 
+**Quoting values that contain a colon.** Because the pairs are colon-separated, a
+value that itself contains a `:` (a URL, a Windows path) must be wrapped in
+**double quotes** — the one rule. The shell usually needs an outer single-quote
+too: `--ip232-serial 'url="ip232://host:25232"'`,
+`--scsi-hdd '0:image="file:///discs/drive.dat"'`. An unquoted `scheme://…` value
+is detected and rejected with a message pointing you to quoting.
+
 ```
 # host-serial: bridge to a host pty or device
 --host-serial                                       # pty, defaults

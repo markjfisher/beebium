@@ -178,7 +178,7 @@ Keyword-only arguments (for advanced options):
 --scsi-hdd 0:/path/to/drive.dat:adapter-id=scsi-a:id=boot-disc:label=System Disc
 ```
 
-Filepaths are always the last positional element so shell tab-completion works. URI schemes (`file://`, `http://`) are preserved (colons in `://` are not split).
+Filepaths are always the last positional element so shell tab-completion works. A value that contains a colon — a URI like `file://`/`http://`, or a `host:port` — must be wrapped in double quotes, since the argument form splits on `:` (e.g. `image="file:///discs/drive.dat"`). An unquoted `scheme://…` is detected and rejected with a message pointing to quoting.
 
 Multiple instances of the same extension are created via repeated flags. Each invocation creates a separate instance with its own config and auto-generated id.
 

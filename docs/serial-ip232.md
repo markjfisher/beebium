@@ -86,11 +86,12 @@ dropped connection is retried automatically.
 ## How to use it
 
 `ip232-serial` is configured with the generic extension argument form,
-`--ip232-serial key=value:key=value`. `host` and `port` are **separate
-parameters** (not a `host:port` URL) because the argument parser splits on `:`.
+`--ip232-serial key=value:key=value`. The endpoint is given either as a single
+`url=` or as separate `host=`/`port=` (not both).
 
 | key | type | default | meaning |
 |-----|------|---------|---------|
+| `url` | string | — | endpoint as `[scheme://]host:port`; alternative to `host`/`port` |
 | `host` | string | `localhost` | IP232 server hostname / address |
 | `port` | integer | `25232` | IP232 server TCP port |
 | `mode` | string | `ip232` | `ip232` (escaped, persistent) or `raw` (pipe, connect on RTS) |
@@ -98,6 +99,18 @@ parameters** (not a `host:port` URL) because the argument parser splits on `:`.
 | `tx_buffer` | integer | `4096` | transmit buffer bytes; `/CTS` asserts at/above it |
 
 `beebium-model-b describe-extension ip232-serial` prints this schema live.
+
+Because the argument form splits on `:`, a `url` value (which contains a port
+colon) must be **wrapped in double quotes**; the shell usually needs an outer
+single-quote too:
+
+```
+--ip232-serial 'url="ip232://bbs.example.com:25232"'
+--ip232-serial 'url="127.0.0.1:25232":mode=raw'     # scheme optional
+```
+
+An unquoted `url=ip232://host:port` is caught with a message telling you to
+quote it. `url=` and `host=`/`port=` cannot be combined.
 
 ### Worked example: dial a BBS through tcpser
 

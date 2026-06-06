@@ -431,11 +431,11 @@ up via the SAME mechanism as every other extension -- no client-side hardcoding.
     no parsing code in the extension dirs, and no `ServerMain`<->`SerialService`
     duplication (the service is status-only). Cleanup done: removed the dead
     `Server::serial_service()` accessor (a `--serial`-wiring vestige; commit
-    24f9d0d). Residual NON-issue, noted not fixed: `split_colon_args` protects
-    `://` but still splits a bare `:` inside a value, so a `path=` with a colon
-    (a Windows drive path, or a future `rfc2217://host:port`) would break -- no
-    current case hits it (POSIX `/dev/...`, Windows `COM3` have none), and
-    rfc2217 should use separate `host=`/`port=` params anyway.
+    24f9d0d). RESOLVED later: the `split_colon_args` colon-in-value limitation is
+    now fixed properly -- values containing `:` are wrapped in double quotes (the
+    one rule; the partial `://` heuristic was dropped, with a helpful guidance
+    error for the unquoted-URL blunder). ip232-serial gained a `url=` param on
+    that basis, and rfc2217 will use the same `rfc2217://host:port` url form.
 18. DONE (commit 24f9d0d): rewrote `docs/serial-acia.md` to the extension model
     (seam + SerialPort handle in core; the three extensions + their CLI syntaxes;
     /CTS flow control + configurable tx_buffer; status-only SerialService with
