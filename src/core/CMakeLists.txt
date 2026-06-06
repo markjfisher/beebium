@@ -31,6 +31,10 @@ add_library(beebium_core STATIC
     include/beebium/serial/PosixSerialPort.hpp
     include/beebium/serial/Win32SerialPort.hpp
     include/beebium/serial/PtyMaster.hpp
+    # Shared cross-platform TCP transport (network-backed serial devices).
+    src/net/TcpClientSerialPort.cpp
+    include/beebium/net/SocketPlatform.hpp
+    include/beebium/net/TcpClientSerialPort.hpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
