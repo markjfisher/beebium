@@ -335,6 +335,12 @@ target_link_libraries(test_tcp_client_serial_port
     PRIVATE beebium_core Threads::Threads Catch2::Catch2WithMain)
 catch_discover_tests(test_tcp_client_serial_port)
 
+# TCP server transport (TcpServerSerialPort: listen/accept-one)
+add_executable(test_tcp_server_serial_port test_tcp_server_serial_port.cpp)
+target_link_libraries(test_tcp_server_serial_port
+    PRIVATE beebium_core Threads::Threads Catch2::Catch2WithMain)
+catch_discover_tests(test_tcp_server_serial_port)
+
 # IP232 escape codec (pure, golden-vector unit tests)
 add_executable(test_ip232_codec test_ip232_codec.cpp)
 target_include_directories(test_ip232_codec
