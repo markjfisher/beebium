@@ -35,6 +35,7 @@ add_library(beebium_core STATIC
     src/net/TcpClientSerialPort.cpp
     include/beebium/net/SocketPlatform.hpp
     include/beebium/net/TcpClientSerialPort.hpp
+    include/beebium/net/EndpointUrl.hpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp

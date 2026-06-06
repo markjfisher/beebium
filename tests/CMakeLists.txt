@@ -324,6 +324,11 @@ add_executable(test_serial_socket test_serial_socket.cpp)
 target_link_libraries(test_serial_socket PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_serial_socket)
 
+# Shared endpoint-URL parser ([scheme://]host:port)
+add_executable(test_endpoint_url test_endpoint_url.cpp)
+target_link_libraries(test_endpoint_url PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_endpoint_url)
+
 # Shared TCP transport (TcpClientSerialPort) over an in-process loopback server
 add_executable(test_tcp_client_serial_port test_tcp_client_serial_port.cpp)
 target_link_libraries(test_tcp_client_serial_port
