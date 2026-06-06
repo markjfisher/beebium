@@ -98,6 +98,11 @@ public:
         // pump_transmit(): a control-register write that changes RTS must reach
         // the device even while /CTS is holding the guest's transmit loop.
         update_rts();
+        // Forward BREAK transitions to the device. Like RTS this is a line
+        // condition rather than data (the guest sets the 6850 Transmitter-Control
+        // field to hold the TX line in the space state), so it is polled every
+        // tick and delivered out of band rather than through the byte queue.
+        update_break();
         // Transmit bit clock.
         if (++tx_timer_ >= tx_bit_period_) {
             tx_timer_ = 0;
@@ -122,13 +127,16 @@ public:
         rx_byte_ = 0;
         rx_bit_index_ = 0;
         rx_has_byte_ = false;
+        rx_break_ = false;
         // Match the power-on latch (cassette select => /DCD high).
         acia_.set_not_dcd(true);
-        // Re-baseline RTS to the (reset) ACIA level and re-deliver to any
-        // attached device so its view tracks the machine reset.
+        // Re-baseline RTS and BREAK to the (reset) ACIA level and re-deliver to
+        // any attached device so its view tracks the machine reset.
         last_rts_asserted_ = !acia_.get_not_rts();
+        last_break_asserted_ = acia_.tx_control() == Mc6850::TX_CTRL_RTS_LOW_BREAK;
         if (sink_) {
             sink_->set_rts(last_rts_asserted_);
+            sink_->set_break(last_break_asserted_);
         }
     }
 
@@ -142,10 +150,13 @@ public:
             acia_.set_not_cts(false);
             return;
         }
-        // Deliver the current RTS level to the freshly attached device so it
-        // starts from the right baseline rather than waiting for a transition.
+        // Deliver the current RTS and BREAK levels to the freshly attached
+        // device so it starts from the right baseline rather than waiting for a
+        // transition.
         last_rts_asserted_ = !acia_.get_not_rts();
         sink_->set_rts(last_rts_asserted_);
+        last_break_asserted_ = acia_.tx_control() == Mc6850::TX_CTRL_RTS_LOW_BREAK;
+        sink_->set_break(last_break_asserted_);
     }
 
     // --- Accessors for tests / debugging ---
@@ -178,6 +189,22 @@ private:
         if (rts_asserted != last_rts_asserted_) {
             last_rts_asserted_ = rts_asserted;
             sink_->set_rts(rts_asserted);
+        }
+    }
+
+    // Forward a BREAK transition to the attached device (edge-triggered). The
+    // guest asserts a break by writing the Transmitter-Control field = 11
+    // (TX_CTRL_RTS_LOW_BREAK, e.g. via OSBYTE &9C) and clears it to end the
+    // break; this surfaces those start/stop edges to the device out of band.
+    void update_break() {
+        if (sink_ == nullptr) {
+            return;
+        }
+        const bool break_asserted =
+            acia_.tx_control() == Mc6850::TX_CTRL_RTS_LOW_BREAK;
+        if (break_asserted != last_break_asserted_) {
+            last_break_asserted_ = break_asserted;
+            sink_->set_break(break_asserted);
         }
     }
 
@@ -218,8 +245,19 @@ private:
         if (source_) {
             switch (rx_state_) {
                 case RxByteState::Idle:
-                    if (!rx_has_byte_ && source_->has_data()) {
+                    // Poll for an inbound BREAK before ordinary data: a break is
+                    // a line condition the device signals out of band. We clock
+                    // it as an all-zeros frame with the stop bit forced low, so
+                    // the ACIA latches a Framing Error with data 0x00 -- exactly
+                    // how the MC6850 represents a received break.
+                    if (!rx_has_byte_ && source_->take_break()) {
+                        rx_byte_ = 0;
+                        rx_break_ = true;
+                        rx_has_byte_ = true;
+                        rx_state_ = RxByteState::Start;
+                    } else if (!rx_has_byte_ && source_->has_data()) {
                         rx_byte_ = source_->next_byte();
+                        rx_break_ = false;
                         rx_has_byte_ = true;
                         rx_state_ = RxByteState::Start;
                     }
@@ -237,9 +275,12 @@ private:
                     }
                     break;
                 case RxByteState::Stop:
-                    bit = 1;  // stop bit
+                    // A genuine stop bit is high; a break frame forces it low to
+                    // raise the receiver's Framing Error.
+                    bit = rx_break_ ? 0 : 1;
                     rx_state_ = RxByteState::Idle;
                     rx_has_byte_ = false;
+                    rx_break_ = false;
                     break;
             }
         }
@@ -263,9 +304,12 @@ private:
     uint8_t rx_byte_ = 0;
     uint8_t rx_bit_index_ = 0;
     bool rx_has_byte_ = false;
+    bool rx_break_ = false;  // current inbound frame is a break (stop bit low)
 
-    // Last RTS level delivered to the attached device, for edge detection.
+    // Last RTS / BREAK levels delivered to the attached device, for edge
+    // detection.
     bool last_rts_asserted_ = false;
+    bool last_break_asserted_ = false;
 
     SerialDataSource* source_ = nullptr;
     SerialDataSink* sink_ = nullptr;

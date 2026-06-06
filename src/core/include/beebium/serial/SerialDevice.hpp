@@ -38,6 +38,15 @@ public:
 
     // Remove and return the next received byte. Only call when has_data().
     virtual uint8_t next_byte() = 0;
+
+    // Optional: the device signals that a BREAK condition should be delivered to
+    // the BBC's receiver. A BREAK is a sub-byte line condition (the line held in
+    // the space state past a stop bit), not a data byte, so it is carried here
+    // out of band rather than through next_byte(). The Serial ULA polls this
+    // before has_data(); when it returns true (consuming the request) the ULA
+    // clocks a framing-error frame into the ACIA (data 0x00 + Framing Error),
+    // which is exactly how the MC6850 surfaces a received break. Default: never.
+    virtual bool take_break() { return false; }
 };
 
 // Beeb -> device (the ULA writes transmitted bytes here).
@@ -68,6 +77,14 @@ public:
     // and thereafter on every transition. Default: ignore (most devices do not
     // care about RTS). Called on the emulation thread.
     virtual void set_rts(bool /*rts_asserted*/) {}
+
+    // The BBC's outbound BREAK state, driven by the MC6850 Transmitter Control
+    // field (the guest sets bits 5-6 = 11 to hold the TX line in the space state
+    // -- a break -- and clears them to end it). Like set_rts this is a line
+    // condition rather than data, delivered as a baseline at attach and on every
+    // transition. break_asserted == true while the guest is transmitting a break.
+    // Default: ignore. Called on the emulation thread.
+    virtual void set_break(bool /*break_asserted*/) {}
 };
 
 // The seam a serial device attaches to: a single, bidirectional endpoint that
