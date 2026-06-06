@@ -2548,7 +2548,7 @@ public:
                 std::cout << "Attachment points:\n";
                 for (const auto& p : points) {
                     std::cout << "  " << p.id << " (" << p.display_name << ") ["
-                              << (p.single_occupancy ? "single" : "multi") << "]\n";
+                              << occupancy_label(p) << "]\n";
                     if (!p.description.empty()) {
                         std::cout << "      " << p.description << "\n";
                     }
@@ -2556,11 +2556,12 @@ public:
                 break;
 
             case OutputFormat::Tsv:
-                std::cout << "id\tdisplay_name\toccupancy\tdescription\n";
+                std::cout << "id\tdisplay_name\tmin_occupancy\tmax_occupancy\tdescription\n";
                 for (const auto& p : points) {
                     std::cout << p.id << "\t" << p.display_name << "\t"
-                              << (p.single_occupancy ? "single" : "multi") << "\t"
-                              << p.description << "\n";
+                              << p.min_occupancy << "\t"
+                              << (p.max_occupancy ? std::to_string(*p.max_occupancy) : "")
+                              << "\t" << p.description << "\n";
                 }
                 break;
 
@@ -2569,8 +2570,9 @@ public:
                     std::cout << "{\"id\":\"" << extension_listing::json_escape(p.id)
                               << "\",\"display_name\":\""
                               << extension_listing::json_escape(p.display_name)
-                              << "\",\"single_occupancy\":"
-                              << (p.single_occupancy ? "true" : "false")
+                              << "\",\"min_occupancy\":" << p.min_occupancy
+                              << ",\"max_occupancy\":"
+                              << (p.max_occupancy ? std::to_string(*p.max_occupancy) : "null")
                               << ",\"description\":\""
                               << extension_listing::json_escape(p.description)
                               << "\"}\n";

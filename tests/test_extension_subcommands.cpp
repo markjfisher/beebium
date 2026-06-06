@@ -192,16 +192,16 @@ TEST_CASE("list-attachment-points lists the points with display names",
     REQUIRE(r.stdout_output.find("1 MHz Bus") != std::string::npos);
 }
 
-TEST_CASE("list-attachment-points --format jsonl carries occupancy",
+TEST_CASE("list-attachment-points --format jsonl carries occupancy bounds",
           "[integration][extension][list-attachment-points]") {
     auto r = run_command(EXECUTABLE + " --format jsonl list-attachment-points");
     REQUIRE(r.exit_code == 0);
     INFO("stdout: " << r.stdout_output);
-    // serial-port is single occupancy; 1mhz-bus is a multi-occupancy bus.
+    // serial-port is bounded 0..1; the 1mhz-bus is unbounded (max null).
     REQUIRE(r.stdout_output.find(
-        "\"id\":\"serial-port\",\"display_name\":\"Serial Port\",\"single_occupancy\":true")
+        "\"id\":\"serial-port\",\"display_name\":\"Serial Port\",\"min_occupancy\":0,\"max_occupancy\":1")
         != std::string::npos);
-    REQUIRE(r.stdout_output.find("\"single_occupancy\":false") != std::string::npos);
+    REQUIRE(r.stdout_output.find("\"max_occupancy\":null") != std::string::npos);
 }
 
 TEST_CASE("describe-extension shows parameter detail for a known extension",

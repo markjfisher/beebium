@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_EXTENSION_ATTACHMENT_POINT_CATALOGUE_HPP
 #define BEEBIUM_EXTENSION_ATTACHMENT_POINT_CATALOGUE_HPP
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,10 +24,15 @@ namespace beebium {
 // serial port, the user port, the 1MHz bus, the Tube, a SCSI bus, etc. Each
 // extension declares the point(s) it attaches to via attaches_to() (and, for
 // listing without loading, in its manifest). This catalogue gives every point a
-// human-readable display name plus its occupancy, so a configuration UI can ask
-// "which of these <point> extensions would you like?" -- a single-occupancy
-// point (one connector) takes at most one extension; a multi-occupancy point (a
-// bus) takes several.
+// human-readable display name plus its occupancy bounds, so a configuration UI
+// can ask "which of these <point> extensions would you like?" and know whether
+// that means at most one (a connector) or several (a bus).
+//
+// Occupancy is an integer range [min_occupancy, max_occupancy]: min is how many
+// must be attached (usually 0 -- optional), max is how many may be (1 for a
+// single connector, more for a bus). max_occupancy is std::nullopt when there is
+// no fixed upper bound. The range models real hardware that does not fit a
+// single/multi boolean -- e.g. a machine with two Tube sockets is 0..2.
 //
 // The point *ids* are the same strings used by attaches_to() / provides() and
 // register_extension_point(). This is the single source of truth for their
@@ -36,25 +42,34 @@ struct AttachmentPoint {
     std::string id;            // e.g. "serial-port" (matches attaches_to() ids)
     std::string display_name;  // e.g. "Serial Port"
     std::string description;   // one-line human-readable summary
-    bool single_occupancy;     // true: one connector, at most one extension;
-                               // false: a bus, several extensions may share it
+    int min_occupancy = 0;     // fewest extensions that may attach (0 = optional)
+    std::optional<int> max_occupancy;  // most that may attach; nullopt = unbounded
 };
 
 // The known attachment points, in a stable presentation order.
 inline const std::vector<AttachmentPoint>& attachment_point_catalogue() {
     static const std::vector<AttachmentPoint> kPoints = {
         {"serial-port", "Serial Port",
-         "The BBC RS423 serial port (MC6850 ACIA + Serial ULA).", true},
+         "The BBC RS423 serial port (MC6850 ACIA + Serial ULA).", 0, 1},
         {"user-port", "User Port",
-         "The 6522 VIA user port (8-bit parallel + handshake lines).", true},
+         "The 6522 VIA user port (8-bit parallel + handshake lines).", 0, 1},
         {"1mhz-bus", "1 MHz Bus",
-         "The 1 MHz bus expansion connector (FRED/JIM paged I/O).", false},
+         "The 1 MHz bus expansion connector (FRED/JIM paged I/O).", 0, std::nullopt},
         {"tube", "Tube",
-         "The Tube interface for a second processor / coprocessor.", true},
+         "The Tube interface for a second processor / coprocessor.", 0, 1},
         {"scsi", "SCSI Bus",
-         "The SCSI bus exposed by a host adapter; holds several targets.", false},
+         "The SCSI bus exposed by a host adapter; holds several targets.", 0, 7},
     };
     return kPoints;
+}
+
+// A compact human-readable occupancy label: "1" (exactly one), "0..1", "0..2",
+// or "0..N" (no upper bound).
+inline std::string occupancy_label(const AttachmentPoint& point) {
+    const std::string lo = std::to_string(point.min_occupancy);
+    if (!point.max_occupancy) return lo + "..N";
+    if (*point.max_occupancy == point.min_occupancy) return lo;
+    return lo + ".." + std::to_string(*point.max_occupancy);
 }
 
 // The catalogue entry for an id, or nullptr if the id is not catalogued.
