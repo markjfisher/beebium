@@ -94,6 +94,37 @@ TEST_CASE("Extension base: config() returns full map", "[extension][base]") {
     REQUIRE(ext.config().at("b") == "2");
 }
 
+TEST_CASE("Extension base: config_bool() parses true forms", "[extension][base]") {
+    TestExtension ext;
+    ext.set_config({{"a", "true"}, {"b", "1"}});
+    REQUIRE(ext.config_bool("a") == true);
+    REQUIRE(ext.config_bool("b") == true);
+}
+
+TEST_CASE("Extension base: config_bool() parses false forms", "[extension][base]") {
+    TestExtension ext;
+    ext.set_config({{"a", "false"}, {"b", "0"}});
+    REQUIRE(ext.config_bool("a", true) == false);
+    REQUIRE(ext.config_bool("b", true) == false);
+}
+
+TEST_CASE("Extension base: config_bool() returns fallback when unset or empty",
+          "[extension][base]") {
+    TestExtension ext;
+    ext.set_config({{"empty", ""}});
+    REQUIRE(ext.config_bool("missing", true) == true);
+    REQUIRE(ext.config_bool("missing", false) == false);
+    REQUIRE(ext.config_bool("empty", true) == true);
+}
+
+TEST_CASE("Extension base: config_bool() returns fallback for unrecognised value",
+          "[extension][base]") {
+    TestExtension ext;
+    ext.set_config({{"a", "yes"}});
+    REQUIRE(ext.config_bool("a", false) == false);
+    REQUIRE(ext.config_bool("a", true) == true);
+}
+
 TEST_CASE("ExtensionManifest::extension_kind defaults to peripheral",
           "[extension][manifest]") {
     ExtensionManifest m;
