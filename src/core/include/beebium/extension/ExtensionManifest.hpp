@@ -36,6 +36,7 @@ struct BEEBIUM_EXT_API ExtensionManifest {
     std::filesystem::path manifest_dirpath;  // directory containing manifest.json (empty for built-in)
     std::vector<ParameterSchema> parameters; // parameter schema for CLI/preset/gRPC
     std::vector<std::string> provides;       // extension points this extension creates (e.g. ["scsi"])
+    std::vector<std::string> attaches_to;    // extension points this extension attaches to (e.g. ["serial-port"]); may be several
 
     // Effective CLI name: cli_name if set, otherwise name
     std::string_view effective_cli_name() const {
