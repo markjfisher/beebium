@@ -117,6 +117,7 @@ Each extension has a `manifest.json` file alongside its shared library. The mani
     "description": "SCSI hard disc target (DAT+DSC image)",
     "library": "scsi-hard-disc",
     "cli": "scsi-hdd",
+    "attaches_to": ["scsi"],
     "parameters": [
         {"key": "scsi-id", "type": "integer", "position": 0, "default": "0",
          "description": "SCSI target ID (0-7)"},
@@ -132,7 +133,17 @@ Fields:
 - `name` -- canonical extension type name (used in presets, gRPC, dependency resolution)
 - `cli` -- short CLI flag name (e.g. `--scsi-hdd`); defaults to `name` if omitted
 - `library` -- shared library filename stem (platform adds `.dylib`/`.so`/`.dll`)
+- `attaches_to` -- the attachment point(s) this extension plugs into (e.g.
+  `["serial-port"]`); a *list*, because one extension may attach to several
+  points at once (e.g. an adapter spanning the analogue port and the user port).
+  Must match the extension's own `attaches_to()` (a build-time test enforces it).
+- `provides` -- new extension points this extension creates for others to attach
+  to (e.g. the SCSI adapter's `["scsi"]`); omit if none.
 - `parameters` -- schema for CLI/preset/gRPC configuration (see below)
+
+Listing `attaches_to` in the manifest (not only in code) lets tools enumerate
+"what can plug in here" without loading any plugin -- the basis of the
+attachment-point discovery below.
 
 Parameter schema fields:
 - `key` -- parameter name
@@ -247,7 +258,7 @@ Notes:
 
 ### Discovering Available Extensions
 
-Three commands surface the same resolved extension set without launching the emulator. All three honour `--format pretty|tsv|jsonl`:
+These commands surface the same resolved extension set without launching the emulator. All honour `--format pretty|tsv|jsonl`:
 
 ```bash
 # Concise list of every available extension (cli flag + description)
@@ -265,6 +276,22 @@ beebium-model-b start --help
 ```
 
 `start --help` shows the section using the auto-default search paths only; it does not pre-scan user `--extension-dir` paths (kept side-effect-free). For a view that includes user paths, use `list-extensions --extension-dir ...`.
+
+### Attachment Points
+
+An **attachment point** is a place an extension can plug in: the serial port, the user port, the 1 MHz bus, the Tube, a SCSI bus. The catalogue gives each a display name and an *occupancy* -- `single` (a connector that holds at most one extension) or `multi` (a bus several can share). A configuration UI uses this to ask, for each point, *"which one, if any, of these extensions would you like to load?"*.
+
+```bash
+# The catalogue: id, display name, occupancy, description
+beebium-model-b list-attachment-points
+
+# Only the extensions that attach to a given point
+beebium-model-b list-extensions --attaches-to serial-port
+```
+
+Because `attaches_to` lives in the manifest, both queries work **before any emulator is launched** -- the graphical clients run these CLI commands (parsing `--format jsonl`) the same way they run `create-preset`, since there is no server to talk to over gRPC at configuration time. (The gRPC `PeripheralExtensionService.ListExtensions` is a different view: the extensions *loaded* in a *running* server.)
+
+The point ids are the same strings used by `attaches_to()` / `provides()` / `register_extension_point()`; their display names live in `AttachmentPointCatalogue.hpp`, which is the single place to add a new point (e.g. a future `analogue-port`).
 
 ## Developer Guide: Creating a Built-in Extension
 
