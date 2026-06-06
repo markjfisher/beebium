@@ -64,6 +64,7 @@ inline std::vector<Entry> make_entries() {
         m.description = "Acorn 65C02 3 MHz second processor";
         m.cli_name = "tube-65c02";
         m.extension_kind = "peripheral";
+        m.attaches_to = {"tube"};
         m.parameters.push_back(
             {"rom", "filepath", "Path to 2KB Tube client ROM image",
              -1, false, false, ""});
@@ -120,6 +121,7 @@ inline std::vector<Entry> make_entries() {
             "Connect the BBC serial port (RS423) to a host PTY or serial device";
         m.cli_name = "host-serial";
         m.extension_kind = "peripheral";
+        m.attaches_to = {"serial-port"};
         m.parameters.push_back(
             {"mode", "string",
              "'pty' (create a pseudo-terminal) or 'device' (open an existing "

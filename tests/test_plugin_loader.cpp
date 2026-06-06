@@ -20,7 +20,10 @@
 #include <beebium/extension/ExtensionRegistry.hpp>
 #include <beebium/extension/OneMHzBusPort.hpp>
 
+#include <algorithm>
 #include <filesystem>
+#include <set>
+#include <string>
 
 namespace {
 
@@ -29,6 +32,14 @@ namespace {
     const std::filesystem::path kPluginDirpath = BEEBIUM_PLUGIN_DIR;
 #else
     const std::filesystem::path kPluginDirpath;
+#endif
+
+// The parent extensions/ deploy directory (holds every deployed plugin), for the
+// manifest/code drift guard.
+#ifdef BEEBIUM_EXTENSIONS_DIR
+    const std::filesystem::path kExtensionsDirpath = BEEBIUM_EXTENSIONS_DIR;
+#else
+    const std::filesystem::path kExtensionsDirpath;
 #endif
 
 }  // namespace
@@ -166,4 +177,39 @@ TEST_CASE("PluginLoader loaded extension provides gRPC services",
     REQUIRE_FALSE(services.empty());
 
     registry.shutdown();
+}
+
+// Drift guard: every deployed plugin manifest's attaches_to must match the
+// extension's own attaches_to() (the code), as a set. This catches a manifest.json
+// that names the wrong attachment point, or one left stale when the code changes.
+TEST_CASE("plugin manifest attaches_to matches the extension code",
+          "[extension][plugin][attachment-points]") {
+    if (kExtensionsDirpath.empty()) {
+        SKIP("BEEBIUM_EXTENSIONS_DIR not set");
+    }
+
+    beebium::PluginLoader loader;
+    auto manifests = loader.scan_manifests(kExtensionsDirpath);
+    REQUIRE_FALSE(manifests.empty());
+
+    int peripherals_checked = 0;
+    for (const auto& manifest : manifests) {
+        // Only peripheral extensions carry attaches_to(); econet-transports use a
+        // different mechanism (extension_kind).
+        if (manifest.extension_kind != "peripheral") continue;
+
+        auto loaded = loader.load_extension(manifest);
+        auto* peripheral = dynamic_cast<beebium::PeripheralExtension*>(loaded.get());
+        REQUIRE(peripheral != nullptr);
+
+        std::set<std::string> from_manifest(manifest.attaches_to.begin(),
+                                            manifest.attaches_to.end());
+        std::set<std::string> from_code;
+        for (auto point : peripheral->attaches_to()) from_code.emplace(point);
+
+        INFO("extension: " << manifest.name);
+        CHECK(from_manifest == from_code);
+        ++peripherals_checked;
+    }
+    CHECK(peripherals_checked > 0);
 }

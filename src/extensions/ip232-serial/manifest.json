@@ -3,6 +3,7 @@
     "display_name": "IP232 Serial",
     "description": "Connect the BBC serial port (RS423) to a tcpser-style IP232 server over TCP",
     "library": "ip232-serial",
+    "attaches_to": ["serial-port"],
     "cli": "ip232-serial",
     "parameters": [
         {

@@ -2,6 +2,7 @@
     "name": "acorn-65c02-coprocessor",
     "description": "Acorn 65C02 3 MHz second processor",
     "library": "acorn-65c02-coprocessor",
+    "attaches_to": ["tube"],
     "cli": "tube-65c02",
     "parameters": [
         {

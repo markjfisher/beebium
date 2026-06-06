@@ -3,6 +3,7 @@
     "display_name": "RPC Serial",
     "description": "Client-driven serial peer: inject/collect bytes via the RpcSerial service",
     "library": "rpc-serial",
+    "attaches_to": ["serial-port"],
     "cli": "rpc-serial",
     "parameters": [
         {

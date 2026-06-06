@@ -3,6 +3,7 @@
     "display_name": "RFC 2217 Serial (server)",
     "description": "Expose the emulated BBC serial port (RS423) to RFC 2217 clients over TCP",
     "library": "rfc2217-server-serial",
+    "attaches_to": ["serial-port"],
     "cli": "rfc2217-server-serial",
     "parameters": [
         {
