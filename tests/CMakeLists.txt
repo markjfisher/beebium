@@ -353,6 +353,19 @@ target_link_libraries(test_ip232_serial_extension
             Catch2::Catch2WithMain)
 catch_discover_tests(test_ip232_serial_extension)
 
+# IP232 interop against a real tcpser (opt-in: skips cleanly when absent)
+add_executable(test_ip232_tcpser_integration test_ip232_tcpser_integration.cpp)
+target_include_directories(test_ip232_tcpser_integration
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/ip232-serial)
+target_link_libraries(test_ip232_tcpser_integration
+    PRIVATE beebium_ext_ip232_serial beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+# tcpser is optional: Catch2 returns 4 for a skipped run, which ctest then
+# reports as skipped rather than failed.
+catch_discover_tests(test_ip232_tcpser_integration
+    PROPERTIES SKIP_RETURN_CODE 4
+)
+
 # Serial PTY transport integration tests (POSIX-only: PtyMaster +
 # HostSerialEndpoint bridged through the SerialSocket to a PosixSerialPort).
 if(NOT WIN32)
