@@ -155,6 +155,8 @@ typed gRPC service and a Peripherals-sidebar `ExtensionUi`:
 | `rpc-serial`      | `RpcSerialEndpoint`    | plugin | The RPC client *is* the device: inject/collect bytes over gRPC. |
 | `loopback-serial` | (the extension itself) | plugin | TX → RX echo plug; zero config, a "does my serial path work" smoke. |
 | `ip232-serial`    | `Ip232SerialEndpoint`  | plugin | Bridges the port to a tcpser-style IP232 server over TCP (retro modem / BBS dial-out). See [serial-ip232.md](serial-ip232.md). |
+| `rfc2217-client-serial` | `Rfc2217ClientEndpoint` | plugin | Drives a remote RFC 2217 access server (ser2net / FujiNet); sets the remote UART's real baud. See [serial-rfc2217.md](serial-rfc2217.md). |
+| `rfc2217-server-serial` | `Rfc2217ServerEndpoint` | plugin | Exposes the BBC port to any RFC 2217 client (pyserial / socat / tio); loopback-bound, unauthenticated. See [serial-rfc2217.md](serial-rfc2217.md). |
 
 Only `host-serial` is essential enough to be a **built-in** (statically linked
 into the server). The others ship as **dynamically-loaded plugins**, discovered
@@ -171,11 +173,12 @@ via thin shim headers.
 Only one device can own the single serial port at a time, so the serial
 extensions are mutually exclusive on the command line.
 
-`ip232-serial` (and the planned RFC 2217 client/server) are **network-backed**
+`ip232-serial` and the two `rfc2217-*-serial` extensions are **network-backed**
 siblings: the same endpoint machinery with a TCP socket + a small protocol codec
 in place of a tty. They reuse the shared cross-platform transport in
-`beebium::net` (`SocketPlatform.hpp`, `TcpClientSerialPort`). The IP232 device
-is documented in detail in [serial-ip232.md](serial-ip232.md).
+`beebium::net` (`SocketPlatform.hpp`, `TcpClientSerialPort` /
+`TcpServerSerialPort`, `EndpointUrl`). See [serial-ip232.md](serial-ip232.md)
+and [serial-rfc2217.md](serial-rfc2217.md).
 
 ## Flow control and bounded buffers
 
