@@ -372,6 +372,35 @@ target_link_libraries(test_rfc2217_client_extension
             Catch2::Catch2WithMain)
 catch_discover_tests(test_rfc2217_client_extension)
 
+# RFC 2217 server endpoint (real client<->server over TCP) + extension
+add_executable(test_rfc2217_server_endpoint test_rfc2217_server_endpoint.cpp)
+target_include_directories(test_rfc2217_server_endpoint
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_server_endpoint
+    PRIVATE beebium_ext_rfc2217_client beebium_ext_rfc2217_server beebium_core
+            Threads::Threads Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_server_endpoint)
+
+add_executable(test_rfc2217_server_extension test_rfc2217_server_extension.cpp)
+target_include_directories(test_rfc2217_server_extension
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_server_extension
+    PRIVATE beebium_ext_rfc2217_server beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_server_extension)
+
+# RFC 2217 interop against a real pySerial client (opt-in: skips when absent)
+add_executable(test_rfc2217_pyserial_client test_rfc2217_pyserial_client.cpp)
+target_include_directories(test_rfc2217_pyserial_client
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_pyserial_client
+    PRIVATE beebium_ext_rfc2217_server beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_pyserial_client
+    PROPERTIES SKIP_RETURN_CODE 4
+)
+
 # IP232 endpoint integration tests (against the in-process loopback server)
 add_executable(test_ip232_serial_endpoint test_ip232_serial_endpoint.cpp)
 target_link_libraries(test_ip232_serial_endpoint

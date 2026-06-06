@@ -46,6 +46,11 @@ inline constexpr std::uint8_t SET_STOPSIZE = 4;
 inline constexpr std::uint8_t SET_CONTROL = 5;
 inline constexpr std::uint8_t NOTIFY_LINESTATE = 6;
 inline constexpr std::uint8_t NOTIFY_MODEMSTATE = 7;
+inline constexpr std::uint8_t FLOWCONTROL_SUSPEND = 8;
+inline constexpr std::uint8_t FLOWCONTROL_RESUME = 9;
+inline constexpr std::uint8_t SET_LINESTATE_MASK = 10;
+inline constexpr std::uint8_t SET_MODEMSTATE_MASK = 11;
+inline constexpr std::uint8_t PURGE_DATA = 12;
 
 // SET-CONTROL values (minimal subset).
 inline constexpr std::uint8_t CONTROL_DTR_ON = 8;
