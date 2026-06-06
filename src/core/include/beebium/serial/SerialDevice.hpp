@@ -54,6 +54,20 @@ public:
     // loop busy-waits (it stalls the emulated guest, never the emulator host).
     // Default: always clear to send.
     virtual bool accepts_more() { return true; }
+
+    // The BBC's outbound RTS line, the only other control signal on the RS423
+    // connector besides CTS (there is no DCD/DTR/DSR pin). The MOS raises RTS to
+    // halt incoming data when its RS423 input buffer is nearly full; a network
+    // device may also use it as a connection cue. Driven by the MC6850
+    // Transmitter Control field (control register bits 5-6).
+    //
+    // rts_asserted == true  => /RTS active (pin low)  => BBC requesting the link.
+    // rts_asserted == false => /RTS deasserted (pin high).
+    //
+    // The Serial ULA delivers the current level once when the device is attached
+    // and thereafter on every transition. Default: ignore (most devices do not
+    // care about RTS). Called on the emulation thread.
+    virtual void set_rts(bool /*rts_asserted*/) {}
 };
 
 // The seam a serial device attaches to: a single, bidirectional endpoint that

@@ -51,6 +51,7 @@ public:
         if (echo_) rx_.push_back(value);
     }
     bool accepts_more() override { return accepts_more_; }
+    void set_rts(bool rts_asserted) override { rts_events_.push_back(rts_asserted); }
 
     // --- Test controls ---
     void push_from_device(uint8_t value) { rx_.push_back(value); }
@@ -58,9 +59,14 @@ public:
     const std::vector<uint8_t>& sent() const { return sent_; }
     bool source_empty() const { return rx_.empty(); }
 
+    // RTS levels delivered by the ULA, in order (one per transition, plus the
+    // baseline at attach).
+    const std::vector<bool>& rts_events() const { return rts_events_; }
+
 private:
     std::deque<uint8_t> rx_;     // device -> Beeb
     std::vector<uint8_t> sent_;  // Beeb -> device (captured)
+    std::vector<bool> rts_events_;
     bool echo_;
     bool accepts_more_ = true;
 };

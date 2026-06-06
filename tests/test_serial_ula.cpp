@@ -59,6 +59,71 @@ TEST_CASE("SerialUla RS423 select drives ACIA /DCD", "[serial][ula]") {
     CHECK_FALSE(acia.not_dcd());               // /DCD low -> carrier present
 }
 
+// =============================================================================
+// RTS forwarding to the device (the BBC's outbound handshake line)
+// =============================================================================
+
+namespace {
+
+// Control-register value selecting the given RTS state with 8N1 framing.
+// tx_control field (bits 5-6): RTS high (deasserted) needs TX_CTRL_RTS_HIGH;
+// any other value (here the default 0) holds RTS low (asserted).
+constexpr uint8_t CONTROL_RTS_HIGH = CONTROL_8N1
+    | (Mc6850::TX_CTRL_RTS_HIGH_NO_IRQ << Mc6850::CR_TX_CONTROL_SHIFT);
+
+}  // namespace
+
+TEST_CASE("SerialUla delivers the RTS baseline when a device attaches",
+          "[serial][ula][rts]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    SerialTestDevice device;
+
+    // Power-on control register (0) selects tx_control 0 -> RTS asserted.
+    ula.set_sink(&device);
+
+    REQUIRE(device.rts_events().size() == 1);
+    CHECK(device.rts_events()[0] == true);
+}
+
+TEST_CASE("SerialUla forwards RTS transitions, one event per change",
+          "[serial][ula][rts]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    SerialTestDevice device;
+    ula.set_sink(&device);  // baseline: asserted (true)
+
+    // Deassert RTS via the ACIA control register, then tick.
+    acia.write_control(CONTROL_RTS_HIGH);
+    ula.tick();
+    REQUIRE(device.rts_events().size() == 2);
+    CHECK(device.rts_events()[1] == false);
+
+    // Ticking again with no change must not produce further events.
+    for (int i = 0; i < 500; ++i) ula.tick();
+    CHECK(device.rts_events().size() == 2);
+
+    // Re-assert RTS, then tick.
+    acia.write_control(CONTROL_8N1);  // tx_control 0 -> RTS low (asserted)
+    ula.tick();
+    REQUIRE(device.rts_events().size() == 3);
+    CHECK(device.rts_events()[2] == true);
+}
+
+TEST_CASE("SerialUla does not call set_rts before a device is attached",
+          "[serial][ula][rts]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    // No sink attached: ticking and toggling RTS must not crash or record.
+    acia.write_control(CONTROL_RTS_HIGH);
+    for (int i = 0; i < 100; ++i) ula.tick();
+
+    SerialTestDevice device;
+    ula.set_sink(&device);
+    REQUIRE(device.rts_events().size() == 1);
+    CHECK(device.rts_events()[0] == false);  // baseline reflects current (high)
+}
+
 TEST_CASE("SerialUla decodes cassette motor bit", "[serial][ula]") {
     Mc6850 acia;
     SerialUla ula(acia);
