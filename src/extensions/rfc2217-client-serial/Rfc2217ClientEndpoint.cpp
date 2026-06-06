@@ -31,6 +31,11 @@ Rfc2217ClientEndpoint::Rfc2217ClientEndpoint(Options options)
     : host_(std::move(options.host)),
       port_num_(options.port),
       baud_(options.baud),
+      data_bits_(options.data_bits),
+      parity_(options.parity),
+      stop_bits_(options.stop_bits),
+      flow_(options.flow),
+      dtr_(options.dtr),
       tx_back_pressure_(options.tx_back_pressure),
       tx_hard_cap_(options.tx_back_pressure + serial::kTxHardCapMargin),
       on_async_state_change_(std::move(options.on_async_state_change)) {
@@ -115,7 +120,14 @@ void Rfc2217ClientEndpoint::connection_loop() {
                     tx_.clear();
                     auto neg = codec_.initial_negotiation();
                     tx_.insert(tx_.end(), neg.begin(), neg.end());
+                    // Configure the remote UART: baud, framing, flow, DTR.
                     codec_.encode_set_baudrate(baud_, tx_);
+                    codec_.encode_set_datasize(data_bits_, tx_);
+                    codec_.encode_set_parity(parity_, tx_);
+                    codec_.encode_set_stopsize(stop_bits_, tx_);
+                    codec_.encode_set_control(flow_, tx_);
+                    codec_.encode_set_control(
+                        dtr_ ? comport::CONTROL_DTR_ON : comport::CONTROL_DTR_OFF, tx_);
                 }
                 connected_.store(true, std::memory_order_release);
                 tx_cv_.notify_all();

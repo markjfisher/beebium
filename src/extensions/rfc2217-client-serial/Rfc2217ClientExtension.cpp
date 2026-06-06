@@ -19,6 +19,7 @@
 #include <beebium/net/EndpointUrl.hpp>
 #include <beebium/serial/SerialBufferLimits.hpp>
 
+#include <cctype>
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
@@ -86,6 +87,42 @@ void Rfc2217ClientExtension::init(ExtensionContext& ctx) {
         const long parsed = std::atol(std::string(*value).c_str());
         if (parsed > 0) options.baud = static_cast<std::uint32_t>(parsed);
     }
+
+    // framing="<data><parity><stop>", e.g. 8N1 / 7E1. Configures the *remote*
+    // UART (independent of the BBC's own ACIA framing).
+    if (auto value = config_value("framing"); value && !value->empty()) {
+        const std::string f = std::string(*value);
+        const auto bad = [&]() {
+            return std::runtime_error("rfc2217-client-serial: invalid framing '" + f
+                                      + "' (expected e.g. 8N1, 7E1)");
+        };
+        if (f.size() != 3) throw bad();
+        const char d = f[0], p = static_cast<char>(std::toupper(f[1])), s = f[2];
+        if (d < '5' || d > '8') throw bad();
+        options.data_bits = static_cast<std::uint8_t>(d - '0');
+        switch (p) {
+            case 'N': options.parity = rfc2217::comport::PARITY_NONE; break;
+            case 'O': options.parity = rfc2217::comport::PARITY_ODD; break;
+            case 'E': options.parity = rfc2217::comport::PARITY_EVEN; break;
+            case 'M': options.parity = rfc2217::comport::PARITY_MARK; break;
+            case 'S': options.parity = rfc2217::comport::PARITY_SPACE; break;
+            default: throw bad();
+        }
+        if (s == '1') options.stop_bits = rfc2217::comport::STOPSIZE_ONE;
+        else if (s == '2') options.stop_bits = rfc2217::comport::STOPSIZE_TWO;
+        else throw bad();
+    }
+
+    if (auto value = config_value("flow"); value && !value->empty()) {
+        const std::string f = std::string(*value);
+        if (f == "none") options.flow = rfc2217::comport::CONTROL_FLOW_NONE;
+        else if (f == "rtscts") options.flow = rfc2217::comport::CONTROL_FLOW_HARDWARE;
+        else if (f == "xonxoff") options.flow = rfc2217::comport::CONTROL_FLOW_XONXOFF;
+        else throw std::runtime_error("rfc2217-client-serial: invalid flow '" + f
+                                      + "' (expected none, rtscts or xonxoff)");
+    }
+
+    options.dtr = config_bool("dtr", true);
 
     options.tx_back_pressure = serial::kDefaultTxBackPressure;
     if (auto value = config_value("tx_buffer"); value && !value->empty()) {

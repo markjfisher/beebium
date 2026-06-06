@@ -54,6 +54,12 @@ public:
         std::string host = "localhost";
         std::uint16_t port = 0;
         std::uint32_t baud = 19200;  // sent to the remote UART (real hardware)
+        // Remote framing + handshaking (RFC 2217 payload values, from comport::).
+        std::uint8_t data_bits = 8;
+        std::uint8_t parity = comport::PARITY_NONE;
+        std::uint8_t stop_bits = comport::STOPSIZE_ONE;
+        std::uint8_t flow = comport::CONTROL_FLOW_NONE;
+        bool dtr = true;
         std::size_t tx_back_pressure = serial::kDefaultTxBackPressure;
         std::function<void()> on_async_state_change;
     };
@@ -99,6 +105,11 @@ private:
     const std::string host_;
     const std::uint16_t port_num_;
     const std::uint32_t baud_;
+    const std::uint8_t data_bits_;
+    const std::uint8_t parity_;
+    const std::uint8_t stop_bits_;
+    const std::uint8_t flow_;
+    const bool dtr_;
     const std::size_t tx_back_pressure_;
     const std::size_t tx_hard_cap_;
 
