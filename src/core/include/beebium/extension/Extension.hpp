@@ -86,6 +86,24 @@ public:
         return std::nullopt;
     }
 
+    // Typed accessor for a "boolean" manifest parameter. Accepts "true"/"1"
+    // as true and "false"/"0" as false (the set parse_extension_args
+    // validates). Returns `fallback` when the key is absent, empty, or holds
+    // an unrecognised value.
+    bool config_bool(std::string_view key, bool fallback = false) const {
+        auto value = config_value(key);
+        if (!value || value->empty()) {
+            return fallback;
+        }
+        if (*value == "true" || *value == "1") {
+            return true;
+        }
+        if (*value == "false" || *value == "0") {
+            return false;
+        }
+        return fallback;
+    }
+
     // Access a list-valued config parameter. Returns nullopt if the key
     // is absent. The returned span aliases into this extension's owned
     // storage and is valid for the lifetime of the Extension.
