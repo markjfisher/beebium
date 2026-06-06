@@ -354,6 +354,24 @@ target_link_libraries(test_rfc2217_codec
     PRIVATE beebium_ext_rfc2217_common Catch2::Catch2WithMain)
 catch_discover_tests(test_rfc2217_codec)
 
+# RFC 2217 client endpoint (in-process echo-server fixture) + extension
+add_executable(test_rfc2217_client_endpoint test_rfc2217_client_endpoint.cpp)
+target_include_directories(test_rfc2217_client_endpoint
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-common)
+target_link_libraries(test_rfc2217_client_endpoint
+    PRIVATE beebium_ext_rfc2217_client beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_client_endpoint)
+
+add_executable(test_rfc2217_client_extension test_rfc2217_client_extension.cpp)
+target_include_directories(test_rfc2217_client_extension
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial)
+target_link_libraries(test_rfc2217_client_extension
+    PRIVATE beebium_ext_rfc2217_client beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_client_extension)
+
 # IP232 endpoint integration tests (against the in-process loopback server)
 add_executable(test_ip232_serial_endpoint test_ip232_serial_endpoint.cpp)
 target_link_libraries(test_ip232_serial_endpoint
