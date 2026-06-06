@@ -70,3 +70,38 @@ TEST_CASE("Rfc2217ClientExtension requires an endpoint", "[serial][rfc2217]") {
     ext.set_config({{"baud", "9600"}});  // no url / host+port
     CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
 }
+
+TEST_CASE("Rfc2217ClientExtension accepts framing / flow / dtr", "[serial][rfc2217]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Rfc2217ClientExtension ext;
+    ext.set_config({{"url", "rfc2217://127.0.0.1:1"},
+                    {"framing", "7E1"},
+                    {"flow", "rtscts"},
+                    {"dtr", "off"}});
+    ext.init(ctx);
+    CHECK(port.is_occupied());
+    ext.shutdown();
+}
+
+TEST_CASE("Rfc2217ClientExtension rejects bad framing", "[serial][rfc2217]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Rfc2217ClientExtension ext;
+    ext.set_config({{"url", "rfc2217://127.0.0.1:1"}, {"framing", "9Z3"}});
+    CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
+}
+
+TEST_CASE("Rfc2217ClientExtension rejects bad flow", "[serial][rfc2217]") {
+    SerialSocket socket;
+    SerialPort port(socket);
+    ExtensionContext ctx(nullptr, nullptr, nullptr, nullptr, &port);
+
+    Rfc2217ClientExtension ext;
+    ext.set_config({{"url", "rfc2217://127.0.0.1:1"}, {"flow", "bogus"}});
+    CHECK_THROWS_AS(ext.init(ctx), std::runtime_error);
+}
