@@ -63,6 +63,32 @@ TEST_CASE("RFC2217 client encodes SET-CONTROL RTS", "[rfc2217][codec]") {
     CHECK(off == Bytes{255, 250, 44, 5, 12, 255, 240});
 }
 
+TEST_CASE("RFC2217 client encodes framing commands", "[rfc2217][codec]") {
+    Rfc2217Codec codec(Rfc2217Codec::Role::Client);
+    Bytes out;
+    codec.encode_set_datasize(7, out);
+    CHECK(out == Bytes{255, 250, 44, 2, 7, 255, 240});  // SET-DATASIZE 7
+
+    out.clear();
+    codec.encode_set_parity(comport::PARITY_EVEN, out);
+    CHECK(out == Bytes{255, 250, 44, 3, 3, 255, 240});  // SET-PARITY EVEN=3
+
+    out.clear();
+    codec.encode_set_stopsize(comport::STOPSIZE_TWO, out);
+    CHECK(out == Bytes{255, 250, 44, 4, 2, 255, 240});  // SET-STOPSIZE 2
+}
+
+TEST_CASE("RFC2217 client encodes flow control and DTR", "[rfc2217][codec]") {
+    Rfc2217Codec codec(Rfc2217Codec::Role::Client);
+    Bytes hw;
+    codec.encode_set_control(comport::CONTROL_FLOW_HARDWARE, hw);
+    CHECK(hw == Bytes{255, 250, 44, 5, 3, 255, 240});  // SET-CONTROL HW flow=3
+
+    Bytes dtr;
+    codec.encode_set_control(comport::CONTROL_DTR_ON, dtr);
+    CHECK(dtr == Bytes{255, 250, 44, 5, 8, 255, 240});  // SET-CONTROL DTR_ON=8
+}
+
 TEST_CASE("RFC2217 escapes IAC inside a subnegotiation payload", "[rfc2217][codec]") {
     Rfc2217Codec codec(Rfc2217Codec::Role::Client);
     Bytes out;

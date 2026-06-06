@@ -69,6 +69,24 @@ void Rfc2217Codec::encode_set_baudrate(std::uint32_t baud,
     encode_subneg(command_for_role(comport::SET_BAUDRATE), value, out);
 }
 
+void Rfc2217Codec::encode_set_datasize(std::uint8_t data_bits,
+                                       std::vector<std::uint8_t>& out) const {
+    const std::uint8_t payload[] = {data_bits};
+    encode_subneg(command_for_role(comport::SET_DATASIZE), payload, out);
+}
+
+void Rfc2217Codec::encode_set_parity(std::uint8_t parity,
+                                     std::vector<std::uint8_t>& out) const {
+    const std::uint8_t payload[] = {parity};
+    encode_subneg(command_for_role(comport::SET_PARITY), payload, out);
+}
+
+void Rfc2217Codec::encode_set_stopsize(std::uint8_t stop,
+                                       std::vector<std::uint8_t>& out) const {
+    const std::uint8_t payload[] = {stop};
+    encode_subneg(command_for_role(comport::SET_STOPSIZE), payload, out);
+}
+
 void Rfc2217Codec::encode_set_control(std::uint8_t value,
                                       std::vector<std::uint8_t>& out) const {
     const std::uint8_t payload[] = {value};
