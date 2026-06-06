@@ -76,6 +76,17 @@ public:
 
     explicit Rfc2217Codec(Role role) : role_(role) {}
 
+    // Reset the per-session parser/negotiation state for a fresh connection.
+    // The role is fixed for the object's lifetime, so this is safe to call while
+    // the (const, role-only) encoders run on another thread.
+    void reset() {
+        state_ = State::Normal;
+        subneg_.clear();
+        com_port_agreed_ = false;
+        sent_will_.clear();
+        sent_do_.clear();
+    }
+
     // Negotiation to send on connect. The client offers COM-PORT control and
     // BINARY/SGA both ways; the server stays passive and answers in decode().
     std::vector<std::uint8_t> initial_negotiation();

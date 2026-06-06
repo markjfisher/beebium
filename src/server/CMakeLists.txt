@@ -103,6 +103,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_loopback_serial_plugin
         beebium_ext_ip232_serial_plugin
         beebium_ext_rpc_serial_plugin
+        beebium_ext_rfc2217_client_plugin
     )
 endif()
 add_custom_target(beebium-servers DEPENDS ${BEEBIUM_SERVERS_DEPS})
