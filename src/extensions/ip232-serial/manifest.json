@@ -1,0 +1,39 @@
+{
+    "name": "ip232-serial",
+    "display_name": "IP232 Serial",
+    "description": "Connect the BBC serial port (RS423) to a tcpser-style IP232 server over TCP",
+    "library": "ip232-serial",
+    "cli": "ip232-serial",
+    "parameters": [
+        {
+            "key": "host",
+            "type": "string",
+            "default": "localhost",
+            "description": "IP232 server hostname or address"
+        },
+        {
+            "key": "port",
+            "type": "integer",
+            "default": "25232",
+            "description": "IP232 server TCP port"
+        },
+        {
+            "key": "mode",
+            "type": "string",
+            "default": "ip232",
+            "description": "'ip232' (0xFF-escaped, persistent connection) or 'raw' (pure byte pipe, connect/disconnect on RTS)"
+        },
+        {
+            "key": "handshake",
+            "type": "boolean",
+            "default": "true",
+            "description": "convey the BBC's RTS line to the server via the 0xFF escape (ip232 mode only)"
+        },
+        {
+            "key": "tx_buffer",
+            "type": "integer",
+            "default": "4096",
+            "description": "transmit buffer size in bytes; the BBC's /CTS asserts at/above it"
+        }
+    ]
+}

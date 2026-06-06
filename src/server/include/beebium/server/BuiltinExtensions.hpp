@@ -27,7 +27,6 @@
 
 #include "AunEconetTransportExtension.hpp"
 #include "HostSerialExtension.hpp"
-#include "Ip232SerialExtension.hpp"
 #include "RpcSerialExtension.hpp"
 #include "SecondProcessor65C02Extension.hpp"
 #include "beebium/extension/Extension.hpp"
@@ -162,46 +161,6 @@ inline std::vector<Entry> make_entries() {
         result.push_back({std::move(m),
                           [] { return std::unique_ptr<Extension>(
                               new RpcSerialExtension()); }});
-    }
-
-    // ip232-serial: connect the BBC serial port to a tcpser-style IP232 server
-    // over TCP. Built-in for the same CLI-test ergonomics reason as the other
-    // serial extensions. The network sibling of host-serial.
-    //
-    // host and port are separate parameters (not a host:port URL) because the
-    // extension arg parser splits values on ':'.
-    {
-        ExtensionManifest m;
-        m.name = "ip232-serial";
-        m.display_name = "IP232 Serial";
-        m.description =
-            "Connect the BBC serial port (RS423) to a tcpser-style IP232 server "
-            "over TCP";
-        m.cli_name = "ip232-serial";
-        m.extension_kind = "peripheral";
-        m.parameters.push_back(
-            {"host", "string", "IP232 server hostname or address",
-             -1, false, false, "localhost"});
-        m.parameters.push_back(
-            {"port", "integer", "IP232 server TCP port",
-             -1, false, false, "25232"});
-        m.parameters.push_back(
-            {"mode", "string",
-             "'ip232' (0xFF-escaped, persistent connection) or 'raw' (pure byte "
-             "pipe, connect/disconnect on RTS)",
-             -1, false, false, "ip232"});
-        m.parameters.push_back(
-            {"handshake", "boolean",
-             "convey the BBC's RTS line to the server via the 0xFF escape "
-             "(ip232 mode only)",
-             -1, false, false, "true"});
-        m.parameters.push_back(
-            {"tx_buffer", "integer",
-             "transmit buffer size in bytes; the BBC's /CTS asserts at/above it",
-             -1, false, false, "4096"});
-        result.push_back({std::move(m),
-                          [] { return std::unique_ptr<Extension>(
-                              new Ip232SerialExtension()); }});
     }
 
     return result;
