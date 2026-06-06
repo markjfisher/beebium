@@ -337,6 +337,13 @@ target_include_directories(test_ip232_codec
 target_link_libraries(test_ip232_codec PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_ip232_codec)
 
+# IP232 endpoint integration tests (against the in-process loopback server)
+add_executable(test_ip232_serial_endpoint test_ip232_serial_endpoint.cpp)
+target_link_libraries(test_ip232_serial_endpoint
+    PRIVATE beebium_ext_ip232_serial beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_ip232_serial_endpoint)
+
 # Serial PTY transport integration tests (POSIX-only: PtyMaster +
 # HostSerialEndpoint bridged through the SerialSocket to a PosixSerialPort).
 if(NOT WIN32)
