@@ -154,6 +154,7 @@ typed gRPC service and a Peripherals-sidebar `ExtensionUi`:
 | `host-serial`     | `HostSerialEndpoint`   | Bridges the port to a host pty or serial device. |
 | `rpc-serial`      | `RpcSerialEndpoint`    | The RPC client *is* the device: inject/collect bytes over gRPC. |
 | `loopback-serial` | (the extension itself) | TX → RX echo plug; zero config, a "does my serial path work" smoke. |
+| `ip232-serial`    | `Ip232SerialEndpoint`  | Bridges the port to a tcpser-style IP232 server over TCP (retro modem / BBS dial-out). See [serial-ip232.md](serial-ip232.md). |
 
 The shared OS-port primitives stay in core under `beebium::serial`:
 `HostSerialPort` (interface), `PosixSerialPort` / `Win32SerialPort` (open an
@@ -161,8 +162,14 @@ existing device path), and `PtyMaster` (create a pseudo-terminal, own the master
 end, advertise the slave path). The Piconet transport reuses the same primitives
 via thin shim headers.
 
-Only one device can own the single serial port at a time, so the three serial
+Only one device can own the single serial port at a time, so the serial
 extensions are mutually exclusive on the command line.
+
+`ip232-serial` (and the planned RFC 2217 client/server) are **network-backed**
+siblings: the same endpoint machinery with a TCP socket + a small protocol codec
+in place of a tty. They reuse the shared cross-platform transport in
+`beebium::net` (`SocketPlatform.hpp`, `TcpClientSerialPort`). The IP232 device
+is documented in detail in [serial-ip232.md](serial-ip232.md).
 
 ## Flow control and bounded buffers
 
@@ -209,6 +216,15 @@ flag; colon-separated `key=value` pairs). `list-extensions` and
 
 # loopback-serial: TX -> RX echo
 --loopback-serial                                   # no parameters
+
+# ip232-serial: connect out to a tcpser-style IP232 server (see serial-ip232.md)
+--ip232-serial host=bbs.example.com:port=25232      # ip232 mode, persistent
+--ip232-serial host=127.0.0.1:port=25232:mode=raw   # raw byte pipe, connect on RTS
+#   host = IP232 server hostname/address (default localhost)
+#   port = IP232 server TCP port (default 25232)
+#   mode = ip232 | raw (default ip232)
+#   handshake = convey RTS via the 0xFF escape, ip232 mode (default true)
+#   tx_buffer = transmit buffer bytes (default 4096)
 ```
 
 ### In a preset
