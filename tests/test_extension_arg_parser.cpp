@@ -63,17 +63,27 @@ TEST_CASE("split_colon_args two tokens", "[extension][arg-parser]") {
     REQUIRE(tokens[1] == "/path/to/file");
 }
 
-TEST_CASE("split_colon_args preserves :// in URIs", "[extension][arg-parser]") {
-    auto tokens = split_colon_args("file:///path/to/file");
+TEST_CASE("split_colon_args does not split inside double quotes",
+          "[extension][arg-parser]") {
+    auto tokens = split_colon_args("url=\"ip232://host:25232\"");
     REQUIRE(tokens.size() == 1);
-    REQUIRE(tokens[0] == "file:///path/to/file");
+    REQUIRE(tokens[0] == "url=\"ip232://host:25232\"");  // quotes retained here
 }
 
-TEST_CASE("split_colon_args URI with other tokens", "[extension][arg-parser]") {
-    auto tokens = split_colon_args("0:file:///path/to/file");
+TEST_CASE("split_colon_args quoted value among other tokens",
+          "[extension][arg-parser]") {
+    auto tokens = split_colon_args("0:image=\"file:///path/to/file\"");
     REQUIRE(tokens.size() == 2);
     REQUIRE(tokens[0] == "0");
-    REQUIRE(tokens[1] == "file:///path/to/file");
+    REQUIRE(tokens[1] == "image=\"file:///path/to/file\"");
+}
+
+TEST_CASE("split_colon_args splits an unquoted URL (no more :// heuristic)",
+          "[extension][arg-parser]") {
+    auto tokens = split_colon_args("file:///path/to/file");
+    REQUIRE(tokens.size() == 2);
+    REQUIRE(tokens[0] == "file");
+    REQUIRE(tokens[1] == "///path/to/file");
 }
 
 TEST_CASE("split_colon_args keyword arguments", "[extension][arg-parser]") {
@@ -185,19 +195,36 @@ TEST_CASE("parse framework keys id and label together", "[extension][arg-parser]
 // Filepath handling
 // ---------------------------------------------------------------------------
 
-TEST_CASE("filepath with file:// URI not split", "[extension][arg-parser]") {
+TEST_CASE("filepath with quoted file:// URI survives the colon split",
+          "[extension][arg-parser]") {
     auto result = parse_extension_args("scsi-hdd",
-        "0:file:///Users/rjs/discs/drive.dat", kScsiHddSchema);
+        "0:image=\"file:///Users/rjs/discs/drive.dat\"", kScsiHddSchema);
     REQUIRE(result.ok);
     REQUIRE(result.config["scsi-id"] == "0");
     REQUIRE(result.config["image"] == "file:///Users/rjs/discs/drive.dat");
 }
 
-TEST_CASE("filepath with http:// URI not split", "[extension][arg-parser]") {
+TEST_CASE("filepath with quoted http:// URI survives the colon split",
+          "[extension][arg-parser]") {
     auto result = parse_extension_args("scsi-hdd",
-        "0:http://example.com/drive.dat", kScsiHddSchema);
+        "0:image=\"http://example.com:8080/drive.dat\"", kScsiHddSchema);
     REQUIRE(result.ok);
-    REQUIRE(result.config["image"] == "http://example.com/drive.dat");
+    REQUIRE(result.config["image"] == "http://example.com:8080/drive.dat");
+}
+
+TEST_CASE("unquoted URI value yields the quoting guidance error",
+          "[extension][arg-parser]") {
+    auto result = parse_extension_args("scsi-hdd",
+        "0:file:///Users/rjs/discs/drive.dat", kScsiHddSchema);
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.error.find("double quotes") != std::string::npos);
+}
+
+TEST_CASE("unterminated quote in a value is an error", "[extension][arg-parser]") {
+    auto result = parse_extension_args("scsi-hdd",
+        "image=\"file:///oops", kScsiHddSchema);
+    REQUIRE_FALSE(result.ok);
+    REQUIRE(result.error.find("unterminated quote") != std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
