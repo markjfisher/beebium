@@ -18,6 +18,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
@@ -164,6 +165,16 @@ void PosixSerialPort::close() {
     if (fd >= 0) {
         ::close(fd);
     }
+}
+
+void PosixSerialPort::set_break(bool asserted) {
+    const int fd = fd_.load(std::memory_order_relaxed);
+    if (fd < 0) {
+        return;
+    }
+    // TIOCSBRK starts a continuous break; TIOCCBRK turns it off. (This is the
+    // asynchronous-break ioctl pair, distinct from tcsendbreak's timed break.)
+    ::ioctl(fd, asserted ? TIOCSBRK : TIOCCBRK);
 }
 
 }  // namespace beebium::serial

@@ -145,6 +145,17 @@ in as both source and sink; the non-owning `beebium::SerialPort` handle
 (`extension/SerialPort.hpp`) is how a PeripheralExtension attaches/detaches its
 device (`ctx.get<SerialPort>().attach(...)`), enforcing the single connector.
 
+Alongside the byte streams the seam carries the RS423 **line conditions** out of
+band, edge-forwarded by the ULA from the 6850's control register: the sink's
+`set_rts(bool)` (the BBC's outbound `/RTS`) and `set_break(bool)` (the guest
+holding the TX line in a break), and the source's `take_break()` (a device-side
+break the ULA clocks into the receiver as a Framing Error + `0x00`). All default
+to no-ops, so a device only implements the ones it cares about. `host-serial`
+maps `set_break` onto a real line break (`TIOCSBRK`/`TIOCCBRK` on POSIX,
+`SetCommBreak`/`ClearCommBreak` on Win32), applied on its writer thread; the RFC
+2217 endpoints carry break both ways over the wire (see
+[serial-rfc2217.md](serial-rfc2217.md)).
+
 The **core holds only the seam and the bit engine**; the concrete devices are
 PeripheralExtensions, each owning its configuration and (where useful) its own
 typed gRPC service and a Peripherals-sidebar `ExtensionUi`:

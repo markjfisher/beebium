@@ -142,6 +142,18 @@ public:
         return tx_.size() < tx_back_pressure_;
     }
 
+    // The guest's transmitted BREAK. The ioctl runs on the writer thread (the
+    // sole owner of port_, per the HostSerialPort single-writer contract), so we
+    // record the desired level here and wake the writer to apply it.
+    void set_break(bool asserted) override {
+        break_asserted_.store(asserted, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(tx_mutex_);
+            break_dirty_ = true;
+        }
+        tx_cv_.notify_one();
+    }
+
     // True while the underlying port is usable. For the emulation thread / tests;
     // the UI uses ui_snapshot() instead (cross-thread safe).
     bool is_open() const { return port_ && port_->is_open(); }
@@ -287,16 +299,26 @@ private:
     void writer_loop() {
         std::vector<std::uint8_t> batch;
         while (true) {
+            bool apply_break = false;
             {
                 std::unique_lock<std::mutex> lock(tx_mutex_);
                 tx_cv_.wait(lock, [this] {
-                    return stop_.load(std::memory_order_acquire) || !tx_.empty();
+                    return stop_.load(std::memory_order_acquire) || !tx_.empty() ||
+                           break_dirty_;
                 });
                 if (stop_.load(std::memory_order_acquire)) {
                     return;  // drop any pending bytes; the machine is tearing down
                 }
+                apply_break = break_dirty_;
+                break_dirty_ = false;
                 batch.assign(tx_.begin(), tx_.end());
                 tx_.clear();
+            }
+            // Apply a BREAK level change before the batch so an asserted break
+            // takes hold promptly and a cleared one precedes the data that
+            // follows it.
+            if (apply_break && port_ && port_->is_open()) {
+                port_->set_break(break_asserted_.load(std::memory_order_acquire));
             }
             // Write the batch, retrying the remainder while the kernel buffer is
             // full (a partial write with no error == EAGAIN). New transmitted
@@ -334,6 +356,11 @@ private:
     std::size_t tx_dropped_ = 0;
     const std::size_t tx_back_pressure_;
     const std::size_t tx_hard_cap_;
+
+    // Outbound BREAK: the desired line level, plus a dirty flag (under tx_mutex_)
+    // telling the writer thread to push it to the port.
+    std::atomic<bool> break_asserted_{false};
+    bool break_dirty_ = false;
 
     // Re-pointing.
     SerialFactory factory_;
