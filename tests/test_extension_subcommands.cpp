@@ -154,6 +154,56 @@ TEST_CASE("list-extensions --extension-dir of a non-existent path errors",
     REQUIRE(r.stderr_output.find("/nonexistent-beebium-test-path") != std::string::npos);
 }
 
+TEST_CASE("list-extensions --attaches-to serial-port shows only serial extensions",
+          "[integration][extension][list-extensions][attachment-points]") {
+    auto r = run_command(EXECUTABLE + " list-extensions --attaches-to serial-port");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    // The serial extensions appear...
+    REQUIRE(r.stdout_output.find("host-serial") != std::string::npos);
+    REQUIRE(r.stdout_output.find("ip232-serial") != std::string::npos);
+    REQUIRE(r.stdout_output.find("rfc2217-server-serial") != std::string::npos);
+    // ...and extensions for other points do not.
+    REQUIRE(r.stdout_output.find("acorn-rtc") == std::string::npos);
+    REQUIRE(r.stdout_output.find("acorn-scsi") == std::string::npos);
+    REQUIRE(r.stdout_output.find("tube-65c02") == std::string::npos);
+}
+
+TEST_CASE("list-extensions output carries attaches_to (built-in manifests too)",
+          "[integration][extension][list-extensions][attachment-points]") {
+    auto r = run_command(EXECUTABLE + " --format jsonl list-extensions");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    // host-serial is a built-in; tube-65c02 is the built-in coprocessor. Their
+    // attaches_to comes from BuiltinExtensions, so this also guards those.
+    REQUIRE(r.stdout_output.find(
+        "\"cli_name\":\"host-serial\"") != std::string::npos);
+    REQUIRE(r.stdout_output.find("\"attaches_to\":[\"serial-port\"]") != std::string::npos);
+    REQUIRE(r.stdout_output.find("\"attaches_to\":[\"tube\"]") != std::string::npos);
+}
+
+TEST_CASE("list-attachment-points lists the points with display names",
+          "[integration][extension][list-attachment-points]") {
+    auto r = run_command(EXECUTABLE + " --format pretty list-attachment-points");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    REQUIRE(r.stdout_output.find("serial-port") != std::string::npos);
+    REQUIRE(r.stdout_output.find("Serial Port") != std::string::npos);
+    REQUIRE(r.stdout_output.find("1 MHz Bus") != std::string::npos);
+}
+
+TEST_CASE("list-attachment-points --format jsonl carries occupancy",
+          "[integration][extension][list-attachment-points]") {
+    auto r = run_command(EXECUTABLE + " --format jsonl list-attachment-points");
+    REQUIRE(r.exit_code == 0);
+    INFO("stdout: " << r.stdout_output);
+    // serial-port is single occupancy; 1mhz-bus is a multi-occupancy bus.
+    REQUIRE(r.stdout_output.find(
+        "\"id\":\"serial-port\",\"display_name\":\"Serial Port\",\"single_occupancy\":true")
+        != std::string::npos);
+    REQUIRE(r.stdout_output.find("\"single_occupancy\":false") != std::string::npos);
+}
+
 TEST_CASE("describe-extension shows parameter detail for a known extension",
           "[integration][extension][describe-extension]") {
     auto r = run_command(EXECUTABLE + " --format pretty describe-extension tube-65c02");
