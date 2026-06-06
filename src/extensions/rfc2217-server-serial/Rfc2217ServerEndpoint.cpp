@@ -60,6 +60,8 @@ void Rfc2217ServerEndpoint::enqueue_tx(const std::vector<std::uint8_t>& bytes) {
 void Rfc2217ServerEndpoint::on_client_connect() {
     codec_.reset();
     client_rts_.store(true, std::memory_order_release);
+    break_pending_.store(false, std::memory_order_release);
+    client_linestate_mask_.store(0, std::memory_order_release);
     std::lock_guard<std::mutex> lock(tx_mutex_);
     tx_.clear();  // a new session: drop anything queued for the previous client
 }
@@ -80,7 +82,17 @@ void Rfc2217ServerEndpoint::process_command(const ComPortCommand& cmd) {
             client_rts_.store(true, std::memory_order_release);
         } else if (cmd.value[0] == CONTROL_RTS_OFF) {
             client_rts_.store(false, std::memory_order_release);
+        } else if (cmd.value[0] == CONTROL_BREAK_ON) {
+            // The client is driving a break: arm one break frame for the BBC's
+            // receiver (the BBC sees "a break happened"; on the next BREAK-OFF
+            // nothing more is injected).
+            break_pending_.store(true, std::memory_order_release);
         }
+    }
+    if (cmd.command == SET_LINESTATE_MASK && !cmd.value.empty()) {
+        // Remember which line-state bits the client wants reported, so the BBC's
+        // break is only sent on as NOTIFY-LINESTATE when it was requested.
+        client_linestate_mask_.store(cmd.value[0], std::memory_order_release);
     }
     std::vector<std::uint8_t> ack;
     codec_.encode_subneg(static_cast<std::uint8_t>(cmd.command + SERVER_OFFSET),
@@ -165,6 +177,10 @@ std::uint8_t Rfc2217ServerEndpoint::next_byte() {
     return value;
 }
 
+bool Rfc2217ServerEndpoint::take_break() {
+    return break_pending_.exchange(false, std::memory_order_acq_rel);
+}
+
 void Rfc2217ServerEndpoint::add_byte(std::uint8_t value) {
     std::lock_guard<std::mutex> lock(tx_mutex_);
     if (tx_.size() >= tx_hard_cap_) {
@@ -189,6 +205,19 @@ void Rfc2217ServerEndpoint::set_rts(bool rts_asserted) {
     // The BBC's RTS output appears to the client as the server's CTS modem line.
     std::vector<std::uint8_t> notify;
     codec_.encode_notify_modemstate(rts_asserted ? comport::MODEMSTATE_CTS : 0, notify);
+    enqueue_tx(notify);
+}
+
+void Rfc2217ServerEndpoint::set_break(bool break_asserted) {
+    // Report the BBC's transmitted break to the client as NOTIFY-LINESTATE, but
+    // only if the client asked to be notified of the break bit.
+    if ((client_linestate_mask_.load(std::memory_order_acquire) &
+         comport::LINESTATE_BREAK) == 0) {
+        return;
+    }
+    std::vector<std::uint8_t> notify;
+    codec_.encode_notify_linestate(
+        break_asserted ? comport::LINESTATE_BREAK : 0, notify);
     enqueue_tx(notify);
 }
 

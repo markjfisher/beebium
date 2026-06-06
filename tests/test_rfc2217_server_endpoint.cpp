@@ -95,6 +95,45 @@ TEST_CASE("RFC2217 client and server endpoints interoperate over TCP",
     CHECK(b == 'Z');
 }
 
+TEST_CASE("RFC2217 client and server endpoints carry BREAK both ways",
+          "[rfc2217][endpoint][break]") {
+    rfc2217::Rfc2217ServerEndpoint::Options server_opts;
+    server_opts.bind = "127.0.0.1";
+    server_opts.port = 0;  // ephemeral
+    rfc2217::Rfc2217ServerEndpoint server(std::move(server_opts));
+    REQUIRE(server.is_listening());
+    const std::uint16_t port = server.local_port();
+    REQUIRE(port != 0);
+
+    rfc2217::Rfc2217ClientEndpoint::Options client_opts;
+    client_opts.host = "127.0.0.1";
+    client_opts.port = port;
+    rfc2217::Rfc2217ClientEndpoint client(std::move(client_opts));
+
+    REQUIRE(wait_until([&] { return client.connected() && server.connected(); }));
+    REQUIRE(wait_until([&] { return client.option_negotiated(); }));
+
+    // The client requests the break line-state on connect; round-trip a byte so
+    // the server has certainly processed that SET-LINESTATE-MASK before we ask
+    // it to report a break.
+    server.add_byte('Z');
+    std::uint8_t b = 0;
+    REQUIRE(drain_one(client, b));
+    CHECK(b == 'Z');
+
+    // Client's BBC transmits a break (SET-CONTROL BREAK) -> the server's BBC
+    // receiver is handed one break.
+    client.set_break(true);
+    client.set_break(false);
+    REQUIRE(wait_until([&] { return server.take_break(); }));
+
+    // Server's BBC transmits a break (NOTIFY-LINESTATE) -> the client's BBC
+    // receiver is handed one break.
+    server.set_break(true);
+    server.set_break(false);
+    REQUIRE(wait_until([&] { return client.take_break(); }));
+}
+
 TEST_CASE("RFC2217 server endpoint reports a bind failure", "[rfc2217][endpoint]") {
     // 192.0.2.0/24 (RFC 5737 TEST-NET-1) is never assigned to the host, so a
     // bind to it deterministically fails.

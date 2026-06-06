@@ -63,11 +63,13 @@ public:
     // --- SerialDataSource (device -> Beeb), emulation thread ---
     bool has_data() override;
     std::uint8_t next_byte() override;
+    bool take_break() override;
 
     // --- SerialDataSink (Beeb -> device), emulation thread ---
     void add_byte(std::uint8_t value) override;
     bool accepts_more() override;
     void set_rts(bool rts_asserted) override;
+    void set_break(bool break_asserted) override;
 
     // --- Diagnostics ---
     bool is_listening() const;
@@ -101,6 +103,10 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> connected_{false};
     std::atomic<bool> client_rts_{true};  // client's SET-CONTROL RTS (BBC CTS-in)
+    std::atomic<bool> break_pending_{false};  // client break to inject into BBC RX
+    // The line-state bits the client asked to be notified of (SET-LINESTATE-MASK).
+    // The BBC's break is reported only if the client requested the break bit.
+    std::atomic<std::uint8_t> client_linestate_mask_{0};
 
     std::mutex rx_mutex_;
     std::deque<std::uint8_t> rx_;

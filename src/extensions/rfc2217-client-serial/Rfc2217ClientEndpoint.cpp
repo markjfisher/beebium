@@ -85,12 +85,23 @@ void Rfc2217ClientEndpoint::enqueue_tx(const std::vector<std::uint8_t>& bytes) {
 }
 
 void Rfc2217ClientEndpoint::process_command(const ComPortCommand& cmd) {
-    // The server replies use the +100 form. We care only about modem-state CTS:
-    // it gates the BBC's transmit (real flow control from the remote UART).
+    // The server replies use the +100 form. Modem-state CTS gates the BBC's
+    // transmit (real flow control from the remote UART).
     if (cmd.command == comport::NOTIFY_MODEMSTATE + comport::SERVER_OFFSET &&
         !cmd.value.empty()) {
         remote_cts_.store((cmd.value[0] & comport::MODEMSTATE_CTS) != 0,
                           std::memory_order_release);
+    }
+    // NOTIFY-LINESTATE carries the remote's break-detect bit. Edge-detect the
+    // rising transition and arm one break frame for the BBC's receiver (the
+    // BBC sees "a break happened"; the exact duration is not preserved).
+    if (cmd.command == comport::NOTIFY_LINESTATE + comport::SERVER_OFFSET &&
+        !cmd.value.empty()) {
+        const bool break_now = (cmd.value[0] & comport::LINESTATE_BREAK) != 0;
+        if (break_now && !remote_break_state_) {
+            break_pending_.store(true, std::memory_order_release);
+        }
+        remote_break_state_ = break_now;
     }
 }
 
@@ -128,7 +139,11 @@ void Rfc2217ClientEndpoint::connection_loop() {
                     codec_.encode_set_control(flow_, tx_);
                     codec_.encode_set_control(
                         dtr_ ? comport::CONTROL_DTR_ON : comport::CONTROL_DTR_OFF, tx_);
+                    // Ask the server to report received breaks so they can be
+                    // injected into the BBC's receiver.
+                    codec_.encode_set_linestate_mask(comport::LINESTATE_BREAK, tx_);
                 }
+                remote_break_state_ = false;
                 connected_.store(true, std::memory_order_release);
                 tx_cv_.notify_all();
                 notify_state_changed();
@@ -217,6 +232,10 @@ std::uint8_t Rfc2217ClientEndpoint::next_byte() {
     return value;
 }
 
+bool Rfc2217ClientEndpoint::take_break() {
+    return break_pending_.exchange(false, std::memory_order_acq_rel);
+}
+
 void Rfc2217ClientEndpoint::add_byte(std::uint8_t value) {
     std::lock_guard<std::mutex> lock(tx_mutex_);
     if (tx_.size() >= tx_hard_cap_) {
@@ -242,6 +261,15 @@ void Rfc2217ClientEndpoint::set_rts(bool rts_asserted) {
     std::vector<std::uint8_t> control;
     codec_.encode_set_control(
         rts_asserted ? comport::CONTROL_RTS_ON : comport::CONTROL_RTS_OFF, control);
+    enqueue_tx(control);
+}
+
+void Rfc2217ClientEndpoint::set_break(bool break_asserted) {
+    // Carry the BBC's transmitted break to the remote UART via SET-CONTROL.
+    std::vector<std::uint8_t> control;
+    codec_.encode_set_control(
+        break_asserted ? comport::CONTROL_BREAK_ON : comport::CONTROL_BREAK_OFF,
+        control);
     enqueue_tx(control);
 }
 
