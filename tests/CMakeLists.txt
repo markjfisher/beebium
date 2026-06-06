@@ -70,6 +70,10 @@ add_executable(test_extension_resolver test_extension_resolver.cpp)
 target_link_libraries(test_extension_resolver PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_extension_resolver)
 
+add_executable(test_attachment_points test_attachment_points.cpp)
+target_link_libraries(test_attachment_points PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_attachment_points)
+
 # Inline CLI argument parsers from ServerMain.hpp (case tolerance, error messages)
 add_executable(test_cli_arg_parsers test_cli_arg_parsers.cpp)
 target_include_directories(test_cli_arg_parsers PRIVATE

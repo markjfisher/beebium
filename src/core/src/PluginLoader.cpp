@@ -157,6 +157,16 @@ ExtensionManifest parse_manifest(const std::filesystem::path& manifest_filepath)
         }
     }
 
+    // Parse attaches_to list (extension points this extension attaches to; an
+    // extension may attach to several, e.g. an adapter spanning two ports).
+    if (j.contains("attaches_to") && j["attaches_to"].is_array()) {
+        for (const auto& a : j["attaches_to"]) {
+            if (a.is_string()) {
+                manifest.attaches_to.push_back(a.get<std::string>());
+            }
+        }
+    }
+
     // Parse parameter schema
     if (j.contains("parameters") && j["parameters"].is_array()) {
         for (const auto& p : j["parameters"]) {
