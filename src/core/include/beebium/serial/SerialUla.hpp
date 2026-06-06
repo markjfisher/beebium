@@ -92,6 +92,12 @@ public:
 
     // Advance the bit clocks by one 2MHz tick (called from SerialSocket).
     void tick() {
+        // Forward RTS transitions to the device. RTS is a connection/handshake
+        // line independent of the transmit baud clock, so it is polled every
+        // tick (a cheap bool compare) and kept decoupled from the /CTS update in
+        // pump_transmit(): a control-register write that changes RTS must reach
+        // the device even while /CTS is holding the guest's transmit loop.
+        update_rts();
         // Transmit bit clock.
         if (++tx_timer_ >= tx_bit_period_) {
             tx_timer_ = 0;
@@ -118,6 +124,12 @@ public:
         rx_has_byte_ = false;
         // Match the power-on latch (cassette select => /DCD high).
         acia_.set_not_dcd(true);
+        // Re-baseline RTS to the (reset) ACIA level and re-deliver to any
+        // attached device so its view tracks the machine reset.
+        last_rts_asserted_ = !acia_.get_not_rts();
+        if (sink_) {
+            sink_->set_rts(last_rts_asserted_);
+        }
     }
 
     // --- Transport wiring (non-owning; the SerialSocket owns the backend) ---
@@ -128,7 +140,12 @@ public:
             // No device attached: clear to send (transmitted bytes are
             // discarded), so the guest's TX loop never stalls.
             acia_.set_not_cts(false);
+            return;
         }
+        // Deliver the current RTS level to the freshly attached device so it
+        // starts from the right baseline rather than waiting for a transition.
+        last_rts_asserted_ = !acia_.get_not_rts();
+        sink_->set_rts(last_rts_asserted_);
     }
 
     // --- Accessors for tests / debugging ---
@@ -149,6 +166,19 @@ private:
         unsigned baud = BAUD_RATES[baud_index & 0x07];
         uint32_t period = static_cast<uint32_t>(timing::CPU_HZ / baud);
         return period < 1 ? 1 : period;
+    }
+
+    // Forward an RTS transition to the attached device (edge-triggered, so the
+    // device sees one call per change rather than one per tick).
+    void update_rts() {
+        if (sink_ == nullptr) {
+            return;
+        }
+        const bool rts_asserted = !acia_.get_not_rts();
+        if (rts_asserted != last_rts_asserted_) {
+            last_rts_asserted_ = rts_asserted;
+            sink_->set_rts(rts_asserted);
+        }
     }
 
     // One transmit bit time: clock the ACIA and assemble the outgoing byte.
@@ -233,6 +263,9 @@ private:
     uint8_t rx_byte_ = 0;
     uint8_t rx_bit_index_ = 0;
     bool rx_has_byte_ = false;
+
+    // Last RTS level delivered to the attached device, for edge detection.
+    bool last_rts_asserted_ = false;
 
     SerialDataSource* source_ = nullptr;
     SerialDataSink* sink_ = nullptr;
