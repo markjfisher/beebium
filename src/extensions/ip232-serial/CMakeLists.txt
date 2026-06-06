@@ -12,6 +12,7 @@
 
 set(IP232_SERIAL_SOURCES
     Ip232SerialEndpoint.cpp
+    Ip232SerialExtension.cpp
 )
 
 add_library(beebium_ext_ip232_serial STATIC ${IP232_SERIAL_SOURCES})

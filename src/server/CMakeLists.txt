@@ -70,6 +70,7 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             beebium_ext_host_serial
             beebium_ext_loopback_serial
             beebium_ext_rpc_serial
+            beebium_ext_ip232_serial
             nlohmann_json::nlohmann_json
             stb_image_write
     )
