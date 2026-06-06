@@ -1141,6 +1141,22 @@ target_compile_definitions(test_tube_ce2023_trace PRIVATE
 )
 catch_discover_tests(test_tube_ce2023_trace)
 
+# End-to-end serial BREAK: a beebasm-assembled 6502 program on an auto-booting
+# DFS disc drives/detects a break against a host peer (recording device / real
+# pySerial client). SKIPs when beebasm / ROMs / pySerial are absent.
+add_executable(test_serial_break_e2e test_serial_break_e2e.cpp)
+target_include_directories(test_serial_break_e2e
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_serial_break_e2e
+    PRIVATE beebium_ext_rfc2217_client beebium_ext_rfc2217_server beebium_core
+            6502_lib Threads::Threads Catch2::Catch2WithMain)
+target_compile_definitions(test_serial_break_e2e PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_serial_break_e2e PROPERTIES SKIP_RETURN_CODE 4)
+
 
 
 # Tube control flag tests with real 65C02 CPU
