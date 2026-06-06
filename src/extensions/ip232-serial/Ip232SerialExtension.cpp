@@ -16,6 +16,7 @@
 
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
+#include <beebium/net/EndpointUrl.hpp>
 #include <beebium/serial/SerialBufferLimits.hpp>
 
 #include <cstddef>
@@ -41,20 +42,41 @@ std::span<const std::string_view> Ip232SerialExtension::provides() const {
 void Ip232SerialExtension::init(ExtensionContext& ctx) {
     ip232::Ip232SerialEndpoint::Options options;
 
-    const std::string host = std::string(config_value("host").value_or("localhost"));
-    options.host = host.empty() ? "localhost" : host;
+    // The endpoint can be given either as a single url=[scheme://]host:port, or
+    // as separate host=/port= -- but not both.
+    auto url = config_value("url");
+    auto host = config_value("host");
+    auto port = config_value("port");
+    const bool have_url = url && !url->empty();
+    const bool have_host_port = (host && !host->empty()) || (port && !port->empty());
 
-    int port = 25232;
-    if (auto value = config_value("port"); value && !value->empty()) {
-        const int parsed = std::atoi(std::string(*value).c_str());
-        if (parsed > 0 && parsed <= 65535) {
-            port = parsed;
-        } else {
+    if (have_url) {
+        if (have_host_port) {
             throw std::runtime_error(
-                "ip232-serial: port must be 1..65535, got '" + std::string(*value) + "'");
+                "ip232-serial: url= cannot be combined with host=/port=");
         }
+        std::string error;
+        auto endpoint = net::parse_endpoint_url(*url, error);
+        if (!endpoint) {
+            throw std::runtime_error("ip232-serial: invalid url '" + std::string(*url)
+                                     + "': " + error);
+        }
+        options.host = endpoint->host;
+        options.port = endpoint->port;
+    } else {
+        options.host = (host && !host->empty()) ? std::string(*host) : "localhost";
+        int port_num = 25232;
+        if (port && !port->empty()) {
+            const int parsed = std::atoi(std::string(*port).c_str());
+            if (parsed > 0 && parsed <= 65535) {
+                port_num = parsed;
+            } else {
+                throw std::runtime_error(
+                    "ip232-serial: port must be 1..65535, got '" + std::string(*port) + "'");
+            }
+        }
+        options.port = static_cast<std::uint16_t>(port_num);
     }
-    options.port = static_cast<std::uint16_t>(port);
 
     const std::string mode = std::string(config_value("mode").value_or("ip232"));
     if (mode == "ip232") {
@@ -77,11 +99,12 @@ void Ip232SerialExtension::init(ExtensionContext& ctx) {
     }
 
     const std::string host_for_log = options.host;
+    const unsigned port_for_log = options.port;
     endpoint_ = std::make_unique<ip232::Ip232SerialEndpoint>(std::move(options));
     serial_port_ = &ctx.get<SerialPort>();
     serial_port_->attach(*endpoint_);
     std::cout << "ip232-serial: " << mode << " bridge to " << host_for_log << ":"
-              << port << " (connecting)\n";
+              << port_for_log << " (connecting)\n";
 }
 
 void Ip232SerialExtension::shutdown() {
