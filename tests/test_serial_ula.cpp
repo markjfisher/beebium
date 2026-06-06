@@ -124,6 +124,78 @@ TEST_CASE("SerialUla does not call set_rts before a device is attached",
     CHECK(device.rts_events()[0] == false);  // baseline reflects current (high)
 }
 
+// =============================================================================
+// BREAK forwarding (both directions) -- a sub-byte line condition carried out
+// of band, not through the byte queue.
+// =============================================================================
+
+namespace {
+
+// Control-register value that holds the transmitter in BREAK (the space state)
+// with 8N1 framing: Transmitter-Control field (bits 5-6) = 11.
+constexpr uint8_t CONTROL_BREAK = CONTROL_8N1
+    | (Mc6850::TX_CTRL_RTS_LOW_BREAK << Mc6850::CR_TX_CONTROL_SHIFT);
+
+}  // namespace
+
+TEST_CASE("SerialUla delivers the BREAK baseline when a device attaches",
+          "[serial][ula][break]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    SerialTestDevice device;
+
+    // Power-on control register (0) is not a break.
+    ula.set_sink(&device);
+
+    REQUIRE(device.break_events().size() == 1);
+    CHECK(device.break_events()[0] == false);
+}
+
+TEST_CASE("SerialUla forwards BREAK transitions, one event per change",
+          "[serial][ula][break]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    SerialTestDevice device;
+    ula.set_sink(&device);  // baseline: not break (false)
+
+    // Assert BREAK via the ACIA control register, then tick.
+    acia.write_control(CONTROL_BREAK);
+    ula.tick();
+    REQUIRE(device.break_events().size() == 2);
+    CHECK(device.break_events()[1] == true);
+
+    // Ticking again with no change must not produce further events.
+    for (int i = 0; i < 500; ++i) ula.tick();
+    CHECK(device.break_events().size() == 2);
+
+    // Clear BREAK, then tick.
+    acia.write_control(CONTROL_8N1);
+    ula.tick();
+    REQUIRE(device.break_events().size() == 3);
+    CHECK(device.break_events()[2] == false);
+}
+
+TEST_CASE("SerialUla injects an inbound BREAK as a Framing Error with data 0x00",
+          "[serial][ula][break]") {
+    Mc6850 acia;
+    SerialUla ula(acia);
+    SerialTestDevice device;
+    ula.set_source(&device);
+
+    acia.write_control(CONTROL_8N1);
+    ula.write(0, ULA_RS423_19200);   // carrier present
+    device.push_break_from_device();
+
+    for (int i = 0; i < 6000 && !acia.rdrf(); ++i) {
+        ula.tick();
+    }
+
+    REQUIRE(acia.rdrf());
+    // A received break is the MC6850's framing-error-with-zero-data condition.
+    CHECK((acia.status() & Mc6850::SR_FE) != 0);
+    CHECK(acia.read_data() == 0x00);
+}
+
 TEST_CASE("SerialUla decodes cassette motor bit", "[serial][ula]") {
     Mc6850 acia;
     SerialUla ula(acia);

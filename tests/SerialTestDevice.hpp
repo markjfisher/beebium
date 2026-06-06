@@ -44,6 +44,11 @@ public:
         rx_.pop_front();
         return value;
     }
+    bool take_break() override {
+        if (pending_breaks_ == 0) return false;
+        --pending_breaks_;
+        return true;
+    }
 
     // --- SerialDataSink (Beeb -> device) ---
     void add_byte(uint8_t value) override {
@@ -52,10 +57,16 @@ public:
     }
     bool accepts_more() override { return accepts_more_; }
     void set_rts(bool rts_asserted) override { rts_events_.push_back(rts_asserted); }
+    void set_break(bool break_asserted) override {
+        break_events_.push_back(break_asserted);
+    }
 
     // --- Test controls ---
     void push_from_device(uint8_t value) { rx_.push_back(value); }
     void set_accepts_more(bool ready) { accepts_more_ = ready; }
+    // Queue an inbound BREAK for the ULA to clock into the receiver. Each queued
+    // break is consumed by one take_break() poll.
+    void push_break_from_device() { ++pending_breaks_; }
     const std::vector<uint8_t>& sent() const { return sent_; }
     bool source_empty() const { return rx_.empty(); }
 
@@ -63,10 +74,16 @@ public:
     // baseline at attach).
     const std::vector<bool>& rts_events() const { return rts_events_; }
 
+    // BREAK levels delivered by the ULA, in order (one per transition, plus the
+    // baseline at attach).
+    const std::vector<bool>& break_events() const { return break_events_; }
+
 private:
     std::deque<uint8_t> rx_;     // device -> Beeb
     std::vector<uint8_t> sent_;  // Beeb -> device (captured)
     std::vector<bool> rts_events_;
+    std::vector<bool> break_events_;
+    unsigned pending_breaks_ = 0;
     bool echo_;
     bool accepts_more_ = true;
 };
