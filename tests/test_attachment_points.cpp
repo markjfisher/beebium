@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 
 using namespace beebium;
@@ -30,12 +31,17 @@ TEST_CASE("attachment-point catalogue gives display names and occupancy",
     CHECK(attachment_point_display_name("tube") == "Tube");
     CHECK(attachment_point_display_name("scsi") == "SCSI Bus");
 
-    // Occupancy: connectors are single, buses are multi.
-    CHECK(find_attachment_point("serial-port")->single_occupancy);
-    CHECK(find_attachment_point("user-port")->single_occupancy);
-    CHECK(find_attachment_point("tube")->single_occupancy);
-    CHECK_FALSE(find_attachment_point("1mhz-bus")->single_occupancy);
-    CHECK_FALSE(find_attachment_point("scsi")->single_occupancy);
+    // Occupancy is an integer range [min, max]; max is nullopt when unbounded.
+    // Connectors hold at most one; a bus holds several.
+    CHECK(find_attachment_point("serial-port")->min_occupancy == 0);
+    CHECK(find_attachment_point("serial-port")->max_occupancy == 1);
+    CHECK(find_attachment_point("tube")->max_occupancy == 1);
+    CHECK(find_attachment_point("1mhz-bus")->max_occupancy == std::nullopt);  // unbounded
+    CHECK(find_attachment_point("scsi")->max_occupancy == 7);
+
+    // Human-readable labels.
+    CHECK(occupancy_label(*find_attachment_point("serial-port")) == "0..1");
+    CHECK(occupancy_label(*find_attachment_point("1mhz-bus")) == "0..N");
 }
 
 TEST_CASE("attachment-point display name falls back to the id",

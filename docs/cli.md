@@ -360,14 +360,14 @@ beebium-model-b list-attachment-points
 **`--format pretty`**:
 ```
 Attachment points:
-  serial-port (Serial Port) [single]
+  serial-port (Serial Port) [0..1]
       The BBC RS423 serial port (MC6850 ACIA + Serial ULA).
-  1mhz-bus (1 MHz Bus) [multi]
+  1mhz-bus (1 MHz Bus) [0..N]
       The 1 MHz bus expansion connector (FRED/JIM paged I/O).
   ...
 ```
 
-Occupancy is `single` (a connector that holds at most one extension -- so the UI offers "which **one**, if any") or `multi` (a bus several extensions can share). `tsv` and `jsonl` carry `id`, `display_name`, `single_occupancy`, and `description`. Like the other discovery commands, this needs no running emulator.
+Occupancy is an integer range `[min..max]`: how many extensions must and may attach. A connector is `0..1` (optional, at most one -- so the UI offers "which **one**, if any"); a bus is `0..N` (`N` = no upper bound, shown as `null` in jsonl). The range accommodates hardware that is not simply single-or-many -- e.g. a future twin-Tube machine would be `0..2`. `tsv` and `jsonl` carry `id`, `display_name`, `min_occupancy`, `max_occupancy` (blank/`null` when unbounded), and `description`. Like the other discovery commands, this needs no running emulator.
 
 ### describe-machine
 

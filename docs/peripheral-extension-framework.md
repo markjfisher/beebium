@@ -279,7 +279,7 @@ beebium-model-b start --help
 
 ### Attachment Points
 
-An **attachment point** is a place an extension can plug in: the serial port, the user port, the 1 MHz bus, the Tube, a SCSI bus. The catalogue gives each a display name and an *occupancy* -- `single` (a connector that holds at most one extension) or `multi` (a bus several can share). A configuration UI uses this to ask, for each point, *"which one, if any, of these extensions would you like to load?"*.
+An **attachment point** is a place an extension can plug in: the serial port, the user port, the 1 MHz bus, the Tube, a SCSI bus. The catalogue gives each a display name and an *occupancy* range `[min..max]` -- how many extensions must and may attach. A connector is `0..1` (optional, at most one); a bus is `0..N` (unbounded). The range, rather than a single/multi flag, accommodates hardware in between -- e.g. a future machine with two Tube sockets is `0..2`. A configuration UI uses this to ask, for each point, *"which one, if any, of these extensions would you like to load?"*.
 
 ```bash
 # The catalogue: id, display name, occupancy, description
