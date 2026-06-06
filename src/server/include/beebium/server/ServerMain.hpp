@@ -16,6 +16,7 @@
 #include "BuiltinExtensions.hpp"
 #include "CliArgParsers.hpp"
 #include "SidewaysValidation.hpp"
+#include "beebium/extension/AttachmentPointCatalogue.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
@@ -2155,6 +2156,27 @@ inline std::string json_escape(std::string_view s) {
     return out;
 }
 
+// Render a string list as a JSON array, e.g. ["serial-port","user-port"].
+inline std::string json_string_array(const std::vector<std::string>& items) {
+    std::string out = "[";
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        if (i) out += ",";
+        out += "\"" + json_escape(items[i]) + "\"";
+    }
+    out += "]";
+    return out;
+}
+
+// Join a string list with commas for a single TSV / pretty cell.
+inline std::string join_comma(const std::vector<std::string>& items) {
+    std::string out;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        if (i) out += ",";
+        out += items[i];
+    }
+    return out;
+}
+
 // Parse just `--extension-dir <path>` arguments out of a subcommand argv slice.
 // Other tokens are reported as "unknown argument" by the caller.
 struct ExtensionDirParse {
@@ -2187,13 +2209,20 @@ public:
     }
 
     void help(const char* program_name) const override {
-        std::cerr << "Usage: " << program_name << " list-extensions [--extension-dir <path>]...\n"
+        std::cerr << "Usage: " << program_name
+                  << " list-extensions [--attaches-to <point>] [--extension-dir <path>]...\n"
                   << "\n"
                   << "Lists every extension that can be selected via a --<cli-name> flag,\n"
                   << "in the same priority order as `start` would resolve them: built-in\n"
                   << "extensions, then the auto-detected <exe-dir>/extensions directory,\n"
                   << "then each --extension-dir given here. Later sources override earlier\n"
-                  << "ones for matching cli-name. Honours --format pretty|tsv|jsonl.\n";
+                  << "ones for matching cli-name.\n"
+                  << "\n"
+                  << "  --attaches-to <point>  show only extensions that attach to the given\n"
+                  << "                         attachment point (e.g. serial-port); see\n"
+                  << "                         list-attachment-points for the points.\n"
+                  << "\n"
+                  << "Honours --format pretty|tsv|jsonl.\n";
     }
 
     int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
@@ -2204,10 +2233,16 @@ public:
 
         auto parsed = extension_listing::parse_extension_dir_args(
             argc, argv, global.subcommand_argv_start);
-        for (const auto& tok : parsed.remaining) {
+        std::string attaches_to_filter;
+        for (std::size_t i = 0; i < parsed.remaining.size(); ++i) {
+            const std::string& tok = parsed.remaining[i];
             if (tok == "--help" || tok == "-h") {
                 help(argv[0]);
                 return ExitCode::OK;
+            }
+            if (tok == "--attaches-to" && i + 1 < parsed.remaining.size()) {
+                attaches_to_filter = parsed.remaining[++i];
+                continue;
             }
             std::cerr << "Unknown argument: " << tok << "\n";
             help(argv[0]);
@@ -2220,19 +2255,37 @@ public:
         }
 
         OutputFormat format = resolve_output_format(global.output_format);
-        const auto& entries = config.extension_resolver.entries();
+
+        // Optionally filter to extensions that attach to a given point. A point
+        // appears in an extension's attaches_to list (which may name several).
+        const auto& all_entries = config.extension_resolver.entries();
+        std::vector<const typename std::decay_t<decltype(all_entries)>::value_type*> entries;
+        for (const auto& e : all_entries) {
+            if (!attaches_to_filter.empty()) {
+                const auto& a = e.manifest->attaches_to;
+                if (std::find(a.begin(), a.end(), attaches_to_filter) == a.end()) {
+                    continue;
+                }
+            }
+            entries.push_back(&e);
+        }
 
         switch (format) {
             case OutputFormat::Pretty:
                 std::cout << "Available extensions:\n";
-                for (const auto& e : entries) {
-                    std::cout << "  --" << e.manifest->effective_cli_name();
-                    if (e.manifest->name != e.manifest->effective_cli_name()) {
-                        std::cout << " (" << e.manifest->name << ")";
+                for (const auto* e : entries) {
+                    std::cout << "  --" << e->manifest->effective_cli_name();
+                    if (e->manifest->name != e->manifest->effective_cli_name()) {
+                        std::cout << " (" << e->manifest->name << ")";
                     }
-                    std::cout << " [" << e.source_label << "]\n";
-                    if (!e.manifest->description.empty()) {
-                        std::cout << "      " << e.manifest->description << "\n";
+                    std::cout << " [" << e->source_label << "]\n";
+                    if (!e->manifest->attaches_to.empty()) {
+                        std::cout << "      attaches to: "
+                                  << extension_listing::join_comma(e->manifest->attaches_to)
+                                  << "\n";
+                    }
+                    if (!e->manifest->description.empty()) {
+                        std::cout << "      " << e->manifest->description << "\n";
                     }
                 }
                 if (entries.empty()) {
@@ -2241,28 +2294,31 @@ public:
                 break;
 
             case OutputFormat::Tsv:
-                std::cout << "cli_name\tname\tkind\tsource\tdescription\n";
-                for (const auto& e : entries) {
-                    std::cout << e.manifest->effective_cli_name() << "\t"
-                              << e.manifest->name << "\t"
-                              << e.manifest->extension_kind << "\t"
-                              << e.source_label << "\t"
-                              << e.manifest->description << "\n";
+                std::cout << "cli_name\tname\tkind\tsource\tattaches_to\tdescription\n";
+                for (const auto* e : entries) {
+                    std::cout << e->manifest->effective_cli_name() << "\t"
+                              << e->manifest->name << "\t"
+                              << e->manifest->extension_kind << "\t"
+                              << e->source_label << "\t"
+                              << extension_listing::join_comma(e->manifest->attaches_to) << "\t"
+                              << e->manifest->description << "\n";
                 }
                 break;
 
             case OutputFormat::Jsonl:
-                for (const auto& e : entries) {
+                for (const auto* e : entries) {
                     std::cout << "{\"cli_name\":\""
-                              << extension_listing::json_escape(e.manifest->effective_cli_name())
+                              << extension_listing::json_escape(e->manifest->effective_cli_name())
                               << "\",\"name\":\""
-                              << extension_listing::json_escape(e.manifest->name)
+                              << extension_listing::json_escape(e->manifest->name)
                               << "\",\"kind\":\""
-                              << extension_listing::json_escape(e.manifest->extension_kind)
+                              << extension_listing::json_escape(e->manifest->extension_kind)
                               << "\",\"source\":\""
-                              << extension_listing::json_escape(e.source_label)
-                              << "\",\"description\":\""
-                              << extension_listing::json_escape(e.manifest->description)
+                              << extension_listing::json_escape(e->source_label)
+                              << "\",\"attaches_to\":"
+                              << extension_listing::json_string_array(e->manifest->attaches_to)
+                              << ",\"description\":\""
+                              << extension_listing::json_escape(e->manifest->description)
                               << "\"}\n";
                 }
                 break;
@@ -2382,6 +2438,13 @@ public:
                     std::cout << "\n";
                 }
                 std::cout << "  kind: " << manifest->extension_kind << "\n";
+                if (!manifest->attaches_to.empty()) {
+                    std::cout << "  attaches to:";
+                    for (const auto& a : manifest->attaches_to) {
+                        std::cout << " " << a << " (" << attachment_point_display_name(a) << ")";
+                    }
+                    std::cout << "\n";
+                }
                 if (!manifest->provides.empty()) {
                     std::cout << "  provides:";
                     for (const auto& p : manifest->provides) std::cout << " " << p;
@@ -2427,6 +2490,88 @@ public:
                               << ",\"default\":\""
                               << extension_listing::json_escape(p.default_value)
                               << "\",\"description\":\""
+                              << extension_listing::json_escape(p.description)
+                              << "\"}\n";
+                }
+                break;
+
+            case OutputFormat::Auto:
+                break;
+        }
+        return ExitCode::OK;
+    }
+};
+
+// ListAttachmentPoints subcommand - the catalogue of points an extension can
+// attach to, with human-readable names. Lets a configuration UI ask, for each
+// point, "which of these <point> extensions would you like to load?".
+template<typename MachineType>
+class ListAttachmentPointsSubcommand : public Subcommand<MachineType> {
+public:
+    std::string_view name() const override { return "list-attachment-points"; }
+    std::string_view description() const override {
+        return "List the attachment points extensions can plug into";
+    }
+
+    void help(const char* program_name) const override {
+        std::cerr << "Usage: " << program_name << " list-attachment-points\n"
+                  << "\n"
+                  << "Lists the attachment points an extension can declare via attaches_to\n"
+                  << "(serial-port, user-port, 1mhz-bus, tube, scsi), each with a display\n"
+                  << "name and its occupancy: 'single' (a connector that holds at most one\n"
+                  << "extension) or 'multi' (a bus that several may share). Pair with\n"
+                  << "`list-extensions --attaches-to <point>` to see what plugs in where.\n"
+                  << "Honours --format pretty|tsv|jsonl.\n";
+    }
+
+    int invoke(int argc, char* argv[], const GlobalConfig& global) const override {
+        if (global.help_requested) {
+            help(argv[0]);
+            return ExitCode::OK;
+        }
+        for (int i = global.subcommand_argv_start; i < argc; ++i) {
+            std::string_view tok = argv[i];
+            if (tok == "--help" || tok == "-h") {
+                help(argv[0]);
+                return ExitCode::OK;
+            }
+            std::cerr << "Unknown argument: " << tok << "\n";
+            help(argv[0]);
+            return ExitCode::USAGE;
+        }
+
+        OutputFormat format = resolve_output_format(global.output_format);
+        const auto& points = attachment_point_catalogue();
+
+        switch (format) {
+            case OutputFormat::Pretty:
+                std::cout << "Attachment points:\n";
+                for (const auto& p : points) {
+                    std::cout << "  " << p.id << " (" << p.display_name << ") ["
+                              << (p.single_occupancy ? "single" : "multi") << "]\n";
+                    if (!p.description.empty()) {
+                        std::cout << "      " << p.description << "\n";
+                    }
+                }
+                break;
+
+            case OutputFormat::Tsv:
+                std::cout << "id\tdisplay_name\toccupancy\tdescription\n";
+                for (const auto& p : points) {
+                    std::cout << p.id << "\t" << p.display_name << "\t"
+                              << (p.single_occupancy ? "single" : "multi") << "\t"
+                              << p.description << "\n";
+                }
+                break;
+
+            case OutputFormat::Jsonl:
+                for (const auto& p : points) {
+                    std::cout << "{\"id\":\"" << extension_listing::json_escape(p.id)
+                              << "\",\"display_name\":\""
+                              << extension_listing::json_escape(p.display_name)
+                              << "\",\"single_occupancy\":"
+                              << (p.single_occupancy ? "true" : "false")
+                              << ",\"description\":\""
                               << extension_listing::json_escape(p.description)
                               << "\"}\n";
                 }
@@ -3880,6 +4025,7 @@ const std::vector<std::unique_ptr<Subcommand<MachineType>>>& get_subcommands() {
         v.push_back(std::make_unique<ListFloppyFormatsSubcommand<MachineType>>());
         v.push_back(std::make_unique<ListExtensionsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeExtensionSubcommand<MachineType>>());
+        v.push_back(std::make_unique<ListAttachmentPointsSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeMachineSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribePresetSchemaSubcommand<MachineType>>());
         v.push_back(std::make_unique<DescribeRomSubcommand<MachineType>>());
