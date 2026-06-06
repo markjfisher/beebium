@@ -68,7 +68,6 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             beebium_ext_acorn_65c02
             beebium_ext_aun
             beebium_ext_host_serial
-            beebium_ext_loopback_serial
             beebium_ext_rpc_serial
             beebium_ext_ip232_serial
             nlohmann_json::nlohmann_json
@@ -103,6 +102,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_piconet_plugin
         beebium_ext_scsi_hard_disc_plugin
         beebium_ext_test_scratch_ram_plugin
+        beebium_ext_loopback_serial_plugin
     )
 endif()
 add_custom_target(beebium-servers DEPENDS ${BEEBIUM_SERVERS_DEPS})
