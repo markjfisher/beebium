@@ -56,6 +56,8 @@ inline constexpr std::uint8_t PURGE_DATA = 12;
 inline constexpr std::uint8_t CONTROL_FLOW_NONE = 1;      // outbound/both
 inline constexpr std::uint8_t CONTROL_FLOW_XONXOFF = 2;
 inline constexpr std::uint8_t CONTROL_FLOW_HARDWARE = 3;
+inline constexpr std::uint8_t CONTROL_BREAK_ON = 5;
+inline constexpr std::uint8_t CONTROL_BREAK_OFF = 6;
 inline constexpr std::uint8_t CONTROL_DTR_ON = 8;
 inline constexpr std::uint8_t CONTROL_DTR_OFF = 9;
 inline constexpr std::uint8_t CONTROL_RTS_ON = 11;
@@ -77,6 +79,12 @@ inline constexpr std::uint8_t STOPSIZE_ONE_HALF = 3;
 
 // NOTIFY-MODEMSTATE bit for CTS.
 inline constexpr std::uint8_t MODEMSTATE_CTS = 0x10;
+
+// NOTIFY-LINESTATE bits (same layout as the UART line-status register). Only the
+// BREAK-detect bit is exchanged; the others (data-ready / overrun / parity /
+// framing / THRE / TSRE / timeout) are not produced by Beebium's byte-oriented
+// model.
+inline constexpr std::uint8_t LINESTATE_BREAK = 0x10;
 }  // namespace comport
 
 // One decoded COM-PORT-OPTION subnegotiation. `command` is the raw code (the
@@ -130,6 +138,11 @@ public:
     void encode_set_control(std::uint8_t value, std::vector<std::uint8_t>& out) const;
     // NOTIFY-MODEMSTATE (server only).
     void encode_notify_modemstate(std::uint8_t state, std::vector<std::uint8_t>& out) const;
+    // SET-LINESTATE-MASK (client only): ask the server to report the given line-
+    // state bits via NOTIFY-LINESTATE.
+    void encode_set_linestate_mask(std::uint8_t mask, std::vector<std::uint8_t>& out) const;
+    // NOTIFY-LINESTATE (server only): report the current line-state bits.
+    void encode_notify_linestate(std::uint8_t state, std::vector<std::uint8_t>& out) const;
 
     // --- Inbound decoding ---
     // Appends application data to `data`, COM-PORT subnegotiations to `commands`,
