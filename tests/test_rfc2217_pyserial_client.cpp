@@ -79,17 +79,24 @@ TEST_CASE("rfc2217-server-serial interoperates with a pySerial client",
     REQUIRE(server.is_listening());
     const std::uint16_t port = server.local_port();
 
-    // Echo whatever the BBC side receives straight back, so the pySerial client
-    // gets its bytes returned through the full RFC 2217 round-trip.
+    // Echo whatever the BBC side receives straight back (so the pySerial client
+    // gets its bytes returned through the full RFC 2217 round-trip), and watch
+    // for a BREAK handed to the BBC's receiver (break_pending_ is sticky until
+    // take_break() consumes it).
     std::atomic<bool> stop{false};
-    std::thread echo([&] {
+    std::atomic<bool> saw_break{false};
+    std::thread worker([&] {
         while (!stop.load()) {
-            if (server.has_data()) server.add_byte(server.next_byte());
-            else std::this_thread::sleep_for(1ms);
+            bool did = false;
+            if (server.has_data()) { server.add_byte(server.next_byte()); did = true; }
+            if (server.take_break()) { saw_break.store(true); did = true; }
+            if (!did) std::this_thread::sleep_for(1ms);
         }
     });
 
-    // A tiny pySerial client: connect, send PING, expect it echoed back.
+    // A tiny pySerial client: connect, echo-check PING, send a real break, then
+    // echo-check DONE. TCP order guarantees the break is processed by the server
+    // before DONE (which follows it on the stream) comes back echoed.
     const std::filesystem::path script =
         std::filesystem::temp_directory_path() / "beebium_rfc2217_pyserial_client.py";
     {
@@ -97,18 +104,29 @@ TEST_CASE("rfc2217-server-serial interoperates with a pySerial client",
         f << "import sys, serial\n"
              "s = serial.serial_for_url(sys.argv[1], baudrate=9600, timeout=5)\n"
              "s.write(b'PING')\n"
-             "data = s.read(4)\n"
+             "if s.read(4) != b'PING': s.close(); sys.exit(2)\n"
+             "s.send_break(0.05)\n"
+             "s.write(b'DONE')\n"
+             "ok = s.read(4) == b'DONE'\n"
              "s.close()\n"
-             "sys.exit(0 if data == b'PING' else 2)\n";
+             "sys.exit(0 if ok else 3)\n";
     }
 
     const std::string cmd = runner + " " + script.string() +
                             " rfc2217://127.0.0.1:" + std::to_string(port);
     const int rc = std::system(cmd.c_str());
 
+    // The break arrives before DONE on the wire, but the server processes it
+    // asynchronously; give the worker a moment to observe the sticky flag.
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (!saw_break.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(2ms);
+    }
+
     stop.store(true);
-    echo.join();
+    worker.join();
     std::filesystem::remove(script);
 
     CHECK(exit_status(rc) == 0);
+    CHECK(saw_break.load());
 }

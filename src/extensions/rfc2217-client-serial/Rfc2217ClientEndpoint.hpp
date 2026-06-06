@@ -73,11 +73,13 @@ public:
     // --- SerialDataSource (device -> Beeb), emulation thread ---
     bool has_data() override;
     std::uint8_t next_byte() override;
+    bool take_break() override;
 
     // --- SerialDataSink (Beeb -> device), emulation thread ---
     void add_byte(std::uint8_t value) override;
     bool accepts_more() override;
     void set_rts(bool rts_asserted) override;
+    void set_break(bool break_asserted) override;
 
     // --- Diagnostics ---
     bool connected() const { return connected_.load(); }
@@ -120,6 +122,8 @@ private:
     std::atomic<bool> negotiated_{false};
     std::atomic<bool> remote_cts_{true};  // modem-state CTS from the server
     std::atomic<bool> rts_asserted_{false};
+    std::atomic<bool> break_pending_{false};  // a remote break to inject into RX
+    bool remote_break_state_ = false;  // reader thread only: NOTIFY-LINESTATE edge
 
     mutable std::mutex port_mutex_;
     std::shared_ptr<net::TcpClientSerialPort> port_;
