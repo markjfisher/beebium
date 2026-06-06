@@ -308,9 +308,12 @@ List every peripheral or transport extension that the server can recognise via a
 ```bash
 beebium-model-b list-extensions
 beebium-model-b list-extensions --extension-dir ~/my-beebium-plugins
+beebium-model-b list-extensions --attaches-to serial-port
 ```
 
 `--extension-dir` is repeatable; later paths override earlier ones (and the auto-detected `<exe-dir>/extensions`) for matching `cli` names.
+
+`--attaches-to <point>` shows only extensions that attach to the given attachment point (e.g. `serial-port`); see [list-attachment-points](#list-attachment-points) for the available points. An extension may attach to several points, so it appears under each.
 
 **`--format pretty`** (default for TTY):
 ```
@@ -324,12 +327,12 @@ Available extensions:
 
 **`--format tsv`** (default for non-TTY):
 ```
-cli_name	name	kind	source	description
-tube-65c02	acorn-65c02-coprocessor	peripheral	built-in	Acorn 65C02 3 MHz second processor
-acorn-rtc	acorn-rtc	peripheral	/install/path/extensions	Acorn User Port Real Time Clock Module (SAF3019P)
+cli_name	name	kind	source	attaches_to	description
+tube-65c02	acorn-65c02-coprocessor	peripheral	built-in	tube	Acorn 65C02 3 MHz second processor
+acorn-rtc	acorn-rtc	peripheral	/install/path/extensions	user-port	Acorn User Port Real Time Clock Module (SAF3019P)
 ```
 
-**`--format jsonl`** — one JSON object per extension, with the same fields as the TSV form.
+**`--format jsonl`** — one JSON object per extension, with the same fields as the TSV form (`attaches_to` is a JSON array).
 
 A `--extension-dir` argument that points to a non-existent directory is a hard error (exit code `EX_CONFIG` = 78). The auto-detected default is silent if absent.
 
@@ -345,6 +348,26 @@ beebium-model-b describe-extension --format jsonl scsi-hdd
 **`--format pretty`** prints a parameter list with type, default, and description per parameter; `tsv` and `jsonl` emit one row per parameter.
 
 Like `list-extensions`, `--extension-dir` is repeatable and can be used to look up extensions in user-supplied directories.
+
+### list-attachment-points
+
+List the attachment points an extension can plug into (the ids used by `attaches_to`), each with a display name and its occupancy. Pair it with `list-extensions --attaches-to <point>` to drive a configuration UI: enumerate the points, then for each point offer the extensions that attach to it.
+
+```bash
+beebium-model-b list-attachment-points
+```
+
+**`--format pretty`**:
+```
+Attachment points:
+  serial-port (Serial Port) [single]
+      The BBC RS423 serial port (MC6850 ACIA + Serial ULA).
+  1mhz-bus (1 MHz Bus) [multi]
+      The 1 MHz bus expansion connector (FRED/JIM paged I/O).
+  ...
+```
+
+Occupancy is `single` (a connector that holds at most one extension -- so the UI offers "which **one**, if any") or `multi` (a bus several extensions can share). `tsv` and `jsonl` carry `id`, `display_name`, `single_occupancy`, and `description`. Like the other discovery commands, this needs no running emulator.
 
 ### describe-machine
 
