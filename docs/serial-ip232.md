@@ -11,6 +11,10 @@ bounded queues, `/CTS` back-pressure) with a TCP socket and a small protocol
 codec in place of a tty. For the shared serial architecture see
 [serial-acia.md](serial-acia.md).
 
+`ip232-serial` ships as a **dynamically-loaded plugin** (only `host-serial` is a
+built-in), discovered at runtime from `<exe-dir>/extensions/ip232-serial/` — no
+special setup; a packaged Beebium server includes it.
+
 ## Why it exists
 
 The BBC's RS423 port was widely used in the 1980s to drive a modem and dial
