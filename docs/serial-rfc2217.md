@@ -27,13 +27,8 @@ the COM-PORT-OPTION subnegotiation set. Application data is escaped `IAC IAC`
 Commands ride in `IAC SB COM-PORT-OPTION <cmd> <value…> IAC SE`; the client uses
 command codes 1–12 and the server replies with the same code + 100.
 
-**v1 is a minimal-but-interoperable core:** negotiate the option (agree
-`BINARY`/`SGA`/`COM-PORT-OPTION`), tunnel data, `SET-BAUDRATE`, map RTS/CTS, and
-exchange modem-state. The server echo-accepts the full client command burst
-(`SET-DATASIZE`/`PARITY`/`STOPSIZE`, the flow-control/mask requests, and
-`PURGE-DATA`) so strict clients like pySerial open cleanly. Deferred to a
-follow-up: actually applying parity/stop, the flow-control modes, BREAK, and
-line-state mask filtering.
+See [Supported vs deliberately not implemented](#supported-vs-deliberately-not-implemented)
+below for exactly which COM-PORT commands are honoured.
 
 ### Control lines
 
@@ -70,12 +65,18 @@ bounded, mutex-protected queues. An unresponsive peer stalls the *guest* (via
 | `url` | string | — | access-server endpoint as `[scheme://]host:port`; alternative to `host`/`port` |
 | `host` / `port` | string / int | — | access-server address (alternative to `url`) |
 | `baud` | int | `19200` | baud to set on the remote UART (real hardware) |
+| `framing` | string | `8N1` | remote UART framing `<data><parity><stop>` (data 5–8; parity N/O/E/M/S; stop 1/2) |
+| `flow` | string | `none` | remote UART flow control: `none` / `rtscts` / `xonxoff` |
+| `dtr` | bool | `true` | assert DTR on the remote UART (the BBC has no DTR pin; real devices need it) |
 | `tx_buffer` | int | `4096` | transmit buffer bytes; `/CTS` asserts at/above it |
+
+`baud`/`framing`/`flow`/`dtr` configure the **remote** UART (a real device);
+they are independent of the BBC's own line settings, which the guest OS owns.
 
 ```
 # A value with a colon must be double-quoted (the shell usually needs single
 # quotes too); host=/port= cannot be combined with url=.
-beebium-model-b start --rfc2217-client-serial 'url="rfc2217://ser2net.local:4001":baud=9600'
+beebium-model-b start --rfc2217-client-serial 'url="rfc2217://ser2net.local:4001":baud=9600:framing=7E1:flow=rtscts'
 beebium-model-b start --rfc2217-client-serial host=ser2net.local:port=4001
 ```
 
@@ -98,6 +99,54 @@ python -m serial.tools.miniterm rfc2217://127.0.0.1:4001
 # or, in code:
 #   s = serial.serial_for_url("rfc2217://127.0.0.1:4001", baudrate=9600)
 ```
+
+## Supported vs deliberately not implemented
+
+Beebium implements the COM-PORT commands that fit its **byte-oriented** model.
+The plugin bridges two byte-streams — the BBC's serial port and the TCP peer —
+that the ULA has already framed into whole bytes, decoupled by bounded queues.
+Anything that is **sub-byte or out-of-band** (a line condition rather than a
+data value) cannot ride that byte queue, and carrying it would need extra
+side-channels into the ULA/ACIA; those are deliberately left out for now.
+
+**Supported**
+
+| Command | Client (we drive the remote) | Server (we are the device) |
+|---|---|---|
+| Option negotiation | offers `WILL COM-PORT`/`BINARY`/`SGA` | answers `DO`/`WILL` |
+| Data (`IAC IAC`) | yes | yes |
+| `SET-BAUDRATE` | sets the **real** remote baud | **cosmetic** — echo-accepted, never applied to the BBC |
+| `SET-DATASIZE`/`PARITY`/`STOPSIZE` | sets the remote framing (`framing=`) | **cosmetic** — echo-accepted |
+| `SET-CONTROL` flow / DTR | sets the remote (`flow=`/`dtr=`) | echo-accepted |
+| `SET-CONTROL` RTS | the BBC's RTS → remote | client RTS → the BBC's CTS input |
+| `NOTIFY-MODEMSTATE` (CTS) | consumed as remote flow control | emitted from the BBC's RTS |
+| `PURGE-DATA`, the `*-MASK` requests | — | echo-accepted (so strict clients open) |
+
+The **server never changes the emulated BBC hardware.** A remote client's
+baud/parity/stop requests are acknowledged but **not applied**: the BBC's real
+line settings are whatever the guest OS programs into the MC6850/Serial ULA, and
+re-timing the hardware from the network would desync the OS's RAM copy of those
+settings. The queues absorb any rate mismatch (see [Baud and the rate
+mismatch](#baud-and-the-rate-mismatch)).
+
+**Deliberately NOT implemented (with fall-backs)**
+
+- **`BREAK`.** A BREAK is the line held in the space state longer than a
+  character frame — a *condition*, not a byte — so it can't traverse the byte
+  queue. *Fall-back:* a BBC-transmitted break is silently not propagated to the
+  remote (no data flows while the guest holds break; normal data resumes when it
+  clears), and a `BREAK` request from a remote/client is ignored (not injected
+  into the BBC's receiver).
+- **`NOTIFY-LINESTATE`** (framing / parity / overrun / break flags). Also
+  sub-byte. *Fall-back:* line errors on the remote link are invisible to the BBC
+  (a corrupted byte arrives as-is or is dropped by the remote); the server emits
+  no line-state, so a client sees a steady "no errors" state.
+- **Honouring the line/modem-state masks and flow-control *enforcement*.** The
+  masks are echo-accepted but not used to filter notifications; flow control
+  beyond the connection-state + RTS/CTS gating is not enforced.
+
+These can be revisited if a concrete need appears; none of them is commonly used
+by BBC serial software.
 
 ## Security
 
