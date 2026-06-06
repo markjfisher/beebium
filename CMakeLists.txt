@@ -120,6 +120,12 @@ if(BEEBIUM_BUILD_SERVICE)
         find_package(Protobuf REQUIRED)
     endif()
 
+    # gRPC's CONFIG-mode imported targets (e.g. Homebrew's) name OpenSSL::SSL and
+    # OpenSSL::Crypto in their link interface, so OpenSSL must be found before
+    # gRPC is or processing gRPCTargets.cmake fails with a missing target.
+    # Harmless on the Linux pkg-config / Windows vcpkg paths below.
+    find_package(OpenSSL QUIET)
+
     find_package(gRPC CONFIG QUIET)
     if(NOT gRPC_FOUND)
         if(WIN32)
