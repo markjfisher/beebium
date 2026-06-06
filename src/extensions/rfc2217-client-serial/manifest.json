@@ -27,6 +27,24 @@
             "description": "baud rate to set on the remote UART (real hardware)"
         },
         {
+            "key": "framing",
+            "type": "string",
+            "default": "8N1",
+            "description": "remote UART framing as <data><parity><stop> (data 5-8; parity N/O/E/M/S; stop 1/2), e.g. 8N1 or 7E1"
+        },
+        {
+            "key": "flow",
+            "type": "string",
+            "default": "none",
+            "description": "remote UART flow control: none, rtscts (hardware) or xonxoff"
+        },
+        {
+            "key": "dtr",
+            "type": "boolean",
+            "default": "true",
+            "description": "assert DTR on the remote UART (many devices/modems need it; the BBC connector has no DTR pin)"
+        },
+        {
             "key": "tx_buffer",
             "type": "integer",
             "default": "4096",
