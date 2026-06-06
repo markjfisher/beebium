@@ -89,6 +89,35 @@ TEST_CASE("RFC2217 client encodes flow control and DTR", "[rfc2217][codec]") {
     CHECK(dtr == Bytes{255, 250, 44, 5, 8, 255, 240});  // SET-CONTROL DTR_ON=8
 }
 
+TEST_CASE("RFC2217 client encodes SET-CONTROL BREAK", "[rfc2217][codec]") {
+    Rfc2217Codec codec(Rfc2217Codec::Role::Client);
+    Bytes on;
+    codec.encode_set_control(comport::CONTROL_BREAK_ON, on);
+    CHECK(on == Bytes{255, 250, 44, 5, 5, 255, 240});  // BREAK_ON = 5
+    Bytes off;
+    codec.encode_set_control(comport::CONTROL_BREAK_OFF, off);
+    CHECK(off == Bytes{255, 250, 44, 5, 6, 255, 240});  // BREAK_OFF = 6
+}
+
+TEST_CASE("RFC2217 client encodes SET-LINESTATE-MASK", "[rfc2217][codec]") {
+    Rfc2217Codec codec(Rfc2217Codec::Role::Client);
+    Bytes out;
+    codec.encode_set_linestate_mask(comport::LINESTATE_BREAK, out);
+    // SET-LINESTATE-MASK = 10; BREAK-detect bit = 0x10
+    CHECK(out == Bytes{255, 250, 44, 10, 0x10, 255, 240});
+}
+
+TEST_CASE("RFC2217 server encodes NOTIFY-LINESTATE break", "[rfc2217][codec]") {
+    Rfc2217Codec codec(Rfc2217Codec::Role::Server);
+    Bytes on;
+    codec.encode_notify_linestate(comport::LINESTATE_BREAK, on);
+    // SERVER NOTIFY-LINESTATE = 6 + 100 = 106; BREAK-detect bit = 0x10
+    CHECK(on == Bytes{255, 250, 44, 106, 0x10, 255, 240});
+    Bytes off;
+    codec.encode_notify_linestate(0, off);
+    CHECK(off == Bytes{255, 250, 44, 106, 0x00, 255, 240});
+}
+
 TEST_CASE("RFC2217 escapes IAC inside a subnegotiation payload", "[rfc2217][codec]") {
     Rfc2217Codec codec(Rfc2217Codec::Role::Client);
     Bytes out;

@@ -99,6 +99,18 @@ void Rfc2217Codec::encode_notify_modemstate(std::uint8_t state,
     encode_subneg(command_for_role(comport::NOTIFY_MODEMSTATE), payload, out);
 }
 
+void Rfc2217Codec::encode_set_linestate_mask(std::uint8_t mask,
+                                             std::vector<std::uint8_t>& out) const {
+    const std::uint8_t payload[] = {mask};
+    encode_subneg(command_for_role(comport::SET_LINESTATE_MASK), payload, out);
+}
+
+void Rfc2217Codec::encode_notify_linestate(std::uint8_t state,
+                                           std::vector<std::uint8_t>& out) const {
+    const std::uint8_t payload[] = {state};
+    encode_subneg(command_for_role(comport::NOTIFY_LINESTATE), payload, out);
+}
+
 bool Rfc2217Codec::supported_option(std::uint8_t option) const {
     return option == OPT_COM_PORT || option == OPT_BINARY || option == OPT_SGA;
 }
