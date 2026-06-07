@@ -27,10 +27,6 @@ from beebium.exceptions import BeebiumError
 from beebium.screen import dump_screen, screen_contains
 
 
-# Tube OSRDCH is slower than native (each keystroke traverses the R1/R2
-# protocol), so use a longer per-key delay than the default.
-TUBE_CYCLES_PER_KEY = 200_000
-
 # DFS ROM for the Acorn 1770 disc controller.
 # DNFS ROMs contain an 8271-only DFS and are NOT compatible with the 1770.
 DFS_1770_ROM_CANDIDATES = [

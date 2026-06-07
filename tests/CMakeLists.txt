@@ -952,6 +952,17 @@ target_compile_definitions(test_keyboard_typing PRIVATE
 )
 catch_discover_tests(test_keyboard_typing)
 
+# Keyboard pacing measurement harness (issue #49). Hidden [.] tests; run on
+# demand. BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS compiles the temporary scan-probe
+# observer into this target only (absent from shipping builds).
+add_executable(test_keyboard_pacing test_keyboard_pacing.cpp)
+target_link_libraries(test_keyboard_pacing PRIVATE beebium_core Catch2::Catch2WithMain)
+target_compile_definitions(test_keyboard_pacing PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS
+)
+catch_discover_tests(test_keyboard_pacing)
+
 # Keyboard lock keys tests (Caps Lock and Shift Lock)
 add_executable(test_keyboard_lock_keys test_keyboard_lock_keys.cpp)
 target_link_libraries(test_keyboard_lock_keys PRIVATE beebium_core Catch2::Catch2WithMain)

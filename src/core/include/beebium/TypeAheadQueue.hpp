@@ -43,15 +43,29 @@ namespace beebium {
 //
 class TypeAheadQueue {
 public:
-    // Default cycles per key (100000 at 2MHz = 50ms, proven reliable minimum)
-    static constexpr size_t DEFAULT_CYCLES_PER_KEY = 100000;
+    // Default key-down and key-up durations, in CPU cycles at 2 MHz.
+    //
+    // The MOS scans the keyboard at 100 Hz and only registers a key that is
+    // stable across two consecutive scans, so each phase must comfortably
+    // exceed ~25 ms (measured floor; see tests/test_keyboard_pacing.cpp).
+    // 80000 cycles = 40 ms gives ~1.6x margin over that floor while staying
+    // well under the ~500 ms auto-repeat threshold. Hold and gap are
+    // independent: a too-short hold drops keys, a too-short gap merges
+    // repeated keys (the "OPALSS" failure). They are NOT two halves of one
+    // budget -- coupling them was the cause of the old unreliability.
+    static constexpr size_t DEFAULT_HOLD_CYCLES = 80000;  // 40 ms key-down
+    static constexpr size_t DEFAULT_GAP_CYCLES = 80000;   // 40 ms key-up
 
     explicit TypeAheadQueue(KeyboardMatrix& keyboard);
 
     // Enqueue a string to type (thread-safe)
     // All characters must be typeable on BBC keyboard.
-    // Returns false if string contains unmappable characters.
-    bool enqueue(std::string_view text, size_t cycles_per_key = DEFAULT_CYCLES_PER_KEY);
+    // hold_cycles: cycles each key is held down; gap_cycles: cycles released
+    // before the next key. Returns false if the string contains unmappable
+    // characters.
+    bool enqueue(std::string_view text,
+                 size_t hold_cycles = DEFAULT_HOLD_CYCLES,
+                 size_t gap_cycles = DEFAULT_GAP_CYCLES);
 
     // Called each machine cycle from the emulator main loop
     // Updates keyboard state based on timing.
@@ -81,7 +95,8 @@ private:
     // Pending entry in the queue
     struct QueueEntry {
         std::string text;
-        size_t cycles_per_key;
+        size_t hold_cycles;
+        size_t gap_cycles;
     };
 
     // Advance to next character or string (called with mutex held)
@@ -100,7 +115,8 @@ private:
     State state_ = State::Idle;
     std::string current_text_;
     size_t current_index_ = 0;
-    size_t current_cycles_per_key_ = DEFAULT_CYCLES_PER_KEY;
+    size_t current_hold_cycles_ = DEFAULT_HOLD_CYCLES;
+    size_t current_gap_cycles_ = DEFAULT_GAP_CYCLES;
     size_t cycle_count_ = 0;
 
     // Current key state

@@ -19,14 +19,14 @@ TypeAheadQueue::TypeAheadQueue(KeyboardMatrix& keyboard)
     : keyboard_(keyboard) {
 }
 
-bool TypeAheadQueue::enqueue(std::string_view text, size_t cycles_per_key) {
+bool TypeAheadQueue::enqueue(std::string_view text, size_t hold_cycles, size_t gap_cycles) {
     // Validate all characters before enqueuing
     if (!is_typeable(text)) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    queue_.push(QueueEntry{std::string(text), cycles_per_key});
+    queue_.push(QueueEntry{std::string(text), hold_cycles, gap_cycles});
     return true;
 }
 
@@ -41,7 +41,8 @@ void TypeAheadQueue::tick() {
                 }
                 // Pop next string from queue
                 current_text_ = std::move(queue_.front().text);
-                current_cycles_per_key_ = queue_.front().cycles_per_key;
+                current_hold_cycles_ = queue_.front().hold_cycles;
+                current_gap_cycles_ = queue_.front().gap_cycles;
                 queue_.pop();
             }
             current_index_ = 0;
@@ -56,8 +57,8 @@ void TypeAheadQueue::tick() {
 
         case State::KeyDown: {
             cycle_count_++;
-            if (cycle_count_ >= current_cycles_per_key_ / 2) {
-                // Release key after half the cycle time
+            if (cycle_count_ >= current_hold_cycles_) {
+                // Release key after the key-down hold time
                 release_current_key();
                 cycle_count_ = 0;
                 state_ = State::KeyUp;
@@ -67,8 +68,8 @@ void TypeAheadQueue::tick() {
 
         case State::KeyUp: {
             cycle_count_++;
-            if (cycle_count_ >= current_cycles_per_key_ / 2) {
-                // Move to next character after remaining cycle time
+            if (cycle_count_ >= current_gap_cycles_) {
+                // Move to next character after the key-up gap time
                 current_index_++;
                 cycle_count_ = 0;
 

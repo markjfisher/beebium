@@ -297,9 +297,6 @@ struct Beebium_TypeQuicklyRequest: Sendable {
   /// UTF-8 string to type
   var text: String = String()
 
-  /// Optional: cycles per keystroke (default 100000)
-  var cyclesPerKey: UInt32 = 0
-
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1045,7 +1042,7 @@ extension Beebium_BreakKeyState: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
 extension Beebium_TypeQuicklyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".TypeQuicklyRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0\u{3}cycles_per_key\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}text\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1054,7 +1051,6 @@ extension Beebium_TypeQuicklyRequest: SwiftProtobuf.Message, SwiftProtobuf._Mess
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.text) }()
-      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.cyclesPerKey) }()
       default: break
       }
     }
@@ -1064,15 +1060,11 @@ extension Beebium_TypeQuicklyRequest: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if !self.text.isEmpty {
       try visitor.visitSingularStringField(value: self.text, fieldNumber: 1)
     }
-    if self.cyclesPerKey != 0 {
-      try visitor.visitSingularUInt32Field(value: self.cyclesPerKey, fieldNumber: 2)
-    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Beebium_TypeQuicklyRequest, rhs: Beebium_TypeQuicklyRequest) -> Bool {
     if lhs.text != rhs.text {return false}
-    if lhs.cyclesPerKey != rhs.cyclesPerKey {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

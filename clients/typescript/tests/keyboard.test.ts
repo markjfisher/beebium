@@ -44,23 +44,13 @@ function makeKeyboardStub() {
 
 describe("Keyboard", () => {
     describe("type", () => {
-        it("sends TypeQuicklyRequest with correct text and cyclesPerKey", async () => {
+        it("sends TypeQuicklyRequest with the text and no timing knob", async () => {
             const stub = makeKeyboardStub();
             const kb = new Keyboard(stub as any);
-            const pending = await kb.type("PRINT 42\r", 1000);
+            const pending = await kb.type("PRINT 42\r");
             expect(pending).toBe(9);
             expect(stub.typeQuickly).toHaveBeenCalledWith(
-                { text: "PRINT 42\r", cyclesPerKey: 1000 },
-                expect.any(Function),
-            );
-        });
-
-        it("uses default cyclesPerKey of 0", async () => {
-            const stub = makeKeyboardStub();
-            const kb = new Keyboard(stub as any);
-            await kb.type("hello");
-            expect(stub.typeQuickly).toHaveBeenCalledWith(
-                { text: "hello", cyclesPerKey: 0 },
+                { text: "PRINT 42\r" },
                 expect.any(Function),
             );
         });

@@ -189,7 +189,8 @@ message BreakKeyState {
 // Enqueue text for typing at machine speed (non-blocking, returns immediately)
 message TypeQuicklyRequest {
     string text = 1;              // UTF-8 string to type
-    uint32 cycles_per_key = 2;    // Optional: cycles per keystroke (default 100000)
+    // No timing knob: the server paces keystrokes reliably on its own.
+    // For deliberate custom timing, drive KeyDown/KeyUp directly instead.
 }
 
 message TypeQuicklyResponse {
