@@ -295,6 +295,40 @@ print(f"TOP={bbc.basic.get_top():04X}")
 print(f"HIMEM={bbc.basic.get_himem():04X}")
 ```
 
+### Reading the MODE 7 Screen
+
+`beebium.screen` reads what is actually displayed in MODE 7 (teletext),
+correcting for hardware scrolling: the BBC scrolls by moving the CRTC display
+start, so a fixed read of `0x7C00` returns a rotated grid once the screen has
+scrolled. These helpers anchor the read at the CRTC screen-start, so they take
+the client (not just `bbc.memory`).
+
+```python
+from beebium.screen import (
+    read_mode7_screen, screen_contains, find, dump_screen,
+)
+
+# 25 rows of 40 characters, in display order
+rows = read_mode7_screen(bbc)
+
+# Is some text on screen? (tolerant of words wrapped across lines)
+if screen_contains(bbc, "BBC Computer 32K"):
+    ...
+
+# Where is it? -> (row, column), or None
+location = find(bbc, ">")
+
+# Formatted dump (with the screen-start address) for diagnostics
+print(dump_screen(bbc))
+```
+
+Lower-level building blocks compose for custom needs: `read_mode7_cells(bbc)`
+returns the raw 25x40 byte grid, `cells_to_text(cells)` renders it as text, and
+`linearise(rows, separator)` flattens it for searching (with separator
+strategies `spaced`, `lined`, `no_separator`, and `dewrapped`). Read the screen
+while the machine is paused or settled, so the screen-start and memory describe
+one frame.
+
 ## pytest Integration
 
 The beebium pytest fixtures are auto-registered. After installing beebium, they're available in your tests:

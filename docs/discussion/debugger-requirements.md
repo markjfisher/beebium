@@ -363,7 +363,7 @@ event = system.host.debugger.wait_for_stop()
 
 # Client-side predicate (periodic peek, no stop during evaluation)
 system.run_until(
-    lambda: screen_contains(bbc.memory, "Initialising"),
+    lambda: screen_contains(bbc, "Initialising"),
     emulated_seconds=10.0)
 ```
 
