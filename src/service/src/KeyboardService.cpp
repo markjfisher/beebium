@@ -190,14 +190,9 @@ grpc::Status KeyboardServiceImpl::TypeQuickly(
 
     const std::string& text = request->text();
 
-    // Use default cycles if not specified (0 means use default)
-    size_t cycles_per_key = request->cycles_per_key();
-    if (cycles_per_key == 0) {
-        cycles_per_key = TypeAheadQueue::DEFAULT_CYCLES_PER_KEY;
-    }
-
-    // Enqueue the text
-    bool accepted = keyboard_.type_ahead().enqueue(text, cycles_per_key);
+    // Pacing is the server's responsibility; the queue applies its reliable
+    // default hold/gap. Clients needing custom timing use KeyDown/KeyUp.
+    bool accepted = keyboard_.type_ahead().enqueue(text);
 
     if (!accepted) {
         response->set_accepted(false);

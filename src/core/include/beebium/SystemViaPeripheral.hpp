@@ -23,6 +23,13 @@
 #include <cstdint>
 #include <memory>
 
+// Keyboard scan diagnostics are temporary measurement scaffolding, compiled in
+// only when BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS is defined (the pacing test target
+// sets it). Shipping builds carry no observer member and no per-access branch.
+#ifdef BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS
+#include <functional>
+#endif
+
 namespace beebium {
 
 // System VIA Peripheral - connects keyboard matrix and addressable latch
@@ -113,6 +120,16 @@ public:
             // Regular key matrix lookup
             pressed = keyboard_.is_key_pressed(row, column);
         }
+
+#ifdef BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS
+        // Observe the MOS keyboard scan: every Port A access that probes a key
+        // (the MOS writes a key number, then reads back bit 7) passes through
+        // here. Reveals the scan cadence without injecting anything. Present
+        // only in diagnostic builds.
+        if (keyboard_probe_observer_) {
+            keyboard_probe_observer_(row, column, pressed);
+        }
+#endif
 
         // Return the key number with bit 7 set if pressed/made
         if (pressed) {
@@ -277,6 +294,15 @@ public:
     // Tick the type-ahead queue (call from emulator main loop)
     void tick_type_ahead() { type_ahead_->tick(); }
 
+#ifdef BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS
+    // Diagnostic: observe every MOS Port A key probe (row, column, pressed).
+    // Pass nullptr to disable. Intended for measuring keyboard scan cadence.
+    using KeyboardProbeObserver = std::function<void(uint8_t row, uint8_t column, bool pressed)>;
+    void set_keyboard_probe_observer(KeyboardProbeObserver observer) {
+        keyboard_probe_observer_ = std::move(observer);
+    }
+#endif
+
     // Sound chip integration (optional)
     void set_sound_chip(Sn76489* chip) { sound_chip_ = chip; }
     Sn76489* sound_chip() const { return sound_chip_; }
@@ -337,6 +363,11 @@ private:
 
     // Type-ahead queue for TypeQuickly functionality
     std::unique_ptr<TypeAheadQueue> type_ahead_;
+
+#ifdef BEEBIUM_KEYBOARD_SCAN_DIAGNOSTICS
+    // Diagnostic observer for MOS keyboard scan probes (diagnostic builds only)
+    KeyboardProbeObserver keyboard_probe_observer_;
+#endif
 
     // Sound chip integration (optional)
     Sn76489* sound_chip_ = nullptr;

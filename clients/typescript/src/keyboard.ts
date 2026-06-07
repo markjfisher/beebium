@@ -139,27 +139,28 @@ export class Keyboard {
     // =========================================================================
 
     /**
-     * Type a string of text, paced in emulator cycles.
+     * Type a string of text, paced reliably by the server.
      *
      * The text is enqueued and typed character-by-character as the
      * emulator runs. Use `\r` for RETURN, `\x1b` for ESCAPE,
      * `\x7f` for DELETE, and `\t` for TAB.
      *
      * Returns immediately; the emulator must be running for the
-     * keystrokes to be processed.
+     * keystrokes to be processed. The server paces keystrokes to be
+     * reliably registered by the MOS keyboard scan, so there is no
+     * timing knob to tune. For deliberate custom timing, drive
+     * `keyDown` / `keyUp` directly.
      *
      * @param text - The text to type.
-     * @param cyclesPerKey - CPU cycles per keystroke (0 = use server default).
      * @returns Total pending characters in queue after enqueue.
      * @throws Error if text contains unmappable characters.
      */
-    async type(text: string, cyclesPerKey: number = 0): Promise<number> {
+    async type(text: string): Promise<number> {
         const response = await promisify<
-            { text: string; cyclesPerKey: number },
+            { text: string },
             TypeQuicklyResponse
         >(this._stub as unknown as Record<string, Function>, "typeQuickly", {
             text,
-            cyclesPerKey,
         });
         if (!response.accepted) {
             throw new Error(`Text rejected: ${response.error}`);

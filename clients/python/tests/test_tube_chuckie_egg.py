@@ -50,7 +50,6 @@ _skip_windows_ci = pytest.mark.skipif(
 )
 
 from tube_test_helpers import (
-    TUBE_CYCLES_PER_KEY,
     run_until_or_timeout,
     dump_diagnostics,
 )
@@ -81,7 +80,7 @@ def _boot_to_text(bbc: Beebium, disc_filepath: Path, target_text: str,
                   emulated_seconds: float = 15.0) -> bool:
     """Insert disc, *EXEC !BOOT, and run until target_text appears on screen."""
     bbc.disc.drive(0).insert(disc_filepath)
-    bbc.keyboard.type("*EXEC !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
+    bbc.keyboard.type("*EXEC !BOOT\r")
     return run_until_or_timeout(
         bbc,
         lambda: screen_contains(bbc, target_text),
@@ -155,7 +154,7 @@ class TestTubeChuckieEggBoot:
     ) -> None:
         """Game loads fully and reaches the title screen."""
         bbc_tube.disc.drive(0).insert(chuckie_egg_disc_filepath)
-        bbc_tube.keyboard.type("*EXEC !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
+        bbc_tube.keyboard.type("*EXEC !BOOT\r")
 
         # Wait for "A game of skill" which appears on the title screen
         # after disc loading, decompression, loading bar, and game

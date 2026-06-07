@@ -40,7 +40,6 @@ _skip_windows_ci = pytest.mark.skipif(
 )
 
 from tube_test_helpers import (
-    TUBE_CYCLES_PER_KEY,
     run_until_or_timeout,
     dump_diagnostics,
 )
@@ -168,7 +167,7 @@ class TestTubeEliteBoot:
                     return True
             return False
 
-        bbc_tube.keyboard.type("*.\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
+        bbc_tube.keyboard.type("*.\r")
 
         found = run_until_or_timeout(
             bbc_tube, _catalog_visible, emulated_seconds=30.0,
@@ -186,7 +185,7 @@ class TestTubeEliteBoot:
         """Type *RUN !BOOT and check for Elite loading screen."""
         bbc_tube.disc.drive(0).insert(elite_disc_filepath)
 
-        bbc_tube.keyboard.type("*RUN !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
+        bbc_tube.keyboard.type("*RUN !BOOT\r")
 
         # Poll for Elite loading text. The !BOOT loader briefly displays
         # "6502 Second Processor ELITE" in Mode 7 before switching to a

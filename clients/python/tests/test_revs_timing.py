@@ -138,7 +138,7 @@ def _navigate_to_gameplay(bbc: Beebium) -> bool:
             for i, row in enumerate(rows):
                 print(f"  Row {i:2d}: [{row}]")
             return False
-        bbc.keyboard.type(key, cycles_per_key=0)
+        bbc.keyboard.type(key)
     # Give the game time to enter its custom screen mode
     bbc.run_for_emulated_seconds(2.0)
     return True

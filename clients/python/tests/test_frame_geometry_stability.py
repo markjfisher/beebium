@@ -143,7 +143,7 @@ class TestFrameGeometryStability:
         """Bitmap modes (R8=0): geometry should be stable after mode switch."""
         bbc = bbc_mode7
         # Switch to the target mode
-        bbc.keyboard.type(f"MODE {mode}\r", cycles_per_key=0)
+        bbc.keyboard.type(f"MODE {mode}\r")
         bbc.run_for_emulated_seconds(1.0)
 
         frames = _capture_frames_while_running(bbc, NUM_FRAMES)

@@ -126,19 +126,21 @@ class Keyboard:
 
     # High-level text input (cycle-paced via server-side TypeAheadQueue)
 
-    def type(self, text: str, cycles_per_key: int = 0) -> int:
-        """Type a string of text, paced in emulator cycles.
+    def type(self, text: str) -> int:
+        """Type a string of text, paced reliably by the server.
 
         The text is enqueued and typed character-by-character as the
         emulator runs. Use ``\\r`` for RETURN, ``\\x1b`` for ESCAPE,
         ``\\x7f`` for DELETE, and ``\\t`` for TAB.
 
         Returns immediately; the emulator must be running for the
-        keystrokes to be processed.
+        keystrokes to be processed. The server paces keystrokes to be
+        reliably registered by the MOS keyboard scan, so there is no
+        timing knob to tune. For deliberate custom timing, drive
+        :meth:`key_down` / :meth:`key_up` directly.
 
         Args:
             text: The text to type.
-            cycles_per_key: CPU cycles per keystroke (0 = use server default).
 
         Returns:
             Total pending characters in queue after enqueue.
@@ -146,10 +148,7 @@ class Keyboard:
         Raises:
             ValueError: If text contains unmappable characters.
         """
-        request = keyboard_pb2.TypeQuicklyRequest(
-            text=text,
-            cycles_per_key=cycles_per_key,
-        )
+        request = keyboard_pb2.TypeQuicklyRequest(text=text)
         response = self._stub.TypeQuickly(request)
         if not response.accepted:
             raise ValueError(f"Text rejected: {response.error}")

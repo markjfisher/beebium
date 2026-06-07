@@ -82,9 +82,9 @@ def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):
     bbc.memory.address.bus[_DONE] = 0
 
     for line, echo in _PROGRAM:
-        bbc.keyboard.type(line + "\r", cycles_per_key=0)
+        bbc.keyboard.type(line + "\r")
         _until(bbc, lambda e=echo: screen_contains(bbc, e))  # line was entered
-    bbc.keyboard.type("RUN\r", cycles_per_key=0)
+    bbc.keyboard.type("RUN\r")
 
     # The guest transmits until the device buffer fills and the ULA asserts /CTS;
     # with the client refusing to drain it stalls there -- yet the host stays
