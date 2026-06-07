@@ -464,9 +464,7 @@ def test_osword_72_correct_cb_with_tube(
                     "See diagnostics above."
                 )
 
-            from beebium.screen import read_mode7_screen
-            screen_text = "\n".join(read_mode7_screen(bbc))
-            assert "DONE" in screen_text
+            assert screen_contains(bbc, "DONE")
             print(f"Screen:\n{dump_screen(bbc)}")
 
     except ServerNotFoundError as e:
