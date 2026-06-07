@@ -40,7 +40,10 @@ fi
 echo "== list-extensions (ABI lib load via RPATH + plugin discovery) =="
 ext_out="$("${server}" list-extensions)" || fail "list-extensions exited non-zero"
 echo "${ext_out}"
-for plugin in scsi-hdd acorn-rtc piconet; do
+# One plugin of each kind plus the network-serial extensions (rpc-serial pulls in
+# gRPC, so its presence also proves those deps resolve from the installed tree).
+expected_plugins="scsi-hdd acorn-rtc piconet ip232-serial rpc-serial loopback-serial rfc2217-client-serial rfc2217-server-serial"
+for plugin in ${expected_plugins}; do
     echo "${ext_out}" | grep -q "${plugin}" \
         || fail "plugin '${plugin}' not discovered from the installed tree"
 done
@@ -55,7 +58,7 @@ linkdir="$(mktemp -d)"
 ln -s "${server}" "${linkdir}/beebium-model-b"
 bare_out="$(PATH="${linkdir}:${PATH}" beebium-model-b list-extensions)" \
     || fail "bare-command list-extensions exited non-zero"
-for plugin in scsi-hdd acorn-rtc piconet; do
+for plugin in ${expected_plugins}; do
     echo "${bare_out}" | grep -q "${plugin}" \
         || fail "plugin '${plugin}' not discovered under bare-command invocation -- argv[0]-based discovery has regressed"
 done
