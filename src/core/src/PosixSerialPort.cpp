@@ -12,36 +12,56 @@
 
 #ifndef _WIN32
 
-#include "beebium/econet/piconet/PosixSerialPort.hpp"
+#include "beebium/serial/PosixSerialPort.hpp"
 
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
 
-namespace beebium::piconet {
+namespace beebium::serial {
 
 namespace {
 
-// Configure a tty fd for raw 115200 8N1 (cfmakeraw + cfsetspeed), with
+// Map an integer baud rate to a termios speed_t. Falls back to B115200 for
+// unrecognised rates (with the actual data transfer unaffected for ptys).
+speed_t baud_to_speed(int baud) {
+    switch (baud) {
+        case 75:     return B75;
+        case 150:    return B150;
+        case 300:    return B300;
+        case 1200:   return B1200;
+        case 2400:   return B2400;
+        case 4800:   return B4800;
+        case 9600:   return B9600;
+        case 19200:  return B19200;
+        case 38400:  return B38400;
+        case 57600:  return B57600;
+        case 115200: return B115200;
+        default:     return B115200;
+    }
+}
+
+// Configure a tty fd for raw <baud> 8N1 (cfmakeraw + cfsetspeed), with
 // VMIN=0, VTIME=0 so reads don't block (we use select() for timing).
 //
 // Non-tty devices (e.g. /dev/null in unit tests) cause tcgetattr/tcsetattr
 // to fail; we log and proceed without termios configuration. The fd is
 // still usable for read()/write(), which is enough for plumbing tests.
-// On a real Piconet device this would never happen.
-void configure_tty(int fd, const std::string& path) {
+void configure_tty(int fd, const std::string& path, int baud) {
     termios tty{};
     if (tcgetattr(fd, &tty) != 0) {
         return;  // Not a tty -- proceed without termios setup.
     }
 
     cfmakeraw(&tty);
-    cfsetispeed(&tty, B115200);
-    cfsetospeed(&tty, B115200);
+    speed_t speed = baud_to_speed(baud);
+    cfsetispeed(&tty, speed);
+    cfsetospeed(&tty, speed);
 
     tty.c_cflag &= ~PARENB;   // No parity
     tty.c_cflag &= ~CSTOPB;   // 1 stop bit
@@ -56,27 +76,21 @@ void configure_tty(int fd, const std::string& path) {
     if (tcsetattr(fd, TCSANOW, &tty) != 0) {
         std::cerr << "PosixSerialPort: tcsetattr(" << path
                   << ") failed: " << std::strerror(errno) << "\n";
-        // Still proceed: the fd is open and the subsequent read/write may
-        // work in unit tests. For real Piconet devices this is unlikely.
     }
 }
 
 }  // namespace
 
-PosixSerialPort::PosixSerialPort(const std::string& device_path)
+PosixSerialPort::PosixSerialPort(const std::string& device_path, int baud_rate)
     : device_path_(device_path) {
     int fd = ::open(device_path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) {
-        // Capture the errno text into open_error_ before anything else
-        // can clobber errno, so PiconetEconetTransportExtension (and
-        // ultimately PiconetUi via the Indicator) can surface the
-        // diagnosis to the user.
         open_error_ = std::strerror(errno);
         std::cerr << "PosixSerialPort: open(" << device_path
                   << ") failed: " << open_error_ << "\n";
         return;
     }
-    configure_tty(fd, device_path);
+    configure_tty(fd, device_path, baud_rate);
     fd_.store(fd, std::memory_order_relaxed);
 }
 
@@ -90,8 +104,7 @@ ReadResult PosixSerialPort::read(std::span<std::uint8_t> buffer) {
         return ReadResult{0, false, true};
     }
 
-    // 100ms wait via select(). The reader thread checks shutdown_ after
-    // each return, so this bounds the join latency on destruction.
+    // 100ms wait via select() so a reader thread can poll a shutdown flag.
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(fd, &rfds);
@@ -132,6 +145,11 @@ WriteResult PosixSerialPort::write(std::span<const std::uint8_t> bytes) {
         ssize_t n = ::write(fd, bytes.data() + total, bytes.size() - total);
         if (n < 0) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Kernel tty buffer full; report what we managed to write so
+                // the caller can retry the remainder.
+                return WriteResult{total, false};
+            }
             return WriteResult{total, true};
         }
         if (n == 0) {
@@ -149,6 +167,16 @@ void PosixSerialPort::close() {
     }
 }
 
-}  // namespace beebium::piconet
+void PosixSerialPort::set_break(bool asserted) {
+    const int fd = fd_.load(std::memory_order_relaxed);
+    if (fd < 0) {
+        return;
+    }
+    // TIOCSBRK starts a continuous break; TIOCCBRK turns it off. (This is the
+    // asynchronous-break ioctl pair, distinct from tcsendbreak's timed break.)
+    ::ioctl(fd, asserted ? TIOCSBRK : TIOCCBRK);
+}
+
+}  // namespace beebium::serial
 
 #endif  // !_WIN32

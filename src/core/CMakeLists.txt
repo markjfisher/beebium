@@ -22,6 +22,22 @@ add_library(beebium_core STATIC
     $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsPosix.cpp>
     $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/EnumeratePortsWin32.cpp>
     include/beebium/serial/EnumeratePorts.hpp
+    # Host serial transport primitives (promoted from the piconet extension).
+    # POSIX compiles PosixSerialPort + PtyMaster; Windows compiles Win32SerialPort.
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PosixSerialPort.cpp>
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/src/PtyMaster.cpp>
+    $<$<BOOL:${WIN32}>:${CMAKE_CURRENT_SOURCE_DIR}/src/Win32SerialPort.cpp>
+    include/beebium/serial/HostSerialPort.hpp
+    include/beebium/serial/PosixSerialPort.hpp
+    include/beebium/serial/Win32SerialPort.hpp
+    include/beebium/serial/PtyMaster.hpp
+    # Shared cross-platform TCP transport (network-backed serial devices).
+    src/net/TcpClientSerialPort.cpp
+    src/net/TcpServerSerialPort.cpp
+    include/beebium/net/SocketPlatform.hpp
+    include/beebium/net/TcpClientSerialPort.hpp
+    include/beebium/net/TcpServerSerialPort.hpp
+    include/beebium/net/EndpointUrl.hpp
     include/beebium/Types.hpp
     include/beebium/CpuPolicy.hpp
     include/beebium/ModelBHardware.hpp
@@ -31,6 +47,11 @@ add_library(beebium_core STATIC
     include/beebium/Via6522Types.hpp
     include/beebium/MemoryMap.hpp
     include/beebium/BankBinding.hpp
+    include/beebium/devices/Mc6850.hpp
+    include/beebium/serial/SerialDevice.hpp
+    include/beebium/serial/SerialUla.hpp
+    include/beebium/serial/SerialSocket.hpp
+    include/beebium/serial/SerialConcepts.hpp
     include/beebium/devices/Ram.hpp
     include/beebium/devices/Rom.hpp
     include/beebium/devices/EmptySlot.hpp

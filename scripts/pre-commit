@@ -3,8 +3,11 @@
 # Pre-commit hook to verify Beebium copyright notices are present in source files
 # and automatically update the copyright year to the current year.
 #
-# Checks staged .swift, .h, .c, .hpp, .cpp files for the required copyright notice.
-# If the notice exists but has an outdated year, updates it and re-stages the file.
+# Checks staged .swift, .h, .c, .hpp, .cpp, .py files for the required license
+# notice and for the maintainer's copyright line. Additional contributor
+# copyright lines are welcome; the check only ensures the maintainer (Robert
+# Smallshire) remains in the set of names. If the maintainer's notice has an
+# outdated year, it is updated and the file re-staged.
 
 # Get current year
 current_year=$(date +%Y)
@@ -12,8 +15,11 @@ current_year=$(date +%Y)
 # Get list of staged files (excluding deleted files)
 staged_files=$(git diff --cached --name-only --diff-filter=d)
 
-# Track files missing copyright
+# Track files missing the license notice
 missing_copyright=()
+
+# Track files that have the license notice but not the maintainer's name
+missing_maintainer=()
 
 # Track files with updated year
 updated_year=()
@@ -32,9 +38,19 @@ for file in $staged_files; do
                 continue
             fi
 
-            # Check for Beebium copyright notice
+            # Skip example scripts (short demos, not core project code)
+            if [[ "$file" == *"/examples/"* ]]; then
+                continue
+            fi
+
+            # Check for the Beebium license notice (the GPL boilerplate body).
             if ! grep -q "This file is part of Beebium" "$file" 2>/dev/null; then
                 missing_copyright+=("$file")
+            # Require the maintainer (Robert Smallshire) among the copyright
+            # holders. Additional contributor copyright lines are welcome; this
+            # only ensures the maintainer's name is always in the set.
+            elif ! grep -qE "Copyright .*Robert Smallshire" "$file" 2>/dev/null; then
+                missing_maintainer+=("$file")
             else
                 # File has copyright notice - check if year needs updating
                 # Match various copyright patterns:
@@ -68,6 +84,23 @@ if [ ${#updated_year[@]} -ne 0 ]; then
         echo "  $file"
     done
     echo ""
+fi
+
+# Report and fail if any files have the license notice but not the maintainer
+if [ ${#missing_maintainer[@]} -ne 0 ]; then
+    echo "ERROR: The following files have the Beebium license notice but are"
+    echo "missing the maintainer copyright line (Robert Smallshire):"
+    echo ""
+    for file in "${missing_maintainer[@]}"; do
+        echo "  $file"
+    done
+    echo ""
+    echo "Keep a copyright line for Robert Smallshire alongside any contributor"
+    echo "lines, for example:"
+    echo "  // Copyright $current_year Robert Smallshire <robert@smallshire.org.uk>"
+    echo "  // Copyright $current_year Ada Lovelace <ada@example.com>"
+    echo ""
+    exit 1
 fi
 
 # Report and fail if any files are missing copyright

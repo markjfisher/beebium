@@ -1,0 +1,7 @@
+{
+    "name": "loopback-serial",
+    "display_name": "Loopback Serial",
+    "description": "Echo bytes the BBC transmits straight back to its serial receiver",
+    "library": "loopback-serial",
+    "cli": "loopback-serial"
+}

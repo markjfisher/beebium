@@ -22,6 +22,7 @@
 #include "Via6522.hpp"
 #include "VideoBinding.hpp"
 #include "econet/EconetConcepts.hpp"
+#include "serial/SerialConcepts.hpp"
 
 #include <6502/6502.h>
 #include <algorithm>
@@ -306,6 +307,18 @@ public:
                 state_.memory.econet_socket.tick_rising();
             } else {
                 state_.memory.econet_socket.tick_falling();
+            }
+        }
+
+        // Tick the serial ACIA + Serial ULA at 2MHz. The Serial ULA owns the
+        // transmit/receive bit clocks; exactly one of tick_rising/tick_falling
+        // fires per 2MHz cycle, so the bit clock advances once per CPU cycle.
+        // The ACIA IRQ is sampled below via poll_irq() (shared CPU IRQ line).
+        if constexpr (HasSerialSocket<MemoryPolicy>) {
+            if (is_rising) {
+                state_.memory.serial_socket.tick_rising();
+            } else {
+                state_.memory.serial_socket.tick_falling();
             }
         }
 
@@ -722,6 +735,16 @@ private:
                 state_.memory.econet_socket.tick_rising();
             } else {
                 state_.memory.econet_socket.tick_falling();
+            }
+        }
+
+        // Keep the serial bit clocks advancing during bus stretch cycles too,
+        // so in-flight characters are not stalled while the CPU is halted.
+        if constexpr (HasSerialSocket<MemoryPolicy>) {
+            if (is_rising) {
+                state_.memory.serial_socket.tick_rising();
+            } else {
+                state_.memory.serial_socket.tick_falling();
             }
         }
 

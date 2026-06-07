@@ -28,40 +28,48 @@ void ParasiteRunner::reset() {
     cpu_.reset();
 }
 
+bool ParasiteRunner::check_breakpoints() {
+    // Check breakpoints before tick(), when register updates are complete and
+    // the CPU is about to decode the next opcode.
+    if (breakpoint_entries_.empty() || !M6502_IsAboutToExecute(&cpu_.cpu())) {
+        return false;
+    }
+    const uint16_t pc = cpu_.cpu().opcode_pc.w;
+    for (auto& bp : breakpoint_entries_) {
+        if (bp.start > pc) break;
+        if (bp.matches(pc)) {
+            if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
+            if (paused_) return true;
+        }
+    }
+    return false;
+}
+
+bool ParasiteRunner::check_watchpoints() {
+    // Watchpoint check (every bus access, after tick).
+    if (watchpoint_entries_.empty()) return false;
+    const uint16_t addr = cpu_.cpu().abus.w;
+    const bool is_write = !cpu_.cpu().read;
+    for (const auto& wp : watchpoint_entries_) {
+        if (wp.start > addr) break;
+        if (wp.matches(addr, is_write)) {
+            if (on_watchpoint_hit_) {
+                on_watchpoint_hit_(wp, addr, cpu_.cpu().dbus, is_write);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 void ParasiteRunner::run(uint64_t cycles) {
     uint64_t batch_end = cpu_.cycle_count() + cycles;
 
     while (cpu_.cycle_count() < batch_end) {
         if (paused_) return;
-
-        // Check breakpoints before tick(), when register updates are complete.
-        if (!breakpoint_entries_.empty() && M6502_IsAboutToExecute(&cpu_.cpu())) {
-            uint16_t pc = cpu_.cpu().opcode_pc.w;
-            for (auto& bp : breakpoint_entries_) {
-                if (bp.start > pc) break;
-                if (bp.matches(pc)) {
-                    if (on_breakpoint_hit_) on_breakpoint_hit_(bp, pc);
-                    if (paused_) return;
-                }
-            }
-        }
-
+        if (check_breakpoints()) return;
         cpu_.tick();
-
-        // Inline watchpoint check (every bus access, after tick)
-        if (!watchpoint_entries_.empty()) {
-            const uint16_t addr = cpu_.cpu().abus.w;
-            const bool is_write = !cpu_.cpu().read;
-            for (const auto& wp : watchpoint_entries_) {
-                if (wp.start > addr) break;
-                if (wp.matches(addr, is_write)) {
-                    if (on_watchpoint_hit_) {
-                        on_watchpoint_hit_(wp, addr, cpu_.cpu().dbus, is_write);
-                    }
-                    return;
-                }
-            }
-        }
+        if (check_watchpoints()) return;
     }
 }
 
@@ -70,7 +78,14 @@ uint64_t ParasiteRunner::step_instruction() {
 }
 
 void ParasiteRunner::step() {
+    // step() is the LIVE execution path: the parasite is ticked single-threaded
+    // from Machine::step() via TubeSocket::tick_parasite() -> tick() -> step().
+    // run() is never called outside tests, so the breakpoint and watchpoint
+    // checks must happen here -- otherwise parasite breakpoints never fire during
+    // normal execution.
+    if (check_breakpoints()) return;  // paused at the breakpoint PC; don't execute it
     cpu_.tick();
+    check_watchpoints();
     ++sequence_;
 }
 

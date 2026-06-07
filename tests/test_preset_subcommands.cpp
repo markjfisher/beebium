@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <beebium/PlatformUtils.hpp>
+#include <beebium/server/PresetLoader.hpp>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -300,6 +301,26 @@ TEST_CASE("create-preset: creates preset in user directory", "[integration][pres
     // Verify file was created
     auto preset_filepath = temp_dir.path() / "my-test-setup.preset.beebium";
     REQUIRE(std::filesystem::exists(preset_filepath));
+}
+
+TEST_CASE("create-preset: captures a serial extension that round-trips through the loader",
+          "[integration][preset][create-preset]") {
+    TempDirectory temp_dir;
+    auto output_filepath = temp_dir.path() / "serial.preset.beebium";
+
+    // create-preset accepts the same --<name> spec flags as `start`.
+    auto result = run_command(
+        EXECUTABLE + " create-preset --name \"Serial Box\" --output \"" +
+        output_filepath.string() + "\" --rpc-serial tx_buffer=256");
+    REQUIRE(result.exit_code == 0);
+    REQUIRE(std::filesystem::exists(output_filepath));
+
+    // Round-trip: PresetLoader parses exactly what create-preset emitted.
+    auto loaded = beebium::server::load_preset(output_filepath);
+    REQUIRE(loaded.success());
+    REQUIRE(loaded.config->extensions.size() == 1);
+    REQUIRE(loaded.config->extensions[0].name == "rpc-serial");
+    REQUIRE(loaded.config->extensions[0].config.at("tx_buffer") == "256");
 }
 
 TEST_CASE("create-preset --help: returns OK", "[integration][preset][create-preset]") {

@@ -464,6 +464,7 @@ void print_usage(const char* program_name) {
         std::cerr << "  --station <1-254>        Econet station number (enables Econet)\n";
     }
 
+
     std::cerr << "  --screen-mode <0-7>      Startup screen mode (default: 7)\n"
               << "  --auto-boot              Reverse SHIFT-BREAK action (SHIFT-BREAK boots)\n"
               << "  --links <0-255>          Raw startup options byte (mutually exclusive\n"
@@ -510,7 +511,8 @@ void print_usage(const char* program_name) {
             const auto& entries = tmp.extension_resolver.entries();
             if (!entries.empty()) {
                 std::cerr << "\n"
-                          << "Extensions (use describe-extension <name> for parameter detail):\n";
+                          << "Extensions -- configure as: --<name> key=value:key=value ...\n"
+                          << "(run 'describe-extension <name>' for each one's parameters):\n";
                 for (const auto& e : entries) {
                     std::cerr << "  --" << e.manifest->effective_cli_name();
                     if (!e.manifest->description.empty()) {
@@ -1706,6 +1708,9 @@ public:
             if constexpr (beebium::HasTubeSocket<Memory>) {
                 extension_registry.register_extension_point("tube");
             }
+            if constexpr (beebium::HasSerialPort<Memory>) {
+                extension_registry.register_extension_point("serial-port");
+            }
 
             // Note: extensions are loaded below from --<cli-name> flags
             // via the plugin path. test-scratch-ram used to be
@@ -1819,7 +1824,8 @@ public:
                 beebium::HasOneMHzBus<Memory> ? &machine.state().memory.one_mhz_bus() : nullptr,
                 beebium::HasUserPort<Memory> ? &machine.state().memory.user_port() : nullptr,
                 beebium::HasTubeSocket<Memory> ? &machine.state().memory.tube_socket : nullptr,
-                &machine.state().memory.indicators);
+                &machine.state().memory.indicators,
+                beebium::HasSerialPort<Memory> ? &machine.state().memory.serial_port() : nullptr);
             extension_registry.resolve_and_init(extension_context);
 
             // All registrations are complete -- close the registration window
@@ -2365,6 +2371,26 @@ public:
                 std::cout << " [" << source_label << "]\n";
                 if (!manifest->description.empty()) {
                     std::cout << "  " << manifest->description << "\n";
+                }
+                // Synthesised invocation form: the colon-separated key=value
+                // syntax the generic extension arg parser accepts. Required
+                // params are shown bare; optional ones are bracketed.
+                std::cout << "  Usage: --" << manifest->effective_cli_name();
+                if (!manifest->parameters.empty()) {
+                    std::cout << " ";
+                    bool first = true;
+                    for (const auto& p : manifest->parameters) {
+                        std::string token = p.key + "=<" + p.type + ">";
+                        if (p.required) {
+                            std::cout << (first ? "" : ":") << token;
+                        } else {
+                            std::cout << "[" << (first ? "" : ":") << token << "]";
+                        }
+                        first = false;
+                    }
+                    std::cout << "\n         (colon-separated key=value pairs)\n";
+                } else {
+                    std::cout << "\n";
                 }
                 std::cout << "  kind: " << manifest->extension_kind << "\n";
                 if (!manifest->provides.empty()) {
@@ -2949,6 +2975,10 @@ public:
                   << "  --release-date <date>     Release date (YYYY, YYYY-MM, or YYYY-MM-DD)\n"
                   << "  --fdc <id>                Disc controller for the FDC socket (e.g. acorn-1770)\n"
                   << "  --sideways SLOT:TYPE[:IMAGE]  Sideways slot (repeatable); same grammar as 'start'\n"
+                  << "  --<extension> [k=v:k=v]   Add an extension instance (repeatable); same\n"
+                  << "                            grammar as 'start' (e.g. --rpc-serial tx_buffer=256,\n"
+                  << "                            --host-serial mode=device:path=/dev/ttyUSB0:baud=9600).\n"
+                  << "                            See list-extensions / describe-extension <name>.\n"
                   << "\n"
                   << "The preset ID is derived by slugifying the name.\n"
                   << "Outputs the created preset ID (or path if --output used).\n";
@@ -2970,6 +3000,20 @@ public:
         std::string release_date;
         std::string fdc_id;
         std::vector<std::string> sideways_args;
+        std::vector<typename ServerConfig<MachineType>::ExtensionInstance> preset_extensions;
+
+        // Resolve extensions so create-preset accepts the same --<name> [k=v:...]
+        // flags as `start`, capturing each into the preset's extensions array.
+        ServerConfig<MachineType> resolver_cfg;
+        if (auto err = populate_extension_resolver(argv[0], {}, resolver_cfg)) {
+            return *err;
+        }
+        auto cli_name_to_manifest = resolver_cfg.extension_resolver.cli_name_map();
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
 
         for (int i = global.subcommand_argv_start; i < argc; ++i) {
             std::string arg = argv[i];
@@ -2988,6 +3032,26 @@ public:
                 fdc_id = argv[++i];
             } else if (arg == "--sideways" && i + 1 < argc) {
                 sideways_args.push_back(argv[++i]);
+            } else if (auto mit = cli_name_to_manifest.find(to_lower(arg));
+                       mit != cli_name_to_manifest.end()) {
+                // An extension flag (e.g. --rpc-serial, --host-serial). Consume an
+                // optional colon-separated spec and parse it like `start` does.
+                const auto* manifest = mit->second;
+                std::string spec;
+                if (i + 1 < argc && std::string_view(argv[i + 1]).substr(0, 2) != "--") {
+                    spec = argv[++i];
+                }
+                auto parse_result = beebium::parse_extension_args(
+                    manifest->effective_cli_name(), spec, manifest->parameters);
+                if (!parse_result.ok) {
+                    std::cerr << "Error: " << parse_result.error << "\n";
+                    return ExitCode::USAGE;
+                }
+                typename ServerConfig<MachineType>::ExtensionInstance inst;
+                inst.name = std::string(manifest->name);
+                inst.config = std::move(parse_result.config);
+                inst.list_config = std::move(parse_result.list_config);
+                preset_extensions.push_back(std::move(inst));
             } else {
                 std::cerr << "Unknown argument: " << arg << "\n";
                 help(argv[0]);
@@ -3066,6 +3130,48 @@ public:
                 slots.push_back(slot);
             }
             preset["sideways_bank"]["slots"] = slots;
+        }
+
+        // Extensions captured from --<name> flags, emitted into the same
+        // "extensions" array PresetLoader reads back. Appended to any inherited
+        // via --from. Values are typed per the manifest schema for clean JSON.
+        if (!preset_extensions.empty()) {
+            auto param_type = [&](const std::string& ext_name, const std::string& key) {
+                if (const auto* m = resolver_cfg.extension_resolver.find_by_name(ext_name)) {
+                    for (const auto& p : m->parameters) {
+                        if (p.key == key) return p.type;
+                    }
+                }
+                return std::string("string");
+            };
+            auto to_value = [](const std::string& type,
+                               const std::string& v) -> nlohmann::ordered_json {
+                if (type == "integer") {
+                    try { return nlohmann::ordered_json(std::stoll(v)); } catch (...) {}
+                } else if (type == "boolean") {
+                    return nlohmann::ordered_json(v == "true");
+                }
+                return nlohmann::ordered_json(v);
+            };
+            nlohmann::ordered_json exts = nlohmann::ordered_json::array();
+            if (preset.contains("extensions") && preset["extensions"].is_array()) {
+                exts = preset["extensions"];
+            }
+            for (const auto& inst : preset_extensions) {
+                nlohmann::ordered_json ext_json;
+                ext_json["name"] = inst.name;
+                nlohmann::ordered_json cfg = nlohmann::ordered_json::object();
+                for (const auto& [key, value] : inst.config) {
+                    if (value.empty()) continue;  // skip unset optionals (e.g. empty path)
+                    cfg[key] = to_value(param_type(inst.name, key), value);
+                }
+                for (const auto& [key, values] : inst.list_config) {
+                    cfg[key] = values;
+                }
+                if (!cfg.empty()) ext_json["config"] = cfg;
+                exts.push_back(std::move(ext_json));
+            }
+            preset["extensions"] = std::move(exts);
         }
 
         // Determine output path

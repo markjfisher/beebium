@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package beebium;
+
+// Client-driven serial peer ("rpc-serial"): the RPC client is the device on the
+// far end of the BBC's serial wire. The client injects bytes for the BBC to
+// receive (Send) and collects bytes the BBC has transmitted (Receive). This
+// service belongs to the rpc-serial PeripheralExtension, which owns the endpoint.
+service RpcSerial {
+    // Inject bytes for the BBC to receive (device -> Beeb).
+    rpc Send(RpcSerialSendRequest) returns (RpcSerialSendResponse);
+
+    // Collect bytes the BBC has transmitted (Beeb -> device).
+    rpc Receive(RpcSerialReceiveRequest) returns (RpcSerialReceiveResponse);
+
+    // Pending byte counts in each direction.
+    rpc GetStatus(RpcSerialStatusRequest) returns (RpcSerialStatus);
+}
+
+message RpcSerialSendRequest {
+    bytes data = 1;
+}
+
+message RpcSerialSendResponse {
+    // Number of bytes accepted (<= request size). Fewer than requested means the
+    // receive queue is full; the client should retry the unaccepted tail later.
+    uint32 accepted = 1;
+}
+
+message RpcSerialReceiveRequest {
+    uint32 max_bytes = 1;  // 0 = all currently available
+}
+
+message RpcSerialReceiveResponse {
+    bytes data = 1;  // bytes the BBC transmitted
+}
+
+message RpcSerialStatusRequest {}
+
+message RpcSerialStatus {
+    uint32 tx_pending = 1;  // bytes the BBC sent, awaiting Receive
+    uint32 rx_pending = 2;  // bytes queued (via Send) to deliver to the BBC
+}

@@ -18,6 +18,8 @@ OUT_DIR="$PROJECT_DIR/src/generated"
 SERVICE_PROTO_DIR="$REPO_ROOT/src/service/proto"
 AUN_PROTO_DIR="$REPO_ROOT/src/extensions/aun"
 PICONET_PROTO_DIR="$REPO_ROOT/src/extensions/piconet"
+RPC_SERIAL_PROTO_DIR="$REPO_ROOT/src/extensions/rpc-serial"
+HOST_SERIAL_PROTO_DIR="$REPO_ROOT/src/extensions/host-serial"
 EXTENSION_UI_PROTO_DIR="$REPO_ROOT/src/core/extension-api/proto"
 
 # ts-proto plugin path
@@ -43,11 +45,14 @@ PROTOS=(
     "$SERVICE_PROTO_DIR:keyboard.proto"
     "$SERVICE_PROTO_DIR:disc.proto"
     "$SERVICE_PROTO_DIR:econet.proto"
+    "$SERVICE_PROTO_DIR:serial.proto"
     "$SERVICE_PROTO_DIR:tube.proto"
     "$SERVICE_PROTO_DIR:econet_transport.proto"
     "$SERVICE_PROTO_DIR:indicator.proto"
     "$AUN_PROTO_DIR:aun.proto"
     "$PICONET_PROTO_DIR:piconet_service.proto"
+    "$RPC_SERIAL_PROTO_DIR:rpc_serial.proto"
+    "$HOST_SERIAL_PROTO_DIR:host_serial.proto"
     "$EXTENSION_UI_PROTO_DIR:extension_ui.proto"
 )
 
@@ -68,6 +73,8 @@ for entry in "${PROTOS[@]}"; do
         -I "$SERVICE_PROTO_DIR" \
         -I "$AUN_PROTO_DIR" \
         -I "$PICONET_PROTO_DIR" \
+        -I "$RPC_SERIAL_PROTO_DIR" \
+        -I "$HOST_SERIAL_PROTO_DIR" \
         -I "$EXTENSION_UI_PROTO_DIR" \
         "$proto_dir/$proto_filename"
 done

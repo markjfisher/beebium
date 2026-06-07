@@ -40,6 +40,7 @@ struct SidebarModeContent: View {
     @ObservedObject var audioClient: AudioClient
     @ObservedObject var audioMixerState: AudioMixerState
     @ObservedObject var econetClient: EconetClient
+    @ObservedObject var serialClient: SerialClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
     @ObservedObject var peripheralsClient: PeripheralsClient
     @ObservedObject var transportsClient: EconetTransportsClient
@@ -59,7 +60,8 @@ struct SidebarModeContent: View {
                 MemoryModeView(sidewaysClient: sidewaysClient)
             case .peripherals:
                 PeripheralsModeView(client: peripheralsClient,
-                                    extensionUiClient: extensionUiClient)
+                                    extensionUiClient: extensionUiClient,
+                                    serialClient: serialClient)
             case .video:
                 VideoModeView(videoSettings: videoSettings)
             case .sound:
@@ -591,6 +593,7 @@ struct SidebarModeContent_Previews: PreviewProvider {
             audioClient: AudioClient(),
             audioMixerState: AudioMixerState(),
             econetClient: EconetClient(),
+            serialClient: SerialClient(),
             extensionUiClient: ExtensionUiClient(),
             peripheralsClient: PeripheralsClient(),
             transportsClient: EconetTransportsClient(),

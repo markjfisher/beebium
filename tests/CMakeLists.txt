@@ -309,6 +309,139 @@ add_executable(test_mc6854 test_mc6854.cpp)
 target_link_libraries(test_mc6854 PRIVATE beebium_core Catch2::Catch2WithMain)
 catch_discover_tests(test_mc6854)
 
+# MC6850 ACIA (serial) tests
+add_executable(test_mc6850 test_mc6850.cpp)
+target_link_libraries(test_mc6850 PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_mc6850)
+
+# Serial ULA (SERPROC) tests
+add_executable(test_serial_ula test_serial_ula.cpp)
+target_link_libraries(test_serial_ula PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_serial_ula)
+
+# Serial socket + Model B memory-map integration tests
+add_executable(test_serial_socket test_serial_socket.cpp)
+target_link_libraries(test_serial_socket PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_serial_socket)
+
+# Shared endpoint-URL parser ([scheme://]host:port)
+add_executable(test_endpoint_url test_endpoint_url.cpp)
+target_link_libraries(test_endpoint_url PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_endpoint_url)
+
+# Shared TCP transport (TcpClientSerialPort) over an in-process loopback server
+add_executable(test_tcp_client_serial_port test_tcp_client_serial_port.cpp)
+target_link_libraries(test_tcp_client_serial_port
+    PRIVATE beebium_core Threads::Threads Catch2::Catch2WithMain)
+catch_discover_tests(test_tcp_client_serial_port)
+
+# TCP server transport (TcpServerSerialPort: listen/accept-one)
+add_executable(test_tcp_server_serial_port test_tcp_server_serial_port.cpp)
+target_link_libraries(test_tcp_server_serial_port
+    PRIVATE beebium_core Threads::Threads Catch2::Catch2WithMain)
+catch_discover_tests(test_tcp_server_serial_port)
+
+# IP232 escape codec (pure, golden-vector unit tests)
+add_executable(test_ip232_codec test_ip232_codec.cpp)
+target_include_directories(test_ip232_codec
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/ip232-serial)
+target_link_libraries(test_ip232_codec PRIVATE beebium_core Catch2::Catch2WithMain)
+catch_discover_tests(test_ip232_codec)
+
+# RFC 2217 codec (pure, golden-vector unit tests)
+add_executable(test_rfc2217_codec test_rfc2217_codec.cpp)
+target_link_libraries(test_rfc2217_codec
+    PRIVATE beebium_ext_rfc2217_common Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_codec)
+
+# RFC 2217 client endpoint (in-process echo-server fixture) + extension
+add_executable(test_rfc2217_client_endpoint test_rfc2217_client_endpoint.cpp)
+target_include_directories(test_rfc2217_client_endpoint
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-common)
+target_link_libraries(test_rfc2217_client_endpoint
+    PRIVATE beebium_ext_rfc2217_client beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_client_endpoint)
+
+add_executable(test_rfc2217_client_extension test_rfc2217_client_extension.cpp)
+target_include_directories(test_rfc2217_client_extension
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial)
+target_link_libraries(test_rfc2217_client_extension
+    PRIVATE beebium_ext_rfc2217_client beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_client_extension)
+
+# RFC 2217 server endpoint (real client<->server over TCP) + extension
+add_executable(test_rfc2217_server_endpoint test_rfc2217_server_endpoint.cpp)
+target_include_directories(test_rfc2217_server_endpoint
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_server_endpoint
+    PRIVATE beebium_ext_rfc2217_client beebium_ext_rfc2217_server beebium_core
+            Threads::Threads Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_server_endpoint)
+
+add_executable(test_rfc2217_server_extension test_rfc2217_server_extension.cpp)
+target_include_directories(test_rfc2217_server_extension
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_server_extension
+    PRIVATE beebium_ext_rfc2217_server beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_server_extension)
+
+# RFC 2217 interop against a real pySerial client (opt-in: skips when absent)
+add_executable(test_rfc2217_pyserial_client test_rfc2217_pyserial_client.cpp)
+target_include_directories(test_rfc2217_pyserial_client
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_rfc2217_pyserial_client
+    PRIVATE beebium_ext_rfc2217_server beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_rfc2217_pyserial_client
+    PROPERTIES SKIP_RETURN_CODE 4
+)
+
+# IP232 endpoint integration tests (against the in-process loopback server)
+add_executable(test_ip232_serial_endpoint test_ip232_serial_endpoint.cpp)
+target_link_libraries(test_ip232_serial_endpoint
+    PRIVATE beebium_ext_ip232_serial beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_ip232_serial_endpoint)
+
+# IP232 extension (attach / config parsing / shutdown)
+add_executable(test_ip232_serial_extension test_ip232_serial_extension.cpp)
+target_include_directories(test_ip232_serial_extension
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/ip232-serial)
+target_link_libraries(test_ip232_serial_extension
+    PRIVATE beebium_ext_ip232_serial beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+catch_discover_tests(test_ip232_serial_extension)
+
+# IP232 interop against a real tcpser (opt-in: skips cleanly when absent)
+add_executable(test_ip232_tcpser_integration test_ip232_tcpser_integration.cpp)
+target_include_directories(test_ip232_tcpser_integration
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/ip232-serial)
+target_link_libraries(test_ip232_tcpser_integration
+    PRIVATE beebium_ext_ip232_serial beebium_core Threads::Threads
+            Catch2::Catch2WithMain)
+# tcpser is optional: Catch2 returns 4 for a skipped run, which ctest then
+# reports as skipped rather than failed.
+catch_discover_tests(test_ip232_tcpser_integration
+    PROPERTIES SKIP_RETURN_CODE 4
+)
+
+# Serial PTY transport integration tests (POSIX-only: PtyMaster +
+# HostSerialEndpoint bridged through the SerialSocket to a PosixSerialPort).
+if(NOT WIN32)
+    add_executable(test_serial_pty test_serial_pty.cpp)
+    target_include_directories(test_serial_pty PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+    )
+    target_link_libraries(test_serial_pty PRIVATE
+        beebium_ext_host_serial Catch2::Catch2WithMain)
+    catch_discover_tests(test_serial_pty)
+endif()
+
 # Econet socket tests
 add_executable(test_econet_socket test_econet_socket.cpp)
 target_link_libraries(test_econet_socket PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -894,6 +1027,66 @@ target_compile_definitions(test_tube_extension PRIVATE
 )
 catch_discover_tests(test_tube_extension)
 
+# Host-serial extension test (POSIX-only: exercises a real pty).
+if(NOT WIN32)
+    add_executable(test_host_serial_extension test_host_serial_extension.cpp)
+    target_include_directories(test_host_serial_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+    )
+    target_link_libraries(test_host_serial_extension PRIVATE
+        beebium_ext_host_serial
+        beebium_extension_ui_proto
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_host_serial_extension)
+endif()
+
+# Host-serial endpoint test (cross-platform: stuck-peer back-pressure, no pty).
+add_executable(test_host_serial_endpoint test_host_serial_endpoint.cpp)
+target_include_directories(test_host_serial_endpoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/host-serial
+)
+target_link_libraries(test_host_serial_endpoint PRIVATE
+    beebium_ext_host_serial
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_host_serial_endpoint)
+
+# Serial-loopback extension test (cross-platform; no pty).
+add_executable(test_loopback_serial_extension test_loopback_serial_extension.cpp)
+target_include_directories(test_loopback_serial_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/extensions/loopback-serial
+)
+target_link_libraries(test_loopback_serial_extension PRIVATE
+    beebium_ext_loopback_serial
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_loopback_serial_extension)
+
+# rpc-serial extension test (needs the service layer for the RpcSerial proto).
+if(BEEBIUM_BUILD_SERVICE)
+    add_executable(test_rpc_serial_extension test_rpc_serial_extension.cpp)
+    target_include_directories(test_rpc_serial_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/extensions/rpc-serial
+    )
+    target_link_libraries(test_rpc_serial_extension PRIVATE
+        beebium_ext_rpc_serial
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_rpc_serial_extension)
+endif()
+
+# Serial extension UI panel (Peripherals sidebar; extension_ui.pb.h types). Only
+# host-serial has a panel; rpc-serial and loopback-serial are panel-less (the
+# sidebar lists them by name, but they have nothing to show or configure).
+add_executable(test_host_serial_ui test_host_serial_ui.cpp)
+target_link_libraries(test_host_serial_ui PRIVATE
+    beebium_ext_host_serial
+    beebium_extension_ui_proto
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(test_host_serial_ui)
+
 # Tube boot screen integration tests (host + parasite, real ROMs)
 add_executable(test_boot_tube test_boot_tube.cpp)
 target_link_libraries(test_boot_tube PRIVATE beebium_core Catch2::Catch2WithMain)
@@ -947,6 +1140,22 @@ target_compile_definitions(test_tube_ce2023_trace PRIVATE
     BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
 )
 catch_discover_tests(test_tube_ce2023_trace)
+
+# End-to-end serial BREAK: a beebasm-assembled 6502 program on an auto-booting
+# DFS disc drives/detects a break against a host peer (recording device / real
+# pySerial client). SKIPs when beebasm / ROMs / pySerial are absent.
+add_executable(test_serial_break_e2e test_serial_break_e2e.cpp)
+target_include_directories(test_serial_break_e2e
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-client-serial
+            ${CMAKE_SOURCE_DIR}/src/extensions/rfc2217-server-serial)
+target_link_libraries(test_serial_break_e2e
+    PRIVATE beebium_ext_rfc2217_client beebium_ext_rfc2217_server beebium_core
+            6502_lib Threads::Threads Catch2::Catch2WithMain)
+target_compile_definitions(test_serial_break_e2e PRIVATE
+    BEEBIUM_ROM_DIR="${BEEBIUM_ROM_DIR}"
+    BEEBIUM_TEST_ASSETS_DIR="${BEEBIUM_TEST_ASSETS_DIR}"
+)
+catch_discover_tests(test_serial_break_e2e PROPERTIES SKIP_RETURN_CODE 4)
 
 
 
@@ -1268,6 +1477,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
         beebium_ext_aun
+        beebium_ext_host_serial
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain
@@ -1288,6 +1498,7 @@ if(BEEBIUM_BUILD_SERVICE)
         beebium_ext_test_scratch_ram
         beebium_ext_acorn_65c02
         beebium_ext_aun
+        beebium_ext_host_serial
         nlohmann_json::nlohmann_json
         stb_image_write
         Catch2::Catch2WithMain
@@ -1326,8 +1537,12 @@ if(BEEBIUM_BUILD_SERVICE)
 
     # Preset subcommand integration tests
     add_executable(test_preset_subcommands test_preset_subcommands.cpp)
+    target_include_directories(test_preset_subcommands PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/server/include
+    )
     target_link_libraries(test_preset_subcommands PRIVATE
         beebium_core
+        nlohmann_json::nlohmann_json
         Catch2::Catch2WithMain
     )
     target_compile_definitions(test_preset_subcommands PRIVATE

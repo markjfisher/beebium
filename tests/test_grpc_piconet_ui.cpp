@@ -268,10 +268,17 @@ TEST_CASE("Piconet end-to-end: SubscribeView -> EditorCommit -> reopen -> next V
             REQUIRE(c.control_case() == beebium::Control::kModalEditor);
             REQUIRE(c.modal_editor().anchor().label().text() == expected_anchor);
             REQUIRE(c.modal_editor().editable());
-            REQUIRE(c.modal_editor().editor().control_case() ==
-                    beebium::Control::kEditableChoice);
-            REQUIRE(c.modal_editor().editor().editable_choice().value() ==
-                    replacement_fake.slave_path());
+            // The shared port picker is an EditableChoice when host ports are
+            // enumerated, or a plain TextInput when none are (e.g. Linux CI);
+            // both carry the chosen path as a string value.
+            const auto& editor = c.modal_editor().editor();
+            REQUIRE((editor.control_case() == beebium::Control::kEditableChoice ||
+                     editor.control_case() == beebium::Control::kTextInput));
+            const std::string editor_value =
+                editor.control_case() == beebium::Control::kEditableChoice
+                    ? editor.editable_choice().value()
+                    : editor.text_input().value();
+            REQUIRE(editor_value == replacement_fake.slave_path());
             found_final_anchor = true;
         }
     }

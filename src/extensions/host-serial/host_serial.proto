@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package beebium;
+
+// Typed config API for the host-serial extension: query and re-point the host
+// serial bridge (mode / path / baud) without going through the GUI ExtensionUi
+// path. This service belongs to the host-serial PeripheralExtension and is
+// present only when --host-serial is loaded. It drives the SAME underlying
+// re-point path (HostSerialEndpoint::request_reopen) as the GUI editor, so a
+// SetConfig and a GUI edit are equivalent and each is reflected in the other.
+service HostSerial {
+    // Read the current bridge configuration and open state.
+    rpc GetConfig(HostSerialGetConfigRequest) returns (HostSerialConfig);
+
+    // Re-point the bridge. A partial update: only the fields present in the
+    // request change; the rest are kept (the client sends just the diff). The
+    // re-point is applied asynchronously on the next emulation tick, so the
+    // returned config is a snapshot taken at call time and may still show the
+    // previous device until the re-point lands -- call GetConfig to confirm.
+    rpc SetConfig(HostSerialSetConfigRequest) returns (HostSerialConfig);
+}
+
+message HostSerialGetConfigRequest {}
+
+message HostSerialConfig {
+    string mode = 1;        // "pty" | "device"
+    string path = 2;        // pty slave path, or the opened device path
+    uint32 baud = 3;        // host line speed (device mode; informational for pty)
+    bool serial_open = 4;   // is the host port currently open?
+    string open_error = 5;  // OS error text when serial_open is false
+}
+
+// Partial update: each field is optional; only the present ones are applied,
+// diffed against the current config.
+message HostSerialSetConfigRequest {
+    // Only "device" is settable at runtime; "pty" is rejected (a pty can only be
+    // created at startup via --host-serial mode=pty). Any successful re-point
+    // results in device mode regardless, since the bridge opens a real device.
+    optional string mode = 1;
+    optional string path = 2;   // the device path to open
+    optional uint32 baud = 3;   // host line speed
+}

@@ -1,0 +1,15 @@
+{
+    "name": "rpc-serial",
+    "display_name": "RPC Serial",
+    "description": "Client-driven serial peer: inject/collect bytes via the RpcSerial service",
+    "library": "rpc-serial",
+    "cli": "rpc-serial",
+    "parameters": [
+        {
+            "key": "tx_buffer",
+            "type": "integer",
+            "default": "4096",
+            "description": "transmit buffer size in bytes; the BBC's /CTS asserts at/above it"
+        }
+    ]
+}

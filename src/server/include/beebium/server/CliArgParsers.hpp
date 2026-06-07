@@ -97,9 +97,11 @@ inline int parse_int(const std::string& str, const std::string& context = "") {
         throw std::runtime_error(
             "Invalid integer: " + str + (context.empty() ? "" : " for " + context));
     }
+    // Parenthesised to defeat the windows.h min/max macros (a consumer may have
+    // pulled them in before this header).
     if (errno == ERANGE
-        || value < std::numeric_limits<int>::min()
-        || value > std::numeric_limits<int>::max()) {
+        || value < (std::numeric_limits<int>::min)()
+        || value > (std::numeric_limits<int>::max)()) {
         throw std::runtime_error(
             "Integer overflow: " + str + (context.empty() ? "" : " for " + context));
     }
