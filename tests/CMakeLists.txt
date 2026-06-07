@@ -1608,7 +1608,13 @@ catch_discover_tests(test_sleep_quantum)
 # of the server and plugin targets (CTest does not build them). Labelled
 # "packaging" so it can be selected with `ctest -L packaging` or skipped with
 # `ctest -LE packaging`.
-if(BEEBIUM_BUILD_SERVER)
+#
+# Linux/macOS only: the install tree relies on Unix INSTALL_RPATH ($ORIGIN /
+# @loader_path) so the server in bin/ resolves the ABI libraries in lib/. Windows
+# has no RPATH equivalent and is not a packaging target (the packages are the
+# Linux .deb/.tar.gz and the macOS Homebrew tap), so the relocated tree is not
+# expected to run there (the server would fail with a missing-DLL error).
+if(BEEBIUM_BUILD_SERVER AND NOT WIN32)
     add_test(
         NAME install_smoke
         COMMAND ${CMAKE_COMMAND}
