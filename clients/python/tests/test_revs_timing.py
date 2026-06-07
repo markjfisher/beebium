@@ -127,12 +127,12 @@ def _navigate_to_gameplay(bbc: Beebium) -> bool:
     """
     for step_num, (wait_text, key) in enumerate(REVS_BOOT_SEQUENCE, 1):
         found = bbc.run_until_or_timeout(
-            lambda text=wait_text: screen_contains(bbc.memory, text),
+            lambda text=wait_text: screen_contains(bbc, text),
             emulated_seconds=60.0,
             chunk_seconds=0.5,
         )
         if not found:
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             print(f"\nStep {step_num}: Failed waiting for: {wait_text!r}")
             print("Current screen:")
             for i, row in enumerate(rows):

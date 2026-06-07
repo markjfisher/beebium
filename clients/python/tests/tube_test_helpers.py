@@ -214,7 +214,7 @@ def dump_diagnostics(bbc: Beebium) -> None:
     # Host screen
     try:
         print("Host screen:")
-        print(dump_screen(bbc.memory))
+        print(dump_screen(bbc))
     except (BeebiumError, grpc.RpcError) as e:
         print(f"Host screen: error reading - {e}")
 

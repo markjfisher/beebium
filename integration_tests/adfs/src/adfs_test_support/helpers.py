@@ -34,11 +34,11 @@ def load_and_run(bbc: Beebium, emulated_seconds: float = 30.0) -> bool:
         lambda: _has_prompt_after(bbc, "*DISC"),
         emulated_seconds=5.0,
     )
-    assert ok, f"*DISC failed:\n{dump_screen(bbc.memory)}"
+    assert ok, f"*DISC failed:\n{dump_screen(bbc)}"
 
     bbc.keyboard.type('CHAIN "TEST"\r')
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, "DONE"),
+        lambda: screen_contains(bbc, "DONE"),
         emulated_seconds=emulated_seconds,
     )
     return ok
@@ -46,7 +46,7 @@ def load_and_run(bbc: Beebium, emulated_seconds: float = 30.0) -> bool:
 
 def _has_prompt_after(bbc: Beebium, command: str) -> bool:
     """Check that a '>' prompt appears on a line AFTER the given command."""
-    rows = read_mode7_screen(bbc.memory)
+    rows = read_mode7_screen(bbc)
     found_command = False
     for row in rows:
         stripped = row.strip()
@@ -59,7 +59,7 @@ def _has_prompt_after(bbc: Beebium, command: str) -> bool:
 
 def parse_results(bbc: Beebium) -> dict[str, str]:
     """Parse TEST:name:PASS/FAIL lines from the MODE 7 screen."""
-    rows = read_mode7_screen(bbc.memory)
+    rows = read_mode7_screen(bbc)
     results = {}
     for row in rows:
         row = row.strip()

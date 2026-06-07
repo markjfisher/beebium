@@ -50,7 +50,7 @@ def _dump_hang_diagnostics(bbc):
 
     lines.append("")
     lines.append("--- SCREEN ---")
-    lines.append(dump_screen(bbc.memory))
+    lines.append(dump_screen(bbc))
 
     try:
         bbc.debugger.stop()
@@ -141,10 +141,10 @@ def test_load_file_via_tube(
             # Boot to BASIC prompt (no auto-boot).
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Type *LOAD to load the TEST file into parasite memory.
             # This triggers the Tube address claim + R3/R4 data transfer.
@@ -152,8 +152,8 @@ def test_load_file_via_tube(
 
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">") and
-                        "LOAD" in "\n".join(read_mode7_screen(bbc.memory)),
+                lambda: screen_contains(bbc, ">") and
+                        "LOAD" in "\n".join(read_mode7_screen(bbc)),
                 emulated_seconds=30.0,
             )
 
@@ -161,7 +161,7 @@ def test_load_file_via_tube(
                 _dump_hang_diagnostics(bbc)
                 pytest.fail("*LOAD hung with Tube active. See diagnostics.")
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"*LOAD completed. Screen:\n{screen}")
 
             # Verify the file was loaded by checking parasite memory.
@@ -212,17 +212,17 @@ def test_call_loaded_file_via_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Load the file
             bbc.keyboard.type('*LOAD TEST 1F00\r', cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">") and
-                        "LOAD" in "\n".join(read_mode7_screen(bbc.memory)),
+                lambda: screen_contains(bbc, ">") and
+                        "LOAD" in "\n".join(read_mode7_screen(bbc)),
                 emulated_seconds=30.0,
             )
             if not ok:
@@ -233,7 +233,7 @@ def test_call_loaded_file_via_tube(
             bbc.keyboard.type('CALL &1F00\r', cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 
@@ -241,9 +241,9 @@ def test_call_loaded_file_via_tube(
                 _dump_hang_diagnostics(bbc)
                 pytest.fail("CALL &1F00 hung. See diagnostics.")
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
-            assert "HELLO" in "\n".join(read_mode7_screen(bbc.memory))
+            assert "HELLO" in "\n".join(read_mode7_screen(bbc))
 
     except ServerNotFoundError as e:
         pytest.skip(str(e))

@@ -57,7 +57,7 @@ def run_until_or_timeout(bbc, predicate, emulated_seconds, chunk_seconds=1.0):
 def _has_prompt_after(bbc, command_text):
     """Check if a '>' prompt appears on a line after the command text."""
     from beebium.screen import read_mode7_screen
-    rows = read_mode7_screen(bbc.memory)
+    rows = read_mode7_screen(bbc)
     found_command = False
     for row in rows:
         stripped = row.strip()
@@ -78,7 +78,7 @@ def _dump_hang_diagnostics(bbc):
 
     lines.append("")
     lines.append("--- SCREEN ---")
-    lines.append(dump_screen(bbc.memory))
+    lines.append(dump_screen(bbc))
 
     # Host CPU
     try:
@@ -276,10 +276,10 @@ def test_adfs_select_with_tube_and_scsi(
             # Boot to BASIC prompt with Tube active.
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Type *ADFS and wait for the prompt to reappear.
             cmd = "*ADFS"
@@ -336,10 +336,10 @@ def test_osword_72_then_adfs_select_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Two OSWORD &72 calls (READ then MODE SENSE) then ADFS select,
             # then another OSWORD &72 READ. This matches WFSINIT's sequence
@@ -368,15 +368,15 @@ def test_osword_72_then_adfs_select_with_tube(
                 bbc.keyboard.type(line + "\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
                 ok = run_until_or_timeout(
                     bbc,
-                    lambda: screen_contains(bbc.memory, ">"),
+                    lambda: screen_contains(bbc, ">"),
                     emulated_seconds=10.0,
                 )
-                assert ok, f"Prompt lost:\n{dump_screen(bbc.memory)}"
+                assert ok, f"Prompt lost:\n{dump_screen(bbc)}"
 
             bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 
@@ -388,9 +388,9 @@ def test_osword_72_then_adfs_select_with_tube(
                 )
 
             from beebium.screen import read_mode7_screen
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
-            print(f"Screen:\n{dump_screen(bbc.memory)}")
+            print(f"Screen:\n{dump_screen(bbc)}")
             assert "ADFS OK" in screen_text
             assert "DONE" in screen_text
 
@@ -426,10 +426,10 @@ def test_osword_72_correct_cb_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             program = (
                 '10 DIM buf% 511, cb% 20\n'
@@ -445,15 +445,15 @@ def test_osword_72_correct_cb_with_tube(
                 bbc.keyboard.type(line + "\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
                 ok = run_until_or_timeout(
                     bbc,
-                    lambda: screen_contains(bbc.memory, ">"),
+                    lambda: screen_contains(bbc, ">"),
                     emulated_seconds=10.0,
                 )
-                assert ok, f"Prompt lost:\n{dump_screen(bbc.memory)}"
+                assert ok, f"Prompt lost:\n{dump_screen(bbc)}"
 
             bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 
@@ -465,9 +465,9 @@ def test_osword_72_correct_cb_with_tube(
                 )
 
             from beebium.screen import read_mode7_screen
-            screen_text = "\n".join(read_mode7_screen(bbc.memory))
+            screen_text = "\n".join(read_mode7_screen(bbc))
             assert "DONE" in screen_text
-            print(f"Screen:\n{dump_screen(bbc.memory)}")
+            print(f"Screen:\n{dump_screen(bbc)}")
 
     except ServerNotFoundError as e:
         pytest.skip(str(e))
@@ -504,10 +504,10 @@ def test_adfs_cat_with_tube_and_scsi(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Select ADFS
             bbc.keyboard.type("*ADFS\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
@@ -516,7 +516,7 @@ def test_adfs_cat_with_tube_and_scsi(
                 lambda: _has_prompt_after(bbc, "*ADFS"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"*ADFS hung:\n{dump_screen(bbc.memory)}"
+            assert ok, f"*ADFS hung:\n{dump_screen(bbc)}"
 
             # Catalogue the SCSI disc
             bbc.keyboard.type("*CAT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
@@ -573,10 +573,10 @@ def test_osword_72_scsi_read_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Type a small BASIC program that does OSWORD &72 to read
             # sector 0 from SCSI drive 0. This is what WFSINIT's PROCread does.
@@ -609,16 +609,16 @@ def test_osword_72_scsi_read_with_tube(
                 bbc.keyboard.type(line + "\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
                 ok = run_until_or_timeout(
                     bbc,
-                    lambda: screen_contains(bbc.memory, ">"),
+                    lambda: screen_contains(bbc, ">"),
                     emulated_seconds=10.0,
                 )
-                assert ok, f"Prompt lost entering program:\n{dump_screen(bbc.memory)}"
+                assert ok, f"Prompt lost entering program:\n{dump_screen(bbc)}"
 
             # RUN the program
             bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 
@@ -631,13 +631,13 @@ def test_osword_72_scsi_read_with_tube(
 
             # Check result
             from beebium.screen import read_mode7_screen
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             if "ERR:" in screen_text:
-                print(f"OSWORD &72 returned error:\n{dump_screen(bbc.memory)}")
+                print(f"OSWORD &72 returned error:\n{dump_screen(bbc)}")
             else:
                 assert "OK:" in screen_text, \
-                    f"Unexpected output:\n{dump_screen(bbc.memory)}"
+                    f"Unexpected output:\n{dump_screen(bbc)}"
                 print("OSWORD &72 SCSI read succeeded with Tube active.")
 
     except ServerNotFoundError as e:
@@ -676,10 +676,10 @@ def test_osword_72_after_adfs_select_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Program that selects ADFS then does OSWORD &72 — exactly
             # what WFSINIT lines 460+560 do.
@@ -700,15 +700,15 @@ def test_osword_72_after_adfs_select_with_tube(
                 bbc.keyboard.type(line + "\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
                 ok = run_until_or_timeout(
                     bbc,
-                    lambda: screen_contains(bbc.memory, ">"),
+                    lambda: screen_contains(bbc, ">"),
                     emulated_seconds=10.0,
                 )
-                assert ok, f"Prompt lost entering program:\n{dump_screen(bbc.memory)}"
+                assert ok, f"Prompt lost entering program:\n{dump_screen(bbc)}"
 
             bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 
@@ -720,15 +720,15 @@ def test_osword_72_after_adfs_select_with_tube(
                 )
 
             from beebium.screen import read_mode7_screen
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             assert "ADFS SELECTED" in screen_text, \
-                f"ADFS select message missing:\n{dump_screen(bbc.memory)}"
+                f"ADFS select message missing:\n{dump_screen(bbc)}"
             if "ERR:" in screen_text:
-                print(f"OSWORD &72 returned error:\n{dump_screen(bbc.memory)}")
+                print(f"OSWORD &72 returned error:\n{dump_screen(bbc)}")
             else:
                 assert "OK:" in screen_text, \
-                    f"Unexpected output:\n{dump_screen(bbc.memory)}"
+                    f"Unexpected output:\n{dump_screen(bbc)}"
                 print("OSWORD &72 after *ADFS succeeded with Tube active.")
 
     except ServerNotFoundError as e:
@@ -769,10 +769,10 @@ def test_watchpoint_025f_tube_flag(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Scan MOS workspace for Tube-related flags.
             print("MOS workspace scan:")
@@ -828,15 +828,15 @@ def test_watchpoint_025f_tube_flag(
                 bbc.keyboard.type(line + "\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
                 ok = run_until_or_timeout(
                     bbc,
-                    lambda: screen_contains(bbc.memory, ">"),
+                    lambda: screen_contains(bbc, ">"),
                     emulated_seconds=10.0,
                 )
-                assert ok, f"Prompt lost:\n{dump_screen(bbc.memory)}"
+                assert ok, f"Prompt lost:\n{dump_screen(bbc)}"
 
             bbc.keyboard.type("RUN\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=30.0,
             )
 

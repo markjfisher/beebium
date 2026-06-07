@@ -107,7 +107,7 @@ def bbc_tube(
         ) as bbc:
             found = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "Acorn TUBE"),
+                lambda: screen_contains(bbc, "Acorn TUBE"),
                 emulated_seconds=30.0,
             )
             if not found:
@@ -140,7 +140,7 @@ class TestTubeEliteBoot:
 
     def test_tube_banner(self, bbc_tube: Beebium) -> None:
         """After boot, screen should show the Tube banner."""
-        assert screen_contains(bbc_tube.memory, "Acorn TUBE")
+        assert screen_contains(bbc_tube, "Acorn TUBE")
 
     def test_insert_elite_disc(
         self, bbc_tube: Beebium, elite_disc_filepath: Path
@@ -159,7 +159,7 @@ class TestTubeEliteBoot:
         bbc_tube.disc.drive(0).insert(elite_disc_filepath)
 
         def _catalog_visible():
-            rows = read_mode7_screen(bbc_tube.memory)
+            rows = read_mode7_screen(bbc_tube)
             for row in rows:
                 stripped = row.strip()
                 if stripped and stripped != ">" and "BASIC" not in stripped \
@@ -175,7 +175,7 @@ class TestTubeEliteBoot:
         )
 
         if not found:
-            rows = read_mode7_screen(bbc_tube.memory)
+            rows = read_mode7_screen(bbc_tube)
             print("\nScreen after *. command:")
             for i, row in enumerate(rows):
                 print(f"Row {i:2d}: [{row}]")
@@ -194,7 +194,7 @@ class TestTubeEliteBoot:
         elite_banner = "6502 Second Processor ELITE"
         found = run_until_or_timeout(
             bbc_tube,
-            lambda: screen_contains(bbc_tube.memory, elite_banner),
+            lambda: screen_contains(bbc_tube, elite_banner),
             emulated_seconds=60.0,
         )
 

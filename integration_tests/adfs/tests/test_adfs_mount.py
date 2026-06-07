@@ -38,16 +38,16 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_dir_to_subdirectory(bbc_adfs):
     """*DIR changes into a subdirectory before *MOUNT."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DIR-SUB") == "PASS", \
-        f"*DIR to subdirectory failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*DIR to subdirectory failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_mount_resets_to_root(bbc_adfs):
     """*MOUNT resets current selected directory to root."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("MOUNT-ROOT") == "PASS", \
-        f"*MOUNT did not reset to root:\n{dump_screen(bbc_adfs.memory)}"
+        f"*MOUNT did not reset to root:\n{dump_screen(bbc_adfs)}"

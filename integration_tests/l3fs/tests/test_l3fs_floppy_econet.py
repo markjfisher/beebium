@@ -51,7 +51,7 @@ def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):
     """Wait until the given text appears on the MODE 7 screen."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         screen_text = "\n".join(rows)
         if text in screen_text:
             return True
@@ -63,7 +63,7 @@ def _wait_for_prompt_after(bbc, command_text, timeout_seconds=30.0, poll_interva
     """Wait for a '>' prompt to appear on a line after the given command text."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         found_command = False
         for row in rows:
             stripped = row.strip()
@@ -77,7 +77,7 @@ def _wait_for_prompt_after(bbc, command_text, timeout_seconds=30.0, poll_interva
 
 def _dump(bbc):
     """Return the current screen text for diagnostics."""
-    return dump_screen(bbc.memory)
+    return dump_screen(bbc)
 
 
 @pytest.fixture(scope="session")
@@ -386,7 +386,7 @@ def test_l3fs_floppy_client_login(
                         finally:
                             _os.set_blocking(fd, True)
 
-                client_screen = "\n".join(read_mode7_screen(client_bbc.memory))
+                client_screen = "\n".join(read_mode7_screen(client_bbc))
                 if "No reply" in client_screen:
                     pytest.fail(
                         f"Client received 'No reply'.\n"

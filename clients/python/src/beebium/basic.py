@@ -23,6 +23,7 @@ import time
 from typing import TYPE_CHECKING
 
 from beebium.exceptions import TimeoutError
+from beebium.screen import read_mode7_screen
 
 if TYPE_CHECKING:
     from beebium.client import Beebium
@@ -41,13 +42,8 @@ SCREEN_MODES = {
     7: (0x7C00, 40, 25, 40),   # Teletext mode, 40 chars
 }
 
-# Default Mode 7 (teletext) screen layout
-MODE7_BASE = 0x7C00
-MODE7_BYTES_PER_LINE = 40
-MODE7_LINES = 25
-
-# BBC BASIC character code for the > prompt
-PROMPT_CHAR = ord(">")
+# The BBC BASIC prompt character, expected at the start of a line.
+PROMPT = ">"
 
 
 class Basic:
@@ -96,13 +92,10 @@ class Basic:
         deadline = time.monotonic() + timeout
 
         while time.monotonic() < deadline:
-            # Check for prompt in Mode 7 screen memory
-            # The prompt typically appears at the start of a line
-            for line in range(MODE7_LINES):
-                addr = MODE7_BASE + (line * MODE7_BYTES_PER_LINE)
-                char = self._client.memory.address.peek[addr]
-                if char == PROMPT_CHAR:
-                    return True
+            # The prompt appears at the start of a line in the MODE 7 display.
+            rows = read_mode7_screen(self._client)
+            if any(row.startswith(PROMPT) for row in rows):
+                return True
 
             time.sleep(poll_interval)
 
@@ -162,7 +155,7 @@ class Basic:
         if mode not in SCREEN_MODES:
             raise ValueError(f"Unsupported mode: {mode}")
 
-        base, bytes_per_line, lines, chars_per_line = SCREEN_MODES[mode]
+        _, _, lines, _ = SCREEN_MODES[mode]
 
         if end_row is None:
             end_row = lines
@@ -170,24 +163,14 @@ class Basic:
         start_row = max(0, min(start_row, lines - 1))
         end_row = max(start_row + 1, min(end_row, lines))
 
-        result = []
-        for row in range(start_row, end_row):
-            addr = base + (row * bytes_per_line)
+        if mode == 7:
+            # Teletext: read what is actually displayed, corrected for scroll.
+            rows = read_mode7_screen(self._client)
+        else:
+            # Graphics modes: pixel decoding to characters is not implemented.
+            rows = ["[graphics mode - not implemented]"] * lines
 
-            if mode == 7:
-                # Teletext: one byte per character
-                data = self._client.memory.address.bus[addr : addr + chars_per_line]
-                # Convert teletext codes to ASCII (strip top bit, handle control codes)
-                line = "".join(
-                    chr(b & 0x7F) if 32 <= (b & 0x7F) < 127 else " " for b in data
-                )
-            else:
-                # Graphics modes: need to decode pixels to characters
-                # For now, just return placeholder for non-teletext modes
-                line = "[graphics mode - not implemented]"
-
-            result.append(line.rstrip())
-
+        result = [rows[row].rstrip() for row in range(start_row, end_row)]
         return "\n".join(result)
 
     def run_program(

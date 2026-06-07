@@ -28,7 +28,7 @@ def _load_and_run(bbc, emulated_seconds: float = 30.0) -> bool:
     """CHAIN the test program from disc and wait for DONE."""
     bbc.keyboard.type('CHAIN "TEST"\r')
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, "DONE"),
+        lambda: screen_contains(bbc, "DONE"),
         emulated_seconds=emulated_seconds,
     )
     return ok
@@ -36,7 +36,7 @@ def _load_and_run(bbc, emulated_seconds: float = 30.0) -> bool:
 
 def _parse_results(bbc) -> dict[str, str]:
     """Parse TEST:name:value lines from the MODE 7 screen."""
-    rows = read_mode7_screen(bbc.memory)
+    rows = read_mode7_screen(bbc)
     results = {}
     for row in rows:
         row = row.strip()
@@ -51,7 +51,7 @@ def _parse_results(bbc) -> dict[str, str]:
 def test_rtc_dongle_detection(bbc_rtc):
     """The dongle detection sequence (write/read register 7) passes."""
     ok = _load_and_run(bbc_rtc)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_rtc.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_rtc)}"
 
     results = _parse_results(bbc_rtc)
     assert results.get("DONGLE1") == "PASS", f"Dongle phase 1 failed: {results}"
@@ -62,7 +62,7 @@ def test_rtc_dongle_detection(bbc_rtc):
 def test_rtc_reads_correct_time(bbc_rtc):
     """Time registers contain the values set at startup (1985-06-15 14:30)."""
     ok = _load_and_run(bbc_rtc)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_rtc.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_rtc)}"
 
     results = _parse_results(bbc_rtc)
 

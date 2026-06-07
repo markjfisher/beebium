@@ -48,7 +48,7 @@ def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):
     """Wait until the given text appears on the MODE 7 screen."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         screen_text = "\n".join(rows)
         if text in screen_text:
             return True
@@ -88,66 +88,66 @@ def test_wfsinit_completes(
         ) as bbc:
             # Boot to BASIC prompt.
             assert _wait_for_screen_text(bbc, ">", timeout_seconds=30), \
-                f"Boot failed:\n{dump_screen(bbc.memory)}"
+                f"Boot failed:\n{dump_screen(bbc)}"
 
             # CHAIN WFSINIT from floppy.
             bbc.keyboard.type('CHAIN "WFSINIT"\r')
 
             # Drive number: 0
             assert _wait_for_screen_text(bbc, "Drive number", timeout_seconds=60), \
-                f"No 'Drive number' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'Drive number' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("0\r")
 
             # Disc name: WFSTEST
             assert _wait_for_screen_text(bbc, "Disc name", timeout_seconds=30), \
-                f"No 'Disc name' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'Disc name' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("WFSTEST\r")
 
             # Next drive: <return> (accept default)
             assert _wait_for_screen_text(bbc, "Next drive", timeout_seconds=30), \
-                f"No 'Next drive' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'Next drive' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("\r")
 
             # Date: 25/10/85
             assert _wait_for_screen_text(bbc, "Date", timeout_seconds=30), \
-                f"No 'Date' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'Date' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("25/10/85\r")
 
             # Please wait .... (long delay for 20MB disc)
             assert _wait_for_screen_text(bbc, "Please wait", timeout_seconds=60), \
-                f"No 'Please wait':\n{dump_screen(bbc.memory)}"
+                f"No 'Please wait':\n{dump_screen(bbc)}"
 
             # Password file: Y
             assert _wait_for_screen_text(bbc, "Password file", timeout_seconds=300), \
-                f"No 'Password file' prompt after 'Please wait':\n{dump_screen(bbc.memory)}"
+                f"No 'Password file' prompt after 'Please wait':\n{dump_screen(bbc)}"
             bbc.keyboard.type("Y\r")
 
             # User name 1: HOLMES
             assert _wait_for_screen_text(bbc, "User name", timeout_seconds=30), \
-                f"No 'User name' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'User name' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("HOLMES\r")
 
             # User name 2: MORIARTY
             assert _wait_for_screen_text(bbc, "User name     2", timeout_seconds=30), \
-                f"No second 'User name' prompt:\n{dump_screen(bbc.memory)}"
+                f"No second 'User name' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("MORIARTY\r")
 
             # User name 3: <return> (empty -- terminates user name list)
             assert _wait_for_screen_text(bbc, "User name     3", timeout_seconds=30), \
-                f"No third 'User name' prompt:\n{dump_screen(bbc.memory)}"
+                f"No third 'User name' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("\r")
 
             # Copy master directories: N
             assert _wait_for_screen_text(bbc, "Copy master directories", timeout_seconds=30), \
-                f"No 'Copy master directories' prompt:\n{dump_screen(bbc.memory)}"
+                f"No 'Copy master directories' prompt:\n{dump_screen(bbc)}"
             bbc.keyboard.type("N\r")
 
             # ** Disc initialised **
             assert _wait_for_screen_text(bbc, "Disc initialised", timeout_seconds=120), \
-                f"No 'Disc initialised' message:\n{dump_screen(bbc.memory)}"
+                f"No 'Disc initialised' message:\n{dump_screen(bbc)}"
 
             print(f"WFSINIT completed successfully!")
-            print(f"Screen:\n{dump_screen(bbc.memory)}")
+            print(f"Screen:\n{dump_screen(bbc)}")
 
     except ServerNotFoundError as e:
         pytest.skip(str(e))

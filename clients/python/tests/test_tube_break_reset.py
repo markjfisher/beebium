@@ -91,11 +91,11 @@ def bbc_anfs_tube(
             startup_timeout=20.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, TUBE_BANNER),
+                lambda: screen_contains(bbc, TUBE_BANNER),
                 emulated_seconds=BOOT_TIMEOUT_SECONDS,
             )
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 print("\nScreen at boot timeout:")
                 for i, row in enumerate(rows):
                     print(f"Row {i:2d}: [{row}]")
@@ -173,7 +173,7 @@ def _diagnostics(bbc: Beebium) -> str:
         lines.append(f"Parasite CPU: error {e!r}")
     try:
         lines.append("Host Mode 7 screen:")
-        lines.append(dump_screen(bbc.memory))
+        lines.append(dump_screen(bbc))
     except Exception as e:  # pragma: no cover - diagnostics only
         lines.append(f"Host screen: error {e!r}")
     return "\n".join(lines)
@@ -190,7 +190,7 @@ class TestTubeBreakReset:
         _press_break_via_grpc(bbc)
 
         ok = bbc.run_until_or_timeout(
-            lambda: screen_contains(bbc.memory, TUBE_BANNER),
+            lambda: screen_contains(bbc, TUBE_BANNER),
             emulated_seconds=RESET_TIMEOUT_SECONDS,
         )
         assert ok, (
@@ -206,7 +206,7 @@ class TestTubeBreakReset:
         _press_ctrl_break_via_grpc(bbc)
 
         ok = bbc.run_until_or_timeout(
-            lambda: screen_contains(bbc.memory, TUBE_BANNER),
+            lambda: screen_contains(bbc, TUBE_BANNER),
             emulated_seconds=RESET_TIMEOUT_SECONDS,
         )
         assert ok, (

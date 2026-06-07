@@ -25,7 +25,7 @@ from beebium.screen import read_mode7_screen
 def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         if text in "\n".join(rows):
             return True
         time.sleep(poll_interval)

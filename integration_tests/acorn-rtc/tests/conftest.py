@@ -170,8 +170,8 @@ def bbc_rtc(model_b_server_filepath, mos_filepath, basic_filepath,
     ) as bbc:
         bbc.debugger.stop()
         ok = bbc.run_until_or_timeout(
-            lambda: screen_contains(bbc.memory, ">"),
+            lambda: screen_contains(bbc, ">"),
             emulated_seconds=10.0,
         )
-        assert ok, f"Boot to BASIC prompt failed:\n{dump_screen(bbc.memory)}"
+        assert ok, f"Boot to BASIC prompt failed:\n{dump_screen(bbc)}"
         yield bbc

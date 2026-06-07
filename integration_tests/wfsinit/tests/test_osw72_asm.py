@@ -50,7 +50,7 @@ def _dump_hang_diagnostics(bbc):
 
     lines.append("")
     lines.append("--- SCREEN ---")
-    lines.append(dump_screen(bbc.memory))
+    lines.append(dump_screen(bbc))
 
     try:
         bbc.debugger.stop()
@@ -157,12 +157,12 @@ def test_osw72_read_sense_adfs_read_asm(
             # Wait for "DONE" (all tests passed) or timeout (hang).
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "DONE"),
+                lambda: screen_contains(bbc, "DONE"),
                 emulated_seconds=60.0,
             )
 
-            screen = dump_screen(bbc.memory)
-            rows = read_mode7_screen(bbc.memory)
+            screen = dump_screen(bbc)
+            rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
 
             if not ok:
