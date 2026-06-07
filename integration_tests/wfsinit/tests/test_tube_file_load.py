@@ -27,7 +27,7 @@ import pytest
 from beebium.client import Beebium
 from beebium.disassemble import disassemble
 from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.screen import screen_contains, dump_screen
 
 from beebium._proto import scsi_host_adapter_pb2, scsi_host_adapter_pb2_grpc
 
@@ -153,7 +153,7 @@ def test_load_file_via_tube(
             ok = run_until_or_timeout(
                 bbc,
                 lambda: screen_contains(bbc, ">") and
-                        "LOAD" in "\n".join(read_mode7_screen(bbc)),
+                        screen_contains(bbc, "LOAD"),
                 emulated_seconds=30.0,
             )
 
@@ -222,7 +222,7 @@ def test_call_loaded_file_via_tube(
             ok = run_until_or_timeout(
                 bbc,
                 lambda: screen_contains(bbc, ">") and
-                        "LOAD" in "\n".join(read_mode7_screen(bbc)),
+                        screen_contains(bbc, "LOAD"),
                 emulated_seconds=30.0,
             )
             if not ok:
@@ -243,7 +243,7 @@ def test_call_loaded_file_via_tube(
 
             screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
-            assert "HELLO" in "\n".join(read_mode7_screen(bbc))
+            assert screen_contains(bbc, "HELLO")
 
     except ServerNotFoundError as e:
         pytest.skip(str(e))

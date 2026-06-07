@@ -34,7 +34,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
-from beebium.screen import dump_screen, read_mode7_screen
+from beebium.screen import dump_screen, lined, linearise, read_mode7_screen
 
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
@@ -386,7 +386,7 @@ def test_l3fs_floppy_client_login(
                         finally:
                             _os.set_blocking(fd, True)
 
-                client_screen = "\n".join(read_mode7_screen(client_bbc))
+                client_screen = linearise(read_mode7_screen(client_bbc), lined)
                 if "No reply" in client_screen:
                     pytest.fail(
                         f"Client received 'No reply'.\n"

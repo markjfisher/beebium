@@ -33,7 +33,7 @@ import pytest
 
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
-from beebium.screen import dump_screen, read_mode7_screen
+from beebium.screen import dump_screen, lined, linearise, read_mode7_screen
 
 
 # AUN port assignments (convention: 10000 + station number).
@@ -301,7 +301,7 @@ def test_l3fs_client_login(
                             _os.set_blocking(fd, True)
 
                 # Check for common error conditions.
-                client_screen = "\n".join(read_mode7_screen(client_bbc))
+                client_screen = linearise(read_mode7_screen(client_bbc), lined)
                 if "No reply" in client_screen:
                     pytest.fail(
                         f"Client received 'No reply' -- file server not "

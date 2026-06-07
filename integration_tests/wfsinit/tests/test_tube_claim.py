@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from beebium.client import Beebium
 from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.screen import screen_contains, dump_screen
 
 TUBE_CYCLES_PER_KEY = 200_000
 
@@ -121,7 +121,7 @@ def test_load_puts_data_in_host_ram(
             bbc.keyboard.type('*LOAD TEST\r', cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: "LOAD" in "\n".join(read_mode7_screen(bbc)) and
+                lambda: screen_contains(bbc, "LOAD") and
                         screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )

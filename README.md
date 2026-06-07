@@ -130,12 +130,12 @@ The Python client (`clients/python`) enables programmatic control of the emulato
 
 ```python
 from beebium import Beebium
-from beebium.screen import read_mode7_screen
+from beebium.screen import read_mode7_screen, linearise, lined
 
 with Beebium.connect() as bbc:
     bbc.debugger.stop()
     bbc.keyboard.type("PRINT 2+2\r")
-    print("\n".join(read_mode7_screen(bbc)))  # scroll-corrected MODE 7 text
+    print(linearise(read_mode7_screen(bbc), lined))  # scroll-corrected MODE 7 text
 ```
 
 ## Project Structure
