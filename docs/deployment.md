@@ -48,23 +48,36 @@ The executable locates ROMs via `../roms/` relative to its directory (i.e., `bui
 
 ### Installed Layout (FHS-Compliant)
 
-When installed via `cmake --install`, Beebium follows the Filesystem Hierarchy Standard:
+When installed via `cmake --install`, the tree is relocatable and self-describing:
 
 ```
 <prefix>/
 ├── bin/
-│   ├── beebium-model-b
-│   └── beebium-model-b-plus
-└── share/beebium/roms/
-    ├── acorn-mos_1_20.rom
-    ├── acorn-mos_2_0.rom
-    └── bbc-basic_2.rom
+│   ├── beebium-model-b, beebium-model-b-plus, ...
+│   └── extensions/<name>/{<plugin>.so, manifest.json}
+├── lib/
+│   ├── libbeebium_extension_api.so
+│   └── libbeebium_extension_ui_proto.so
+└── share/beebium/
+    ├── roms/      (acorn-mos_1_20.rom, ...)
+    └── presets/
 ```
+
+The server binaries carry an `$ORIGIN`-relative `RPATH` (`@loader_path` on macOS),
+so they resolve the extension ABI libraries in `lib/` from the installed tree.
+Each binary finds its `extensions/`, ROMs, and presets relative to its own
+on-disk location (resolved from the OS, not `argv[0]`, so a `/usr/bin` symlink
+into the tree works too), so the whole tree relocates intact.
 
 The default `<prefix>` is `/usr/local`. Override with:
 ```bash
 cmake --install build --prefix /opt/beebium
 ```
+
+The distributable packages install this tree under `/opt/beebium` with `/usr/bin`
+symlinks onto the binaries. For the self-contained, statically linked `.deb` /
+`.tar.gz` bundles (and how they are built, validated, and shipped), see
+[Packaging and Distribution](packaging.md).
 
 The executable locates ROMs via `../share/beebium/roms/` relative to its directory.
 

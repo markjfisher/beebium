@@ -10,6 +10,14 @@ project(beebium
 # libraries are linked into plugin shared libraries)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Serialise the most memory-hungry compiles into a depth-1 Ninja job pool. The
+# per-variant server mains each instantiate the full Machine<Hardware> template
+# against the static gRPC/protobuf headers and peak at ~2.5-3 GB; building
+# several at once OOM-kills the compiler on memory-limited hosts (e.g. an 8 GB
+# Docker VM) even though the rest of the tree parallelises fine. Server targets
+# opt in via JOB_POOL_COMPILE; the property is ignored by non-Ninja generators.
+set_property(GLOBAL PROPERTY JOB_POOLS beebium_heavy_compile=1)
+
 # C++ Standard (C++20 for concepts, constexpr improvements, std::span)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -191,4 +199,10 @@ endif()
 
 if(BEEBIUM_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+# CPack packaging for the self-contained Linux server bundle (.deb + .tar.gz).
+# Configured only with the server build; inert until `cpack` is invoked.
+if(BEEBIUM_BUILD_SERVER)
+    include(${CMAKE_SOURCE_DIR}/cmake/BeebiumPackaging.cmake)
 endif()

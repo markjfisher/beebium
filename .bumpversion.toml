@@ -1,0 +1,99 @@
+# Single source of truth for the Beebium version, managed by bump-my-version.
+#
+# Beebium is a monorepo with one version across the server and all clients, so a
+# release bumps every embedded version string in lockstep, then commits and tags:
+#
+#   uvx bump-my-version bump minor      # 0.1.0 -> 0.2.0, edits files, commit + tag
+#   git push --follow-tags              # push the commit AND the v* tag
+#
+# Validate first with:
+#   uvx bump-my-version bump --dry-run --verbose minor
+#
+# current_version below is authoritative; the files listed are kept equal to it.
+
+[tool.bumpversion]
+current_version = "0.1.0"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+search = "{current_version}"
+replace = "{new_version}"
+regex = false
+ignore_missing_version = false
+ignore_missing_files = false
+allow_dirty = false
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release v{new_version}"
+message = "Release v{new_version}"
+
+# After the regex edits, re-write the JSON files canonically so the package's
+# own version is updated cleanly without disturbing the rest of the document
+# (the name-anchored regex below may leave non-canonical indentation; json.tool
+# normalises it). Writes via a temp file so the input is not truncated mid-read.
+pre_commit_hooks = [
+    "python3 -m json.tool --indent=2 clients/typescript/package.json clients/typescript/.bump.tmp && mv clients/typescript/.bump.tmp clients/typescript/package.json",
+    "python3 -m json.tool --indent=2 clients/typescript/package-lock.json clients/typescript/.bump.tmp && mv clients/typescript/.bump.tmp clients/typescript/package-lock.json",
+]
+
+# --- Server / core (C++) ---------------------------------------------------
+[[tool.bumpversion.files]]
+filename = "CMakeLists.txt"
+search = "VERSION {current_version}"
+replace = "VERSION {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "vcpkg.json"
+regex = true
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'
+
+# --- Python client ---------------------------------------------------------
+[[tool.bumpversion.files]]
+filename = "clients/python/pyproject.toml"
+regex = true
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "clients/python/src/beebium/__init__.py"
+regex = true
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+# --- TypeScript client -----------------------------------------------------
+# Runtime version (single source; index.ts re-exports it, server-process.ts
+# uses it for the provenance default).
+[[tool.bumpversion.files]]
+filename = "clients/typescript/src/version.ts"
+regex = true
+search = 'export const VERSION = "{current_version}"'
+replace = 'export const VERSION = "{new_version}"'
+
+# npm package version (the one root "version" key).
+[[tool.bumpversion.files]]
+filename = "clients/typescript/package.json"
+regex = true
+search = '"version": "{current_version}"'
+replace = '"version": "{new_version}"'
+
+# Lockfile: anchor on the package name so only beebium's OWN version nodes
+# (root + packages[""]) match -- never a dependency that happens to share the
+# version. json.tool (pre_commit_hook) re-canonicalises the file afterwards.
+[[tool.bumpversion.files]]
+filename = "clients/typescript/package-lock.json"
+regex = true
+search = '"name": "beebium",\s*"version": "{current_version}",'
+replace = '"name": "beebium",\n  "version": "{new_version}",'
+
+# --- macOS GUI client (scenario 1, deferred -- kept in lockstep anyway) -----
+[[tool.bumpversion.files]]
+filename = "clients/macos/Beebium/project.yml"
+regex = true
+search = 'MARKETING_VERSION: "{current_version}"'
+replace = 'MARKETING_VERSION: "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "clients/macos/Beebium/Beebium.xcodeproj/project.pbxproj"
+search = "MARKETING_VERSION = {current_version};"
+replace = "MARKETING_VERSION = {new_version};"

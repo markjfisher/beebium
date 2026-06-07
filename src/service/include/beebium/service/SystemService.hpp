@@ -16,6 +16,7 @@
 #include "system.grpc.pb.h"
 #include "beebium/PacingClock.hpp"
 #include "beebium/service/ConnectionTracker.hpp"
+#include "beebium/service/ProtocolFingerprint.hpp"
 #include "beebium/service/ShutdownPolicy.hpp"
 #include "beebium/service/ShutdownCoordinator.hpp"
 #include <beebium/discovery/Advertiser.hpp>
@@ -224,6 +225,10 @@ grpc::Status SystemServiceImpl<MachineType>::GetSystemInfo(
 
     // Set clock frequency
     response->set_clock_speed_hz(clock_speed_hz_);
+
+    // Report the wire-protocol fingerprint the server was built against, so a
+    // connecting client can refuse to proceed on a contract mismatch.
+    response->set_protocol_fingerprint(std::string(PROTOCOL_FINGERPRINT));
 
     return grpc::Status::OK;
 }

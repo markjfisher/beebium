@@ -43,6 +43,14 @@ endfunction()
 function(add_beebium_server TARGET_NAME SOURCE_FILE)
     add_executable(${TARGET_NAME} ${SOURCE_FILE})
 
+    # The server main is the single most memory-hungry TU in the tree (full
+    # Machine<Hardware> template + static gRPC/protobuf headers). Pin its
+    # compilation to the depth-1 beebium_heavy_compile pool (defined in the
+    # top-level CMakeLists) so a parallel Ninja build never compiles two of
+    # them at once and OOM-kills the compiler on memory-limited hosts.
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        JOB_POOL_COMPILE beebium_heavy_compile)
+
     target_include_directories(${TARGET_NAME}
         PRIVATE
             ${SERVER_INCLUDE_DIR}
@@ -71,6 +79,19 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             nlohmann_json::nlohmann_json
             stb_image_write
     )
+
+    # Installed layout: server binaries live in <prefix>/bin and resolve the
+    # extension ABI shared libraries from <prefix>/lib via an $ORIGIN-relative
+    # RPATH (@loader_path on macOS). This only affects the installed binaries;
+    # the build-tree RPATH (auto-added by CMake to build/lib) is unaffected, so
+    # running from the build directory continues to work unchanged.
+    if(APPLE)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            INSTALL_RPATH "@loader_path/../lib")
+    elseif(NOT WIN32)
+        set_target_properties(${TARGET_NAME} PROPERTIES
+            INSTALL_RPATH "$ORIGIN/../lib")
+    endif()
 endfunction()
 
 # Model-specific executables
