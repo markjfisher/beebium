@@ -58,8 +58,13 @@ if(NOT rc EQUAL 0)
                         "resolution broken in the installed tree:\n${out}\n${err}")
 endif()
 # Each of these is a SHARED-library plugin deployed under bin/extensions/<name>;
-# their presence proves the installed plugin tree was found and loaded.
-foreach(plugin scsi-hdd acorn-rtc piconet)
+# their presence proves the installed plugin tree was found and loaded. Covers
+# one of each kind: a 1MHz-bus device (scsi-hdd), a user-port device (acorn-rtc),
+# an econet transport (piconet), and the network-serial extensions, whose extra
+# runtime deps (gRPC for rpc-serial) must also resolve from the installed tree.
+foreach(plugin scsi-hdd acorn-rtc piconet
+               ip232-serial rpc-serial loopback-serial
+               rfc2217-client-serial rfc2217-server-serial)
     if(NOT out MATCHES "${plugin}")
         message(FATAL_ERROR "plugin '${plugin}' not discovered from the installed "
                             "tree (bin/extensions):\n${out}")
