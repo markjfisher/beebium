@@ -18,6 +18,19 @@ export class ConnectionError extends BeebiumError {
     }
 }
 
+/**
+ * The server's wire protocol does not match this client's. Raised at connect
+ * time when the server's protocol fingerprint differs from the client's
+ * compiled-in fingerprint. Install a server and client built from the same
+ * protocol.
+ */
+export class ProtocolMismatchError extends ConnectionError {
+    constructor(message: string) {
+        super(message);
+        this.name = "ProtocolMismatchError";
+    }
+}
+
 /** The emulator server failed to start. */
 export class ServerStartupError extends BeebiumError {
     constructor(message: string) {

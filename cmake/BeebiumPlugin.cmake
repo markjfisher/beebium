@@ -58,6 +58,29 @@ function(beebium_finalize_plugin)
         )
     endif()
 
+    # Install the plugin alongside the server binaries, matching the runtime
+    # discovery layout: <prefix>/bin/extensions/<name>/{<lib>.so, manifest.json}.
+    # The server's default extension-dir search is exe_dir/extensions, and the
+    # installed server lives in <prefix>/bin, so plugins install under
+    # bin/extensions/<name>. The RPATH lets a freshly dlopen'd plugin resolve
+    # the extension ABI libraries in <prefix>/lib even when not already loaded
+    # by the host process (../../../lib: name -> extensions -> bin -> prefix).
+    if(BEEBIUM_BUILD_SERVER)
+        if(APPLE)
+            set_target_properties(${ARG_TARGET} PROPERTIES
+                INSTALL_RPATH "@loader_path/../../../lib")
+        elseif(NOT WIN32)
+            set_target_properties(${ARG_TARGET} PROPERTIES
+                INSTALL_RPATH "$ORIGIN/../../../lib")
+        endif()
+        install(TARGETS ${ARG_TARGET}
+            LIBRARY DESTINATION bin/extensions/${ARG_NAME}
+        )
+        install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+            DESTINATION bin/extensions/${ARG_NAME}
+        )
+    endif()
+
     # Windows test runtime: any test binary that statically links the
     # plugin (or LoadLibrary's it directly) needs the DLL findable via
     # the Windows DLL search (which looks in the loading executable's

@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { ServerStartupError, ServerNotFoundError } from "./exceptions.js";
+import { VERSION } from "./version.js";
 
 /** Default build directory for the beebium server executables. */
 const DEFAULT_BUILD_DIRPATH = "/Users/rjs/Code/beebium/build/src/server";
@@ -33,7 +34,7 @@ export interface ServerProcessOptions {
     timeout?: number;
     /** Provenance type string (default "typescript-client"). */
     provenanceType?: string;
-    /** Provenance version string (default "0.1.0"). */
+    /** Provenance version string (default: the client VERSION). */
     provenanceVersion?: string;
 }
 
@@ -64,7 +65,7 @@ export class ServerProcess {
     constructor(options?: ServerProcessOptions) {
         this.provenanceUuid = randomUUID();
         this.provenanceType = options?.provenanceType ?? "typescript-client";
-        this.provenanceVersion = options?.provenanceVersion ?? "0.1.0";
+        this.provenanceVersion = options?.provenanceVersion ?? VERSION;
         this.extraArgs = options?.args ?? [];
 
         if (options?.executableFilepath) {

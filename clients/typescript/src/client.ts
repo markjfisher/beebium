@@ -15,6 +15,8 @@ import { Memory } from "./memory.js";
 import { Keyboard } from "./keyboard.js";
 import { Video } from "./video.js";
 import { System } from "./system.js";
+import { ProtocolMismatchError } from "./exceptions.js";
+import { PROTOCOL_FINGERPRINT } from "./protocol_fingerprint.js";
 import { Disc } from "./disc.js";
 import { Econet } from "./econet.js";
 import { Serial } from "./serial.js";
@@ -131,7 +133,27 @@ export class Beebium {
         const effectiveTarget = target ?? `localhost:${DEFAULT_GRPC_PORT}`;
         const connection = new Connection(effectiveTarget);
         await connection.waitForReady(timeoutMs);
-        return new Beebium(connection);
+        const client = new Beebium(connection);
+        await client.verifyProtocol();
+        return client;
+    }
+
+    /**
+     * Assert the server's wire protocol matches this client's. Compares the
+     * server's protocol fingerprint (from GetSystemInfo) to the client's
+     * compiled-in fingerprint and throws on any mismatch, so an incompatible
+     * pairing fails clearly at connect rather than cryptically mid-call.
+     */
+    private async verifyProtocol(): Promise<void> {
+        const serverFingerprint = await this.system.getProtocolFingerprint();
+        if (serverFingerprint !== PROTOCOL_FINGERPRINT) {
+            const reported = serverFingerprint || "(none reported)";
+            throw new ProtocolMismatchError(
+                `Server protocol fingerprint ${reported} does not match this ` +
+                `client's ${PROTOCOL_FINGERPRINT}. Install a server and client ` +
+                `built from the same protocol.`,
+            );
+        }
     }
 
     /**
@@ -155,6 +177,7 @@ export class Beebium {
         const connection = new Connection(server.target);
         await connection.waitForReady(timeoutMs);
         const bbc = new Beebium(connection, server, server.provenanceUuid);
+        await bbc.verifyProtocol();
 
         // Wait for WaitMode startup to complete (the server runs 7 cycles
         // then pauses). Without this, the first debugger operation may race

@@ -310,6 +310,16 @@ class System:
         return response.clock_speed_hz
 
     @property
+    def protocol_fingerprint(self) -> str:
+        """The wire-protocol fingerprint the server was built against.
+
+        Empty if the server predates protocol fingerprinting.
+        """
+        request = system_pb2.GetSystemInfoRequest()
+        response = self._stub.GetSystemInfo(request)
+        return response.protocol_fingerprint
+
+    @property
     def client_count(self) -> int:
         """Number of clients with active WatchServerStatus streams.
 

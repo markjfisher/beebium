@@ -24,7 +24,12 @@ import grpc
 import beebium
 from beebium.basic import Basic
 from beebium.connection import Connection
-from beebium.exceptions import BeebiumError, ConnectionError as BeebiumConnectionError
+from beebium.exceptions import (
+    BeebiumError,
+    ConnectionError as BeebiumConnectionError,
+    ProtocolMismatchError,
+)
+from beebium._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
 from beebium.cpu import CPU
 from beebium.crtc import Crtc
 from beebium.debugger import Debugger
@@ -157,7 +162,9 @@ class Beebium:
         # This won't match the server's provenance unless the server was started
         # with --allow-shutdown or this is the sole client.
         instance_uuid = str(uuid.uuid4())
-        return cls(connection, instance_uuid=instance_uuid)
+        client = cls(connection, instance_uuid=instance_uuid)
+        client._verify_protocol()
+        return client
 
     @classmethod
     @contextlib.contextmanager
@@ -210,9 +217,27 @@ class Beebium:
                 server=server,
                 instance_uuid=server.provenance_instance_uuid,
             )
+            client._verify_protocol()
             yield client
         finally:
             server.stop()
+
+    def _verify_protocol(self) -> None:
+        """Assert the server's wire protocol matches this client's.
+
+        Compares the server's protocol fingerprint (from GetSystemInfo) to the
+        client's compiled-in fingerprint and raises on any mismatch, so an
+        incompatible pairing fails clearly at connect rather than cryptically
+        mid-call later.
+        """
+        server_fingerprint = self.system.protocol_fingerprint
+        if server_fingerprint != PROTOCOL_FINGERPRINT:
+            reported = server_fingerprint or "(none reported)"
+            raise ProtocolMismatchError(
+                f"Server protocol fingerprint {reported} does not match this "
+                f"client's {PROTOCOL_FINGERPRINT}. Install a server and client "
+                f"built from the same protocol."
+            )
 
     @property
     def target(self) -> str:

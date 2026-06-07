@@ -59,10 +59,12 @@ from beebium.exceptions import (
     EconetError,
     InvalidConditionError,
     MemoryAccessError,
+    ProtocolMismatchError,
     ServerNotFoundError,
     ServerStartupError,
     TimeoutError,
 )
+from beebium._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
 from beebium.system import (
     AdvertisementState,
     MachineIdentity,
@@ -89,6 +91,8 @@ __all__ = [
     "Choice",
     "ConnectionError",
     "Control",
+    "PROTOCOL_FINGERPRINT",
+    "ProtocolMismatchError",
     "ControlKind",
     "DebuggerError",
     "DEFAULT_GRPC_PORT",

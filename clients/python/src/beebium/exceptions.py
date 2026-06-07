@@ -25,6 +25,17 @@ class ConnectionError(BeebiumError):
     pass
 
 
+class ProtocolMismatchError(ConnectionError):
+    """The server's wire protocol does not match this client's.
+
+    Raised at connect time when the server's protocol fingerprint differs from
+    the client's compiled-in fingerprint. Install a server and client built from
+    the same protocol.
+    """
+
+    pass
+
+
 class ServerStartupError(BeebiumError):
     """The beebium-server process failed to start."""
 

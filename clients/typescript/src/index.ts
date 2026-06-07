@@ -66,7 +66,9 @@ export {
     TimeoutError,
     DiscError,
     EconetError,
+    ProtocolMismatchError,
 } from "./exceptions.js";
 
 export const DEFAULT_GRPC_PORT = 0xBEEB;
-export const VERSION = "0.1.0";
+export { VERSION } from "./version.js";
+export { PROTOCOL_FINGERPRINT } from "./protocol_fingerprint.js";
