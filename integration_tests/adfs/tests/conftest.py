@@ -201,10 +201,10 @@ def bbc_adfs(bplus_server_filepath, mos_filepath, basic_filepath,
                         blank_scsi_disc, test_disc_ssd, tmp_path) as bbc:
         bbc.debugger.stop()
         ok = bbc.run_until_or_timeout(
-            lambda: screen_contains(bbc.memory, ">"),
+            lambda: screen_contains(bbc, ">"),
             emulated_seconds=10.0,
         )
-        assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+        assert ok, f"Boot failed:\n{dump_screen(bbc)}"
         yield bbc
 
 
@@ -218,10 +218,10 @@ def bbc_adfs_4mb(bplus_server_filepath, mos_filepath, basic_filepath,
                         blank_scsi_disc_4mb, test_disc_ssd, tmp_path) as bbc:
         bbc.debugger.stop()
         ok = bbc.run_until_or_timeout(
-            lambda: screen_contains(bbc.memory, ">"),
+            lambda: screen_contains(bbc, ">"),
             emulated_seconds=10.0,
         )
-        assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+        assert ok, f"Boot failed:\n{dump_screen(bbc)}"
         yield bbc
 
 

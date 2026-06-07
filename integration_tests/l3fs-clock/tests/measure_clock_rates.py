@@ -35,7 +35,7 @@ from beebium._proto import debugger_pb2, debugger_pb2_grpc
 def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         screen_text = "\n".join(rows)
         if text in screen_text:
             return True
@@ -95,21 +95,21 @@ def main():
     ) as bbc:
         print("Waiting for BASIC prompt...")
         assert _wait_for_screen_text(bbc, ">", timeout_seconds=30), \
-            f"Boot failed:\n{dump_screen(bbc.memory)}"
+            f"Boot failed:\n{dump_screen(bbc)}"
 
         print("Starting L3FS...")
         bbc.keyboard.type("*RUN FS3v126\r")
         assert _wait_for_screen_text(bbc, "Number of drives:", timeout_seconds=120), \
-            f"FS failed:\n{dump_screen(bbc.memory)}"
+            f"FS failed:\n{dump_screen(bbc)}"
         bbc.keyboard.type("1\r")
         assert _wait_for_screen_text(bbc, "Command :", timeout_seconds=30), \
-            f"FS failed:\n{dump_screen(bbc.memory)}"
+            f"FS failed:\n{dump_screen(bbc)}"
         bbc.keyboard.type("S")
         assert _wait_for_screen_text(bbc, "Stations:", timeout_seconds=10), \
-            f"FS failed:\n{dump_screen(bbc.memory)}"
+            f"FS failed:\n{dump_screen(bbc)}"
         bbc.keyboard.type("2\r")
         assert _wait_for_screen_text(bbc, "01:21", timeout_seconds=60), \
-            f"FS failed:\n{dump_screen(bbc.memory)}"
+            f"FS failed:\n{dump_screen(bbc)}"
 
         print("L3FS is running. Connecting to parasite...\n")
 

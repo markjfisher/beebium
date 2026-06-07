@@ -124,10 +124,10 @@ def bbc_no_tube(
         ) as bbc:
             bbc.debugger.stop()
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
-            assert ok, f"Boot failed (no Tube):\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed (no Tube):\n{dump_screen(bbc)}"
             yield bbc
     except ServerNotFoundError as e:
         pytest.skip(str(e))
@@ -159,11 +159,11 @@ def bbc_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "Acorn TUBE"),
+                lambda: screen_contains(bbc, "Acorn TUBE"),
                 emulated_seconds=30.0,
             )
             if not ok:
-                print(f"Tube banner not seen:\n{dump_screen(bbc.memory)}")
+                print(f"Tube banner not seen:\n{dump_screen(bbc)}")
                 pytest.fail("Tube banner not visible after boot")
             with bbc.debugger.running():
                 yield bbc

@@ -84,7 +84,7 @@ def _boot_to_text(bbc: Beebium, disc_filepath: Path, target_text: str,
     bbc.keyboard.type("*EXEC !BOOT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
     return run_until_or_timeout(
         bbc,
-        lambda: screen_contains(bbc.memory, target_text),
+        lambda: screen_contains(bbc, target_text),
         emulated_seconds=emulated_seconds,
     )
 
@@ -129,7 +129,7 @@ def bbc_tube(
         ) as bbc:
             found = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, "Acorn TUBE"),
+                lambda: screen_contains(bbc, "Acorn TUBE"),
                 emulated_seconds=30.0,
             )
             if not found:
@@ -164,12 +164,12 @@ class TestTubeChuckieEggBoot:
         # Check infrequently to reduce gRPC overhead on slow CI runners.
         found = run_until_or_timeout(
             bbc_tube,
-            lambda: screen_contains(bbc_tube.memory, "A game of skill"),
+            lambda: screen_contains(bbc_tube, "A game of skill"),
             emulated_seconds=300.0,
             chunk_seconds=5.0,
         )
         if not found:
-            rows = read_mode7_screen(bbc_tube.memory)
+            rows = read_mode7_screen(bbc_tube)
             print("\nScreen while waiting for title screen:")
             for i, row in enumerate(rows):
                 print(f"Row {i:2d}: [{row}]")

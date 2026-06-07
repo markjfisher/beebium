@@ -93,7 +93,7 @@ def _diagnose_mismatch(original: bytes, saved: bytes) -> str:
 
 def _has_prompt_after(bbc: Beebium, command: str) -> bool:
     """Check that a '>' prompt appears on a line AFTER the given command."""
-    rows = read_mode7_screen(bbc.memory)
+    rows = read_mode7_screen(bbc)
     found_command = False
     for row in rows:
         stripped = row.strip()
@@ -168,7 +168,7 @@ class TestDfsSaveWithoutTube:
     ) -> None:
         """SAVE without Tube produces a byte-exact copy."""
         ok = _load_and_save(bbc_no_tube, cycles_per_key=100_000, emulated_seconds=15.0)
-        screen = dump_screen(bbc_no_tube.memory)
+        screen = dump_screen(bbc_no_tube)
         assert ok, f"LOAD/SAVE did not complete:\n{screen}"
         print(f"Screen after LOAD/SAVE:\n{screen}")
 
@@ -195,7 +195,7 @@ class TestDfsSaveWithTube:
         in the saved file appears twice.
         """
         ok = _load_and_save_tube(bbc_with_tube)
-        assert ok, f"LOAD/SAVE did not complete:\n{dump_screen(bbc_with_tube.memory)}"
+        assert ok, f"LOAD/SAVE did not complete:\n{dump_screen(bbc_with_tube)}"
 
         saved = _eject_and_read(bbc_with_tube, blank_ssd_filepath)
         if saved != test_program_bytes:
@@ -220,7 +220,7 @@ class TestDfsSaveWithTube:
             lambda: _has_prompt_after(bbc_with_tube, load_cmd),
             emulated_seconds=30.0,
         )
-        assert ok, f"LOAD did not complete:\n{dump_screen(bbc_with_tube.memory)}"
+        assert ok, f"LOAD did not complete:\n{dump_screen(bbc_with_tube)}"
 
         # Read parasite memory: PAGE is &0800 on the 65C02 coprocessor
         page = 0x0800

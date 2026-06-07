@@ -94,8 +94,8 @@ class TestCapsLockObservedBehaviour:
         bbc.keyboard.type("abc")
         _run_for_emulated_seconds(bbc, 1.0)
         bbc.debugger.stop()
-        assert screen_contains(bbc.memory, "ABC")
-        assert not screen_contains(bbc.memory, "abc")
+        assert screen_contains(bbc, "ABC")
+        assert not screen_contains(bbc, "abc")
 
 
 class TestTextInputContextManager:
@@ -137,8 +137,8 @@ class TestTextInputContextManager:
             bbc.keyboard.type("abc")
             # _run_for_emulated_seconds preserves the running state.
             _run_for_emulated_seconds(bbc, 1.0)
-            assert screen_contains(bbc.memory, "abc")
-            assert not screen_contains(bbc.memory, "ABC")
+            assert screen_contains(bbc, "abc")
+            assert not screen_contains(bbc, "ABC")
 
     def test_uppercase_letters_typed_as_uppercase(self, bbc: Beebium) -> None:
         """Inside the context manager, ``type("DEF")`` (which presses
@@ -149,8 +149,8 @@ class TestTextInputContextManager:
         with bbc.keyboard.text_input():
             bbc.keyboard.type("DEF")
             _run_for_emulated_seconds(bbc, 1.0)
-            assert screen_contains(bbc.memory, "DEF")
-            assert not screen_contains(bbc.memory, "def")
+            assert screen_contains(bbc, "DEF")
+            assert not screen_contains(bbc, "def")
 
     def test_no_op_when_locks_already_off(self, bbc: Beebium) -> None:
         """If caps lock is already off, the context manager doesn't

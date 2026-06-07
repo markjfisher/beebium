@@ -119,7 +119,7 @@ def bbc_mode7(bbc: Beebium) -> Beebium:
     """BBC Micro booted into Mode 7 (default)."""
     bbc.debugger.stop()
     bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, ">"),
+        lambda: screen_contains(bbc, ">"),
         emulated_seconds=10.0,
     )
     return bbc

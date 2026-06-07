@@ -38,21 +38,21 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_opt_off(bbc_adfs):
     """*OPT 4,0 sets boot option to Off."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("OPT-OFF") == "PASS", \
-        f"*OPT 4,0 failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*OPT 4,0 failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_opt_exec(bbc_adfs):
     """*OPT 4,3 sets boot option to Exec."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("OPT-EXEC") == "PASS", \
-        f"*OPT 4,3 failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*OPT 4,3 failed:\n{dump_screen(bbc_adfs)}"
 
-    rows = read_mode7_screen(bbc_adfs.memory)
+    rows = read_mode7_screen(bbc_adfs)
     screen_text = "\n".join(rows)
     assert "Exec" in screen_text or "EXEC" in screen_text, \
-        f"Boot option 'Exec' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+        f"Boot option 'Exec' not found on screen:\n{dump_screen(bbc_adfs)}"

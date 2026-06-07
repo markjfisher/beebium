@@ -38,9 +38,9 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_title_with_spaces(bbc_adfs):
     """*TITLE sets a multi-word title visible in *CAT output."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("TITLE-SET") == "PASS", \
-        f"*TITLE failed:\n{dump_screen(bbc_adfs.memory)}"
-    assert screen_contains(bbc_adfs.memory, "Test Disc Title"), \
-        f"Title 'Test Disc Title' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+        f"*TITLE failed:\n{dump_screen(bbc_adfs)}"
+    assert screen_contains(bbc_adfs, "Test Disc Title"), \
+        f"Title 'Test Disc Title' not found on screen:\n{dump_screen(bbc_adfs)}"

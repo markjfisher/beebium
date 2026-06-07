@@ -78,12 +78,12 @@ def _until(bbc, predicate, *, budget=60.0):
 def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):
     bbc = cts_bbc
 
-    _until(bbc, lambda: screen_contains(bbc.memory, ">"))  # BASIC is ready
+    _until(bbc, lambda: screen_contains(bbc, ">"))  # BASIC is ready
     bbc.memory.address.bus[_DONE] = 0
 
     for line, echo in _PROGRAM:
         bbc.keyboard.type(line + "\r", cycles_per_key=0)
-        _until(bbc, lambda e=echo: screen_contains(bbc.memory, e))  # line was entered
+        _until(bbc, lambda e=echo: screen_contains(bbc, e))  # line was entered
     bbc.keyboard.type("RUN\r", cycles_per_key=0)
 
     # The guest transmits until the device buffer fills and the ULA asserts /CTS;

@@ -294,13 +294,13 @@ def b_plus_128k_with_adfs_at_startup(
             startup_timeout=15.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
             if not ok:
                 pytest.fail(
                     "B+ 128K with ADFS at slot 9 failed to reach BASIC prompt:\n"
-                    f"{dump_screen(bbc.memory)}"
+                    f"{dump_screen(bbc)}"
                 )
             yield bbc
     except ServerNotFoundError as exc:
@@ -329,13 +329,13 @@ def b_plus_128k_with_adfs_disc(
             startup_timeout=15.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
             if not ok:
                 pytest.fail(
                     "B+ 128K failed to reach BASIC prompt:\n"
-                    f"{dump_screen(bbc.memory)}"
+                    f"{dump_screen(bbc)}"
                 )
             yield bbc
     except ServerNotFoundError as exc:
@@ -372,13 +372,13 @@ def romram_with_srload_disc(
             startup_timeout=15.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
             if not ok:
                 pytest.fail(
                     "Machine failed to reach BASIC prompt:\n"
-                    f"{dump_screen(bbc.memory)}"
+                    f"{dump_screen(bbc)}"
                 )
             yield bbc
     except ServerNotFoundError as exc:

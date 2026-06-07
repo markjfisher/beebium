@@ -38,34 +38,34 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_cdir_lib(bbc_adfs):
     """*CDIR creates a library directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("CDIR-LIB") == "PASS", \
-        f"*CDIR for library failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*CDIR for library failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_lib_set(bbc_adfs):
     """*LIB sets the library directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("LIB-SET") == "PASS", \
-        f"*LIB failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*LIB failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_lcat(bbc_adfs):
     """*LCAT catalogues the library directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("LCAT") == "PASS", \
-        f"*LCAT failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*LCAT failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_lex(bbc_adfs):
     """*LEX examines the library directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("LEX") == "PASS", \
-        f"*LEX failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*LEX failed:\n{dump_screen(bbc_adfs)}"

@@ -38,45 +38,45 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_cdir(bbc_adfs):
     """*CDIR creates a directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("CDIR") == "PASS", \
-        f"*CDIR failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*CDIR failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_dir_into(bbc_adfs):
     """*DIR changes into a subdirectory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DIR-INTO") == "PASS", \
-        f"*DIR into subdirectory failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*DIR into subdirectory failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_dir_root(bbc_adfs):
     """*DIR $ returns to root directory."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DIR-ROOT") == "PASS", \
-        f"*DIR $ failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*DIR $ failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_back(bbc_adfs):
     """*BACK swaps between previous and current directories."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("BACK") == "PASS", \
-        f"*BACK failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*BACK failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_title(bbc_adfs):
     """*TITLE sets directory title visible in *CAT output."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("TITLE") == "PASS", \
-        f"*TITLE failed:\n{dump_screen(bbc_adfs.memory)}"
-    assert screen_contains(bbc_adfs.memory, "My Disc"), \
-        f"Title 'My Disc' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+        f"*TITLE failed:\n{dump_screen(bbc_adfs)}"
+    assert screen_contains(bbc_adfs, "My Disc"), \
+        f"Title 'My Disc' not found on screen:\n{dump_screen(bbc_adfs)}"

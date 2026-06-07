@@ -38,43 +38,43 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_sequential_write(bbc_adfs):
     """OPENOUT/PRINT#/CLOSE# writes data to a sequential file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("WRITE") == "PASS", \
-        f"Sequential write failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"Sequential write failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_sequential_read(bbc_adfs):
     """OPENIN/INPUT#/CLOSE# reads data back correctly."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("READ") == "PASS", \
-        f"Sequential read failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"Sequential read failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_ext(bbc_adfs):
     """EXT# returns the file length."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("EXT") == "PASS", \
-        f"EXT# failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"EXT# failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_eof(bbc_adfs):
     """EOF# returns true at end of file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("EOF") == "PASS", \
-        f"EOF# failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"EOF# failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_ptr(bbc_adfs):
     """PTR# resets file position for re-reading."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("PTR") == "PASS", \
-        f"PTR# failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"PTR# failed:\n{dump_screen(bbc_adfs)}"

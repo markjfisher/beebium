@@ -96,7 +96,7 @@ def _diagnostics(bbc: Beebium, attempt: int) -> str:
         parts.append(f"Host CPU: error {e!r}")
     try:
         parts.append("Host Mode 7 screen:")
-        parts.append(dump_screen(bbc.memory))
+        parts.append(dump_screen(bbc))
     except (BeebiumError, grpc.RpcError) as e:
         parts.append(f"Host screen: error {e!r}")
     return "\n".join(parts)
@@ -135,7 +135,7 @@ def _stress_break_cycles(
         # Give the machine emulated time to complete reset and redraw banner.
         try:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, banner_text),
+                lambda: screen_contains(bbc, banner_text),
                 emulated_seconds=settle_seconds,
             )
         except (BeebiumError, grpc.RpcError) as e:
@@ -181,11 +181,11 @@ def bbc_romram(
             startup_timeout=20.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "BASIC"),
+                lambda: screen_contains(bbc, "BASIC"),
                 emulated_seconds=15.0,
             )
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 print("\nScreen at boot timeout:")
                 for i, row in enumerate(rows):
                     print(f"Row {i:2d}: [{row}]")
@@ -235,11 +235,11 @@ def bbc_anfs_tube(
             startup_timeout=20.0,
         ) as bbc:
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "Acorn TUBE 6502 64K"),
+                lambda: screen_contains(bbc, "Acorn TUBE 6502 64K"),
                 emulated_seconds=30.0,
             )
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 print("\nScreen at boot timeout:")
                 for i, row in enumerate(rows):
                     print(f"Row {i:2d}: [{row}]")

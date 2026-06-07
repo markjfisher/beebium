@@ -38,25 +38,25 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_rename_old_gone(bbc_adfs):
     """After *RENAME, the old name no longer exists."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("OLD-GONE") == "PASS", \
-        f"Old file still exists after rename:\n{dump_screen(bbc_adfs.memory)}"
+        f"Old file still exists after rename:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_rename_new_exists(bbc_adfs):
     """After *RENAME, the new name exists."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("NEW-EXISTS") == "PASS", \
-        f"New file not found after rename:\n{dump_screen(bbc_adfs.memory)}"
+        f"New file not found after rename:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_rename_cross_directory(bbc_adfs):
     """*RENAME can move a file between directories."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("CROSS-DIR") == "PASS", \
-        f"Cross-directory rename failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"Cross-directory rename failed:\n{dump_screen(bbc_adfs)}"

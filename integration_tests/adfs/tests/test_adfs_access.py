@@ -38,34 +38,34 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_default_access(bbc_adfs):
     """New files have default WR access."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DEFAULT-WR") == "PASS", \
-        f"Default access check failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"Default access check failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_set_lock(bbc_adfs):
     """*ACCESS sets L attribute on a file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("SET-LOCK") == "PASS", \
-        f"*ACCESS L failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*ACCESS L failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_delete_locked(bbc_adfs):
     """*DELETE on a locked file produces an error."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DEL-LOCKED") == "PASS", \
-        f"Delete of locked file did not error:\n{dump_screen(bbc_adfs.memory)}"
+        f"Delete of locked file did not error:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_unlock_and_delete(bbc_adfs):
     """Removing lock then deleting succeeds."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("UNLOCK-DEL") == "PASS", \
-        f"Unlock and delete failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"Unlock and delete failed:\n{dump_screen(bbc_adfs)}"

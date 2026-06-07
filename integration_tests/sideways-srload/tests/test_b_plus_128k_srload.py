@@ -174,19 +174,19 @@ def test_srload_amx_into_sram_z_shows_in_help_after_break(
 
     bbc.keyboard.press_break()
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, ">"),
+        lambda: screen_contains(bbc, ">"),
         emulated_seconds=10.0,
     )
     assert ok, (
         f"After *SRLOAD R.AMX 8000 Z Q + Break, B+ 128K didn't reach the BASIC "
-        f"prompt:\n{dump_screen(bbc.memory)}"
+        f"prompt:\n{dump_screen(bbc)}"
     )
 
     bbc.keyboard.type("*HELP")
     bbc.keyboard.press_return()
     bbc.run_for_emulated_seconds(2.0)
 
-    screen = dump_screen(bbc.memory)
+    screen = dump_screen(bbc)
     if "AMX" not in screen:
         pytest.fail(
             f"After *SRLOAD AMX into SRAM Z and Break, *HELP doesn't list "
@@ -213,19 +213,19 @@ def test_srload_comal_into_sram_z_shows_in_help_after_break(
 
     bbc.keyboard.press_break()
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, ">"),
+        lambda: screen_contains(bbc, ">"),
         emulated_seconds=10.0,
     )
     assert ok, (
         f"After *SRLOAD R.COMAL + Break, B+ 128K didn't reach BASIC prompt:\n"
-        f"{dump_screen(bbc.memory)}"
+        f"{dump_screen(bbc)}"
     )
 
     bbc.keyboard.type("*HELP")
     bbc.keyboard.press_return()
     bbc.run_for_emulated_seconds(2.0)
 
-    screen = dump_screen(bbc.memory)
+    screen = dump_screen(bbc)
     if "COMAL" not in screen:
         pytest.fail(
             f"After *SRLOAD COMAL into SRAM Z and Break, *HELP doesn't "
@@ -243,7 +243,7 @@ def test_adfs_at_startup_in_a_rom_socket_boots_cleanly(
     from beebium.screen import dump_screen
 
     bbc = b_plus_128k_with_adfs_at_startup
-    screen = dump_screen(bbc.memory)
+    screen = dump_screen(bbc)
     assert "Bad sum" not in screen, (
         f"ADFS reports Bad sum even when loaded into a regular ROM "
         f"socket at startup - the bug isn't *SRLOAD-related:\n{screen}"
@@ -272,14 +272,14 @@ def test_srload_anfs_into_sram_z_works_through_break(
     # plumbing isn't the cause of the hang we just saw.
     bbc.keyboard.press_break()
     ok = bbc.run_until_or_timeout(
-        lambda: screen_contains(bbc.memory, ">"),
+        lambda: screen_contains(bbc, ">"),
         emulated_seconds=10.0,
     )
     if not ok:
         pytest.fail(
             "Plain Break didn't reach the BASIC prompt; "
             "the hang isn't ADFS-specific:\n"
-            f"{dump_screen(bbc.memory)}"
+            f"{dump_screen(bbc)}"
         )
 
 
@@ -334,7 +334,7 @@ def test_srload_adfs_into_sram_z_is_visible_to_mos(
     # printed by something during init.
     bbc.keyboard.press_break()
     bbc.run_for_emulated_seconds(8.0)
-    post_break_screen = dump_screen(bbc.memory)
+    post_break_screen = dump_screen(bbc)
 
     # Re-check the bytes via gRPC AFTER the Break. If they diverge
     # from the source, soft_reset is clearing or corrupting sram_z.

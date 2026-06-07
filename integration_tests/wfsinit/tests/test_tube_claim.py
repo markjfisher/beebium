@@ -47,10 +47,10 @@ def test_tube_presence_flag(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Check MOS Tube presence flag
             tube_flag = bbc.memory.address.peek[0x027A]
@@ -108,10 +108,10 @@ def test_load_puts_data_in_host_ram(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Clear host RAM at &1F00 to distinguish loaded data from zeros
             for i in range(16):
@@ -121,11 +121,11 @@ def test_load_puts_data_in_host_ram(
             bbc.keyboard.type('*LOAD TEST\r', cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: "LOAD" in "\n".join(read_mode7_screen(bbc.memory)) and
-                        screen_contains(bbc.memory, ">"),
+                lambda: "LOAD" in "\n".join(read_mode7_screen(bbc)) and
+                        screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"*LOAD did not complete:\n{dump_screen(bbc.memory)}"
+            assert ok, f"*LOAD did not complete:\n{dump_screen(bbc)}"
 
             # Check host memory at &1F00
             host_data = bytes(bbc.memory.address.peek[0x1F00:0x1F10])

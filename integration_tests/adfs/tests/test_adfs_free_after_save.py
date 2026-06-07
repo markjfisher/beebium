@@ -38,14 +38,14 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_free_decreases_after_save(bbc_adfs):
     """*FREE shows reduced free space after saving a file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("FREE-BEFORE") == "PASS", \
-        f"*FREE before save failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*FREE before save failed:\n{dump_screen(bbc_adfs)}"
     assert results.get("FREE-AFTER") == "PASS", \
-        f"*FREE after save failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*FREE after save failed:\n{dump_screen(bbc_adfs)}"
 
-    rows = read_mode7_screen(bbc_adfs.memory)
+    rows = read_mode7_screen(bbc_adfs)
     screen_text = "\n".join(rows)
     assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
-        f"'Bytes Free' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+        f"'Bytes Free' not found on screen:\n{dump_screen(bbc_adfs)}"

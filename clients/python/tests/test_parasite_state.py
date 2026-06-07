@@ -62,7 +62,7 @@ def bbc_with_tube(beebium_roms_dirpath: Path, mos_filepath: Path, basic_filepath
         ) as instance:
             # Wait for Tube banner and BASIC prompt.
             ok = instance.run_until_or_timeout(
-                lambda: screen_contains(instance.memory, ">"),
+                lambda: screen_contains(instance, ">"),
                 emulated_seconds=30.0,
             )
             if not ok:

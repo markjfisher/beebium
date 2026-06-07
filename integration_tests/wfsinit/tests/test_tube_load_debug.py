@@ -53,19 +53,19 @@ def test_tube_load_detailed_debug(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # First: *CAT to see what DFS thinks is on the disc
             bbc.keyboard.type("*CAT\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
-            print(f"After *CAT:\n{dump_screen(bbc.memory)}")
+            print(f"After *CAT:\n{dump_screen(bbc)}")
 
             # Fill host RAM &0000-&2FFF with sentinel pattern
             # so we can find where data lands
@@ -81,16 +81,16 @@ def test_tube_load_detailed_debug(
             bbc.keyboard.type("*INFO TEST\r", cycles_per_key=TUBE_CYCLES_PER_KEY)
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=10.0,
             )
-            print(f"After *INFO:\n{dump_screen(bbc.memory)}")
+            print(f"After *INFO:\n{dump_screen(bbc)}")
 
             # Now do *LOAD with explicit address.
             # Wait for the command to complete by checking for a ">" prompt
             # on a line AFTER "LOAD" appears on screen.
             def _load_complete():
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 found_load = False
                 for row in rows:
                     if "LOAD TEST" in row:
@@ -105,11 +105,11 @@ def test_tube_load_detailed_debug(
                 _load_complete,
                 emulated_seconds=30.0,
             )
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"After *LOAD:\n{screen}")
 
             # Check if there was an error
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             screen_text = "\n".join(rows)
             if "fault" in screen_text.lower() or "error" in screen_text.lower():
                 print("ERROR detected on screen!")
@@ -179,14 +179,14 @@ def test_exec_boot_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             # Type *EXEC !BOOT — this is what OPT 3 auto-boot does
             def _after_exec():
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 text = "\n".join(rows)
                 return "DONE" in text or "fault" in text.lower() or "error" in text.lower()
 
@@ -197,10 +197,10 @@ def test_exec_boot_with_tube(
                 emulated_seconds=60.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"After *EXEC !BOOT:\n{screen}")
 
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             text = "\n".join(rows)
             if "DONE" in text:
                 print("SUCCESS: Program ran via *EXEC !BOOT")
@@ -239,13 +239,13 @@ def test_run_from_keyboard_with_tube(
         ) as bbc:
             ok = run_until_or_timeout(
                 bbc,
-                lambda: screen_contains(bbc.memory, ">"),
+                lambda: screen_contains(bbc, ">"),
                 emulated_seconds=30.0,
             )
-            assert ok, f"Boot failed:\n{dump_screen(bbc.memory)}"
+            assert ok, f"Boot failed:\n{dump_screen(bbc)}"
 
             def _run_complete():
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 text = "\n".join(rows)
                 return "DONE" in text
 
@@ -256,7 +256,7 @@ def test_run_from_keyboard_with_tube(
                 emulated_seconds=30.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
 
             if ok:
@@ -301,7 +301,7 @@ def test_auto_boot_with_tube(
             startup_timeout=30.0,
         ) as bbc:
             def _boot_complete():
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 text = "\n".join(rows)
                 return "DONE" in text or "fault" in text.lower()
 
@@ -311,10 +311,10 @@ def test_auto_boot_with_tube(
                 emulated_seconds=30.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
 
-            rows = read_mode7_screen(bbc.memory)
+            rows = read_mode7_screen(bbc)
             text = "\n".join(rows)
             if "fault" in text.lower():
                 pytest.fail(

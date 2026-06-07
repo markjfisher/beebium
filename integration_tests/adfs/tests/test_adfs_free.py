@@ -38,26 +38,26 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_free_2mb(bbc_adfs):
     """*FREE on a blank 2 MB disc shows expected free space values."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("FREE") == "PASS", \
-        f"*FREE failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*FREE failed:\n{dump_screen(bbc_adfs)}"
 
-    rows = read_mode7_screen(bbc_adfs.memory)
+    rows = read_mode7_screen(bbc_adfs)
     screen_text = "\n".join(rows)
     assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
-        f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+        f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_free_4mb(bbc_adfs_4mb):
     """*FREE on a blank 4 MB disc shows expected free space values."""
     ok = load_and_run(bbc_adfs_4mb)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs_4mb.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs_4mb)}"
     results = parse_results(bbc_adfs_4mb)
     assert results.get("FREE") == "PASS", \
-        f"*FREE failed:\n{dump_screen(bbc_adfs_4mb.memory)}"
+        f"*FREE failed:\n{dump_screen(bbc_adfs_4mb)}"
 
-    rows = read_mode7_screen(bbc_adfs_4mb.memory)
+    rows = read_mode7_screen(bbc_adfs_4mb)
     screen_text = "\n".join(rows)
     assert "Bytes Free" in screen_text or "Bytes free" in screen_text, \
-        f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs_4mb.memory)}"
+        f"'Bytes free' not found on screen:\n{dump_screen(bbc_adfs_4mb)}"

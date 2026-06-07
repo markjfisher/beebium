@@ -38,43 +38,43 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_create_file(bbc_adfs):
     """OPENOUT creates a file and CLOSE# closes it."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("CREATE") == "PASS", \
-        f"File creation failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"File creation failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_delete_file(bbc_adfs):
     """*DELETE removes a file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("DELETE") == "PASS", \
-        f"*DELETE failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*DELETE failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_rename_file(bbc_adfs):
     """*RENAME changes a file's name."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("RENAME") == "PASS", \
-        f"*RENAME failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*RENAME failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_save_file(bbc_adfs):
     """*SAVE saves a memory region as a file."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("SAVE") == "PASS", \
-        f"*SAVE failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*SAVE failed:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_load_file(bbc_adfs):
     """*LOAD loads a file back into memory with correct contents."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("LOAD") == "PASS", \
-        f"*LOAD failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*LOAD failed:\n{dump_screen(bbc_adfs)}"

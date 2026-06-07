@@ -55,11 +55,11 @@ def test_boot_from_full_size_ssd(
         ) as bbc:
             bbc.debugger.stop()
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "HELLO DONE"),
+                lambda: screen_contains(bbc, "HELLO DONE"),
                 emulated_seconds=15.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
             assert ok, f"Program did not produce expected output:\n{screen}"
 
@@ -99,14 +99,14 @@ def test_boot_from_truncated_beebasm_ssd(
         ) as bbc:
             bbc.debugger.stop()
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "HELLO DONE"),
+                lambda: screen_contains(bbc, "HELLO DONE"),
                 emulated_seconds=15.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 screen_text = "\n".join(rows)
                 if "Disc fault" in screen_text:
                     pytest.fail(
@@ -145,14 +145,14 @@ def test_boot_from_truncated_ssd_with_adfs_rom_no_scsi(
         ) as bbc:
             bbc.debugger.stop()
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "HELLO DONE"),
+                lambda: screen_contains(bbc, "HELLO DONE"),
                 emulated_seconds=15.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 screen_text = "\n".join(rows)
                 if "Disc fault" in screen_text:
                     pytest.fail(
@@ -193,14 +193,14 @@ def test_boot_from_truncated_ssd_with_adfs_and_scsi(
         ) as bbc:
             bbc.debugger.stop()
             ok = bbc.run_until_or_timeout(
-                lambda: screen_contains(bbc.memory, "HELLO DONE"),
+                lambda: screen_contains(bbc, "HELLO DONE"),
                 emulated_seconds=15.0,
             )
 
-            screen = dump_screen(bbc.memory)
+            screen = dump_screen(bbc)
             print(f"Screen:\n{screen}")
             if not ok:
-                rows = read_mode7_screen(bbc.memory)
+                rows = read_mode7_screen(bbc)
                 screen_text = "\n".join(rows)
                 if "Disc fault" in screen_text:
                     pytest.fail(

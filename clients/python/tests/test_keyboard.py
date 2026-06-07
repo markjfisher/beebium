@@ -53,10 +53,10 @@ def _wait_for_screen(bbc: Beebium, text: str, emulated_seconds: float = 5.0) -> 
             time.sleep(0.05)
             current = bbc.debugger.cycle_count
             if current >= target:
-                return screen_contains(bbc.memory, text)
+                return screen_contains(bbc, text)
             if current - start >= clock_hz:
                 bbc.debugger.stop()
-                if screen_contains(bbc.memory, text):
+                if screen_contains(bbc, text):
                     return True
                 bbc.debugger.run()
 

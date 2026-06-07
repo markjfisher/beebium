@@ -44,7 +44,7 @@ def _wait_for_screen_text(bbc, text, timeout_seconds=120.0, poll_interval=0.5):
     """Wait until the given text appears on the MODE 7 screen."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        rows = read_mode7_screen(bbc.memory)
+        rows = read_mode7_screen(bbc)
         screen_text = "\n".join(rows)
         if text in screen_text:
             return True
@@ -144,35 +144,35 @@ def test_l3fs_clock_update_interval(
     ) as bbc:
         # Wait for BASIC prompt (Tube boot is slower)
         assert _wait_for_screen_text(bbc, ">", timeout_seconds=30), \
-            f"Boot to BASIC prompt failed:\n{dump_screen(bbc.memory)}"
+            f"Boot to BASIC prompt failed:\n{dump_screen(bbc)}"
 
         # Type *RUN FS3v126 to start the file server
         bbc.keyboard.type("*RUN FS3v126\r")
 
         # Wait for "Number of drives:" prompt
         assert _wait_for_screen_text(bbc, "Number of drives:", timeout_seconds=120), \
-            f"FS did not reach 'Number of drives:' prompt:\n{dump_screen(bbc.memory)}"
+            f"FS did not reach 'Number of drives:' prompt:\n{dump_screen(bbc)}"
 
         # Type 1 <RETURN>
         bbc.keyboard.type("1\r")
 
         # Wait for "Command :" prompt
         assert _wait_for_screen_text(bbc, "Command :", timeout_seconds=30), \
-            f"FS did not reach 'Command :' prompt:\n{dump_screen(bbc.memory)}"
+            f"FS did not reach 'Command :' prompt:\n{dump_screen(bbc)}"
 
         # Type S (no RETURN needed)
         bbc.keyboard.type("S")
 
         # Wait for "Stations:" prompt
         assert _wait_for_screen_text(bbc, "Stations:", timeout_seconds=10), \
-            f"FS did not reach 'Stations:' prompt:\n{dump_screen(bbc.memory)}"
+            f"FS did not reach 'Stations:' prompt:\n{dump_screen(bbc)}"
 
         # Type 2 <RETURN>
         bbc.keyboard.type("2\r")
 
         # Wait for the time display (the initial time should be 01:21)
         assert _wait_for_screen_text(bbc, "01:21", timeout_seconds=60), \
-            f"FS did not display initial time 01:21:\n{dump_screen(bbc.memory)}"
+            f"FS did not display initial time 01:21:\n{dump_screen(bbc)}"
 
         print("\nL3FS is running. Monitoring RTC activity...")
 

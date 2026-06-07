@@ -36,14 +36,14 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_cat_on_blank_disc(bbc_adfs):
     """Run *CAT and *EX on a blank ADFS hard disc."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
 
     results = parse_results(bbc_adfs)
     assert results.get("CAT-ROOT") == "PASS", \
-        f"*CAT failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*CAT failed:\n{dump_screen(bbc_adfs)}"
     assert results.get("EX-ROOT") == "PASS", \
-        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*EX failed:\n{dump_screen(bbc_adfs)}"
 
     # Verify the root directory marker appears on screen
-    assert screen_contains(bbc_adfs.memory, "$"), \
-        f"Root directory '$' not found on screen:\n{dump_screen(bbc_adfs.memory)}"
+    assert screen_contains(bbc_adfs, "$"), \
+        f"Root directory '$' not found on screen:\n{dump_screen(bbc_adfs)}"

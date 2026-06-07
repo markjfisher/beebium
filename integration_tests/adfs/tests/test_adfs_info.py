@@ -38,19 +38,19 @@ def test_disc_ssd(basictool_filepath):
 def test_adfs_info(bbc_adfs):
     """*INFO shows file details including addresses and length."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("INFO") == "PASS", \
-        f"*INFO failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*INFO failed:\n{dump_screen(bbc_adfs)}"
     # Verify the file name DATA appears in the *INFO output
-    assert screen_contains(bbc_adfs.memory, "DATA"), \
-        f"File name 'DATA' not found in *INFO output:\n{dump_screen(bbc_adfs.memory)}"
+    assert screen_contains(bbc_adfs, "DATA"), \
+        f"File name 'DATA' not found in *INFO output:\n{dump_screen(bbc_adfs)}"
 
 
 def test_adfs_ex(bbc_adfs):
     """*EX shows directory listing with file details."""
     ok = load_and_run(bbc_adfs)
-    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs.memory)}"
+    assert ok, f"Test program did not complete:\n{dump_screen(bbc_adfs)}"
     results = parse_results(bbc_adfs)
     assert results.get("EX") == "PASS", \
-        f"*EX failed:\n{dump_screen(bbc_adfs.memory)}"
+        f"*EX failed:\n{dump_screen(bbc_adfs)}"

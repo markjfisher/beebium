@@ -37,7 +37,7 @@ def _wait_for(bbc, text, timeout=60):
     """Wait for text to appear at the start of a screen row."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        for row in read_mode7_screen(bbc.memory):
+        for row in read_mode7_screen(bbc):
             if row.strip().startswith(text):
                 return True
         time.sleep(0.5)
@@ -88,9 +88,9 @@ def test_tube_osbyte_throughput(bbc):
 
     # Wait for boot (normal pacing, no coupled stepping)
     assert _wait_for(bbc, ">", timeout=30), \
-        f"Boot failed:\n{dump_screen(bbc.memory)}"
-    assert screen_contains(bbc.memory, "TUBE"), \
-        f"Tube not active:\n{dump_screen(bbc.memory)}"
+        f"Boot failed:\n{dump_screen(bbc)}"
+    assert screen_contains(bbc, "TUBE"), \
+        f"Tube not active:\n{dump_screen(bbc)}"
 
     # Machine code at &2000 (13 bytes): 256-iteration OSBYTE 51 loop.
     #   LDA #51 / LDX #0 / JSR &FFF4 / INC &2030 / BNE loop / RTS
@@ -116,7 +116,7 @@ def test_tube_osbyte_throughput(bbc):
 
     # Wait for =GO
     assert _wait_for(bbc, "=GO", timeout=60), \
-        f"Program did not reach =GO:\n{dump_screen(bbc.memory)}"
+        f"Program did not reach =GO:\n{dump_screen(bbc)}"
 
     t0 = time.monotonic()
 
@@ -125,11 +125,11 @@ def test_tube_osbyte_throughput(bbc):
     t1 = time.monotonic()
     wall_seconds = t1 - t0
 
-    rows = read_mode7_screen(bbc.memory)
-    print(f"\n{dump_screen(bbc.memory)}")
+    rows = read_mode7_screen(bbc)
+    print(f"\n{dump_screen(bbc)}")
 
     if not ok:
-        print(f"\n{dump_screen(bbc.memory)}")
+        print(f"\n{dump_screen(bbc)}")
         pytest.fail(
             f"{OSBYTE_COUNT} OSBYTE 51 calls did not complete in 180 wall-clock "
             f"seconds under normal pacing."
