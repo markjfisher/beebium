@@ -35,6 +35,8 @@ python -m grpc_tools.protoc \
     -I "$EXTENSION_API_PROTO_DIR" \
     -I "$EXTENSIONS_DIR/aun" \
     -I "$EXTENSIONS_DIR/piconet" \
+    -I "$EXTENSIONS_DIR/rpc-serial" \
+    -I "$EXTENSIONS_DIR/host-serial" \
     --python_out="$OUT_DIR" \
     --grpc_python_out="$OUT_DIR" \
     "$PROTO_DIR/video.proto" \
@@ -45,11 +47,14 @@ python -m grpc_tools.protoc \
     "$PROTO_DIR/disc.proto" \
     "$PROTO_DIR/econet.proto" \
     "$PROTO_DIR/econet_transport.proto" \
+    "$PROTO_DIR/serial.proto" \
     "$PROTO_DIR/indicator.proto" \
     "$PROTO_DIR/sideways.proto" \
     "$EXTENSION_API_PROTO_DIR/extension_ui.proto" \
     "$EXTENSIONS_DIR/aun/aun.proto" \
-    "$EXTENSIONS_DIR/piconet/piconet_service.proto"
+    "$EXTENSIONS_DIR/piconet/piconet_service.proto" \
+    "$EXTENSIONS_DIR/rpc-serial/rpc_serial.proto" \
+    "$EXTENSIONS_DIR/host-serial/host_serial.proto"
 
 # Fix imports in generated files to use relative imports
 # The generated code uses absolute imports which don't work with src layout

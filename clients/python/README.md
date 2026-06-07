@@ -4,19 +4,80 @@ Python client for the Beebium BBC Micro emulator. Designed for pytest-based test
 
 ## Installation
 
+### From a checkout (recommended: uv)
+
+This repository is a [uv](https://docs.astral.sh/uv/) project (`pyproject.toml`
++ `uv.lock`). `uv` manages an isolated environment for you, so it works on
+distributions that enforce [PEP 668](https://peps.python.org/pep-0668/) (Arch,
+recent Debian/Ubuntu, Fedora) where a system-wide `pip install` is blocked with
+`error: externally-managed-environment`.
+
 ```bash
-pip install beebium
+cd clients/python
+
+# Run anything in the project environment (uv creates it on first use):
+uv run python examples/serial_demo.py --port 50071
+
+# Run the test suite (the `dev` extra pulls in pytest + grpcio-tools):
+uv run --extra dev python -m pytest
+
+# Or materialise a .venv you can activate:
+uv sync --extra dev
 ```
 
-For development (includes grpcio-tools for proto generation):
+No `pip` is required, and nothing is installed into your system Python.
+
+### From a checkout (plain virtualenv)
+
+PEP 668 only blocks the *system* environment, so `pip` works fine inside a
+virtualenv:
+
 ```bash
-pip install beebium[dev]
+cd clients/python
+python -m venv .venv
+. .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-For image capture support (requires Pillow):
+### From PyPI
+
 ```bash
-pip install beebium[imaging]
+pip install beebium            # core client
+pip install beebium[dev]       # + grpcio-tools for proto generation
+pip install beebium[imaging]   # + Pillow for image capture
 ```
+
+On a PEP 668 system, run these inside a virtualenv (above) or via
+`uv pip install` / `pipx`.
+
+## Running the examples
+
+The `examples/` scripts need a running `beebium-server`. Build the servers
+first (see the top-level build docs); they appear at
+`build/src/server/beebium-model-b` (and `-plus`, `-plus-128k`, `-romram`).
+
+Either attach to a server you start yourself:
+
+```bash
+# terminal 1
+./build/src/server/beebium-model-b --mos roms/acorn-mos_1_20.rom --port 50071
+# terminal 2
+cd clients/python
+uv run python examples/serial_demo.py --port 50071
+```
+
+…or let an example launch (and stop) its own server. Point it at the server
+binary via `--server` / `$BEEBIUM_SERVER` and a MOS ROM via `--mos`:
+
+```bash
+cd clients/python
+export BEEBIUM_SERVER="$PWD/../../build/src/server/beebium-model-b"
+uv run python examples/serial_demo.py --mos ../../roms/acorn-mos_1_20.rom
+```
+
+`serial_demo.py` defaults `--mos` to `<repo>/roms/acorn-mos_1_20.rom` when that
+file exists, so from a full checkout `uv run python examples/serial_demo.py`
+just works.
 
 ## Quick Start
 

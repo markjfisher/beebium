@@ -98,27 +98,51 @@ std::vector<std::string> split_colon_args(std::string_view input) {
     std::vector<std::string> tokens;
     if (input.empty()) return tokens;
 
+    // Split on ':' EXCEPT inside a double-quoted run: a value that contains a
+    // colon (a URL like ip232://host:port, a Windows C:\path) must be wrapped in
+    // double quotes. The quote characters are retained in the token here and
+    // stripped from the value by parse_extension_args.
     std::string current;
-    size_t i = 0;
-    while (i < input.size()) {
-        if (input[i] == ':') {
-            // Check for :// (URI scheme) -- don't split
-            if (i + 2 < input.size() && input[i + 1] == '/' && input[i + 2] == '/') {
-                current += input[i];
-                ++i;
-                continue;
-            }
+    bool in_quotes = false;
+    for (char c : input) {
+        if (c == '"') {
+            in_quotes = !in_quotes;
+            current += c;
+        } else if (c == ':' && !in_quotes) {
             tokens.push_back(std::move(current));
             current.clear();
-            ++i;
         } else {
-            current += input[i];
-            ++i;
+            current += c;
         }
     }
     tokens.push_back(std::move(current));
     return tokens;
 }
+
+namespace {
+
+// Strip a single matched pair of surrounding double quotes from a value.
+// Returns false (via `error`) if the value opens a quote it never closes.
+bool strip_quotes(std::string& value, std::string& error) {
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+        value = value.substr(1, value.size() - 2);
+        return true;
+    }
+    if (!value.empty() && value.front() == '"') {
+        error = "unterminated quote in value '" + value + "'";
+        return false;
+    }
+    return true;
+}
+
+// A token beginning with '//' is the tell-tale of an unquoted scheme://... value
+// that the tokenizer split at the scheme colon (scheme://host -> 'scheme',
+// '//host'; file:///path -> 'file', '///path'). Guide the user to quoting.
+bool looks_like_split_url(std::string_view token) {
+    return token.size() >= 2 && token[0] == '/' && token[1] == '/';
+}
+
+}  // namespace
 
 ParseResult parse_extension_args(
         std::string_view cli_name,
@@ -162,6 +186,17 @@ ParseResult parse_extension_args(
         tokens.clear();
     }
 
+    // Guide the user past the most common mistake: an unquoted URL value, which
+    // the colon split tore apart at the scheme colon. A stray '//...' token is
+    // the unmistakable signature (a quoted value never produces one).
+    for (const auto& token : tokens) {
+        if (looks_like_split_url(token)) {
+            return err("'" + token
+                       + "' looks like part of an unquoted URL -- wrap values that "
+                         "contain ':' in double quotes, e.g. key=\"scheme://host:port\"");
+        }
+    }
+
     // Parse tokens
     size_t positional_index = 0;
 
@@ -171,6 +206,9 @@ ParseResult parse_extension_args(
             // Keyword argument: key=value
             std::string key = token.substr(0, eq_pos);
             std::string value = token.substr(eq_pos + 1);
+            if (std::string quote_error; !strip_quotes(value, quote_error)) {
+                return err(quote_error);
+            }
 
             if (is_framework_key(key)) {
                 // Framework-managed key -- pass through without schema validation
@@ -230,7 +268,11 @@ ParseResult parse_extension_args(
                 return err("parameter '" + param->key + "' specified twice");
             }
 
-            result.config[param->key] = token;
+            std::string value = token;
+            if (std::string quote_error; !strip_quotes(value, quote_error)) {
+                return err(quote_error);
+            }
+            result.config[param->key] = std::move(value);
             positional_index++;
         }
     }

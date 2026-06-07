@@ -26,6 +26,7 @@ import SwiftUI
 struct PeripheralsModeView: View {
     @ObservedObject var client: PeripheralsClient
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var serialClient: SerialClient
 
     var body: some View {
         Group {
@@ -100,7 +101,8 @@ struct PeripheralsModeView: View {
                         Divider().padding(.horizontal, 12)
                     }
                     ExtensionPointSection(group: group,
-                                          extensionUiClient: extensionUiClient)
+                                          extensionUiClient: extensionUiClient,
+                                          serialClient: serialClient)
                 }
                 if !client.tree.orphans.isEmpty {
                     if !client.tree.groups.isEmpty {
@@ -136,15 +138,31 @@ private extension View {
 private struct ExtensionPointSection: View {
     let group: PeripheralTree.ExtensionPointGroup
     @ObservedObject var extensionUiClient: ExtensionUiClient
+    @ObservedObject var serialClient: SerialClient
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Tier 1: the extension point is the section header -- the most
+            // prominent element, so the extensions read as nested beneath it.
             Text(PeripheralLabels.extensionPoint(group.extensionPoint))
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.secondary)
+                .font(.headline)
+                .foregroundColor(.primary)
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 10)
                 .padding(.bottom, 2)
+
+            // Interface (port) details, shown before the extension details: the
+            // on-board serial hardware's own state (connector standard + the
+            // emulated BBC RS423 TX/RX baud, distinct from any host-side rate).
+            // Indented under the header, a readable secondary line.
+            if group.extensionPoint == "serial-port", let label = serialPortInterface {
+                Text(label)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 32)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 4)
+            }
 
             ForEach(group.nodes) { node in
                 PeripheralNodeRow(node: node,
@@ -152,6 +170,17 @@ private struct ExtensionPointSection: View {
                                   extensionUiClient: extensionUiClient)
             }
         }
+    }
+
+    // The serial port's interface line, e.g. "RS423 Tx 75 / Rx 1200 baud".
+    // nil when the machine has no serial socket. The baud is the emulated BBC
+    // (Serial ULA) rate captured while RS423 is selected -- never the cassette
+    // rate. Until RS423 has been selected we show just the connector standard.
+    private var serialPortInterface: String? {
+        guard serialClient.hasSerialSocket else { return nil }
+        let connector = serialClient.connector.isEmpty ? "RS423" : serialClient.connector
+        guard serialClient.hasRs423Rates else { return connector }
+        return "\(connector) Tx \(serialClient.rs423TxBaud) / Rx \(serialClient.rs423RxBaud) baud"
     }
 }
 
@@ -162,10 +191,10 @@ private struct OrphanSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Unattached")
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.secondary)
+                .font(.headline)
+                .foregroundColor(.primary)
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 10)
                 .padding(.bottom, 2)
 
             ForEach(orphans) { node in
@@ -185,15 +214,20 @@ private struct PeripheralNodeRow: View {
     @ObservedObject var extensionUiClient: ExtensionUiClient
 
     private var leadingPadding: CGFloat {
-        // 16pt base indent for the section + 16pt per nesting level.
-        16 + CGFloat(depth) * 16
+        // Extensions sit one level in from their section header (which is at
+        // 16pt), so a top-level extension starts at 32pt and its own details
+        // (the ExtensionUi panel) at 48pt -- making the extension visibly
+        // subservient to its extension point. +16pt per further nesting level.
+        32 + CGFloat(depth) * 16
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                // Tier 2: the extension name -- semibold so it reads as a header
+                // above its own (regular-weight) detail rows in the panel below.
                 Text(node.displayName)
-                    .font(.body)
+                    .font(.body.weight(.semibold))
                 Spacer()
                 ForEach(node.secondaryAttachments, id: \.self) { point in
                     Text("also: \(PeripheralLabels.extensionPoint(point))")
@@ -247,7 +281,8 @@ private struct PeripheralNodeRow: View {
 struct PeripheralsModeView_Previews: PreviewProvider {
     static var previews: some View {
         PeripheralsModeView(client: PeripheralsClient(),
-                            extensionUiClient: ExtensionUiClient())
+                            extensionUiClient: ExtensionUiClient(),
+                            serialClient: SerialClient())
             .frame(width: 280, height: 400)
     }
 }

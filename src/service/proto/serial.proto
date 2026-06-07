@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package beebium;
+
+// Serial port (MC6850 ACIA + Serial ULA) status service.
+//
+// Reports the live state of the on-board serial hardware. What is attached to
+// the far end of the wire is owned by a serial PeripheralExtension (host-serial,
+// rpc-serial, loopback-serial, ...), not by this service.
+service SerialService {
+    // Query serial hardware status (ACIA + Serial ULA registers).
+    rpc GetSerialStatus(GetSerialStatusRequest) returns (SerialStatus);
+
+    // Server-pushed status stream. Writes an initial SerialStatus as soon as the
+    // stream is established, then a fresh snapshot whenever the chip state
+    // changes (sampled at min_interval_ms, so rapid TDRE/RDRF toggling during a
+    // transfer is coalesced). The stream stays open until the client cancels;
+    // use this instead of polling GetSerialStatus.
+    rpc WatchSerialStatus(WatchSerialStatusRequest) returns (stream SerialStatus);
+}
+
+message GetSerialStatusRequest {
+    // Empty - returns full status.
+}
+
+message WatchSerialStatusRequest {
+    // Minimum interval between change checks, in milliseconds (0 = default 50).
+    uint32 min_interval_ms = 1;
+}
+
+message SerialStatus {
+    // True if this machine variant has the on-board serial socket.
+    bool has_serial_socket = 1;
+
+    // Static, machine-defined: the physical connector standard. "RS423" on the
+    // Model B / B+ / Master 128; "RS232" on a Master Compact fitted with serial
+    // (only the signal levels differ -- this is purely a label). Empty when the
+    // machine has no serial socket.
+    string connector = 16;
+
+    // MC6850 ACIA state.
+    uint32 acia_control = 2;   // last control-register value written
+    uint32 acia_status = 3;    // current status-register value
+    bool tdre = 4;             // Transmit Data Register Empty
+    bool rdrf = 5;             // Receive Data Register Full
+    bool not_dcd = 6;          // /DCD pin (true = no carrier)
+    bool not_cts = 7;          // /CTS pin (true = not clear to send)
+    bool irq_pending = 8;      // ACIA interrupt output
+
+    // Serial ULA (SERPROC) state.
+    uint32 ula_control = 9;    // last latch value written
+    uint32 tx_baud = 10;       // decoded transmit baud rate
+    uint32 rx_baud = 11;       // decoded receive baud rate
+    bool rs423_selected = 12;  // RS423 (true) vs cassette (false)
+    bool motor_on = 13;        // cassette motor relay
+    uint32 tx_bit_period = 14; // transmit bit period in 2MHz cycles
+    uint32 rx_bit_period = 15; // receive bit period in 2MHz cycles
+}

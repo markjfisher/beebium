@@ -17,7 +17,8 @@
 // ModalEditor inside the Piconet extension's panel).
 //
 // This is a best-effort, UI-oriented helper:
-//   * macOS:   /dev/tty.usbmodem*, /dev/tty.usbserial*
+//   * macOS:   /dev/cu.usbmodem*, /dev/cu.usbserial* (call-out, preferred) plus
+//              the /dev/tty.usbmodem*, /dev/tty.usbserial* dial-in forms
 //   * Linux:   /dev/ttyUSB*, /dev/ttyACM*, plus any symlink entries
 //              in /dev/serial/by-id/ (the stable-id form preferred
 //              where the kernel provides it)
@@ -42,7 +43,8 @@ std::vector<std::string> enumerate_ports();
 // platform defaults. Used by unit tests with a tmpfs fixture.
 //
 // * dev_dir is scanned for entries matching the platform's tty-prefix
-//   set (macOS: tty.usbmodem, tty.usbserial; Linux: ttyUSB, ttyACM).
+//   set (macOS: cu.usbmodem, cu.usbserial, tty.usbmodem, tty.usbserial;
+//   Linux: ttyUSB, ttyACM).
 //   Matching entries are returned as "<dev_dir>/<name>".
 // * by_id_dir, if non-empty, is scanned for all entries (its contents
 //   are preserved verbatim as "<by_id_dir>/<name>") -- this mirrors

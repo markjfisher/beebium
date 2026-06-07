@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -100,7 +100,7 @@ class Basic:
             # The prompt typically appears at the start of a line
             for line in range(MODE7_LINES):
                 addr = MODE7_BASE + (line * MODE7_BYTES_PER_LINE)
-                char = self._client.memory.peek[addr]
+                char = self._client.memory.address.peek[addr]
                 if char == PROMPT_CHAR:
                     return True
 
@@ -176,7 +176,7 @@ class Basic:
 
             if mode == 7:
                 # Teletext: one byte per character
-                data = self._client.memory.bus[addr : addr + chars_per_line]
+                data = self._client.memory.address.bus[addr : addr + chars_per_line]
                 # Convert teletext codes to ASCII (strip top bit, handle control codes)
                 line = "".join(
                     chr(b & 0x7F) if 32 <= (b & 0x7F) < 127 else " " for b in data
@@ -255,7 +255,7 @@ class Basic:
             The HIMEM address (top of BASIC memory).
         """
         # HIMEM is stored at &0006-&0007 (little-endian)
-        return self._client.memory.bus.cast("<H")[0x0006]
+        return self._client.memory.address.bus.cast("<H")[0x0006]
 
     def get_page(self) -> int:
         """Get the current PAGE value.
@@ -264,7 +264,7 @@ class Basic:
             The PAGE address (start of BASIC program area).
         """
         # PAGE is stored at &0018-&0019 (little-endian)
-        return self._client.memory.bus.cast("<H")[0x0018]
+        return self._client.memory.address.bus.cast("<H")[0x0018]
 
     def get_top(self) -> int:
         """Get the current TOP value.
@@ -273,4 +273,4 @@ class Basic:
             The TOP address (end of current BASIC program).
         """
         # TOP is stored at &0012-&0013 (little-endian)
-        return self._client.memory.bus.cast("<H")[0x0012]
+        return self._client.memory.address.bus.cast("<H")[0x0012]

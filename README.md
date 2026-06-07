@@ -84,6 +84,18 @@ cd build
 ctest --output-on-failure
 ```
 
+Some integration tests light up only when an optional tool is on the `PATH`;
+they **skip cleanly** otherwise:
+
+- [`beebasm`](https://github.com/stardot/beebasm) — assembles real 6502 programs
+  onto auto-booting disc images so guest software can be driven end to end (see
+  [Testing with real 6502 code](docs/testing-from-disc.md), the
+  `beebasm → bootable disc → autoboot` pattern).
+- `pySerial` (fetched automatically via [`uv`](https://docs.astral.sh/uv/)) —
+  drives the RFC 2217 serial endpoints as a real external client.
+- [`tcpser`](https://github.com/go4retro/tcpser) — exercises the IP232 serial
+  bridge against a real modem server.
+
 ### macOS Frontend
 
 ```bash

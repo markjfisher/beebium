@@ -19,6 +19,9 @@ import { ProtocolMismatchError } from "./exceptions.js";
 import { PROTOCOL_FINGERPRINT } from "./protocol_fingerprint.js";
 import { Disc } from "./disc.js";
 import { Econet } from "./econet.js";
+import { Serial } from "./serial.js";
+import { RpcSerial } from "./rpc_serial.js";
+import { HostSerial } from "./host_serial.js";
 import { Tube } from "./tube.js";
 import { Aun } from "./aun.js";
 import { Piconet } from "./piconet.js";
@@ -78,6 +81,9 @@ export class Beebium {
     private _system?: System;
     private _disc?: Disc;
     private _econet?: Econet;
+    private _serial?: Serial;
+    private _rpcSerial?: RpcSerial;
+    private _hostSerial?: HostSerial;
     private _tube?: Tube;
     private _aun?: Aun;
     private _piconet?: Piconet;
@@ -257,6 +263,30 @@ export class Beebium {
             this._econet = new Econet(this.connection.econetStub);
         }
         return this._econet;
+    }
+
+    /** Access serial port (MC6850 ACIA + Serial ULA) status. */
+    get serial(): Serial {
+        if (this._serial === undefined) {
+            this._serial = new Serial(this.connection.serialStub);
+        }
+        return this._serial;
+    }
+
+    /** Drive the rpc-serial peer (requires the server's --rpc-serial extension). */
+    get rpcSerial(): RpcSerial {
+        if (this._rpcSerial === undefined) {
+            this._rpcSerial = new RpcSerial(this.connection.rpcSerialStub);
+        }
+        return this._rpcSerial;
+    }
+
+    /** Query/re-point the host-serial bridge (requires the server's --host-serial extension). */
+    get hostSerial(): HostSerial {
+        if (this._hostSerial === undefined) {
+            this._hostSerial = new HostSerial(this.connection.hostSerialStub);
+        }
+        return this._hostSerial;
     }
 
     /** Access Tube coprocessor management. */

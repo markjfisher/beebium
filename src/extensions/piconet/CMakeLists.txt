@@ -1,12 +1,10 @@
 # Piconet USB-CDC Econet transport extension.
 #
-# beebium_piconet_core and the plugin both build on every platform:
-# POSIX picks up PosixSerialPort.cpp, Windows picks up Win32SerialPort.cpp.
-if(WIN32)
-    set(PICONET_SERIAL_SRCS src/Win32SerialPort.cpp)
-else()
-    set(PICONET_SERIAL_SRCS src/PosixSerialPort.cpp)
-endif()
+# The platform SerialPort implementations (PosixSerialPort/Win32SerialPort)
+# were promoted to beebium core (beebium::serial); the Piconet headers under
+# include/beebium/econet/piconet/ are now thin aliasing shims. beebium_core is
+# linked PUBLIC below, so the symbols resolve without compiling them here.
+set(PICONET_SERIAL_SRCS)
 
 # Core protocol library: Piconet USB-CDC protocol parsing/formatting,
 # the PiconetBackend, and the platform serial transport. PUBLIC headers

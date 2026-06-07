@@ -35,7 +35,12 @@ bool starts_with(std::string_view s, std::string_view prefix) noexcept {
 // tiny (two entries) and inlining the test avoids a per-file split.
 bool name_is_serial_tty(std::string_view name) noexcept {
 #ifdef __APPLE__
-    return starts_with(name, "tty.usbmodem") ||
+    // The call-out (cu.*) nodes are the ones you open for a serial bridge; the
+    // dial-in (tty.*) forms are listed too for completeness. A virtual port made
+    // with `socat pty,link=/dev/cu.usbserial-<name>` therefore also shows up.
+    return starts_with(name, "cu.usbmodem") ||
+           starts_with(name, "cu.usbserial") ||
+           starts_with(name, "tty.usbmodem") ||
            starts_with(name, "tty.usbserial");
 #else
     return starts_with(name, "ttyUSB") ||

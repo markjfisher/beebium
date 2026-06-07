@@ -166,9 +166,17 @@ TEST_CASE("PiconetUi build_view (live backend) produces ModalEditor + Indicator 
     // OR type your own" intent at the right level of abstraction.
     const auto& editor = modal.editor();
     REQUIRE(editor.id() == "device_path_value");
-    REQUIRE(editor.control_case() == beebium::Control::kEditableChoice);
-    REQUIRE(editor.editable_choice().value() == fixture.slave_path());
-    REQUIRE(editor.editable_choice().placeholder() == fixture.slave_path());
+    // The port control is an EditableChoice dropdown when host ports are
+    // enumerated, or a plain TextInput when none are -- depends on the test
+    // host. Either way the value and placeholder reflect the current path.
+    if (editor.control_case() == beebium::Control::kEditableChoice) {
+        REQUIRE(editor.editable_choice().value() == fixture.slave_path());
+        REQUIRE(editor.editable_choice().placeholder() == fixture.slave_path());
+    } else {
+        REQUIRE(editor.control_case() == beebium::Control::kTextInput);
+        REQUIRE(editor.text_input().value() == fixture.slave_path());
+        REQUIRE(editor.text_input().placeholder() == fixture.slave_path());
+    }
 
     const auto& indicator = root.group().controls(1);
     REQUIRE(indicator.id() == "connected");
