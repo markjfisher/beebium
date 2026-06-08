@@ -9,9 +9,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Cheap fail-fast gate. Verify the protocol-fingerprint constants match the
+  # proto contract before committing runners to the expensive build matrix: a
+  # proto changed without a regenerated fingerprint fails here in ~15s rather
+  # than after the multi-platform vcpkg builds. If this fails, run
+  #   python scripts/sync_protocol_fingerprint.py
+  # (after regenerating the proto stubs) and commit the result.
+  preflight:
+    name: Preflight (protocol fingerprint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install protoc tooling
+        run: pip install grpcio-tools
+      - name: Verify protocol fingerprint constants are in sync
+        run: python scripts/sync_protocol_fingerprint.py --check
+
   server-macos-arm64:
     name: Build and Test Server (macOS arm64)
     runs-on: macos-14
+    needs: preflight
 
     env:
       VCPKG_DEFAULT_TRIPLET: arm64-osx-static
@@ -92,6 +112,7 @@ jobs:
   server-macos-x86_64:
     name: Build and Test Server (macOS x86_64)
     runs-on: macos-15-intel
+    needs: preflight
 
     env:
       VCPKG_DEFAULT_TRIPLET: x64-osx-static
@@ -172,6 +193,7 @@ jobs:
   server-linux:
     name: Build and Test Server (Linux)
     runs-on: ubuntu-latest
+    needs: preflight
 
     steps:
       - name: Checkout
@@ -209,6 +231,7 @@ jobs:
   server-windows:
     name: Build and Test Server (Windows)
     runs-on: windows-latest
+    needs: preflight
 
     permissions:
       contents: read
@@ -401,6 +424,7 @@ jobs:
 
     name: TypeScript Client Unit Tests
     runs-on: ubuntu-latest
+    needs: preflight
 
     steps:
       - name: Checkout
@@ -565,6 +589,7 @@ jobs:
 
     name: Python Client Unit Tests
     runs-on: ubuntu-latest
+    needs: preflight
 
     steps:
       - name: Checkout
