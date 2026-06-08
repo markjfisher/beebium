@@ -33,6 +33,9 @@ service SystemService {
 
     // Stream pacing statistics at a configurable interval.
     rpc WatchPacingStats(WatchPacingStatsRequest) returns (stream PacingStats);
+
+    // Set the runtime pacing speed multiplier.
+    rpc SetSpeedMultiplier(SetSpeedMultiplierRequest) returns (SetSpeedMultiplierResponse);
 }
 
 message GetSystemInfoRequest {
@@ -253,6 +256,16 @@ message GetPacingStatsRequest {}
 message WatchPacingStatsRequest {
     // Minimum interval between updates in milliseconds (default: 1000).
     uint32 interval_ms = 1;
+}
+
+message SetSpeedMultiplierRequest {
+    // 0.0 = unlimited, 1.0 = real-time, 2.0 = double-speed.
+    double speed_multiplier = 1;
+}
+
+message SetSpeedMultiplierResponse {
+    // Echoed back resulting runtime speed multiplier.
+    double speed_multiplier = 1;
 }
 
 // Pacing statistics snapshot.

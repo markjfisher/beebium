@@ -19,6 +19,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include "beebium/Machines.hpp"
+#include "beebium/PacingClock.hpp"
 #include "beebium/service/Server.hpp"
 #include "beebium/service/SystemService.hpp"
 
@@ -28,6 +29,7 @@
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -106,6 +108,12 @@ public:
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(machine_, "127.0.0.1", 0);
         server_->start(provenance_, identity_);
 
+        pacing_clock_ = std::make_unique<beebium::PacingClock>(
+            beebium::ModelB::Memory::default_pacing_config(),
+            std::chrono::milliseconds(1),
+            beebium::PlatformSleep{});
+        server_->set_pacing_clock(pacing_clock_.get());
+
         // Create client channel using the actual bound port
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
@@ -118,12 +126,14 @@ public:
 
     beebium::ModelB& machine() { return machine_; }
     beebium::SystemService::Stub& system() { return *system_stub_; }
+    beebium::PacingClock& pacing_clock() { return *pacing_clock_; }
 
 private:
     beebium::service::Provenance provenance_;
     beebium::service::MachineIdentity identity_;
     beebium::ModelB machine_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
+    std::unique_ptr<beebium::PacingClock> pacing_clock_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<beebium::SystemService::Stub> system_stub_;
 };
@@ -405,9 +415,53 @@ TEST_CASE("SystemService SetMachineName preserves model_type and model_name", "[
     CHECK(name_response.identity().model_name() == initial_model_name);
 }
 
+TEST_CASE("SystemService SetSpeedMultiplier accepts unlimited mode", "[grpc][system][pacing]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetSpeedMultiplierRequest request;
+    request.set_speed_multiplier(0.0);
+    beebium::SetSpeedMultiplierResponse response;
+
+    auto status = fixture.system().SetSpeedMultiplier(&context, request, &response);
+
+    REQUIRE(status.ok());
+    CHECK(response.speed_multiplier() == 0.0);
+    CHECK(fixture.pacing_clock().speed_multiplier() == 0.0);
+}
+
+TEST_CASE("SystemService SetSpeedMultiplier accepts finite positive values", "[grpc][system][pacing]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetSpeedMultiplierRequest request;
+    request.set_speed_multiplier(2.0);
+    beebium::SetSpeedMultiplierResponse response;
+
+    auto status = fixture.system().SetSpeedMultiplier(&context, request, &response);
+
+    REQUIRE(status.ok());
+    CHECK(response.speed_multiplier() == 2.0);
+    CHECK(fixture.pacing_clock().speed_multiplier() == 2.0);
+}
+
+TEST_CASE("SystemService SetSpeedMultiplier rejects negative values", "[grpc][system][pacing]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext context;
+    beebium::SetSpeedMultiplierRequest request;
+    request.set_speed_multiplier(-1.0);
+    beebium::SetSpeedMultiplierResponse response;
+
+    auto status = fixture.system().SetSpeedMultiplier(&context, request, &response);
+
+    CHECK_FALSE(status.ok());
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    CHECK(fixture.pacing_clock().speed_multiplier() == 1.0);
+}
+
 // Note: WatchServerStatus is a streaming RPC that requires special handling
 // for testing. The server-side implementation sends READY immediately and then
 // blocks waiting for shutdown or client disconnect. Testing this properly
 // requires either async clients or multi-threaded test setup.
 // For now, this functionality is covered by Python integration tests.
-

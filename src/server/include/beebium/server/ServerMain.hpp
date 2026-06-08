@@ -388,6 +388,9 @@ struct ServerConfig {
     // Wait mode for controlled startup
     WaitMode wait_mode = WaitMode::None;
 
+    // Optional runtime speed override applied before PacingClock construction.
+    std::optional<double> speed_multiplier_override;
+
     // Provenance
     std::string provenance_type;
     std::string provenance_uuid;
@@ -489,6 +492,8 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
+              << "  --turbo                  Start with unlimited emulation speed\n"
+              << "  --unlimited-speed        Alias for --turbo\n"
               << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
               << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
               << "  --provenance-version <v> Provenance version string\n"
@@ -921,6 +926,8 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: " << e.what() << "\n";
                 return ExitCode::USAGE;
             }
+        } else if (arg == "--turbo" || arg == "--unlimited-speed") {
+            config.speed_multiplier_override = 0.0;
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
         } else if (arg == "--station" && i + 1 < argc) {
@@ -1382,7 +1389,9 @@ void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
 // This function blocks until g_running becomes false (signal handler sets it).
 // Sets up shutdown callbacks for clean signal handling.
 template<typename MachineType>
-void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
+void run_emulation_loop(MachineType& machine,
+                        beebium::service::Server<MachineType>& server,
+                        const ServerConfig<MachineType>& config) {
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
@@ -1392,9 +1401,13 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     PlatformSleep sleeper;
     auto quantum = beebium::measure_sleep_quantum(sleeper);
 
+    auto pacing_config = Memory::default_pacing_config();
+    if (config.speed_multiplier_override.has_value()) {
+        pacing_config.speed_multiplier = *config.speed_multiplier_override;
+    }
+
     // Create and start pacing clock with measured quantum
-    PacingClock pacing_clock(Memory::default_pacing_config(), quantum,
-                             std::move(sleeper));
+    PacingClock pacing_clock(pacing_config, quantum, std::move(sleeper));
 
     if (use_pacing) {
         pacing_clock.start();
@@ -1964,7 +1977,7 @@ public:
             handle_wait_mode(machine, config.wait_mode);
 
             // Run main emulation loop (blocks until shutdown)
-            run_emulation_loop(machine, server);
+            run_emulation_loop(machine, server, config);
 
             std::cout << "\nShutting down...\n";
 

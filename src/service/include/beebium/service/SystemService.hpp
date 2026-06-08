@@ -27,6 +27,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -117,6 +118,11 @@ public:
         grpc::ServerContext* context,
         const WatchPacingStatsRequest* request,
         grpc::ServerWriter<beebium::PacingStats>* writer) override;
+
+    grpc::Status SetSpeedMultiplier(
+        grpc::ServerContext* context,
+        const SetSpeedMultiplierRequest* request,
+        SetSpeedMultiplierResponse* response) override;
 
     /// Notify all watchers that shutdown is imminent.
     /// Called from signal handler or shutdown path.
@@ -534,6 +540,30 @@ grpc::Status SystemServiceImpl<MachineType>::WatchPacingStats(
 
         if (!writer->Write(msg)) break;
     }
+    return grpc::Status::OK;
+}
+
+template<typename MachineType>
+grpc::Status SystemServiceImpl<MachineType>::SetSpeedMultiplier(
+    grpc::ServerContext* /*context*/,
+    const SetSpeedMultiplierRequest* request,
+    SetSpeedMultiplierResponse* response) {
+
+    if (!pacing_clock_) {
+        return {grpc::StatusCode::UNAVAILABLE, "Pacing clock not configured"};
+    }
+
+    const double speed_multiplier = request->speed_multiplier();
+    if (!std::isfinite(speed_multiplier)) {
+        return {grpc::StatusCode::INVALID_ARGUMENT, "Speed multiplier must be finite"};
+    }
+    if (speed_multiplier < 0.0) {
+        return {grpc::StatusCode::INVALID_ARGUMENT,
+                "Speed multiplier must be greater than or equal to zero"};
+    }
+
+    pacing_clock_->set_speed_multiplier(speed_multiplier);
+    response->set_speed_multiplier(pacing_clock_->speed_multiplier());
     return grpc::Status::OK;
 }
 

@@ -61,7 +61,11 @@ python -m grpc_tools.protoc \
 for file in "$OUT_DIR"/*_pb2_grpc.py; do
     if [[ -f "$file" ]]; then
         # Replace 'import xxx_pb2' with 'from . import xxx_pb2'
-        sed -i '' 's/^import \(.*_pb2\) as/from . import \1 as/' "$file"
+        if sed --version >/dev/null 2>&1; then
+            sed -i 's/^import \(.*_pb2\) as/from . import \1 as/' "$file"
+        else
+            sed -i '' 's/^import \(.*_pb2\) as/from . import \1 as/' "$file"
+        fi
     fi
 done
 
