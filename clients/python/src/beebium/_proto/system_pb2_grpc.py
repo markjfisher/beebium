@@ -88,6 +88,11 @@ class SystemServiceStub(object):
                 request_serializer=system__pb2.WatchPacingStatsRequest.SerializeToString,
                 response_deserializer=system__pb2.PacingStats.FromString,
                 _registered_method=True)
+        self.SetSpeedMultiplier = channel.unary_unary(
+                '/beebium.SystemService/SetSpeedMultiplier',
+                request_serializer=system__pb2.SetSpeedMultiplierRequest.SerializeToString,
+                response_deserializer=system__pb2.SetSpeedMultiplierResponse.FromString,
+                _registered_method=True)
 
 
 class SystemServiceServicer(object):
@@ -156,6 +161,13 @@ class SystemServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetSpeedMultiplier(self, request, context):
+        """Set the runtime pacing speed multiplier.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SystemServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -198,6 +210,11 @@ def add_SystemServiceServicer_to_server(servicer, server):
                     servicer.WatchPacingStats,
                     request_deserializer=system__pb2.WatchPacingStatsRequest.FromString,
                     response_serializer=system__pb2.PacingStats.SerializeToString,
+            ),
+            'SetSpeedMultiplier': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetSpeedMultiplier,
+                    request_deserializer=system__pb2.SetSpeedMultiplierRequest.FromString,
+                    response_serializer=system__pb2.SetSpeedMultiplierResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -418,6 +435,33 @@ class SystemService(object):
             '/beebium.SystemService/WatchPacingStats',
             system__pb2.WatchPacingStatsRequest.SerializeToString,
             system__pb2.PacingStats.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetSpeedMultiplier(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.SystemService/SetSpeedMultiplier',
+            system__pb2.SetSpeedMultiplierRequest.SerializeToString,
+            system__pb2.SetSpeedMultiplierResponse.FromString,
             options,
             channel_credentials,
             insecure,

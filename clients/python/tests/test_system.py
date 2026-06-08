@@ -416,6 +416,13 @@ class MockSetAdvertisementResponse:
         self.state = state or MockAdvertisementState()
 
 
+class MockSetSpeedMultiplierResponse:
+    """Mock SetSpeedMultiplier response."""
+
+    def __init__(self, speed_multiplier: float = 1.0):
+        self.speed_multiplier = speed_multiplier
+
+
 class TestAdvertisementState:
     """Tests for the AdvertisementState dataclass."""
 
@@ -505,3 +512,30 @@ class TestSystemAdvertisementMethods:
         # Even though we requested enabled=True, it returns False because unavailable
         assert state.enabled is False
         assert state.available is False
+
+
+class TestSystemSpeedMultiplier:
+    """Tests for runtime speed control on System."""
+
+    def test_set_speed_multiplier_calls_grpc(self, mock_stub):
+        """set_speed_multiplier forwards to SetSpeedMultiplier."""
+        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(
+            speed_multiplier=0.0
+        )
+        system = System(mock_stub)
+
+        result = system.set_speed_multiplier(0.0)
+
+        mock_stub.SetSpeedMultiplier.assert_called_once()
+        assert result == 0.0
+
+    def test_set_speed_multiplier_returns_echoed_value(self, mock_stub):
+        """set_speed_multiplier returns the server's echoed multiplier."""
+        mock_stub.SetSpeedMultiplier.return_value = MockSetSpeedMultiplierResponse(
+            speed_multiplier=2.0
+        )
+        system = System(mock_stub)
+
+        result = system.set_speed_multiplier(1.5)
+
+        assert result == 2.0

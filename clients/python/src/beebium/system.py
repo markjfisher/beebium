@@ -460,3 +460,19 @@ class System:
             available=response.state.available,
             advertised_name=response.state.advertised_name,
         )
+
+    def set_speed_multiplier(self, speed_multiplier: float) -> float:
+        """Set the runtime emulation speed multiplier.
+
+        Args:
+            speed_multiplier: Runtime speed multiplier.
+                `0.0` means unlimited speed, `1.0` is real-time.
+
+        Returns:
+            The resulting runtime speed multiplier echoed by the server.
+        """
+        request = system_pb2.SetSpeedMultiplierRequest(
+            speed_multiplier=speed_multiplier,
+        )
+        response = self._stub.SetSpeedMultiplier(request)
+        return response.speed_multiplier
