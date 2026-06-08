@@ -24,6 +24,7 @@ import time
 import pytest
 
 from beebium.client import Beebium
+from beebium.keyboard import Keyboard
 from beebium.screen import screen_contains
 
 
@@ -177,6 +178,15 @@ class TestTextInputContextManager:
 class TestTapLockKeys:
     """Tests for the ``tap_caps_lock`` and ``tap_shift_lock`` helpers."""
 
+    def test_lock_led_state_classifies_quantized_values(self) -> None:
+        """Quantized duty-cycle levels map to off/on/ambiguous as expected."""
+        assert Keyboard._lock_led_state(0) is False
+        assert Keyboard._lock_led_state(64) is False
+        assert Keyboard._lock_led_state(127) is None
+        assert Keyboard._lock_led_state(128) is True
+        assert Keyboard._lock_led_state(192) is True
+        assert Keyboard._lock_led_state(255) is True
+
     def test_tap_caps_lock_toggles_led(self, bbc: Beebium) -> None:
         """A single tap of CAPS LOCK toggles the LED state."""
         _boot_and_run(bbc)
@@ -186,7 +196,7 @@ class TestTapLockKeys:
 
         after = bbc.indicators.get("caps-lock-led")
         assert after != before
-        assert after in (0, 255)
+        assert Keyboard._lock_led_state(after) is not None
 
     def test_tap_shift_lock_toggles_led(self, bbc: Beebium) -> None:
         """A single tap of SHIFT LOCK toggles the LED state."""
@@ -197,7 +207,7 @@ class TestTapLockKeys:
 
         after = bbc.indicators.get("shift-lock-led")
         assert after != before
-        assert after in (0, 255)
+        assert Keyboard._lock_led_state(after) is not None
 
     def test_tap_raises_if_emulator_not_running(self, bbc: Beebium) -> None:
         """tap_caps_lock requires the emulator to be running."""

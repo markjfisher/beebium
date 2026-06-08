@@ -45,6 +45,15 @@ SHIFT_LOCK_KEY = (5, 0)
 CAPS_LOCK_LED = "caps-lock-led"
 SHIFT_LOCK_LED = "shift-lock-led"
 
+# CAPS LOCK and SHIFT LOCK LEDs are published through a server-side
+# QuantizedDutyCycleFilter<2>(100ms), so stable readings are bucketed into
+# 0/64/128/192/255 rather than always converging to exact binary values.
+# In practice the MOS-driven "on" state can settle at either 128 or 192,
+# depending on where the 100ms duty-cycle window lands relative to the LED PWM.
+# Treat the low buckets as off and 128+ as definitively on.
+_LOCK_LED_OFF_MAX = 64
+_LOCK_LED_ON_MIN = 128
+
 # Cycles the lock key is held before being released. The MOS scans the
 # keyboard matrix from a ~10ms timer IRQ and debounces transitions, so
 # 50ms held is comfortably above the minimum to register a clean press.
@@ -296,11 +305,10 @@ class Keyboard:
             )
 
         indicators = client.indicators
-        # IndicatorService values are PWM/duty-cycle filtered. Wait for a
-        # definitive starting reading so we can detect the toggle by a
-        # transition between definitive states rather than reacting to a
-        # transient.
-        initial_led = self._wait_for_definitive_led(
+        # IndicatorService values are PWM/duty-cycle filtered and quantized,
+        # so wait for a definitive starting state before looking for the
+        # toggle edge.
+        initial_led = self._wait_for_definitive_led_state(
             indicators, led_name, timeout_cycles
         )
         self.matrix_down(row, column)
@@ -310,7 +318,8 @@ class Keyboard:
         start_cycles = debugger.cycle_count
         while debugger.cycle_count - start_cycles < timeout_cycles:
             value = indicators.get(led_name)
-            if value != initial_led and not Indicators.is_transient(value):
+            state = self._lock_led_state(value)
+            if state is not None and state != initial_led:
                 # MOS may still be inside its keyboard-handler IRQ
                 # routine, processing the press. Wait for the release
                 # to be scanned and the key-debounce window to clear
@@ -322,7 +331,8 @@ class Keyboard:
             self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
         # Final check after the budget elapsed
         value = indicators.get(led_name)
-        if value != initial_led and not Indicators.is_transient(value):
+        state = self._lock_led_state(value)
+        if state is not None and state != initial_led:
             self._wait_emulated_cycles(_LOCK_TAP_RELEASE_SETTLE_CYCLES)
             return
         raise RuntimeError(
@@ -331,17 +341,32 @@ class Keyboard:
             f"{timeout_cycles} emulator cycles (last value {value})."
         )
 
-    def _wait_for_definitive_led(
+    @staticmethod
+    def _lock_led_state(value: int) -> bool | None:
+        """Map a filtered lock-LED reading to off/on/ambiguous.
+
+        Lock LEDs are published through a quantized duty-cycle filter, so a
+        stable logical on/off state may appear as 192 or 64 rather than exact
+        255 or 0.
+        """
+        if value <= _LOCK_LED_OFF_MAX:
+            return False
+        if value >= _LOCK_LED_ON_MIN:
+            return True
+        return None
+
+    def _wait_for_definitive_led_state(
         self, indicators: Indicators, led_name: str, timeout_cycles: int
-    ) -> int:
-        """Block until ``led_name`` reads as a definitive 0 or 255 value."""
+    ) -> bool:
+        """Block until ``led_name`` reads as a definitive logical state."""
         client = self._require_client("tap")
         debugger = client.debugger
         start_cycles = debugger.cycle_count
         while debugger.cycle_count - start_cycles < timeout_cycles:
             value = indicators.get(led_name)
-            if not Indicators.is_transient(value):
-                return value
+            state = self._lock_led_state(value)
+            if state is not None:
+                return state
             self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
         raise RuntimeError(
             f"Indicator {led_name!r} stayed in a PWM-filter transient "
@@ -398,15 +423,11 @@ class Keyboard:
             )
 
         indicators = client.indicators
-        caps_was_on = Indicators.is_definitive_on(
-            self._wait_for_definitive_led(
-                indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-            )
+        caps_was_on = self._wait_for_definitive_led_state(
+            indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
         )
-        shift_was_on = Indicators.is_definitive_on(
-            self._wait_for_definitive_led(
-                indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-            )
+        shift_was_on = self._wait_for_definitive_led_state(
+            indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
         )
 
         if caps_was_on:
@@ -421,15 +442,11 @@ class Keyboard:
             # restoring tap doesn't change the case of in-flight characters.
             self.wait_for_typing()
 
-            caps_now_on = Indicators.is_definitive_on(
-                self._wait_for_definitive_led(
-                    indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-                )
+            caps_now_on = self._wait_for_definitive_led_state(
+                indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
             )
-            shift_now_on = Indicators.is_definitive_on(
-                self._wait_for_definitive_led(
-                    indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-                )
+            shift_now_on = self._wait_for_definitive_led_state(
+                indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
             )
             if caps_now_on != caps_was_on:
                 self.tap_caps_lock()
