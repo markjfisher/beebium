@@ -89,7 +89,7 @@ jobs:
                 -DBEEBIUM_BUILD_SERVER=ON; then
               exit 0
             fi
-            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            echo "::warning::CMake configure failed (attempt ${attempt}/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
             rm -rf build
             sleep $((attempt * 20))
           done
@@ -183,7 +183,7 @@ jobs:
                 -DBEEBIUM_BUILD_SERVER=ON; then
               exit 0
             fi
-            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            echo "::warning::CMake configure failed (attempt ${attempt}/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
             rm -rf build
             sleep $((attempt * 20))
           done
@@ -243,7 +243,7 @@ jobs:
                 -DBEEBIUM_BUILD_SERVER=ON; then
               exit 0
             fi
-            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            echo "::warning::CMake configure failed (attempt ${attempt}/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
             rm -rf build
             sleep $((attempt * 20))
           done
@@ -269,7 +269,13 @@ jobs:
 
   server-windows:
     name: Build and Test Server (Windows)
-    runs-on: windows-latest
+    # Pinned to windows-2022 for Visual Studio 2022. In June 2026 GitHub
+    # migrated windows-latest / windows-2025 to ship Visual Studio 2026 by
+    # default, so the "Visual Studio 17 2022" CMake generator below no longer
+    # finds an instance on windows-latest. Revisit when moving to the VS 2026
+    # toolset (generator "Visual Studio 18 2026", and confirm the pinned vcpkg
+    # commit supports it).
+    runs-on: windows-2022
     needs: preflight
 
     permissions:
@@ -325,7 +331,7 @@ jobs:
               -DBEEBIUM_BUILD_SERVICE=ON `
               -DBEEBIUM_BUILD_SERVER=ON
             if ($LASTEXITCODE -eq 0) { exit 0 }
-            Write-Host "::warning::CMake configure failed (attempt $attempt/3), likely a transient FetchContent download error; retrying"
+            Write-Host "::warning::CMake configure failed (attempt $attempt/3); retrying in case the cause was transient (e.g. a FetchContent download). A deterministic failure will surface after the final attempt."
             Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
             Start-Sleep -Seconds ($attempt * 20)
           }
@@ -710,7 +716,9 @@ jobs:
 
   python-integration-windows:
     name: Python Client Integration Tests (Windows)
-    runs-on: windows-latest
+    # Match the windows-2022 image the server binary is built against (see
+    # server-windows) so the bundled MSVC runtime DLLs line up at run time.
+    runs-on: windows-2022
     needs: server-windows
 
     steps:
