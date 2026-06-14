@@ -102,8 +102,19 @@ targets:
             # build machine (deps reference the dev tree + /opt/homebrew).
             # See docs/macos-app-packaging.md.
             echo "  Bundling native dependencies into the app..."
-            /usr/bin/env python3 "${SRCROOT}/scripts/bundle_dependencies.py" \
-              "$SERVERS_DEST"
+            # The dynamic-triplet macOS server links gRPC/protobuf/abseil as
+            # shared dylibs shipped in the artifact's lib/ (sibling of
+            # src/server). The server binaries' baked rpath points at the CI
+            # build tree, which does not exist here, so point the bundler at the
+            # shipped lib/ directory where the actual dylibs live.
+            SERVERS_LIBDIR="$SERVERS_DIR/../../lib"
+            if [ -d "$SERVERS_LIBDIR" ]; then
+              /usr/bin/env python3 "${SRCROOT}/scripts/bundle_dependencies.py" \
+                "$SERVERS_DEST" --search-dir "$SERVERS_LIBDIR"
+            else
+              /usr/bin/env python3 "${SRCROOT}/scripts/bundle_dependencies.py" \
+                "$SERVERS_DEST"
+            fi
           else
             echo "BEEBIUM_SERVERS_BUILD_DIR not set or directory does not exist, skipping server embedding"
           fi
