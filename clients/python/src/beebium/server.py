@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -69,6 +71,18 @@ class ServerProcess:
         self._extra_args = extra_args or []
         self._process: subprocess.Popen[bytes] | None = None
         self._provenance_instance_uuid = str(uuid.uuid4())
+        # Background reader threads continuously drain the server's stdout and
+        # stderr pipes into these buffers. Draining serves two purposes: it
+        # prevents the server from blocking on a full pipe during a long
+        # session (the OS pipe buffer is only ~64KB), and it preserves the
+        # output so a mid-session crash can be reported with its final logs.
+        self._stdout_chunks: list[bytes] = []
+        self._stderr_chunks: list[bytes] = []
+        self._reader_threads: list[threading.Thread] = []
+        #: Exit code of the most recently stopped server process. Negative
+        #: values are -signal (e.g. -11 for SIGSEGV); None until the process
+        #: has been reaped by stop().
+        self.last_exit_code: int | None = None
 
     @property
     def port(self) -> int:
@@ -143,52 +157,110 @@ class ServerProcess:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        self._start_readers()
 
         # Wait for the server to be ready
         if not self._wait_for_ready(timeout):
-            # Capture any output from the failed server before stopping
-            exit_code = None
-            stdout_output = b""
-            stderr_output = b""
-            if self._process is not None:
-                # Check if process exited
-                exit_code = self._process.poll()
-                if exit_code is not None:
-                    # Process died - read its output
-                    stdout_output, stderr_output = self._process.communicate(timeout=1.0)
-            self.stop(timeout=1.0)
+            exit_code = self._process.poll() if self._process is not None else None
+            self.stop(timeout=1.0)  # joins the reader threads and reaps output
+            stdout_output, stderr_output = self._captured_output()
 
             # Build detailed error message
             error_msg = f"Server failed to start within {timeout} seconds"
             error_msg += f"\nCommand: {' '.join(cmd)}"
             if exit_code is not None:
-                error_msg += f"\nServer exited with code {exit_code}"
+                error_msg += f"\nServer exited with {self._describe_exit(exit_code)}"
             if stderr_output:
-                error_msg += f"\nServer stderr:\n{stderr_output.decode('utf-8', errors='replace')}"
+                error_msg += f"\nServer stderr:\n{stderr_output}"
             if stdout_output:
-                error_msg += f"\nServer stdout:\n{stdout_output.decode('utf-8', errors='replace')}"
+                error_msg += f"\nServer stdout:\n{stdout_output}"
             raise ServerStartupError(error_msg)
 
     def stop(self, timeout: float = 5.0) -> None:
         """Stop the server gracefully, then forcefully if needed.
 
+        If the server has already exited on its own before this call -- i.e. it
+        crashed mid-session rather than being shut down -- its exit signal and
+        captured stderr are written to this process's stderr so the failure is
+        visible (e.g. in a pytest run) instead of being silently swallowed.
+
         Args:
             timeout: Maximum time to wait for graceful shutdown (seconds).
         """
-        if self._process is None:
+        proc = self._process
+        if proc is None:
             return
 
-        # Try graceful shutdown first (SIGTERM)
-        self._process.terminate()
+        # A non-None poll() before we have asked it to stop means the server
+        # died on its own -- an unexpected mid-session crash worth reporting.
+        died_unexpectedly = proc.poll() is not None
 
-        try:
-            self._process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            # Force kill if graceful shutdown didn't work
-            self._process.kill()
-            self._process.wait(timeout=1.0)
+        if proc.poll() is None:
+            proc.terminate()  # graceful shutdown first (SIGTERM)
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()  # force kill if graceful shutdown didn't work
+                proc.wait(timeout=1.0)
 
+        # The process is gone, so its pipes are at EOF; the readers will finish.
+        for thread in self._reader_threads:
+            thread.join(timeout=2.0)
+        self._reader_threads = []
+        self.last_exit_code = proc.returncode
         self._process = None
+
+        if died_unexpectedly:
+            self._report_unexpected_exit(proc.returncode)
+
+    def _start_readers(self) -> None:
+        """Spawn daemon threads to drain the server's stdout/stderr pipes."""
+
+        def pump(pipe: object, sink: list[bytes]) -> None:
+            try:
+                for chunk in iter(lambda: pipe.read(4096), b""):  # type: ignore[union-attr]
+                    sink.append(chunk)
+            except (ValueError, OSError):
+                pass  # pipe closed underneath us during shutdown
+
+        assert self._process is not None
+        for pipe, sink in (
+            (self._process.stdout, self._stdout_chunks),
+            (self._process.stderr, self._stderr_chunks),
+        ):
+            thread = threading.Thread(target=pump, args=(pipe, sink), daemon=True)
+            thread.start()
+            self._reader_threads.append(thread)
+
+    def _captured_output(self) -> tuple[str, str]:
+        """Decode everything the reader threads have collected so far."""
+        return (
+            b"".join(self._stdout_chunks).decode("utf-8", errors="replace"),
+            b"".join(self._stderr_chunks).decode("utf-8", errors="replace"),
+        )
+
+    @staticmethod
+    def _describe_exit(code: int) -> str:
+        """Human-readable description of a subprocess exit code."""
+        if code < 0:
+            try:
+                name = signal.Signals(-code).name
+            except ValueError:
+                name = f"signal {-code}"
+            return f"signal {-code} ({name})"
+        return f"code {code}"
+
+    def _report_unexpected_exit(self, code: int | None) -> None:
+        """Write a mid-session crash report to stderr (captured by pytest)."""
+        _, stderr_output = self._captured_output()
+        detail = self._describe_exit(code) if code is not None else "unknown status"
+        report = (
+            f"\n[beebium] server {self._server_filepath} exited unexpectedly "
+            f"mid-session with {detail}."
+        )
+        if stderr_output:
+            report += f"\n[beebium] server stderr:\n{stderr_output}"
+        print(report, file=sys.stderr, flush=True)
 
     def _wait_for_ready(self, timeout: float) -> bool:
         """Wait for the server to be ready to accept connections."""
