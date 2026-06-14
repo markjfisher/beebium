@@ -70,19 +70,31 @@ jobs:
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
       - name: Configure CMake
         run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
-            -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
-            -DVCPKG_TARGET_TRIPLET=arm64-osx-static \
-            -DVCPKG_MANIFEST_INSTALL=OFF \
-            -DBEEBIUM_BUILD_TESTS=ON \
-            -DBEEBIUM_BUILD_SERVICE=ON \
-            -DBEEBIUM_BUILD_SERVER=ON
+          for attempt in 1 2 3; do
+            if cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
+                -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
+                -DVCPKG_TARGET_TRIPLET=arm64-osx-static \
+                -DVCPKG_MANIFEST_INSTALL=OFF \
+                -DBEEBIUM_BUILD_TESTS=ON \
+                -DBEEBIUM_BUILD_SERVICE=ON \
+                -DBEEBIUM_BUILD_SERVER=ON; then
+              exit 0
+            fi
+            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            rm -rf build
+            sleep $((attempt * 20))
+          done
+          echo "::error::CMake configure failed after 3 attempts"
+          exit 1
 
       - name: Build
         run: cmake --build build --parallel
@@ -152,19 +164,31 @@ jobs:
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
       - name: Configure CMake
         run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
-            -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
-            -DVCPKG_TARGET_TRIPLET=x64-osx-static \
-            -DVCPKG_MANIFEST_INSTALL=OFF \
-            -DBEEBIUM_BUILD_TESTS=ON \
-            -DBEEBIUM_BUILD_SERVICE=ON \
-            -DBEEBIUM_BUILD_SERVER=ON
+          for attempt in 1 2 3; do
+            if cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+                -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+                -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
+                -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
+                -DVCPKG_TARGET_TRIPLET=x64-osx-static \
+                -DVCPKG_MANIFEST_INSTALL=OFF \
+                -DBEEBIUM_BUILD_TESTS=ON \
+                -DBEEBIUM_BUILD_SERVICE=ON \
+                -DBEEBIUM_BUILD_SERVER=ON; then
+              exit 0
+            fi
+            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            rm -rf build
+            sleep $((attempt * 20))
+          done
+          echo "::error::CMake configure failed after 3 attempts"
+          exit 1
 
       - name: Build
         run: cmake --build build --parallel
@@ -206,13 +230,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc uuid-dev
 
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
       - name: Configure CMake
         run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBEEBIUM_BUILD_TESTS=ON \
-            -DBEEBIUM_BUILD_SERVICE=ON \
-            -DBEEBIUM_BUILD_SERVER=ON
+          for attempt in 1 2 3; do
+            if cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DBEEBIUM_BUILD_TESTS=ON \
+                -DBEEBIUM_BUILD_SERVICE=ON \
+                -DBEEBIUM_BUILD_SERVER=ON; then
+              exit 0
+            fi
+            echo "::warning::CMake configure failed (attempt ${attempt}/3), likely a transient FetchContent download error; retrying"
+            rm -rf build
+            sleep $((attempt * 20))
+          done
+          echo "::error::CMake configure failed after 3 attempts"
+          exit 1
 
       - name: Build
         run: cmake --build build --parallel 2
@@ -242,6 +278,11 @@ jobs:
 
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
+      # Pin vcpkg's tool/source download root to a cacheable path. vcpkg
+      # downloads its own pinned PowerShell-core here during compiler-hash
+      # detection, and that GitHub release URL intermittently 504s; caching
+      # the directory means it is fetched once and reused thereafter.
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
 
     steps:
       - name: Checkout
@@ -249,6 +290,12 @@ jobs:
 
       - name: Set VCPKG_INSTALLED_DIR
         run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-downloads
+          key: vcpkg-downloads-windows-77df67c
 
       - name: Configure vcpkg NuGet binary cache
         run: |
@@ -262,17 +309,28 @@ jobs:
           runVcpkgInstall: true
           vcpkgJsonGlob: 'vcpkg.json'
 
+      # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
+      # GitHub at configure time, which intermittently 504s. Clean the build
+      # tree and retry rather than failing the whole run on a transient blip.
       - name: Configure CMake
         run: |
-          cmake -B build `
-            -G "Visual Studio 17 2022" `
-            -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_INSTALLED_DIR="${env:VCPKG_INSTALLED_DIR}" `
-            -DVCPKG_MANIFEST_INSTALL=OFF `
-            -DBEEBIUM_BUILD_TESTS=ON `
-            -DBEEBIUM_BUILD_SERVICE=ON `
-            -DBEEBIUM_BUILD_SERVER=ON
+          foreach ($attempt in 1..3) {
+            cmake -B build `
+              -G "Visual Studio 17 2022" `
+              -A x64 `
+              -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+              -DVCPKG_INSTALLED_DIR="${env:VCPKG_INSTALLED_DIR}" `
+              -DVCPKG_MANIFEST_INSTALL=OFF `
+              -DBEEBIUM_BUILD_TESTS=ON `
+              -DBEEBIUM_BUILD_SERVICE=ON `
+              -DBEEBIUM_BUILD_SERVER=ON
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "::warning::CMake configure failed (attempt $attempt/3), likely a transient FetchContent download error; retrying"
+            Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds ($attempt * 20)
+          }
+          Write-Host "::error::CMake configure failed after 3 attempts"
+          exit 1
 
       - name: Build
         run: cmake --build build --config Release --parallel
