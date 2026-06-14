@@ -216,14 +216,22 @@ private:
     void stop_io_threads() {
         stop_.store(true, std::memory_order_release);
         tx_cv_.notify_all();  // wake the writer if it is waiting for data
-        if (port_) {
-            port_->close();  // unblock a pending read() so the reader can exit
-        }
+        // Do not close port_ here to interrupt the reader. Every HostSerialPort
+        // read() polls with a bounded (~100ms) select() timeout, so the reader
+        // observes stop_ and exits on its own within one poll interval. Closing
+        // the fd from this thread while the reader is inside select()/read() on
+        // it is undefined behaviour: once ::close() returns, another thread can
+        // reopen the freed descriptor number (e.g. a gRPC socket), and the
+        // reader's read() then blocks indefinitely on that unrelated fd. Join
+        // first, then close, so no thread touches port_ while it is torn down.
         if (reader_.joinable()) {
             reader_.join();
         }
         if (writer_.joinable()) {
             writer_.join();
+        }
+        if (port_) {
+            port_->close();
         }
     }
 
