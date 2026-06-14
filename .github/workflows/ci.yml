@@ -34,7 +34,13 @@ jobs:
     needs: preflight
 
     env:
-      VCPKG_DEFAULT_TRIPLET: arm64-osx-static
+      # Dynamic triplet: gRPC/protobuf/abseil build as shared dylibs so there is
+      # exactly one copy in the process. Static linkage gave the exe and each
+      # dlopened plugin their own gRPC/absl runtime, crashing (SIGSEGV in
+      # grpc_core::ExecCtx::Run) when a gRPC call crossed the exe<->plugin
+      # boundary. The dylibs are bundled into lib/, keeping the build
+      # self-contained. See cmake/BeebiumBundleRuntime.cmake.
+      VCPKG_DEFAULT_TRIPLET: arm64-osx-dynamic
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
 
     steps:
@@ -59,9 +65,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_installed
-          key: vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-arm64-dynamic-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-arm64-static-${{ env.IMAGE_VERSION }}-
+            vcpkg-${{ runner.os }}-arm64-dynamic-${{ env.IMAGE_VERSION }}-
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -82,8 +88,9 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
                 -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
                 -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
-                -DVCPKG_TARGET_TRIPLET=arm64-osx-static \
+                -DVCPKG_TARGET_TRIPLET=arm64-osx-dynamic \
                 -DVCPKG_MANIFEST_INSTALL=OFF \
+                -DBEEBIUM_BUNDLE_RUNTIME_DYLIBS=ON \
                 -DBEEBIUM_BUILD_TESTS=ON \
                 -DBEEBIUM_BUILD_SERVICE=ON \
                 -DBEEBIUM_BUILD_SERVER=ON; then
@@ -99,11 +106,21 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Verify static linking
+      - name: Verify self-contained linking
         run: |
-          echo "Checking dynamic dependencies..."
+          echo "Server dynamic dependencies:"
           otool -L build/src/server/beebium-model-b
-          # Should only show system libraries, not Homebrew paths
+          # The runtime dylibs are bundled into build/lib and referenced via
+          # @rpath; nothing should resolve to Homebrew, /usr/local, or the
+          # (non-shipped) vcpkg install tree.
+          if otool -L build/src/server/beebium-model-b | grep -qE '/opt/homebrew|/usr/local/opt|vcpkg_installed'; then
+            echo "::error::server links a non-bundled dynamic library"
+            otool -L build/src/server/beebium-model-b | grep -E '/opt/homebrew|/usr/local/opt|vcpkg_installed'
+            exit 1
+          fi
+          # The shared gRPC runtime must be bundled alongside the ABI libs.
+          test -f build/lib/libgrpc++.dylib || { echo "::error::libgrpc++.dylib was not bundled into build/lib"; exit 1; }
+          echo "Bundled runtime dylibs: $(ls build/lib/*.dylib | wc -l)"
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -118,8 +135,7 @@ jobs:
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
             build/src/server/extensions/
-            build/lib/libbeebium_extension_api.dylib
-            build/lib/libbeebium_extension_ui_proto.dylib
+            build/lib/
           retention-days: 7
 
   server-macos-x86_64:
@@ -128,7 +144,9 @@ jobs:
     needs: preflight
 
     env:
-      VCPKG_DEFAULT_TRIPLET: x64-osx-static
+      # Dynamic triplet so gRPC/protobuf/abseil are a single shared copy bundled
+      # into lib/ -- see the arm64 job and cmake/BeebiumBundleRuntime.cmake.
+      VCPKG_DEFAULT_TRIPLET: x64-osx-dynamic
       VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
 
     steps:
@@ -153,9 +171,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_installed
-          key: vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-x64-dynamic-${{ env.IMAGE_VERSION }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-x64-static-${{ env.IMAGE_VERSION }}-
+            vcpkg-${{ runner.os }}-x64-dynamic-${{ env.IMAGE_VERSION }}-
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -176,8 +194,9 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
                 -DVCPKG_INSTALLED_DIR="${VCPKG_INSTALLED_DIR}" \
                 -DVCPKG_OVERLAY_TRIPLETS="${GITHUB_WORKSPACE}/triplets" \
-                -DVCPKG_TARGET_TRIPLET=x64-osx-static \
+                -DVCPKG_TARGET_TRIPLET=x64-osx-dynamic \
                 -DVCPKG_MANIFEST_INSTALL=OFF \
+                -DBEEBIUM_BUNDLE_RUNTIME_DYLIBS=ON \
                 -DBEEBIUM_BUILD_TESTS=ON \
                 -DBEEBIUM_BUILD_SERVICE=ON \
                 -DBEEBIUM_BUILD_SERVER=ON; then
@@ -193,11 +212,21 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Verify static linking
+      - name: Verify self-contained linking
         run: |
-          echo "Checking dynamic dependencies..."
+          echo "Server dynamic dependencies:"
           otool -L build/src/server/beebium-model-b
-          # Should only show system libraries, not Homebrew paths
+          # The runtime dylibs are bundled into build/lib and referenced via
+          # @rpath; nothing should resolve to Homebrew, /usr/local, or the
+          # (non-shipped) vcpkg install tree.
+          if otool -L build/src/server/beebium-model-b | grep -qE '/opt/homebrew|/usr/local/opt|vcpkg_installed'; then
+            echo "::error::server links a non-bundled dynamic library"
+            otool -L build/src/server/beebium-model-b | grep -E '/opt/homebrew|/usr/local/opt|vcpkg_installed'
+            exit 1
+          fi
+          # The shared gRPC runtime must be bundled alongside the ABI libs.
+          test -f build/lib/libgrpc++.dylib || { echo "::error::libgrpc++.dylib was not bundled into build/lib"; exit 1; }
+          echo "Bundled runtime dylibs: $(ls build/lib/*.dylib | wc -l)"
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
@@ -212,8 +241,7 @@ jobs:
             build/src/server/beebium-model-b-romram
             build/src/server/presets/
             build/src/server/extensions/
-            build/lib/libbeebium_extension_api.dylib
-            build/lib/libbeebium_extension_ui_proto.dylib
+            build/lib/
           retention-days: 7
 
   server-linux:
