@@ -37,6 +37,19 @@ function(beebium_finalize_plugin)
         message(FATAL_ERROR "beebium_finalize_plugin: NAME is required")
     endif()
 
+    # macOS: a gRPC-service plugin must not embed its own gRPC/protobuf/abseil
+    # runtime. Two copies of the runtime in one process crash when a gRPC call
+    # crosses the exe<->plugin boundary, because gRPC's ExecCtx/closure-list
+    # state is per-copy (see project_macos_static_grpc_duplicate_runtime / gRPC
+    # #39198). Plugins leave the runtime symbols undefined -- their proto object
+    # libraries compile against the gRPC/protobuf headers but do not link the
+    # static libraries -- and resolve the host executable's single static copy
+    # at load. The server is built with -rdynamic so those symbols are visible.
+    # Harmless for plugins that reference no gRPC symbols.
+    if(APPLE)
+        target_link_options(${ARG_TARGET} PRIVATE -Wl,-undefined,dynamic_lookup)
+    endif()
+
     # Server-adjacent deploy. Only meaningful when the server executables
     # are being built this configure; skip gracefully otherwise so that
     # tests-only / plugin-only configures still succeed.

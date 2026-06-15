@@ -1265,10 +1265,29 @@ if(BEEBIUM_BUILD_SERVICE)
 
     # Plugin loader tests
     add_executable(test_plugin_loader test_plugin_loader.cpp)
+    # This test dlopen's the real plugins, which (on macOS) leave their
+    # gRPC/protobuf/abseil symbols undefined to resolve from the host process.
+    # Link the service layer so the runtime is present, and export it
+    # (-rdynamic) so the dlopen'd plugins resolve it -- exactly as the server
+    # does. See beebium_finalize_plugin / project_grpc_plugin_runtime_sharing.
     target_link_libraries(test_plugin_loader PRIVATE
         beebium_core
+        beebium_service
         Catch2::Catch2WithMain
     )
+    if(APPLE)
+        # macOS plugins leave their gRPC/protobuf/abseil symbols undefined to
+        # resolve from the host (project_grpc_plugin_runtime_sharing). Static
+        # libs are demand-loaded, so merely linking beebium_service would not
+        # pull in symbols the test itself never references (e.g. grpc::Status::OK).
+        # -force_load pulls the whole service layer -- which references the full
+        # gRPC/abseil API the plugins need -- and -rdynamic exports it, exactly
+        # reproducing the server's plugin-hosting environment. Linux plugins link
+        # libgrpc++.so themselves, so this is unnecessary there.
+        target_link_options(test_plugin_loader PRIVATE
+            -rdynamic
+            -Wl,-force_load,$<TARGET_FILE:beebium_service>)
+    endif()
     # Point the test at the canonical deploy location populated by
     # beebium_finalize_plugin() (<server-exe-dir>/extensions/<name>/),
     # matching what the server's default --extension-dir discovery
@@ -1302,10 +1321,20 @@ if(BEEBIUM_BUILD_SERVICE)
     # then dlclose's the plugins before the Indicators registry is destroyed
     # -- the same destruction order the server has at exit.
     add_executable(test_scsi_plugin_shutdown test_scsi_plugin_shutdown.cpp)
+    # dlopen's the acorn-scsi / scsi-hard-disc plugins; provide and export the
+    # gRPC runtime they resolve from the host (as the server does).
     target_link_libraries(test_scsi_plugin_shutdown PRIVATE
         beebium_core
+        beebium_service
         Catch2::Catch2WithMain
     )
+    if(APPLE)
+        # See test_plugin_loader: force-load the service layer so the dlopen'd
+        # plugins resolve the full gRPC/abseil runtime from this host.
+        target_link_options(test_scsi_plugin_shutdown PRIVATE
+            -rdynamic
+            -Wl,-force_load,$<TARGET_FILE:beebium_service>)
+    endif()
     target_compile_definitions(test_scsi_plugin_shutdown PRIVATE
         BEEBIUM_PLUGIN_EXTENSIONS_DIR="$<TARGET_FILE_DIR:beebium-model-b>/extensions"
     )

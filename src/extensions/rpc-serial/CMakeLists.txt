@@ -21,11 +21,10 @@ if(BEEBIUM_BUILD_SERVICE)
     target_include_directories(beebium_ext_rpc_serial_proto
         PUBLIC ${beebium_ext_rpc_serial_OUT_DIR}
     )
-    target_link_libraries(beebium_ext_rpc_serial_proto
-        PUBLIC
-            gRPC::grpc++
-            protobuf::libprotobuf
-    )
+    # gRPC/protobuf linkage: headers-only on macOS so the plugin resolves the
+    # runtime from the host executable (no embedded second copy); linked normally
+    # elsewhere. Standalone test binaries link gRPC explicitly (below).
+    beebium_proto_object_grpc_linkage(beebium_ext_rpc_serial_proto)
     set_target_properties(beebium_ext_rpc_serial_proto PROPERTIES
         POSITION_INDEPENDENT_CODE ON
     )
@@ -48,7 +47,14 @@ target_link_libraries(beebium_ext_rpc_serial
 
 if(BEEBIUM_BUILD_SERVICE)
     target_compile_definitions(beebium_ext_rpc_serial PUBLIC BEEBIUM_BUILD_SERVICE)
-    target_link_libraries(beebium_ext_rpc_serial PUBLIC beebium_ext_rpc_serial_proto)
+    # The unit-test static lib links gRPC for real -- its consumers are
+    # standalone test executables, not the plugin, so they need their own copy.
+    target_link_libraries(beebium_ext_rpc_serial
+        PUBLIC
+            beebium_ext_rpc_serial_proto
+            gRPC::grpc++
+            protobuf::libprotobuf
+    )
 
     # Shared library (the plugin). RpcSerialExtension/Endpoint are header-only on
     # the serial seam, so the plugin links only the extension-API surface + the
@@ -70,5 +76,8 @@ if(BEEBIUM_BUILD_SERVICE)
         PREFIX ""
         OUTPUT_NAME "rpc-serial"
     )
+    # -undefined dynamic_lookup (macOS) is applied centrally by
+    # beebium_finalize_plugin so the plugin resolves the host's single gRPC
+    # runtime; its proto object lib above is headers-only to keep it undefined.
     beebium_finalize_plugin(TARGET beebium_ext_rpc_serial_plugin NAME rpc-serial)
 endif()

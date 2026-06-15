@@ -32,11 +32,10 @@ if(BEEBIUM_BUILD_SERVICE)
         PUBLIC ${beebium_ext_acorn_rtc_OUT_DIR}
     )
 
-    target_link_libraries(beebium_ext_acorn_rtc_proto
-        PUBLIC
-            gRPC::grpc++
-            protobuf::libprotobuf
-    )
+    # gRPC/protobuf linkage: headers-only on macOS so the plugin resolves the
+    # runtime from the host executable; linked normally elsewhere. Test/built-in
+    # consumers link gRPC explicitly (below).
+    beebium_proto_object_grpc_linkage(beebium_ext_acorn_rtc_proto)
 
     set_target_properties(beebium_ext_acorn_rtc_proto PROPERTIES
         POSITION_INDEPENDENT_CODE ON
@@ -52,11 +51,15 @@ if(BEEBIUM_BUILD_SERVICE)
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    # The static (built-in / unit-test) lib links gRPC for real: its consumers
+    # are the executable and standalone test binaries, not the plugin.
     target_link_libraries(beebium_ext_acorn_rtc
         PUBLIC
             beebium_rtc_core
             beebium_core
             beebium_ext_acorn_rtc_proto
+            gRPC::grpc++
+            protobuf::libprotobuf
             # AcornRtcUi.cpp pulls in extension_ui.pb.h for the
             # View / DispatchRequest types it composes.
             beebium_extension_ui_proto
