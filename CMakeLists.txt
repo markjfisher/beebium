@@ -201,13 +201,6 @@ if(BEEBIUM_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# Bundle the vcpkg runtime dylibs (macOS dynamic build) into <build>/lib and the
-# install tree so the server is self-contained. Inert unless
-# BEEBIUM_BUNDLE_RUNTIME_DYLIBS is set.
-if(BEEBIUM_BUILD_SERVER)
-    include(${CMAKE_SOURCE_DIR}/cmake/BeebiumBundleRuntime.cmake)
-endif()
-
 # CPack packaging for the self-contained Linux server bundle (.deb + .tar.gz).
 # Configured only with the server build; inert until `cpack` is invoked.
 if(BEEBIUM_BUILD_SERVER)

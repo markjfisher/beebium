@@ -248,14 +248,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("frameworks",
                         help="Path to the app's Contents/Frameworks directory")
-    parser.add_argument(
-        "--search-dir", action="append", default=[], dest="search_dirs",
-        metavar="DIR",
-        help="Additional directory to search for @rpath dependencies "
-             "(repeatable). Needed when the binaries' baked rpaths point at a "
-             "build tree that does not exist on this machine -- e.g. a server "
-             "built in CI references <ci-workspace>/build/lib, so point this at "
-             "the shipped lib/ directory holding the actual dylibs.")
     args = parser.parse_args()
 
     frameworks = Path(args.frameworks)
@@ -276,16 +268,6 @@ def main() -> int:
 
     print(f"Bundling dependencies for {len(roots)} Mach-O root(s)...")
     bundler = Bundler(frameworks)
-    # Explicit search dirs (e.g. the shipped lib/) take precedence over the
-    # rpaths baked into the binaries, which may reference a non-existent build
-    # tree when the servers were built on a different machine (CI).
-    for search_dir in args.search_dirs:
-        resolved = Path(search_dir).resolve()
-        if resolved.is_dir():
-            bundler.search_paths.append(str(resolved))
-        else:
-            print(f"  WARNING: --search-dir does not exist: {search_dir}",
-                  file=sys.stderr)
     bundler.seed_search_paths(roots)
     for root in roots:
         bundler.process(root)
