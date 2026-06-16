@@ -15,7 +15,7 @@
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/SerialPort.hpp>
 #ifdef BEEBIUM_BUILD_SERVICE
-#include "RpcSerialService.hpp"
+#include "RpcSerialDispatcher.hpp"
 #endif
 
 #include <cstddef>
@@ -53,20 +53,20 @@ void RpcSerialExtension::init(ExtensionContext& ctx) {
 
 void RpcSerialExtension::shutdown() {
 #ifdef BEEBIUM_BUILD_SERVICE
-    service_.reset();
+    dispatcher_.reset();
 #endif
     endpoint_.reset();
 }
 
-std::vector<grpc::Service*> RpcSerialExtension::grpc_services() {
+std::vector<ExtensionRpcDispatcher*> RpcSerialExtension::rpc_dispatchers() {
 #ifdef BEEBIUM_BUILD_SERVICE
     if (!endpoint_) {
         return {};  // init() not yet called
     }
-    if (!service_) {
-        service_ = std::make_unique<RpcSerialServiceImpl>(*endpoint_);
+    if (!dispatcher_) {
+        dispatcher_ = std::make_unique<RpcSerialDispatcher>(*endpoint_);
     }
-    return {service_.get()};
+    return {dispatcher_.get()};
 #else
     return {};
 #endif

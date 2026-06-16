@@ -22,12 +22,12 @@ from beebium._proto import (
     disc_pb2_grpc,
     econet_pb2_grpc,
     econet_transport_pb2_grpc,
+    extension_rpc_pb2_grpc,
     extension_ui_pb2_grpc,
     host_serial_pb2_grpc,
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
     piconet_service_pb2_grpc,
-    rpc_serial_pb2_grpc,
     serial_pb2_grpc,
     sideways_pb2_grpc,
     system_pb2_grpc,
@@ -61,7 +61,9 @@ class Connection:
         self._disc_stub: disc_pb2_grpc.DiscServiceStub | None = None
         self._econet_stub: econet_pb2_grpc.EconetServiceStub | None = None
         self._serial_stub: serial_pb2_grpc.SerialServiceStub | None = None
-        self._rpc_serial_stub: rpc_serial_pb2_grpc.RpcSerialStub | None = None
+        self._extension_rpc_stub: (
+            extension_rpc_pb2_grpc.ExtensionRpcStub | None
+        ) = None
         self._host_serial_stub: host_serial_pb2_grpc.HostSerialStub | None = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
         self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
@@ -98,7 +100,9 @@ class Connection:
         self._disc_stub = disc_pb2_grpc.DiscServiceStub(self._channel)
         self._econet_stub = econet_pb2_grpc.EconetServiceStub(self._channel)
         self._serial_stub = serial_pb2_grpc.SerialServiceStub(self._channel)
-        self._rpc_serial_stub = rpc_serial_pb2_grpc.RpcSerialStub(self._channel)
+        self._extension_rpc_stub = extension_rpc_pb2_grpc.ExtensionRpcStub(
+            self._channel
+        )
         self._host_serial_stub = host_serial_pb2_grpc.HostSerialStub(self._channel)
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
         self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
@@ -178,11 +182,11 @@ class Connection:
         return self._serial_stub
 
     @property
-    def rpc_serial_stub(self) -> rpc_serial_pb2_grpc.RpcSerialStub:
-        """The RpcSerial stub (rpc-serial extension)."""
-        if self._rpc_serial_stub is None:
+    def extension_rpc_stub(self) -> extension_rpc_pb2_grpc.ExtensionRpcStub:
+        """The ExtensionRpc stub: the one channel for extension-provided APIs."""
+        if self._extension_rpc_stub is None:
             raise ConnectionError("Not connected")
-        return self._rpc_serial_stub
+        return self._extension_rpc_stub
 
     @property
     def host_serial_stub(self) -> host_serial_pb2_grpc.HostSerialStub:

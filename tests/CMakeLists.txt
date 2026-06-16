@@ -1437,6 +1437,17 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_extension_ui_service)
 
+    # ExtensionRpc end-to-end tests: a fake extension exposes an
+    # ExtensionRpcDispatcher, driven through the real ExtensionRpcServiceImpl
+    # over an in-process gRPC server (routing, error mapping, server-stream).
+    add_executable(test_grpc_extension_rpc
+        test_grpc_extension_rpc.cpp)
+    target_link_libraries(test_grpc_extension_rpc PRIVATE
+        beebium_service
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_grpc_extension_rpc)
+
     # Piconet gRPC service tests. The plugin DLL no longer carries
     # PiconetService (gRPC's per-module state caused heap corruption
     # when piconet.dll linked gRPC alongside the EXE -- see

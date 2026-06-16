@@ -22,7 +22,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium._proto import rpc_serial_pb2, rpc_serial_pb2_grpc
+from beebium._proto import rpc_serial_pb2
+from beebium.extension_rpc import ExtensionChannel
+
+# The logical service name the rpc-serial extension's dispatcher registers
+# (matches RpcSerialDispatcher::service_name() in the extension).
+_SERVICE = "RpcSerial"
 
 
 @dataclass(frozen=True)
@@ -34,10 +39,15 @@ class RpcSerialStatus:
 
 
 class RpcSerial:
-    """Drive the client-driven serial peer provided by the rpc-serial extension."""
+    """Drive the client-driven serial peer provided by the rpc-serial extension.
 
-    def __init__(self, stub: rpc_serial_pb2_grpc.RpcSerialStub):
-        self._stub = stub
+    The RpcSerial messages are tunnelled over the core's ExtensionRpc channel;
+    the rpc-serial plugin no longer hosts its own gRPC service. The public API
+    here is unchanged.
+    """
+
+    def __init__(self, channel: ExtensionChannel):
+        self._channel = channel
 
     def send(self, data: bytes) -> int:
         """Inject bytes for the BBC to receive.
@@ -46,20 +56,27 @@ class RpcSerial:
         when the receive queue is full; resend ``data[accepted:]`` after the BBC
         has read some. Never blocks.
         """
-        response = self._stub.Send(rpc_serial_pb2.RpcSerialSendRequest(data=data))
+        request = rpc_serial_pb2.RpcSerialSendRequest(data=data)
+        reply = self._channel.invoke(_SERVICE, "Send", request.SerializeToString())
+        response = rpc_serial_pb2.RpcSerialSendResponse()
+        response.ParseFromString(reply)
         return response.accepted
 
     def receive(self, max_bytes: int = 0) -> bytes:
         """Collect bytes the BBC has transmitted (0 = all currently available)."""
-        response = self._stub.Receive(
-            rpc_serial_pb2.RpcSerialReceiveRequest(max_bytes=max_bytes)
-        )
+        request = rpc_serial_pb2.RpcSerialReceiveRequest(max_bytes=max_bytes)
+        reply = self._channel.invoke(_SERVICE, "Receive", request.SerializeToString())
+        response = rpc_serial_pb2.RpcSerialReceiveResponse()
+        response.ParseFromString(reply)
         return response.data
 
     @property
     def status(self) -> RpcSerialStatus:
         """Pending byte counts in each direction."""
-        response = self._stub.GetStatus(rpc_serial_pb2.RpcSerialStatusRequest())
+        request = rpc_serial_pb2.RpcSerialStatusRequest()
+        reply = self._channel.invoke(_SERVICE, "GetStatus", request.SerializeToString())
+        response = rpc_serial_pb2.RpcSerialStatus()
+        response.ParseFromString(reply)
         return RpcSerialStatus(
             tx_pending=response.tx_pending, rx_pending=response.rx_pending
         )

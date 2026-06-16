@@ -23,19 +23,18 @@
 #include <string_view>
 #include <vector>
 
-namespace grpc { class Service; }
-
 namespace beebium {
 
 #ifdef BEEBIUM_BUILD_SERVICE
-class RpcSerialServiceImpl;  // forward; defined when the service layer is built
+class RpcSerialDispatcher;  // forward; defined when the service layer is built
 #endif
 
 // Built-in PeripheralExtension: a client-driven serial peer. The RPC client is
 // the device on the far end of the BBC serial wire -- it injects bytes for the
-// BBC to receive and collects bytes the BBC transmits, via the RpcSerial gRPC
-// service. The extension owns an RpcSerialEndpoint and attaches it to the
-// serial port via the SerialPort handle.
+// BBC to receive and collects bytes the BBC transmits, via the RpcSerial
+// service tunnelled over the core's ExtensionRpc channel. The extension owns
+// an RpcSerialEndpoint and attaches it to the serial port via the SerialPort
+// handle. It does NOT link gRPC: the dispatcher takes serialized bytes.
 //
 // CLI: --rpc-serial (no parameters).
 class RpcSerialExtension : public PeripheralExtension {
@@ -47,18 +46,18 @@ public:
     std::span<const std::string_view> provides() const override;
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
-    std::vector<grpc::Service*> grpc_services() override;
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // No Peripherals-sidebar panel: a client-driven peer has nothing to show or
-    // configure here. Clients drive it through the unary RpcSerial RPCs (there
-    // is no persistent session to report), and the byte queues are debugger
-    // detail, exposed via RpcSerial.GetStatus rather than the sidebar. The
-    // sidebar still lists the extension by name via ListExtensions.
+    // configure here. Clients drive it through the unary RpcSerial methods
+    // (there is no persistent session to report), and the byte queues are
+    // debugger detail, exposed via RpcSerial.GetStatus rather than the sidebar.
+    // The sidebar still lists the extension by name via ListExtensions.
 
 private:
     std::unique_ptr<RpcSerialEndpoint> endpoint_;  // constructed in init() from config
 #ifdef BEEBIUM_BUILD_SERVICE
-    std::unique_ptr<RpcSerialServiceImpl> service_;  // lazily constructed
+    std::unique_ptr<RpcSerialDispatcher> dispatcher_;  // lazily constructed
 #endif
 };
 

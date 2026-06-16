@@ -37,6 +37,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.extension_rpc import ExtensionChannel
 from beebium.host_serial import HostSerial
 from beebium.rpc_serial import RpcSerial
 from beebium.serial import Serial
@@ -389,7 +390,9 @@ class Beebium:
         the server to be launched with ``--rpc-serial``.
         """
         if self._rpc_serial is None:
-            self._rpc_serial = RpcSerial(self._connection.rpc_serial_stub)
+            self._rpc_serial = RpcSerial(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._rpc_serial
 
     @property

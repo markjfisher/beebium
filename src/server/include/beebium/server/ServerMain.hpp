@@ -19,6 +19,7 @@
 #include "beebium/extension/AttachmentPointCatalogue.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
+#include "beebium/service/ExtensionRpcService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
@@ -1865,6 +1866,12 @@ public:
             beebium::service::ExtensionUiServiceImpl extension_ui_service(
                 transport_registry, extension_registry);
 
+            // The single channel through which clients drive extension RPC
+            // services (the gRPC-free replacement for extension-hosted gRPC
+            // services). See docs/discussion/extension-rpc-channel.md.
+            beebium::service::ExtensionRpcServiceImpl extension_rpc_service(
+                transport_registry, extension_registry);
+
             // Collect all extension-provided services plus the discovery
             // services. Both peripheral and transport extensions can
             // contribute services; AunService / PiconetService come via
@@ -1876,6 +1883,7 @@ public:
             extension_services.push_back(&peripheral_extension_service);
             extension_services.push_back(&econet_transport_service);
             extension_services.push_back(&extension_ui_service);
+            extension_services.push_back(&extension_rpc_service);
 
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";

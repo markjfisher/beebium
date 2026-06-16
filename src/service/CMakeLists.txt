@@ -15,6 +15,7 @@ set(PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/serial.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/tube.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/peripheral_extension.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/extension_rpc.proto
 )
 # Note: extension_ui.proto lives under src/core/extension-api/proto/ and
 # is compiled into beebium_extension_api so plugins (and the server's
@@ -63,6 +64,7 @@ set(SERVICE_SOURCES
     src/KeyboardService.cpp
     src/ConnectionTracker.cpp
     src/ShutdownCoordinator.cpp
+    src/ExtensionRpcService.cpp
 )
 
 # Create the library
@@ -88,6 +90,10 @@ target_link_libraries(beebium_service
         # state (ExecCtx, closure lists) confined there. See
         # docs/discussion/grpc-windows-streaming-race.md.
         beebium_extension_ui_service
+        # ExtensionRpcServiceImpl bridges the gRPC-free dispatcher ABI
+        # (RpcContext/RpcResponseWriter/ExtensionRpcDispatcher, anchored in
+        # beebium_extension_api) to the ExtensionRpc gRPC service.
+        beebium_extension_api
         gRPC::grpc++
         protobuf::libprotobuf
 )

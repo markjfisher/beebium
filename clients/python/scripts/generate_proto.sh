@@ -50,6 +50,7 @@ python -m grpc_tools.protoc \
     "$PROTO_DIR/serial.proto" \
     "$PROTO_DIR/indicator.proto" \
     "$PROTO_DIR/sideways.proto" \
+    "$PROTO_DIR/extension_rpc.proto" \
     "$EXTENSION_API_PROTO_DIR/extension_ui.proto" \
     "$EXTENSIONS_DIR/aun/aun.proto" \
     "$EXTENSIONS_DIR/piconet/piconet_service.proto" \
