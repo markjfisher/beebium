@@ -163,11 +163,12 @@ service ExtensionRpc {
   // event subscriptions, etc.).
   rpc ServerStream(InvokeRequest) returns (stream InvokeResponse);
 
-  // Client-streaming and bidi: optional, add when an extension needs them.
-  // The FIRST request frame carries the route (extension_id/service/method);
-  // subsequent frames carry payload only.
-  rpc ClientStream(stream InvokeRequest) returns (InvokeResponse);
-  rpc BidiStream(stream InvokeRequest) returns (stream InvokeResponse);
+  // DEFERRED (not in the initial scope; no extension needs them yet).
+  // Client-streaming and bidi would be added the same way: the FIRST request
+  // frame carries the route (extension_id/service/method), subsequent frames
+  // carry payload only.
+  //   rpc ClientStream(stream InvokeRequest) returns (InvokeResponse);
+  //   rpc BidiStream(stream InvokeRequest) returns (stream InvokeResponse);
 
   // Discovery + reflection (see section 10).
   rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
@@ -569,20 +570,31 @@ version/descriptor surface makes checkable.
 - **Phase 3 - retire the old path.** Remove `grpc_services()`, the macOS
   Option 2 build machinery, and the Windows special-casing.
 
-## 16. Open decisions
+## 16. Decisions (settled)
 
-1. **Payload typing now**: raw bytes (simplest) vs `google.protobuf.Any`
-   (type-tagged) vs descriptor-reflection. Recommendation: **bytes now,
-   reflection later** - keeps Phase 0 tiny.
-2. **Streaming scope**: unary + server-stream only, or all four modes?
-   Recommendation: first two; revisit if an extension needs client/bidi.
-3. **Codegen vs hand-written stubs** for the first migration. Recommendation:
-   hand-written for Phase 0, generator from Phase 2.
-4. **Routing key**: instance UUID only, or `(type, instance)`? Discovery
-   shape follows from this.
-5. **UI unification**: leave `ExtensionUiService` parallel, or fold it onto
-   `ExtensionRpc` eventually?
-6. **Naming**: `ExtensionRpc` / `ExtensionService` / `PeripheralRpc`?
+1. **Payload typing**: raw **bytes** for now. `Any`/descriptor-reflection are
+   a later option (section 10), not in the initial scope.
+2. **Streaming scope**: **unary + server-stream only**. Client-streaming and
+   bidi are deferred until an extension actually needs them (none do today).
+3. **Stubs**: **hand-written** thin wrappers initially. The
+   `protoc-gen-beebium-ext` generator is a later phase (Phase 2), once the
+   shape has settled against a couple of real migrations.
+4. **Routing key**: **instance UUID only** (`extension_id`). This matches the
+   existing `ExtensionUiService` instance keying; the logical service +
+   method live in the envelope. Discovery lists instances and their services.
+5. **UI unification**: **not yet**. `ExtensionUiService` and `ExtensionRpc`
+   stay parallel; folding the UI onto the channel is a possible later
+   simplification, not a goal.
+6. **Naming**: **`ExtensionRpc`** (service), `beebium.extension` package.
+
+Still genuinely open (can settle during Phase 0/1, not blocking):
+
+- Exact `RpcContext` surface (does Phase 0 need deadline propagation, or is
+  cancellation enough?).
+- Whether `rpc_dispatchers()` returns one dispatcher per logical service or a
+  single dispatcher that names its services - a small ABI ergonomics call.
+- Error-code vocabulary: reuse `grpc::StatusCode` values verbatim, or a
+  smaller extension-specific set mapped at the edge.
 
 ## 17. References
 
