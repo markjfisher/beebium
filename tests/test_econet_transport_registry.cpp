@@ -122,13 +122,6 @@ TEST_CASE("EconetTransportRegistry: preserves an explicit user-set id",
     REQUIRE(ptr->id() == "primary-link");
 }
 
-TEST_CASE("EconetTransportRegistry: collect_grpc_services empty when extensions provide none",
-          "[econet][transport][registry]") {
-    EconetTransportRegistry registry;
-    registry.add(std::make_unique<StubTransport>());
-    REQUIRE(registry.collect_grpc_services().empty());
-}
-
 TEST_CASE("EconetTransportExtension default on_station_id_changed is a no-op",
           "[econet][transport][extension]") {
     StubTransport t;

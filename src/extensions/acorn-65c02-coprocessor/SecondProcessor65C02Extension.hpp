@@ -17,7 +17,6 @@
 #include "beebium/tube/TubeSocket.hpp"
 #include "beebium/tube/TubeUla.hpp"
 #include "beebium/service/DebuggerService.hpp"
-#include "ParasiteDebuggerAdapter.hpp"
 
 #include <array>
 #include <cstdint>
@@ -61,8 +60,6 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
-    std::vector<grpc::Service*> grpc_services() override;
-
     // --- Cross-processor debugger coordination ---
 
     // Wire the counterpart stop callbacks between host and parasite
@@ -97,8 +94,10 @@ private:
 
     std::unique_ptr<TubeUla> tube_ula_;
     std::unique_ptr<ParasiteRunner> runner_;
+    // The parasite debugger impl. The server wraps this in a
+    // ParasiteDebuggerAdapter and registers it as the ParasiteDebuggerControl
+    // gRPC service -- the extension does not host gRPC services itself.
     std::unique_ptr<service::DebuggerControlServiceImpl<ParasiteRunner>> debugger_service_;
-    std::unique_ptr<ParasiteDebuggerAdapter> debugger_adapter_;
     TubeSocket* tube_socket_ = nullptr;  // non-owning, from ExtensionContext
 };
 

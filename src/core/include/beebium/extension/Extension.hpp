@@ -185,11 +185,11 @@ public:
 
     // Optional remote-control hook. Returns the extension's RPC dispatchers
     // (zero or more), each serving one logical service over the core-hosted
-    // ExtensionRpc channel. Empty by default. This is the gRPC-free
-    // replacement for grpc_services(): the dispatchers handle serialized
-    // request/response bytes, so the extension never links gRPC. The returned
-    // pointers must outlive the Extension instance (typically members of the
-    // concrete class). See docs/discussion/extension-rpc-channel.md.
+    // ExtensionRpc channel. Empty by default. The dispatchers handle serialized
+    // request/response bytes, so the extension never links gRPC -- this is the
+    // sole way an extension exposes a client-facing API. The returned pointers
+    // must outlive the Extension instance (typically members of the concrete
+    // class). See docs/discussion/extension-rpc-channel.md.
     virtual std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() { return {}; }
 
 protected:

@@ -27,10 +27,6 @@ EconetTransportExtension::~EconetTransportExtension() = default;
 
 void EconetTransportExtension::on_station_id_changed(uint8_t /*new_id*/) {}
 
-std::vector<grpc::Service*> EconetTransportExtension::grpc_services() {
-    return {};
-}
-
 EconetTransportRegistry::~EconetTransportRegistry() = default;
 
 }  // namespace beebium

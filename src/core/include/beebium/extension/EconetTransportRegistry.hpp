@@ -75,18 +75,6 @@ public:
         return extensions_;
     }
 
-    // Collect gRPC services from every loaded transport for registration
-    // with the gRPC ServerBuilder.
-    std::vector<grpc::Service*> collect_grpc_services() {
-        std::vector<grpc::Service*> services;
-        for (auto& ext : extensions_) {
-            for (auto* svc : ext->grpc_services()) {
-                services.push_back(svc);
-            }
-        }
-        return services;
-    }
-
 private:
     std::vector<std::unique_ptr<EconetTransportExtension>> extensions_;
 };

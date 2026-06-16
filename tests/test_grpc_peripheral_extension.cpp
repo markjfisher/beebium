@@ -125,7 +125,7 @@ public:
         peripheral_ext_service_ =
             std::make_unique<beebium::service::PeripheralExtensionServiceImpl>(registry_);
 
-        auto ext_services = registry_.collect_grpc_services();
+        std::vector<grpc::Service*> ext_services;
         ext_services.push_back(peripheral_ext_service_.get());
 
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
@@ -194,7 +194,7 @@ TEST_CASE("PeripheralExtensionService ListExtensions reports has_ui correctly",
     registry.resolve_and_init(ctx);
 
     beebium::service::PeripheralExtensionServiceImpl peripheral_ext_service(registry);
-    auto ext_services = registry.collect_grpc_services();
+    std::vector<grpc::Service*> ext_services;
     ext_services.push_back(&peripheral_ext_service);
 
     beebium::service::Server<beebium::ModelB> server(machine, "127.0.0.1", 0);
@@ -250,7 +250,7 @@ TEST_CASE("PeripheralExtensionService ListExtensions serialises storage devices"
     registry.resolve_and_init(ctx);
 
     beebium::service::PeripheralExtensionServiceImpl peripheral_ext_service(registry);
-    auto ext_services = registry.collect_grpc_services();
+    std::vector<grpc::Service*> ext_services;
     ext_services.push_back(&peripheral_ext_service);
 
     beebium::service::Server<beebium::ModelB> server(machine, "127.0.0.1", 0);
@@ -319,7 +319,7 @@ TEST_CASE("PeripheralExtensionService ListExtensions empty when no extensions lo
 
     beebium::service::PeripheralExtensionServiceImpl peripheral_ext_service(registry);
 
-    auto ext_services = registry.collect_grpc_services();
+    std::vector<grpc::Service*> ext_services;
     ext_services.push_back(&peripheral_ext_service);
 
     beebium::service::Server<beebium::ModelB> server(machine, "127.0.0.1", 0);

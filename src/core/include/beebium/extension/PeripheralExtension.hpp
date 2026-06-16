@@ -57,9 +57,9 @@ public:
     // Called during shutdown in reverse init order.
     virtual void shutdown() = 0;
 
-    // Zero or more gRPC services for client interaction.
-    // Collected after init() and registered with the gRPC ServerBuilder.
-    virtual std::vector<grpc::Service*> grpc_services() { return {}; }
+    // A peripheral extension's client-facing API is served through the core's
+    // ExtensionRpc channel via rpc_dispatchers() (declared on Extension), not
+    // by hosting a gRPC service here.
 };
 
 }  // namespace beebium

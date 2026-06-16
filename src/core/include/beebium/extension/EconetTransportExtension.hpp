@@ -55,11 +55,9 @@ public:
     // EconetTransportExtension.cpp.
     virtual void on_station_id_changed(uint8_t new_station_id);
 
-    // Zero or more gRPC services for client interaction
-    // (e.g. AUN-specific peer-list RPCs). Collected after backend
-    // construction and registered with the gRPC ServerBuilder. Defined
-    // out-of-line in EconetTransportExtension.cpp.
-    virtual std::vector<grpc::Service*> grpc_services();
+    // A transport's client-facing API (e.g. AUN peer-list RPCs) is served
+    // through the core's ExtensionRpc channel via rpc_dispatchers() (declared
+    // on Extension), not by hosting a gRPC service here.
 };
 
 }  // namespace beebium

@@ -42,7 +42,7 @@ TEST_CASE("Ip232SerialExtension attaches to the serial port", "[serial][ip232]")
     Ip232SerialExtension ext;
     REQUIRE(ext.attaches_to().size() == 1);
     CHECK(ext.attaches_to()[0] == "serial-port");
-    CHECK(ext.grpc_services().empty());  // no typed service in v1
+    CHECK(ext.rpc_dispatchers().empty());  // no typed service in v1
 
     ext.set_config(base_config());
     ext.init(ctx);
