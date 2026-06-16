@@ -8,9 +8,11 @@ beebium_compile_proto(
     PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# Messages only: the dispatcher (de)serializes these. The generated
+# .grpc.pb.cc stub is deliberately NOT compiled -- that is what would pull
+# gRPC in. See docs/discussion/extension-rpc-channel.md.
 add_library(beebium_ext_test_scratch_ram_proto OBJECT
     ${beebium_ext_test_scratch_ram_PROTO_SRCS}
-    ${beebium_ext_test_scratch_ram_GRPC_SRCS}
 )
 
 target_include_directories(beebium_ext_test_scratch_ram_proto
@@ -19,7 +21,6 @@ target_include_directories(beebium_ext_test_scratch_ram_proto
 
 target_link_libraries(beebium_ext_test_scratch_ram_proto
     PUBLIC
-        gRPC::grpc++
         protobuf::libprotobuf
 )
 
@@ -39,6 +40,7 @@ target_include_directories(beebium_ext_test_scratch_ram
 target_link_libraries(beebium_ext_test_scratch_ram
     PUBLIC
         beebium_core
+        beebium_extension_api
         beebium_ext_test_scratch_ram_proto
 )
 

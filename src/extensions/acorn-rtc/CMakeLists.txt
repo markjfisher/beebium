@@ -23,19 +23,22 @@ if(BEEBIUM_BUILD_SERVICE)
         PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    # Messages only: the dispatcher (de)serializes these. The generated
+    # .grpc.pb.cc stub is deliberately NOT compiled -- that (and the macOS
+    # headers-only Option 2 linkage it needed) is what would pull gRPC in. The
+    # RTC's typed API is served over the core's ExtensionRpc channel instead.
+    # See docs/discussion/extension-rpc-channel.md.
     add_library(beebium_ext_acorn_rtc_proto OBJECT
         ${beebium_ext_acorn_rtc_PROTO_SRCS}
-        ${beebium_ext_acorn_rtc_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_rtc_proto
         PUBLIC ${beebium_ext_acorn_rtc_OUT_DIR}
     )
 
-    # gRPC/protobuf linkage: headers-only on macOS so the plugin resolves the
-    # runtime from the host executable; linked normally elsewhere. Test/built-in
-    # consumers link gRPC explicitly (below).
-    beebium_proto_object_grpc_linkage(beebium_ext_acorn_rtc_proto)
+    target_link_libraries(beebium_ext_acorn_rtc_proto
+        PUBLIC protobuf::libprotobuf
+    )
 
     set_target_properties(beebium_ext_acorn_rtc_proto PROPERTIES
         POSITION_INDEPENDENT_CODE ON
@@ -51,15 +54,12 @@ if(BEEBIUM_BUILD_SERVICE)
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    # The static (built-in / unit-test) lib links gRPC for real: its consumers
-    # are the executable and standalone test binaries, not the plugin.
     target_link_libraries(beebium_ext_acorn_rtc
         PUBLIC
             beebium_rtc_core
             beebium_core
+            beebium_extension_api
             beebium_ext_acorn_rtc_proto
-            gRPC::grpc++
-            protobuf::libprotobuf
             # AcornRtcUi.cpp pulls in extension_ui.pb.h for the
             # View / DispatchRequest types it composes.
             beebium_extension_ui_proto

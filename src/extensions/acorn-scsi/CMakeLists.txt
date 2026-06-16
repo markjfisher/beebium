@@ -31,17 +31,18 @@ if(BEEBIUM_BUILD_SERVICE)
 
     add_library(beebium_ext_acorn_scsi_proto OBJECT
         ${beebium_ext_acorn_scsi_PROTO_SRCS}
-        ${beebium_ext_acorn_scsi_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_scsi_proto
         PUBLIC ${beebium_ext_acorn_scsi_OUT_DIR}
     )
 
-    # gRPC/protobuf linkage: headers-only on macOS so the plugin resolves the
-    # runtime from the host executable; linked normally elsewhere. Test/built-in
-    # consumers link gRPC explicitly (below).
-    beebium_proto_object_grpc_linkage(beebium_ext_acorn_scsi_proto)
+    # Messages only (no .grpc.pb.cc, no macOS Option 2 headers-only linkage):
+    # that is what pulled gRPC in. The SCSI host-adapter API is served over the
+    # core's ExtensionRpc channel. See docs/discussion/extension-rpc-channel.md.
+    target_link_libraries(beebium_ext_acorn_scsi_proto
+        PUBLIC protobuf::libprotobuf
+    )
 
     set_target_properties(beebium_ext_acorn_scsi_proto PROPERTIES
         POSITION_INDEPENDENT_CODE ON
@@ -56,15 +57,11 @@ if(BEEBIUM_BUILD_SERVICE)
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    # The static (built-in / unit-test) lib links gRPC for real: its consumers
-    # are the executable and standalone test binaries, not the plugin.
     target_link_libraries(beebium_ext_acorn_scsi
         PUBLIC
             beebium_scsi_core
             beebium_core
             beebium_ext_acorn_scsi_proto
-            gRPC::grpc++
-            protobuf::libprotobuf
     )
 
     # Shared library (plugin extension)

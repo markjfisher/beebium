@@ -13,7 +13,6 @@
 #ifndef BEEBIUM_ACORN_RTC_EXTENSION_HPP
 #define BEEBIUM_ACORN_RTC_EXTENSION_HPP
 
-#include "AcornRtcService.hpp"
 #include "AcornRtcUi.hpp"
 #include "Saf3019p.hpp"
 #include <beebium/extension/PeripheralExtension.hpp>
@@ -26,18 +25,24 @@
 
 namespace beebium {
 
+class ExtensionRpcDispatcher;
+class AcornRtcDispatcher;  // defined in AcornRtcDispatcher.hpp
+
 class AcornRtcExtension : public PeripheralExtension,
                               public UserPortDevice {
 public:
-    AcornRtcExtension() = default;
-    ~AcornRtcExtension() override = default;
+    // Both defined in the .cpp where AcornRtcDispatcher is complete (the
+    // unique_ptr<AcornRtcDispatcher> member needs it for construction cleanup
+    // and destruction).
+    AcornRtcExtension();
+    ~AcornRtcExtension() override;
 
     // PeripheralExtension interface
     std::span<const std::string_view> attaches_to() const override;
     std::span<const std::string_view> provides() const override;
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
-    std::vector<grpc::Service*> grpc_services() override;
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // ExtensionUi panel for the Peripherals sidebar. Returns a stable
     // pointer (owned by this extension) showing the current chip
@@ -47,13 +52,13 @@ public:
     // UserPortDevice interface
     uint8_t update_port_b(uint8_t output, uint8_t ddr) override;
 
-    // Access for gRPC service
+    // Access for the dispatcher and UI.
     Saf3019p& chip() { return chip_; }
 
 private:
     Saf3019p chip_;
     bool ddr_reset_armed_ = false;
-    std::unique_ptr<AcornRtcServiceImpl> service_;
+    std::unique_ptr<AcornRtcDispatcher> dispatcher_;
     AcornRtcUi ui_{*this};
 };
 

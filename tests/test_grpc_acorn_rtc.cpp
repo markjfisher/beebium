@@ -10,30 +10,38 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// Test gRPC AcornRtcService provided by the AcornRtcExtension.
+// Test the AUN-style AcornRtc operations tunnelled through the core's generic
+// ExtensionRpc channel: a real server with the ExtensionRpc service over a
+// registry holding the RTC extension, driven by serializing each request,
+// calling ExtensionRpc.Invoke(service="AcornRtcService"), and parsing the
+// reply -- exactly as the Python/TS clients do over the wire.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "beebium/Machines.hpp"
 #include "beebium/service/Server.hpp"
+#include "beebium/service/ExtensionRpcService.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
 #include "beebium/extension/ExtensionRegistry.hpp"
+#include "beebium/extension/EconetTransportRegistry.hpp"
 #include "AcornRtcExtension.hpp"
 
-#include "acorn_rtc.grpc.pb.h"
+#include "acorn_rtc.pb.h"
+#include "extension_rpc.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
+
+#include <span>
+#include <string>
 
 namespace {
 
 class AcornRtcGrpcFixture {
 public:
-    AcornRtcGrpcFixture() {
+    AcornRtcGrpcFixture() : service_(transports_, registry_) {
         machine_.reset();
 
-        // Set up extension registry with user-port extension point
         registry_.register_extension_point("user-port");
 
-        // Create and configure the RTC extension with a known time
         auto rtc = std::make_unique<beebium::AcornRtcExtension>();
         rtc->set_config({
             {"id", "test-rtc"},
@@ -46,16 +54,15 @@ public:
             &machine_.state().memory.user_port());
         registry_.resolve_and_init(ctx);
 
-        auto ext_services = registry_.collect_grpc_services();
-
-        // Start server with extension services
+        services_.push_back(&service_);
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
             machine_, "127.0.0.1", 0);
-        server_->start({}, {}, false, {}, nullptr, ext_services);
+        server_->start({}, {}, false, {}, nullptr,
+                       std::span<grpc::Service*>(services_));
 
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-        stub_ = beebium::AcornRtcService::NewStub(channel_);
+        stub_ = beebium::ExtensionRpc::NewStub(channel_);
     }
 
     ~AcornRtcGrpcFixture() {
@@ -63,14 +70,31 @@ public:
         registry_.shutdown();
     }
 
-    beebium::AcornRtcService::Stub& stub() { return *stub_; }
+    // Serialize `req`, tunnel via ExtensionRpc.Invoke, parse the reply.
+    template <typename Req, typename Resp>
+    grpc::Status invoke(const std::string& method, const Req& req, Resp* resp) {
+        grpc::ClientContext ctx;
+        beebium::InvokeRequest ireq;
+        ireq.set_service("AcornRtcService");
+        ireq.set_method(method);
+        ireq.set_payload(req.SerializeAsString());
+        beebium::InvokeResponse iresp;
+        grpc::Status status = stub_->Invoke(&ctx, ireq, &iresp);
+        if (status.ok() && resp != nullptr) {
+            REQUIRE(resp->ParseFromString(iresp.payload()));
+        }
+        return status;
+    }
 
 private:
     beebium::ModelB machine_;
+    beebium::EconetTransportRegistry transports_;
     beebium::ExtensionRegistry registry_;
+    beebium::service::ExtensionRpcServiceImpl service_;
+    std::vector<grpc::Service*> services_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<beebium::AcornRtcService::Stub> stub_;
+    std::unique_ptr<beebium::ExtensionRpc::Stub> stub_;
 };
 
 }  // namespace
@@ -79,11 +103,10 @@ TEST_CASE("AcornRtcService GetTime returns initialised values",
           "[grpc][extension][acorn-rtc]") {
     AcornRtcGrpcFixture fixture;
 
-    grpc::ClientContext ctx;
     beebium::GetRtcTimeRequest request;
     beebium::GetRtcTimeResponse response;
 
-    auto status = fixture.stub().GetTime(&ctx, request, &response);
+    auto status = fixture.invoke("GetTime", request, &response);
     REQUIRE(status.ok());
     REQUIRE(response.year() == 1985);
     REQUIRE(response.month() == 6);
@@ -99,20 +122,18 @@ TEST_CASE("AcornRtcService SetTime updates registers",
 
     // Set a new time
     {
-        grpc::ClientContext ctx;
         beebium::SetRtcTimeRequest request;
         beebium::SetRtcTimeResponse response;
         request.set_iso8601("1990-12-25T08:00");
-        auto status = fixture.stub().SetTime(&ctx, request, &response);
+        auto status = fixture.invoke("SetTime", request, &response);
         REQUIRE(status.ok());
     }
 
     // Verify it took effect
     {
-        grpc::ClientContext ctx;
         beebium::GetRtcTimeRequest request;
         beebium::GetRtcTimeResponse response;
-        auto status = fixture.stub().GetTime(&ctx, request, &response);
+        auto status = fixture.invoke("GetTime", request, &response);
         REQUIRE(status.ok());
         REQUIRE(response.year() == 1990);
         REQUIRE(response.month() == 12);
@@ -126,12 +147,11 @@ TEST_CASE("AcornRtcService SetTime rejects out-of-range year",
           "[grpc][extension][acorn-rtc]") {
     AcornRtcGrpcFixture fixture;
 
-    grpc::ClientContext ctx;
     beebium::SetRtcTimeRequest request;
     beebium::SetRtcTimeResponse response;
     request.set_iso8601("2026-04-02T10:00");
 
-    auto status = fixture.stub().SetTime(&ctx, request, &response);
+    auto status = fixture.invoke("SetTime", request, &response);
     REQUIRE_FALSE(status.ok());
     REQUIRE(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
 }
@@ -140,11 +160,10 @@ TEST_CASE("AcornRtcService GetRegisters returns 8 values",
           "[grpc][extension][acorn-rtc]") {
     AcornRtcGrpcFixture fixture;
 
-    grpc::ClientContext ctx;
     beebium::GetRtcRegistersRequest request;
     beebium::GetRtcRegistersResponse response;
 
-    auto status = fixture.stub().GetRegisters(&ctx, request, &response);
+    auto status = fixture.invoke("GetRegisters", request, &response);
     REQUIRE(status.ok());
     REQUIRE(response.registers_size() == 8);
 
@@ -163,21 +182,19 @@ TEST_CASE("AcornRtcService SetRegister applies wrapping",
 
     // Write BCD 0x71 to register 7 (minute alarm, wrapping test)
     {
-        grpc::ClientContext ctx;
         beebium::SetRtcRegisterRequest request;
         beebium::SetRtcRegisterResponse response;
         request.set_register_index(7);
         request.set_bcd_value(0x71);
-        auto status = fixture.stub().SetRegister(&ctx, request, &response);
+        auto status = fixture.invoke("SetRegister", request, &response);
         REQUIRE(status.ok());
     }
 
     // Read back and verify wrapping: 0x71 (113) wraps to 13 (0x0D)
     {
-        grpc::ClientContext ctx;
         beebium::GetRtcRegistersRequest request;
         beebium::GetRtcRegistersResponse response;
-        auto status = fixture.stub().GetRegisters(&ctx, request, &response);
+        auto status = fixture.invoke("GetRegisters", request, &response);
         REQUIRE(status.ok());
         REQUIRE(response.registers(7) == 13);  // raw byte 13 = 0x0D
     }

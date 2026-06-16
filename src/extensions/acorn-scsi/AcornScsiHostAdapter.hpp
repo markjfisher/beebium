@@ -37,7 +37,8 @@
 
 namespace beebium {
 
-class ScsiHostAdapterServiceImpl;
+class ExtensionRpcDispatcher;
+class ScsiHostAdapterDispatcher;
 
 // Acorn SCSI Host Adapter extension for the 1 MHz bus.
 //
@@ -70,7 +71,7 @@ public:
 
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
-    std::vector<grpc::Service*> grpc_services() override;
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // Register a per-LUN activity indicator. Called by SCSI target extensions
     // (e.g. scsi-hard-disc) during their own init() after the adapter has been
@@ -148,7 +149,7 @@ private:
 
     ScsiBus bus_;
     ScsiTargetRegistry registry_;
-    std::unique_ptr<ScsiHostAdapterServiceImpl> service_;
+    std::unique_ptr<ScsiHostAdapterDispatcher> dispatcher_;
 
     // Captured from ExtensionContext during init(). Non-owning; lifetime is
     // managed by the machine.
