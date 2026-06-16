@@ -24,7 +24,6 @@ from beebium._proto import (
     econet_transport_pb2_grpc,
     extension_rpc_pb2_grpc,
     extension_ui_pb2_grpc,
-    host_serial_pb2_grpc,
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
     piconet_service_pb2_grpc,
@@ -64,7 +63,6 @@ class Connection:
         self._extension_rpc_stub: (
             extension_rpc_pb2_grpc.ExtensionRpcStub | None
         ) = None
-        self._host_serial_stub: host_serial_pb2_grpc.HostSerialStub | None = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
         self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
         self._piconet_stub: piconet_service_pb2_grpc.PiconetServiceStub | None = None
@@ -103,7 +101,6 @@ class Connection:
         self._extension_rpc_stub = extension_rpc_pb2_grpc.ExtensionRpcStub(
             self._channel
         )
-        self._host_serial_stub = host_serial_pb2_grpc.HostSerialStub(self._channel)
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
         self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
         self._piconet_stub = piconet_service_pb2_grpc.PiconetServiceStub(self._channel)
@@ -187,13 +184,6 @@ class Connection:
         if self._extension_rpc_stub is None:
             raise ConnectionError("Not connected")
         return self._extension_rpc_stub
-
-    @property
-    def host_serial_stub(self) -> host_serial_pb2_grpc.HostSerialStub:
-        """The HostSerial stub (host-serial extension)."""
-        if self._host_serial_stub is None:
-            raise ConnectionError("Not connected")
-        return self._host_serial_stub
 
     @property
     def econet_transport_stub(self) -> econet_transport_pb2_grpc.EconetTransportServiceStub:

@@ -23,7 +23,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from beebium._proto import host_serial_pb2, host_serial_pb2_grpc
+from beebium._proto import host_serial_pb2
+from beebium.extension_rpc import ExtensionChannel
+
+# The logical service name the host-serial extension's dispatcher registers
+# (matches HostSerialDispatcher::service_name() in the extension).
+_SERVICE = "HostSerial"
 
 
 @dataclass(frozen=True)
@@ -38,14 +43,22 @@ class HostSerialConfig:
 
 
 class HostSerial:
-    """Query and re-point the host-serial bridge."""
+    """Query and re-point the host-serial bridge.
 
-    def __init__(self, stub: host_serial_pb2_grpc.HostSerialStub):
-        self._stub = stub
+    The HostSerial messages are tunnelled over the core's ExtensionRpc channel;
+    the host-serial extension no longer hosts its own gRPC service. The public
+    API here is unchanged.
+    """
+
+    def __init__(self, channel: ExtensionChannel):
+        self._channel = channel
 
     def get_config(self) -> HostSerialConfig:
         """Read the current bridge configuration and open state."""
-        response = self._stub.GetConfig(host_serial_pb2.HostSerialGetConfigRequest())
+        request = host_serial_pb2.HostSerialGetConfigRequest()
+        reply = self._channel.invoke(_SERVICE, "GetConfig", request.SerializeToString())
+        response = host_serial_pb2.HostSerialConfig()
+        response.ParseFromString(reply)
         return _config_from_proto(response)
 
     def set_config(
@@ -68,7 +81,9 @@ class HostSerial:
             request.path = path
         if baud is not None:
             request.baud = baud
-        response = self._stub.SetConfig(request)
+        reply = self._channel.invoke(_SERVICE, "SetConfig", request.SerializeToString())
+        response = host_serial_pb2.HostSerialConfig()
+        response.ParseFromString(reply)
         return _config_from_proto(response)
 
 

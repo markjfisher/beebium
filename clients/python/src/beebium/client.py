@@ -404,7 +404,9 @@ class Beebium:
         ``--host-serial``.
         """
         if self._host_serial is None:
-            self._host_serial = HostSerial(self._connection.host_serial_stub)
+            self._host_serial = HostSerial(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._host_serial
 
     @property

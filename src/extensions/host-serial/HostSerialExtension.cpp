@@ -13,7 +13,7 @@
 #include "HostSerialExtension.hpp"
 
 #ifdef BEEBIUM_BUILD_SERVICE
-#include "HostSerialService.hpp"
+#include "HostSerialDispatcher.hpp"
 #endif
 
 #include <beebium/extension/ExtensionContext.hpp>
@@ -132,23 +132,23 @@ void HostSerialExtension::init(ExtensionContext& ctx) {
 
 void HostSerialExtension::shutdown() {
 #ifdef BEEBIUM_BUILD_SERVICE
-    // Drop the service before the endpoint it references.
-    service_.reset();
+    // Drop the dispatcher before the endpoint it references.
+    dispatcher_.reset();
 #endif
     // Drops the endpoint, which stops and joins the reader thread. The machine
     // is being torn down, so the ULA is not ticking through the handle.
     endpoint_.reset();
 }
 
-std::vector<grpc::Service*> HostSerialExtension::grpc_services() {
+std::vector<ExtensionRpcDispatcher*> HostSerialExtension::rpc_dispatchers() {
 #ifdef BEEBIUM_BUILD_SERVICE
     if (!endpoint_) {
-        return {};  // not initialised (or init failed): no service to expose
+        return {};  // not initialised (or init failed): no dispatcher to expose
     }
-    if (!service_) {
-        service_ = std::make_unique<HostSerialServiceImpl>(*endpoint_);
+    if (!dispatcher_) {
+        dispatcher_ = std::make_unique<HostSerialDispatcher>(*endpoint_);
     }
-    return {service_.get()};
+    return {dispatcher_.get()};
 #else
     return {};
 #endif
