@@ -26,7 +26,6 @@ from beebium._proto import (
     extension_ui_pb2_grpc,
     indicator_pb2_grpc,
     keyboard_pb2_grpc,
-    piconet_service_pb2_grpc,
     serial_pb2_grpc,
     sideways_pb2_grpc,
     system_pb2_grpc,
@@ -65,7 +64,6 @@ class Connection:
         ) = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
         self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
-        self._piconet_stub: piconet_service_pb2_grpc.PiconetServiceStub | None = None
         self._extension_ui_stub: extension_ui_pb2_grpc.ExtensionUiServiceStub | None = None
         self._indicator_stub: indicator_pb2_grpc.IndicatorServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
@@ -103,7 +101,6 @@ class Connection:
         )
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
         self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
-        self._piconet_stub = piconet_service_pb2_grpc.PiconetServiceStub(self._channel)
         self._extension_ui_stub = extension_ui_pb2_grpc.ExtensionUiServiceStub(self._channel)
         self._indicator_stub = indicator_pb2_grpc.IndicatorServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
@@ -200,13 +197,6 @@ class Connection:
         return self._aun_stub
 
     @property
-    def piconet_stub(self) -> piconet_service_pb2_grpc.PiconetServiceStub:
-        """The PiconetService stub (Piconet-specific operations)."""
-        if self._piconet_stub is None:
-            raise ConnectionError("Not connected")
-        return self._piconet_stub
-
-    @property
     def extension_ui_stub(self) -> extension_ui_pb2_grpc.ExtensionUiServiceStub:
         """The ExtensionUiService stub (server-driven UI for extensions)."""
         if self._extension_ui_stub is None:
@@ -253,7 +243,6 @@ class Connection:
             self._econet_stub = None
             self._econet_transport_stub = None
             self._aun_stub = None
-            self._piconet_stub = None
             self._extension_ui_stub = None
             self._indicator_stub = None
             self._keyboard_stub = None

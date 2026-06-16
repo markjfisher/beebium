@@ -16,7 +16,6 @@ import { SerialServiceClient } from "./generated/serial.js";
 import { ExtensionRpcClient } from "./generated/extension_rpc.js";
 import { TubeServiceClient } from "./generated/tube.js";
 import { AunServiceClient } from "./generated/aun.js";
-import { PiconetServiceClient } from "./generated/piconet_service.js";
 import { EconetTransportServiceClient } from "./generated/econet_transport.js";
 import { ExtensionUiServiceClient } from "./generated/extension_ui.js";
 import { IndicatorServiceClient } from "./generated/indicator.js";
@@ -33,7 +32,6 @@ import type { SerialServiceClient as SerialServiceClientType } from "./generated
 import type { ExtensionRpcClient as ExtensionRpcClientType } from "./generated/extension_rpc.js";
 import type { TubeServiceClient as TubeServiceClientType } from "./generated/tube.js";
 import type { AunServiceClient as AunServiceClientType } from "./generated/aun.js";
-import type { PiconetServiceClient as PiconetServiceClientType } from "./generated/piconet_service.js";
 import type { EconetTransportServiceClient as EconetTransportServiceClientType } from "./generated/econet_transport.js";
 import type { ExtensionUiServiceClient as ExtensionUiServiceClientType } from "./generated/extension_ui.js";
 import type { IndicatorServiceClient as IndicatorServiceClientType } from "./generated/indicator.js";
@@ -61,7 +59,6 @@ export class Connection {
     private _extensionRpcStub: ExtensionRpcClientType | null = null;
     private _tubeStub: TubeServiceClientType | null = null;
     private _aunStub: AunServiceClientType | null = null;
-    private _piconetStub: PiconetServiceClientType | null = null;
     private _econetTransportStub: EconetTransportServiceClientType | null = null;
     private _extensionUiStub: ExtensionUiServiceClientType | null = null;
     private _indicatorStub: IndicatorServiceClientType | null = null;
@@ -225,16 +222,6 @@ export class Connection {
         return this._aunStub;
     }
 
-    get piconetStub(): PiconetServiceClientType {
-        this.ensureOpen();
-        if (!this._piconetStub) {
-            this._piconetStub = new PiconetServiceClient(
-                this._target,
-                this.credentials,
-            );
-        }
-        return this._piconetStub;
-    }
 
     get econetTransportStub(): EconetTransportServiceClientType {
         this.ensureOpen();
@@ -321,7 +308,6 @@ export class Connection {
             this._econetStub,
             this._tubeStub,
             this._aunStub,
-            this._piconetStub,
             this._econetTransportStub,
             this._extensionUiStub,
             this._extensionRpcStub,
@@ -344,7 +330,6 @@ export class Connection {
         this._econetStub = null;
         this._tubeStub = null;
         this._aunStub = null;
-        this._piconetStub = null;
         this._econetTransportStub = null;
         this._extensionUiStub = null;
         this._extensionRpcStub = null;

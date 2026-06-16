@@ -12,6 +12,9 @@
 
 #include "PiconetEconetTransportExtension.hpp"
 
+#ifdef BEEBIUM_BUILD_SERVICE
+#include "PiconetDispatcher.hpp"
+#endif
 #include "beebium/econet/piconet/PiconetConfig.hpp"
 
 #ifdef _WIN32
@@ -46,6 +49,18 @@ std::unique_ptr<piconet::SerialPort> make_platform_serial(
 
 PiconetEconetTransportExtension::PiconetEconetTransportExtension() = default;
 PiconetEconetTransportExtension::~PiconetEconetTransportExtension() = default;
+
+std::vector<ExtensionRpcDispatcher*>
+PiconetEconetTransportExtension::rpc_dispatchers() {
+#ifdef BEEBIUM_BUILD_SERVICE
+    if (!dispatcher_) {
+        dispatcher_ = std::make_unique<PiconetDispatcher>(*this);
+    }
+    return {dispatcher_.get()};
+#else
+    return {};
+#endif
+}
 
 std::unique_ptr<NetworkBackend>
 PiconetEconetTransportExtension::create_backend(std::uint8_t station) {

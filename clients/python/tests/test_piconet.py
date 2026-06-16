@@ -21,35 +21,43 @@ import pytest
 from beebium.piconet import Piconet, PiconetStatus
 
 
-class MockGetStatusResponse:
-    def __init__(self, device_path="/dev/tty.usbmodem101", serial_open=True):
-        self.device_path = device_path
-        self.serial_open = serial_open
+from beebium._proto import piconet_service_pb2
+
+
+def _channel_returning(device_path="/dev/tty.usbmodem101", serial_open=True):
+    """An ExtensionChannel mock whose invoke() returns serialized status bytes,
+    exactly as the real channel carries the dispatcher's reply."""
+    response = piconet_service_pb2.PiconetGetStatusResponse(
+        device_path=device_path, serial_open=serial_open
+    )
+    channel = MagicMock()
+    channel.invoke.return_value = response.SerializeToString()
+    return channel
 
 
 @pytest.fixture
-def mock_stub():
-    stub = MagicMock()
-    stub.GetStatus.return_value = MockGetStatusResponse()
-    return stub
+def mock_channel():
+    return _channel_returning()
 
 
 @pytest.fixture
-def piconet(mock_stub):
-    return Piconet(mock_stub)
+def piconet(mock_channel):
+    return Piconet(mock_channel)
 
 
-def test_status_returns_dataclass(mock_stub, piconet):
+def test_status_returns_dataclass(mock_channel, piconet):
     status = piconet.status
     assert isinstance(status, PiconetStatus)
     assert status.device_path == "/dev/tty.usbmodem101"
     assert status.serial_open is True
+    # The request is tunnelled to the PiconetService dispatcher's GetStatus.
+    service, method = mock_channel.invoke.call_args.args[:2]
+    assert service == "PiconetService"
+    assert method == "GetStatus"
 
 
-def test_status_reports_disconnected(mock_stub, piconet):
-    mock_stub.GetStatus.return_value = MockGetStatusResponse(
-        device_path="/dev/nonexistent", serial_open=False
-    )
+def test_status_reports_disconnected(piconet):
+    piconet = Piconet(_channel_returning(device_path="/dev/nonexistent", serial_open=False))
     status = piconet.status
     assert status.device_path == "/dev/nonexistent"
     assert status.serial_open is False

@@ -1,59 +1,68 @@
 import { describe, it, expect, vi } from "vitest";
 import { Piconet } from "../src/piconet.js";
+import type { ExtensionChannel } from "../src/extension_rpc.js";
+import {
+    PiconetGetStatusRequest,
+    PiconetGetStatusResponse,
+} from "../src/generated/piconet_service.js";
 
-function createMockStub(methods: Record<string, (req: any) => any>) {
-    const stub: Record<string, any> = {};
-    for (const [name, handler] of Object.entries(methods)) {
-        stub[name] = vi.fn((request: any, callback: Function) => {
-            try {
-                const response = handler(request);
-                callback(null, response);
-            } catch (err) {
-                callback(err);
-            }
-        });
-    }
-    return stub;
+type InvokeHandler = (service: string, method: string, payload: Uint8Array) => Uint8Array;
+
+// A mock ExtensionChannel whose invoke() returns encoded status bytes, exactly
+// as the real channel carries the PiconetService dispatcher's reply.
+function mockChannel(handler: InvokeHandler) {
+    const invoke = vi.fn(
+        async (service: string, method: string, payload: Uint8Array) =>
+            handler(service, method, payload),
+    );
+    return { channel: { invoke } as unknown as ExtensionChannel, invoke };
+}
+
+function encodeStatus(devicePath: string, serialOpen: boolean): Uint8Array {
+    return PiconetGetStatusResponse.encode(
+        PiconetGetStatusResponse.fromPartial({ devicePath, serialOpen }),
+    ).finish();
 }
 
 describe("Piconet", () => {
     describe("getStatus", () => {
         it("reports a connected adapter", async () => {
-            const stub = createMockStub({
-                getStatus: () => ({
-                    devicePath: "/dev/tty.usbmodem101",
-                    serialOpen: true,
-                }),
-            });
-            const piconet = new Piconet(stub as any);
+            const { channel, invoke } = mockChannel(() =>
+                encodeStatus("/dev/tty.usbmodem101", true),
+            );
+            const piconet = new Piconet(channel);
+
             const status = await piconet.getStatus();
+            expect(invoke).toHaveBeenCalledWith(
+                "PiconetService",
+                "GetStatus",
+                expect.anything(),
+            );
             expect(status.devicePath).toBe("/dev/tty.usbmodem101");
             expect(status.serialOpen).toBe(true);
         });
 
         it("reports a disconnected adapter", async () => {
-            const stub = createMockStub({
-                getStatus: () => ({
-                    devicePath: "/dev/nonexistent",
-                    serialOpen: false,
-                }),
-            });
-            const piconet = new Piconet(stub as any);
+            const { channel } = mockChannel(() => encodeStatus("/dev/nonexistent", false));
+            const piconet = new Piconet(channel);
+
             const status = await piconet.getStatus();
             expect(status.devicePath).toBe("/dev/nonexistent");
             expect(status.serialOpen).toBe(false);
         });
 
-        it("sends empty request body", async () => {
-            const stub = createMockStub({
-                getStatus: () => ({
-                    devicePath: "",
-                    serialOpen: false,
-                }),
+        it("tunnels an empty GetStatus request", async () => {
+            let seenLength = -1;
+            const { channel } = mockChannel((_service, _method, payload) => {
+                // The request decodes cleanly and carries no fields.
+                PiconetGetStatusRequest.decode(payload);
+                seenLength = payload.length;
+                return encodeStatus("", false);
             });
-            const piconet = new Piconet(stub as any);
+            const piconet = new Piconet(channel);
+
             await piconet.getStatus();
-            expect(stub.getStatus).toHaveBeenCalledWith({}, expect.any(Function));
+            expect(seenLength).toBe(0);
         });
     });
 });

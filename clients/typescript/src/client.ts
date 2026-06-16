@@ -313,7 +313,9 @@ export class Beebium {
     /** Access Piconet-specific operations (USB-CDC adapter status). */
     get piconet(): Piconet {
         if (this._piconet === undefined) {
-            this._piconet = new Piconet(this.connection.piconetStub);
+            this._piconet = new Piconet(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._piconet;
     }

@@ -437,7 +437,9 @@ class Beebium:
         Only meaningful when ``transport.active.name == "piconet"``.
         """
         if self._piconet is None:
-            self._piconet = Piconet(self._connection.piconet_stub)
+            self._piconet = Piconet(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._piconet
 
     @property

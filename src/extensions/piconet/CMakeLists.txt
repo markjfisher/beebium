@@ -31,11 +31,13 @@ set_target_properties(beebium_piconet_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# piconet plugin sources. The plugin DLL contains only the
-# EconetTransportExtension implementation, the UI, and the platform
-# serial wiring -- it deliberately does NOT link gRPC.
+# piconet plugin sources. The plugin DLL contains the
+# EconetTransportExtension implementation, the UI, the platform serial
+# wiring, and -- when the service layer is built -- a gRPC-free
+# PiconetDispatcher plus the piconet_service.proto MESSAGES. It does NOT
+# link gRPC.
 #
-# Why: vcpkg builds gRPC as a static library on Windows. When two
+# Why no gRPC: vcpkg builds gRPC as a static library on Windows. When two
 # modules in the same process each link gRPC::grpc++ statically, each
 # gets its own private copy of gRPC's internal state (thread-local
 # ExecCtx, closure lists, iomgr). When the EXE-side gRPC server
@@ -46,16 +48,61 @@ set_target_properties(beebium_piconet_core PROPERTIES
 # serial_factory_ std::function's stored fn-ptr -- yielding an AV at
 # the next reopen call. See docs/discussion/grpc-windows-streaming-race.md.
 #
-# The PiconetService gRPC stub used to live here; it was extracted
-# (TODO: a beebium_ext_piconet_service STATIC linked into the EXE
-# would restore the GetStatus RPC). The macOS frontend's
-# device-path-editor flow only needs ExtensionUiService, which is
-# unaffected by piconet.dll's gRPC absence.
+# The PiconetService.GetStatus RPC is served through the core's single
+# ExtensionRpc channel: PiconetDispatcher (de)serializes the proto
+# messages and reads the backend, so the plugin carries protobuf for its
+# own messages but never gRPC. See docs/discussion/extension-rpc-channel.md.
 set(PICONET_PLUGIN_SOURCES
     PiconetEconetTransportExtension.cpp
     PiconetUi.cpp
     plugin_entry.cpp
 )
+
+# piconet_service.proto MESSAGES only (no gRPC stub). The dispatcher
+# (de)serializes these; compiling the .grpc.pb.cc is what would pull gRPC
+# into the plugin, so it is deliberately omitted.
+if(BEEBIUM_BUILD_SERVICE)
+    beebium_compile_proto(
+        TARGET beebium_ext_piconet
+        PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/piconet_service.proto
+        PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_library(beebium_ext_piconet_proto OBJECT
+        ${beebium_ext_piconet_PROTO_SRCS}
+    )
+    target_include_directories(beebium_ext_piconet_proto
+        PUBLIC ${beebium_ext_piconet_OUT_DIR}
+    )
+    target_link_libraries(beebium_ext_piconet_proto
+        PUBLIC protobuf::libprotobuf
+    )
+    set_target_properties(beebium_ext_piconet_proto PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    # Static build of the extension (+ dispatcher) for unit tests that drive
+    # PiconetEconetTransportExtension / PiconetDispatcher directly. Linking the
+    # proto messages once here (rather than also linking the plugin) keeps a
+    # single protobuf descriptor copy in the test process.
+    add_library(beebium_ext_piconet STATIC
+        PiconetEconetTransportExtension.cpp
+        PiconetUi.cpp
+    )
+    target_include_directories(beebium_ext_piconet
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_compile_definitions(beebium_ext_piconet PUBLIC BEEBIUM_BUILD_SERVICE)
+    target_link_libraries(beebium_ext_piconet
+        PUBLIC
+            beebium_piconet_core
+            beebium_extension_api
+            beebium_ext_piconet_proto
+            beebium_extension_ui_proto
+    )
+    set_target_properties(beebium_ext_piconet PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+endif()
 
 # The shared-library plugin: links the protocol core and the
 # EconetTransportExtension wrapper, exports beebium_create_extension.
@@ -70,6 +117,22 @@ target_link_libraries(beebium_ext_piconet_plugin
         beebium_piconet_core
         beebium_extension_api
 )
+
+if(BEEBIUM_BUILD_SERVICE)
+    # The dispatcher + proto messages. beebium_extension_api supplies the
+    # ExtensionRpcDispatcher ABI; the proto object lib supplies the messages
+    # (and pulls protobuf, but not gRPC).
+    #
+    # PUBLIC (not PRIVATE): the extension's class layout has a member guarded by
+    # #ifdef BEEBIUM_BUILD_SERVICE, so every consumer that compiles the header
+    # (e.g. the plugin-linking tests) MUST see the same flag, or sizeof differs
+    # and an object constructed in one module and destroyed in another corrupts
+    # the heap.
+    target_compile_definitions(beebium_ext_piconet_plugin PUBLIC BEEBIUM_BUILD_SERVICE)
+    target_link_libraries(beebium_ext_piconet_plugin
+        PRIVATE beebium_ext_piconet_proto
+    )
+endif()
 
 set_target_properties(beebium_ext_piconet_plugin PROPERTIES
     PREFIX ""

@@ -81,10 +81,10 @@ describe("Connection", () => {
         expect(() => conn.aunStub).toThrow(ConnectionError);
     });
 
-    it("accessing piconetStub after close() throws ConnectionError", () => {
+    it("accessing extensionRpcStub after close() throws ConnectionError", () => {
         const conn = new Connection("localhost:50051");
         conn.close();
-        expect(() => conn.piconetStub).toThrow(ConnectionError);
+        expect(() => conn.extensionRpcStub).toThrow(ConnectionError);
     });
 
     it("accessing econetTransportStub after close() throws ConnectionError", () => {

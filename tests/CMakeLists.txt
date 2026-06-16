@@ -1448,6 +1448,16 @@ if(BEEBIUM_BUILD_SERVICE)
     )
     catch_discover_tests(test_grpc_extension_rpc)
 
+    # Piconet dispatcher: PiconetService.GetStatus served gRPC-free through the
+    # ExtensionRpc channel. Links the static extension build (one protobuf
+    # descriptor copy), not the plugin.
+    add_executable(test_piconet_dispatcher test_piconet_dispatcher.cpp)
+    target_link_libraries(test_piconet_dispatcher PRIVATE
+        beebium_ext_piconet
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_piconet_dispatcher)
+
     # Piconet gRPC service tests. The plugin DLL no longer carries
     # PiconetService (gRPC's per-module state caused heap corruption
     # when piconet.dll linked gRPC alongside the EXE -- see
