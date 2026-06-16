@@ -6,13 +6,21 @@
  * programmatically -- the scripting-friendly equivalent of the GUI panel,
  * without the declarative ExtensionUi control tree. Requires the server to be
  * launched with --host-serial.
+ *
+ * The HostSerial messages are tunnelled over the core's ExtensionRpc channel;
+ * the host-serial extension no longer hosts its own gRPC service. The public
+ * API here is unchanged.
  */
 
-import type {
-    HostSerialClient,
+import {
+    HostSerialGetConfigRequest,
+    HostSerialSetConfigRequest,
     HostSerialConfig as ProtoHostSerialConfig,
 } from "./generated/host_serial.js";
-import { promisify } from "./call-utils.js";
+import type { ExtensionChannel } from "./extension_rpc.js";
+
+/** The logical service name the host-serial extension's dispatcher registers. */
+const SERVICE = "HostSerial";
 
 export interface HostSerialConfig {
     /** "pty" or "device". */
@@ -37,20 +45,19 @@ export interface HostSerialSetConfigOptions {
 
 /** Query and re-point the host-serial bridge. */
 export class HostSerial {
-    private readonly stub: HostSerialClient;
+    private readonly channel: ExtensionChannel;
 
-    constructor(stub: HostSerialClient) {
-        this.stub = stub;
+    constructor(channel: ExtensionChannel) {
+        this.channel = channel;
     }
 
     /** Read the current bridge configuration and open state. */
     async getConfig(): Promise<HostSerialConfig> {
-        const response = await promisify<{}, ProtoHostSerialConfig>(
-            this.stub as unknown as Record<string, Function>,
-            "getConfig",
-            {},
-        );
-        return fromProto(response);
+        const payload = HostSerialGetConfigRequest.encode(
+            HostSerialGetConfigRequest.fromPartial({}),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "GetConfig", payload);
+        return fromProto(ProtoHostSerialConfig.decode(reply));
     }
 
     /**
@@ -61,16 +68,17 @@ export class HostSerial {
      * getConfig() to confirm. Never blocks.
      */
     async setConfig(options: HostSerialSetConfigOptions = {}): Promise<HostSerialConfig> {
-        const request: { mode?: string; path?: string; baud?: number } = {};
-        if (options.mode !== undefined) request.mode = options.mode;
-        if (options.path !== undefined) request.path = options.path;
-        if (options.baud !== undefined) request.baud = options.baud;
-        const response = await promisify<typeof request, ProtoHostSerialConfig>(
-            this.stub as unknown as Record<string, Function>,
-            "setConfig",
-            request,
-        );
-        return fromProto(response);
+        // Only the present fields are serialized (proto3 optional), so the server
+        // sees exactly the diff the caller asked for.
+        const payload = HostSerialSetConfigRequest.encode(
+            HostSerialSetConfigRequest.fromPartial({
+                mode: options.mode,
+                path: options.path,
+                baud: options.baud,
+            }),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "SetConfig", payload);
+        return fromProto(ProtoHostSerialConfig.decode(reply));
     }
 }
 

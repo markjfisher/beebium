@@ -13,8 +13,7 @@ import { VideoServiceClient } from "./generated/video.js";
 import { DiscServiceClient } from "./generated/disc.js";
 import { EconetServiceClient } from "./generated/econet.js";
 import { SerialServiceClient } from "./generated/serial.js";
-import { RpcSerialClient } from "./generated/rpc_serial.js";
-import { HostSerialClient } from "./generated/host_serial.js";
+import { ExtensionRpcClient } from "./generated/extension_rpc.js";
 import { TubeServiceClient } from "./generated/tube.js";
 import { AunServiceClient } from "./generated/aun.js";
 import { PiconetServiceClient } from "./generated/piconet_service.js";
@@ -31,8 +30,7 @@ import type { VideoServiceClient as VideoServiceClientType } from "./generated/v
 import type { DiscServiceClient as DiscServiceClientType } from "./generated/disc.js";
 import type { EconetServiceClient as EconetServiceClientType } from "./generated/econet.js";
 import type { SerialServiceClient as SerialServiceClientType } from "./generated/serial.js";
-import type { RpcSerialClient as RpcSerialClientType } from "./generated/rpc_serial.js";
-import type { HostSerialClient as HostSerialClientType } from "./generated/host_serial.js";
+import type { ExtensionRpcClient as ExtensionRpcClientType } from "./generated/extension_rpc.js";
 import type { TubeServiceClient as TubeServiceClientType } from "./generated/tube.js";
 import type { AunServiceClient as AunServiceClientType } from "./generated/aun.js";
 import type { PiconetServiceClient as PiconetServiceClientType } from "./generated/piconet_service.js";
@@ -60,8 +58,7 @@ export class Connection {
     private _discStub: DiscServiceClientType | null = null;
     private _econetStub: EconetServiceClientType | null = null;
     private _serialStub: SerialServiceClientType | null = null;
-    private _rpcSerialStub: RpcSerialClientType | null = null;
-    private _hostSerialStub: HostSerialClientType | null = null;
+    private _extensionRpcStub: ExtensionRpcClientType | null = null;
     private _tubeStub: TubeServiceClientType | null = null;
     private _aunStub: AunServiceClientType | null = null;
     private _piconetStub: PiconetServiceClientType | null = null;
@@ -191,26 +188,19 @@ export class Connection {
         return this._serialStub;
     }
 
-    get rpcSerialStub(): RpcSerialClientType {
+    /**
+     * The core's ExtensionRpc stub: the single channel through which every
+     * extension-provided API (rpc-serial, host-serial, ...) is tunnelled.
+     */
+    get extensionRpcStub(): ExtensionRpcClientType {
         this.ensureOpen();
-        if (!this._rpcSerialStub) {
-            this._rpcSerialStub = new RpcSerialClient(
+        if (!this._extensionRpcStub) {
+            this._extensionRpcStub = new ExtensionRpcClient(
                 this._target,
                 this.credentials,
             );
         }
-        return this._rpcSerialStub;
-    }
-
-    get hostSerialStub(): HostSerialClientType {
-        this.ensureOpen();
-        if (!this._hostSerialStub) {
-            this._hostSerialStub = new HostSerialClient(
-                this._target,
-                this.credentials,
-            );
-        }
-        return this._hostSerialStub;
+        return this._extensionRpcStub;
     }
 
     get tubeStub(): TubeServiceClientType {
@@ -334,6 +324,7 @@ export class Connection {
             this._piconetStub,
             this._econetTransportStub,
             this._extensionUiStub,
+            this._extensionRpcStub,
             this._indicatorStub,
         ];
 
@@ -356,6 +347,7 @@ export class Connection {
         this._piconetStub = null;
         this._econetTransportStub = null;
         this._extensionUiStub = null;
+        this._extensionRpcStub = null;
         this._indicatorStub = null;
     }
 }

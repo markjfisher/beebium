@@ -49,6 +49,7 @@ PROTOS=(
     "$SERVICE_PROTO_DIR:tube.proto"
     "$SERVICE_PROTO_DIR:econet_transport.proto"
     "$SERVICE_PROTO_DIR:indicator.proto"
+    "$SERVICE_PROTO_DIR:extension_rpc.proto"
     "$AUN_PROTO_DIR:aun.proto"
     "$PICONET_PROTO_DIR:piconet_service.proto"
     "$RPC_SERIAL_PROTO_DIR:rpc_serial.proto"
