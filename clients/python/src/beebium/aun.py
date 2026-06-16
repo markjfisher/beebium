@@ -23,7 +23,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
-from beebium._proto import aun_pb2, aun_pb2_grpc
+from beebium._proto import aun_pb2
+from beebium.extension_rpc import ExtensionChannel
+
+# The logical service name the AUN extension's dispatcher registers
+# (matches AunDispatcher::service_name() in the extension).
+_SERVICE = "AunService"
 from beebium.exceptions import EconetError
 
 
@@ -78,14 +83,25 @@ class Aun:
             print(bbc.aun.status)
     """
 
-    def __init__(self, stub: aun_pb2_grpc.AunServiceStub):
-        self._stub = stub
+    def __init__(self, channel: ExtensionChannel):
+        self._channel = channel
+
+    def _invoke(self, method: str, request, response):
+        """Tunnel `request` to the AunService dispatcher and parse the reply.
+
+        The AUN messages travel over the core's ExtensionRpc channel; the AUN
+        extension no longer hosts its own gRPC service. The public API here is
+        unchanged.
+        """
+        reply = self._channel.invoke(_SERVICE, method, request.SerializeToString())
+        response.ParseFromString(reply)
+        return response
 
     @property
     def status(self) -> AunStatus:
         """Read the AUN backend status."""
         request = aun_pb2.AunGetStatusRequest()
-        response = self._stub.GetStatus(request)
+        response = self._invoke("GetStatus", request, aun_pb2.AunGetStatusResponse())
         return AunStatus(
             connected=response.connected,
             local_port=response.local_port,
@@ -96,7 +112,7 @@ class Aun:
     def peers(self) -> list[PeerInfo]:
         """Enumerate all configured AUN peers."""
         request = aun_pb2.AunListPeersRequest()
-        response = self._stub.ListPeers(request)
+        response = self._invoke("ListPeers", request, aun_pb2.AunListPeersResponse())
         return [
             PeerInfo(
                 net=p.net,
@@ -126,7 +142,9 @@ class Aun:
             EconetError: If the AUN backend is not active or the call fails.
         """
         request = aun_pb2.AunSetConnectedRequest(connected=connected)
-        response = self._stub.SetConnected(request)
+        response = self._invoke(
+            "SetConnected", request, aun_pb2.AunSetConnectedResponse()
+        )
         if not response.success:
             raise EconetError(response.error)
 
@@ -154,7 +172,7 @@ class Aun:
             ip_address=ip_address,
             port=port,
         )
-        response = self._stub.AddPeer(request)
+        response = self._invoke("AddPeer", request, aun_pb2.AunAddPeerResponse())
         if not response.success:
             raise EconetError(response.error)
 
@@ -165,6 +183,8 @@ class Aun:
             EconetError: If the call fails.
         """
         request = aun_pb2.AunRemovePeerRequest(net=net, stn=stn)
-        response = self._stub.RemovePeer(request)
+        response = self._invoke(
+            "RemovePeer", request, aun_pb2.AunRemovePeerResponse()
+        )
         if not response.success:
             raise EconetError(response.error)

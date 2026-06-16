@@ -10,91 +10,73 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Unit tests for the Aun client wrapper around AunService."""
+"""Unit tests for the Aun client wrapper around AunService.
+
+The Aun wrapper tunnels its messages over the core's ExtensionRpc channel, so
+the tests drive it through a fake ExtensionChannel whose ``invoke`` returns
+serialized real protobuf responses and records the serialized requests (which
+the tests decode to assert on the fields the wrapper sent).
+"""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
+from beebium._proto import aun_pb2
 from beebium.aun import Aun, AunStatus, PeerInfo, PeerSource
 from beebium.exceptions import EconetError
 
 
-# --- Mock proto response types ---
+class FakeChannel:
+    """An ExtensionChannel stand-in for AunService methods."""
 
+    def __init__(self):
+        self._responses = {
+            "GetStatus": aun_pb2.AunGetStatusResponse(
+                connected=True, local_port=32768, peer_count=0
+            ),
+            "SetConnected": aun_pb2.AunSetConnectedResponse(success=True),
+            "AddPeer": aun_pb2.AunAddPeerResponse(success=True),
+            "RemovePeer": aun_pb2.AunRemovePeerResponse(success=True),
+            "ListPeers": aun_pb2.AunListPeersResponse(),
+        }
+        self.calls: list[tuple[str, str, bytes]] = []
 
-class MockGetStatusResponse:
-    def __init__(self, connected=True, local_port=32768, peer_count=0):
-        self.connected = connected
-        self.local_port = local_port
-        self.peer_count = peer_count
+    def set_response(self, method, response) -> None:
+        self._responses[method] = response
 
+    def invoke(self, service, method, payload, *, extension_id=""):
+        self.calls.append((service, method, payload))
+        return self._responses[method].SerializeToString()
 
-class MockSetConnectedResponse:
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
-class MockAddPeerResponse:
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
-class MockRemovePeerResponse:
-    def __init__(self, success=True, error=""):
-        self.success = success
-        self.error = error
-
-
-class MockAunPeer:
-    def __init__(self, net=0, stn=254, ip_address="127.0.0.1", port=32768,
-                 source=None):
-        from beebium._proto import aun_pb2
-        self.net = net
-        self.stn = stn
-        self.ip_address = ip_address
-        self.port = port
-        # Default to OPERATOR_CONFIGURED so existing tests that don't
-        # care about provenance keep their previous semantics.
-        self.source = (source if source is not None
-                       else aun_pb2.AUN_PEER_SOURCE_OPERATOR_CONFIGURED)
-
-
-class MockListPeersResponse:
-    def __init__(self, peers=None):
-        self.peers = peers if peers is not None else []
-
-
-# --- Fixtures ---
+    def request(self, method, request_type):
+        """Decode the request the wrapper serialized for `method`."""
+        for service, called_method, payload in self.calls:
+            if called_method == method:
+                assert service == "AunService"
+                req = request_type()
+                req.ParseFromString(payload)
+                return req
+        raise AssertionError(f"{method} was not invoked")
 
 
 @pytest.fixture
-def mock_stub():
-    stub = MagicMock()
-    stub.GetStatus.return_value = MockGetStatusResponse()
-    stub.SetConnected.return_value = MockSetConnectedResponse()
-    stub.AddPeer.return_value = MockAddPeerResponse()
-    stub.RemovePeer.return_value = MockRemovePeerResponse()
-    stub.ListPeers.return_value = MockListPeersResponse()
-    return stub
+def channel():
+    return FakeChannel()
 
 
 @pytest.fixture
-def aun(mock_stub):
-    return Aun(mock_stub)
-
-
-# --- Tests ---
+def aun(channel):
+    return Aun(channel)
 
 
 class TestStatus:
-    def test_status_returns_dataclass(self, mock_stub, aun):
-        mock_stub.GetStatus.return_value = MockGetStatusResponse(
-            connected=True, local_port=32768, peer_count=2
+    def test_status_returns_dataclass(self, channel, aun):
+        channel.set_response(
+            "GetStatus",
+            aun_pb2.AunGetStatusResponse(
+                connected=True, local_port=32768, peer_count=2
+            ),
         )
         status = aun.status
         assert isinstance(status, AunStatus)
@@ -104,56 +86,63 @@ class TestStatus:
 
 
 class TestSetConnected:
-    def test_set_connected_true(self, mock_stub, aun):
+    def test_set_connected_true(self, channel, aun):
         aun.set_connected(True)
-        request = mock_stub.SetConnected.call_args[0][0]
+        request = channel.request("SetConnected", aun_pb2.AunSetConnectedRequest)
         assert request.connected is True
 
-    def test_set_connected_false(self, mock_stub, aun):
+    def test_set_connected_false(self, channel, aun):
         aun.set_connected(False)
-        request = mock_stub.SetConnected.call_args[0][0]
+        request = channel.request("SetConnected", aun_pb2.AunSetConnectedRequest)
         assert request.connected is False
 
-    def test_set_connected_failure_raises(self, mock_stub, aun):
-        mock_stub.SetConnected.return_value = MockSetConnectedResponse(
-            success=False, error="AUN backend is not active"
+    def test_set_connected_failure_raises(self, channel, aun):
+        channel.set_response(
+            "SetConnected",
+            aun_pb2.AunSetConnectedResponse(
+                success=False, error="AUN backend is not active"
+            ),
         )
         with pytest.raises(EconetError, match="not active"):
             aun.set_connected(True)
 
 
 class TestAddPeer:
-    def test_add_peer(self, mock_stub, aun):
+    def test_add_peer(self, channel, aun):
         aun.add_peer(net=1, stn=254, ip_address="192.168.1.100", port=32768)
-        request = mock_stub.AddPeer.call_args[0][0]
+        request = channel.request("AddPeer", aun_pb2.AunAddPeerRequest)
         assert request.net == 1
         assert request.stn == 254
         assert request.ip_address == "192.168.1.100"
         assert request.port == 32768
 
-    def test_add_peer_default_port(self, mock_stub, aun):
+    def test_add_peer_default_port(self, channel, aun):
         aun.add_peer(net=0, stn=1, ip_address="10.0.0.1")
-        request = mock_stub.AddPeer.call_args[0][0]
+        request = channel.request("AddPeer", aun_pb2.AunAddPeerRequest)
         assert request.port == 0
 
-    def test_add_peer_failure_raises(self, mock_stub, aun):
-        mock_stub.AddPeer.return_value = MockAddPeerResponse(
-            success=False, error="invalid ip_address"
+    def test_add_peer_failure_raises(self, channel, aun):
+        channel.set_response(
+            "AddPeer",
+            aun_pb2.AunAddPeerResponse(success=False, error="invalid ip_address"),
         )
         with pytest.raises(EconetError, match="invalid ip_address"):
             aun.add_peer(net=0, stn=1, ip_address="not.an.ip")
 
 
 class TestRemovePeer:
-    def test_remove_peer(self, mock_stub, aun):
+    def test_remove_peer(self, channel, aun):
         aun.remove_peer(net=1, stn=254)
-        request = mock_stub.RemovePeer.call_args[0][0]
+        request = channel.request("RemovePeer", aun_pb2.AunRemovePeerRequest)
         assert request.net == 1
         assert request.stn == 254
 
-    def test_remove_peer_failure_raises(self, mock_stub, aun):
-        mock_stub.RemovePeer.return_value = MockRemovePeerResponse(
-            success=False, error="AUN backend is not active"
+    def test_remove_peer_failure_raises(self, channel, aun):
+        channel.set_response(
+            "RemovePeer",
+            aun_pb2.AunRemovePeerResponse(
+                success=False, error="AUN backend is not active"
+            ),
         )
         with pytest.raises(EconetError, match="not active"):
             aun.remove_peer(net=0, stn=99)
@@ -163,14 +152,21 @@ class TestPeers:
     def test_peers_empty(self, aun):
         assert aun.peers == []
 
-    def test_peers_populated(self, mock_stub, aun):
-        from beebium._proto import aun_pb2
-        mock_stub.ListPeers.return_value = MockListPeersResponse(
-            peers=[
-                MockAunPeer(net=0, stn=1, ip_address="192.168.1.1", port=32768),
-                MockAunPeer(net=1, stn=254, ip_address="10.0.0.100", port=9999,
-                            source=aun_pb2.AUN_PEER_SOURCE_DISCOVERED),
-            ]
+    def test_peers_populated(self, channel, aun):
+        channel.set_response(
+            "ListPeers",
+            aun_pb2.AunListPeersResponse(
+                peers=[
+                    aun_pb2.AunPeer(
+                        net=0, stn=1, ip_address="192.168.1.1", port=32768,
+                        source=aun_pb2.AUN_PEER_SOURCE_OPERATOR_CONFIGURED,
+                    ),
+                    aun_pb2.AunPeer(
+                        net=1, stn=254, ip_address="10.0.0.100", port=9999,
+                        source=aun_pb2.AUN_PEER_SOURCE_DISCOVERED,
+                    ),
+                ]
+            ),
         )
         peers = aun.peers
         assert len(peers) == 2
@@ -181,20 +177,21 @@ class TestPeers:
         assert peers[1].port == 9999
         assert peers[1].source == PeerSource.DISCOVERED
 
-    def test_peers_unspecified_source_falls_back_to_operator(
-            self, mock_stub, aun):
-        # Older servers leave source unset (UNSPECIFIED is the proto
-        # default). The wrapper must collapse that to OPERATOR_CONFIGURED
-        # because pre-discovery servers only ever published operator
-        # entries -- treating UNSPECIFIED as DISCOVERED would mis-label
-        # everything from those servers.
-        from beebium._proto import aun_pb2
-        mock_stub.ListPeers.return_value = MockListPeersResponse(
-            peers=[
-                MockAunPeer(net=0, stn=1, ip_address="192.168.1.1",
-                            port=32768,
-                            source=aun_pb2.AUN_PEER_SOURCE_UNSPECIFIED),
-            ]
+    def test_peers_unspecified_source_falls_back_to_operator(self, channel, aun):
+        # Older servers leave source unset (UNSPECIFIED is the proto default).
+        # The wrapper collapses that to OPERATOR_CONFIGURED because
+        # pre-discovery servers only ever published operator entries -- treating
+        # UNSPECIFIED as DISCOVERED would mis-label everything from those servers.
+        channel.set_response(
+            "ListPeers",
+            aun_pb2.AunListPeersResponse(
+                peers=[
+                    aun_pb2.AunPeer(
+                        net=0, stn=1, ip_address="192.168.1.1", port=32768,
+                        source=aun_pb2.AUN_PEER_SOURCE_UNSPECIFIED,
+                    ),
+                ]
+            ),
         )
         peers = aun.peers
         assert peers[0].source == PeerSource.OPERATOR_CONFIGURED

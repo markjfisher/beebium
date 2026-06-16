@@ -305,7 +305,9 @@ export class Beebium {
     /** Access AUN-specific Econet operations (peer table, cable plug, port status). */
     get aun(): Aun {
         if (this._aun === undefined) {
-            this._aun = new Aun(this.connection.aunStub);
+            this._aun = new Aun(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._aun;
     }

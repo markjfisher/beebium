@@ -75,12 +75,6 @@ describe("Connection", () => {
         expect(() => conn.tubeStub).toThrow(ConnectionError);
     });
 
-    it("accessing aunStub after close() throws ConnectionError", () => {
-        const conn = new Connection("localhost:50051");
-        conn.close();
-        expect(() => conn.aunStub).toThrow(ConnectionError);
-    });
-
     it("accessing extensionRpcStub after close() throws ConnectionError", () => {
         const conn = new Connection("localhost:50051");
         conn.close();

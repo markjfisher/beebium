@@ -10,18 +10,25 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
-// End-to-end gRPC test for AunService. Spins up a real gRPC server with
-// the AUN extension's service registered, installs an AunBackend on an
-// OS-chosen port, and drives the AUN-specific RPCs (peer table
-// management, cable plug, status query) through a real client stub.
+// End-to-end test for the AUN-specific RPCs, tunnelled through the core's
+// generic ExtensionRpc channel. Spins up a real gRPC server with the
+// ExtensionRpc service registered over a registry holding the AUN extension,
+// installs an AunBackend on an OS-chosen port, and drives the AUN operations
+// (peer table management, cable plug, status query) by serializing each
+// request, calling ExtensionRpc.Invoke with service="AunService", and parsing
+// the reply -- exactly as the Python/TS clients do over the wire.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "AunEconetTransportExtension.hpp"
 #include "beebium/Machines.hpp"
+#include "beebium/extension/EconetTransportRegistry.hpp"
+#include "beebium/extension/ExtensionRegistry.hpp"
+#include "beebium/service/ExtensionRpcService.hpp"
 #include "beebium/service/Server.hpp"
 
-#include "aun.grpc.pb.h"
+#include "aun.pb.h"
+#include "extension_rpc.grpc.pb.h"
 
 #include <grpcpp/grpcpp.h>
 
@@ -33,28 +40,28 @@
 #endif
 
 #include <memory>
+#include <span>
+#include <string>
 
 namespace {
 
 class AunServiceFixture {
 public:
-    AunServiceFixture() {
+    AunServiceFixture() : service_(transports_, peripherals_) {
         machine_.reset();
 
-        // Build the AUN extension on an OS-assigned ephemeral port and
-        // hand its backend to EconetSocket so AunService has something
-        // to talk to. Using port=0 avoids cross-test conflicts on a
-        // hardcoded port number.
-        ext_ = std::make_unique<beebium::AunEconetTransportExtension>();
-        ext_->set_config({{"port", "0"}});
-        auto backend = ext_->create_backend(/*station=*/1);
+        // Build the AUN extension on an OS-assigned ephemeral port and hand its
+        // backend to EconetSocket so the dispatcher has something to talk to.
+        auto ext = std::make_unique<beebium::AunEconetTransportExtension>();
+        ext->set_config({{"port", "0"}});
+        auto backend = ext->create_backend(/*station=*/1);
         REQUIRE(backend != nullptr);
         machine_.state().memory.econet_socket.enable(
             /*station=*/1, std::move(backend), /*aun_mode=*/true);
+        ext_ = ext.get();
+        transports_.add(std::move(ext));
 
-        // Pick up the AunService instance the extension owns.
-        services_ = ext_->grpc_services();
-
+        services_.push_back(&service_);
         server_ = std::make_unique<beebium::service::Server<beebium::ModelB>>(
             machine_, "127.0.0.1", 0);
         server_->start(beebium::service::Provenance{},
@@ -66,97 +73,100 @@ public:
 
         std::string address = "127.0.0.1:" + std::to_string(server_->port());
         channel_ = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
-        stub_ = beebium::AunService::NewStub(channel_);
+        stub_ = beebium::ExtensionRpc::NewStub(channel_);
     }
 
-    ~AunServiceFixture() {
-        server_->stop();
+    ~AunServiceFixture() { server_->stop(); }
+
+    // Serialize `req`, tunnel it via ExtensionRpc.Invoke (service=AunService,
+    // the named method), and parse the reply into `resp`.
+    template <typename Req, typename Resp>
+    grpc::Status invoke(const std::string& method, const Req& req, Resp* resp) {
+        grpc::ClientContext ctx;
+        beebium::InvokeRequest ireq;
+        ireq.set_service("AunService");
+        ireq.set_method(method);
+        ireq.set_payload(req.SerializeAsString());
+        beebium::InvokeResponse iresp;
+        grpc::Status status = stub_->Invoke(&ctx, ireq, &iresp);
+        if (status.ok() && resp != nullptr) {
+            REQUIRE(resp->ParseFromString(iresp.payload()));
+        }
+        return status;
     }
 
-    beebium::AunService::Stub& stub() { return *stub_; }
-
-    // Reach through to the underlying AunBackend so a test can simulate
-    // a discovered (vs operator-configured) peer addition without going
-    // through real mDNS.
+    // Reach the underlying AunBackend to simulate a discovered peer without
+    // going through real mDNS.
     beebium::AunEconetTransportExtension& extension() { return *ext_; }
 
 private:
     beebium::ModelB machine_;
-    std::unique_ptr<beebium::AunEconetTransportExtension> ext_;
+    beebium::EconetTransportRegistry transports_;
+    beebium::ExtensionRegistry peripherals_;
+    beebium::service::ExtensionRpcServiceImpl service_;
+    beebium::AunEconetTransportExtension* ext_ = nullptr;  // owned by transports_
     std::vector<grpc::Service*> services_;
     std::unique_ptr<beebium::service::Server<beebium::ModelB>> server_;
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<beebium::AunService::Stub> stub_;
+    std::unique_ptr<beebium::ExtensionRpc::Stub> stub_;
 };
 
 }  // namespace
 
-TEST_CASE("AunService GetStatus on a freshly-bound AUN backend", "[grpc][aun]") {
+TEST_CASE("AunService GetStatus on a freshly-bound AUN backend",
+          "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
-    grpc::ClientContext context;
     beebium::AunGetStatusRequest request;
     beebium::AunGetStatusResponse response;
-    auto status = fixture.stub().GetStatus(&context, request, &response);
-
-    REQUIRE(status.ok());
+    REQUIRE(fixture.invoke("GetStatus", request, &response).ok());
     REQUIRE(response.connected());
     REQUIRE(response.local_port() != 0);
     REQUIRE(response.peer_count() == 0);
 }
 
-TEST_CASE("AunService AddPeer then ListPeers", "[grpc][aun]") {
+TEST_CASE("AunService AddPeer then ListPeers", "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
     {
-        grpc::ClientContext context;
         beebium::AunAddPeerRequest request;
         request.set_net(0);
         request.set_stn(254);
         request.set_ip_address("127.0.0.1");
         request.set_port(40001);
         beebium::AunAddPeerResponse response;
-        auto status = fixture.stub().AddPeer(&context, request, &response);
-        REQUIRE(status.ok());
+        REQUIRE(fixture.invoke("AddPeer", request, &response).ok());
         REQUIRE(response.success());
     }
 
     {
-        grpc::ClientContext context;
         beebium::AunListPeersRequest request;
         beebium::AunListPeersResponse response;
-        auto status = fixture.stub().ListPeers(&context, request, &response);
-        REQUIRE(status.ok());
+        REQUIRE(fixture.invoke("ListPeers", request, &response).ok());
         REQUIRE(response.peers_size() == 1);
         const auto& peer = response.peers(0);
         REQUIRE(peer.net() == 0);
         REQUIRE(peer.stn() == 254);
         REQUIRE(peer.ip_address() == "127.0.0.1");
         REQUIRE(peer.port() == 40001);
-        // AddPeer goes via the operator path; ListPeers reports the
-        // source so clients can distinguish operator entries from
-        // mDNS-discovered ones without a side channel.
         CHECK(peer.source() == beebium::AUN_PEER_SOURCE_OPERATOR_CONFIGURED);
     }
 }
 
 TEST_CASE("AunService ListPeers reports source for discovered entries",
-          "[grpc][aun]") {
+          "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
-    // Inject a discovered peer directly through the backend, mimicking
-    // what AunDiscoverySubscriber would do on receipt of an mDNS
-    // announcement. The gRPC client should see source=DISCOVERED.
+    // Inject a discovered peer directly through the backend, mimicking what
+    // AunDiscoverySubscriber would do on receipt of an mDNS announcement.
     auto* backend = fixture.extension().backend();
     REQUIRE(backend != nullptr);
     backend->add_peer(0, 200, htonl(INADDR_LOOPBACK), 50001,
                       beebium::PeerSource::Discovered);
 
-    grpc::ClientContext context;
     beebium::AunListPeersRequest request;
     beebium::AunListPeersResponse response;
-    auto status = fixture.stub().ListPeers(&context, request, &response);
-    REQUIRE(status.ok());
+    REQUIRE(fixture.invoke("ListPeers", request, &response).ok());
     REQUIRE(response.peers_size() == 1);
     const auto& peer = response.peers(0);
     CHECK(peer.stn() == 200);
@@ -164,28 +174,26 @@ TEST_CASE("AunService ListPeers reports source for discovered entries",
 }
 
 TEST_CASE("AunService AddPeer with default port (0) substitutes AUN_DEFAULT_PORT",
-          "[grpc][aun]") {
+          "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
-    grpc::ClientContext add_ctx;
     beebium::AunAddPeerRequest add_req;
     add_req.set_net(0);
     add_req.set_stn(254);
     add_req.set_ip_address("127.0.0.1");
     add_req.set_port(0);  // request default
     beebium::AunAddPeerResponse add_resp;
-    REQUIRE(fixture.stub().AddPeer(&add_ctx, add_req, &add_resp).ok());
+    REQUIRE(fixture.invoke("AddPeer", add_req, &add_resp).ok());
     REQUIRE(add_resp.success());
 
-    grpc::ClientContext list_ctx;
     beebium::AunListPeersRequest list_req;
     beebium::AunListPeersResponse list_resp;
-    REQUIRE(fixture.stub().ListPeers(&list_ctx, list_req, &list_resp).ok());
+    REQUIRE(fixture.invoke("ListPeers", list_req, &list_resp).ok());
     REQUIRE(list_resp.peers_size() == 1);
     REQUIRE(list_resp.peers(0).port() == 32768);  // AUN_DEFAULT_PORT
 }
 
-TEST_CASE("AunService RemovePeer", "[grpc][aun]") {
+TEST_CASE("AunService RemovePeer", "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
     {
@@ -193,71 +201,64 @@ TEST_CASE("AunService RemovePeer", "[grpc][aun]") {
         req.set_net(0); req.set_stn(254);
         req.set_ip_address("127.0.0.1"); req.set_port(40001);
         beebium::AunAddPeerResponse resp;
-        grpc::ClientContext ctx;
-        REQUIRE(fixture.stub().AddPeer(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("AddPeer", req, &resp).ok());
     }
 
     {
         beebium::AunRemovePeerRequest req;
         req.set_net(0); req.set_stn(254);
         beebium::AunRemovePeerResponse resp;
-        grpc::ClientContext ctx;
-        REQUIRE(fixture.stub().RemovePeer(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("RemovePeer", req, &resp).ok());
         REQUIRE(resp.success());
     }
 
     {
         beebium::AunListPeersRequest req;
         beebium::AunListPeersResponse resp;
-        grpc::ClientContext ctx;
-        REQUIRE(fixture.stub().ListPeers(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("ListPeers", req, &resp).ok());
         REQUIRE(resp.peers_size() == 0);
     }
 }
 
-TEST_CASE("AunService SetConnected toggles backend state", "[grpc][aun]") {
+TEST_CASE("AunService SetConnected toggles backend state",
+          "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
     {
-        grpc::ClientContext ctx;
         beebium::AunSetConnectedRequest req;
         req.set_connected(false);
         beebium::AunSetConnectedResponse resp;
-        REQUIRE(fixture.stub().SetConnected(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("SetConnected", req, &resp).ok());
         REQUIRE(resp.success());
     }
     {
-        grpc::ClientContext ctx;
         beebium::AunGetStatusRequest req;
         beebium::AunGetStatusResponse resp;
-        REQUIRE(fixture.stub().GetStatus(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("GetStatus", req, &resp).ok());
         REQUIRE_FALSE(resp.connected());
     }
     {
-        grpc::ClientContext ctx;
         beebium::AunSetConnectedRequest req;
         req.set_connected(true);
         beebium::AunSetConnectedResponse resp;
-        REQUIRE(fixture.stub().SetConnected(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("SetConnected", req, &resp).ok());
     }
     {
-        grpc::ClientContext ctx;
         beebium::AunGetStatusRequest req;
         beebium::AunGetStatusResponse resp;
-        REQUIRE(fixture.stub().GetStatus(&ctx, req, &resp).ok());
+        REQUIRE(fixture.invoke("GetStatus", req, &resp).ok());
         REQUIRE(resp.connected());
     }
 }
 
-TEST_CASE("AunService AddPeer rejects invalid IP", "[grpc][aun]") {
+TEST_CASE("AunService AddPeer rejects invalid IP", "[grpc][aun][extension-rpc]") {
     AunServiceFixture fixture;
 
-    grpc::ClientContext ctx;
     beebium::AunAddPeerRequest req;
     req.set_net(0); req.set_stn(254);
     req.set_ip_address("not-an-ip"); req.set_port(40001);
     beebium::AunAddPeerResponse resp;
-    REQUIRE(fixture.stub().AddPeer(&ctx, req, &resp).ok());
+    REQUIRE(fixture.invoke("AddPeer", req, &resp).ok());
     REQUIRE_FALSE(resp.success());
     REQUIRE(resp.error().find("invalid") != std::string::npos);
 }

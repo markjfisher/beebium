@@ -17,7 +17,6 @@ from __future__ import annotations
 import grpc
 
 from beebium._proto import (
-    aun_pb2_grpc,
     debugger_pb2_grpc,
     disc_pb2_grpc,
     econet_pb2_grpc,
@@ -63,7 +62,6 @@ class Connection:
             extension_rpc_pb2_grpc.ExtensionRpcStub | None
         ) = None
         self._econet_transport_stub: econet_transport_pb2_grpc.EconetTransportServiceStub | None = None
-        self._aun_stub: aun_pb2_grpc.AunServiceStub | None = None
         self._extension_ui_stub: extension_ui_pb2_grpc.ExtensionUiServiceStub | None = None
         self._indicator_stub: indicator_pb2_grpc.IndicatorServiceStub | None = None
         self._keyboard_stub: keyboard_pb2_grpc.KeyboardServiceStub | None = None
@@ -100,7 +98,6 @@ class Connection:
             self._channel
         )
         self._econet_transport_stub = econet_transport_pb2_grpc.EconetTransportServiceStub(self._channel)
-        self._aun_stub = aun_pb2_grpc.AunServiceStub(self._channel)
         self._extension_ui_stub = extension_ui_pb2_grpc.ExtensionUiServiceStub(self._channel)
         self._indicator_stub = indicator_pb2_grpc.IndicatorServiceStub(self._channel)
         self._keyboard_stub = keyboard_pb2_grpc.KeyboardServiceStub(self._channel)
@@ -190,13 +187,6 @@ class Connection:
         return self._econet_transport_stub
 
     @property
-    def aun_stub(self) -> aun_pb2_grpc.AunServiceStub:
-        """The AunService stub (AUN-specific operations)."""
-        if self._aun_stub is None:
-            raise ConnectionError("Not connected")
-        return self._aun_stub
-
-    @property
     def extension_ui_stub(self) -> extension_ui_pb2_grpc.ExtensionUiServiceStub:
         """The ExtensionUiService stub (server-driven UI for extensions)."""
         if self._extension_ui_stub is None:
@@ -242,7 +232,6 @@ class Connection:
             self._disc_stub = None
             self._econet_stub = None
             self._econet_transport_stub = None
-            self._aun_stub = None
             self._extension_ui_stub = None
             self._indicator_stub = None
             self._keyboard_stub = None

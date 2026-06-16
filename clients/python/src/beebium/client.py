@@ -427,7 +427,7 @@ class Beebium:
         returns an error.
         """
         if self._aun is None:
-            self._aun = Aun(self._connection.aun_stub)
+            self._aun = Aun(ExtensionChannel(self._connection.extension_rpc_stub))
         return self._aun
 
     @property
