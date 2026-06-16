@@ -2,6 +2,11 @@ name: CI
 
 on:
   push:
+    # feature/extension-rpc-channel is excluded while it churns, to avoid
+    # burning the multi-platform build matrix on every push. Trigger CI for it
+    # manually via workflow_dispatch (or remove this exclusion) when needed.
+    branches-ignore:
+      - feature/extension-rpc-channel
   pull_request:
   schedule:
     # Run weekly on Monday at 6 AM UTC to keep caches alive (7-day expiry)
