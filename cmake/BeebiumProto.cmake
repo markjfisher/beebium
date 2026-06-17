@@ -86,31 +86,10 @@ function(beebium_compile_proto)
 endfunction()
 
 
-# Apply the gRPC/protobuf linkage for a plugin's proto OBJECT library.
-#
-# On macOS, a dlopened gRPC-service plugin must NOT embed its own
-# gRPC/protobuf/abseil runtime -- two runtimes in one process crash when a call
-# crosses the exe<->plugin boundary (project_macos_static_grpc_duplicate_runtime
-# / gRPC #39198). So compile against the headers only and resolve the runtime
-# from the host executable at load (beebium_finalize_plugin adds -undefined
-# dynamic_lookup; the server is built with -rdynamic).
-#
-# Elsewhere, link the libraries normally: Linux shares one system libgrpc++.so
-# (and a shared lib may carry undefined symbols resolved from the host at load),
-# while Windows DLLs must resolve every symbol at link time via the import
-# library, so headers-only is not an option there.
-function(beebium_proto_object_grpc_linkage target)
-    if(APPLE)
-        target_include_directories(${target}
-            PUBLIC
-                $<TARGET_PROPERTY:gRPC::grpc++,INTERFACE_INCLUDE_DIRECTORIES>
-                $<TARGET_PROPERTY:protobuf::libprotobuf,INTERFACE_INCLUDE_DIRECTORIES>
-        )
-    else()
-        target_link_libraries(${target}
-            PUBLIC
-                gRPC::grpc++
-                protobuf::libprotobuf
-        )
-    endif()
-endfunction()
+# NOTE: the former beebium_proto_object_grpc_linkage() helper is gone. It made a
+# plugin's proto OBJECT library compile gRPC/protobuf headers-only on macOS so
+# the plugin resolved a single host-side runtime at load -- the workaround for
+# the duplicate-gRPC-runtime crash (gRPC #39198). Extensions no longer host gRPC
+# services (their APIs go through the core's ExtensionRpc channel), so plugin
+# proto libraries compile their MESSAGES only and link protobuf::libprotobuf
+# directly on every platform. See docs/discussion/extension-rpc-channel.md.
