@@ -1503,8 +1503,14 @@ if(BEEBIUM_BUILD_SERVICE)
         test_piconet_ui.cpp
         piconet/FakePiconetDevice.cpp
         ${PICONET_SERIAL_BRIDGE_SRCS})
+    # Link the STATIC extension build, not the plugin DLL: this test constructs
+    # PiconetEconetTransportExtension directly rather than dlopen'ing it. On
+    # Windows the plugin DLL is built with WINDOWS_EXPORT_ALL_SYMBOLS, so since
+    # the plugin gained protobuf message code it re-exports protobuf symbols;
+    # linking that DLL alongside libprotobuf split the descriptor pool and
+    # crashed the proto-using UI tests. The static lib has no such export.
     target_link_libraries(test_piconet_ui PRIVATE
-        beebium_ext_piconet_plugin
+        beebium_ext_piconet
         beebium_piconet_core
         beebium_extension_api
         beebium_extension_ui_proto
