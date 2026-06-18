@@ -39,9 +39,10 @@ if _version_not_supported:
 
 class PiconetServiceStub(object):
     """Piconet-specific service. Lives alongside PiconetEconetTransportExtension
-    in src/extensions/piconet/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when Piconet
-    is the active transport.
+    in src/extensions/piconet/ and is served via that extension's
+    PiconetDispatcher over the core's ExtensionRpc channel (no gRPC stub is
+    compiled from this service block). It is reachable only when Piconet is
+    the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense
@@ -69,9 +70,10 @@ class PiconetServiceStub(object):
 
 class PiconetServiceServicer(object):
     """Piconet-specific service. Lives alongside PiconetEconetTransportExtension
-    in src/extensions/piconet/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when Piconet
-    is the active transport.
+    in src/extensions/piconet/ and is served via that extension's
+    PiconetDispatcher over the core's ExtensionRpc channel (no gRPC stub is
+    compiled from this service block). It is reachable only when Piconet is
+    the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense
@@ -110,9 +112,10 @@ def add_PiconetServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class PiconetService(object):
     """Piconet-specific service. Lives alongside PiconetEconetTransportExtension
-    in src/extensions/piconet/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when Piconet
-    is the active transport.
+    in src/extensions/piconet/ and is served via that extension's
+    PiconetDispatcher over the core's ExtensionRpc channel (no gRPC stub is
+    compiled from this service block). It is reachable only when Piconet is
+    the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense
