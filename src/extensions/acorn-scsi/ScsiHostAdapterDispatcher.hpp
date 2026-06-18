@@ -42,7 +42,7 @@ public:
         return "ScsiHostAdapterService";
     }
 
-    RpcStatus invoke(std::string_view method, std::string_view request,
+    RpcStatus invoke(std::string_view method, std::string_view /*request*/,
                      std::string& response, RpcContext& /*ctx*/) override {
         if (method == "ListTargets") {
             ListScsiTargetsResponse resp;
