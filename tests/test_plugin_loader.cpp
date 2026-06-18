@@ -149,7 +149,7 @@ TEST_CASE("PluginLoader load_extension loads and registers extension",
     registry.shutdown();
 }
 
-TEST_CASE("PluginLoader loaded extension provides gRPC services",
+TEST_CASE("PluginLoader loaded extension provides an RPC dispatcher",
           "[extension][plugin]") {
     if (kPluginDirpath.empty()) {
         SKIP("BEEBIUM_PLUGIN_DIR not set");
@@ -173,8 +173,15 @@ TEST_CASE("PluginLoader loaded extension provides gRPC services",
     beebium::ExtensionContext ctx(&port);
     registry.resolve_and_init(ctx);
 
-    auto services = registry.collect_grpc_services();
-    REQUIRE_FALSE(services.empty());
+    // The extension's API is served through the core's ExtensionRpc channel,
+    // so it contributes an ExtensionRpcDispatcher (not a hosted gRPC service).
+    bool any_dispatcher = false;
+    for (auto* ext : registry.extensions()) {
+        if (!ext->rpc_dispatchers().empty()) {
+            any_dispatcher = true;
+        }
+    }
+    REQUIRE(any_dispatcher);
 
     registry.shutdown();
 }

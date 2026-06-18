@@ -37,6 +37,13 @@ function(beebium_finalize_plugin)
         message(FATAL_ERROR "beebium_finalize_plugin: NAME is required")
     endif()
 
+    # Plugins resolve the extension ABI (and the framework types they use) from
+    # the linked beebium_extension_api dylib, and protobuf from the shared
+    # libprotobuf, so they link cleanly with no undefined symbols. Extensions no
+    # longer host gRPC services -- their APIs go through the core's ExtensionRpc
+    # channel -- so the macOS -undefined dynamic_lookup / host-resolved-runtime
+    # workaround for gRPC #39198 (and the matching server -rdynamic) is gone.
+
     # Server-adjacent deploy. Only meaningful when the server executables
     # are being built this configure; skip gracefully otherwise so that
     # tests-only / plugin-only configures still succeed.

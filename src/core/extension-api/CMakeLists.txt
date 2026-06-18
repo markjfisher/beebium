@@ -205,6 +205,7 @@ add_library(beebium_extension_api SHARED
     EconetTransportExtension.cpp
     ExtensionStorage.cpp
     ExtensionUi.cpp
+    ExtensionRpc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/UserPort.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/PluginLoader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/ExtensionArgParser.cpp

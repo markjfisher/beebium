@@ -23,9 +23,13 @@ if(BEEBIUM_BUILD_SERVICE)
         PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    # Messages only: the dispatcher (de)serializes these. The generated
+    # .grpc.pb.cc stub is deliberately NOT compiled -- that (and the macOS
+    # headers-only Option 2 linkage it needed) is what would pull gRPC in. The
+    # RTC's typed API is served over the core's ExtensionRpc channel instead.
+    # See docs/discussion/extension-rpc-channel.md.
     add_library(beebium_ext_acorn_rtc_proto OBJECT
         ${beebium_ext_acorn_rtc_PROTO_SRCS}
-        ${beebium_ext_acorn_rtc_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_rtc_proto
@@ -33,9 +37,7 @@ if(BEEBIUM_BUILD_SERVICE)
     )
 
     target_link_libraries(beebium_ext_acorn_rtc_proto
-        PUBLIC
-            gRPC::grpc++
-            protobuf::libprotobuf
+        PUBLIC protobuf::libprotobuf
     )
 
     set_target_properties(beebium_ext_acorn_rtc_proto PROPERTIES
@@ -56,6 +58,7 @@ if(BEEBIUM_BUILD_SERVICE)
         PUBLIC
             beebium_rtc_core
             beebium_core
+            beebium_extension_api
             beebium_ext_acorn_rtc_proto
             # AcornRtcUi.cpp pulls in extension_ui.pb.h for the
             # View / DispatchRequest types it composes.

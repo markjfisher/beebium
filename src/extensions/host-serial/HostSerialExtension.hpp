@@ -23,12 +23,12 @@
 #include <string_view>
 #include <vector>
 
-namespace grpc { class Service; }
-
 namespace beebium {
 
+class ExtensionRpcDispatcher;
+
 #ifdef BEEBIUM_BUILD_SERVICE
-class HostSerialServiceImpl;  // forward; defined when the service layer is built
+class HostSerialDispatcher;  // forward; defined when the service layer is built
 #endif
 
 // Built-in PeripheralExtension that bridges the BBC serial port (RS423) to a
@@ -50,8 +50,8 @@ class HostSerialServiceImpl;  // forward; defined when the service layer is buil
 class HostSerialExtension : public PeripheralExtension {
 public:
     HostSerialExtension();
-    // Defined in the .cpp where HostSerialServiceImpl is complete (the
-    // unique_ptr<HostSerialServiceImpl> member needs it for destruction).
+    // Defined in the .cpp where HostSerialDispatcher is complete (the
+    // unique_ptr<HostSerialDispatcher> member needs it for destruction).
     ~HostSerialExtension() override;
 
     std::span<const std::string_view> attaches_to() const override;
@@ -60,7 +60,8 @@ public:
     void shutdown() override;
 
     // Typed config API (query + re-point), parallel to the GUI panel below.
-    std::vector<grpc::Service*> grpc_services() override;
+    // Served through the core's ExtensionRpc channel, not a hosted gRPC service.
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // Peripherals-sidebar panel.
     ExtensionUi* ui() override { return &ui_; }
@@ -77,8 +78,8 @@ private:
     std::unique_ptr<serial::HostSerialEndpoint> endpoint_;
 #ifdef BEEBIUM_BUILD_SERVICE
     // Declared after endpoint_ so it is destroyed FIRST (it holds an endpoint_
-    // reference). Lazily constructed in grpc_services().
-    std::unique_ptr<HostSerialServiceImpl> service_;
+    // reference). Lazily constructed in rpc_dispatchers().
+    std::unique_ptr<HostSerialDispatcher> dispatcher_;
 #endif
 };
 

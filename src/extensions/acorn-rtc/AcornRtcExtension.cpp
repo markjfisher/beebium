@@ -11,6 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include "AcornRtcExtension.hpp"
+#include "AcornRtcDispatcher.hpp"
 #include "TimeParser.hpp"
 #include <beebium/extension/ExtensionContext.hpp>
 #include <beebium/extension/UserPort.hpp>
@@ -19,6 +20,9 @@
 #include <stdexcept>
 
 namespace beebium {
+
+AcornRtcExtension::AcornRtcExtension() = default;
+AcornRtcExtension::~AcornRtcExtension() = default;
 
 std::span<const std::string_view> AcornRtcExtension::attaches_to() const {
     static constexpr std::string_view deps[] = {"user-port"};
@@ -88,20 +92,20 @@ void AcornRtcExtension::init(ExtensionContext& ctx) {
               << (target_dt.hour < 10 ? "0" : "") << target_dt.hour << ":"
               << (target_dt.minute < 10 ? "0" : "") << target_dt.minute << "\n";
 
-    // Create gRPC service
-    service_ = std::make_unique<AcornRtcServiceImpl>(chip_);
+    // Create the channel dispatcher for the RTC's typed API.
+    dispatcher_ = std::make_unique<AcornRtcDispatcher>(chip_);
 
     // Attach to User Port
     ctx.get<UserPort>().attach(*this);
 }
 
 void AcornRtcExtension::shutdown() {
-    service_.reset();
+    dispatcher_.reset();
 }
 
-std::vector<grpc::Service*> AcornRtcExtension::grpc_services() {
-    if (service_) {
-        return {service_.get()};
+std::vector<ExtensionRpcDispatcher*> AcornRtcExtension::rpc_dispatchers() {
+    if (dispatcher_) {
+        return {dispatcher_.get()};
     }
     return {};
 }

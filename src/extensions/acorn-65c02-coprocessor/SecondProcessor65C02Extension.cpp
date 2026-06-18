@@ -45,13 +45,13 @@ void SecondProcessor65C02Extension::init(ExtensionContext& ctx)
     tube_socket_->install_parasite(runner_.get());
     tube_socket_->set_parasite_clock_ratio(3, 2);  // 3 MHz / 2 MHz
 
-    // Create debugger service (wraps ParasiteRunner with the same
-    // DebuggerControlServiceImpl template used by the host debugger).
-    // The adapter exposes it under the ParasiteDebuggerControl service
-    // name so it can coexist with the host's DebuggerControl on the
-    // same gRPC server.
+    // Create the parasite debugger impl (wraps ParasiteRunner with the same
+    // DebuggerControlServiceImpl template used by the host debugger). The
+    // server reads this via debugger_service() and wraps it in a
+    // ParasiteDebuggerAdapter registered as the ParasiteDebuggerControl gRPC
+    // service, so it coexists with the host's DebuggerControl without the
+    // extension hosting any gRPC service itself.
     debugger_service_ = std::make_unique<service::DebuggerControlServiceImpl<ParasiteRunner>>(*runner_);
-    debugger_adapter_ = std::make_unique<ParasiteDebuggerAdapter>(*debugger_service_);
 
     std::cout << "  65C02 coprocessor (3 MHz, single-threaded)\n";
 }
@@ -67,7 +67,6 @@ void SecondProcessor65C02Extension::shutdown()
         tube_socket_->install_backend(nullptr);
     }
 
-    debugger_adapter_.reset();
     debugger_service_.reset();
     runner_.reset();
     tube_ula_.reset();
@@ -100,13 +99,6 @@ bool SecondProcessor65C02Extension::load_rom(std::array<uint8_t, 2048>& rom) con
     }
     file.read(reinterpret_cast<char*>(rom.data()), 2048);
     return file.gcount() == 2048;
-}
-
-std::vector<grpc::Service*> SecondProcessor65C02Extension::grpc_services()
-{
-    if (debugger_adapter_)
-        return {debugger_adapter_.get()};
-    return {};
 }
 
 }  // namespace beebium

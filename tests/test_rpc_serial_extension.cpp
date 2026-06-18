@@ -10,12 +10,13 @@
 // You should have received a copy of the GNU General Public License along with Beebium.
 // If not, see <https://www.gnu.org/licenses/>.
 
+#include "RpcSerialDispatcher.hpp"
 #include "RpcSerialEndpoint.hpp"
 #include "RpcSerialExtension.hpp"
-#include "RpcSerialService.hpp"
 
 #include <beebium/devices/Mc6850.hpp>
 #include <beebium/extension/ExtensionContext.hpp>
+#include <beebium/extension/ExtensionRpc.hpp>
 #include <beebium/extension/SerialPort.hpp>
 #include <beebium/serial/SerialSocket.hpp>
 #include <beebium/serial/SerialUla.hpp>
@@ -23,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 
 using namespace beebium;
@@ -30,9 +32,35 @@ using namespace beebium;
 namespace {
 constexpr uint8_t CONTROL_8N1 =
     Mc6850::COUNTER_DIVIDE_16 | (0x05 << Mc6850::CR_WORD_SELECT_SHIFT);
+
+// A minimal RpcContext for driving a dispatcher directly in a unit test (no
+// gRPC). The dispatcher resolves remote calls to serialized bytes, exactly as
+// the core's ExtensionRpc service feeds it at runtime.
+class TestRpcContext final : public RpcContext {
+public:
+    bool is_cancelled() const override { return false; }
+    const std::map<std::string, std::string>& metadata() const override {
+        return metadata_;
+    }
+private:
+    std::map<std::string, std::string> metadata_;
+};
+
+// Serialize `req`, invoke the dispatcher, parse the reply into `resp`.
+template <typename Req, typename Resp>
+RpcStatus call(ExtensionRpcDispatcher& d, std::string_view method,
+               const Req& req, Resp* resp) {
+    TestRpcContext ctx;
+    std::string out;
+    RpcStatus status = d.invoke(method, req.SerializeAsString(), out, ctx);
+    if (status.is_ok() && resp != nullptr) {
+        REQUIRE(resp->ParseFromString(out));
+    }
+    return status;
+}
 }  // namespace
 
-TEST_CASE("RpcSerialExtension attaches and exposes a service",
+TEST_CASE("RpcSerialExtension attaches and exposes a dispatcher",
           "[serial][rpc-serial]") {
     SerialSocket socket;
     SerialPort port(socket);
@@ -42,21 +70,26 @@ TEST_CASE("RpcSerialExtension attaches and exposes a service",
     REQUIRE(ext.attaches_to().size() == 1);
     CHECK(ext.attaches_to()[0] == "serial-port");
 
+    // No dispatcher before init().
+    CHECK(ext.rpc_dispatchers().empty());
+
     ext.init(ctx);
     CHECK(port.is_occupied());
-    CHECK(ext.grpc_services().size() == 1);
+    auto dispatchers = ext.rpc_dispatchers();
+    REQUIRE(dispatchers.size() == 1);
+    CHECK(dispatchers[0]->service_name() == "RpcSerial");
 
     ext.shutdown();
 }
 
-TEST_CASE("RpcSerial service round-trips bytes through the BBC",
+TEST_CASE("RpcSerial dispatcher round-trips bytes through the BBC",
           "[serial][rpc-serial]") {
     RpcSerialEndpoint endpoint;
     SerialSocket socket;
     SerialPort port(socket);
     port.attach(endpoint);
 
-    RpcSerialServiceImpl service(endpoint);
+    RpcSerialDispatcher dispatcher(endpoint);
 
     socket.write_acia(0, CONTROL_8N1);
     socket.write_ula(0, SerialUla::RS423_SELECT);
@@ -65,7 +98,7 @@ TEST_CASE("RpcSerial service round-trips bytes through the BBC",
     RpcSerialSendRequest send_req;
     send_req.set_data("Z");
     RpcSerialSendResponse send_resp;
-    service.Send(nullptr, &send_req, &send_resp);
+    CHECK(call(dispatcher, "Send", send_req, &send_resp).is_ok());
     CHECK(send_resp.accepted() == 1);
 
     for (int i = 0; i < 6000 && (socket.read_acia(0) & Mc6850::SR_RDRF) == 0; ++i) {
@@ -84,15 +117,15 @@ TEST_CASE("RpcSerial service round-trips bytes through the BBC",
     RpcSerialReceiveRequest recv_req;
     recv_req.set_max_bytes(0);
     RpcSerialReceiveResponse recv_resp;
-    service.Receive(nullptr, &recv_req, &recv_resp);
+    CHECK(call(dispatcher, "Receive", recv_req, &recv_resp).is_ok());
     REQUIRE(recv_resp.data().size() == 1);
     CHECK(static_cast<uint8_t>(recv_resp.data()[0]) == 0x5A);
 }
 
-TEST_CASE("RpcSerial Send caps the receive queue and reports accepted",
+TEST_CASE("RpcSerial dispatcher Send caps the receive queue and reports accepted",
           "[serial][rpc-serial]") {
     RpcSerialEndpoint endpoint;
-    RpcSerialServiceImpl service(endpoint);
+    RpcSerialDispatcher dispatcher(endpoint);
 
     // Flood beyond the receive capacity with nothing draining it: Send accepts
     // only what fits and reports it -- it never blocks or grows unbounded.
@@ -100,13 +133,54 @@ TEST_CASE("RpcSerial Send caps the receive queue and reports accepted",
     RpcSerialSendRequest req;
     req.set_data(std::string(flood, 'A'));
     RpcSerialSendResponse resp;
-    service.Send(nullptr, &req, &resp);
+    CHECK(call(dispatcher, "Send", req, &resp).is_ok());
     CHECK(resp.accepted() == RpcSerialEndpoint::kRxCapacity);
 
     // The queue is now full; a further send accepts nothing.
     RpcSerialSendResponse resp2;
-    service.Send(nullptr, &req, &resp2);
+    CHECK(call(dispatcher, "Send", req, &resp2).is_ok());
     CHECK(resp2.accepted() == 0);
+}
+
+TEST_CASE("RpcSerial dispatcher GetStatus reports the queue depths",
+          "[serial][rpc-serial]") {
+    RpcSerialEndpoint endpoint;
+    RpcSerialDispatcher dispatcher(endpoint);
+
+    // Queue some bytes in each direction without draining.
+    RpcSerialSendRequest send_req;
+    send_req.set_data("abc");  // device -> BBC (rx)
+    RpcSerialSendResponse send_resp;
+    CHECK(call(dispatcher, "Send", send_req, &send_resp).is_ok());
+    endpoint.add_byte(0x10);   // BBC -> device (tx)
+    endpoint.add_byte(0x11);
+
+    RpcSerialStatusRequest status_req;
+    RpcSerialStatus status;
+    CHECK(call(dispatcher, "GetStatus", status_req, &status).is_ok());
+    CHECK(status.rx_pending() == 3);
+    CHECK(status.tx_pending() == 2);
+}
+
+TEST_CASE("RpcSerial dispatcher rejects unknown methods and bad requests",
+          "[serial][rpc-serial]") {
+    RpcSerialEndpoint endpoint;
+    RpcSerialDispatcher dispatcher(endpoint);
+    TestRpcContext ctx;
+
+    // Unknown method -> UNIMPLEMENTED.
+    std::string out;
+    RpcStatus unknown = dispatcher.invoke("Nope", "", out, ctx);
+    CHECK_FALSE(unknown.is_ok());
+    CHECK(unknown.code == kRpcUnimplemented);
+
+    // A request that is not a valid protobuf for the method -> INVALID_ARGUMENT.
+    // (A long random byte string is overwhelmingly unlikely to parse as the
+    // expected message.)
+    std::string garbage(64, '\xff');
+    RpcStatus bad = dispatcher.invoke("Send", garbage, out, ctx);
+    CHECK_FALSE(bad.is_ok());
+    CHECK(bad.code == kRpcInvalidArgument);
 }
 
 TEST_CASE("RpcSerialEndpoint bounds tx and signals back-pressure",

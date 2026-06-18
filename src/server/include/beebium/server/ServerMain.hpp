@@ -19,6 +19,7 @@
 #include "beebium/extension/AttachmentPointCatalogue.hpp"
 #include "beebium/extension/EconetTransportRegistry.hpp"
 #include "beebium/service/EconetTransportService.hpp"
+#include "beebium/service/ExtensionRpcService.hpp"
 #include "beebium/service/ExtensionUiService.hpp"
 #include "beebium/extension/ExtensionArgParser.hpp"
 #include "beebium/extension/ExtensionContext.hpp"
@@ -28,6 +29,7 @@
 #include "beebium/extension/PluginLoader.hpp"
 #include "beebium/service/PeripheralExtensionService.hpp"
 #include "SecondProcessor65C02Extension.hpp"
+#include "ParasiteDebuggerAdapter.hpp"
 #include "beebium/Machines.hpp"
 #include "beebium/SidewaysRomHeader.hpp"
 #include "beebium/PacingClock.hpp"
@@ -1878,17 +1880,41 @@ public:
             beebium::service::ExtensionUiServiceImpl extension_ui_service(
                 transport_registry, extension_registry);
 
-            // Collect all extension-provided services plus the discovery
-            // services. Both peripheral and transport extensions can
-            // contribute services; AunService / PiconetService come via
-            // the transport registry's grpc_services hook.
-            auto extension_services = extension_registry.collect_grpc_services();
-            for (auto* svc : transport_registry.collect_grpc_services()) {
-                extension_services.push_back(svc);
-            }
+            // The single channel through which clients drive extension RPC
+            // services (the gRPC-free replacement for extension-hosted gRPC
+            // services). See docs/discussion/extension-rpc-channel.md.
+            beebium::service::ExtensionRpcServiceImpl extension_rpc_service(
+                transport_registry, extension_registry);
+
+            // Collect the discovery + channel services. Extension-provided
+            // APIs (AunService, PiconetService, the serial/SCSI/RTC services,
+            // ...) are NOT hosted as gRPC services by the extensions; clients
+            // reach them through the single extension_rpc_service channel.
+            std::vector<grpc::Service*> extension_services;
             extension_services.push_back(&peripheral_extension_service);
             extension_services.push_back(&econet_transport_service);
             extension_services.push_back(&extension_ui_service);
+            extension_services.push_back(&extension_rpc_service);
+
+            // The parasite (second processor) debugger is the one genuine core
+            // gRPC service contributed by an extension: it is the same
+            // DebuggerControl proto as the host debugger, consumed by the
+            // typed debugger clients. The server (not the extension) wraps the
+            // coprocessor's debugger impl in the adapter and registers it, so
+            // no extension hosts a gRPC service. The adapter must outlive the
+            // server, hence this enclosing-scope owner.
+            std::unique_ptr<beebium::ParasiteDebuggerAdapter> parasite_debugger_adapter;
+            for (auto* ext : extension_registry.extensions()) {
+                auto* tube_ext =
+                    dynamic_cast<beebium::SecondProcessor65C02Extension*>(ext);
+                if (tube_ext && tube_ext->debugger_service()) {
+                    parasite_debugger_adapter =
+                        std::make_unique<beebium::ParasiteDebuggerAdapter>(
+                            *tube_ext->debugger_service());
+                    extension_services.push_back(parasite_debugger_adapter.get());
+                    break;
+                }
+            }
 
             // Start gRPC server
             std::cout << "Starting gRPC server...\n";

@@ -1,23 +1,34 @@
 /**
  * AUN (Acorn Universal Networking) transport-specific operations.
  *
- * These RPCs are surfaced by AunService when AUN is the active Econet
- * transport on the server. Use bbc.transport.getActive() to confirm AUN
- * is the active transport before calling these methods; otherwise the
- * RPC returns an error indicating "AUN backend is not active".
+ * These RPCs are surfaced by the AunService dispatcher when AUN is the active
+ * Econet transport on the server. Use bbc.transport.getActive() to confirm AUN
+ * is the active transport before calling these methods; otherwise the call
+ * returns an error indicating "AUN backend is not active".
+ *
+ * The AUN messages are tunnelled over the core's ExtensionRpc channel; the AUN
+ * extension no longer hosts its own gRPC service. The public API here is
+ * unchanged.
  */
 
-import type {
-    AunServiceClient,
-    AunGetStatusResponse as ProtoAunGetStatusResponse,
-    AunListPeersResponse as ProtoAunListPeersResponse,
-    AunSetConnectedResponse as ProtoAunSetConnectedResponse,
-    AunAddPeerResponse as ProtoAunAddPeerResponse,
-    AunRemovePeerResponse as ProtoAunRemovePeerResponse,
+import {
+    AunGetStatusRequest,
+    AunGetStatusResponse,
+    AunListPeersRequest,
+    AunListPeersResponse,
+    AunSetConnectedRequest,
+    AunSetConnectedResponse,
+    AunAddPeerRequest,
+    AunAddPeerResponse,
+    AunRemovePeerRequest,
+    AunRemovePeerResponse,
+    AunPeerSource as ProtoAunPeerSource,
 } from "./generated/aun.js";
-import { AunPeerSource as ProtoAunPeerSource } from "./generated/aun.js";
-import { promisify } from "./call-utils.js";
+import type { ExtensionChannel } from "./extension_rpc.js";
 import { EconetError } from "./exceptions.js";
+
+/** The logical service name the AUN extension's dispatcher registers. */
+const SERVICE = "AunService";
 
 export interface AunStatus {
     connected: boolean;
@@ -61,19 +72,19 @@ export interface PeerInfo {
  * transport.
  */
 export class Aun {
-    private readonly stub: AunServiceClient;
+    private readonly channel: ExtensionChannel;
 
-    constructor(stub: AunServiceClient) {
-        this.stub = stub;
+    constructor(channel: ExtensionChannel) {
+        this.channel = channel;
     }
 
     /** Read the AUN backend status. */
     async getStatus(): Promise<AunStatus> {
-        const response = await promisify<{}, ProtoAunGetStatusResponse>(
-            this.stub as unknown as Record<string, Function>,
-            "getStatus",
-            {},
-        );
+        const payload = AunGetStatusRequest.encode(
+            AunGetStatusRequest.fromPartial({}),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "GetStatus", payload);
+        const response = AunGetStatusResponse.decode(reply);
         return {
             connected: response.connected,
             localPort: response.localPort,
@@ -83,11 +94,11 @@ export class Aun {
 
     /** Enumerate all configured AUN peers. */
     async listPeers(): Promise<PeerInfo[]> {
-        const response = await promisify<{}, ProtoAunListPeersResponse>(
-            this.stub as unknown as Record<string, Function>,
-            "listPeers",
-            {},
-        );
+        const payload = AunListPeersRequest.encode(
+            AunListPeersRequest.fromPartial({}),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "ListPeers", payload);
+        const response = AunListPeersResponse.decode(reply);
         return response.peers.map((p) => ({
             net: p.net,
             stn: p.stn,
@@ -111,11 +122,11 @@ export class Aun {
      * @throws EconetError if the AUN backend is not active or the call fails.
      */
     async setConnected(connected: boolean): Promise<void> {
-        const response = await promisify<{ connected: boolean }, ProtoAunSetConnectedResponse>(
-            this.stub as unknown as Record<string, Function>,
-            "setConnected",
-            { connected },
-        );
+        const payload = AunSetConnectedRequest.encode(
+            AunSetConnectedRequest.fromPartial({ connected }),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "SetConnected", payload);
+        const response = AunSetConnectedResponse.decode(reply);
         if (!response.success) {
             throw new EconetError(response.error);
         }
@@ -136,14 +147,11 @@ export class Aun {
         ipAddress: string,
         port: number = 0,
     ): Promise<void> {
-        const response = await promisify<
-            { net: number; stn: number; ipAddress: string; port: number },
-            ProtoAunAddPeerResponse
-        >(
-            this.stub as unknown as Record<string, Function>,
-            "addPeer",
-            { net, stn, ipAddress, port },
-        );
+        const payload = AunAddPeerRequest.encode(
+            AunAddPeerRequest.fromPartial({ net, stn, ipAddress, port }),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "AddPeer", payload);
+        const response = AunAddPeerResponse.decode(reply);
         if (!response.success) {
             throw new EconetError(response.error);
         }
@@ -155,14 +163,11 @@ export class Aun {
      * @throws EconetError if the call fails.
      */
     async removePeer(net: number, stn: number): Promise<void> {
-        const response = await promisify<
-            { net: number; stn: number },
-            ProtoAunRemovePeerResponse
-        >(
-            this.stub as unknown as Record<string, Function>,
-            "removePeer",
-            { net, stn },
-        );
+        const payload = AunRemovePeerRequest.encode(
+            AunRemovePeerRequest.fromPartial({ net, stn }),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "RemovePeer", payload);
+        const response = AunRemovePeerResponse.decode(reply);
         if (!response.success) {
             throw new EconetError(response.error);
         }

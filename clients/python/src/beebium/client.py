@@ -37,6 +37,7 @@ from beebium.disc import Disc
 from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.econet_transport import EconetTransport
+from beebium.extension_rpc import ExtensionChannel
 from beebium.host_serial import HostSerial
 from beebium.rpc_serial import RpcSerial
 from beebium.serial import Serial
@@ -389,7 +390,9 @@ class Beebium:
         the server to be launched with ``--rpc-serial``.
         """
         if self._rpc_serial is None:
-            self._rpc_serial = RpcSerial(self._connection.rpc_serial_stub)
+            self._rpc_serial = RpcSerial(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._rpc_serial
 
     @property
@@ -401,7 +404,9 @@ class Beebium:
         ``--host-serial``.
         """
         if self._host_serial is None:
-            self._host_serial = HostSerial(self._connection.host_serial_stub)
+            self._host_serial = HostSerial(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._host_serial
 
     @property
@@ -422,7 +427,7 @@ class Beebium:
         returns an error.
         """
         if self._aun is None:
-            self._aun = Aun(self._connection.aun_stub)
+            self._aun = Aun(ExtensionChannel(self._connection.extension_rpc_stub))
         return self._aun
 
     @property
@@ -432,7 +437,9 @@ class Beebium:
         Only meaningful when ``transport.active.name == "piconet"``.
         """
         if self._piconet is None:
-            self._piconet = Piconet(self._connection.piconet_stub)
+            self._piconet = Piconet(
+                ExtensionChannel(self._connection.extension_rpc_stub)
+            )
         return self._piconet
 
     @property

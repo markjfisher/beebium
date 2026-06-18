@@ -27,8 +27,9 @@
 
 namespace beebium {
 
-class ExtensionUi;       // forward decl; defined in ExtensionUi.hpp
-class ExtensionStorage;  // forward decl; defined in ExtensionStorage.hpp
+class ExtensionUi;             // forward decl; defined in ExtensionUi.hpp
+class ExtensionStorage;        // forward decl; defined in ExtensionStorage.hpp
+class ExtensionRpcDispatcher;  // forward decl; defined in ExtensionRpc.hpp
 
 // Common base for all extension-point types. Holds manifest, instance
 // config, and identity accessors. No lifecycle methods -- those belong
@@ -181,6 +182,15 @@ public:
     // virtual accessor avoids requiring dynamic_cast (and its cross-
     // plugin typeinfo dependency) at the framework level.
     virtual ExtensionStorage* storage() { return nullptr; }
+
+    // Optional remote-control hook. Returns the extension's RPC dispatchers
+    // (zero or more), each serving one logical service over the core-hosted
+    // ExtensionRpc channel. Empty by default. The dispatchers handle serialized
+    // request/response bytes, so the extension never links gRPC -- this is the
+    // sole way an extension exposes a client-facing API. The returned pointers
+    // must outlive the Extension instance (typically members of the concrete
+    // class). See docs/discussion/extension-rpc-channel.md.
+    virtual std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() { return {}; }
 
 protected:
     ExtensionManifest manifest_;

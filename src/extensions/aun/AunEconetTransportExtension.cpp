@@ -17,7 +17,7 @@
 #include "beebium/econet/AunPacket.hpp"
 
 #ifdef BEEBIUM_BUILD_SERVICE
-#include "AunService.hpp"
+#include "AunDispatcher.hpp"
 #endif
 
 #ifndef BEEBIUM_VERSION
@@ -242,12 +242,12 @@ AunEconetTransportExtension::create_backend(std::uint8_t station) {
 AunEconetTransportExtension::AunEconetTransportExtension() = default;
 AunEconetTransportExtension::~AunEconetTransportExtension() = default;
 
-std::vector<grpc::Service*> AunEconetTransportExtension::grpc_services() {
+std::vector<ExtensionRpcDispatcher*> AunEconetTransportExtension::rpc_dispatchers() {
 #ifdef BEEBIUM_BUILD_SERVICE
-    if (!service_) {
-        service_ = std::make_unique<AunServiceImpl>(*this);
+    if (!dispatcher_) {
+        dispatcher_ = std::make_unique<AunDispatcher>(*this);
     }
-    return {service_.get()};
+    return {dispatcher_.get()};
 #else
     return {};
 #endif

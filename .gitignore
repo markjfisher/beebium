@@ -7,6 +7,7 @@ out/
 # vcpkg (cloned/installed locally or by CI)
 vcpkg/
 vcpkg_installed/
+vcpkg_installed-*/
 
 # CMake generated files
 CMakeCache.txt

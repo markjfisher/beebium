@@ -31,17 +31,17 @@ if(BEEBIUM_BUILD_SERVICE)
 
     add_library(beebium_ext_acorn_scsi_proto OBJECT
         ${beebium_ext_acorn_scsi_PROTO_SRCS}
-        ${beebium_ext_acorn_scsi_GRPC_SRCS}
     )
 
     target_include_directories(beebium_ext_acorn_scsi_proto
         PUBLIC ${beebium_ext_acorn_scsi_OUT_DIR}
     )
 
+    # Messages only (no .grpc.pb.cc, no macOS Option 2 headers-only linkage):
+    # that is what pulled gRPC in. The SCSI host-adapter API is served over the
+    # core's ExtensionRpc channel. See docs/discussion/extension-rpc-channel.md.
     target_link_libraries(beebium_ext_acorn_scsi_proto
-        PUBLIC
-            gRPC::grpc++
-            protobuf::libprotobuf
+        PUBLIC protobuf::libprotobuf
     )
 
     set_target_properties(beebium_ext_acorn_scsi_proto PROPERTIES

@@ -20,6 +20,7 @@ import { PROTOCOL_FINGERPRINT } from "./protocol_fingerprint.js";
 import { Disc } from "./disc.js";
 import { Econet } from "./econet.js";
 import { Serial } from "./serial.js";
+import { ExtensionChannel } from "./extension_rpc.js";
 import { RpcSerial } from "./rpc_serial.js";
 import { HostSerial } from "./host_serial.js";
 import { Tube } from "./tube.js";
@@ -276,7 +277,9 @@ export class Beebium {
     /** Drive the rpc-serial peer (requires the server's --rpc-serial extension). */
     get rpcSerial(): RpcSerial {
         if (this._rpcSerial === undefined) {
-            this._rpcSerial = new RpcSerial(this.connection.rpcSerialStub);
+            this._rpcSerial = new RpcSerial(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._rpcSerial;
     }
@@ -284,7 +287,9 @@ export class Beebium {
     /** Query/re-point the host-serial bridge (requires the server's --host-serial extension). */
     get hostSerial(): HostSerial {
         if (this._hostSerial === undefined) {
-            this._hostSerial = new HostSerial(this.connection.hostSerialStub);
+            this._hostSerial = new HostSerial(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._hostSerial;
     }
@@ -300,7 +305,9 @@ export class Beebium {
     /** Access AUN-specific Econet operations (peer table, cable plug, port status). */
     get aun(): Aun {
         if (this._aun === undefined) {
-            this._aun = new Aun(this.connection.aunStub);
+            this._aun = new Aun(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._aun;
     }
@@ -308,7 +315,9 @@ export class Beebium {
     /** Access Piconet-specific operations (USB-CDC adapter status). */
     get piconet(): Piconet {
         if (this._piconet === undefined) {
-            this._piconet = new Piconet(this.connection.piconetStub);
+            this._piconet = new Piconet(
+                new ExtensionChannel(this.connection.extensionRpcStub),
+            );
         }
         return this._piconet;
     }

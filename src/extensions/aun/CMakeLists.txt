@@ -10,10 +10,11 @@
 # unblock converting AUN; until then, AUN remains in
 # BuiltinExtensions::entries() alongside acorn-65c02-coprocessor.
 #
-# When the service layer is being built, also compiles aun.proto and
-# the AunService implementation. The service is the gRPC home for
-# AUN-specific RPCs (peer table management, cable plug, port status)
-# that used to live on EconetService and required dynamic_cast.
+# When the service layer is being built, also compiles the aun.proto
+# MESSAGES (not the gRPC stub). The AUN-specific RPCs (peer table
+# management, cable plug, port status) are served through the core's
+# ExtensionRpc channel via a hand-written AunDispatcher, so this library
+# links protobuf but NOT gRPC. See docs/discussion/extension-rpc-channel.md.
 
 set(AUN_SOURCES
     AunEconetTransportExtension.cpp
@@ -28,10 +29,11 @@ if(BEEBIUM_BUILD_SERVICE)
         PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/aun.proto
         PROTO_PATH ${CMAKE_CURRENT_SOURCE_DIR}
     )
+    # Messages only: the dispatcher (de)serializes these. The generated
+    # .grpc.pb.cc stub is deliberately NOT compiled -- that is what would
+    # pull gRPC in.
     list(APPEND AUN_SOURCES
-        AunService.cpp
         ${beebium_ext_aun_PROTO_SRCS}
-        ${beebium_ext_aun_GRPC_SRCS}
     )
 endif()
 
@@ -61,9 +63,11 @@ target_compile_definitions(beebium_ext_aun PRIVATE
 )
 
 if(BEEBIUM_BUILD_SERVICE)
+    # protobuf for the aun.proto messages; beebium_extension_api for the
+    # ExtensionRpcDispatcher ABI the AunDispatcher implements. No gRPC.
     target_link_libraries(beebium_ext_aun
         PUBLIC
-            gRPC::grpc++
             protobuf::libprotobuf
+            beebium_extension_api
     )
 endif()

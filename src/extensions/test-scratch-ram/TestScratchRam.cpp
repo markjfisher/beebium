@@ -11,7 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include "TestScratchRam.hpp"
-#include "ScratchRamService.hpp"
+#include "ScratchRamDispatcher.hpp"
 
 namespace beebium {
 
@@ -39,16 +39,16 @@ void TestScratchRam::write(uint16_t offset, uint8_t value) {
 
 void TestScratchRam::init(ExtensionContext& ctx) {
     ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
-    service_ = std::make_unique<ScratchRamServiceImpl>(*this);
+    dispatcher_ = std::make_unique<ScratchRamDispatcher>(*this);
 }
 
 void TestScratchRam::shutdown() {
-    service_.reset();
+    dispatcher_.reset();
 }
 
-std::vector<grpc::Service*> TestScratchRam::grpc_services() {
-    if (service_) {
-        return {service_.get()};
+std::vector<ExtensionRpcDispatcher*> TestScratchRam::rpc_dispatchers() {
+    if (dispatcher_) {
+        return {dispatcher_.get()};
     }
     return {};
 }

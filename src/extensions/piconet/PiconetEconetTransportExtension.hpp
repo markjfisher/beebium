@@ -29,9 +29,12 @@
 #include <memory>
 #include <vector>
 
-namespace grpc { class Service; }
-
 namespace beebium {
+
+class ExtensionRpcDispatcher;
+#ifdef BEEBIUM_BUILD_SERVICE
+class PiconetDispatcher;  // forward; defined when the service layer is built
+#endif
 
 class PiconetEconetTransportExtension : public EconetTransportExtension {
 public:
@@ -66,10 +69,17 @@ public:
     // dispatches validated events into its handle_event.
     ExtensionUi* ui() override { return &ui_; }
 
+    // Piconet-specific status (PiconetService.GetStatus), served through the
+    // core's ExtensionRpc channel rather than a plugin-hosted gRPC service.
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
+
 private:
     PiconetBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
     std::string open_error_message_;
     PiconetUi ui_{*this};
+#ifdef BEEBIUM_BUILD_SERVICE
+    std::unique_ptr<PiconetDispatcher> dispatcher_;  // lazily constructed
+#endif
 };
 
 }  // namespace beebium

@@ -80,6 +80,12 @@ function(add_beebium_server TARGET_NAME SOURCE_FILE)
             stb_image_write
     )
 
+    # No -rdynamic needed: dlopened plugins resolve the extension ABI from the
+    # linked beebium_extension_api dylib, not from the host executable's exported
+    # symbols. Extensions no longer host gRPC services (their APIs go through the
+    # core's ExtensionRpc channel), so the host no longer needs to export a
+    # shared gRPC/protobuf runtime for plugins to bind to.
+
     # Installed layout: server binaries live in <prefix>/bin and resolve the
     # extension ABI shared libraries from <prefix>/lib via an $ORIGIN-relative
     # RPATH (@loader_path on macOS). This only affects the installed binaries;

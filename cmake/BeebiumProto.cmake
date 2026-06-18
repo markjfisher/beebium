@@ -84,3 +84,12 @@ function(beebium_compile_proto)
         )
     endif()
 endfunction()
+
+
+# NOTE: the former beebium_proto_object_grpc_linkage() helper is gone. It made a
+# plugin's proto OBJECT library compile gRPC/protobuf headers-only on macOS so
+# the plugin resolved a single host-side runtime at load -- the workaround for
+# the duplicate-gRPC-runtime crash (gRPC #39198). Extensions no longer host gRPC
+# services (their APIs go through the core's ExtensionRpc channel), so plugin
+# proto libraries compile their MESSAGES only and link protobuf::libprotobuf
+# directly on every platform. See docs/discussion/extension-rpc-channel.md.

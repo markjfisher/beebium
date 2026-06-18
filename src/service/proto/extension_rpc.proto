@@ -1,0 +1,69 @@
+// Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+//
+// This file is part of Beebium.
+//
+// Beebium is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version. Beebium is distributed in the hope that it will
+// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License along with Beebium.
+// If not, see <https://www.gnu.org/licenses/>.
+
+syntax = "proto3";
+
+package beebium;
+
+// The one generic, core-hosted service through which clients drive
+// extension-provided APIs. Extensions never host a gRPC service themselves;
+// they register C++ dispatchers and the core tunnels opaque serialized
+// request/response bytes to them. This keeps the single gRPC runtime in the
+// core, so a plugin never links gRPC. The extension's own request/response
+// messages are ordinary protobuf, but they travel as opaque `payload` bytes
+// here -- only the extension and the client (de)serialize them.
+//
+// See docs/discussion/extension-rpc-channel.md.
+service ExtensionRpc {
+  // Unary: one request, one response.
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // Server-streaming: one request, a stream of responses (status feeds,
+  // event subscriptions).
+  rpc ServerStream(InvokeRequest) returns (stream InvokeResponse);
+
+  // Discovery (which instances exist, which services they offer) is deferred:
+  // the existing PeripheralExtensionService already enumerates instances, and
+  // for now a client routes by service name (empty extension_id) when an
+  // extension type is a singleton. A dedicated discovery method that also
+  // reports each instance's services lands with Phase 1.
+
+  // Client-streaming and bidi are deferred until an extension needs them
+  // (none do today); they would be added the same way, with the FIRST frame
+  // carrying the route and subsequent frames carrying payload only.
+}
+
+message InvokeRequest {
+  // Target extension instance id. May be empty when exactly one loaded
+  // extension offers `service` (the common case today), in which case the
+  // core routes by service name.
+  string extension_id = 1;
+
+  // Logical service within the extension, e.g. "RpcSerial".
+  string service = 2;
+
+  // Method within the service, e.g. "Send".
+  string method = 3;
+
+  // Serialized request message, opaque to the core.
+  bytes payload = 4;
+
+  // Request headers (auth, trace ids, ...).
+  map<string, string> metadata = 5;
+}
+
+message InvokeResponse {
+  // Serialized response message, opaque to the core. On a non-OK call the
+  // gRPC status (code + message) carries the error -- exactly as a native
+  // gRPC method would -- and this payload is empty.
+  bytes payload = 1;
+}

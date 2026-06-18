@@ -11,7 +11,7 @@
 // If not, see <https://www.gnu.org/licenses/>.
 
 #include "AcornScsiHostAdapter.hpp"
-#include "ScsiHostAdapterService.hpp"
+#include "ScsiHostAdapterDispatcher.hpp"
 
 namespace beebium {
 
@@ -34,7 +34,7 @@ std::unique_ptr<AcornScsiHostAdapter> AcornScsiHostAdapter::create() {
 void AcornScsiHostAdapter::init(ExtensionContext& ctx) {
     ctx.get<OneMHzBusPort>().claim_addresses(kBaseOffset, kEndOffset, *this);
     registry_.wire_to_bus(bus_);
-    service_ = std::make_unique<ScsiHostAdapterServiceImpl>(*this);
+    dispatcher_ = std::make_unique<ScsiHostAdapterDispatcher>(*this);
 
     if (ctx.has_indicators()) {
         indicators_ = &ctx.indicators();
@@ -52,12 +52,12 @@ void AcornScsiHostAdapter::init(ExtensionContext& ctx) {
 }
 
 void AcornScsiHostAdapter::shutdown() {
-    service_.reset();
+    dispatcher_.reset();
 }
 
-std::vector<grpc::Service*> AcornScsiHostAdapter::grpc_services() {
-    if (service_) {
-        return {service_.get()};
+std::vector<ExtensionRpcDispatcher*> AcornScsiHostAdapter::rpc_dispatchers() {
+    if (dispatcher_) {
+        return {dispatcher_.get()};
     }
     return {};
 }

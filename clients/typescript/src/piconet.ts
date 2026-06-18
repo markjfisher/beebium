@@ -1,17 +1,24 @@
 /**
  * Piconet (USB-CDC Econet bridge) transport-specific operations.
  *
- * These RPCs are surfaced by PiconetService when Piconet is the active
- * Econet transport on the server. The current scope is intentionally
- * minimal -- just enough for a user to confirm "yes, my Piconet is
- * plugged in, and it's on /dev/X".
+ * These RPCs are surfaced by the PiconetService dispatcher when Piconet is the
+ * active Econet transport on the server. The current scope is intentionally
+ * minimal -- just enough for a user to confirm "yes, my Piconet is plugged in,
+ * and it's on /dev/X".
+ *
+ * The PiconetService messages are tunnelled over the core's ExtensionRpc
+ * channel; the piconet extension no longer hosts its own gRPC service. The
+ * public API here is unchanged.
  */
 
-import type {
-    PiconetServiceClient,
-    PiconetGetStatusResponse as ProtoPiconetGetStatusResponse,
+import {
+    PiconetGetStatusRequest,
+    PiconetGetStatusResponse,
 } from "./generated/piconet_service.js";
-import { promisify } from "./call-utils.js";
+import type { ExtensionChannel } from "./extension_rpc.js";
+
+/** The logical service name the piconet extension's dispatcher registers. */
+const SERVICE = "PiconetService";
 
 export interface PiconetStatus {
     /**
@@ -43,19 +50,19 @@ export interface PiconetStatus {
  * transport.
  */
 export class Piconet {
-    private readonly stub: PiconetServiceClient;
+    private readonly channel: ExtensionChannel;
 
-    constructor(stub: PiconetServiceClient) {
-        this.stub = stub;
+    constructor(channel: ExtensionChannel) {
+        this.channel = channel;
     }
 
     /** Read the Piconet adapter status (device path + serial open). */
     async getStatus(): Promise<PiconetStatus> {
-        const response = await promisify<{}, ProtoPiconetGetStatusResponse>(
-            this.stub as unknown as Record<string, Function>,
-            "getStatus",
-            {},
-        );
+        const payload = PiconetGetStatusRequest.encode(
+            PiconetGetStatusRequest.fromPartial({}),
+        ).finish();
+        const reply = await this.channel.invoke(SERVICE, "GetStatus", payload);
+        const response = PiconetGetStatusResponse.decode(reply);
         return {
             devicePath: response.devicePath,
             serialOpen: response.serialOpen,

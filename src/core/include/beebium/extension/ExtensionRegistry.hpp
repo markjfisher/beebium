@@ -113,16 +113,6 @@ public:
         init_order_.clear();
     }
 
-    // Collect gRPC services from all initialised extensions.
-    std::vector<grpc::Service*> collect_grpc_services() {
-        std::vector<grpc::Service*> services;
-        for (auto* ext : init_order_) {
-            auto ext_services = ext->grpc_services();
-            services.insert(services.end(), ext_services.begin(), ext_services.end());
-        }
-        return services;
-    }
-
     // Iterate initialised extensions (for PeripheralExtensionService discovery).
     std::span<PeripheralExtension* const> extensions() const {
         return init_order_;

@@ -995,7 +995,7 @@ public:
         machine_.state().memory.indicators.start();
 
         // Start gRPC server with the extension's services attached.
-        auto extension_services = registry_.collect_grpc_services();
+        std::vector<grpc::Service*> extension_services;
 
         server_ = std::make_unique<beebium::service::Server<beebium::ModelBPlus>>(
             machine_, "127.0.0.1", 0);

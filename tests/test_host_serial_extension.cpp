@@ -15,7 +15,13 @@
 #include "HostSerialExtension.hpp"
 
 #ifdef BEEBIUM_BUILD_SERVICE
-#include "HostSerialService.hpp"
+#include "HostSerialDispatcher.hpp"
+
+#include <beebium/extension/ExtensionRpc.hpp>
+
+#include "host_serial.pb.h"
+
+#include <map>
 #endif
 
 #include "extension_ui.pb.h"
@@ -35,6 +41,35 @@
 #include <string>
 
 using namespace beebium;
+
+#ifdef BEEBIUM_BUILD_SERVICE
+namespace {
+// A minimal RpcContext for driving a dispatcher directly (no gRPC), exactly as
+// the core's ExtensionRpc service feeds it serialized bytes at runtime.
+class TestRpcContext final : public RpcContext {
+public:
+    bool is_cancelled() const override { return false; }
+    const std::map<std::string, std::string>& metadata() const override {
+        return metadata_;
+    }
+private:
+    std::map<std::string, std::string> metadata_;
+};
+
+// Serialize `req`, invoke the dispatcher, parse the reply into `resp`.
+template <typename Req, typename Resp>
+RpcStatus call(ExtensionRpcDispatcher& d, std::string_view method,
+               const Req& req, Resp* resp) {
+    TestRpcContext ctx;
+    std::string out;
+    RpcStatus status = d.invoke(method, req.SerializeAsString(), out, ctx);
+    if (status.is_ok() && resp != nullptr) {
+        REQUIRE(resp->ParseFromString(out));
+    }
+    return status;
+}
+}  // namespace
+#endif
 
 namespace {
 constexpr uint8_t CONTROL_8N1 =
@@ -142,8 +177,8 @@ TEST_CASE("HostSerialExtension bridges a transmitted byte to the host device",
 }
 
 #ifdef BEEBIUM_BUILD_SERVICE
-TEST_CASE("HostSerial gRPC config service reports and re-points the bridge",
-          "[serial][host-serial][grpc]") {
+TEST_CASE("HostSerial dispatcher reports and re-points the bridge",
+          "[serial][host-serial][extension-rpc]") {
     auto pty = std::make_unique<serial::PtyMaster>();
     REQUIRE(pty->is_open());
     const std::string slave = pty->slave_path();
@@ -154,18 +189,23 @@ TEST_CASE("HostSerial gRPC config service reports and re-points the bridge",
 
     HostSerialExtension ext;
     ext.set_config({{"mode", "device"}, {"path", slave}, {"baud", "9600"}});
+
+    // No dispatcher before init().
+    CHECK(ext.rpc_dispatchers().empty());
+
     ext.init(ctx);
     REQUIRE(port.is_occupied());
 
-    auto services = ext.grpc_services();
-    REQUIRE(services.size() == 1);
-    auto* svc = static_cast<HostSerialServiceImpl*>(services[0]);
+    auto dispatchers = ext.rpc_dispatchers();
+    REQUIRE(dispatchers.size() == 1);
+    REQUIRE(dispatchers[0]->service_name() == "HostSerial");
+    auto& dispatcher = *dispatchers[0];
 
     // GetConfig reflects the launch configuration.
     {
         HostSerialGetConfigRequest req;
         HostSerialConfig resp;
-        REQUIRE(svc->GetConfig(nullptr, &req, &resp).ok());
+        REQUIRE(call(dispatcher, "GetConfig", req, &resp).is_ok());
         CHECK(resp.mode() == "device");
         CHECK(resp.path() == slave);
         CHECK(resp.baud() == 9600);
@@ -178,13 +218,13 @@ TEST_CASE("HostSerial gRPC config service reports and re-points the bridge",
         HostSerialSetConfigRequest req;
         req.set_baud(19200);
         HostSerialConfig resp;
-        REQUIRE(svc->SetConfig(nullptr, &req, &resp).ok());
+        REQUIRE(call(dispatcher, "SetConfig", req, &resp).is_ok());
     }
     ext.endpoint()->has_data();  // drive process_pending_reopen
     {
         HostSerialGetConfigRequest req;
         HostSerialConfig resp;
-        REQUIRE(svc->GetConfig(nullptr, &req, &resp).ok());
+        REQUIRE(call(dispatcher, "GetConfig", req, &resp).is_ok());
         CHECK(resp.baud() == 19200);
         CHECK(resp.path() == slave);   // kept (absent from the SetConfig diff)
         CHECK(resp.mode() == "device");
@@ -194,9 +234,18 @@ TEST_CASE("HostSerial gRPC config service reports and re-points the bridge",
     {
         HostSerialSetConfigRequest req;
         req.set_mode("pty");
-        HostSerialConfig resp;
-        CHECK(svc->SetConfig(nullptr, &req, &resp).error_code() ==
-              grpc::StatusCode::INVALID_ARGUMENT);
+        CHECK(call(dispatcher, "SetConfig", req,
+                   static_cast<HostSerialConfig*>(nullptr))
+                  .code == kRpcInvalidArgument);
+    }
+
+    // An unknown method is UNIMPLEMENTED.
+    {
+        TestRpcContext bad_ctx;
+        std::string out;
+        RpcStatus unknown = dispatcher.invoke("Nope", "", out, bad_ctx);
+        CHECK_FALSE(unknown.is_ok());
+        CHECK(unknown.code == kRpcUnimplemented);
     }
 
     ext.shutdown();

@@ -27,7 +27,8 @@
 
 namespace beebium {
 
-class ScratchRamServiceImpl;
+class ExtensionRpcDispatcher;
+class ScratchRamDispatcher;
 
 // 8 bytes of scratch RAM at FRED offsets 0x80-0x87 (absolute 0xFC80-0xFC87).
 // This is within the "Test Hardware" range (FC80-FC8F) defined in the
@@ -60,7 +61,7 @@ public:
     void init(ExtensionContext& ctx) override;
     void shutdown() override;
 
-    std::vector<grpc::Service*> grpc_services() override;
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // OneMHzBusDevice interface
 
@@ -73,7 +74,7 @@ public:
 
 private:
     std::array<uint8_t, kSize> ram_{};
-    std::unique_ptr<ScratchRamServiceImpl> service_;
+    std::unique_ptr<ScratchRamDispatcher> dispatcher_;
 };
 
 }  // namespace beebium

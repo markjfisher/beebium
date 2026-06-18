@@ -46,11 +46,10 @@
 #include <string>
 #include <vector>
 
-namespace grpc { class Service; }
-
 namespace beebium {
 
-class AunServiceImpl;          // forward; defined when service is built
+class ExtensionRpcDispatcher;
+class AunDispatcher;           // forward; defined when service is built
 class AunDiscoveryAnnouncer;   // forward; defined in this dir
 class AunDiscoverySubscriber;  // forward; defined in this dir
 
@@ -80,9 +79,9 @@ public:
     // shuts down (which only happens at process exit).
     std::unique_ptr<NetworkBackend> create_backend(std::uint8_t station) override;
 
-    // Returns the AunService bound to this extension's backend. The
-    // server collects this and registers it with gRPC.
-    std::vector<grpc::Service*> grpc_services() override;
+    // AUN-specific operations (peer table, cable plug, port status), served
+    // through the core's ExtensionRpc channel rather than a hosted gRPC service.
+    std::vector<ExtensionRpcDispatcher*> rpc_dispatchers() override;
 
     // Non-owning pointer to the AunBackend we constructed. Returns
     // nullptr before create_backend has run or if construction failed
@@ -117,7 +116,7 @@ public:
 
 private:
     AunBackend* backend_ = nullptr;  // non-owning; lives in EconetSocket
-    std::unique_ptr<AunServiceImpl> service_;  // lazily constructed
+    std::unique_ptr<AunDispatcher> dispatcher_;  // lazily constructed
     // Owned by the extension so its lifetime ends with the extension
     // (the backend lives inside EconetSocket and outlives the
     // extension only briefly during shutdown). nullptr until
