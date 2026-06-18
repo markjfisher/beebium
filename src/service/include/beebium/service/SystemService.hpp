@@ -512,6 +512,11 @@ grpc::Status SystemServiceImpl<MachineType>::GetPacingStats(
     response->set_ticks_io_skipped(stats.ticks_io_woken);
     response->set_controller_drift(stats.controller_deficit);
     response->set_controller_integral(stats.controller_integral);
+    response->set_speed_multiplier(pacing_clock_->speed_multiplier());
+    response->set_achieved_speed_multiplier(
+        pacing_clock_->achieved_speed_multiplier());
+    response->set_estimated_max_speed_multiplier(
+        pacing_clock_->estimated_max_speed_multiplier());
     return grpc::Status::OK;
 }
 
@@ -537,6 +542,11 @@ grpc::Status SystemServiceImpl<MachineType>::WatchPacingStats(
         msg.set_ticks_io_skipped(stats.ticks_io_woken);
         msg.set_controller_drift(stats.controller_deficit);
         msg.set_controller_integral(stats.controller_integral);
+        msg.set_speed_multiplier(pacing_clock_->speed_multiplier());
+        msg.set_achieved_speed_multiplier(
+            pacing_clock_->achieved_speed_multiplier());
+        msg.set_estimated_max_speed_multiplier(
+            pacing_clock_->estimated_max_speed_multiplier());
 
         if (!writer->Write(msg)) break;
     }

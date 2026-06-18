@@ -1499,6 +1499,14 @@ void run_emulation_loop(MachineType& machine,
                 double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
                 double run_secs = std::chrono::duration<double>(run_duration).count();
                 double run_pct = 100.0 * run_secs / elapsed_secs;
+
+                // Publish a throughput sample for the gRPC pacing stats: the
+                // achieved multiplier and the estimated ceiling at current load.
+                double achieved_multiplier = actual_hz / target_hz;
+                double active_fraction = run_secs / elapsed_secs;
+                pacing_clock.publish_throughput(
+                    achieved_multiplier,
+                    estimate_max_speed_multiplier(achieved_multiplier, active_fraction));
                 std::cerr << "Pacing: "
                           << std::fixed << std::setprecision(3)
                           << (actual_hz / 1e6) << " MHz"

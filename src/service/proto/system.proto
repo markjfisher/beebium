@@ -284,4 +284,9 @@ message PacingStats {
     // PI controller state
     double controller_drift = 7;       // Current drift in cycles (+ = ahead)
     double controller_integral = 8;    // Accumulated drift (time debt)
+
+    // Speed control and headroom, sampled over the pacing window (~5s).
+    double speed_multiplier = 9;             // Configured multiplier (0.0 = unlimited)
+    double achieved_speed_multiplier = 10;   // Actual emulated rate / base clock over the window
+    double estimated_max_speed_multiplier = 11; // Estimated ceiling at current host load; 0.0 = no estimate yet (idle/paused or not yet sampled)
 }

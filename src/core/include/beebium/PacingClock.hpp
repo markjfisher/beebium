@@ -146,6 +146,29 @@ public:
         return speed_multiplier_.load(std::memory_order_relaxed);
     }
 
+    /// Publish a throughput sample for monitoring. Called from the emulation
+    /// loop once per stats window with the achieved multiplier (actual emulated
+    /// rate / base clock) and the estimated ceiling at current host load.
+    /// Lock-free: two relaxed atomic stores, read by the gRPC service thread.
+    void publish_throughput(double achieved_multiplier,
+                            double estimated_max_multiplier) {
+        achieved_multiplier_.store(achieved_multiplier, std::memory_order_relaxed);
+        estimated_max_multiplier_.store(estimated_max_multiplier,
+                                        std::memory_order_relaxed);
+    }
+
+    /// Achieved speed multiplier over the most recent stats window (0.0 until
+    /// the first window completes).
+    double achieved_speed_multiplier() const {
+        return achieved_multiplier_.load(std::memory_order_relaxed);
+    }
+
+    /// Estimated maximum attainable speed multiplier at current host load
+    /// (0.0 = no estimate yet: idle/paused or not yet sampled).
+    double estimated_max_speed_multiplier() const {
+        return estimated_max_multiplier_.load(std::memory_order_relaxed);
+    }
+
     void pause() {
         std::lock_guard lock(mutex_);
         paused_ = true;
@@ -257,6 +280,11 @@ private:
     // set_speed_multiplier() from any thread; read lock-free on the hot path.
     std::atomic<double> speed_multiplier_{1.0};
 
+    // Throughput samples published by the emulation loop once per stats window
+    // and read lock-free by the gRPC service. 0.0 until the first window.
+    std::atomic<double> achieved_multiplier_{0.0};
+    std::atomic<double> estimated_max_multiplier_{0.0};
+
     // Deficit controller
     PacingController controller_;
 
@@ -285,5 +313,26 @@ private:
     // I/O pending flag (optional)
     std::atomic<bool>* io_pending_ = nullptr;
 };
+
+/// Estimate the maximum attainable speed multiplier from the achieved
+/// multiplier and the fraction of wall-clock time spent computing (the rest
+/// being sleep/idle slack that could be reclaimed by running faster).
+///
+/// If the emulator currently runs at `achieved` multiples of real time while
+/// computing only `active_fraction` of the time, it could run up to
+/// `achieved / active_fraction` before saturating the host -- an upper bound,
+/// since per-tick overheads do not scale perfectly with speed.
+///
+/// Returns 0.0 ("no estimate") when there is nothing to extrapolate from:
+/// a non-positive achieved rate or active_fraction (idle/paused). The result
+/// is never below `achieved` (active_fraction is clamped to <= 1).
+constexpr double estimate_max_speed_multiplier(double achieved_multiplier,
+                                               double active_fraction) {
+    if (achieved_multiplier <= 0.0 || active_fraction <= 0.0) {
+        return 0.0;
+    }
+    double fraction = active_fraction < 1.0 ? active_fraction : 1.0;
+    return achieved_multiplier / fraction;
+}
 
 } // namespace beebium

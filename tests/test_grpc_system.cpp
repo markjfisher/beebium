@@ -482,6 +482,30 @@ TEST_CASE("SystemService SetSpeedMultiplier rejects non-finite values", "[grpc][
     CHECK(fixture.pacing_clock().speed_multiplier() == 1.0);
 }
 
+TEST_CASE("SystemService GetPacingStats reports the configured speed multiplier",
+          "[grpc][system][pacing]") {
+    SystemTestFixture fixture;
+
+    grpc::ClientContext set_ctx;
+    beebium::SetSpeedMultiplierRequest set_request;
+    set_request.set_speed_multiplier(2.0);
+    beebium::SetSpeedMultiplierResponse set_response;
+    REQUIRE(fixture.system()
+                .SetSpeedMultiplier(&set_ctx, set_request, &set_response)
+                .ok());
+
+    grpc::ClientContext context;
+    beebium::GetPacingStatsRequest request;
+    beebium::PacingStats stats;
+    REQUIRE(fixture.system().GetPacingStats(&context, request, &stats).ok());
+
+    CHECK(stats.speed_multiplier() == 2.0);
+    // The emulation loop is not running in this fixture, so no throughput
+    // sample has been published: the headroom fields read as "no estimate".
+    CHECK(stats.achieved_speed_multiplier() == 0.0);
+    CHECK(stats.estimated_max_speed_multiplier() == 0.0);
+}
+
 // Note: WatchServerStatus is a streaming RPC that requires special handling
 // for testing. The server-side implementation sends READY immediately and then
 // blocks waiting for shutdown or client disconnect. Testing this properly

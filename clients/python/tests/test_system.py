@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -539,3 +539,66 @@ class TestSystemSpeedMultiplier:
         result = system.set_speed_multiplier(1.5)
 
         assert result == 2.0
+
+
+class MockPacingStatsResponse:
+    """Mock GetPacingStats response."""
+
+    def __init__(
+        self,
+        ticks_executed: int = 0,
+        ticks_io_skipped: int = 0,
+        controller_drift: float = 0.0,
+        controller_integral: float = 0.0,
+        speed_multiplier: float = 1.0,
+        achieved_speed_multiplier: float = 0.0,
+        estimated_max_speed_multiplier: float = 0.0,
+    ):
+        self.ticks_executed = ticks_executed
+        self.ticks_io_skipped = ticks_io_skipped
+        self.controller_drift = controller_drift
+        self.controller_integral = controller_integral
+        self.speed_multiplier = speed_multiplier
+        self.achieved_speed_multiplier = achieved_speed_multiplier
+        self.estimated_max_speed_multiplier = estimated_max_speed_multiplier
+
+
+class TestSystemPacingStats:
+    """Tests for System.get_pacing_stats."""
+
+    def test_get_pacing_stats_maps_all_fields(self, mock_stub):
+        """get_pacing_stats maps every response field onto the dataclass."""
+        mock_stub.GetPacingStats.return_value = MockPacingStatsResponse(
+            ticks_executed=1000,
+            ticks_io_skipped=5,
+            controller_drift=12.5,
+            controller_integral=-3.0,
+            speed_multiplier=2.0,
+            achieved_speed_multiplier=1.97,
+            estimated_max_speed_multiplier=18.4,
+        )
+        system = System(mock_stub)
+
+        stats = system.get_pacing_stats()
+
+        mock_stub.GetPacingStats.assert_called_once()
+        assert stats.ticks_executed == 1000
+        assert stats.ticks_io_skipped == 5
+        assert stats.controller_drift == 12.5
+        assert stats.controller_integral == -3.0
+        assert stats.speed_multiplier == 2.0
+        assert stats.achieved_speed_multiplier == 1.97
+        assert stats.estimated_max_speed_multiplier == 18.4
+
+    def test_get_pacing_stats_no_estimate_sentinel(self, mock_stub):
+        """estimated_max of 0.0 is the documented 'no estimate yet' value."""
+        mock_stub.GetPacingStats.return_value = MockPacingStatsResponse(
+            speed_multiplier=1.0,
+            achieved_speed_multiplier=0.0,
+            estimated_max_speed_multiplier=0.0,
+        )
+        system = System(mock_stub)
+
+        stats = system.get_pacing_stats()
+
+        assert stats.estimated_max_speed_multiplier == 0.0

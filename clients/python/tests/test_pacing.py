@@ -1,0 +1,53 @@
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
+#
+# This file is part of Beebium.
+#
+# Beebium is free software: you can redistribute it and/or modify it under the terms of the
+# GNU General Public License as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. Beebium is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License along with Beebium.
+# If not, see <https://www.gnu.org/licenses/>.
+
+"""Integration tests for the pacing/speed-headroom stats.
+
+These exercise the throughput sampling done by the server's emulation loop,
+which a UI speed slider polls via GetPacingStats: the configured multiplier,
+the achieved multiplier, and the estimated maximum attainable multiplier.
+"""
+from __future__ import annotations
+
+import time
+
+from beebium.client import Beebium
+
+
+# The server samples throughput once per pacing window; this is a little over
+# one window (~5s wall) so at least one sample is published.
+_ONE_WINDOW_SECONDS = 6.5
+
+
+def test_pacing_stats_reports_configured_multiplier(bbc: Beebium) -> None:
+    """get_pacing_stats reports the configured speed multiplier immediately,
+    without needing the emulator to run."""
+    assert bbc.system.get_pacing_stats().speed_multiplier == 1.0
+
+    bbc.system.set_speed_multiplier(2.0)
+    assert bbc.system.get_pacing_stats().speed_multiplier == 2.0
+
+
+def test_headroom_estimate_populates_after_a_window(bbc: Beebium) -> None:
+    """After a pacing window elapses while running, the server publishes a
+    throughput sample: an achieved multiplier and an estimated ceiling that is
+    never below it."""
+    # The fixture's emulator is already running; just let a window elapse.
+    assert bbc.debugger.is_running
+    time.sleep(_ONE_WINDOW_SECONDS)
+
+    stats = bbc.system.get_pacing_stats()
+
+    # Real-time pacing of a 2 MHz machine: achieved is ~1x and there is ample
+    # headroom, so the estimate is at least the achieved rate.
+    assert stats.achieved_speed_multiplier > 0.0
+    assert stats.estimated_max_speed_multiplier >= stats.achieved_speed_multiplier
