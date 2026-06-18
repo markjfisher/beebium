@@ -494,7 +494,9 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
-              << "  --unlimited-speed        Start with unlimited emulation speed\n"
+              << "  --speed <multiplier>     Emulation speed as a multiple of real-time\n"
+              << "                           (1.0 = real-time, 2.0 = double; 'unlimited' to\n"
+              << "                           run flat out)\n"
               << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
               << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
               << "  --provenance-version <v> Provenance version string\n"
@@ -927,8 +929,24 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: " << e.what() << "\n";
                 return ExitCode::USAGE;
             }
-        } else if (arg == "--unlimited-speed") {
-            config.speed_multiplier_override = 0.0;
+        } else if (arg == "--speed" || arg.rfind("--speed=", 0) == 0) {
+            std::string speed_value;
+            if (arg == "--speed") {
+                if (i + 1 >= argc) {
+                    std::cerr << "Error: --speed requires a value "
+                                 "(a positive multiplier or 'unlimited')\n";
+                    return ExitCode::USAGE;
+                }
+                speed_value = argv[++i];
+            } else {
+                speed_value = arg.substr(8);  // Skip "--speed="
+            }
+            try {
+                config.speed_multiplier_override = parse_speed_arg(speed_value);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
         } else if (arg == "--station" && i + 1 < argc) {

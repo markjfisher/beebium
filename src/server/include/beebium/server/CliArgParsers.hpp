@@ -22,6 +22,7 @@
 
 #include <cctype>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -196,6 +197,34 @@ inline WaitMode parse_wait_arg(const std::string& value) {
     throw std::runtime_error(
         "Invalid --wait value: '" + value
         + "' (expected one of: cli, api -- case-insensitive)");
+}
+
+// Parse --speed. Accepts a positive, finite real multiplier (1.0 = real-time,
+// 2.0 = double) or the word "unlimited" (run flat out). Returns the pacing
+// speed multiplier; 0.0 is the internal unlimited sentinel. Zero and negative
+// values are rejected here -- on a CLI "speed 0" reads as "stopped", the
+// opposite of unlimited, so the word form is the only way to request flat out.
+inline double parse_speed_arg(const std::string& value) {
+    if (ascii_to_lower(value) == "unlimited") return 0.0;
+
+    double multiplier = 0.0;
+    try {
+        std::size_t consumed = 0;
+        multiplier = std::stod(value, &consumed);
+        if (consumed != value.size()) {
+            throw std::invalid_argument(value);
+        }
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "Invalid --speed value: '" + value
+            + "' (expected a positive multiplier such as 1.0 or 2.0, or 'unlimited')");
+    }
+    if (!std::isfinite(multiplier) || multiplier <= 0.0) {
+        throw std::runtime_error(
+            "Invalid --speed value: '" + value
+            + "' (must be a positive, finite multiplier; use 'unlimited' to run flat out)");
+    }
+    return multiplier;
 }
 
 // Parse --format. Case-insensitive.
