@@ -16,6 +16,7 @@
 // They create a local server, connect to it, and verify system info and provenance.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include "beebium/Machines.hpp"
@@ -29,6 +30,7 @@
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <random>
 #include <vector>
@@ -451,6 +453,26 @@ TEST_CASE("SystemService SetSpeedMultiplier rejects negative values", "[grpc][sy
     grpc::ClientContext context;
     beebium::SetSpeedMultiplierRequest request;
     request.set_speed_multiplier(-1.0);
+    beebium::SetSpeedMultiplierResponse response;
+
+    auto status = fixture.system().SetSpeedMultiplier(&context, request, &response);
+
+    CHECK_FALSE(status.ok());
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    CHECK(fixture.pacing_clock().speed_multiplier() == 1.0);
+}
+
+TEST_CASE("SystemService SetSpeedMultiplier rejects non-finite values", "[grpc][system][pacing]") {
+    SystemTestFixture fixture;
+
+    const double non_finite =
+        GENERATE(std::numeric_limits<double>::quiet_NaN(),
+                 std::numeric_limits<double>::infinity(),
+                 -std::numeric_limits<double>::infinity());
+
+    grpc::ClientContext context;
+    beebium::SetSpeedMultiplierRequest request;
+    request.set_speed_multiplier(non_finite);
     beebium::SetSpeedMultiplierResponse response;
 
     auto status = fixture.system().SetSpeedMultiplier(&context, request, &response);
