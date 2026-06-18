@@ -494,8 +494,7 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
-              << "  --turbo                  Start with unlimited emulation speed\n"
-              << "  --unlimited-speed        Alias for --turbo\n"
+              << "  --unlimited-speed        Start with unlimited emulation speed\n"
               << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
               << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
               << "  --provenance-version <v> Provenance version string\n"
@@ -928,7 +927,7 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
                 std::cerr << "Error: " << e.what() << "\n";
                 return ExitCode::USAGE;
             }
-        } else if (arg == "--turbo" || arg == "--unlimited-speed") {
+        } else if (arg == "--unlimited-speed") {
             config.speed_multiplier_override = 0.0;
         } else if (arg == "--fdc" && i + 1 < argc) {
             config.fdc_type = argv[++i];
