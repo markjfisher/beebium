@@ -14,6 +14,7 @@ import type {
     LaunchProvenance as ProtoLaunchProvenance,
     ShutdownConditionStatus as ProtoShutdownConditionStatus,
     AdvertisementState as ProtoAdvertisementState,
+    PacingStats as ProtoPacingStats,
 } from "./generated/system.js";
 import {
     ServerStatusType,
@@ -72,6 +73,30 @@ export interface ServerStatusEvent {
     shutdownGraceMs: number;
     identity?: MachineIdentity;
     shutdownConditions: ShutdownConditionStatus[];
+}
+
+/**
+ * Snapshot of emulation pacing and speed headroom.
+ *
+ * The speed fields are sampled by the server over its pacing window (~5s),
+ * so they update slowly and steadily -- intended for a polled readout
+ * (e.g. a UI speed slider once per second), not a high-frequency series.
+ */
+export interface PacingStats {
+    /** Total pacing ticks since start. */
+    ticksExecuted: number;
+    /** Ticks where sleep was cut short for I/O. */
+    ticksIoSkipped: number;
+    /** Current drift in cycles (+ = ahead of real time). */
+    controllerDrift: number;
+    /** Accumulated drift (time debt). */
+    controllerIntegral: number;
+    /** Configured multiplier (0.0 = unlimited). */
+    speedMultiplier: number;
+    /** Actual emulated rate / base clock over the window. */
+    achievedSpeedMultiplier: number;
+    /** Estimated ceiling at current host load; 0.0 = no estimate yet. */
+    estimatedMaxSpeedMultiplier: number;
 }
 
 function mapServerStatus(protoStatus: ServerStatusType): ServerStatus {
@@ -320,5 +345,50 @@ export class System {
             throw new Error("Server returned no advertisement state");
         }
         return toAdvertisementState(response.state);
+    }
+
+    /**
+     * Set the runtime emulation speed multiplier.
+     *
+     * `0.0` means unlimited speed, `1.0` is real-time. Returns the resulting
+     * multiplier echoed by the server.
+     */
+    async setSpeedMultiplier(speedMultiplier: number): Promise<number> {
+        const response = await promisify<{ speedMultiplier: number }, { speedMultiplier: number }>(
+            this.stub as unknown as Record<string, Function>,
+            "setSpeedMultiplier",
+            { speedMultiplier },
+        );
+        return response.speedMultiplier;
+    }
+
+    /**
+     * Get a snapshot of emulation pacing and speed headroom.
+     *
+     * `estimatedMaxSpeedMultiplier` is an upper-bound estimate of the fastest
+     * the host can currently run the emulation, derived from the proportion of
+     * wall-clock time spent computing rather than sleeping. It is `0.0` when no
+     * estimate is available yet (idle/paused, or the first pacing window has
+     * not elapsed).
+     *
+     * The fields are sampled over the server's pacing window (~5s), so poll at
+     * a low rate (e.g. once per second for a speed slider) rather than treating
+     * it as a high-frequency stream.
+     */
+    async getPacingStats(): Promise<PacingStats> {
+        const response = await promisify<{}, ProtoPacingStats>(
+            this.stub as unknown as Record<string, Function>,
+            "getPacingStats",
+            {},
+        );
+        return {
+            ticksExecuted: response.ticksExecuted,
+            ticksIoSkipped: response.ticksIoSkipped,
+            controllerDrift: response.controllerDrift,
+            controllerIntegral: response.controllerIntegral,
+            speedMultiplier: response.speedMultiplier,
+            achievedSpeedMultiplier: response.achievedSpeedMultiplier,
+            estimatedMaxSpeedMultiplier: response.estimatedMaxSpeedMultiplier,
+        };
     }
 }

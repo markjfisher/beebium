@@ -261,4 +261,72 @@ describe("System", () => {
             expect(count).toBe(0);
         });
     });
+
+    describe("setSpeedMultiplier", () => {
+        it("sends the request and returns the echoed multiplier", async () => {
+            const stub = createMockStub({
+                setSpeedMultiplier: (req: any) => ({ speedMultiplier: req.speedMultiplier }),
+            });
+            const sys = new System(stub as any);
+            const result = await sys.setSpeedMultiplier(2.0);
+            expect(result).toBe(2.0);
+            expect(stub.setSpeedMultiplier).toHaveBeenCalledWith(
+                { speedMultiplier: 2.0 },
+                expect.any(Function),
+            );
+        });
+
+        it("forwards the unlimited sentinel (0.0)", async () => {
+            const stub = createMockStub({
+                setSpeedMultiplier: () => ({ speedMultiplier: 0.0 }),
+            });
+            const sys = new System(stub as any);
+            const result = await sys.setSpeedMultiplier(0.0);
+            expect(result).toBe(0.0);
+        });
+    });
+
+    describe("getPacingStats", () => {
+        it("maps every response field onto the result", async () => {
+            const stub = createMockStub({
+                getPacingStats: () => ({
+                    ticksExecuted: 1000,
+                    ticksIoSkipped: 5,
+                    controllerDrift: 12.5,
+                    controllerIntegral: -3.0,
+                    speedMultiplier: 2.0,
+                    achievedSpeedMultiplier: 1.97,
+                    estimatedMaxSpeedMultiplier: 18.4,
+                }),
+            });
+            const sys = new System(stub as any);
+            const stats = await sys.getPacingStats();
+            expect(stats).toEqual({
+                ticksExecuted: 1000,
+                ticksIoSkipped: 5,
+                controllerDrift: 12.5,
+                controllerIntegral: -3.0,
+                speedMultiplier: 2.0,
+                achievedSpeedMultiplier: 1.97,
+                estimatedMaxSpeedMultiplier: 18.4,
+            });
+        });
+
+        it("treats estimatedMaxSpeedMultiplier 0.0 as the no-estimate sentinel", async () => {
+            const stub = createMockStub({
+                getPacingStats: () => ({
+                    ticksExecuted: 0,
+                    ticksIoSkipped: 0,
+                    controllerDrift: 0,
+                    controllerIntegral: 0,
+                    speedMultiplier: 1.0,
+                    achievedSpeedMultiplier: 0.0,
+                    estimatedMaxSpeedMultiplier: 0.0,
+                }),
+            });
+            const sys = new System(stub as any);
+            const stats = await sys.getPacingStats();
+            expect(stats.estimatedMaxSpeedMultiplier).toBe(0.0);
+        });
+    });
 });

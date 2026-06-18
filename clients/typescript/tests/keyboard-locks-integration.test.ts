@@ -62,17 +62,18 @@ async function bootAndRun(bbc: Beebium): Promise<void> {
 }
 
 describe("Integration: Keyboard lock keys (issue #5)", () => {
-    it("BBC Micro boots with CAPS LOCK on, SHIFT LOCK off (via IndicatorService)", async () => {
+    it("BBC Micro boots with CAPS LOCK on, SHIFT LOCK off", async () => {
         const bbc = await launchHost();
         await bootToBasicStopped(bbc);
-        expect(await bbc.indicators.get("caps-lock-led")).toBe(255);
-        expect(await bbc.indicators.get("shift-lock-led")).toBe(0);
+        const state = await bbc.keyboard.getLockState();
+        expect(state.capsLock).toBe(true);
+        expect(state.shiftLock).toBe(false);
     });
 
     it("type('abc') with CAPS LOCK on echoes as 'ABC' (current behaviour)", async () => {
         const bbc = await launchHost();
         await bootAndRun(bbc);
-        expect(await bbc.indicators.get("caps-lock-led")).toBe(255);
+        expect((await bbc.keyboard.getLockState()).capsLock).toBe(true);
 
         await bbc.keyboard.type("abc");
         await runForEmulatedSeconds(bbc, 1.0);
@@ -88,7 +89,7 @@ describe("Integration: Keyboard lock keys (issue #5)", () => {
         await bootAndRun(bbc);
 
         await bbc.keyboard.withTextInput(async () => {
-            expect(await bbc.indicators.get("caps-lock-led")).toBe(0);
+            expect((await bbc.keyboard.getLockState()).capsLock).toBe(false);
 
             await bbc.keyboard.type("abc");
             await runForEmulatedSeconds(bbc, 1.0);
@@ -103,26 +104,24 @@ describe("Integration: Keyboard lock keys (issue #5)", () => {
     it("withTextInput restores CAPS LOCK to its prior state on exit", async () => {
         const bbc = await launchHost();
         await bootAndRun(bbc);
-        const before = await bbc.indicators.get("caps-lock-led");
-        expect(before).toBe(255);
+        const before = (await bbc.keyboard.getLockState()).capsLock;
+        expect(before).toBe(true);
 
         await bbc.keyboard.withTextInput(async () => {
             // No-op body
         });
 
-        expect(await bbc.indicators.get("caps-lock-led")).toBe(before);
+        expect((await bbc.keyboard.getLockState()).capsLock).toBe(before);
     });
 
-    it("tapCapsLock toggles the IndicatorService CAPS LOCK LED", async () => {
+    it("tapCapsLock flips the logical caps-lock latch", async () => {
         const bbc = await launchHost();
         await bootAndRun(bbc);
-        const before = await bbc.indicators.get("caps-lock-led");
+        const before = (await bbc.keyboard.getLockState()).capsLock;
 
         await bbc.keyboard.tapCapsLock();
 
-        const after = await bbc.indicators.get("caps-lock-led");
-        expect(after).not.toBe(before);
-        expect([0, 255]).toContain(after);
+        expect((await bbc.keyboard.getLockState()).capsLock).not.toBe(before);
     });
 
     it("withTextInput throws if the emulator is not running", async () => {
@@ -139,5 +138,68 @@ describe("Integration: Keyboard lock keys (issue #5)", () => {
         await bootToBasicStopped(bbc);
 
         await expect(bbc.keyboard.tapCapsLock()).rejects.toThrow(/running emulator/);
+    });
+});
+
+describe("Integration: Keyboard lock keys at unlimited speed", () => {
+    // At unlimited speed the lock-LED brightness no longer settles to 0/255
+    // within a cycle-budgeted poll; these exercise the logical-latch path that
+    // replaced the brightness inference, with the emulator running flat out.
+
+    it("reads the logical lock state exactly at unlimited speed", async () => {
+        const bbc = await launchHost();
+        await bootAndRun(bbc);
+        // Pacing clock is wired once the emulator is running; switch to
+        // unlimited speed for the lock operations under test.
+        await bbc.system.setSpeedMultiplier(0.0);
+        const state = await bbc.keyboard.getLockState();
+        expect(state.capsLock).toBe(true);
+        expect(state.shiftLock).toBe(false);
+    });
+
+    it("lock-key case control works at unlimited speed", async () => {
+        const bbc = await launchHost();
+        await bootAndRun(bbc);
+        // Pacing clock is wired once the emulator is running; switch to
+        // unlimited speed for the lock operations under test.
+        await bbc.system.setSpeedMultiplier(0.0);
+        expect((await bbc.keyboard.getLockState()).capsLock).toBe(true);
+
+        await bbc.keyboard.withTextInput(async () => {
+            expect((await bbc.keyboard.getLockState()).capsLock).toBe(false);
+            await bbc.keyboard.type("hello");
+            await runForEmulatedSeconds(bbc, 1.0);
+            expect(await screenContains(readFn(bbc), "hello")).toBe(true);
+            expect(await screenContains(readFn(bbc), "HELLO")).toBe(false);
+        });
+
+        expect((await bbc.keyboard.getLockState()).capsLock).toBe(true);
+    });
+
+    it("SHIFT-modifier case control works at unlimited speed", async () => {
+        const bbc = await launchHost();
+        await bootAndRun(bbc);
+        // Pacing clock is wired once the emulator is running; switch to
+        // unlimited speed for the lock operations under test.
+        await bbc.system.setSpeedMultiplier(0.0);
+
+        await bbc.keyboard.withTextInput(async () => {
+            await bbc.keyboard.type("MixedCase");
+            await runForEmulatedSeconds(bbc, 1.0);
+            expect(await screenContains(readFn(bbc), "MixedCase")).toBe(true);
+        });
+    });
+
+    it("tapCapsLock flips the latch at unlimited speed", async () => {
+        const bbc = await launchHost();
+        await bootAndRun(bbc);
+        // Pacing clock is wired once the emulator is running; switch to
+        // unlimited speed for the lock operations under test.
+        await bbc.system.setSpeedMultiplier(0.0);
+        const before = (await bbc.keyboard.getLockState()).capsLock;
+
+        await bbc.keyboard.tapCapsLock();
+
+        expect((await bbc.keyboard.getLockState()).capsLock).not.toBe(before);
     });
 });
