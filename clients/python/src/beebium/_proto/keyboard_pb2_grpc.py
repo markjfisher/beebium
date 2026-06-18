@@ -107,6 +107,11 @@ class KeyboardServiceStub(object):
                 request_serializer=keyboard__pb2.GetBreakStateRequest.SerializeToString,
                 response_deserializer=keyboard__pb2.BreakKeyState.FromString,
                 _registered_method=True)
+        self.GetLockState = channel.unary_unary(
+                '/beebium.KeyboardService/GetLockState',
+                request_serializer=keyboard__pb2.GetLockStateRequest.SerializeToString,
+                response_deserializer=keyboard__pb2.LockKeyState.FromString,
+                _registered_method=True)
         self.TypeQuickly = channel.unary_unary(
                 '/beebium.KeyboardService/TypeQuickly',
                 request_serializer=keyboard__pb2.TypeQuicklyRequest.SerializeToString,
@@ -235,6 +240,20 @@ class KeyboardServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetLockState(self, request, context):
+        """Query CAPS LOCK / SHIFT LOCK logical state.
+
+        Returns the MOS-maintained latch bits that also drive the lock LEDs.
+        Unlike the lock-LED brightness published by IndicatorService -- which is
+        duty-cycle filtered over a wall-clock window for human persistence of
+        vision -- this is the exact logical state and is correct at any emulation
+        speed. Automation that needs to know whether a lock is engaged should use
+        this rather than inferring it from filtered brightness.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def TypeQuickly(self, request, context):
         """=========================================================================
         Type-ahead (TypeQuickly)
@@ -343,6 +362,11 @@ def add_KeyboardServiceServicer_to_server(servicer, server):
                     servicer.GetBreakState,
                     request_deserializer=keyboard__pb2.GetBreakStateRequest.FromString,
                     response_serializer=keyboard__pb2.BreakKeyState.SerializeToString,
+            ),
+            'GetLockState': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLockState,
+                    request_deserializer=keyboard__pb2.GetLockStateRequest.FromString,
+                    response_serializer=keyboard__pb2.LockKeyState.SerializeToString,
             ),
             'TypeQuickly': grpc.unary_unary_rpc_method_handler(
                     servicer.TypeQuickly,
@@ -695,6 +719,33 @@ class KeyboardService(object):
             '/beebium.KeyboardService/GetBreakState',
             keyboard__pb2.GetBreakStateRequest.SerializeToString,
             keyboard__pb2.BreakKeyState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLockState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/beebium.KeyboardService/GetLockState',
+            keyboard__pb2.GetLockStateRequest.SerializeToString,
+            keyboard__pb2.LockKeyState.FromString,
             options,
             channel_credentials,
             insecure,

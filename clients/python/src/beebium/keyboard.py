@@ -18,10 +18,9 @@ import contextlib
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from beebium._proto import keyboard_pb2, keyboard_pb2_grpc
-from beebium.indicators import Indicators
 from beebium.keyboard_map import (
     CTRL_KEY,
     DELETE_KEY,
@@ -41,32 +40,21 @@ if TYPE_CHECKING:
 CAPS_LOCK_KEY = (4, 0)
 SHIFT_LOCK_KEY = (5, 0)
 
-# IndicatorService names for the lock LEDs.
-CAPS_LOCK_LED = "caps-lock-led"
-SHIFT_LOCK_LED = "shift-lock-led"
-
-# CAPS LOCK and SHIFT LOCK LEDs are published through a server-side
-# QuantizedDutyCycleFilter<2>(100ms), so stable readings are bucketed into
-# 0/64/128/192/255 rather than always converging to exact binary values.
-# In practice the MOS-driven "on" state can settle at either 128 or 192,
-# depending on where the 100ms duty-cycle window lands relative to the LED PWM.
-# Treat the low buckets as off and 128+ as definitively on.
-_LOCK_LED_OFF_MAX = 64
-_LOCK_LED_ON_MIN = 128
-
 # Cycles the lock key is held before being released. The MOS scans the
 # keyboard matrix from a ~10ms timer IRQ and debounces transitions, so
 # 50ms held is comfortably above the minimum to register a clean press.
 _LOCK_TAP_HOLD_CYCLES = 100_000
 
-# Bound on emulator cycles spent waiting for the IndicatorService LED
-# value to settle to its new definitive state after the key is released.
-# 1,000,000 cycles == 500ms at 2 MHz; far longer than the 100ms duty-
-# cycle filter window plus MOS scan latency, so a timeout indicates a
-# real fault rather than slow scheduling.
+# Bound on emulator cycles spent waiting for the logical lock latch to flip
+# after the key is released. The latch is updated by the MOS keyboard scan
+# (~100Hz, every ~10ms emulated), so the flip lands within a scan period or
+# two. 1,000,000 cycles == 500ms emulated -- tens of scan periods, so a
+# timeout indicates a real fault. Because the bound is in emulated cycles it
+# is independent of wall-clock emulation speed.
 _LOCK_TAP_TIMEOUT_CYCLES = 1_000_000
 
-# Cycles between LED reads while polling for the edge.
+# Cycles between logical-latch reads while polling for the flip. ~2.5ms
+# emulated oversamples the ~10ms MOS scan period a few times over.
 _LOCK_TAP_POLL_CHUNK_CYCLES = 5_000
 
 # Cycles to spin after the LED edge is observed, giving MOS time to
@@ -95,6 +83,17 @@ class KeyboardState:
         if 0 <= row < len(self.pressed_rows):
             return bool(self.pressed_rows[row] & (1 << column))
         return False
+
+
+class LockState(NamedTuple):
+    """Logical CAPS LOCK / SHIFT LOCK state, as held by the MOS.
+
+    These are the exact latch bits, not the duty-cycle-filtered lock-LED
+    brightness -- so they are correct at any emulation speed.
+    """
+
+    caps_lock: bool
+    shift_lock: bool
 
 
 class Keyboard:
@@ -245,30 +244,45 @@ class Keyboard:
     # for the MOS keyboard scan to detect both edges. The current state can
     # be read from the addressable-latch LED bits.
 
+    def get_lock_state(self) -> LockState:
+        """Return the logical CAPS LOCK and SHIFT LOCK state.
+
+        Reads the MOS-maintained lock latch directly, so the result is
+        exact and correct at any emulation speed -- unlike the lock-LED
+        brightness from :class:`Indicators`, which is duty-cycle filtered
+        over a wall-clock window for display and only settles to 0/255 in
+        real time.
+        """
+        response = self._stub.GetLockState(keyboard_pb2.GetLockStateRequest())
+        return LockState(
+            caps_lock=response.caps_lock_on,
+            shift_lock=response.shift_lock_on,
+        )
+
     def tap_caps_lock(
         self, *, timeout_cycles: int = _LOCK_TAP_TIMEOUT_CYCLES
     ) -> None:
         """Tap the CAPS LOCK key, toggling the MOS caps-lock state.
 
-        Polls the IndicatorService ``caps-lock-led`` value until it has
-        switched to its new definitive state, confirming that the MOS
-        has registered the toggle and the duty-cycle filter has settled.
+        Polls the logical lock latch (via :meth:`get_lock_state`) until it
+        has flipped, confirming that the MOS keyboard scan has registered
+        the toggle before returning.
 
         The emulator must be running on entry -- the MOS keyboard scan
         is interrupt-driven and only progresses while CPU cycles are
         being executed.
 
         Args:
-            timeout_cycles: Maximum emulator cycles to wait for the LED
-                edge. Default 1,000,000 cycles (500ms at 2 MHz).
+            timeout_cycles: Maximum emulator cycles to wait for the latch
+                to flip. Default 1,000,000 cycles (500ms emulated).
 
         Raises:
-            RuntimeError: If the emulator is not running, or if the LED
-                value fails to settle within ``timeout_cycles``.
+            RuntimeError: If the emulator is not running, or if the latch
+                fails to flip within ``timeout_cycles``.
         """
         self._tap_lock_key(
             *CAPS_LOCK_KEY,
-            led_name=CAPS_LOCK_LED,
+            which="CAPS LOCK",
             timeout_cycles=timeout_cycles,
         )
 
@@ -282,16 +296,21 @@ class Keyboard:
         """
         self._tap_lock_key(
             *SHIFT_LOCK_KEY,
-            led_name=SHIFT_LOCK_LED,
+            which="SHIFT LOCK",
             timeout_cycles=timeout_cycles,
         )
+
+    def _lock_is_on(self, which: str) -> bool:
+        """Return the logical on/off state of one lock from the latch."""
+        state = self.get_lock_state()
+        return state.caps_lock if which == "CAPS LOCK" else state.shift_lock
 
     def _tap_lock_key(
         self,
         row: int,
         column: int,
         *,
-        led_name: str,
+        which: str,
         timeout_cycles: int,
     ) -> None:
         client = self._require_client("tap")
@@ -304,22 +323,16 @@ class Keyboard:
                 "before tapping."
             )
 
-        indicators = client.indicators
-        # IndicatorService values are PWM/duty-cycle filtered and quantized,
-        # so wait for a definitive starting state before looking for the
-        # toggle edge.
-        initial_led = self._wait_for_definitive_led_state(
-            indicators, led_name, timeout_cycles
-        )
+        # The logical latch is exact and immediate, so the starting state is
+        # read in a single query -- no waiting for a filter to settle.
+        initial = self._lock_is_on(which)
         self.matrix_down(row, column)
         self._wait_emulated_cycles(_LOCK_TAP_HOLD_CYCLES)
         self.matrix_up(row, column)
 
         start_cycles = debugger.cycle_count
         while debugger.cycle_count - start_cycles < timeout_cycles:
-            value = indicators.get(led_name)
-            state = self._lock_led_state(value)
-            if state is not None and state != initial_led:
+            if self._lock_is_on(which) != initial:
                 # MOS may still be inside its keyboard-handler IRQ
                 # routine, processing the press. Wait for the release
                 # to be scanned and the key-debounce window to clear
@@ -330,47 +343,13 @@ class Keyboard:
                 return
             self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
         # Final check after the budget elapsed
-        value = indicators.get(led_name)
-        state = self._lock_led_state(value)
-        if state is not None and state != initial_led:
+        if self._lock_is_on(which) != initial:
             self._wait_emulated_cycles(_LOCK_TAP_RELEASE_SETTLE_CYCLES)
             return
         raise RuntimeError(
-            f"Lock key tap not registered: indicator {led_name!r} did "
-            f"not transition to its opposite definitive state within "
-            f"{timeout_cycles} emulator cycles (last value {value})."
-        )
-
-    @staticmethod
-    def _lock_led_state(value: int) -> bool | None:
-        """Map a filtered lock-LED reading to off/on/ambiguous.
-
-        Lock LEDs are published through a quantized duty-cycle filter, so a
-        stable logical on/off state may appear as 192 or 64 rather than exact
-        255 or 0.
-        """
-        if value <= _LOCK_LED_OFF_MAX:
-            return False
-        if value >= _LOCK_LED_ON_MIN:
-            return True
-        return None
-
-    def _wait_for_definitive_led_state(
-        self, indicators: Indicators, led_name: str, timeout_cycles: int
-    ) -> bool:
-        """Block until ``led_name`` reads as a definitive logical state."""
-        client = self._require_client("tap")
-        debugger = client.debugger
-        start_cycles = debugger.cycle_count
-        while debugger.cycle_count - start_cycles < timeout_cycles:
-            value = indicators.get(led_name)
-            state = self._lock_led_state(value)
-            if state is not None:
-                return state
-            self._wait_emulated_cycles(_LOCK_TAP_POLL_CHUNK_CYCLES)
-        raise RuntimeError(
-            f"Indicator {led_name!r} stayed in a PWM-filter transient "
-            f"state for {timeout_cycles} emulator cycles."
+            f"Lock key tap not registered: the {which} latch did not flip "
+            f"within {timeout_cycles} emulator cycles. Is the emulator "
+            f"running fast enough to advance the MOS keyboard scan?"
         )
 
     def _wait_emulated_cycles(self, cycles: int) -> None:
@@ -422,17 +401,12 @@ class Keyboard:
                 "bbc.debugger.run() before entering the with-block."
             )
 
-        indicators = client.indicators
-        caps_was_on = self._wait_for_definitive_led_state(
-            indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-        )
-        shift_was_on = self._wait_for_definitive_led_state(
-            indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-        )
+        # One latch query gives the exact starting state at any speed.
+        initial = self.get_lock_state()
 
-        if caps_was_on:
+        if initial.caps_lock:
             self.tap_caps_lock()
-        if shift_was_on:
+        if initial.shift_lock:
             self.tap_shift_lock()
 
         try:
@@ -442,15 +416,10 @@ class Keyboard:
             # restoring tap doesn't change the case of in-flight characters.
             self.wait_for_typing()
 
-            caps_now_on = self._wait_for_definitive_led_state(
-                indicators, CAPS_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-            )
-            shift_now_on = self._wait_for_definitive_led_state(
-                indicators, SHIFT_LOCK_LED, _LOCK_TAP_TIMEOUT_CYCLES
-            )
-            if caps_now_on != caps_was_on:
+            current = self.get_lock_state()
+            if current.caps_lock != initial.caps_lock:
                 self.tap_caps_lock()
-            if shift_now_on != shift_was_on:
+            if current.shift_lock != initial.shift_lock:
                 self.tap_shift_lock()
 
     def _require_client(self, feature: str) -> Beebium:

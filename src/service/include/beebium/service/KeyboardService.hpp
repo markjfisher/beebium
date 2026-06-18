@@ -132,6 +132,11 @@ public:
         const GetBreakStateRequest* request,
         BreakKeyState* response) override;
 
+    grpc::Status GetLockState(
+        grpc::ServerContext* context,
+        const GetLockStateRequest* request,
+        LockKeyState* response) override;
+
 private:
     SystemViaPeripheral& keyboard_;
     BreakCallbacks break_callbacks_;

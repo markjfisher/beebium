@@ -370,4 +370,19 @@ grpc::Status KeyboardServiceImpl::GetBreakState(
     return grpc::Status::OK;
 }
 
+grpc::Status KeyboardServiceImpl::GetLockState(
+    grpc::ServerContext* /*context*/,
+    const GetLockStateRequest* /*request*/,
+    LockKeyState* response) {
+
+    // The addressable-latch lock bits are the MOS's logical CAPS/SHIFT LOCK
+    // state (active-low; AddressableLatch corrects for that). Reading them here
+    // gives the exact logical state at any emulation speed, with none of the
+    // wall-clock duty-cycle settling the lock-LED indicator deliberately adds.
+    const auto& latch = keyboard_.latch();
+    response->set_caps_lock_on(latch.caps_lock_led());
+    response->set_shift_lock_on(latch.shift_lock_led());
+    return grpc::Status::OK;
+}
+
 } // namespace beebium::service

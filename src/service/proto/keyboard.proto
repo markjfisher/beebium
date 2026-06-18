@@ -48,6 +48,16 @@ service KeyboardService {
     // Query Break key state
     rpc GetBreakState(GetBreakStateRequest) returns (BreakKeyState);
 
+    // Query CAPS LOCK / SHIFT LOCK logical state.
+    //
+    // Returns the MOS-maintained latch bits that also drive the lock LEDs.
+    // Unlike the lock-LED brightness published by IndicatorService -- which is
+    // duty-cycle filtered over a wall-clock window for human persistence of
+    // vision -- this is the exact logical state and is correct at any emulation
+    // speed. Automation that needs to know whether a lock is engaged should use
+    // this rather than inferring it from filtered brightness.
+    rpc GetLockState(GetLockStateRequest) returns (LockKeyState);
+
     // =========================================================================
     // Type-ahead (TypeQuickly)
     // =========================================================================
@@ -180,6 +190,13 @@ message GetBreakStateRequest {}
 
 message BreakKeyState {
     bool is_held = 1;       // True if Break key is currently held
+}
+
+message GetLockStateRequest {}
+
+message LockKeyState {
+    bool caps_lock_on = 1;   // True if CAPS LOCK is currently engaged
+    bool shift_lock_on = 2;  // True if SHIFT LOCK is currently engaged
 }
 
 // ============================================================================

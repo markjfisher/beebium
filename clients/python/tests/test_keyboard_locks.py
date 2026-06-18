@@ -24,7 +24,6 @@ import time
 import pytest
 
 from beebium.client import Beebium
-from beebium.keyboard import Keyboard
 from beebium.screen import screen_contains
 
 
@@ -60,19 +59,21 @@ def _boot_and_run(bbc: Beebium) -> None:
 class TestBootDefaults:
     """Sanity checks for the default lock state after MOS boot.
 
-    Lock-LED state is read via the IndicatorService -- the same source
-    of truth used by the macOS frontend -- not the debugger latch.
+    Lock state is read via the logical lock latch (``get_lock_state``),
+    which is exact at any emulation speed. The lock-LED brightness from the
+    IndicatorService is a duty-cycle-filtered display projection of the same
+    latch and is covered separately by the C++ filter tests.
     """
 
     def test_caps_lock_on_after_boot(self, bbc: Beebium) -> None:
-        """BBC Micro boots with CAPS LOCK on (LED lit)."""
+        """BBC Micro boots with CAPS LOCK on."""
         _boot_to_basic(bbc)
-        assert bbc.indicators.get("caps-lock-led") == 255
+        assert bbc.keyboard.get_lock_state().caps_lock
 
     def test_shift_lock_off_after_boot(self, bbc: Beebium) -> None:
         """BBC Micro boots with SHIFT LOCK off."""
         _boot_to_basic(bbc)
-        assert bbc.indicators.get("shift-lock-led") == 0
+        assert not bbc.keyboard.get_lock_state().shift_lock
 
 
 class TestCapsLockObservedBehaviour:
@@ -90,7 +91,7 @@ class TestCapsLockObservedBehaviour:
         as uppercase on the BASIC input line.
         """
         _boot_and_run(bbc)
-        assert bbc.indicators.get("caps-lock-led") == 255
+        assert bbc.keyboard.get_lock_state().caps_lock
 
         bbc.keyboard.type("abc")
         _run_for_emulated_seconds(bbc, 1.0)
@@ -110,29 +111,28 @@ class TestTextInputContextManager:
     def test_disables_caps_lock_inside_block(self, bbc: Beebium) -> None:
         """CAPS LOCK is off inside the with-block when it was on entering."""
         _boot_and_run(bbc)
-        assert bbc.indicators.get("caps-lock-led") == 255
+        assert bbc.keyboard.get_lock_state().caps_lock
 
         with bbc.keyboard.text_input():
-            assert bbc.indicators.get("caps-lock-led") == 0
+            assert not bbc.keyboard.get_lock_state().caps_lock
 
     def test_restores_caps_lock_after_block(self, bbc: Beebium) -> None:
         """CAPS LOCK is restored to its prior state after the with-block."""
         _boot_and_run(bbc)
-        original = bbc.indicators.get("caps-lock-led")
-        assert original == 255
+        original = bbc.keyboard.get_lock_state().caps_lock
+        assert original is True
 
         with bbc.keyboard.text_input():
             pass
 
-        # tap_caps_lock has already polled until the LED settled to its
-        # new definitive value before returning, so no extra wait is
-        # needed before reading.
-        assert bbc.indicators.get("caps-lock-led") == original
+        # tap_caps_lock has already polled until the logical latch flipped
+        # before returning, so the restored state is observable immediately.
+        assert bbc.keyboard.get_lock_state().caps_lock == original
 
     def test_lowercase_letters_typed_as_lowercase(self, bbc: Beebium) -> None:
         """Inside the context manager, ``type("abc")`` echoes as 'abc'."""
         _boot_and_run(bbc)
-        assert bbc.indicators.get("caps-lock-led") == 255
+        assert bbc.keyboard.get_lock_state().caps_lock
 
         with bbc.keyboard.text_input():
             bbc.keyboard.type("abc")
@@ -145,7 +145,7 @@ class TestTextInputContextManager:
         """Inside the context manager, ``type("DEF")`` (which presses
         SHIFT for each letter) echoes as 'DEF', not 'def'."""
         _boot_and_run(bbc)
-        assert bbc.indicators.get("caps-lock-led") == 255
+        assert bbc.keyboard.get_lock_state().caps_lock
 
         with bbc.keyboard.text_input():
             bbc.keyboard.type("DEF")
@@ -158,12 +158,12 @@ class TestTextInputContextManager:
         toggle it and leaves it off."""
         _boot_and_run(bbc)
         bbc.keyboard.tap_caps_lock()
-        assert bbc.indicators.get("caps-lock-led") == 0
+        assert not bbc.keyboard.get_lock_state().caps_lock
 
         with bbc.keyboard.text_input():
-            assert bbc.indicators.get("caps-lock-led") == 0
+            assert not bbc.keyboard.get_lock_state().caps_lock
 
-        assert bbc.indicators.get("caps-lock-led") == 0
+        assert not bbc.keyboard.get_lock_state().caps_lock
 
     def test_raises_if_emulator_not_running(self, bbc: Beebium) -> None:
         """text_input() refuses to run with a stopped emulator."""
@@ -178,36 +178,23 @@ class TestTextInputContextManager:
 class TestTapLockKeys:
     """Tests for the ``tap_caps_lock`` and ``tap_shift_lock`` helpers."""
 
-    def test_lock_led_state_classifies_quantized_values(self) -> None:
-        """Quantized duty-cycle levels map to off/on/ambiguous as expected."""
-        assert Keyboard._lock_led_state(0) is False
-        assert Keyboard._lock_led_state(64) is False
-        assert Keyboard._lock_led_state(127) is None
-        assert Keyboard._lock_led_state(128) is True
-        assert Keyboard._lock_led_state(192) is True
-        assert Keyboard._lock_led_state(255) is True
-
-    def test_tap_caps_lock_toggles_led(self, bbc: Beebium) -> None:
-        """A single tap of CAPS LOCK toggles the LED state."""
+    def test_tap_caps_lock_toggles_logical_state(self, bbc: Beebium) -> None:
+        """A single tap of CAPS LOCK flips the logical caps-lock latch."""
         _boot_and_run(bbc)
-        before = bbc.indicators.get("caps-lock-led")
+        before = bbc.keyboard.get_lock_state().caps_lock
 
         bbc.keyboard.tap_caps_lock()
 
-        after = bbc.indicators.get("caps-lock-led")
-        assert after != before
-        assert Keyboard._lock_led_state(after) is not None
+        assert bbc.keyboard.get_lock_state().caps_lock != before
 
-    def test_tap_shift_lock_toggles_led(self, bbc: Beebium) -> None:
-        """A single tap of SHIFT LOCK toggles the LED state."""
+    def test_tap_shift_lock_toggles_logical_state(self, bbc: Beebium) -> None:
+        """A single tap of SHIFT LOCK flips the logical shift-lock latch."""
         _boot_and_run(bbc)
-        before = bbc.indicators.get("shift-lock-led")
+        before = bbc.keyboard.get_lock_state().shift_lock
 
         bbc.keyboard.tap_shift_lock()
 
-        after = bbc.indicators.get("shift-lock-led")
-        assert after != before
-        assert Keyboard._lock_led_state(after) is not None
+        assert bbc.keyboard.get_lock_state().shift_lock != before
 
     def test_tap_raises_if_emulator_not_running(self, bbc: Beebium) -> None:
         """tap_caps_lock requires the emulator to be running."""
@@ -216,3 +203,64 @@ class TestTapLockKeys:
 
         with pytest.raises(RuntimeError, match="running emulator"):
             bbc.keyboard.tap_caps_lock()
+
+
+class TestUnlimitedSpeedTyping:
+    """Typing and lock/case handling stay correct at unlimited speed.
+
+    This is the regression coverage for the lock-state rework. At unlimited
+    speed the lock-LED brightness no longer settles to 0/255 within a poll
+    budget measured in emulated cycles -- the duty-cycle filter integrates
+    over wall-clock time, which has decoupled from emulated time. The
+    keyboard helper instead reads the logical lock latch (get_lock_state),
+    which is exact at any speed. These tests drive that path end to end with
+    the emulator running flat out.
+    """
+
+    @staticmethod
+    def _boot_unlimited_and_run(bbc: Beebium) -> None:
+        bbc.system.set_speed_multiplier(0.0)  # 0.0 == unlimited
+        _boot_and_run(bbc)
+
+    def test_lock_state_query_exact_at_unlimited_speed(self, bbc: Beebium) -> None:
+        """The logical lock state is readable exactly while running flat out."""
+        self._boot_unlimited_and_run(bbc)
+        assert bbc.keyboard.get_lock_state().caps_lock
+        assert not bbc.keyboard.get_lock_state().shift_lock
+
+    def test_lock_key_case_control_at_unlimited_speed(self, bbc: Beebium) -> None:
+        """text_input() disables the boot CAPS LOCK so lowercase stays
+        lowercase, then restores it -- all at unlimited speed, the case the
+        old LED-brightness approach could not handle reliably."""
+        self._boot_unlimited_and_run(bbc)
+        assert bbc.keyboard.get_lock_state().caps_lock
+
+        with bbc.keyboard.text_input():
+            assert not bbc.keyboard.get_lock_state().caps_lock
+            bbc.keyboard.type("hello")
+            _run_for_emulated_seconds(bbc, 1.0)
+            assert screen_contains(bbc, "hello")
+            assert not screen_contains(bbc, "HELLO")
+
+        # The entry CAPS LOCK state is restored after the block.
+        assert bbc.keyboard.get_lock_state().caps_lock
+
+    def test_shift_modifier_case_at_unlimited_speed(self, bbc: Beebium) -> None:
+        """Mixed-case typing (SHIFT pressed per uppercase letter) echoes
+        verbatim inside text_input() at unlimited speed."""
+        self._boot_unlimited_and_run(bbc)
+
+        with bbc.keyboard.text_input():
+            bbc.keyboard.type("MixedCase")
+            _run_for_emulated_seconds(bbc, 1.0)
+            assert screen_contains(bbc, "MixedCase")
+
+    def test_tap_caps_lock_toggles_at_unlimited_speed(self, bbc: Beebium) -> None:
+        """tap_caps_lock confirms the toggle via the logical latch, so it is
+        reliable at unlimited speed where the LED never reaches 255."""
+        self._boot_unlimited_and_run(bbc)
+        before = bbc.keyboard.get_lock_state().caps_lock
+
+        bbc.keyboard.tap_caps_lock()
+
+        assert bbc.keyboard.get_lock_state().caps_lock != before
