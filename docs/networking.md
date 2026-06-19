@@ -156,6 +156,16 @@ a quiet network and recovers at 1x) rather than silently corrupting it. This is
 enforced **server-side** (the server owns pacing and knows the active
 transports), so programmatic clients are bound by it too, not just the GUI;
 clients can observe the gating state and surface *why* a transport is paused.
+Concretely: an `EconetSocket` carrying a real-time transport inserts a
+`SpeedGate` decorator above the backend (alongside `FourWayHandshake`) that
+severs the wire while gated, and the gating state is reported on
+`GetEconetStatusResponse` (`requires_real_time`, `gated_by_speed`).
+
+> **Dual-ADLC bridge note.** This gating is currently *socket-level*: one
+> transport per `EconetSocket`, one `gated_by_speed` flag. The future
+> Acorn-Econet-Bridge machine type would have two ADLCs / two transports, so the
+> speed gating and the status fields exposing it will need to become
+> per-transport. Revisit this design decision when that machine lands.
 
 ## Econet Transport Extensions
 

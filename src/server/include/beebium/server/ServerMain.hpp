@@ -1254,7 +1254,8 @@ std::optional<int> install_econet(MachineType& machine,
                               << transport.name() << "'\n";
                     machine.state().memory.econet_socket.enable(
                         station, std::move(backend),
-                        true);  // FourWayHandshake active
+                        true,  // FourWayHandshake active
+                        transport.requires_real_time_pacing());
                 } else {
                     // Transport configured but unavailable (e.g. port=none,
                     // bind failed): install a disconnected TestBackend so
@@ -1262,7 +1263,8 @@ std::optional<int> install_econet(MachineType& machine,
                     auto stub = std::make_unique<beebium::TestBackend>();
                     stub->set_connected(false);
                     machine.state().memory.econet_socket.enable(
-                        station, std::move(stub), true);
+                        station, std::move(stub), true,
+                        transport.requires_real_time_pacing());
                     std::cout << "Econet station " << config.station_number
                               << " (transport '" << transport.name()
                               << "' configured but unavailable -- no network)\n";
@@ -1480,6 +1482,14 @@ void run_emulation_loop(MachineType& machine,
         // Check if shutdown was requested during wait
         if (machine.shutdown_requested()) {
             break;
+        }
+
+        // Keep the Econet socket informed of the current speed so a transport
+        // that requires real time (Piconet) is gated whenever speed != 1x. Cheap
+        // (an atomic compare); only bumps the status sequence on a change.
+        if constexpr (HasEconetSocket<Memory>) {
+            machine.memory().econet_socket.set_emulation_speed(
+                pacing_clock.speed_multiplier());
         }
 
         if (use_pacing) {
