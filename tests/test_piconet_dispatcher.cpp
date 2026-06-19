@@ -77,3 +77,11 @@ TEST_CASE("Piconet dispatcher rejects an unknown method",
     CHECK_FALSE(status.is_ok());
     CHECK(status.code == kRpcUnimplemented);
 }
+
+TEST_CASE("PiconetEconetTransportExtension requires real-time pacing",
+          "[piconet][transport]") {
+    // Piconet bridges to a real Econet line, so it only works at 1x and the
+    // server gates it off at any other speed.
+    PiconetEconetTransportExtension ext;
+    REQUIRE(ext.requires_real_time_pacing());
+}

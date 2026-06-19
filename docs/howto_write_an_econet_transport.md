@@ -70,6 +70,13 @@ Key differences from a peripheral extension:
   "configured but the cable's unplugged". Record a human-readable reason
   (`open_error_`) for the UI to show; the dispatcher's status RPC should report
   it too.
+- **Override `requires_real_time_pacing()` if your transport bridges to a
+  real-time peer.** It defaults to `false` — any emulation speed is fine, as for
+  AUN over UDP. Return `true` (as Piconet does) when the transport talks to real
+  hardware sharing a wall-clock timebase; the server then gates the transport off
+  whenever the emulation speed is not 1x, because its protocol timing cannot
+  interleave with real peers at any other rate. See `docs/networking.md`
+  ("Emulation speed and real-time peers").
 
 ## The backend
 
