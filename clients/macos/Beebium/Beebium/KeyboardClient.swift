@@ -15,6 +15,7 @@ import AudioToolbox
 import Foundation
 import GRPC
 import NIO
+import os
 
 /// BBC keyboard internal key numbers for modifier keys
 private enum BBCModifierKey {
@@ -39,6 +40,8 @@ private struct PressedKeyState {
 /// synthetic Shift and Ctrl keys.
 @MainActor
 final class KeyboardClient: ObservableObject, Disconnectable {
+
+    private static let log = Logger(subsystem: "com.beebium", category: "keyboard")
 
     private var channel: GRPCChannel?
     private var client: Beebium_KeyboardServiceClient?
@@ -401,7 +404,11 @@ final class KeyboardClient: ObservableObject, Disconnectable {
         do {
             return try await client.getLockState(Beebium_GetLockStateRequest()).response.get()
         } catch {
-            print("[KeyboardClient] getLockState failed: \(error)")
+            // Log loudly (Console-visible, unlike print to stdout): a failure
+            // here disables caps-lock sync, and an UNIMPLEMENTED status means the
+            // server is too old for this RPC -- which the protocol-fingerprint
+            // check at connect should already have flagged.
+            Self.log.error("getLockState failed: \(String(describing: error), privacy: .public)")
             return nil
         }
     }
