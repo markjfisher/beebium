@@ -99,6 +99,15 @@ message GetEconetStatusResponse {
     uint64 ticks_with_timer_active = 23;
     uint64 read_stretch_parasite_ticks = 24;
 
+    // Emulation-speed gating. requires_real_time is true when the active
+    // transport must run at real time (1x) -- it bridges to a real Econet line
+    // (Piconet). gated_by_speed is true when that transport is currently severed
+    // because the emulation speed is not 1x; the guest sees a dead carrier until
+    // the speed returns to 1x. See docs/networking.md ("Emulation speed and
+    // real-time peers").
+    bool requires_real_time = 26;
+    bool gated_by_speed = 27;
+
     // Field 25 (piconet) was removed; Piconet status now lives on
     // PiconetService.GetStatus (in src/extensions/piconet/piconet_service.proto).
     reserved 25;

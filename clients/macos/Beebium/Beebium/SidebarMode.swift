@@ -20,7 +20,7 @@ enum SidebarMode: Int, CaseIterable, Identifiable {
     case video = 4
     case sound = 5
     case keyboard = 6
-    case coprocessor = 7
+    case processor = 7
     case network = 8
 
     var id: Int { rawValue }
@@ -34,7 +34,7 @@ enum SidebarMode: Int, CaseIterable, Identifiable {
         case .video: return "display"
         case .sound: return "speaker.wave.2"
         case .keyboard: return "keyboard"
-        case .coprocessor: return "cpu"
+        case .processor: return "cpu"
         case .network: return "network"
         }
     }
@@ -48,7 +48,7 @@ enum SidebarMode: Int, CaseIterable, Identifiable {
         case .video: return "Video"
         case .sound: return "Sound"
         case .keyboard: return "Keyboard"
-        case .coprocessor: return "Coprocessor"
+        case .processor: return "Processor"
         case .network: return "Network"
         }
     }

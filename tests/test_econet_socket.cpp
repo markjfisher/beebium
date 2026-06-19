@@ -16,6 +16,9 @@
 #include "beebium/econet/EconetConcepts.hpp"
 #include "beebium/econet/TestBackend.hpp"
 #include "beebium/econet/Mc6854.hpp"
+#include "beebium/econet/SpeedGate.hpp"
+
+#include <atomic>
 
 using namespace beebium;
 
@@ -481,4 +484,53 @@ TEST_CASE("EconetSocket NFS: IRQ toggle during NMI handler does not cause re-ent
     // INTON restores NMI
     socket.on_inton();
     CHECK(socket.nmi_pending());
+}
+
+TEST_CASE("EconetSocket: a non-real-time transport is never gated by speed",
+          "[econet][socket][speed]") {
+    EconetSocket socket;
+    socket.enable(42, std::make_unique<TestBackend>(), /*aun_mode=*/false,
+                  /*requires_real_time=*/false);
+    REQUIRE_FALSE(socket.requires_real_time());
+
+    socket.set_emulation_speed(2.0);
+    CHECK_FALSE(socket.gated_by_speed());
+    socket.set_emulation_speed(0.0);  // unlimited
+    CHECK_FALSE(socket.gated_by_speed());
+}
+
+TEST_CASE("EconetSocket: a real-time transport is gated when speed != 1x",
+          "[econet][socket][speed]") {
+    EconetSocket socket;
+    socket.enable(42, std::make_unique<TestBackend>(), /*aun_mode=*/false,
+                  /*requires_real_time=*/true);
+    REQUIRE(socket.requires_real_time());
+    CHECK_FALSE(socket.gated_by_speed());  // default real time
+
+    socket.set_emulation_speed(2.0);
+    CHECK(socket.gated_by_speed());
+    socket.set_emulation_speed(0.5);
+    CHECK(socket.gated_by_speed());
+    socket.set_emulation_speed(0.0);  // unlimited also gates
+    CHECK(socket.gated_by_speed());
+
+    socket.set_emulation_speed(1.0);  // back to real time
+    CHECK_FALSE(socket.gated_by_speed());
+}
+
+TEST_CASE("SpeedGate severs the wire while gated", "[econet][speed][gate]") {
+    TestBackend inner;
+    inner.set_connected(true);
+    std::atomic<bool> gated{false};
+    SpeedGate gate(inner, gated);
+
+    CHECK(gate.is_connected());        // transparent pass-through when open
+    CHECK_FALSE(gate.is_receiving_flags());
+
+    gated.store(true);
+    CHECK_FALSE(gate.is_connected());  // dead carrier while gated
+    CHECK_FALSE(gate.receive_frame().has_value());
+
+    gated.store(false);
+    CHECK(gate.is_connected());
 }

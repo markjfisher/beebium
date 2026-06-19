@@ -46,6 +46,7 @@ struct SidebarModeContent: View {
     @ObservedObject var transportsClient: EconetTransportsClient
     @ObservedObject var sidewaysClient: SidewaysClient
     @ObservedObject var videoSettings: VideoSettings
+    @ObservedObject var speedModel: SpeedControlModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,8 +69,8 @@ struct SidebarModeContent: View {
                 AudioMixerView(audioClient: audioClient, mixerState: audioMixerState)
             case .keyboard:
                 KeyboardModeView(mappingManager: keyboardMappingManager)
-            case .coprocessor:
-                CoprocessorModeView()
+            case .processor:
+                ProcessorModeView(speedModel: speedModel)
             case .network:
                 NetworkModeView(econetClient: econetClient,
                                 keyboardMappingManager: keyboardMappingManager,
@@ -326,10 +327,21 @@ private struct MappingRowView: View {
     }
 }
 
-/// Placeholder view for Coprocessor mode (Tube coprocessors)
-struct CoprocessorModeView: View {
+/// Processor mode: the host CPU (emulation speed) and, in future, Tube
+/// coprocessors.
+struct ProcessorModeView: View {
+    @ObservedObject var speedModel: SpeedControlModel
+
     var body: some View {
-        ModePlaceholder(mode: .coprocessor)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                SpeedControlView(model: speedModel)
+                // Future: Tube coprocessor selection/config.
+            }
+            .padding()
+        }
+        .onAppear { speedModel.startPolling() }
+        .onDisappear { speedModel.stopPolling() }
     }
 }
 
@@ -400,6 +412,12 @@ struct NetworkModeView: View {
     private var econetContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if econetClient.gatedBySpeed {
+                    speedGatedBanner
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                }
+
                 statusSection
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -423,6 +441,34 @@ struct NetworkModeView: View {
             }
         }
         .task { await transportsClient.refresh() }
+    }
+
+    // MARK: - Speed Gating Banner
+
+    // Shown when the active transport requires real-time emulation (e.g.
+    // Piconet) but the emulation speed is not 1x, so its traffic is severed.
+    private var speedGatedBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Econet paused")
+                    .font(.callout)
+                    .bold()
+                Text("This network bridges to real hardware and needs real-time speed. Set the emulation speed to 1x in the Processor panel to resume.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.yellow.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Status Section
@@ -598,7 +644,8 @@ struct SidebarModeContent_Previews: PreviewProvider {
             peripheralsClient: PeripheralsClient(),
             transportsClient: EconetTransportsClient(),
             sidewaysClient: SidewaysClient(),
-            videoSettings: VideoSettings()
+            videoSettings: VideoSettings(),
+            speedModel: SpeedControlModel()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))

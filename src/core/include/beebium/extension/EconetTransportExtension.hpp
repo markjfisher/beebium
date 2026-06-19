@@ -55,6 +55,16 @@ public:
     // EconetTransportExtension.cpp.
     virtual void on_station_id_changed(uint8_t new_station_id);
 
+    // Whether this transport requires the emulation to run at real time (1x).
+    // Default false: transports with no shared real-world clock (e.g. AUN over
+    // UDP) work at any speed. A transport bridging to a real Econet line with
+    // real stations (Piconet) overrides to true; the server then gates that
+    // transport off while the speed is not 1x, since its protocol timing cannot
+    // interleave with real peers in wall time at any other rate. See
+    // docs/networking.md ("Emulation speed and real-time peers"). Defined
+    // out-of-line in EconetTransportExtension.cpp.
+    virtual bool requires_real_time_pacing() const;
+
     // A transport's client-facing API (e.g. AUN peer-list RPCs) is served
     // through the core's ExtensionRpc channel via rpc_dispatchers() (declared
     // on Extension), not by hosting a gRPC service here.

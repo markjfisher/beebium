@@ -53,6 +53,12 @@ public:
     // machine shutdown, which only happens at process exit).
     std::unique_ptr<NetworkBackend> create_backend(std::uint8_t station) override;
 
+    // Piconet bridges to a real, physical Econet line with real stations
+    // running in wall time, so its protocol timing only interleaves correctly
+    // when the emulation runs at real time. See docs/networking.md ("Emulation
+    // speed and real-time peers").
+    bool requires_real_time_pacing() const override { return true; }
+
     // Non-owning accessor used by PiconetUi.
     PiconetBackend* backend() { return backend_; }
     const PiconetBackend* backend() const { return backend_; }

@@ -206,3 +206,25 @@ TEST_CASE("estimate_max_speed_multiplier reports no estimate when idle",
     REQUIRE(estimate_max_speed_multiplier(0.0, 0.5) == 0.0);
     REQUIRE(estimate_max_speed_multiplier(-1.0, 0.5) == 0.0);
 }
+
+TEST_CASE("PacingController catch-up clamp scales with speed", "[pacing]") {
+    // 2 MHz, 500us quantum -> nominal 1000 cycles, 1x ceiling max_cycles 3000.
+    PacingController ctrl(2'000'000, 500'000);
+
+    // A 1s elapsed against 0 cycles is a deficit far above the clamp, so the
+    // return is the (speed-scaled) ceiling.
+    SECTION("1x is clamped to the nominal ceiling") {
+        REQUIRE(ctrl.update(1'000'000'000, 0, 1.0) == 3000);
+    }
+    SECTION("S>1 raises the ceiling proportionally") {
+        // Without this, paced speed could never exceed max_ratio (~3x) however
+        // high the request -- the regression this guards against.
+        REQUIRE(ctrl.update(1'000'000'000, 0, 4.0) == 12000);
+    }
+    SECTION("S<1 does not shrink the ceiling below the 1x headroom") {
+        REQUIRE(ctrl.update(1'000'000'000, 0, 0.5) == 3000);
+    }
+    SECTION("default speed is 1x") {
+        REQUIRE(ctrl.update(1'000'000'000, 0) == 3000);
+    }
+}

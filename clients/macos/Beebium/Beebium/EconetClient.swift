@@ -35,6 +35,10 @@ final class EconetClient: ObservableObject, Disconnectable {
     @Published private(set) var stationId: UInt32 = 0
     @Published private(set) var aunMode: Bool = false
     @Published private(set) var connected: Bool = false
+    /// The active transport requires real-time (1x) emulation (e.g. Piconet).
+    @Published private(set) var requiresRealTime: Bool = false
+    /// The transport is currently severed because the emulation speed is not 1x.
+    @Published private(set) var gatedBySpeed: Bool = false
     @Published private(set) var isLoaded: Bool = false
     @Published private(set) var errorMessage: String?
 
@@ -56,6 +60,8 @@ final class EconetClient: ObservableObject, Disconnectable {
         stationId = 0
         aunMode = false
         connected = false
+        requiresRealTime = false
+        gatedBySpeed = false
         errorMessage = nil
     }
 
@@ -119,6 +125,8 @@ final class EconetClient: ObservableObject, Disconnectable {
         stationId = response.stationID
         aunMode = response.aunMode
         connected = response.connected
+        requiresRealTime = response.requiresRealTime
+        gatedBySpeed = response.gatedBySpeed
         isLoaded = true
         errorMessage = nil
     }

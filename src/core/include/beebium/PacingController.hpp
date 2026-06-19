@@ -28,7 +28,9 @@ namespace beebium {
 /// - After running ahead: deficit ≈ 0 (pauses until wall-clock catches up)
 ///
 /// The max_cycles clamp prevents concentrated catch-up after deficits,
-/// spreading recovery across many ticks imperceptibly.
+/// spreading recovery across many ticks imperceptibly. It scales with the
+/// speed multiplier so that requesting S>1 is not itself clamped down to the
+/// real-time ceiling.
 ///
 /// Pure computation -- no threading, no clocks, no side effects.
 ///
@@ -48,10 +50,17 @@ public:
 
     /// Compute cycles to execute in the next tick.
     ///
-    /// @param wall_elapsed_ns  Wall-clock nanoseconds since start/reset.
-    /// @param total_cycles     Total crystal ticks executed since start/reset.
+    /// @param wall_elapsed_ns   Wall-clock nanoseconds since start/reset (for
+    ///                          variable-rate pacing, multiplier-scaled time).
+    /// @param total_cycles      Total crystal ticks executed since start/reset.
+    /// @param speed_multiplier  Current effective speed. The per-tick catch-up
+    ///                          ceiling is the nominal headroom times this, so a
+    ///                          steady S>1 rate isn't clamped down to the 1x
+    ///                          ceiling (which would cap paced speed at max_ratio
+    ///                          regardless of request). Defaults to 1.0.
     /// @return Number of cycles to execute. Zero if ahead of real-time.
-    uint32_t update(int64_t wall_elapsed_ns, uint64_t total_cycles) {
+    uint32_t update(int64_t wall_elapsed_ns, uint64_t total_cycles,
+                    double speed_multiplier = 1.0) {
         double target = (static_cast<double>(wall_elapsed_ns) / 1e9)
                       * target_clock_hz_;
         double deficit = target - static_cast<double>(total_cycles);
@@ -60,7 +69,9 @@ public:
         ++tick_count_;
 
         if (deficit <= 0.0) return 1;  // Always run at least 1 cycle
-        if (deficit > static_cast<double>(max_cycles_)) return max_cycles_;
+        double max_cycles = static_cast<double>(max_cycles_)
+                          * std::max(1.0, speed_multiplier);
+        if (deficit > max_cycles) return static_cast<uint32_t>(max_cycles);
         return static_cast<uint32_t>(deficit);
     }
 

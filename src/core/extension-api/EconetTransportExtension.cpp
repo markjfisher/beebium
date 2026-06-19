@@ -27,6 +27,8 @@ EconetTransportExtension::~EconetTransportExtension() = default;
 
 void EconetTransportExtension::on_station_id_changed(uint8_t /*new_id*/) {}
 
+bool EconetTransportExtension::requires_real_time_pacing() const { return false; }
+
 EconetTransportRegistry::~EconetTransportRegistry() = default;
 
 }  // namespace beebium

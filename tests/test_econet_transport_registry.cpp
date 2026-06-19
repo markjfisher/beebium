@@ -129,3 +129,12 @@ TEST_CASE("EconetTransportExtension default on_station_id_changed is a no-op",
     t.on_station_id_changed(42);
     SUCCEED();
 }
+
+TEST_CASE("EconetTransportExtension does not require real-time pacing by default",
+          "[econet][transport][extension]") {
+    // A transport with no real-world clock coupling (e.g. AUN over UDP) inherits
+    // the default: the emulator may run at any speed without gating the
+    // transport. Transports bridging to a real Econet line override this.
+    StubTransport t;
+    REQUIRE_FALSE(t.requires_real_time_pacing());
+}

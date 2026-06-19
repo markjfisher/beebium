@@ -15,6 +15,7 @@
 #include "FourWayHandshake.hpp"
 #include "Mc6854.hpp"
 #include "NetworkBackend.hpp"
+#include "SpeedGate.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -59,14 +60,29 @@ public:
     // ADLC and the backend to bridge AUN's two-way protocol to the four-way
     // handshake that NFS ROMs expect.
     void enable(uint8_t station_id, std::unique_ptr<NetworkBackend> backend,
-                bool aun_mode = false) {
+                bool aun_mode = false, bool requires_real_time = false) {
         backend_ = std::move(backend);
+        requires_real_time_ = requires_real_time;
+        speed_gated_.store(false, std::memory_order_relaxed);
+
+        // For a transport coupled to a real-time peer (Piconet), insert a
+        // SpeedGate decorator that severs the wire when the emulation is not at
+        // 1x. Transports that work at any speed (AUN) skip it, keeping the ADLC's
+        // per-tick backend polling free of the extra indirection.
+        NetworkBackend* wire = backend_.get();
+        if (requires_real_time_) {
+            speed_gate_ = std::make_unique<SpeedGate>(*backend_, speed_gated_);
+            wire = speed_gate_.get();
+        } else {
+            speed_gate_.reset();
+        }
+
         if (aun_mode) {
-            handshake_ = std::make_unique<FourWayHandshake>(*backend_);
+            handshake_ = std::make_unique<FourWayHandshake>(*wire);
             adlc_ = std::make_unique<Mc6854>(*handshake_);
         } else {
             handshake_.reset();
-            adlc_ = std::make_unique<Mc6854>(*backend_);
+            adlc_ = std::make_unique<Mc6854>(*wire);
         }
         station_id_ = station_id;
         enabled_ = true;
@@ -77,13 +93,41 @@ public:
     void disable() {
         adlc_.reset();
         handshake_.reset();
+        speed_gate_.reset();
         backend_.reset();
         enabled_ = false;
+        requires_real_time_ = false;
+        speed_gated_.store(false, std::memory_order_relaxed);
         nmi_enable_ff_ = false;
         bump_status_sequence();
     }
 
     bool enabled() const { return enabled_; }
+
+    // --- Emulation-speed gating ---
+
+    // Whether the active transport must run at real time (1x) -- i.e. it bridges
+    // to a real-time peer (Piconet). Mirrors the transport's
+    // requires_real_time_pacing(); false for transports that tolerate any speed.
+    bool requires_real_time() const { return requires_real_time_; }
+
+    // Whether the wire is currently severed because the emulation speed is not
+    // 1x and the transport requires real time. Reflected in EconetStatus so
+    // clients can explain why the network went quiet.
+    bool gated_by_speed() const {
+        return speed_gated_.load(std::memory_order_relaxed);
+    }
+
+    // Inform the socket of the current emulation speed multiplier (pushed by the
+    // emulation loop). Recomputes the gate and bumps the status sequence on a
+    // change so WatchEconetStatus wakes.
+    void set_emulation_speed(double speed_multiplier) {
+        bool gated = requires_real_time_ && speed_multiplier != 1.0;
+        if (speed_gated_.load(std::memory_order_relaxed) != gated) {
+            speed_gated_.store(gated, std::memory_order_relaxed);
+            bump_status_sequence();
+        }
+    }
 
     // Set the station ID without touching the ADLC. Notifies the backend
     // via on_station_id_changed so backends carrying their own station
@@ -296,10 +340,13 @@ private:
     }
 
     std::unique_ptr<NetworkBackend> backend_;
+    std::unique_ptr<SpeedGate> speed_gate_;  // present only when requires_real_time_
     std::unique_ptr<FourWayHandshake> handshake_;
     std::unique_ptr<Mc6854> adlc_;
     uint8_t station_id_ = 0;
     bool enabled_ = false;
+    bool requires_real_time_ = false;
+    std::atomic<bool> speed_gated_{false};
     bool cached_adlc_irq_ = false;
     bool nmi_enable_ff_ = false;
     const uint8_t* last_bus_value_ptr_ = nullptr;
