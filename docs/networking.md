@@ -116,6 +116,47 @@ All three backends operate behind the `FourWayHandshake` decorator (`aun_mode = 
 
 `PiconetBackend` does not support **inbound immediate operations other than MachinePeek** — the firmware's host-driven REPLY path was abandoned upstream and Piconet handles MachinePeek inline with a canned response. Standard fileserver and printer traffic is unaffected. Documented in detail in `docs/discussion/piconet-feasibility.md` ("Immediate Operations Limitation").
 
+### Emulation speed and real-time peers
+
+Beebium can run the emulated machine faster or slower than real time (the
+Processor panel's speed control; `SystemService.SetSpeedMultiplier`). "Speed"
+here is purely the ratio at which **emulated time** advances relative to **wall
+time** — wall time itself never changes rate. A self-contained machine at 2x
+simply experiences two seconds of its own time (CPU, VIA timers, the emulated
+clock) per wall second, and is internally consistent; there is no problem.
+
+Networking is the exception, because an Econet peer lives in **our** wall-clock
+universe, and the guest's Econet protocol timing (the four-way handshake and its
+timeouts, run by the NFS ROM on the emulated CPU) is therefore in **emulated**
+time. The moment those two clocks diverge, the coupling can break — and whether
+it does depends on the transport:
+
+- **AUN** has no Econet line clock; it is UDP datagrams. The only coupling is
+  soft: the guest's emulated-time protocol timeouts versus wall-clock UDP
+  latency. A moderate speed-up merely tightens those timeouts in wall terms (a
+  200ms emulated timeout is 100ms of wall at 2x — still vast next to LAN
+  latency); it only bites at extreme speed, and then it fails *gracefully*
+  ("Net Error", retry), not corruptingly. Slowdown is entirely benign. **AUN
+  needs no gating.**
+
+- **Piconet** bridges to a **real physical Econet with real stations running in
+  real time**. The serial byte/baud mismatch between Beebium and the Piconet
+  device is absorbed by buffering, but a byte buffer cannot re-pace
+  *protocol-level* timing: the guest's emulated-time handshake has to interleave
+  with real stations responding in wall time, and that coupling is immovable.
+  Both directions break it, symmetrically — faster than 1x and the guest's own
+  timeouts abandon real peers too soon; slower than 1x and real peers time the
+  guest out. Only **exactly 1x** keeps both happy.
+
+The policy follows from this: a transport declares whether it must run at real
+time via `EconetTransportExtension::requires_real_time_pacing()` (AUN → `false`,
+Piconet → `true`). When a transport that requires it is active and the speed is
+not 1x, **that transport is gated** — it stops carrying traffic (the guest sees
+a quiet network and recovers at 1x) rather than silently corrupting it. This is
+enforced **server-side** (the server owns pacing and knows the active
+transports), so programmatic clients are bound by it too, not just the GUI;
+clients can observe the gating state and surface *why* a transport is paused.
+
 ## Econet Transport Extensions
 
 Beebium's transports are *extensions*, dispatched through the same machinery that handles peripheral extensions (acorn-rtc, acorn-scsi, etc.). The split between built-in and plugin extensions and the C++ class hierarchy that supports it:
