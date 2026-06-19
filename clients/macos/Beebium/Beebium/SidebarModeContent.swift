@@ -46,6 +46,7 @@ struct SidebarModeContent: View {
     @ObservedObject var transportsClient: EconetTransportsClient
     @ObservedObject var sidewaysClient: SidewaysClient
     @ObservedObject var videoSettings: VideoSettings
+    @ObservedObject var speedModel: SpeedControlModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,7 +70,7 @@ struct SidebarModeContent: View {
             case .keyboard:
                 KeyboardModeView(mappingManager: keyboardMappingManager)
             case .processor:
-                ProcessorModeView()
+                ProcessorModeView(speedModel: speedModel)
             case .network:
                 NetworkModeView(econetClient: econetClient,
                                 keyboardMappingManager: keyboardMappingManager,
@@ -326,11 +327,21 @@ private struct MappingRowView: View {
     }
 }
 
-/// Processor mode: the host CPU (e.g. emulation speed) and, in future, Tube
+/// Processor mode: the host CPU (emulation speed) and, in future, Tube
 /// coprocessors.
 struct ProcessorModeView: View {
+    @ObservedObject var speedModel: SpeedControlModel
+
     var body: some View {
-        ModePlaceholder(mode: .processor)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                SpeedControlView(model: speedModel)
+                // Future: Tube coprocessor selection/config.
+            }
+            .padding()
+        }
+        .onAppear { speedModel.startPolling() }
+        .onDisappear { speedModel.stopPolling() }
     }
 }
 
@@ -599,7 +610,8 @@ struct SidebarModeContent_Previews: PreviewProvider {
             peripheralsClient: PeripheralsClient(),
             transportsClient: EconetTransportsClient(),
             sidewaysClient: SidewaysClient(),
-            videoSettings: VideoSettings()
+            videoSettings: VideoSettings(),
+            speedModel: SpeedControlModel()
         )
         .frame(width: 220, height: 300)
         .background(Color(nsColor: .windowBackgroundColor))

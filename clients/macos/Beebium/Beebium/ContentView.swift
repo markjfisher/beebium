@@ -73,6 +73,7 @@ struct ContentView: View {
     @StateObject private var transportsClient = EconetTransportsClient()
     @StateObject private var sidewaysClient = SidewaysClient()
     @StateObject private var videoSettings = VideoSettings.loadFromUserDefaults()
+    @StateObject private var speedModel = SpeedControlModel()
     let initialTarget: ConnectionTarget
     let initialNeedsRun: Bool
     let initialProvenanceUUID: String?
@@ -123,7 +124,8 @@ struct ContentView: View {
                 peripheralsClient: peripheralsClient,
                 transportsClient: transportsClient,
                 sidewaysClient: sidewaysClient,
-                videoSettings: videoSettings
+                videoSettings: videoSettings,
+                speedModel: speedModel
             )
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -293,6 +295,9 @@ struct ContentView: View {
                 let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
                 keyboardClient.syncCapsLockState(macCapsLockIsOn: macCapsLockIsOn)
             }
+
+            // Wire the speed control to the system client for its RPCs.
+            speedModel.bind(to: systemClient)
 
             // Register clients with ClientGroup for bulk disconnect
             clientGroup.register(keyboardClient)

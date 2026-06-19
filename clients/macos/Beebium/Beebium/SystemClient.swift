@@ -151,6 +151,37 @@ final class SystemClient: ObservableObject, Disconnectable {
         }
     }
 
+    // MARK: - Emulation Speed
+
+    /// Set the runtime emulation speed multiplier (0.0 = unlimited, 1.0 =
+    /// real-time). Returns the resulting multiplier echoed by the server, or nil
+    /// on failure.
+    @discardableResult
+    func setSpeedMultiplier(_ multiplier: Double) async -> Double? {
+        guard let client = client else { return nil }
+        do {
+            var request = Beebium_SetSpeedMultiplierRequest()
+            request.speedMultiplier = multiplier
+            let response = try await client.setSpeedMultiplier(request).response.get()
+            return response.speedMultiplier
+        } catch {
+            NSLog("[SystemClient] setSpeedMultiplier failed: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
+    /// Fetch a pacing snapshot: configured, achieved, and estimated-max speed
+    /// multipliers (sampled over the server's ~5s window), or nil on failure.
+    func getPacingStats() async -> Beebium_PacingStats? {
+        guard let client = client else { return nil }
+        do {
+            return try await client.getPacingStats(Beebium_GetPacingStatsRequest()).response.get()
+        } catch {
+            NSLog("[SystemClient] getPacingStats failed: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - Private
 
     /// Start the WatchServerStatus stream.
