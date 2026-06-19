@@ -68,8 +68,8 @@ struct SidebarModeContent: View {
                 AudioMixerView(audioClient: audioClient, mixerState: audioMixerState)
             case .keyboard:
                 KeyboardModeView(mappingManager: keyboardMappingManager)
-            case .coprocessor:
-                CoprocessorModeView()
+            case .processor:
+                ProcessorModeView()
             case .network:
                 NetworkModeView(econetClient: econetClient,
                                 keyboardMappingManager: keyboardMappingManager,
@@ -326,10 +326,11 @@ private struct MappingRowView: View {
     }
 }
 
-/// Placeholder view for Coprocessor mode (Tube coprocessors)
-struct CoprocessorModeView: View {
+/// Processor mode: the host CPU (e.g. emulation speed) and, in future, Tube
+/// coprocessors.
+struct ProcessorModeView: View {
     var body: some View {
-        ModePlaceholder(mode: .coprocessor)
+        ModePlaceholder(mode: .processor)
     }
 }
 
