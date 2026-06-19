@@ -98,11 +98,37 @@ they **skip cleanly** otherwise:
 
 ### macOS Frontend
 
+The macOS app **embeds the headless server executables in its bundle**, so the
+servers must be built before (or together with) the app. The convenience script
+does both, and optionally launches the result:
+
 ```bash
-cd clients/macos/Beebium
-xcodegen generate  # If using XcodeGen
-open Beebium.xcodeproj
+scripts/build-macos-app.sh          # build servers (CMake) + app (Xcode)
+scripts/build-macos-app.sh --run    # ... and launch it
 ```
+
+To work in Xcode directly, build the servers once, then open the project:
+
+```bash
+cmake --build build --target beebium-servers   # the four server executables
+cd clients/macos/Beebium
+xcodegen generate                              # regenerate after adding/removing files
+open Beebium.xcodeproj                         # then build & run from Xcode
+```
+
+The Xcode build embeds servers from `$BEEBIUM_SERVERS_BUILD_DIR`, which
+**defaults to `build/src/server`** when unset — so a normal build always bundles
+a freshly built server. Point it elsewhere to bundle a different build:
+
+```bash
+BEEBIUM_SERVERS_BUILD_DIR=$PWD/build-release/src/server \
+  xcodebuild build -scheme Beebium -configuration Release
+```
+
+If no servers are found there, the build prints a warning and keeps whatever is
+already bundled (it won't fail the build, but the app can't launch a machine
+until you build them). For self-contained distribution builds, see
+[docs/macos-app-packaging.md](docs/macos-app-packaging.md).
 
 ### Python Client
 
