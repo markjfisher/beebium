@@ -231,6 +231,7 @@ The macOS frontend's Network sidebar (sidebar mode 8) is split into a transport-
 
 - **Connection** — "Connected" / "Disconnected", driven by `EconetService.GetEconetStatus.connected`. For AUN this reflects the cable-simulation state (toggled via the panel's Connect/Disconnect button); for Piconet it reflects `is_serial_open() && mode == LISTEN`. Same row, same widget, same meaning across transports — "is the BBC actually in two-way comms with the wire?"
 - **Econet Station** — current station number with a pencil-edit affordance opening a popover (`SetStationId` via `EconetService`). Transport-agnostic.
+- **Speed-gating banner** — a yellow `exclamationmark.triangle` warning shown at the top of the panel when `GetEconetStatus.gated_by_speed` is true: the active transport requires real-time emulation (`requires_real_time`) but the emulation speed is not 1x, so its traffic has been severed (see "Emulation speed and real-time peers" above). The banner reuses the existing connection-error idiom and directs the user to the Processor panel to restore 1x speed. It is transport-agnostic — any transport reporting `requires_real_time` triggers it — but in practice only Piconet does.
 
 **Per-transport panel** (server-pushed `View` rendered by `ExtensionPanelView`, driven by whichever transport extension is active):
 
