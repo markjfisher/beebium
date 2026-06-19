@@ -78,6 +78,11 @@ internal protocol Beebium_KeyboardServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>
 
+  func getLockState(
+    _ request: Beebium_GetLockStateRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetLockStateRequest, Beebium_LockKeyState>
+
   func typeQuickly(
     _ request: Beebium_TypeQuicklyRequest,
     callOptions: CallOptions?
@@ -325,6 +330,31 @@ extension Beebium_KeyboardServiceClientProtocol {
     )
   }
 
+  /// Query CAPS LOCK / SHIFT LOCK logical state.
+  ///
+  /// Returns the MOS-maintained latch bits that also drive the lock LEDs.
+  /// Unlike the lock-LED brightness published by IndicatorService -- which is
+  /// duty-cycle filtered over a wall-clock window for human persistence of
+  /// vision -- this is the exact logical state and is correct at any emulation
+  /// speed. Automation that needs to know whether a lock is engaged should use
+  /// this rather than inferring it from filtered brightness.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetLockState.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getLockState(
+    _ request: Beebium_GetLockStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetLockStateRequest, Beebium_LockKeyState> {
+    return self.makeUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLockState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLockStateInterceptors() ?? []
+    )
+  }
+
   /// Enqueue text to type at machine speed (non-blocking)
   ///
   /// - Parameters:
@@ -539,6 +569,11 @@ internal protocol Beebium_KeyboardServiceAsyncClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>
 
+  func makeGetLockStateCall(
+    _ request: Beebium_GetLockStateRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetLockStateRequest, Beebium_LockKeyState>
+
   func makeTypeQuicklyCall(
     _ request: Beebium_TypeQuicklyRequest,
     callOptions: CallOptions?
@@ -716,6 +751,18 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeGetBreakStateInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetLockStateCall(
+    _ request: Beebium_GetLockStateRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetLockStateRequest, Beebium_LockKeyState> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLockState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLockStateInterceptors() ?? []
     )
   }
 
@@ -926,6 +973,18 @@ extension Beebium_KeyboardServiceAsyncClientProtocol {
     )
   }
 
+  internal func getLockState(
+    _ request: Beebium_GetLockStateRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_LockKeyState {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_KeyboardServiceClientMetadata.Methods.getLockState.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetLockStateInterceptors() ?? []
+    )
+  }
+
   internal func typeQuickly(
     _ request: Beebium_TypeQuicklyRequest,
     callOptions: CallOptions? = nil
@@ -1042,6 +1101,9 @@ internal protocol Beebium_KeyboardServiceClientInterceptorFactoryProtocol: Senda
   /// - Returns: Interceptors to use when invoking 'getBreakState'.
   func makeGetBreakStateInterceptors() -> [ClientInterceptor<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>]
 
+  /// - Returns: Interceptors to use when invoking 'getLockState'.
+  func makeGetLockStateInterceptors() -> [ClientInterceptor<Beebium_GetLockStateRequest, Beebium_LockKeyState>]
+
   /// - Returns: Interceptors to use when invoking 'typeQuickly'.
   func makeTypeQuicklyInterceptors() -> [ClientInterceptor<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>]
 
@@ -1075,6 +1137,7 @@ internal enum Beebium_KeyboardServiceClientMetadata {
       Beebium_KeyboardServiceClientMetadata.Methods.breakDown,
       Beebium_KeyboardServiceClientMetadata.Methods.breakUp,
       Beebium_KeyboardServiceClientMetadata.Methods.getBreakState,
+      Beebium_KeyboardServiceClientMetadata.Methods.getLockState,
       Beebium_KeyboardServiceClientMetadata.Methods.typeQuickly,
       Beebium_KeyboardServiceClientMetadata.Methods.getTypingStatus,
       Beebium_KeyboardServiceClientMetadata.Methods.clearTyping,
@@ -1156,6 +1219,12 @@ internal enum Beebium_KeyboardServiceClientMetadata {
       type: GRPCCallType.unary
     )
 
+    internal static let getLockState = GRPCMethodDescriptor(
+      name: "GetLockState",
+      path: "/beebium.KeyboardService/GetLockState",
+      type: GRPCCallType.unary
+    )
+
     internal static let typeQuickly = GRPCMethodDescriptor(
       name: "TypeQuickly",
       path: "/beebium.KeyboardService/TypeQuickly",
@@ -1224,6 +1293,16 @@ internal protocol Beebium_KeyboardServiceProvider: CallHandlerProvider {
 
   /// Query Break key state
   func getBreakState(request: Beebium_GetBreakStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_BreakKeyState>
+
+  /// Query CAPS LOCK / SHIFT LOCK logical state.
+  ///
+  /// Returns the MOS-maintained latch bits that also drive the lock LEDs.
+  /// Unlike the lock-LED brightness published by IndicatorService -- which is
+  /// duty-cycle filtered over a wall-clock window for human persistence of
+  /// vision -- this is the exact logical state and is correct at any emulation
+  /// speed. Automation that needs to know whether a lock is engaged should use
+  /// this rather than inferring it from filtered brightness.
+  func getLockState(request: Beebium_GetLockStateRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_LockKeyState>
 
   /// Enqueue text to type at machine speed (non-blocking)
   func typeQuickly(request: Beebium_TypeQuicklyRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_TypeQuicklyResponse>
@@ -1361,6 +1440,15 @@ extension Beebium_KeyboardServiceProvider {
         userFunction: self.getBreakState(request:context:)
       )
 
+    case "GetLockState":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetLockStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_LockKeyState>(),
+        interceptors: self.interceptors?.makeGetLockStateInterceptors() ?? [],
+        userFunction: self.getLockState(request:context:)
+      )
+
     case "TypeQuickly":
       return UnaryServerHandler(
         context: context,
@@ -1486,6 +1574,19 @@ internal protocol Beebium_KeyboardServiceAsyncProvider: CallHandlerProvider, Sen
     request: Beebium_GetBreakStateRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_BreakKeyState
+
+  /// Query CAPS LOCK / SHIFT LOCK logical state.
+  ///
+  /// Returns the MOS-maintained latch bits that also drive the lock LEDs.
+  /// Unlike the lock-LED brightness published by IndicatorService -- which is
+  /// duty-cycle filtered over a wall-clock window for human persistence of
+  /// vision -- this is the exact logical state and is correct at any emulation
+  /// speed. Automation that needs to know whether a lock is engaged should use
+  /// this rather than inferring it from filtered brightness.
+  func getLockState(
+    request: Beebium_GetLockStateRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_LockKeyState
 
   /// Enqueue text to type at machine speed (non-blocking)
   func typeQuickly(
@@ -1645,6 +1746,15 @@ extension Beebium_KeyboardServiceAsyncProvider {
         wrapping: { try await self.getBreakState(request: $0, context: $1) }
       )
 
+    case "GetLockState":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetLockStateRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_LockKeyState>(),
+        interceptors: self.interceptors?.makeGetLockStateInterceptors() ?? [],
+        wrapping: { try await self.getLockState(request: $0, context: $1) }
+      )
+
     case "TypeQuickly":
       return GRPCAsyncServerHandler(
         context: context,
@@ -1746,6 +1856,10 @@ internal protocol Beebium_KeyboardServiceServerInterceptorFactoryProtocol: Senda
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeGetBreakStateInterceptors() -> [ServerInterceptor<Beebium_GetBreakStateRequest, Beebium_BreakKeyState>]
 
+  /// - Returns: Interceptors to use when handling 'getLockState'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetLockStateInterceptors() -> [ServerInterceptor<Beebium_GetLockStateRequest, Beebium_LockKeyState>]
+
   /// - Returns: Interceptors to use when handling 'typeQuickly'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeTypeQuicklyInterceptors() -> [ServerInterceptor<Beebium_TypeQuicklyRequest, Beebium_TypeQuicklyResponse>]
@@ -1784,6 +1898,7 @@ internal enum Beebium_KeyboardServiceServerMetadata {
       Beebium_KeyboardServiceServerMetadata.Methods.breakDown,
       Beebium_KeyboardServiceServerMetadata.Methods.breakUp,
       Beebium_KeyboardServiceServerMetadata.Methods.getBreakState,
+      Beebium_KeyboardServiceServerMetadata.Methods.getLockState,
       Beebium_KeyboardServiceServerMetadata.Methods.typeQuickly,
       Beebium_KeyboardServiceServerMetadata.Methods.getTypingStatus,
       Beebium_KeyboardServiceServerMetadata.Methods.clearTyping,
@@ -1862,6 +1977,12 @@ internal enum Beebium_KeyboardServiceServerMetadata {
     internal static let getBreakState = GRPCMethodDescriptor(
       name: "GetBreakState",
       path: "/beebium.KeyboardService/GetBreakState",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getLockState = GRPCMethodDescriptor(
+      name: "GetLockState",
+      path: "/beebium.KeyboardService/GetLockState",
       type: GRPCCallType.unary
     )
 

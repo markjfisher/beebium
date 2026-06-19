@@ -50,6 +50,7 @@ DartConfiguration.tcl
 
 # AI assistant configuration (user-specific)
 .claude/
+.kilo/
 
 # IDE and editor files
 .vscode/

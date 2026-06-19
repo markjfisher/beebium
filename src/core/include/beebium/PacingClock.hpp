@@ -61,7 +61,12 @@ public:
         , quantum_(quantum)
         , controller_(config.base_clock_hz, quantum.count())
         , sleeper_(std::move(sleeper))
-        , io_pending_(io_pending) {}
+        , io_pending_(io_pending) {
+        // The live, runtime-adjustable speed lives in an atomic, seeded from
+        // the configured value. config_ holds only immutable pacing parameters
+        // thereafter; see speed_multiplier_.
+        speed_multiplier_.store(config.speed_multiplier, std::memory_order_relaxed);
+    }
 
     ~PacingClock() { stop(); }
 
@@ -103,7 +108,7 @@ public:
 
     /// Get cycles to execute in the next tick (deficit controller).
     uint64_t cycles_for_next_tick() {
-        if (config_.is_unlimited()) {
+        if (is_unlimited()) {
             return controller_.nominal_cycles();
         }
         auto now = Clock::now();
@@ -120,7 +125,7 @@ public:
 
     /// Block until next tick is ready.
     void wait_for_tick() {
-        if (config_.is_unlimited()) return;
+        if (is_unlimited()) return;
         std::unique_lock lock(mutex_);
         cv_.wait_for(lock, std::chrono::milliseconds(100),
                      [this] { return tick_ready_ || !running_; });
@@ -130,14 +135,38 @@ public:
     const PacingConfig& config() const { return config_; }
     Duration quantum() const { return quantum_; }
 
+    /// Set the runtime speed multiplier (0.0 = unlimited). Lock-free: a single
+    /// atomic store, observed by the timer and emulation threads on their next
+    /// tick. Callable from any thread (e.g. the gRPC service).
     void set_speed_multiplier(double m) {
-        std::lock_guard lock(mutex_);
-        config_.speed_multiplier = m;
+        speed_multiplier_.store(m, std::memory_order_relaxed);
     }
 
     double speed_multiplier() const {
-        std::lock_guard lock(mutex_);
-        return config_.speed_multiplier;
+        return speed_multiplier_.load(std::memory_order_relaxed);
+    }
+
+    /// Publish a throughput sample for monitoring. Called from the emulation
+    /// loop once per stats window with the achieved multiplier (actual emulated
+    /// rate / base clock) and the estimated ceiling at current host load.
+    /// Lock-free: two relaxed atomic stores, read by the gRPC service thread.
+    void publish_throughput(double achieved_multiplier,
+                            double estimated_max_multiplier) {
+        achieved_multiplier_.store(achieved_multiplier, std::memory_order_relaxed);
+        estimated_max_multiplier_.store(estimated_max_multiplier,
+                                        std::memory_order_relaxed);
+    }
+
+    /// Achieved speed multiplier over the most recent stats window (0.0 until
+    /// the first window completes).
+    double achieved_speed_multiplier() const {
+        return achieved_multiplier_.load(std::memory_order_relaxed);
+    }
+
+    /// Estimated maximum attainable speed multiplier at current host load
+    /// (0.0 = no estimate yet: idle/paused or not yet sampled).
+    double estimated_max_speed_multiplier() const {
+        return estimated_max_multiplier_.load(std::memory_order_relaxed);
     }
 
     void pause() {
@@ -179,6 +208,12 @@ public:
     }
 
 private:
+    /// Whether pacing is currently in unlimited mode. Reads the live atomic,
+    /// so it is safe on the timer and emulation threads without locking.
+    bool is_unlimited() const {
+        return speed_multiplier_.load(std::memory_order_relaxed) == 0.0;
+    }
+
     void timer_loop() {
         while (running_) {
             // Handle pause
@@ -189,7 +224,7 @@ private:
             }
 
             // Unlimited mode: signal immediately
-            if (config_.is_unlimited()) {
+            if (is_unlimited()) {
                 {
                     std::lock_guard lock(mutex_);
                     tick_ready_ = true;
@@ -236,9 +271,19 @@ private:
         }
     }
 
-    // Configuration
+    // Immutable pacing parameters (base clock, pacing rate). The construction
+    // value of speed_multiplier seeds speed_multiplier_ and is not read again.
     PacingConfig config_;
     Duration quantum_;
+
+    // Live, runtime-adjustable speed multiplier (0.0 = unlimited). Written by
+    // set_speed_multiplier() from any thread; read lock-free on the hot path.
+    std::atomic<double> speed_multiplier_{1.0};
+
+    // Throughput samples published by the emulation loop once per stats window
+    // and read lock-free by the gRPC service. 0.0 until the first window.
+    std::atomic<double> achieved_multiplier_{0.0};
+    std::atomic<double> estimated_max_multiplier_{0.0};
 
     // Deficit controller
     PacingController controller_;
@@ -268,5 +313,26 @@ private:
     // I/O pending flag (optional)
     std::atomic<bool>* io_pending_ = nullptr;
 };
+
+/// Estimate the maximum attainable speed multiplier from the achieved
+/// multiplier and the fraction of wall-clock time spent computing (the rest
+/// being sleep/idle slack that could be reclaimed by running faster).
+///
+/// If the emulator currently runs at `achieved` multiples of real time while
+/// computing only `active_fraction` of the time, it could run up to
+/// `achieved / active_fraction` before saturating the host -- an upper bound,
+/// since per-tick overheads do not scale perfectly with speed.
+///
+/// Returns 0.0 ("no estimate") when there is nothing to extrapolate from:
+/// a non-positive achieved rate or active_fraction (idle/paused). The result
+/// is never below `achieved` (active_fraction is clamped to <= 1).
+constexpr double estimate_max_speed_multiplier(double achieved_multiplier,
+                                               double active_fraction) {
+    if (achieved_multiplier <= 0.0 || active_fraction <= 0.0) {
+        return 0.0;
+    }
+    double fraction = active_fraction < 1.0 ? active_fraction : 1.0;
+    return achieved_multiplier / fraction;
+}
 
 } // namespace beebium

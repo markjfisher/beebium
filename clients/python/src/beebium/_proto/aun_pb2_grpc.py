@@ -39,9 +39,9 @@ if _version_not_supported:
 
 class AunServiceStub(object):
     """AUN-specific service. Lives alongside the AunEconetTransportExtension
-    in src/extensions/aun/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when AUN is
-    the active transport.
+    in src/extensions/aun/ and is served via that extension's AunDispatcher
+    over the core's ExtensionRpc channel (no gRPC stub is compiled from this
+    service block). It is reachable only when AUN is the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense
@@ -84,9 +84,9 @@ class AunServiceStub(object):
 
 class AunServiceServicer(object):
     """AUN-specific service. Lives alongside the AunEconetTransportExtension
-    in src/extensions/aun/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when AUN is
-    the active transport.
+    in src/extensions/aun/ and is served via that extension's AunDispatcher
+    over the core's ExtensionRpc channel (no gRPC stub is compiled from this
+    service block). It is reachable only when AUN is the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense
@@ -168,9 +168,9 @@ def add_AunServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class AunService(object):
     """AUN-specific service. Lives alongside the AunEconetTransportExtension
-    in src/extensions/aun/ and is registered via the extension's
-    grpc_services() hook so the gRPC server only exposes it when AUN is
-    the active transport.
+    in src/extensions/aun/ and is served via that extension's AunDispatcher
+    over the core's ExtensionRpc channel (no gRPC stub is compiled from this
+    service block). It is reachable only when AUN is the active transport.
 
     EconetService remains the place for transport-agnostic Econet RPCs
     (status, station ID, enable/disable). Anything that only makes sense

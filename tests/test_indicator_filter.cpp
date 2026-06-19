@@ -126,6 +126,57 @@ TEST_CASE("DebounceFilter with zero duration acts like passthrough", "[indicator
 }
 
 // =============================================================================
+// QuantizedDutyCycleFilter Tests
+// =============================================================================
+
+TEST_CASE("QuantizedDutyCycleFilter<2> fully off returns zero", "[indicators][filter]") {
+    QuantizedDutyCycleFilter<2> filter(100ms);
+    auto now = steady_clock::now();
+
+    REQUIRE(filter.sample(now) == 0);
+    REQUIRE(filter.sample(now + 100ms) == 0);
+}
+
+TEST_CASE("QuantizedDutyCycleFilter<2> ramps up through quantized on buckets", "[indicators][filter]") {
+    QuantizedDutyCycleFilter<2> filter(100ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+
+    // Over the first 100ms wall-clock window the reported brightness ramps as
+    // the duty-cycle window fills with ON time.
+    REQUIRE(filter.sample(now + 25ms) == 0);
+    REQUIRE(filter.sample(now + 50ms) == 64);
+    REQUIRE(filter.sample(now + 75ms) == 128);
+    REQUIRE(filter.sample(now + 100ms) == 255);
+}
+
+TEST_CASE("QuantizedDutyCycleFilter<2> decays back to off through low buckets", "[indicators][filter]") {
+    QuantizedDutyCycleFilter<2> filter(100ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    REQUIRE(filter.sample(now + 100ms) == 255);
+
+    filter.update(0, now + 100ms);
+
+    // As the 100ms window slides forward, the published value falls from fully
+    // on to the low bucket, then finally to exact off.
+    REQUIRE(filter.sample(now + 150ms) == 64);
+    REQUIRE(filter.sample(now + 200ms) == 0);
+}
+
+TEST_CASE("QuantizedDutyCycleFilter<2> maps 75 percent duty cycle to 128", "[indicators][filter]") {
+    QuantizedDutyCycleFilter<2> filter(100ms);
+    auto now = steady_clock::now();
+
+    filter.update(255, now);
+    filter.update(0, now + 75ms);
+
+    REQUIRE(filter.sample(now + 100ms) == 128);
+}
+
+// =============================================================================
 // DutyCycleFilter Tests
 // =============================================================================
 

@@ -14,11 +14,12 @@
 
 Computes the single Beebium protocol fingerprint from the canonical core proto
 set and writes it, identically, into the server (C++ header), the Python client,
-and the TypeScript client. Run as part of proto regeneration; the same value
-ends up in all three so the connect-time handshake compares one constant built
-once -- never each language hashing its own (differing) stub subset.
+the TypeScript client, and the macOS/Swift client. Run as part of proto
+regeneration; the same value ends up in all four so the connect-time handshake
+compares one constant built once -- never each language hashing its own
+(differing) stub subset.
 
-    python scripts/sync_protocol_fingerprint.py            # write the 3 files
+    python scripts/sync_protocol_fingerprint.py            # write the files
     python scripts/sync_protocol_fingerprint.py --check    # CI: fail on drift
 
 The canonical set is the always-present contract: the core service protos plus
@@ -107,10 +108,24 @@ export const PROTOCOL_FINGERPRINT = "{fp}";
 """
 
 
+def render_swift(fp: str) -> str:
+    return (
+        _GPL.format(c="//")
+        + f"""
+// {_GENERATED}
+
+enum ProtocolFingerprint {{
+    static let value = "{fp}"
+}}
+"""
+    )
+
+
 _TARGETS = [
     ("src/service/include/beebium/service/ProtocolFingerprint.hpp", render_cpp),
     ("clients/python/src/beebium/_proto/protocol_fingerprint.py", render_python),
     ("clients/typescript/src/protocol_fingerprint.ts", render_typescript),
+    ("clients/macos/Beebium/Beebium/ProtocolFingerprint.swift", render_swift),
 ]
 
 

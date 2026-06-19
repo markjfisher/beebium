@@ -31,6 +31,7 @@ function makeKeyboardStub() {
         breakDown: () => ({ success: true }),
         breakUp: () => ({ success: true }),
         getBreakState: () => ({ isHeld: false }),
+        getLockState: () => ({ capsLockOn: true, shiftLockOn: false }),
         getLinks: () => ({ value: 0xFF }),
         setLinks: () => ({ success: true, error: "" }),
         getStartupScreenMode: () => ({ mode: 7 }),
@@ -359,6 +360,26 @@ describe("Keyboard", () => {
             const status = await kb.typingStatus();
             expect(status.idle).toBe(true);
             expect(status.pendingCharacters).toBe(0);
+        });
+    });
+
+    describe("getLockState", () => {
+        it("maps the latch response to a LockState", async () => {
+            const stub = createMockStub({
+                getLockState: () => ({ capsLockOn: true, shiftLockOn: false }),
+            });
+            const kb = new Keyboard(stub as any);
+            const state = await kb.getLockState();
+            expect(state).toEqual({ capsLock: true, shiftLock: false });
+        });
+
+        it("reflects both locks engaged", async () => {
+            const stub = createMockStub({
+                getLockState: () => ({ capsLockOn: true, shiftLockOn: true }),
+            });
+            const kb = new Keyboard(stub as any);
+            const state = await kb.getLockState();
+            expect(state).toEqual({ capsLock: true, shiftLock: true });
         });
     });
 });

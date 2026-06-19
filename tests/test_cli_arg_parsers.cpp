@@ -23,6 +23,7 @@
 using beebium::server::parse_sideways_arg;
 using beebium::server::parse_wait_arg;
 using beebium::server::parse_format_arg;
+using beebium::server::parse_speed_arg;
 using beebium::server::SidewaysSlotType;
 using beebium::server::WaitMode;
 using beebium::server::OutputFormat;
@@ -117,4 +118,46 @@ TEST_CASE("parse_format_arg error message lists allowed values", "[cli][format]"
         REQUIRE(msg.find("tsv") != std::string::npos);
         REQUIRE(msg.find("jsonl") != std::string::npos);
     }
+}
+
+// ---- parse_speed_arg ----
+
+TEST_CASE("parse_speed_arg accepts positive multipliers", "[cli][speed]") {
+    REQUIRE(parse_speed_arg("1") == 1.0);
+    REQUIRE(parse_speed_arg("1.0") == 1.0);
+    REQUIRE(parse_speed_arg("0.5") == 0.5);
+    REQUIRE(parse_speed_arg("2.0") == 2.0);
+}
+
+TEST_CASE("parse_speed_arg maps the word 'unlimited' to the 0.0 sentinel", "[cli][speed]") {
+    REQUIRE(parse_speed_arg("unlimited") == 0.0);
+    REQUIRE(parse_speed_arg("UNLIMITED") == 0.0);
+    REQUIRE(parse_speed_arg("Unlimited") == 0.0);
+}
+
+TEST_CASE("parse_speed_arg rejects zero and points at 'unlimited'", "[cli][speed]") {
+    try {
+        parse_speed_arg("0");
+        FAIL("expected std::runtime_error");
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        REQUIRE(msg.find("0") != std::string::npos);
+        REQUIRE(msg.find("unlimited") != std::string::npos);
+    }
+}
+
+TEST_CASE("parse_speed_arg rejects negative multipliers", "[cli][speed]") {
+    REQUIRE_THROWS_AS(parse_speed_arg("-1"), std::runtime_error);
+    REQUIRE_THROWS_AS(parse_speed_arg("-0.5"), std::runtime_error);
+}
+
+TEST_CASE("parse_speed_arg rejects non-numeric and trailing junk", "[cli][speed]") {
+    REQUIRE_THROWS_AS(parse_speed_arg("fast"), std::runtime_error);
+    REQUIRE_THROWS_AS(parse_speed_arg("2x"), std::runtime_error);
+    REQUIRE_THROWS_AS(parse_speed_arg(""), std::runtime_error);
+}
+
+TEST_CASE("parse_speed_arg rejects non-finite values", "[cli][speed]") {
+    REQUIRE_THROWS_AS(parse_speed_arg("inf"), std::runtime_error);
+    REQUIRE_THROWS_AS(parse_speed_arg("nan"), std::runtime_error);
 }

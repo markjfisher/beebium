@@ -23,6 +23,7 @@ import type {
     KeyboardServiceClient,
     KeyboardState as KeyboardStateProto,
     LinksState,
+    LockKeyState,
     SetLinksResponse,
     SetStartupAutoBootResponse,
     SetStartupScreenModeResponse,
@@ -32,30 +33,26 @@ import type {
     TypingStatus,
 } from "./generated/keyboard.js";
 import type { Beebium } from "./client.js";
-import { Indicators } from "./indicators.js";
 
 // CAPS LOCK and SHIFT LOCK live on row 4/5 column 0 of the keyboard matrix.
 // These are not modifier keys -- a tap toggles a sticky state held by MOS.
 const CAPS_LOCK_KEY: readonly [number, number] = [4, 0];
 const SHIFT_LOCK_KEY: readonly [number, number] = [5, 0];
 
-// IndicatorService names for the lock LEDs.
-const CAPS_LOCK_LED = "caps-lock-led";
-const SHIFT_LOCK_LED = "shift-lock-led";
-
 // Cycles the lock key is held before being released. The MOS scans the
 // keyboard matrix from a ~10ms timer IRQ and debounces transitions, so
 // 50ms held is comfortably above the minimum to register a clean press.
 const LOCK_TAP_HOLD_CYCLES = 100_000;
 
-// Bound on emulator cycles spent waiting for the IndicatorService LED
-// value to settle to its new definitive state after the key is released.
-// 1,000,000 cycles == 500ms at 2 MHz; far longer than the 100ms duty-
-// cycle filter window plus MOS scan latency, so a timeout indicates a
-// real fault rather than slow scheduling.
+// Bound on emulator cycles spent waiting for the logical lock latch to flip
+// after the key is released. The latch is updated by the MOS keyboard scan
+// (~100Hz, every ~10ms emulated), so the flip lands within a scan period or
+// two. 1,000,000 cycles == 500ms emulated -- tens of scan periods, so a
+// timeout indicates a real fault. The bound is in emulated cycles, so it is
+// independent of wall-clock emulation speed.
 const LOCK_TAP_TIMEOUT_CYCLES = 1_000_000;
 
-// Cycles between LED reads while polling for the edge.
+// Cycles between logical-latch reads while polling for the flip.
 const LOCK_TAP_POLL_CHUNK_CYCLES = 5_000;
 
 // Cycles to spin after the LED edge is observed, giving MOS time to
@@ -84,6 +81,17 @@ export interface KeyboardState {
 
     /** Check if a specific key is pressed. */
     isPressed(row: number, column: number): boolean;
+}
+
+/**
+ * Logical CAPS LOCK / SHIFT LOCK state, as held by the MOS.
+ *
+ * These are the exact latch bits, not the duty-cycle-filtered lock-LED
+ * brightness -- so they are correct at any emulation speed.
+ */
+export interface LockState {
+    capsLock: boolean;
+    shiftLock: boolean;
 }
 
 function createKeyboardState(pressedRows: number[]): KeyboardState {
@@ -271,26 +279,43 @@ export class Keyboard {
     // be read from the addressable-latch LED bits.
 
     /**
+     * Get the logical CAPS LOCK and SHIFT LOCK state.
+     *
+     * Reads the MOS-maintained lock latch directly, so the result is exact
+     * and correct at any emulation speed -- unlike the lock-LED brightness
+     * from the IndicatorService, which is duty-cycle filtered over a
+     * wall-clock window for display and only settles to 0/255 in real time.
+     */
+    async getLockState(): Promise<LockState> {
+        const response = await promisify<Record<string, never>, LockKeyState>(
+            this._stub as unknown as Record<string, Function>,
+            "getLockState",
+            {},
+        );
+        return { capsLock: response.capsLockOn, shiftLock: response.shiftLockOn };
+    }
+
+    /**
      * Tap the CAPS LOCK key, toggling the MOS caps-lock state.
      *
-     * Polls the IndicatorService `caps-lock-led` value until it has
-     * switched to its new definitive state, confirming that the MOS
-     * has registered the toggle and the duty-cycle filter has settled.
+     * Polls the logical lock latch (via `getLockState`) until it has flipped,
+     * confirming that the MOS keyboard scan has registered the toggle before
+     * returning.
      *
      * The emulator must be running on entry -- the MOS keyboard scan
      * is interrupt-driven and only progresses while CPU cycles are
      * being executed.
      *
-     * @param timeoutCycles - Maximum emulator cycles to wait for the LED
-     *   edge. Default 1,000,000 cycles (500ms at 2 MHz).
-     * @throws Error if the emulator is not running, or if the LED value
-     *   fails to settle within `timeoutCycles`.
+     * @param timeoutCycles - Maximum emulator cycles to wait for the latch to
+     *   flip. Default 1,000,000 cycles (500ms emulated).
+     * @throws Error if the emulator is not running, or if the latch fails to
+     *   flip within `timeoutCycles`.
      */
     async tapCapsLock(timeoutCycles: number = LOCK_TAP_TIMEOUT_CYCLES): Promise<void> {
         await this._tapLockKey(
             CAPS_LOCK_KEY[0],
             CAPS_LOCK_KEY[1],
-            CAPS_LOCK_LED,
+            "CAPS LOCK",
             timeoutCycles,
         );
     }
@@ -305,7 +330,7 @@ export class Keyboard {
         await this._tapLockKey(
             SHIFT_LOCK_KEY[0],
             SHIFT_LOCK_KEY[1],
-            SHIFT_LOCK_LED,
+            "SHIFT LOCK",
             timeoutCycles,
         );
     }
@@ -344,22 +369,13 @@ export class Keyboard {
             );
         }
 
-        const indicators = client.indicators;
-        const capsWasOn = Indicators.isDefinitiveOn(
-            await this._waitForDefinitiveLed(
-                indicators, CAPS_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
-            ),
-        );
-        const shiftWasOn = Indicators.isDefinitiveOn(
-            await this._waitForDefinitiveLed(
-                indicators, SHIFT_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
-            ),
-        );
+        // One latch query gives the exact starting state at any speed.
+        const initial = await this.getLockState();
 
-        if (capsWasOn) {
+        if (initial.capsLock) {
             await this.tapCapsLock();
         }
-        if (shiftWasOn) {
+        if (initial.shiftLock) {
             await this.tapShiftLock();
         }
 
@@ -370,29 +386,25 @@ export class Keyboard {
             // restoring tap doesn't change the case of in-flight characters.
             await this.waitForTyping();
 
-            const capsNowOn = Indicators.isDefinitiveOn(
-                await this._waitForDefinitiveLed(
-                    indicators, CAPS_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
-                ),
-            );
-            const shiftNowOn = Indicators.isDefinitiveOn(
-                await this._waitForDefinitiveLed(
-                    indicators, SHIFT_LOCK_LED, LOCK_TAP_TIMEOUT_CYCLES,
-                ),
-            );
-            if (capsNowOn !== capsWasOn) {
+            const current = await this.getLockState();
+            if (current.capsLock !== initial.capsLock) {
                 await this.tapCapsLock();
             }
-            if (shiftNowOn !== shiftWasOn) {
+            if (current.shiftLock !== initial.shiftLock) {
                 await this.tapShiftLock();
             }
         }
     }
 
+    private async _lockIsOn(which: "CAPS LOCK" | "SHIFT LOCK"): Promise<boolean> {
+        const state = await this.getLockState();
+        return which === "CAPS LOCK" ? state.capsLock : state.shiftLock;
+    }
+
     private async _tapLockKey(
         row: number,
         column: number,
-        ledName: string,
+        which: "CAPS LOCK" | "SHIFT LOCK",
         timeoutCycles: number,
     ): Promise<void> {
         const client = this._requireClient("tap");
@@ -406,18 +418,16 @@ export class Keyboard {
             );
         }
 
-        const indicators = client.indicators;
-        const initialLed = await this._waitForDefinitiveLed(
-            indicators, ledName, timeoutCycles,
-        );
+        // The logical latch is exact and immediate, so the starting state is
+        // read in a single query -- no waiting for a filter to settle.
+        const initial = await this._lockIsOn(which);
         await this.matrixDown(row, column);
         await this._waitEmulatedCycles(LOCK_TAP_HOLD_CYCLES);
         await this.matrixUp(row, column);
 
         const startCycles = (await dbg.getState()).cycleCount;
         while ((await dbg.getState()).cycleCount - startCycles < timeoutCycles) {
-            const value = await indicators.get(ledName);
-            if (value !== initialLed && !Indicators.isTransient(value)) {
+            if (await this._lockIsOn(which) !== initial) {
                 // MOS may still be inside its keyboard-handler IRQ
                 // routine, processing the press. Wait for the release
                 // to be scanned and the key-debounce window to clear
@@ -429,36 +439,14 @@ export class Keyboard {
             }
             await this._waitEmulatedCycles(LOCK_TAP_POLL_CHUNK_CYCLES);
         }
-        const value = await indicators.get(ledName);
-        if (value !== initialLed && !Indicators.isTransient(value)) {
+        if (await this._lockIsOn(which) !== initial) {
             await this._waitEmulatedCycles(LOCK_TAP_RELEASE_SETTLE_CYCLES);
             return;
         }
         throw new Error(
-            `Lock key tap not registered: indicator '${ledName}' did ` +
-            `not transition to its opposite definitive state within ` +
-            `${timeoutCycles} emulator cycles (last value ${value}).`,
-        );
-    }
-
-    private async _waitForDefinitiveLed(
-        indicators: Indicators,
-        ledName: string,
-        timeoutCycles: number,
-    ): Promise<number> {
-        const client = this._requireClient("tap");
-        const dbg = client.debugger;
-        const startCycles = (await dbg.getState()).cycleCount;
-        while ((await dbg.getState()).cycleCount - startCycles < timeoutCycles) {
-            const value = await indicators.get(ledName);
-            if (!Indicators.isTransient(value)) {
-                return value;
-            }
-            await this._waitEmulatedCycles(LOCK_TAP_POLL_CHUNK_CYCLES);
-        }
-        throw new Error(
-            `Indicator '${ledName}' stayed in a PWM-filter transient ` +
-            `state for ${timeoutCycles} emulator cycles.`,
+            `Lock key tap not registered: the ${which} latch did not flip ` +
+            `within ${timeoutCycles} emulator cycles. Is the emulator ` +
+            `running fast enough to advance the MOS keyboard scan?`,
         );
     }
 

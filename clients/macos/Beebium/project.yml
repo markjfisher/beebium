@@ -57,8 +57,12 @@ targets:
           # (manifest.json) that codesign rejects in Frameworks, which it
           # validates as code-only. The Swift side resolves this directory
           # via Bundle.main.resourcePath (PresetManager.serversDirpath).
-          SERVERS_DIR="${BEEBIUM_SERVERS_BUILD_DIR:-}"
-          if [ -n "$SERVERS_DIR" ] && [ -d "$SERVERS_DIR" ]; then
+          # Default to the repo's CMake build tree so a plain build (from Xcode
+          # or `xcodebuild` without the variable exported) still embeds a freshly
+          # built server instead of silently keeping a stale one. Override
+          # BEEBIUM_SERVERS_BUILD_DIR to bundle a release/static build.
+          SERVERS_DIR="${BEEBIUM_SERVERS_BUILD_DIR:-${SRCROOT}/../../../build/src/server}"
+          if [ -d "$SERVERS_DIR" ] && [ -f "$SERVERS_DIR/beebium-model-b" ]; then
             echo "Embedding servers from: $SERVERS_DIR"
             SERVERS_DEST="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/servers"
             # Rebuild from scratch each time so stale bundled dylibs from a
@@ -105,7 +109,11 @@ targets:
             /usr/bin/env python3 "${SRCROOT}/scripts/bundle_dependencies.py" \
               "$SERVERS_DEST"
           else
-            echo "BEEBIUM_SERVERS_BUILD_DIR not set or directory does not exist, skipping server embedding"
+            echo "warning: no server executables found at $SERVERS_DIR" >&2
+            echo "warning: the app bundle will keep whatever server it already has (possibly stale, or none)." >&2
+            echo "warning: build the servers first --" >&2
+            echo "warning:   cmake --build build --target beebium-servers" >&2
+            echo "warning: or run scripts/build-macos-app.sh, or set BEEBIUM_SERVERS_BUILD_DIR." >&2
           fi
 
           # Copy ROMs (if BEEBIUM_ROMS_DIR is set, otherwise try repo default relative to SRCROOT)

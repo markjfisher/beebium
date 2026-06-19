@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <beebium/PacingClock.hpp>
 #include <beebium/PacingController.hpp>
 
 #include <cmath>
@@ -178,4 +179,30 @@ TEST_CASE("PacingController recovery from burst is bounded", "[pacing]") {
         // After burst, cycles should return to near nominal
         REQUIRE(results[260].cycles_this_tick >= 500);
     }
+}
+
+TEST_CASE("estimate_max_speed_multiplier extrapolates from active fraction",
+          "[pacing]") {
+    // Running real-time but computing only half the wall clock -> could double.
+    REQUIRE_THAT(estimate_max_speed_multiplier(1.0, 0.5), WithinAbs(2.0, 1e-9));
+    // 8% active at 1x -> ~12.5x headroom.
+    REQUIRE_THAT(estimate_max_speed_multiplier(1.0, 0.08), WithinAbs(12.5, 1e-9));
+    // Already running at 4x while computing a quarter of the time -> 16x.
+    REQUIRE_THAT(estimate_max_speed_multiplier(4.0, 0.25), WithinAbs(16.0, 1e-9));
+}
+
+TEST_CASE("estimate_max_speed_multiplier returns achieved when saturated",
+          "[pacing]") {
+    // Fully busy (active_fraction == 1): the ceiling is the achieved rate.
+    REQUIRE_THAT(estimate_max_speed_multiplier(12.0, 1.0), WithinAbs(12.0, 1e-9));
+    // active_fraction above 1 (measurement noise) is clamped, never below achieved.
+    REQUIRE_THAT(estimate_max_speed_multiplier(12.0, 1.5), WithinAbs(12.0, 1e-9));
+}
+
+TEST_CASE("estimate_max_speed_multiplier reports no estimate when idle",
+          "[pacing]") {
+    // Nothing to extrapolate from: paused/idle window or zero achieved rate.
+    REQUIRE(estimate_max_speed_multiplier(1.0, 0.0) == 0.0);
+    REQUIRE(estimate_max_speed_multiplier(0.0, 0.5) == 0.0);
+    REQUIRE(estimate_max_speed_multiplier(-1.0, 0.5) == 0.0);
 }

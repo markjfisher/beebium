@@ -114,6 +114,14 @@ public:
         return *impl_->debugger_control_service;
     }
 
+    /// Seed the configured speed multiplier before the pacing clock exists,
+    /// so clients can query and set the speed as soon as the server listens.
+    void set_initial_speed_multiplier(double multiplier) {
+        if (impl_->system_service) {
+            impl_->system_service->set_initial_speed_multiplier(multiplier);
+        }
+    }
+
     /// Set the pacing clock for gRPC stats monitoring.
     void set_pacing_clock(PacingClock* clock) {
         if (impl_->system_service) {

@@ -23,15 +23,6 @@ struct IndicatorMetadata {
     let relatedKey: String?  // BBC key name this indicator relates to (e.g., "Caps Lock", "Shift Lock")
 }
 
-/// BBC Caps Lock LED state for synchronization purposes.
-/// Only definitive states (0 or 255) are meaningful; intermediate values
-/// (1-254) from PWM filtering should be ignored during sync.
-enum CapsLockState {
-    case off        // brightness = 0
-    case on         // brightness = 255
-    case transient  // brightness 1-254 (ignore for sync)
-}
-
 /// Client for streaming indicator states from beebium-server via gRPC
 @MainActor
 final class IndicatorClient: ObservableObject, Disconnectable {
@@ -60,16 +51,6 @@ final class IndicatorClient: ObservableObject, Disconnectable {
 
     private var client: Beebium_IndicatorServiceNIOClient?
     private var subscriptionTask: Task<Void, Never>?
-
-    /// BBC Caps Lock LED state for synchronization
-    var capsLockState: CapsLockState {
-        guard let brightness = values["caps-lock-led"] else { return .off }
-        switch brightness {
-        case 0: return .off
-        case 255: return .on
-        default: return .transient
-        }
-    }
 
     /// Connect to the server using an existing gRPC channel
     func connect(channel: GRPCChannel) {
@@ -157,18 +138,17 @@ final class IndicatorClient: ObservableObject, Disconnectable {
             values[name] = value
         }
 
-        // Trigger initial Caps Lock sync on the first DEFINITIVE
-        // caps-lock-led value (0 or 255). Intermediate PWM-filter
-        // values (1-254) are not meaningful for state comparison, so
-        // we don't want to consume the once-per-session initial-sync
-        // event on a transient brightness -- if we did, the canonical
-        // sync would silently no-op on the transient guard and a
-        // later stable value would never trigger any further sync.
-        if !hasTriggeredInitialSync,
-           let brightness = values["caps-lock-led"],
-           brightness == 0 || brightness == 255 {
+        // Trigger the once-per-session initial Caps Lock sync on the first
+        // caps-lock-led update of any value. The first update means the MOS
+        // has actively driven the lock LED -- i.e. it has booted far enough to
+        // own the caps-lock state. The actual logical state is then read from
+        // the keyboard latch (KeyboardClient.getLockState), not this filtered
+        // brightness, so any value is a valid "ready" signal -- including the
+        // intermediate buckets seen at high emulation speed, which the old
+        // 0/255 gate would have waited for forever.
+        if !hasTriggeredInitialSync, update.values["caps-lock-led"] != nil {
             hasTriggeredInitialSync = true
-            print("[KBD][capsLock.initial] caps-lock-led brightness=\(brightness) -> firing onInitialCapsLockSync")
+            print("[KBD][capsLock.initial] first caps-lock-led update -> firing onInitialCapsLockSync")
             onInitialCapsLockSync?()
         }
     }

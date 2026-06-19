@@ -217,6 +217,20 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Beebium")
+        .alert(
+            "Server / app version mismatch",
+            isPresented: Binding(
+                get: { systemClient.protocolMismatchMessage != nil },
+                set: { presented in
+                    if !presented { systemClient.protocolMismatchMessage = nil }
+                }
+            ),
+            presenting: systemClient.protocolMismatchMessage
+        ) { _ in
+            Button("OK", role: .cancel) { systemClient.protocolMismatchMessage = nil }
+        } message: { message in
+            Text(message)
+        }
         .focusedValue(\.sidebarMode, $sidebarMode)
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)
@@ -274,14 +288,10 @@ struct ContentView: View {
             // triggers in this view (NSWindow.didBecomeKey, the at-connect
             // sync below) gate on indicatorClient.hasTriggeredInitialSync
             // so they never run before this one.
-            indicatorClient.onInitialCapsLockSync = { [weak keyboardClient, weak indicatorClient] in
-                guard let keyboardClient = keyboardClient,
-                      let indicatorClient = indicatorClient else { return }
+            indicatorClient.onInitialCapsLockSync = { [weak keyboardClient] in
+                guard let keyboardClient = keyboardClient else { return }
                 let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
-                keyboardClient.syncCapsLockState(
-                    macCapsLockIsOn: macCapsLockIsOn,
-                    bbcState: indicatorClient.capsLockState
-                )
+                keyboardClient.syncCapsLockState(macCapsLockIsOn: macCapsLockIsOn)
             }
 
             // Register clients with ClientGroup for bulk disconnect
@@ -397,8 +407,7 @@ struct ContentView: View {
                 if indicatorClient.hasTriggeredInitialSync {
                     let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
                     keyboardClient.syncCapsLockState(
-                        macCapsLockIsOn: macCapsLockIsOn,
-                        bbcState: indicatorClient.capsLockState
+                        macCapsLockIsOn: macCapsLockIsOn
                     )
                 }
             } else {
@@ -425,8 +434,7 @@ struct ContentView: View {
             guard indicatorClient.hasTriggeredInitialSync else { return }
             let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
             keyboardClient.syncCapsLockState(
-                macCapsLockIsOn: macCapsLockIsOn,
-                bbcState: indicatorClient.capsLockState
+                macCapsLockIsOn: macCapsLockIsOn
             )
         }
         .onChange(of: systemClient.clientCount) { count in
@@ -441,8 +449,7 @@ struct ContentView: View {
             if isEnabled {
                 let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
                 keyboardClient.syncCapsLockState(
-                    macCapsLockIsOn: macCapsLockIsOn,
-                    bbcState: indicatorClient.capsLockState
+                    macCapsLockIsOn: macCapsLockIsOn
                 )
             }
         }

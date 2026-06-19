@@ -15,6 +15,7 @@ import AudioToolbox
 import Foundation
 import GRPC
 import NIO
+import os
 
 /// BBC keyboard internal key numbers for modifier keys
 private enum BBCModifierKey {
@@ -39,6 +40,8 @@ private struct PressedKeyState {
 /// synthetic Shift and Ctrl keys.
 @MainActor
 final class KeyboardClient: ObservableObject, Disconnectable {
+
+    private static let log = Logger(subsystem: "com.beebium", category: "keyboard")
 
     private var channel: GRPCChannel?
     private var client: Beebium_KeyboardServiceClient?
@@ -389,12 +392,35 @@ final class KeyboardClient: ObservableObject, Disconnectable {
         pressCapsLock()
     }
 
+    /// Query the BBC's logical CAPS / SHIFT LOCK latch state.
+    ///
+    /// Reads the MOS-maintained latch bits directly, so the result is exact at
+    /// any emulation speed -- unlike the lock-LED brightness from the indicator
+    /// stream, which is duty-cycle filtered for display and only settles to
+    /// 0/255 in real time. Returns nil if the client is not connected or the
+    /// query fails.
+    func getLockState() async -> Beebium_LockKeyState? {
+        guard let client = client else { return nil }
+        do {
+            return try await client.getLockState(Beebium_GetLockStateRequest()).response.get()
+        } catch {
+            // Log loudly (Console-visible, unlike print to stdout): a failure
+            // here disables caps-lock sync, and an UNIMPLEMENTED status means the
+            // server is too old for this RPC -- which the protocol-fingerprint
+            // check at connect should already have flagged.
+            Self.log.error("getLockState failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The BBC's logical CAPS LOCK state, or nil if it could not be read.
+    func capsLockIsOn() async -> Bool? {
+        await getLockState()?.capsLockOn
+    }
+
     /// Sync BBC Caps Lock state to match macOS state (with rate limiting).
-    /// Only syncs when BBC state is definitive (0 or 255); ignores transient states.
-    /// - Parameters:
-    ///   - macCapsLockIsOn: Current macOS Caps Lock state
-    ///   - bbcState: Current BBC Caps Lock LED state
-    func syncCapsLockState(macCapsLockIsOn: Bool, bbcState: CapsLockState) {
+    /// - Parameter macCapsLockIsOn: Current macOS Caps Lock state.
+    func syncCapsLockState(macCapsLockIsOn: Bool) {
         let enabled = mappingManager?.isCapsLockSyncEnabled == true
         guard enabled else { return }
 
@@ -411,19 +437,22 @@ final class KeyboardClient: ObservableObject, Disconnectable {
             return
         }
 
-        // Ignore transient states (PWM filtered intermediate values)
-        guard bbcState != .transient else { return }
-
-        // Rate limiting to prevent feedback loops
+        // Rate limiting to prevent feedback loops. Claimed up front so the
+        // async latch query below is issued at most once per window.
         let now = Date()
         guard now.timeIntervalSince(lastSyncTime) >= minSyncInterval else { return }
+        lastSyncTime = now
 
-        let bbcCapsLockIsOn = (bbcState == .on)
-        if macCapsLockIsOn != bbcCapsLockIsOn {
-            print("[KBD][capsLock.sync] macOn=\(macCapsLockIsOn)"
-                  + " bbcOn=\(bbcCapsLockIsOn) -> tap")
-            lastSyncTime = now
-            pressCapsLock()
+        Task {
+            // Read the exact logical caps-lock state from the latch. It is
+            // correct at any emulation speed, where the lock-LED brightness
+            // this used to infer from never settles to a definitive 0/255.
+            guard let bbcCapsLockIsOn = await capsLockIsOn() else { return }
+            if macCapsLockIsOn != bbcCapsLockIsOn {
+                print("[KBD][capsLock.sync] macOn=\(macCapsLockIsOn)"
+                      + " bbcOn=\(bbcCapsLockIsOn) -> tap")
+                pressCapsLock()
+            }
         }
     }
 

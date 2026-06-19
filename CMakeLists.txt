@@ -206,3 +206,27 @@ endif()
 if(BEEBIUM_BUILD_SERVER)
     include(${CMAKE_SOURCE_DIR}/cmake/BeebiumPackaging.cmake)
 endif()
+
+# Convenience targets for the macOS frontend, so it shares the uniform
+# `cmake --build . --target <name>` interface as everything else. They delegate
+# to scripts/build-macos-app.sh, which builds the servers and embeds them in the
+# app bundle (see the script header and README.md). macOS-only.
+#   cmake --build . --target macos-app   (or `make macos-app` from the build dir)
+#   cmake --build . --target macos-run   builds and launches the app
+if(APPLE)
+    # Pass BUILD_DIR so the script builds and embeds servers from this
+    # configured tree, not its default ./build (matters for out-of-tree or
+    # release build dirs).
+    add_custom_target(macos-app
+        COMMAND ${CMAKE_COMMAND} -E env BUILD_DIR=${CMAKE_BINARY_DIR}
+                ${CMAKE_SOURCE_DIR}/scripts/build-macos-app.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        USES_TERMINAL
+        COMMENT "Building the macOS app with freshly built embedded servers")
+    add_custom_target(macos-run
+        COMMAND ${CMAKE_COMMAND} -E env BUILD_DIR=${CMAKE_BINARY_DIR}
+                ${CMAKE_SOURCE_DIR}/scripts/build-macos-app.sh --run
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        USES_TERMINAL
+        COMMENT "Building and launching the macOS app")
+endif()

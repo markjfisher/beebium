@@ -226,6 +226,14 @@ struct Beebium_SystemInfo: Sendable {
   /// Clears the value of `connections`. Subsequent reads from it will return its default value.
   mutating func clearConnections() {self._connections = nil}
 
+  /// Nominal CPU clock frequency in Hz (e.g. 2000000 for 2 MHz).
+  var clockSpeedHz: UInt32 = 0
+
+  /// Fingerprint of the wire protocol the server was built against (a hash of
+  /// the normalised proto contract). Clients compare this to their own
+  /// compiled-in fingerprint at connect and refuse to proceed on a mismatch.
+  var protocolFingerprint: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -467,6 +475,100 @@ struct Beebium_SetAdvertisementResponse: Sendable {
   fileprivate var _state: Beebium_AdvertisementState? = nil
 }
 
+struct Beebium_GetPacingStatsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_WatchPacingStatsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Minimum interval between updates in milliseconds (default: 1000).
+  var intervalMs: UInt32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_SetSpeedMultiplierRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// 0.0 = unlimited, 1.0 = real-time, 2.0 = double-speed.
+  var speedMultiplier: Double = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_SetSpeedMultiplierResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Echoed back resulting runtime speed multiplier.
+  var speedMultiplier: Double = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// Pacing statistics snapshot.
+/// Available from both host and parasite SystemService instances.
+struct Beebium_PacingStats: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Emulation timing
+  var ticksExecuted: UInt64 = 0
+
+  /// Ticks skipped (falling behind)
+  var ticksSkipped: UInt64 = 0
+
+  /// Ticks where sleep was skipped for I/O
+  var ticksIoSkipped: UInt64 = 0
+
+  /// Adaptive sleep margin
+  var avgOvershootUs: Double = 0
+
+  /// Recent maximum overshoot
+  var maxRecentOvershootUs: Double = 0
+
+  /// Current adaptive safety margin
+  var safetyMarginUs: Double = 0
+
+  /// PI controller state
+  var controllerDrift: Double = 0
+
+  /// Accumulated drift (time debt)
+  var controllerIntegral: Double = 0
+
+  /// Speed control and headroom, sampled over the pacing window (~5s).
+  var speedMultiplier: Double = 0
+
+  /// Actual emulated rate / base clock over the window
+  var achievedSpeedMultiplier: Double = 0
+
+  /// Estimated ceiling at current host load; 0.0 = no estimate yet (idle/paused or not yet sampled)
+  var estimatedMaxSpeedMultiplier: Double = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate let _protobuf_package = "beebium"
@@ -620,7 +722,7 @@ extension Beebium_ConnectionInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageI
 
 extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SystemInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{3}provenance\0\u{1}identity\0\u{1}connections\0\u{b}machine_type\0\u{b}machine_display_name\0\u{c}\u{1}\u{1}\u{c}\u{2}\u{1}")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\u{3}provenance\0\u{1}identity\0\u{1}connections\0\u{3}clock_speed_hz\0\u{3}protocol_fingerprint\0\u{b}machine_type\0\u{b}machine_display_name\0\u{c}\u{1}\u{1}\u{c}\u{2}\u{1}")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -631,6 +733,8 @@ extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImple
       case 3: try { try decoder.decodeSingularMessageField(value: &self._provenance) }()
       case 4: try { try decoder.decodeSingularMessageField(value: &self._identity) }()
       case 5: try { try decoder.decodeSingularMessageField(value: &self._connections) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.clockSpeedHz) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.protocolFingerprint) }()
       default: break
       }
     }
@@ -650,6 +754,12 @@ extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImple
     try { if let v = self._connections {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
     } }()
+    if self.clockSpeedHz != 0 {
+      try visitor.visitSingularUInt32Field(value: self.clockSpeedHz, fieldNumber: 6)
+    }
+    if !self.protocolFingerprint.isEmpty {
+      try visitor.visitSingularStringField(value: self.protocolFingerprint, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -657,6 +767,8 @@ extension Beebium_SystemInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImple
     if lhs._provenance != rhs._provenance {return false}
     if lhs._identity != rhs._identity {return false}
     if lhs._connections != rhs._connections {return false}
+    if lhs.clockSpeedHz != rhs.clockSpeedHz {return false}
+    if lhs.protocolFingerprint != rhs.protocolFingerprint {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1066,6 +1178,195 @@ extension Beebium_SetAdvertisementResponse: SwiftProtobuf.Message, SwiftProtobuf
 
   static func ==(lhs: Beebium_SetAdvertisementResponse, rhs: Beebium_SetAdvertisementResponse) -> Bool {
     if lhs._state != rhs._state {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_GetPacingStatsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".GetPacingStatsRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_GetPacingStatsRequest, rhs: Beebium_GetPacingStatsRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_WatchPacingStatsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".WatchPacingStatsRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}interval_ms\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.intervalMs) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.intervalMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.intervalMs, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_WatchPacingStatsRequest, rhs: Beebium_WatchPacingStatsRequest) -> Bool {
+    if lhs.intervalMs != rhs.intervalMs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SetSpeedMultiplierRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetSpeedMultiplierRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}speed_multiplier\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularDoubleField(value: &self.speedMultiplier) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.speedMultiplier.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.speedMultiplier, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_SetSpeedMultiplierRequest, rhs: Beebium_SetSpeedMultiplierRequest) -> Bool {
+    if lhs.speedMultiplier != rhs.speedMultiplier {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_SetSpeedMultiplierResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SetSpeedMultiplierResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}speed_multiplier\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularDoubleField(value: &self.speedMultiplier) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.speedMultiplier.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.speedMultiplier, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_SetSpeedMultiplierResponse, rhs: Beebium_SetSpeedMultiplierResponse) -> Bool {
+    if lhs.speedMultiplier != rhs.speedMultiplier {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_PacingStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PacingStats"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}ticks_executed\0\u{3}ticks_skipped\0\u{3}ticks_io_skipped\0\u{3}avg_overshoot_us\0\u{3}max_recent_overshoot_us\0\u{3}safety_margin_us\0\u{3}controller_drift\0\u{3}controller_integral\0\u{3}speed_multiplier\0\u{3}achieved_speed_multiplier\0\u{3}estimated_max_speed_multiplier\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.ticksExecuted) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.ticksSkipped) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.ticksIoSkipped) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.avgOvershootUs) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.maxRecentOvershootUs) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.safetyMarginUs) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.controllerDrift) }()
+      case 8: try { try decoder.decodeSingularDoubleField(value: &self.controllerIntegral) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self.speedMultiplier) }()
+      case 10: try { try decoder.decodeSingularDoubleField(value: &self.achievedSpeedMultiplier) }()
+      case 11: try { try decoder.decodeSingularDoubleField(value: &self.estimatedMaxSpeedMultiplier) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.ticksExecuted != 0 {
+      try visitor.visitSingularUInt64Field(value: self.ticksExecuted, fieldNumber: 1)
+    }
+    if self.ticksSkipped != 0 {
+      try visitor.visitSingularUInt64Field(value: self.ticksSkipped, fieldNumber: 2)
+    }
+    if self.ticksIoSkipped != 0 {
+      try visitor.visitSingularUInt64Field(value: self.ticksIoSkipped, fieldNumber: 3)
+    }
+    if self.avgOvershootUs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.avgOvershootUs, fieldNumber: 4)
+    }
+    if self.maxRecentOvershootUs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.maxRecentOvershootUs, fieldNumber: 5)
+    }
+    if self.safetyMarginUs.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.safetyMarginUs, fieldNumber: 6)
+    }
+    if self.controllerDrift.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.controllerDrift, fieldNumber: 7)
+    }
+    if self.controllerIntegral.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.controllerIntegral, fieldNumber: 8)
+    }
+    if self.speedMultiplier.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.speedMultiplier, fieldNumber: 9)
+    }
+    if self.achievedSpeedMultiplier.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.achievedSpeedMultiplier, fieldNumber: 10)
+    }
+    if self.estimatedMaxSpeedMultiplier.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.estimatedMaxSpeedMultiplier, fieldNumber: 11)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_PacingStats, rhs: Beebium_PacingStats) -> Bool {
+    if lhs.ticksExecuted != rhs.ticksExecuted {return false}
+    if lhs.ticksSkipped != rhs.ticksSkipped {return false}
+    if lhs.ticksIoSkipped != rhs.ticksIoSkipped {return false}
+    if lhs.avgOvershootUs != rhs.avgOvershootUs {return false}
+    if lhs.maxRecentOvershootUs != rhs.maxRecentOvershootUs {return false}
+    if lhs.safetyMarginUs != rhs.safetyMarginUs {return false}
+    if lhs.controllerDrift != rhs.controllerDrift {return false}
+    if lhs.controllerIntegral != rhs.controllerIntegral {return false}
+    if lhs.speedMultiplier != rhs.speedMultiplier {return false}
+    if lhs.achievedSpeedMultiplier != rhs.achievedSpeedMultiplier {return false}
+    if lhs.estimatedMaxSpeedMultiplier != rhs.estimatedMaxSpeedMultiplier {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -390,6 +390,9 @@ struct ServerConfig {
     // Wait mode for controlled startup
     WaitMode wait_mode = WaitMode::None;
 
+    // Optional runtime speed override applied before PacingClock construction.
+    std::optional<double> speed_multiplier_override;
+
     // Provenance
     std::string provenance_type;
     std::string provenance_uuid;
@@ -491,6 +494,9 @@ void print_usage(const char* program_name) {
               << "  --wait[=<mode>]          Wait before starting emulation:\n"
               << "                           cli - wait for RETURN keypress (default if TTY)\n"
               << "                           api - wait for Run() RPC (default if not TTY)\n"
+              << "  --speed <multiplier>     Emulation speed as a multiple of real-time\n"
+              << "                           (1.0 = real-time, 2.0 = double; 'unlimited' to\n"
+              << "                           run flat out)\n"
               << "  --provenance-type <type> Provenance type (e.g., python-client, macos-gui)\n"
               << "  --provenance-uuid <uuid> Provenance instance UUID (RFC 4122)\n"
               << "  --provenance-version <v> Provenance version string\n"
@@ -919,6 +925,24 @@ std::optional<int> parse_start_arguments(int argc, char* argv[], int start_index
             std::string wait_value = arg.substr(7);  // Skip "--wait="
             try {
                 config.wait_mode = parse_wait_arg(wait_value);
+            } catch (const std::runtime_error& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return ExitCode::USAGE;
+            }
+        } else if (arg == "--speed" || arg.rfind("--speed=", 0) == 0) {
+            std::string speed_value;
+            if (arg == "--speed") {
+                if (i + 1 >= argc) {
+                    std::cerr << "Error: --speed requires a value "
+                                 "(a positive multiplier or 'unlimited')\n";
+                    return ExitCode::USAGE;
+                }
+                speed_value = argv[++i];
+            } else {
+                speed_value = arg.substr(8);  // Skip "--speed="
+            }
+            try {
+                config.speed_multiplier_override = parse_speed_arg(speed_value);
             } catch (const std::runtime_error& e) {
                 std::cerr << "Error: " << e.what() << "\n";
                 return ExitCode::USAGE;
@@ -1384,7 +1408,9 @@ void handle_wait_mode(MachineType& machine, WaitMode wait_mode) {
 // This function blocks until g_running becomes false (signal handler sets it).
 // Sets up shutdown callbacks for clean signal handling.
 template<typename MachineType>
-void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineType>& server) {
+void run_emulation_loop(MachineType& machine,
+                        beebium::service::Server<MachineType>& server,
+                        const ServerConfig<MachineType>& config) {
     using Memory = typename MachineType::Memory;
 
     // Check for BEEBIUM_NO_PACING environment variable for debugging
@@ -1394,9 +1420,13 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
     PlatformSleep sleeper;
     auto quantum = beebium::measure_sleep_quantum(sleeper);
 
+    auto pacing_config = Memory::default_pacing_config();
+    if (config.speed_multiplier_override.has_value()) {
+        pacing_config.speed_multiplier = *config.speed_multiplier_override;
+    }
+
     // Create and start pacing clock with measured quantum
-    PacingClock pacing_clock(Memory::default_pacing_config(), quantum,
-                             std::move(sleeper));
+    PacingClock pacing_clock(pacing_config, quantum, std::move(sleeper));
 
     if (use_pacing) {
         pacing_clock.start();
@@ -1469,6 +1499,14 @@ void run_emulation_loop(MachineType& machine, beebium::service::Server<MachineTy
                 double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
                 double run_secs = std::chrono::duration<double>(run_duration).count();
                 double run_pct = 100.0 * run_secs / elapsed_secs;
+
+                // Publish a throughput sample for the gRPC pacing stats: the
+                // achieved multiplier and the estimated ceiling at current load.
+                double achieved_multiplier = actual_hz / target_hz;
+                double active_fraction = run_secs / elapsed_secs;
+                pacing_clock.publish_throughput(
+                    achieved_multiplier,
+                    estimate_max_speed_multiplier(achieved_multiplier, active_fraction));
                 std::cerr << "Pacing: "
                           << std::fixed << std::setprecision(3)
                           << (actual_hz / 1e6) << " MHz"
@@ -1961,6 +1999,13 @@ public:
                     g_request_pacing_stop();
                 }
             };
+            // Publish the configured speed (from --speed) before the server
+            // accepts connections, so GetPacingStats/SetSpeedMultiplier work
+            // immediately -- the pacing clock itself is wired only once the
+            // emulation loop starts, below.
+            server.set_initial_speed_multiplier(
+                config.speed_multiplier_override.value_or(1.0));
+
             server.start(std::move(provenance), std::move(identity),
                         config.advertise, shutdown_policy_config, std::move(shutdown_callback),
                         extension_services);
@@ -1990,7 +2035,7 @@ public:
             handle_wait_mode(machine, config.wait_mode);
 
             // Run main emulation loop (blocks until shutdown)
-            run_emulation_loop(machine, server);
+            run_emulation_loop(machine, server, config);
 
             std::cout << "\nShutting down...\n";
 

@@ -169,6 +169,25 @@ class ServerStatusEvent:
     shutdown_conditions: "tuple[ShutdownConditionStatus, ...]" = ()  # For SHUTDOWN_PROGRESS
 
 
+@dataclass(frozen=True)
+class PacingStats:
+    """Snapshot of emulation pacing and speed headroom.
+
+    The speed fields are sampled by the server over its pacing window
+    (~5 seconds), so they update slowly and steadily -- intended for a
+    polled readout (e.g. a UI speed slider once per second), not a
+    high-frequency series.
+    """
+
+    ticks_executed: int  # Total pacing ticks since start
+    ticks_io_skipped: int  # Ticks where sleep was cut short for I/O
+    controller_drift: float  # Current drift in cycles (+ = ahead of real time)
+    controller_integral: float  # Accumulated drift (time debt)
+    speed_multiplier: float  # Configured multiplier (0.0 = unlimited)
+    achieved_speed_multiplier: float  # Actual emulated rate / base clock over the window
+    estimated_max_speed_multiplier: float  # Estimated ceiling at current host load; 0.0 = no estimate yet
+
+
 class System:
     """System information and server status.
 
@@ -459,4 +478,45 @@ class System:
             enabled=response.state.enabled,
             available=response.state.available,
             advertised_name=response.state.advertised_name,
+        )
+
+    def set_speed_multiplier(self, speed_multiplier: float) -> float:
+        """Set the runtime emulation speed multiplier.
+
+        Args:
+            speed_multiplier: Runtime speed multiplier.
+                `0.0` means unlimited speed, `1.0` is real-time.
+
+        Returns:
+            The resulting runtime speed multiplier echoed by the server.
+        """
+        request = system_pb2.SetSpeedMultiplierRequest(
+            speed_multiplier=speed_multiplier,
+        )
+        response = self._stub.SetSpeedMultiplier(request)
+        return response.speed_multiplier
+
+    def get_pacing_stats(self) -> PacingStats:
+        """Return a snapshot of emulation pacing and speed headroom.
+
+        ``estimated_max_speed_multiplier`` is an upper-bound estimate of the
+        fastest the host can currently run the emulation, derived from the
+        proportion of wall-clock time spent computing rather than sleeping.
+        It is ``0.0`` when no estimate is available yet (the emulator is
+        idle/paused, or the first pacing window has not elapsed).
+
+        The fields are sampled over the server's pacing window (~5s), so
+        poll this at a low rate (e.g. once per second for a speed slider)
+        rather than treating it as a high-frequency stream.
+        """
+        request = system_pb2.GetPacingStatsRequest()
+        response = self._stub.GetPacingStats(request)
+        return PacingStats(
+            ticks_executed=response.ticks_executed,
+            ticks_io_skipped=response.ticks_io_skipped,
+            controller_drift=response.controller_drift,
+            controller_integral=response.controller_integral,
+            speed_multiplier=response.speed_multiplier,
+            achieved_speed_multiplier=response.achieved_speed_multiplier,
+            estimated_max_speed_multiplier=response.estimated_max_speed_multiplier,
         )

@@ -168,6 +168,33 @@ TEST_CASE("KeyboardService GetState returns current keyboard state", "[grpc][key
     CHECK((response.pressed_rows(4) & (1 << 5)) != 0);
 }
 
+TEST_CASE("KeyboardService GetLockState reports the latch lock bits", "[grpc][keyboard][lock]") {
+    KeyboardTestFixture fixture;
+    auto& latch = fixture.machine().state().memory.system_via_peripheral.latch();
+
+    // Lock-LED latch bits are active-low: a clear bit means the lock is
+    // engaged. Set CAPS LOCK on (bit clear) and SHIFT LOCK off (bit set).
+    latch.write(6, false);  // CAPS_LOCK_LED clear -> caps lock engaged
+    latch.write(7, true);   // SHIFT_LOCK_LED set   -> shift lock released
+
+    grpc::ClientContext context;
+    beebium::GetLockStateRequest request;
+    beebium::LockKeyState response;
+    REQUIRE(fixture.stub().GetLockState(&context, request, &response).ok());
+    CHECK(response.caps_lock_on());
+    CHECK_FALSE(response.shift_lock_on());
+
+    // Flip both and confirm the query tracks the latch exactly.
+    latch.write(6, true);   // caps lock released
+    latch.write(7, false);  // shift lock engaged
+
+    grpc::ClientContext context2;
+    beebium::LockKeyState response2;
+    REQUIRE(fixture.stub().GetLockState(&context2, request, &response2).ok());
+    CHECK_FALSE(response2.caps_lock_on());
+    CHECK(response2.shift_lock_on());
+}
+
 TEST_CASE("KeyboardService multiple keys can be pressed simultaneously", "[grpc][keyboard]") {
     KeyboardTestFixture fixture;
 

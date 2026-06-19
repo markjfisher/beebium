@@ -13,6 +13,7 @@
 #ifndef BEEBIUM_FRAME_ALLOCATOR_HPP
 #define BEEBIUM_FRAME_ALLOCATOR_HPP
 
+#include <algorithm>
 #include <cstdint>
 #include <cstddef>
 #include <span>
