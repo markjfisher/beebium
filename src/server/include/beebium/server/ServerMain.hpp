@@ -1451,9 +1451,20 @@ void run_emulation_loop(MachineType& machine,
 
     // Main emulation loop
     constexpr uint64_t cycles_per_frame = 40000;  // For non-paced mode
-    auto last_stats_time = std::chrono::steady_clock::now();
-    uint64_t last_cycle_count = machine.cycle_count();
-    std::chrono::steady_clock::duration run_duration{};
+
+    // The gRPC pacing throughput is published far more frequently than the
+    // human-readable stderr log, so clients (e.g. a speed slider) see a
+    // commanded speed change reflected within ~1s rather than waiting up to the
+    // 5s log interval. The two windows are tracked independently.
+    constexpr auto publish_interval = std::chrono::milliseconds(500);
+    constexpr auto log_interval = std::chrono::seconds(5);
+    auto loop_start = std::chrono::steady_clock::now();
+    auto last_publish_time = loop_start;
+    auto last_log_time = loop_start;
+    uint64_t last_publish_cycle_count = machine.cycle_count();
+    uint64_t last_log_cycle_count = machine.cycle_count();
+    std::chrono::steady_clock::duration publish_run_duration{};
+    std::chrono::steady_clock::duration log_run_duration{};
     // Reset VSYNC edge counter for frequency measurement
     machine.memory().system_via_peripheral.consume_vsync_rising_edges();
     while (g_running) {
@@ -1476,37 +1487,52 @@ void run_emulation_loop(MachineType& machine,
             uint64_t cycles = pacing_clock.cycles_for_next_tick();
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles);
-            run_duration += std::chrono::steady_clock::now() - run_start;
+            auto run_segment = std::chrono::steady_clock::now() - run_start;
+            publish_run_duration += run_segment;
+            log_run_duration += run_segment;
             pacing_clock.report_cycles(machine.cycle_count());
         } else {
             auto run_start = std::chrono::steady_clock::now();
             machine.run(cycles_per_frame);
-            run_duration += std::chrono::steady_clock::now() - run_start;
+            auto run_segment = std::chrono::steady_clock::now() - run_start;
+            publish_run_duration += run_segment;
+            log_run_duration += run_segment;
         }
 
-        // Periodic pacing stats (every 5 seconds)
+        // Periodic pacing stats
         if (use_pacing) {
             auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time);
-            if (elapsed.count() >= 5) {
-                auto stats = pacing_clock.timing_stats();
-                uint64_t current_cycles = machine.cycle_count();
-                uint64_t cycles_delta = current_cycles - last_cycle_count;
-                double elapsed_secs = std::chrono::duration<double>(now - last_stats_time).count();
-                double actual_hz = static_cast<double>(cycles_delta) / elapsed_secs;
-                double target_hz = static_cast<double>(Memory::default_pacing_config().base_clock_hz);
-                uint32_t vsync_edges = machine.memory().system_via_peripheral.consume_vsync_rising_edges();
-                double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
-                double run_secs = std::chrono::duration<double>(run_duration).count();
-                double run_pct = 100.0 * run_secs / elapsed_secs;
+            double target_hz = static_cast<double>(Memory::default_pacing_config().base_clock_hz);
 
-                // Publish a throughput sample for the gRPC pacing stats: the
-                // achieved multiplier and the estimated ceiling at current load.
-                double achieved_multiplier = actual_hz / target_hz;
-                double active_fraction = run_secs / elapsed_secs;
+            // Publish a throughput sample to the gRPC pacing stats every ~1s so
+            // a commanded speed change is reflected promptly.
+            if (now - last_publish_time >= publish_interval) {
+                uint64_t current_cycles = machine.cycle_count();
+                double secs = std::chrono::duration<double>(now - last_publish_time).count();
+                double cycles_delta = static_cast<double>(current_cycles - last_publish_cycle_count);
+                double achieved_multiplier = secs > 0.0 ? cycles_delta / secs / target_hz : 0.0;
+                double active_fraction = secs > 0.0
+                    ? std::chrono::duration<double>(publish_run_duration).count() / secs
+                    : 0.0;
                 pacing_clock.publish_throughput(
                     achieved_multiplier,
                     estimate_max_speed_multiplier(achieved_multiplier, active_fraction));
+                last_publish_time = now;
+                last_publish_cycle_count = current_cycles;
+                publish_run_duration = {};
+            }
+
+            // Human-readable pacing log (every 5s).
+            if (now - last_log_time >= log_interval) {
+                auto stats = pacing_clock.timing_stats();
+                uint64_t current_cycles = machine.cycle_count();
+                uint64_t cycles_delta = current_cycles - last_log_cycle_count;
+                double elapsed_secs = std::chrono::duration<double>(now - last_log_time).count();
+                double actual_hz = static_cast<double>(cycles_delta) / elapsed_secs;
+                uint32_t vsync_edges = machine.memory().system_via_peripheral.consume_vsync_rising_edges();
+                double vsync_hz = static_cast<double>(vsync_edges) / elapsed_secs;
+                double run_secs = std::chrono::duration<double>(log_run_duration).count();
+                double run_pct = 100.0 * run_secs / elapsed_secs;
                 std::cerr << "Pacing: "
                           << std::fixed << std::setprecision(3)
                           << (actual_hz / 1e6) << " MHz"
@@ -1518,9 +1544,9 @@ void run_emulation_loop(MachineType& machine,
                           << " | deficit " << std::setprecision(0) << stats.controller_deficit
                           << " | run " << std::setprecision(1) << run_pct << "%"
                           << "\n";
-                last_stats_time = now;
-                last_cycle_count = current_cycles;
-                run_duration = {};
+                last_log_time = now;
+                last_log_cycle_count = current_cycles;
+                log_run_duration = {};
             }
         }
     }
