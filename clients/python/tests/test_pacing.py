@@ -51,3 +51,44 @@ def test_headroom_estimate_populates_after_a_window(bbc: Beebium) -> None:
     # headroom, so the estimate is at least the achieved rate.
     assert stats.achieved_speed_multiplier > 0.0
     assert stats.estimated_max_speed_multiplier >= stats.achieved_speed_multiplier
+
+
+# Seconds to run after a speed change before measuring -- several of the
+# server's ~1s publish windows, so the achieved rate has settled.
+_SETTLE_SECONDS = 3.5
+
+
+def test_runs_at_double_speed(bbc: Beebium) -> None:
+    """Setting 2x actually paces the emulator at ~2x real time (a 2 MHz machine
+    is far within any modern host's headroom)."""
+    assert bbc.debugger.is_running
+    bbc.system.set_speed_multiplier(2.0)
+    time.sleep(_SETTLE_SECONDS)
+
+    stats = bbc.system.get_pacing_stats()
+    assert stats.speed_multiplier == 2.0
+    assert 1.6 <= stats.achieved_speed_multiplier <= 2.4
+
+
+def test_runs_at_half_speed(bbc: Beebium) -> None:
+    """Setting 0.5x paces the emulator at ~half real time (always attainable)."""
+    assert bbc.debugger.is_running
+    bbc.system.set_speed_multiplier(0.5)
+    time.sleep(_SETTLE_SECONDS)
+
+    stats = bbc.system.get_pacing_stats()
+    assert stats.speed_multiplier == 0.5
+    assert 0.4 <= stats.achieved_speed_multiplier <= 0.6
+
+
+def test_runs_above_the_catch_up_clamp(bbc: Beebium) -> None:
+    """Paced speed must be able to exceed the controller's real-time catch-up
+    ceiling (~3x): setting 4x reaches ~4x, not a ~3x plateau. Needs only modest
+    headroom -- a 2 MHz machine at 4x is trivial for any modern host."""
+    assert bbc.debugger.is_running
+    bbc.system.set_speed_multiplier(4.0)
+    time.sleep(_SETTLE_SECONDS)
+
+    stats = bbc.system.get_pacing_stats()
+    assert stats.speed_multiplier == 4.0
+    assert stats.achieved_speed_multiplier >= 3.5

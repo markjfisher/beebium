@@ -79,6 +79,10 @@ public:
         paused_ = false;
         tick_ready_ = false;
         start_time_ = Clock::now();
+        last_pace_wall_ = start_time_;
+        effective_elapsed_ns_ = 0.0;
+        baseline_cycles_ = total_cycles_.load(std::memory_order_relaxed);
+        last_speed_ = speed_multiplier_.load(std::memory_order_relaxed);
         controller_.reset();
         timer_thread_ = std::thread(&PacingClock::timer_loop, this);
     }
@@ -108,14 +112,41 @@ public:
 
     /// Get cycles to execute in the next tick (deficit controller).
     uint64_t cycles_for_next_tick() {
-        if (is_unlimited()) {
+        double s = speed_multiplier_.load(std::memory_order_relaxed);
+        auto now = Clock::now();
+
+        if (s == 0.0) {
+            // Unlimited: run flat out. Keep the pacing anchor at "now" so the
+            // (discarded) unlimited interval does not skew the next finite
+            // window; a real speed change is rebased on return below.
+            last_pace_wall_ = now;
+            last_speed_ = s;
             return controller_.nominal_cycles();
         }
-        auto now = Clock::now();
-        auto wall_ns = std::chrono::duration_cast<Duration>(
-            now - start_time_).count();
-        auto cycles = total_cycles_.load(std::memory_order_acquire);
-        return controller_.update(wall_ns, cycles);
+
+        // Rebase on any speed change (including leaving unlimited): re-anchor the
+        // cycle baseline and the integrated target to "now", so the deficit
+        // accounting tracks the new rate from here without a lurch.
+        if (s != last_speed_) {
+            baseline_cycles_ = total_cycles_.load(std::memory_order_acquire);
+            effective_elapsed_ns_ = 0.0;
+            last_pace_wall_ = now;
+            last_speed_ = s;
+            controller_.reset();
+        }
+
+        // Integrate the multiplier-scaled wall time. Feeding the controller this
+        // stretched time makes its target slope base*s, while the controller
+        // itself stays a pure 1x deficit tracker. The cycle count is taken
+        // relative to the baseline so target and actual share an origin.
+        double dt_ns = static_cast<double>(
+            std::chrono::duration_cast<Duration>(now - last_pace_wall_).count());
+        last_pace_wall_ = now;
+        effective_elapsed_ns_ += s * dt_ns;
+
+        uint64_t cycles =
+            total_cycles_.load(std::memory_order_acquire) - baseline_cycles_;
+        return controller_.update(static_cast<int64_t>(effective_elapsed_ns_), cycles, s);
     }
 
     /// Legacy: fixed cycles per tick for non-paced mode.
@@ -179,7 +210,13 @@ public:
             std::lock_guard lock(mutex_);
             paused_ = false;
             start_time_ = Clock::now();
-            total_cycles_.store(0, std::memory_order_relaxed);
+            last_pace_wall_ = start_time_;
+            effective_elapsed_ns_ = 0.0;
+            // Re-anchor the cycle baseline to the current count rather than
+            // zeroing it: the emulation keeps reporting its absolute cycle
+            // count, so the deficit must be measured relative to here.
+            baseline_cycles_ = total_cycles_.load(std::memory_order_relaxed);
+            last_speed_ = speed_multiplier_.load(std::memory_order_relaxed);
             controller_.reset();
         }
         pause_cv_.notify_one();
@@ -298,6 +335,18 @@ private:
     // Timing
     Clock::time_point start_time_;
     std::atomic<uint64_t> total_cycles_{0};
+
+    // Variable-rate pacing accounting. Touched only by cycles_for_next_tick on
+    // the emulation thread, plus (re)initialised in start()/resume() (the latter
+    // under mutex_, ordered before the next tick by the wait_for_tick handshake).
+    // effective_elapsed_ns_ integrates speed_multiplier * wall_dt, so feeding it
+    // to the 1x deficit controller yields a base*multiplier target;
+    // baseline_cycles_ anchors the cycle count at the last (re)base; last_speed_
+    // detects a speed change so the next tick rebases.
+    Clock::time_point last_pace_wall_{};
+    double effective_elapsed_ns_ = 0.0;
+    uint64_t baseline_cycles_ = 0;
+    double last_speed_ = 1.0;
 
     // Thread control
     std::atomic<bool> running_{false};
