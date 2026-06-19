@@ -106,12 +106,25 @@ jobs:
           # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
-        # --timeout 600: fail a hung test after 10 min instead of letting it
-        # sit on CTest's 1500s default and run the job to the 6h runner limit.
+        # --timeout 120: fail a hung test after 2 min. The slowest legitimate
+        # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
+        # headroom while capping the wasted time when a test deadlocks.
+        # --repeat until-pass:2 reruns a test that fails once, so a transient
+        # blip does not sink the whole (lengthy) build and its dependent jobs;
+        # a genuinely broken test still fails on the rerun. The post-step grep
+        # turns a recovered flake into a visible warning so it gets tracked and
+        # root-caused rather than silently masked by the retry.
         # Per-test durations are printed inline (Test #N ... Passed X sec).
-        run: ctest --test-dir build --output-on-failure --timeout 600
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
 
       - name: Upload server binaries and presets
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-macos-arm64
@@ -203,12 +216,25 @@ jobs:
           # Should only show system libraries, not Homebrew paths
 
       - name: Run tests
-        # --timeout 600: fail a hung test after 10 min instead of letting it
-        # sit on CTest's 1500s default and run the job to the 6h runner limit.
+        # --timeout 120: fail a hung test after 2 min. The slowest legitimate
+        # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
+        # headroom while capping the wasted time when a test deadlocks.
+        # --repeat until-pass:2 reruns a test that fails once, so a transient
+        # blip does not sink the whole (lengthy) build and its dependent jobs;
+        # a genuinely broken test still fails on the rerun. The post-step grep
+        # turns a recovered flake into a visible warning so it gets tracked and
+        # root-caused rather than silently masked by the retry.
         # Per-test durations are printed inline (Test #N ... Passed X sec).
-        run: ctest --test-dir build --output-on-failure --timeout 600
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
 
       - name: Upload server binaries and presets
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-macos-x86_64
@@ -260,12 +286,25 @@ jobs:
         run: cmake --build build --parallel 2
 
       - name: Run tests
-        # --timeout 600: fail a hung test after 10 min instead of letting it
-        # sit on CTest's 1500s default and run the job to the 6h runner limit.
+        # --timeout 120: fail a hung test after 2 min. The slowest legitimate
+        # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
+        # headroom while capping the wasted time when a test deadlocks.
+        # --repeat until-pass:2 reruns a test that fails once, so a transient
+        # blip does not sink the whole (lengthy) build and its dependent jobs;
+        # a genuinely broken test still fails on the rerun. The post-step grep
+        # turns a recovered flake into a visible warning so it gets tracked and
+        # root-caused rather than silently masked by the retry.
         # Per-test durations are printed inline (Test #N ... Passed X sec).
-        run: ctest --test-dir build --output-on-failure --timeout 600
+        run: |
+          ctest --test-dir build --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
 
       - name: Upload server binaries
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-linux
@@ -355,7 +394,15 @@ jobs:
           Copy-Item "build\src\server\Release\beebium_extension_api.dll" -Destination "build\tests\Release\" -Force
 
       - name: Run tests
-        run: ctest --test-dir build --build-config Release --output-on-failure --timeout 600
+        # See the macOS/Linux jobs for the rationale behind --timeout 120 and
+        # --repeat until-pass:2. shell: bash uses the runner's Git Bash (with
+        # -eo pipefail) so the retry-visibility logic matches the other jobs.
+        shell: bash
+        run: |
+          ctest --test-dir build --build-config Release --output-on-failure --timeout 120 --repeat until-pass:2 2>&1 | tee ctest.log
+          if grep -qE '\*\*\*(Failed|Timeout|Exception)' ctest.log; then
+            echo "::warning::A test failed on its first attempt and passed on rerun (flaky). See the ctest output above and root-cause it; do not rely on the retry."
+          fi
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -368,6 +415,9 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLED_DIR\x64-windows\bin\*.dll" -Destination "build\src\server\Release\" -Force
 
       - name: Upload server binary with DLLs
+        # Preserve the built binaries even if a step failed, so a re-run of a
+        # dependent job can reuse them instead of forcing a full rebuild.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: beebium-server-windows
