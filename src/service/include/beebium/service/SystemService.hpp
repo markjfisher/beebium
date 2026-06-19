@@ -76,8 +76,25 @@ public:
     SystemServiceImpl(const SystemServiceImpl&) = delete;
     SystemServiceImpl& operator=(const SystemServiceImpl&) = delete;
 
+    /// Seed the configured speed multiplier (from the --speed CLI flag)
+    /// before the pacing clock exists. The clock is created and wired only
+    /// once the emulation loop starts, but clients may query or set the speed
+    /// as soon as the gRPC server is listening; this keeps the configured
+    /// value available throughout, independent of the clock's lifetime.
+    void set_initial_speed_multiplier(double multiplier) {
+        configured_speed_multiplier_.store(multiplier, std::memory_order_relaxed);
+    }
+
     /// Set the pacing clock for stats monitoring. Call after construction.
-    void set_pacing_clock(PacingClock* clock) { pacing_clock_ = clock; }
+    /// Adopts the configured multiplier so any speed set before the clock
+    /// existed (e.g. during the brief startup window) takes effect.
+    void set_pacing_clock(PacingClock* clock) {
+        pacing_clock_ = clock;
+        if (clock) {
+            clock->set_speed_multiplier(
+                configured_speed_multiplier_.load(std::memory_order_relaxed));
+        }
+    }
 
     grpc::Status GetSystemInfo(
         grpc::ServerContext* context,
@@ -158,6 +175,10 @@ private:
     uint16_t server_port_;
     uint32_t clock_speed_hz_;
     PacingClock* pacing_clock_ = nullptr;
+    // The requested speed multiplier. Owned by the service so it survives the
+    // pacing clock's lifetime (the clock is a stack local in the emulation
+    // loop, created after the gRPC server starts listening).
+    std::atomic<double> configured_speed_multiplier_{1.0};
 
     // Synchronization for identity changes and shutdown notification
     mutable std::mutex watchers_mutex_;
@@ -505,7 +526,12 @@ grpc::Status SystemServiceImpl<MachineType>::GetPacingStats(
     beebium::PacingStats* response) {
 
     if (!pacing_clock_) {
-        return {grpc::StatusCode::UNAVAILABLE, "Pacing clock not configured"};
+        // The clock is wired only once the emulation loop starts. Until then
+        // report the configured multiplier; the remaining fields are runtime
+        // measurements that need a running clock, so they stay zero.
+        response->set_speed_multiplier(
+            configured_speed_multiplier_.load(std::memory_order_relaxed));
+        return grpc::Status::OK;
     }
     auto stats = pacing_clock_->timing_stats();
     response->set_ticks_executed(stats.ticks_executed);
@@ -559,10 +585,6 @@ grpc::Status SystemServiceImpl<MachineType>::SetSpeedMultiplier(
     const SetSpeedMultiplierRequest* request,
     SetSpeedMultiplierResponse* response) {
 
-    if (!pacing_clock_) {
-        return {grpc::StatusCode::UNAVAILABLE, "Pacing clock not configured"};
-    }
-
     const double speed_multiplier = request->speed_multiplier();
     if (!std::isfinite(speed_multiplier)) {
         return {grpc::StatusCode::INVALID_ARGUMENT, "Speed multiplier must be finite"};
@@ -572,8 +594,16 @@ grpc::Status SystemServiceImpl<MachineType>::SetSpeedMultiplier(
                 "Speed multiplier must be greater than or equal to zero"};
     }
 
-    pacing_clock_->set_speed_multiplier(speed_multiplier);
-    response->set_speed_multiplier(pacing_clock_->speed_multiplier());
+    // Record the request so it survives the clock's lifetime and is adopted
+    // when the clock is wired (set_pacing_clock). The clock may exist already
+    // (machine running) or not yet (brief startup window).
+    configured_speed_multiplier_.store(speed_multiplier, std::memory_order_relaxed);
+    if (pacing_clock_) {
+        pacing_clock_->set_speed_multiplier(speed_multiplier);
+        response->set_speed_multiplier(pacing_clock_->speed_multiplier());
+    } else {
+        response->set_speed_multiplier(speed_multiplier);
+    }
     return grpc::Status::OK;
 }
 

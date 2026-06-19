@@ -1999,6 +1999,13 @@ public:
                     g_request_pacing_stop();
                 }
             };
+            // Publish the configured speed (from --speed) before the server
+            // accepts connections, so GetPacingStats/SetSpeedMultiplier work
+            // immediately -- the pacing clock itself is wired only once the
+            // emulation loop starts, below.
+            server.set_initial_speed_multiplier(
+                config.speed_multiplier_override.value_or(1.0));
+
             server.start(std::move(provenance), std::move(identity),
                         config.advertise, shutdown_policy_config, std::move(shutdown_callback),
                         extension_services);

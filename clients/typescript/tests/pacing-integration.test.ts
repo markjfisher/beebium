@@ -29,12 +29,10 @@ async function launchHost(): Promise<Beebium> {
 const ONE_WINDOW_MS = 6500;
 
 describe("Integration: Pacing stats", () => {
-    it("reports the configured speed multiplier while running", async () => {
+    it("reports the configured speed multiplier", async () => {
         const bbc = await launchHost();
-        // The pacing clock is wired into the service once the emulator runs.
-        if (!(await bbc.debugger.isRunning())) {
-            await bbc.debugger.run();
-        }
+        // The configured multiplier is available as soon as the server is up,
+        // independent of whether the emulation loop has wired the pacing clock.
         expect((await bbc.system.getPacingStats()).speedMultiplier).toBe(1.0);
 
         await bbc.system.setSpeedMultiplier(2.0);
