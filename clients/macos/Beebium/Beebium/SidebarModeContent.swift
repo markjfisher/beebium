@@ -412,6 +412,12 @@ struct NetworkModeView: View {
     private var econetContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if econetClient.gatedBySpeed {
+                    speedGatedBanner
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                }
+
                 statusSection
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -435,6 +441,34 @@ struct NetworkModeView: View {
             }
         }
         .task { await transportsClient.refresh() }
+    }
+
+    // MARK: - Speed Gating Banner
+
+    // Shown when the active transport requires real-time emulation (e.g.
+    // Piconet) but the emulation speed is not 1x, so its traffic is severed.
+    private var speedGatedBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Econet paused")
+                    .font(.callout)
+                    .bold()
+                Text("This network bridges to real hardware and needs real-time speed. Set the emulation speed to 1x in the Processor panel to resume.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.yellow.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Status Section
