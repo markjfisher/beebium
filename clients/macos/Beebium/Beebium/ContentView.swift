@@ -274,14 +274,10 @@ struct ContentView: View {
             // triggers in this view (NSWindow.didBecomeKey, the at-connect
             // sync below) gate on indicatorClient.hasTriggeredInitialSync
             // so they never run before this one.
-            indicatorClient.onInitialCapsLockSync = { [weak keyboardClient, weak indicatorClient] in
-                guard let keyboardClient = keyboardClient,
-                      let indicatorClient = indicatorClient else { return }
+            indicatorClient.onInitialCapsLockSync = { [weak keyboardClient] in
+                guard let keyboardClient = keyboardClient else { return }
                 let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
-                keyboardClient.syncCapsLockState(
-                    macCapsLockIsOn: macCapsLockIsOn,
-                    bbcState: indicatorClient.capsLockState
-                )
+                keyboardClient.syncCapsLockState(macCapsLockIsOn: macCapsLockIsOn)
             }
 
             // Register clients with ClientGroup for bulk disconnect
@@ -397,8 +393,7 @@ struct ContentView: View {
                 if indicatorClient.hasTriggeredInitialSync {
                     let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
                     keyboardClient.syncCapsLockState(
-                        macCapsLockIsOn: macCapsLockIsOn,
-                        bbcState: indicatorClient.capsLockState
+                        macCapsLockIsOn: macCapsLockIsOn
                     )
                 }
             } else {
@@ -425,8 +420,7 @@ struct ContentView: View {
             guard indicatorClient.hasTriggeredInitialSync else { return }
             let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
             keyboardClient.syncCapsLockState(
-                macCapsLockIsOn: macCapsLockIsOn,
-                bbcState: indicatorClient.capsLockState
+                macCapsLockIsOn: macCapsLockIsOn
             )
         }
         .onChange(of: systemClient.clientCount) { count in
@@ -441,8 +435,7 @@ struct ContentView: View {
             if isEnabled {
                 let macCapsLockIsOn = NSEvent.modifierFlags.contains(.capsLock)
                 keyboardClient.syncCapsLockState(
-                    macCapsLockIsOn: macCapsLockIsOn,
-                    bbcState: indicatorClient.capsLockState
+                    macCapsLockIsOn: macCapsLockIsOn
                 )
             }
         }

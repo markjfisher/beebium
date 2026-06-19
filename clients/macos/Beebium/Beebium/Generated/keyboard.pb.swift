@@ -288,6 +288,32 @@ struct Beebium_BreakKeyState: Sendable {
   init() {}
 }
 
+struct Beebium_GetLockStateRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Beebium_LockKeyState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// True if CAPS LOCK is currently engaged
+  var capsLockOn: Bool = false
+
+  /// True if SHIFT LOCK is currently engaged
+  var shiftLockOn: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 /// Enqueue text for typing at machine speed (non-blocking, returns immediately)
 struct Beebium_TypeQuicklyRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
@@ -1035,6 +1061,60 @@ extension Beebium_BreakKeyState: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
   static func ==(lhs: Beebium_BreakKeyState, rhs: Beebium_BreakKeyState) -> Bool {
     if lhs.isHeld != rhs.isHeld {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_GetLockStateRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".GetLockStateRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_GetLockStateRequest, rhs: Beebium_GetLockStateRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Beebium_LockKeyState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".LockKeyState"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}caps_lock_on\0\u{3}shift_lock_on\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.capsLockOn) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.shiftLockOn) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.capsLockOn != false {
+      try visitor.visitSingularBoolField(value: self.capsLockOn, fieldNumber: 1)
+    }
+    if self.shiftLockOn != false {
+      try visitor.visitSingularBoolField(value: self.shiftLockOn, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Beebium_LockKeyState, rhs: Beebium_LockKeyState) -> Bool {
+    if lhs.capsLockOn != rhs.capsLockOn {return false}
+    if lhs.shiftLockOn != rhs.shiftLockOn {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
