@@ -214,7 +214,19 @@ private:
     }
 
     void stop_io_threads() {
-        stop_.store(true, std::memory_order_release);
+        // Set stop_ while holding tx_mutex_. The writer evaluates its tx_cv_
+        // predicate (which reads stop_) under tx_mutex_; storing stop_ outside
+        // the lock leaves a window where the writer reads stop_ == false, then
+        // blocks on the cv just after this notify_all() has already fired -- a
+        // lost wakeup that hangs writer_.join() forever (the 10-minute CI
+        // timeout). Mutating the predicate's state under the wait's mutex closes
+        // that window: the writer either observes stop_ in its check or is
+        // already blocked and gets the notify. The reader needs no such care --
+        // it polls stop_ between bounded select() timeouts, no cv involved.
+        {
+            std::lock_guard<std::mutex> lock(tx_mutex_);
+            stop_.store(true, std::memory_order_release);
+        }
         tx_cv_.notify_all();  // wake the writer if it is waiting for data
         // Do not close port_ here to interrupt the reader. Every HostSerialPort
         // read() polls with a bounded (~100ms) select() timeout, so the reader

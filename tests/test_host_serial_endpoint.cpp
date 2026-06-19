@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <span>
 #include <string>
@@ -193,4 +194,38 @@ TEST_CASE("HostSerialEndpoint request_reopen is a no-op without a factory",
     // Default snapshot path stays empty; the original port is untouched.
     CHECK(endpoint.ui_snapshot().device_path.empty());
     CHECK(endpoint.is_open());
+}
+
+TEST_CASE("HostSerialEndpoint teardown never loses the writer wakeup",
+          "[serial][host-serial]") {
+    // Tearing down an idle endpoint races stop_ against the writer thread
+    // parking on its tx_cv_ wait. If stop_ is published outside tx_mutex_, the
+    // notify can slip into the gap between the writer's predicate check and its
+    // block, so the writer sleeps forever and the destructor hangs on
+    // writer_.join() (this was a ~10-minute CI timeout on x86_64). Each
+    // iteration must complete promptly; a watchdog turns a hang into a failure
+    // here instead of a suite-wide timeout. Many iterations sample the narrow
+    // race window. With the fix it is deterministic; the loop just guards it.
+    for (int i = 0; i < 3000; ++i) {
+        std::promise<void> torn_down;
+        std::future<void> done = torn_down.get_future();
+
+        std::thread worker([&torn_down] {
+            {
+                serial::HostSerialEndpoint endpoint(std::make_unique<OpenPort>());
+                // Give the writer a moment to reach its cv wait so the teardown
+                // below actually races the block, not the thread's startup.
+                std::this_thread::sleep_for(std::chrono::microseconds(50));
+            }  // destructor -> stop_io_threads() -> reader_/writer_ join here
+            torn_down.set_value();
+        });
+
+        if (done.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            // The destructor is wedged on a join; the worker cannot be safely
+            // joined. Detach it and fail loudly rather than hang the run.
+            worker.detach();
+            FAIL("HostSerialEndpoint teardown hung: a writer wakeup was lost");
+        }
+        worker.join();
+    }
 }
