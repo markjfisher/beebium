@@ -107,6 +107,28 @@ scripts/build-macos-app.sh          # build servers (CMake) + app (Xcode)
 scripts/build-macos-app.sh --run    # ... and launch it
 ```
 
+The same thing is available through the normal CMake build interface, as the
+`macos-app` and `macos-run` targets (macOS only; they delegate to the script and
+embed servers from the configured build tree):
+
+```bash
+cmake --build build --target macos-app    # build servers + app
+cmake --build build --target macos-run    # ... and launch it
+```
+
+`cmake --build <dir>` resolves `<dir>` against your **current** directory, so use
+the path to your build tree — a bare `build` only works when a `build/` sits
+right there. From inside the build tree (e.g. `build/src/server`) point it at the
+root explicitly:
+
+```bash
+cmake --build /path/to/beebium/build --target macos-app   # absolute, from anywhere
+cd build && make macos-app                                # from the build-tree root
+```
+
+Note `make macos-app` only works from the **top** of the build tree (`build/`),
+not a subdirectory — CMake emits custom targets into the top-level Makefile only.
+
 To work in Xcode directly, build the servers once, then open the project:
 
 ```bash
