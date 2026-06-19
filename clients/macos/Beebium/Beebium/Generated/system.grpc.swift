@@ -49,6 +49,22 @@ internal protocol Beebium_SystemServiceClientProtocol: GRPCClient {
     _ request: Beebium_SetAdvertisementRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>
+
+  func getPacingStats(
+    _ request: Beebium_GetPacingStatsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_GetPacingStatsRequest, Beebium_PacingStats>
+
+  func watchPacingStats(
+    _ request: Beebium_WatchPacingStatsRequest,
+    callOptions: CallOptions?,
+    handler: @escaping (Beebium_PacingStats) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchPacingStatsRequest, Beebium_PacingStats>
+
+  func setSpeedMultiplier(
+    _ request: Beebium_SetSpeedMultiplierRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse>
 }
 
 extension Beebium_SystemServiceClientProtocol {
@@ -171,6 +187,63 @@ extension Beebium_SystemServiceClientProtocol {
       interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
     )
   }
+
+  /// Get current pacing statistics (PI controller state, timing, I/O skip counts).
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetPacingStats.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getPacingStats(
+    _ request: Beebium_GetPacingStatsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_GetPacingStatsRequest, Beebium_PacingStats> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPacingStatsInterceptors() ?? []
+    )
+  }
+
+  /// Stream pacing statistics at a configurable interval.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to WatchPacingStats.
+  ///   - callOptions: Call options.
+  ///   - handler: A closure called when each response is received from the server.
+  /// - Returns: A `ServerStreamingCall` with futures for the metadata and status.
+  internal func watchPacingStats(
+    _ request: Beebium_WatchPacingStatsRequest,
+    callOptions: CallOptions? = nil,
+    handler: @escaping (Beebium_PacingStats) -> Void
+  ) -> ServerStreamingCall<Beebium_WatchPacingStatsRequest, Beebium_PacingStats> {
+    return self.makeServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchPacingStatsInterceptors() ?? [],
+      handler: handler
+    )
+  }
+
+  /// Set the runtime pacing speed multiplier.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetSpeedMultiplier.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setSpeedMultiplier(
+    _ request: Beebium_SetSpeedMultiplierRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse> {
+    return self.makeUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setSpeedMultiplier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetSpeedMultiplierInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -266,6 +339,21 @@ internal protocol Beebium_SystemServiceAsyncClientProtocol: GRPCClient {
     _ request: Beebium_SetAdvertisementRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>
+
+  func makeGetPacingStatsCall(
+    _ request: Beebium_GetPacingStatsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_GetPacingStatsRequest, Beebium_PacingStats>
+
+  func makeWatchPacingStatsCall(
+    _ request: Beebium_WatchPacingStatsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchPacingStatsRequest, Beebium_PacingStats>
+
+  func makeSetSpeedMultiplierCall(
+    _ request: Beebium_SetSpeedMultiplierRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -349,6 +437,42 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
     )
   }
+
+  internal func makeGetPacingStatsCall(
+    _ request: Beebium_GetPacingStatsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_GetPacingStatsRequest, Beebium_PacingStats> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPacingStatsInterceptors() ?? []
+    )
+  }
+
+  internal func makeWatchPacingStatsCall(
+    _ request: Beebium_WatchPacingStatsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncServerStreamingCall<Beebium_WatchPacingStatsRequest, Beebium_PacingStats> {
+    return self.makeAsyncServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchPacingStatsInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetSpeedMultiplierCall(
+    _ request: Beebium_SetSpeedMultiplierRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setSpeedMultiplier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetSpeedMultiplierInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -424,6 +548,42 @@ extension Beebium_SystemServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSetAdvertisementInterceptors() ?? []
     )
   }
+
+  internal func getPacingStats(
+    _ request: Beebium_GetPacingStatsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_PacingStats {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.getPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetPacingStatsInterceptors() ?? []
+    )
+  }
+
+  internal func watchPacingStats(
+    _ request: Beebium_WatchPacingStatsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncResponseStream<Beebium_PacingStats> {
+    return self.performAsyncServerStreamingCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.watchPacingStats.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeWatchPacingStatsInterceptors() ?? []
+    )
+  }
+
+  internal func setSpeedMultiplier(
+    _ request: Beebium_SetSpeedMultiplierRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Beebium_SetSpeedMultiplierResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Beebium_SystemServiceClientMetadata.Methods.setSpeedMultiplier.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetSpeedMultiplierInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -462,6 +622,15 @@ internal protocol Beebium_SystemServiceClientInterceptorFactoryProtocol: Sendabl
 
   /// - Returns: Interceptors to use when invoking 'setAdvertisement'.
   func makeSetAdvertisementInterceptors() -> [ClientInterceptor<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getPacingStats'.
+  func makeGetPacingStatsInterceptors() -> [ClientInterceptor<Beebium_GetPacingStatsRequest, Beebium_PacingStats>]
+
+  /// - Returns: Interceptors to use when invoking 'watchPacingStats'.
+  func makeWatchPacingStatsInterceptors() -> [ClientInterceptor<Beebium_WatchPacingStatsRequest, Beebium_PacingStats>]
+
+  /// - Returns: Interceptors to use when invoking 'setSpeedMultiplier'.
+  func makeSetSpeedMultiplierInterceptors() -> [ClientInterceptor<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse>]
 }
 
 internal enum Beebium_SystemServiceClientMetadata {
@@ -475,6 +644,9 @@ internal enum Beebium_SystemServiceClientMetadata {
       Beebium_SystemServiceClientMetadata.Methods.requestShutdown,
       Beebium_SystemServiceClientMetadata.Methods.getAdvertisementState,
       Beebium_SystemServiceClientMetadata.Methods.setAdvertisement,
+      Beebium_SystemServiceClientMetadata.Methods.getPacingStats,
+      Beebium_SystemServiceClientMetadata.Methods.watchPacingStats,
+      Beebium_SystemServiceClientMetadata.Methods.setSpeedMultiplier,
     ]
   )
 
@@ -514,6 +686,24 @@ internal enum Beebium_SystemServiceClientMetadata {
       path: "/beebium.SystemService/SetAdvertisement",
       type: GRPCCallType.unary
     )
+
+    internal static let getPacingStats = GRPCMethodDescriptor(
+      name: "GetPacingStats",
+      path: "/beebium.SystemService/GetPacingStats",
+      type: GRPCCallType.unary
+    )
+
+    internal static let watchPacingStats = GRPCMethodDescriptor(
+      name: "WatchPacingStats",
+      path: "/beebium.SystemService/WatchPacingStats",
+      type: GRPCCallType.serverStreaming
+    )
+
+    internal static let setSpeedMultiplier = GRPCMethodDescriptor(
+      name: "SetSpeedMultiplier",
+      path: "/beebium.SystemService/SetSpeedMultiplier",
+      type: GRPCCallType.unary
+    )
   }
 }
 
@@ -546,6 +736,15 @@ internal protocol Beebium_SystemServiceProvider: CallHandlerProvider {
 
   /// Enable or disable mDNS service advertisement at runtime
   func setAdvertisement(request: Beebium_SetAdvertisementRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetAdvertisementResponse>
+
+  /// Get current pacing statistics (PI controller state, timing, I/O skip counts).
+  func getPacingStats(request: Beebium_GetPacingStatsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_PacingStats>
+
+  /// Stream pacing statistics at a configurable interval.
+  func watchPacingStats(request: Beebium_WatchPacingStatsRequest, context: StreamingResponseCallContext<Beebium_PacingStats>) -> EventLoopFuture<GRPCStatus>
+
+  /// Set the runtime pacing speed multiplier.
+  func setSpeedMultiplier(request: Beebium_SetSpeedMultiplierRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Beebium_SetSpeedMultiplierResponse>
 }
 
 extension Beebium_SystemServiceProvider {
@@ -614,6 +813,33 @@ extension Beebium_SystemServiceProvider {
         userFunction: self.setAdvertisement(request:context:)
       )
 
+    case "GetPacingStats":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetPacingStatsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_PacingStats>(),
+        interceptors: self.interceptors?.makeGetPacingStatsInterceptors() ?? [],
+        userFunction: self.getPacingStats(request:context:)
+      )
+
+    case "WatchPacingStats":
+      return ServerStreamingServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchPacingStatsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_PacingStats>(),
+        interceptors: self.interceptors?.makeWatchPacingStatsInterceptors() ?? [],
+        userFunction: self.watchPacingStats(request:context:)
+      )
+
+    case "SetSpeedMultiplier":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetSpeedMultiplierRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetSpeedMultiplierResponse>(),
+        interceptors: self.interceptors?.makeSetSpeedMultiplierInterceptors() ?? [],
+        userFunction: self.setSpeedMultiplier(request:context:)
+      )
+
     default:
       return nil
     }
@@ -670,6 +896,25 @@ internal protocol Beebium_SystemServiceAsyncProvider: CallHandlerProvider, Senda
     request: Beebium_SetAdvertisementRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Beebium_SetAdvertisementResponse
+
+  /// Get current pacing statistics (PI controller state, timing, I/O skip counts).
+  func getPacingStats(
+    request: Beebium_GetPacingStatsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_PacingStats
+
+  /// Stream pacing statistics at a configurable interval.
+  func watchPacingStats(
+    request: Beebium_WatchPacingStatsRequest,
+    responseStream: GRPCAsyncResponseStreamWriter<Beebium_PacingStats>,
+    context: GRPCAsyncServerCallContext
+  ) async throws
+
+  /// Set the runtime pacing speed multiplier.
+  func setSpeedMultiplier(
+    request: Beebium_SetSpeedMultiplierRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Beebium_SetSpeedMultiplierResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -745,6 +990,33 @@ extension Beebium_SystemServiceAsyncProvider {
         wrapping: { try await self.setAdvertisement(request: $0, context: $1) }
       )
 
+    case "GetPacingStats":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_GetPacingStatsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_PacingStats>(),
+        interceptors: self.interceptors?.makeGetPacingStatsInterceptors() ?? [],
+        wrapping: { try await self.getPacingStats(request: $0, context: $1) }
+      )
+
+    case "WatchPacingStats":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_WatchPacingStatsRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_PacingStats>(),
+        interceptors: self.interceptors?.makeWatchPacingStatsInterceptors() ?? [],
+        wrapping: { try await self.watchPacingStats(request: $0, responseStream: $1, context: $2) }
+      )
+
+    case "SetSpeedMultiplier":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Beebium_SetSpeedMultiplierRequest>(),
+        responseSerializer: ProtobufSerializer<Beebium_SetSpeedMultiplierResponse>(),
+        interceptors: self.interceptors?.makeSetSpeedMultiplierInterceptors() ?? [],
+        wrapping: { try await self.setSpeedMultiplier(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -776,6 +1048,18 @@ internal protocol Beebium_SystemServiceServerInterceptorFactoryProtocol: Sendabl
   /// - Returns: Interceptors to use when handling 'setAdvertisement'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSetAdvertisementInterceptors() -> [ServerInterceptor<Beebium_SetAdvertisementRequest, Beebium_SetAdvertisementResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getPacingStats'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetPacingStatsInterceptors() -> [ServerInterceptor<Beebium_GetPacingStatsRequest, Beebium_PacingStats>]
+
+  /// - Returns: Interceptors to use when handling 'watchPacingStats'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeWatchPacingStatsInterceptors() -> [ServerInterceptor<Beebium_WatchPacingStatsRequest, Beebium_PacingStats>]
+
+  /// - Returns: Interceptors to use when handling 'setSpeedMultiplier'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetSpeedMultiplierInterceptors() -> [ServerInterceptor<Beebium_SetSpeedMultiplierRequest, Beebium_SetSpeedMultiplierResponse>]
 }
 
 internal enum Beebium_SystemServiceServerMetadata {
@@ -789,6 +1073,9 @@ internal enum Beebium_SystemServiceServerMetadata {
       Beebium_SystemServiceServerMetadata.Methods.requestShutdown,
       Beebium_SystemServiceServerMetadata.Methods.getAdvertisementState,
       Beebium_SystemServiceServerMetadata.Methods.setAdvertisement,
+      Beebium_SystemServiceServerMetadata.Methods.getPacingStats,
+      Beebium_SystemServiceServerMetadata.Methods.watchPacingStats,
+      Beebium_SystemServiceServerMetadata.Methods.setSpeedMultiplier,
     ]
   )
 
@@ -826,6 +1113,24 @@ internal enum Beebium_SystemServiceServerMetadata {
     internal static let setAdvertisement = GRPCMethodDescriptor(
       name: "SetAdvertisement",
       path: "/beebium.SystemService/SetAdvertisement",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getPacingStats = GRPCMethodDescriptor(
+      name: "GetPacingStats",
+      path: "/beebium.SystemService/GetPacingStats",
+      type: GRPCCallType.unary
+    )
+
+    internal static let watchPacingStats = GRPCMethodDescriptor(
+      name: "WatchPacingStats",
+      path: "/beebium.SystemService/WatchPacingStats",
+      type: GRPCCallType.serverStreaming
+    )
+
+    internal static let setSpeedMultiplier = GRPCMethodDescriptor(
+      name: "SetSpeedMultiplier",
+      path: "/beebium.SystemService/SetSpeedMultiplier",
       type: GRPCCallType.unary
     )
   }

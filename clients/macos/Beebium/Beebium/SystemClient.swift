@@ -12,10 +12,13 @@
 
 import Foundation
 import GRPC
+import os
 
 /// Client for querying system/machine information from beebium-server via gRPC
 @MainActor
 final class SystemClient: ObservableObject, Disconnectable {
+    private static let log = Logger(subsystem: "com.beebium", category: "protocol")
+
     // MARK: - Machine Identity
 
     /// Machine UUID (RFC 4122 v4), stable for machine lifetime
@@ -45,6 +48,13 @@ final class SystemClient: ObservableObject, Disconnectable {
 
     /// Error message if loading failed
     @Published private(set) var errorMessage: String?
+
+    /// Set when the connected server's protocol fingerprint does not match the
+    /// fingerprint this app was built against -- i.e. the server is a different
+    /// (often stale) build. The client and server protocols evolve together, so
+    /// a mismatch means RPCs may be missing or behave differently; surface it
+    /// loudly rather than letting features silently misbehave. Drives a UI alert.
+    @Published var protocolMismatchMessage: String?
 
     private var client: Beebium_SystemServiceNIOClient?
     private var provenanceUUID: String?
@@ -202,6 +212,7 @@ final class SystemClient: ObservableObject, Disconnectable {
                 let response = try await client.getSystemInfo(request).response.get()
 
                 await MainActor.run {
+                    self?.checkProtocolFingerprint(response.protocolFingerprint)
                     self?.updateIdentity(response.identity)
                     self?.clientCount = Int(response.connections.clientCount)
                     self?.isLoaded = true
@@ -222,5 +233,24 @@ final class SystemClient: ObservableObject, Disconnectable {
         machineName = identity.name
         machineType = identity.modelType
         machineDisplayName = identity.modelName
+    }
+
+    /// Compare the server's protocol fingerprint against this app's and surface
+    /// any mismatch loudly. An empty server fingerprint means a server too old
+    /// to report one, which is also a mismatch.
+    private func checkProtocolFingerprint(_ serverFingerprint: String) {
+        guard serverFingerprint != ProtocolFingerprint.value else {
+            protocolMismatchMessage = nil
+            return
+        }
+        let reported = serverFingerprint.isEmpty ? "(none reported)" : serverFingerprint
+        Self.log.fault(
+            "protocol fingerprint mismatch: server=\(reported, privacy: .public) app=\(ProtocolFingerprint.value, privacy: .public)")
+        protocolMismatchMessage = """
+            The connected server is a different build from this app \
+            (protocol fingerprint \(reported) vs \(ProtocolFingerprint.value)). \
+            Rebuild the bundled server so the two match -- e.g. run \
+            scripts/build-macos-app.sh. Until then some features may not work.
+            """
     }
 }

@@ -217,6 +217,20 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Beebium")
+        .alert(
+            "Server / app version mismatch",
+            isPresented: Binding(
+                get: { systemClient.protocolMismatchMessage != nil },
+                set: { presented in
+                    if !presented { systemClient.protocolMismatchMessage = nil }
+                }
+            ),
+            presenting: systemClient.protocolMismatchMessage
+        ) { _ in
+            Button("OK", role: .cancel) { systemClient.protocolMismatchMessage = nil }
+        } message: { message in
+            Text(message)
+        }
         .focusedValue(\.sidebarMode, $sidebarMode)
         .focusedValue(\.showSidebar, $showSidebar)
         .focusedValue(\.showStatusBar, $showStatusBar)

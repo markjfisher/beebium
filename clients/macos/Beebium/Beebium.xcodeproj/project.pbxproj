@@ -139,6 +139,7 @@
 		EB57600D1B017B3105D1F79D /* system.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C4007152A43F9E94FB30A5 /* system.pb.swift */; };
 		EB7386AD783AEBB8DCABC15A /* keyboard.proto in Resources */ = {isa = PBXBuildFile; fileRef = DFB1414298AE8F8261138293 /* keyboard.proto */; };
 		EE2E16B800D75FA4C460895A /* ExtensionUiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3295FC427F5DC583E764C83B /* ExtensionUiClient.swift */; };
+		EE33BF0A4DE7E404A3288E43 /* ProtocolFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BEAA83FA16284B08EE75DC /* ProtocolFingerprint.swift */; };
 		EEC1DCADCCF584AB8BC8DD01 /* ConnectionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0380D979784116B4110F8904 /* ConnectionRegistry.swift */; };
 		EED3FE1B2C84F875665FC6FE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C5792BABD709C954B706793 /* Metal.framework */; };
 		EF8362333B41FBAA43E048B0 /* disc.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92BF9F9BD423BAC0EBD291A4 /* disc.pb.swift */; };
@@ -264,6 +265,7 @@
 		A16BD17340EC98E2C5EF1127 /* audio.proto */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.protobuf; path = audio.proto; sourceTree = "<group>"; };
 		A2D7FC4E0D4B86900F8E309A /* EmulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorView.swift; sourceTree = "<group>"; };
 		A32A705682AF714B2B54471F /* aun.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aun.grpc.swift; sourceTree = "<group>"; };
+		A3BEAA83FA16284B08EE75DC /* ProtocolFingerprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFingerprint.swift; sourceTree = "<group>"; };
 		A44DA8D133CDD247497229CA /* disc.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = disc.grpc.swift; sourceTree = "<group>"; };
 		A7386122C0E5009AE250FECD /* SidebarModeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarModeContent.swift; sourceTree = "<group>"; };
 		AF6E0FC8FC2E9B1DD5775CD0 /* audio.grpc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = audio.grpc.swift; sourceTree = "<group>"; };
@@ -514,6 +516,7 @@
 				757B84FAA1D1A37B1ABEB0A0 /* PeripheralsClient.swift */,
 				F4F91689B09CACC55C956BA2 /* PeripheralsModeView.swift */,
 				5B4E1CC9ABAFFA92C4A74F5B /* PeripheralTree.swift */,
+				A3BEAA83FA16284B08EE75DC /* ProtocolFingerprint.swift */,
 				B5B19F4DD5A21B41C2CF9630 /* RecentConnections.swift */,
 				60AB5DB41408CC531369DC47 /* SerialClient.swift */,
 				3C410D45C0D56B52B7405B54 /* Shaders.metal */,
@@ -782,6 +785,7 @@
 				394059FE9C2A8CC58886CC50 /* PeripheralsModeView.swift in Sources */,
 				D5072BCBDC5F2D2DBAFFAF87 /* PixelShape.swift in Sources */,
 				D7BE097905B0FE46BD611CB5 /* PresetManager.swift in Sources */,
+				EE33BF0A4DE7E404A3288E43 /* ProtocolFingerprint.swift in Sources */,
 				F369818B03931A54C795F6D6 /* RecentConnections.swift in Sources */,
 				BA7685640D333A974EF6D1F6 /* ResettableControls.swift in Sources */,
 				1C6C1476609292CEC12F9374 /* RomHeaderInfo.swift in Sources */,
