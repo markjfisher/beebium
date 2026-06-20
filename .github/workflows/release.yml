@@ -1,0 +1,67 @@
+# Assemble a server release when a version tag is pushed.
+#
+# The release process is: `uvx bump-my-version bump <part>` (edits every
+# embedded version, commits, tags v<version>) then `git push --follow-tags`.
+# Pushing the tag fires this workflow, which:
+#
+#   1. builds the self-contained Linux .deb + .tar.gz (both arches),
+#   2. builds, tests and audits the macOS Homebrew formula (both arches),
+#   3. creates a DRAFT GitHub Release with the Linux artifacts attached.
+#
+# The release is left as a DRAFT on purpose: nothing is published until you
+# review it and click publish. The macOS server is delivered via the Homebrew
+# tap, which is updated separately by running
+# `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` once the release
+# tarball exists, then committing and pushing the tap.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    uses: ./.github/workflows/linux-packages.yml
+
+  macos-formula:
+    uses: ./.github/workflows/macos-package.yml
+
+  release:
+    name: draft GitHub Release
+    needs: [linux, macos-formula]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: _artifacts
+          merge-multiple: true
+
+      - name: List collected artifacts
+        run: ls -l _artifacts
+
+      - name: Create draft release with Linux artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: _artifacts/*
+          body: |
+            Self-contained Linux server bundles (`.deb` for Debian/Ubuntu/Raspberry Pi OS,
+            `.tar.gz` for other distros), built for `amd64` and `arm64`.
+
+            The macOS server is installed from the Homebrew tap. After this release
+            tarball is published, update the tap from a checkout of the repository:
+
+            ```
+            packaging/homebrew/sync-tap.sh <version> <homebrew-beebium-checkout>
+            ```
+            (pass the bare version, e.g. `0.1.0`, not the `v`-prefixed tag.)
+
+            then commit and push the tap. The Python and TypeScript clients are
+            published to PyPI and npm separately (later phases).

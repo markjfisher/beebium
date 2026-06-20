@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# Build, install, test and audit the beebium-server Homebrew formula against the
+# current working tree (not a published release). Used both for local validation
+# and by the macOS packaging CI, so the two run identical steps.
+#
+# It packages the working tree into a GitHub-style source tarball, pins a
+# throwaway copy of the canonical formula at that tarball, installs it into a
+# local tap with --build-from-source, then runs `brew test` and
+# `brew audit --strict`.
+#
+# Usage: packaging/homebrew/test-formula.sh
+set -euo pipefail
+
+here_dirpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_dirpath="$(cd "${here_dirpath}/../.." && pwd)"
+formula_filepath="${here_dirpath}/beebium-server.rb"
+
+version="$(grep -E '^current_version' "${repo_dirpath}/.bumpversion.toml" \
+  | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+echo "Validating beebium-server formula for version ${version}"
+
+work_dirpath="$(mktemp -d -t beebium-formula.XXXXXX)"
+trap 'rm -rf "${work_dirpath}"' EXIT
+
+# GitHub-style source tarball of the working tree (tracked files, including any
+# uncommitted edits via `git stash create`), rooted at beebium-<version>/.
+tree_ish="$(cd "${repo_dirpath}" && git stash create || true)"
+tree_ish="${tree_ish:-HEAD}"
+tarball_filepath="${work_dirpath}/beebium-${version}.tar.gz"
+git -C "${repo_dirpath}" archive --format=tar.gz \
+  --prefix="beebium-${version}/" -o "${tarball_filepath}" "${tree_ish}"
+sha256="$(shasum -a 256 "${tarball_filepath}" | awk '{print $1}')"
+
+# Pin a throwaway formula at the local tarball.
+tap_repo_dirpath="$(brew --repository)/Library/Taps/beebium/homebrew-formula-test"
+mkdir -p "${tap_repo_dirpath}/Formula"
+sed \
+  -e "s|^  url .*|  url \"file://${tarball_filepath}\"|" \
+  -e "s|^  sha256 .*|  sha256 \"${sha256}\"|" \
+  "${formula_filepath}" > "${tap_repo_dirpath}/Formula/beebium-server.rb"
+
+cleanup() {
+  brew uninstall --force beebium-server >/dev/null 2>&1 || true
+  brew untap beebium/formula-test >/dev/null 2>&1 || true
+  rm -rf "${work_dirpath}"
+}
+trap cleanup EXIT
+
+echo "::group::brew install --build-from-source"
+brew install --build-from-source beebium/formula-test/beebium-server
+echo "::endgroup::"
+
+echo "::group::brew test"
+brew test beebium/formula-test/beebium-server
+echo "::endgroup::"
+
+echo "::group::brew audit --strict"
+brew audit --strict beebium/formula-test/beebium-server
+echo "::endgroup::"
+
+# The four servers must be on PATH via the keg's bin symlinks, and discovery
+# must resolve plugins out of the installed libexec tree.
+echo "::group::PATH + discovery check"
+ext_out="$(beebium-model-b list-extensions)"
+for cli in host-serial aun scsi-hdd ip232-serial rfc2217-client-serial \
+           rfc2217-server-serial rpc-serial loopback-serial piconet \
+           acorn-scsi acorn-rtc; do
+  echo "${ext_out}" | grep -q "^${cli}	" || {
+    echo "MISSING extension: ${cli}" >&2
+    exit 1
+  }
+done
+echo "all expected extensions discovered"
+echo "::endgroup::"
+
+echo "Formula validation PASSED."

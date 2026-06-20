@@ -14,7 +14,7 @@ the macOS `.app`, see [macOS App Packaging](macos-app-packaging.md).
 | Component | Channel | Status |
 |-----------|---------|--------|
 | Server (headless core) | Self-contained `.deb` (apt) + `.tar.gz` (everything else) | **Done** (Linux, both arches) |
-| Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | Planned |
+| Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | **Done** (formula built/tested/audited, both arches); tap publish is manual |
 | Python client | PyPI (`beebium`) | Planned |
 | TypeScript client | npm (`beebium`) | Planned |
 
@@ -58,6 +58,114 @@ Raspberry Pi 4 / 400 (Cortex-A72, baseline ARMv8-A): the build uses default
 `aarch64` codegen with no `-mcpu` tuning, so one `arm64` bundle runs across
 Pi 4 / 400 / 5. Raspberry Pi support requires a 64-bit OS image (Pi OS 64-bit or
 Ubuntu for Pi); the 32-bit default image is not supported.
+
+## The macOS Homebrew formula
+
+The macOS server is distributed through a Homebrew tap
+(`rob-smallshire/homebrew-beebium`, formula `beebium-server`). Unlike the Linux
+bundle, it is a **source build against Homebrew's own grpc/protobuf/abseil** —
+the idiomatic Homebrew approach — rather than a static bundle.
+
+### Tap layout and naming
+
+A tap is a single GitHub repo (`homebrew-<name>`; the `homebrew-` prefix is
+stripped in `brew` commands) that can hold any number of formulae and casks. One
+repo — `rob-smallshire/homebrew-beebium`, tapped as `rob-smallshire/beebium` —
+holds **everything Beebium ships through Homebrew**; separate repos are not
+needed:
+
+```
+homebrew-beebium/
+├── Formula/
+│   └── beebium-server.rb     # headless backend (CLI, build-from-source)
+└── Casks/
+    └── beebium-gui.rb        # macOS GUI app (.app bundle, future, out of scope now)
+```
+
+The packages are installed independently:
+
+```
+brew install rob-smallshire/beebium/beebium-server   # backend only
+brew install --cask rob-smallshire/beebium/beebium-gui   # frontend only (future)
+```
+
+**Naming decision:** the backend is `beebium-server` and the macOS GUI will be
+`beebium-gui`; the bare `beebium` token is left unclaimed. The names are
+deliberately symmetric and descriptive so neither component squats the project's
+bare name — consistent with Beebium's headless-core identity, where the GUI is
+one of several frontends rather than "the" application. (A cask token
+conventionally mirrors an app's display name, which would pull the GUI toward a
+bare `beebium`; that is rejected here precisely because casks are macOS-only and
+the bare name should not resolve to one platform's frontend.) The only hard
+Homebrew constraint is that a formula and a cask in the same tap must not share a
+token, or `brew install <token>` becomes an ambiguous formula-vs-cask choice;
+distinct `-server`/`-gui` tokens avoid that entirely. The macOS app currently
+embeds its own server binaries; if that changes, the cask can
+`depends_on formula: "rob-smallshire/beebium/beebium-server"` while staying
+separately installable.
+
+### Why source-build, not static
+
+Static-linking gRPC was historically forced on macOS by the "duplicate gRPC
+runtime" crash: when both the server and a dlopened plugin embedded gRPC/abseil,
+serving a plugin-hosted service segfaulted in `ExecCtx::Run`. Since the
+**ExtensionRpc channel** landed, plugins no longer host gRPC services — they link
+only `libbeebium_extension_api` and the shared `libprotobuf`, so only the core
+links gRPC. The duplicate-runtime hazard is gone, and the formula can simply
+`depends_on "grpc"` and friends and build from source.
+
+The build needs no special toolchain: `CMakeLists.txt` already prefers CONFIG-mode
+`find_package(Protobuf)` / `find_package(gRPC)` (Homebrew's), and
+`nlohmann_json` is resolved the same way (`find_package(nlohmann_json CONFIG)`),
+falling back to the pinned `FetchContent` copy only when no package is installed
+— Homebrew's build sandbox forbids `FetchContent` network access, so the packaged
+`nlohmann-json` is used there.
+
+### Accepted gRPC-skew trade-off
+
+A Homebrew-installed server links Homebrew's gRPC, which floats with the tap's
+`grpc` formula, while a client may be installed independently (uv/pip, npm) or on
+a different host/OS entirely. That skew is acceptable: gRPC keeps the wire
+protocol cross-version compatible, and the connect-time **protocol-fingerprint
+handshake** (see [Versioning and Protocol
+Compatibility](versioning-and-compatibility.md)) rejects any *schema* mismatch.
+Server and client version numbers need not match across the wire.
+
+### Keg layout
+
+The formula installs the whole relocatable tree under `libexec` and symlinks the
+four servers into `bin`, so only the servers land on the user's `PATH` (not
+`bin/extensions/`):
+
+```
+<keg>/
+├── bin/{beebium-model-b, ...}            # symlinks -> ../libexec/bin/<server>
+└── libexec/
+    ├── bin/{beebium-model-b, ...}        # the real binaries
+    ├── bin/extensions/<name>/{<plugin>.dylib, manifest.json}
+    ├── lib/{libbeebium_extension_api.dylib, libbeebium_extension_ui_proto.dylib}
+    └── share/beebium/{roms,presets}/
+```
+
+Discovery follows the `bin` symlink to the real binary's on-disk location (via
+`_NSGetExecutablePath`), then resolves extensions, the ABI dylibs (via the
+`@loader_path/../lib` install RPATH), ROMs and presets relative to it — the same
+mechanism the Linux `/usr/bin` symlinks rely on.
+
+### Files and validation
+
+- `packaging/homebrew/beebium-server.rb` — the canonical formula, kept in the
+  monorepo for review and CI.
+- `packaging/homebrew/test-formula.sh` — packages the working tree into a
+  GitHub-style source tarball, pins a throwaway formula at it, then
+  `brew install --build-from-source` + `brew test` + `brew audit --strict` +
+  an extension-discovery check. Run locally or in CI; both run identical steps.
+- `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` — fetches the
+  released source tarball, computes its `sha256`, and writes the pinned formula
+  into the tap's `Formula/` for the maintainer to commit and push.
+
+Publishing the tap is deliberately manual: author + validate here, then push the
+formula to `rob-smallshire/homebrew-beebium` to go live.
 
 ## Install layout
 
@@ -153,9 +261,17 @@ produced packages in clean `debian:bookworm` (`.deb`, with the Python
 interaction smoke) and Arch (`archlinux` for x86_64, Arch Linux ARM for arm64)
 containers.
 
-A future version-bump/tag flow (see
-[Versioning and Protocol Compatibility](versioning-and-compatibility.md)) can
-invoke this workflow on a release tag and publish the artifacts.
+`.github/workflows/macos-package.yml` builds, installs, tests and audits the
+Homebrew formula on `macos-14` (arm64) and `macos-13` (x86_64) by running
+`packaging/homebrew/test-formula.sh`. The source build is cheap (~1 min), so it
+runs on PRs that touch the formula or the build system, plus on demand.
+
+`.github/workflows/release.yml` ties these together: pushing a `v*` tag (the
+final step of the `bump-my-version` release) builds the Linux bundles, validates
+the macOS formula, and creates a **draft** GitHub Release with the Linux `.deb`
+and `.tar.gz` attached. The draft is published manually; the Homebrew tap is then
+updated with `packaging/homebrew/sync-tap.sh`. Both `linux-packages.yml` and
+`macos-package.yml` expose `workflow_call` so the release flow reuses them.
 
 ## Status
 
@@ -165,10 +281,16 @@ invoke this workflow on a release tag and publish the artifacts.
   `.tar.gz`, both validated by install-in-clean-distro on Debian and Arch
   (x86_64 + Arch Linux ARM).
 - The manual CI workflow that builds and smoke-tests both.
+- macOS Homebrew formula (`beebium-server`): source build against Homebrew's
+  grpc/protobuf, validated locally and in CI on both arches
+  (`brew install`/`test`/`audit` + extension discovery + a Python-client
+  fingerprint-handshake smoke).
+- A release-tag workflow (`release.yml`) that builds Linux bundles, validates the
+  macOS formula, and drafts a GitHub Release with the Linux artifacts attached.
 
 **Remaining:**
-- macOS Homebrew tap (`rob-smallshire/homebrew-beebium`, formula `beebium-server`).
+- Publish the tap: create `rob-smallshire/homebrew-beebium` and push the formula
+  (the build/test/audit is done; only the external publish is manual).
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
 - Publishing the Python client to PyPI and the TypeScript client to npm.
-- Wiring a release-tag trigger to build and publish artifacts automatically.
 - On-real-hardware validation on a 64-bit Raspberry Pi 4 / 400.

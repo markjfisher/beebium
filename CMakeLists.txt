@@ -110,15 +110,22 @@ endif()
 option(BEEBIUM_BUILD_SERVICE "Build gRPC service layer" ON)
 option(BEEBIUM_BUILD_SERVER "Build beebium-server executable" ON)
 
-# nlohmann-json for preset file parsing (header-only, fetched via FetchContent)
-include(FetchContent)
-FetchContent_Declare(
-    nlohmann_json
-    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
-    URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
+# nlohmann-json for preset file parsing (header-only). Prefer an installed copy
+# (Homebrew's nlohmann-json, a distro package, or vcpkg) via find_package, and
+# fall back to fetching a pinned release only when none is present. Homebrew's
+# build sandbox forbids FetchContent network access, so on that path the
+# packaged copy must be found. Both paths expose nlohmann_json::nlohmann_json.
+find_package(nlohmann_json 3.11 CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 if(BEEBIUM_BUILD_SERVICE)
     # Find gRPC and Protobuf

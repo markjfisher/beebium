@@ -1,0 +1,44 @@
+# Build, install, test and audit the beebium-server Homebrew formula on macOS.
+#
+# The formula is a source build against Homebrew's own grpc/protobuf/abseil, so
+# this is cheap (~1 min per runner) -- it runs on PRs that touch the formula or
+# the build system, on demand, and as a reusable job in the release flow.
+#
+# Covers both architectures: macos-14 is arm64 (Apple Silicon), macos-13 is
+# x86_64 (Intel).
+
+name: macOS package
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    paths:
+      - "packaging/homebrew/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/server/CMakeLists.txt"
+      - ".github/workflows/macos-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    name: formula (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x86_64
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build, install, test and audit the formula
+        run: packaging/homebrew/test-formula.sh
