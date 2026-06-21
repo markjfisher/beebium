@@ -771,6 +771,72 @@ auto disc = MemoryDiscImage::create_ssd();
 machine.memory().disc_drive_0.insert(std::move(disc));
 ```
 
+## Write-Back and Durability
+
+How guest writes reach the host image file differs deliberately between the
+floppy (FDD) and hard-disc (HDD) subsystems. The two models are not the same,
+and the difference is intentional.
+
+### Floppy (FDD) write-back
+
+Floppy images are decoded at the pulse level: a write lands in an in-memory
+pulse track and sets a per-track dirty flag (`DiscTrack`). Nothing touches the
+host file at that point. Dirty tracks are written back to the host `.ssd`/`.dsd`
+through a format `write_track_callback` (`SsdFormatHandler`/`AdfsFormatHandler`/
+`HfeFormatHandler`) on these triggers:
+
+- **Head steps off a track** -- `DiscDrive::flush_before_leaving_track` flushes
+  the track being left, so sustained multi-track activity persists continuously.
+- **Write inactivity** -- the WD1770 flushes all dirty tracks after a short
+  idle period with no writes (`FLUSH_IDLE_TICKS`, ~250 ms at 1 MHz). This is the
+  prompt path for the final track, and it is the one place that also calls
+  `platform::sync_file_to_disk` (`fsync`), so a settled save is durable against
+  a crash. It is deliberately decoupled from motor spin-down (~2 s), because
+  motor-off also gates eject quiescence and flushing there would race the eject
+  path.
+- **Server shutdown** -- `flush_disc_drives` flushes both drives after the
+  emulation loop has stopped, as a backstop for quitting just after a write.
+- **Eject** -- `complete_eject` flushes all dirty tracks before the disc leaves.
+
+The in-memory dirty layer is why this machinery is needed: without it, a track
+written and then stepped away from would sit unflushed in process memory and be
+invisible to external tools. (This was a real bug; see the
+`integration_tests/dfs-writeback` suite, which verifies the host image with
+`oaknut-dfs` out of process.)
+
+### Hard disc (HDD) write-through
+
+The SCSI hard disc has **no in-memory image buffer and no dirty-tracking**.
+`HardDiskImage` holds an open `FILE*`; each SCSI WRITE block is written straight
+through with `fseek` + `fwrite` + `fflush` per sector (`HardDiskImage::write_sector`).
+By the time a WRITE command returns, the data is already in the OS page cache,
+so external programs on the same host see it immediately. The FDD's
+"buffered-in-memory, may not be flushed" failure mode therefore **cannot occur**
+for the HDD, and the HDD needs none of the flush triggers above.
+
+### Deliberate variance: HDD is OS-cache durable, not `fsync` durable
+
+The HDD calls `fflush` (data to the OS) but **not** `fsync` (data to the storage
+device); the FDD's inactivity flush does call `fsync`. This asymmetry is a
+deliberate decision, not an oversight:
+
+- The HDD has no pending-write-in-process-memory risk to begin with, so the
+  reason the FDD needs prompt flushing simply does not apply.
+- `fflush` after every sector already gives the property that matters in
+  practice -- writes are immediately visible to other processes and survive a
+  process crash or clean exit.
+- ADFS/SCSI generates far more, larger and more frequent sector writes than a
+  DFS floppy, so per-sector `fsync` would be costly for no benefit to the
+  reported failure mode (stale data seen by external tools).
+
+The accepted trade-off is that HDD writes are **not** durable against host
+power-loss / kernel panic, only against process and emulator failure. If that
+ever needs to change, the right shape is a debounced `fsync` on the SCSI
+device's tick (mirroring the FDD's inactivity flush) rather than a per-sector
+`fsync`; note the HDD currently has no teardown hook reaching the image, as
+`ScsiHardDiscExtension::shutdown()` transfers ownership to the SCSI target
+registry.
+
 ## Implementation Status
 
 ### Complete

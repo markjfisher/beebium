@@ -148,6 +148,12 @@ bool HardDiskImage::write_sector(const uint8_t* src, uint32_t lba) {
     }
 
     size_t written = std::fwrite(src, 1, scsi::ACORN_BLOCK_SIZE, dat_file_);
+    // Write-through: fflush pushes each block to the OS page cache so it is
+    // immediately visible to other processes and survives an emulator crash.
+    // We deliberately do NOT fsync here (OS-cache durable, not device durable):
+    // unlike the floppy path there is no in-memory dirty layer to lose, and
+    // per-sector fsync would be costly given HDD write volume. See the
+    // "Write-Back and Durability" section of docs/disc-subsystem.md.
     std::fflush(dat_file_);
     return written == scsi::ACORN_BLOCK_SIZE;
 }
