@@ -23,6 +23,61 @@ channels (system package manager for the server, language ecosystems for the
 clients). A user installs the server one way and `pip install beebium` /
 `npm install beebium` separately; that is expected and fine.
 
+## Repositories and where things live
+
+Packaging now spans **two repositories**. Knowing which is which avoids editing
+the wrong copy of the formula.
+
+### The monorepo — `rob-smallshire/beebium`
+
+This repo (where you are reading) holds the source and **all the packaging
+inputs**. Nothing here is the published Homebrew formula; this is where packaging
+is authored and tested.
+
+```
+beebium/
+├── CMakeLists.txt              # install rules + CPack feed the Linux packages
+├── cmake/BeebiumPackaging.cmake# CPack config (.deb + .tar.gz)
+├── docker/linux-bundle/        # static-bundle build (the Linux .deb/.tar.gz)
+├── scripts/smoke-installed-tree.sh
+├── packaging/
+│   ├── debian/{postinst,prerm} # .deb maintainer scripts
+│   ├── smoke/test_smoke.py     # client-drives-installed-server interaction smoke
+│   └── homebrew/
+│       ├── beebium-server.rb   # CANONICAL formula (source of truth, reviewed/CI'd)
+│       ├── test-formula.sh     # build/install/test/audit against the working tree
+│       └── sync-tap.sh         # pin a release into the tap (below)
+└── .github/workflows/
+    ├── linux-packages.yml      # build + smoke the Linux packages
+    ├── macos-package.yml       # build/test/audit the Homebrew formula
+    └── release.yml             # tag -> Linux bundles + macOS formula + draft Release
+```
+
+### The tap — `rob-smallshire/homebrew-beebium`
+
+A **separate GitHub repo** that Homebrew clones when a user runs
+`brew tap rob-smallshire/beebium`. It holds the **published** formula and the tap
+README. Locally it lives under the Homebrew prefix, not beside this repo:
+
+```
+/opt/homebrew/Library/Taps/rob-smallshire/homebrew-beebium/
+├── Formula/beebium-server.rb   # the PUBLISHED formula users install
+├── README.md                   # tap landing page (install instructions, status)
+└── .github/workflows/          # bottle-building CI (brew test-bot / pr-pull)
+```
+
+### How the two formulae stay in sync
+
+`packaging/homebrew/beebium-server.rb` (monorepo) is the source of truth;
+`Formula/beebium-server.rb` (tap) is a published copy pinned to a release. They
+are connected by `packaging/homebrew/sync-tap.sh <version> <tap-checkout>`, which
+fetches the release source tarball, computes its `sha256`, and writes the pinned
+formula into the tap's `Formula/`. **Edit the canonical copy in the monorepo**,
+validate it (`packaging/homebrew/test-formula.sh`), then run `sync-tap.sh` to push
+the change to the tap — never hand-edit the tap's formula. (The `head` spec in the
+canonical formula means `brew install --HEAD beebium-server` builds from the
+monorepo's `master` directly, independent of any pinned release.)
+
 ## The self-contained static bundle (Linux)
 
 The Linux server is shipped as a **self-contained, statically linked bundle**:
@@ -167,6 +222,36 @@ mechanism the Linux `/usr/bin` symlinks rely on.
 Publishing the tap is deliberately manual: author + validate here, then push the
 formula to `rob-smallshire/homebrew-beebium` to go live.
 
+### Current state and remaining macOS work
+
+The tap (`rob-smallshire/homebrew-beebium`) exists and carries the formula, and a
+full end-to-end install has been validated from the real tap:
+`brew install --HEAD rob-smallshire/beebium/beebium-server` clones `master`,
+builds, puts the four servers on `PATH`, and discovers all extensions. So the
+**`--HEAD` (build-from-`master`) path works today.**
+
+Remaining before a normal `brew install beebium-server` works, in order:
+
+1. **Cut a tagged release.** The formula's `url`/`sha256` point at a
+   `v<version>` source tarball that does not exist yet; `sha256` is a placeholder.
+   Tag a release (`git tag v0.1.0 && git push --follow-tags`, or `bump-my-version`),
+   then run `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` to fetch the
+   tarball, compute the real checksum, and write the pinned formula into the tap;
+   commit and push the tap. Only then does the stable (non-`--HEAD`) formula
+   resolve.
+2. **Wire bottles.** Until bottles exist, every `brew install` compiles
+   beebium-server from source (~1 min locally, a few minutes on slower runners) —
+   acceptable for dev, undesirable at CI scale. The `brew tap-new` scaffolding
+   already added a bottle-building workflow to the tap; once `v<version>` is
+   tagged, enable it (PR -> `brew test-bot` builds bottles per macOS
+   runner/arch -> `pr-pull` uploads them and adds the `bottle do` block to the
+   formula). After that, installs pour a pre-built binary and only unsupported
+   macOS versions (or `--build-from-source`) compile.
+
+A self-contained macOS `.tar.gz` (Homebrew-free, for macOS CI that wants the same
+download-and-run experience as Linux) is a possible later addition; it needs the
+vcpkg-static build path rather than the Homebrew-deps build.
+
 ## Install layout
 
 Both package formats lay down the same relocatable tree under `/opt/beebium`,
@@ -287,10 +372,18 @@ updated with `packaging/homebrew/sync-tap.sh`. Both `linux-packages.yml` and
   fingerprint-handshake smoke).
 - A release-tag workflow (`release.yml`) that builds Linux bundles, validates the
   macOS formula, and drafts a GitHub Release with the Linux artifacts attached.
+- The tap `rob-smallshire/homebrew-beebium` is live with the formula;
+  `brew install --HEAD beebium-server` validated end-to-end from the real tap.
 
-**Remaining:**
-- Publish the tap: create `rob-smallshire/homebrew-beebium` and push the formula
-  (the build/test/audit is done; only the external publish is manual).
+**Remaining (macOS Homebrew):**
+- Cut a tagged release and pin the checksum into the tap
+  (`sync-tap.sh`) so plain `brew install beebium-server` works, not just `--HEAD`.
+- Wire the tap's bottle-building workflow so installs pour a pre-built binary
+  instead of compiling (matters at CI scale).
+- Possibly add a Homebrew-free self-contained macOS `.tar.gz` for macOS CI
+  (needs the vcpkg-static build path).
+
+**Remaining (other):**
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
 - Publishing the Python client to PyPI and the TypeScript client to npm.
 - On-real-hardware validation on a 64-bit Raspberry Pi 4 / 400.
