@@ -1330,6 +1330,21 @@ inline std::optional<int> load_single_disc(DiscDrive& drive, int drive_num,
     return std::nullopt;
 }
 
+// Flush any pending disc writes to the host image files.
+//
+// In normal operation each drive flushes itself when the head steps off a
+// dirty track and on the controller's short write-inactivity timer. This is
+// the shutdown backstop: if the server is asked to stop within that brief
+// window after a write, flush whatever remains so no saved data is lost on
+// exit.
+template<typename MachineType>
+void flush_disc_drives(MachineType& machine) {
+    if constexpr (requires { machine.state().memory.disc_drive_0; }) {
+        machine.state().memory.disc_drive_0.flush_if_dirty();
+        machine.state().memory.disc_drive_1.flush_if_dirty();
+    }
+}
+
 // Load disc images into floppy drives.
 // Returns an exit code on error, or std::nullopt on success.
 template<typename MachineType>
@@ -2074,6 +2089,10 @@ public:
             run_emulation_loop(machine, server, config);
 
             std::cout << "\nShutting down...\n";
+
+            // Emulation has stopped (the loop ran on this thread), so this
+            // cannot race the in-emulation flush. Persist any remaining writes.
+            flush_disc_drives(machine);
 
             server.stop();
             extension_registry.shutdown();

@@ -24,9 +24,11 @@
 #include <windows.h>
 #include <process.h>
 #elif defined(__APPLE__)
+#include <fcntl.h>
 #include <unistd.h>
 #include <mach-o/dyld.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -99,6 +101,30 @@ inline std::optional<std::filesystem::path> executable_directory() {
         return self.parent_path();
     }
     return std::nullopt;
+#endif
+}
+
+// Best-effort flush of a file's contents from the OS cache to the storage
+// device, so writes survive a process or OS crash rather than only a clean
+// process exit. Uses fsync (POSIX) / FlushFileBuffers (Windows). This is not a
+// full hardware barrier (no F_FULLFSYNC), which is the right trade-off for an
+// emulator: durable against crashes without the cost of a platter sync on
+// every save. Returns false if the file cannot be opened or synced.
+inline bool sync_file_to_disk(const std::filesystem::path& filepath) {
+#ifdef _WIN32
+    HANDLE handle = CreateFileW(filepath.c_str(), GENERIC_WRITE,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return false;
+    bool ok = FlushFileBuffers(handle) != 0;
+    CloseHandle(handle);
+    return ok;
+#else
+    int fd = ::open(filepath.c_str(), O_WRONLY);
+    if (fd < 0) return false;
+    bool ok = (::fsync(fd) == 0);
+    ::close(fd);
+    return ok;
 #endif
 }
 

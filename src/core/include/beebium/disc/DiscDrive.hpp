@@ -13,6 +13,7 @@
 #pragma once
 
 #include "Disc.hpp"
+#include "beebium/PlatformUtils.hpp"
 #include "beebium/indicators/IndicatorFilter.hpp"
 #include "beebium/indicators/Indicators.hpp"
 
@@ -194,15 +195,23 @@ public:
     // =========================================================================
 
     void step_in() {
-        if (current_track_ < MAX_TRACK) ++current_track_;
+        if (current_track_ < MAX_TRACK) {
+            flush_before_leaving_track(current_track_ + 1);
+            ++current_track_;
+        }
     }
 
     void step_out() {
-        if (current_track_ > 0) --current_track_;
+        if (current_track_ > 0) {
+            flush_before_leaving_track(current_track_ - 1);
+            --current_track_;
+        }
     }
 
     void seek(uint8_t track) {
-        current_track_ = (track <= MAX_TRACK) ? track : MAX_TRACK;
+        uint8_t target = (track <= MAX_TRACK) ? track : MAX_TRACK;
+        flush_before_leaving_track(target);
+        current_track_ = target;
     }
 
     uint8_t current_track() const { return current_track_; }
@@ -305,9 +314,28 @@ public:
         return head_position_ == 0 && pulse_sub_position_ == 0;
     }
 
-    // Flush any dirty tracks on the current disc.
-    void flush_if_dirty() {
-        if (disc_) disc_->flush_dirty_tracks();
+    // Flush any dirty tracks on the current disc. When sync_to_disk is set,
+    // also force the host file out of the OS cache to the storage device
+    // (used by the controller's write-inactivity flush so a settled save is
+    // durable against a crash, not just a clean process exit).
+    void flush_if_dirty(bool sync_to_disk = false) {
+        if (!disc_) return;
+        bool had_dirty = disc_->has_dirty_tracks();
+        disc_->flush_dirty_tracks();
+        if (sync_to_disk && had_dirty) {
+            const auto& filepath = disc_->source_filepath();
+            if (!filepath.empty()) platform::sync_file_to_disk(filepath);
+        }
+    }
+
+    // Flush pending writes when the head is about to leave the current track.
+    // This persists sustained multi-track activity continuously, at track
+    // granularity, rather than waiting for the motor to spin down (~2 seconds
+    // of idle) or the disc to be ejected.
+    void flush_before_leaving_track(uint8_t target_track) {
+        if (disc_ && target_track != current_track_) {
+            disc_->flush_dirty_tracks();
+        }
     }
 
     // =========================================================================

@@ -270,6 +270,39 @@ TEST_CASE("WD1770 Write Sector then Read back", "[disc][wd1770p][write]") {
     }
 }
 
+TEST_CASE("WD1770 flushes dirty tracks after write inactivity",
+          "[disc][wd1770p][write][flush]") {
+    // After disc writes stop, the controller must flush dirty tracks to the
+    // host image on its own short inactivity timer -- without waiting for the
+    // ~2s motor spin-down, and decoupled from the eject path.
+    TestRig rig;
+
+    int flushes = 0;
+    rig.drive.disc()->set_write_track_callback(
+        [&](Disc&, bool, uint32_t) { ++flushes; });
+
+    // Write a sector to dirty the current track.
+    rig.write_sector_reg(0);
+    rig.write_command(0xA0);  // Write Sector
+    for (int i = 0; i < 256; ++i) {
+        REQUIRE(rig.wait_for_drq());
+        rig.write_data(static_cast<uint8_t>(i));
+    }
+    rig.run_until_complete();
+    REQUIRE(rig.drive.disc()->has_dirty_tracks());
+
+    int flushes_after_write = flushes;
+
+    // Idle below the inactivity threshold (250'000 ticks): still unflushed.
+    for (int i = 0; i < 150'000; ++i) rig.fdc.tick();
+    CHECK(rig.drive.disc()->has_dirty_tracks());
+
+    // Idle past the threshold: the controller flushes the dirty track.
+    for (int i = 0; i < 250'000; ++i) rig.fdc.tick();
+    CHECK_FALSE(rig.drive.disc()->has_dirty_tracks());
+    CHECK(flushes > flushes_after_write);
+}
+
 // =============================================================================
 // Type III: Read Address
 // =============================================================================

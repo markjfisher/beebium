@@ -220,6 +220,72 @@ TEST_CASE("DiscDrive write marks disc dirty", "[disc][pulsedrive][pulses]") {
     CHECK(disc_ptr->has_dirty_tracks());
 }
 
+TEST_CASE("DiscDrive flush_if_dirty writes back every dirty track",
+          "[disc][pulsedrive][flush]") {
+    // flush_if_dirty() is the primitive used by the step-away path, the
+    // controller's write-inactivity timer, and the server shutdown backstop.
+    DiscDrive drive;
+    auto disc = make_test_disc();
+    auto* disc_ptr = disc.get();
+
+    std::vector<uint32_t> flushed_tracks;
+    disc_ptr->set_write_track_callback(
+        [&](Disc&, bool /*upper_side*/, uint32_t track_number) {
+            flushed_tracks.push_back(track_number);
+        });
+
+    drive.insert(std::move(disc));
+    drive.set_side(0);
+    drive.seek(7);
+    drive.write_pulses(0x12345678);  // dirties track 7
+    REQUIRE(disc_ptr->has_dirty_tracks());
+
+    drive.flush_if_dirty();
+
+    CHECK_FALSE(disc_ptr->has_dirty_tracks());
+    REQUIRE(flushed_tracks.size() == 1);
+    CHECK(flushed_tracks[0] == 7);
+
+    // A second flush with nothing dirty is a no-op.
+    drive.flush_if_dirty();
+    CHECK(flushed_tracks.size() == 1);
+}
+
+TEST_CASE("DiscDrive flushes a dirty track when the head steps away",
+          "[disc][pulsedrive][flush]") {
+    // Sustained multi-track writes must persist continuously: a track that has
+    // been written should be flushed as soon as the head steps to another
+    // track, not held in memory until the motor eventually spins down.
+    DiscDrive drive;
+    auto disc = make_test_disc();
+    auto* disc_ptr = disc.get();
+
+    std::vector<uint32_t> flushed_tracks;
+    disc_ptr->set_write_track_callback(
+        [&](Disc&, bool, uint32_t track_number) {
+            flushed_tracks.push_back(track_number);
+        });
+
+    drive.insert(std::move(disc));
+    drive.set_side(0);
+    drive.set_motor(true);
+
+    drive.seek(5);
+    drive.write_pulses(0xCAFEF00D);  // dirties track 5
+    CHECK(flushed_tracks.empty());
+
+    drive.step_in();  // leave track 5 -> must flush it now
+    REQUIRE(flushed_tracks.size() == 1);
+    CHECK(flushed_tracks[0] == 5);
+    CHECK_FALSE(disc_ptr->has_dirty_tracks());
+
+    // Seeking to the same track must not trigger a redundant flush.
+    drive.write_pulses(0x0BADF00D);  // dirties track 6 (current)
+    flushed_tracks.clear();
+    drive.seek(drive.current_track());
+    CHECK(flushed_tracks.empty());
+}
+
 // =============================================================================
 // Side Selection
 // =============================================================================
