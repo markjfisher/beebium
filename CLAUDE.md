@@ -227,6 +227,7 @@ WD1770 controller with:
 - `sound-subsystem.md` - SN76489 and audio pipeline
 - `video-subsystem.md` - Display rendering pipeline
 - `grpc-server.md` - Service API documentation
+- `lifecycle-management.md` - Connection liveness (heartbeat, graceful/crash/unreachable), client teardown, window/server shutdown, and the rules behind them
 - `keyboard.md` - Keyboard matrix and input handling
 - `indicators.md` - LED status indicators
 - `sideways-slots.md` - Sideways ROM/RAM topology, validation rules, motherboard links
