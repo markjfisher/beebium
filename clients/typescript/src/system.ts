@@ -28,6 +28,12 @@ export enum ServerStatus {
     SHUTTING_DOWN = "shutting_down",
     IDENTITY_CHANGED = "identity_changed",
     SHUTDOWN_PROGRESS = "shutdown_progress",
+    /**
+     * Periodic liveness tick, emitted on an otherwise-idle stream every few
+     * seconds. Its absence (no events within a timeout) signals a
+     * silently-unreachable server -- a network partition or a frozen process.
+     */
+    HEARTBEAT = "heartbeat",
 }
 
 export enum ShutdownMode {
@@ -107,6 +113,8 @@ function mapServerStatus(protoStatus: ServerStatusType): ServerStatus {
             return ServerStatus.SHUTTING_DOWN;
         case ServerStatusType.SERVER_STATUS_IDENTITY_CHANGED:
             return ServerStatus.IDENTITY_CHANGED;
+        case ServerStatusType.SERVER_STATUS_HEARTBEAT:
+            return ServerStatus.HEARTBEAT;
         case ServerStatusType.SERVER_STATUS_SHUTDOWN_PROGRESS:
             return ServerStatus.SHUTDOWN_PROGRESS;
         default:
