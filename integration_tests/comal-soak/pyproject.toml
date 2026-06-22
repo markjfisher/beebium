@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beebium-comal-soak"
+version = "0.1.0"
+description = "Standalone soak / hang-reproduction harness for the COMAL Sierpinski workload"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    { name = "Robert Smallshire", email = "robert@smallshire.org.uk" }
+]
+dependencies = [
+    "beebium",
+]
+
+[project.scripts]
+comal-soak = "comal_soak.driver:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/comal_soak"]
+
+[tool.uv.sources]
+beebium = { path = "../../clients/python", editable = true }
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
