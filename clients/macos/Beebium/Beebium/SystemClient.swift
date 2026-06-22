@@ -41,6 +41,32 @@ final class SystemClient: ObservableObject, Disconnectable {
     /// Whether the server has signaled it is shutting down
     @Published private(set) var isServerShuttingDown: Bool = false
 
+    /// Liveness of the connection to the server, derived from the
+    /// WatchServerStatus stream (the authoritative status facility).
+    ///
+    /// - active: stream is open and healthy.
+    /// - stopped: the server announced a graceful shutdown before the stream
+    ///   ended (an orderly stop the user expects).
+    /// - died: the stream ended without a shutdown announcement -- the server
+    ///   process ended unexpectedly (crashed or was killed). We know it was the
+    ///   *process* that went away, not the network.
+    ///
+    /// A future `.unreachable` case will cover a genuine network loss (the
+    /// server is still alive but no longer reachable), detected by a heartbeat
+    /// timeout rather than a stream end -- which is why "connection lost"
+    /// wording is reserved for that and not used for `.died`.
+    ///
+    /// Distinguishing these is the whole point: each gets different UI. The
+    /// value is sticky across `disconnect()` so a non-active value survives the
+    /// teardown cascade long enough to be shown; it resets on the next
+    /// `connect()`.
+    enum Liveness: Equatable {
+        case active
+        case stopped
+        case died
+    }
+    @Published private(set) var liveness: Liveness = .active
+
     // MARK: - Connection State
 
     /// Whether system info has been successfully loaded
@@ -67,6 +93,7 @@ final class SystemClient: ObservableObject, Disconnectable {
     func connect(channel: GRPCChannel, provenanceUUID: String? = nil) {
         client = Beebium_SystemServiceNIOClient(channel: channel)
         self.provenanceUUID = provenanceUUID
+        liveness = .active
         fetchSystemInfo()
         startStatusStream()
     }
@@ -202,15 +229,28 @@ final class SystemClient: ObservableObject, Disconnectable {
 
         call.status.whenComplete { [weak self] result in
             Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.statusStreamCall = nil
+
+                // The status code at completion tells us why the stream ended.
+                // We capture it at resolution time, so a later cancel() from the
+                // teardown cascade cannot retroactively mask a real failure.
+                let code: GRPCStatus.Code?
                 switch result {
-                case .success(let status):
-                    if status.code != .ok && status.code != .cancelled {
-                        NSLog("[SystemClient] Status stream ended: %@", status.description)
-                    }
-                case .failure(let error):
-                    NSLog("[SystemClient] Status stream error: %@", error.localizedDescription)
+                case .success(let status): code = status.code
+                case .failure: code = nil
                 }
-                self?.statusStreamCall = nil
+
+                // We cancelled it ourselves (window close / reconnect) -> not a
+                // loss; leave liveness untouched.
+                if code == .cancelled { return }
+
+                // The stream ended for any other reason: the server process is
+                // gone. A prior SHUTTING_DOWN announcement means an orderly
+                // stop; otherwise it died unexpectedly.
+                self.liveness = self.isServerShuttingDown ? .stopped : .died
+                NSLog("[SystemClient] Server connection ended: %@",
+                      self.liveness == .stopped ? "graceful shutdown" : "process died unexpectedly")
             }
         }
     }

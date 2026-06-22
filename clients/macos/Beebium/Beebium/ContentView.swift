@@ -162,7 +162,8 @@ struct ContentView: View {
                 ZStack {
                     emulatorView
 
-                    if videoClient.connectionState != .connected {
+                    if videoClient.connectionState != .connected
+                        || systemClient.liveness != .active {
                         statusOverlay
                     }
                 }
@@ -428,6 +429,14 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: systemClient.liveness) { newLiveness in
+            // A mid-session loss/stop must surface its overlay; immersive mode
+            // hides the chrome, so drop back to the normal layout where the
+            // overlay lives (mirrors the connectionState handler above).
+            if isImmersive, newLiveness != .active {
+                isImmersive = false
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             // Sync Caps Lock state when window gains focus (macOS Caps Lock
             // may have changed while we were unfocused). Only fire after
@@ -498,8 +507,52 @@ struct ContentView: View {
         videoClient.reconnect(to: target)
     }
 
+    /// A label identifying which emulator this window is connected to, for the
+    /// disconnection overlay. The server's friendly name is preferred; the
+    /// target address is a stable fallback (and survives if the name is later
+    /// cleared by teardown).
+    private var connectionLabel: String {
+        systemClient.machineDisplayName.isEmpty
+            ? videoClient.target.address
+            : systemClient.machineDisplayName
+    }
+
     @ViewBuilder
     private var statusOverlay: some View {
+        // Server liveness (from the WatchServerStatus status facility) takes
+        // priority: a mid-session loss or shutdown is what the user most needs
+        // to see, and it is distinct from connect-time states.
+        switch systemClient.liveness {
+        case .died:
+            // The server process ended unexpectedly (crash/kill). We know it was
+            // the process, not the network, so we say so -- and there is nothing
+            // to reconnect to, so the only honest action is to close the window.
+            disconnectionOverlay(
+                systemImage: "exclamationmark.triangle.fill",
+                tint: .orange,
+                title: "Emulator stopped unexpectedly",
+                message: "\(connectionLabel) ended unexpectedly -- it may have "
+                    + "crashed or been killed. There is nothing to reconnect to."
+            )
+        case .stopped:
+            // A graceful shutdown: the emulator is intentionally gone. Just
+            // inform and let the user close the window.
+            disconnectionOverlay(
+                systemImage: "stop.circle.fill",
+                tint: .secondary,
+                title: "Emulator stopped",
+                message: "\(connectionLabel) was deliberately shut down. There "
+                    + "is nothing to reconnect to."
+            )
+        case .active:
+            connectStatusCard
+        }
+    }
+
+    /// Connect-time states (initial connect / connect failure). These are not
+    /// mid-session losses, so they keep the lighter, undimmed card.
+    @ViewBuilder
+    private var connectStatusCard: some View {
         VStack(spacing: 16) {
             switch videoClient.connectionState {
             case .disconnected:
@@ -538,6 +591,54 @@ struct ContentView: View {
         }
         .padding(32)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Prominent, dimmed overlay for a mid-session disconnection. Dims the
+    /// frozen last frame (so it reads as "stopped") while keeping it visible
+    /// underneath, so you can still tell which emulator this window is.
+    private func disconnectionOverlay(systemImage: String, tint: Color,
+                                      title: String, message: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 52))
+                    .foregroundColor(tint)
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                Text(message)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                // The server is gone either way -- there is no recovery, so the
+                // only action is to close the window.
+                Button("Close") {
+                    closeWindow()
+                }
+                .keyboardShortcut(.defaultAction)
+                .padding(.top, 6)
+            }
+            .padding(36)
+            .frame(maxWidth: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(radius: 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Close this window through the same path as the title-bar close button,
+    /// so it runs the WindowCloseCoordinator's teardown rather than a raw close.
+    private func closeWindow() {
+        guard let window = currentWindow ?? stableWindow else { return }
+        if let closeButton = window.standardWindowButton(.closeButton),
+           let action = closeButton.action, let target = closeButton.target {
+            _ = NSApp.sendAction(action, to: target, from: closeButton)
+        } else {
+            window.performClose(nil)
+        }
     }
 }
 
