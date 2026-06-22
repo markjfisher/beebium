@@ -305,6 +305,11 @@ grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
         return grpc::Status::OK;
     }
 
+    // Emit a liveness heartbeat on an otherwise-idle stream every few seconds,
+    // so a client can detect a silently-unreachable server by their absence.
+    const auto heartbeat_interval = std::chrono::seconds(2);
+    auto last_heartbeat = std::chrono::steady_clock::now();
+
     // Wait for events in a loop
     // Use wait_for with timeout to periodically check for client cancellation,
     // since context->IsCancelled() doesn't notify the condition variable.
@@ -318,6 +323,17 @@ grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
 
         if (context->IsCancelled()) {
             break;
+        }
+
+        // Periodic liveness heartbeat.
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_heartbeat >= heartbeat_interval) {
+            last_heartbeat = now;
+            ServerStatusEvent heartbeat;
+            heartbeat.set_status(SERVER_STATUS_HEARTBEAT);
+            if (!writer->Write(heartbeat)) {
+                break;
+            }
         }
 
         // Handle identity change event

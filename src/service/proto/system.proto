@@ -211,6 +211,13 @@ enum ServerStatusType {
     // Shutdown is in progress, showing subsystem coordination status
     // The shutdown_conditions field contains status of each subsystem
     SERVER_STATUS_SHUTDOWN_PROGRESS = 3;
+
+    // Periodic liveness tick, emitted on an otherwise-idle stream every few
+    // seconds. Carries no payload; its job is to keep the stream producing
+    // traffic so a client can detect a silently-unreachable server (network
+    // partition or a frozen process) by the *absence* of heartbeats. A healthy
+    // connection delivers these at a steady cadence.
+    SERVER_STATUS_HEARTBEAT = 4;
 }
 
 // === Advertisement RPC ===

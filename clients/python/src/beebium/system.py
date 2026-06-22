@@ -32,6 +32,7 @@ class ServerStatus(Enum):
     SHUTTING_DOWN = "shutting_down"
     IDENTITY_CHANGED = "identity_changed"
     SHUTDOWN_PROGRESS = "shutdown_progress"
+    HEARTBEAT = "heartbeat"
 
 
 class ShutdownMode(Enum):
@@ -297,6 +298,8 @@ class System:
                 )
                 # Update cache
                 self._identity_cache = identity
+            elif response.status == system_pb2.SERVER_STATUS_HEARTBEAT:
+                status = ServerStatus.HEARTBEAT
             elif response.status == system_pb2.SERVER_STATUS_SHUTDOWN_PROGRESS:
                 status = ServerStatus.SHUTDOWN_PROGRESS
                 # Parse shutdown condition status
