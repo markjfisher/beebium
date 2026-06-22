@@ -78,6 +78,13 @@ enum Beebium_ServerStatusType: SwiftProtobuf.Enum, Swift.CaseIterable {
   /// Shutdown is in progress, showing subsystem coordination status
   /// The shutdown_conditions field contains status of each subsystem
   case serverStatusShutdownProgress // = 3
+
+  /// Periodic liveness tick, emitted on an otherwise-idle stream every few
+  /// seconds. Carries no payload; its job is to keep the stream producing
+  /// traffic so a client can detect a silently-unreachable server (network
+  /// partition or a frozen process) by the *absence* of heartbeats. A healthy
+  /// connection delivers these at a steady cadence.
+  case serverStatusHeartbeat // = 4
   case UNRECOGNIZED(Int)
 
   init() {
@@ -90,6 +97,7 @@ enum Beebium_ServerStatusType: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 1: self = .serverStatusShuttingDown
     case 2: self = .serverStatusIdentityChanged
     case 3: self = .serverStatusShutdownProgress
+    case 4: self = .serverStatusHeartbeat
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -100,6 +108,7 @@ enum Beebium_ServerStatusType: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .serverStatusShuttingDown: return 1
     case .serverStatusIdentityChanged: return 2
     case .serverStatusShutdownProgress: return 3
+    case .serverStatusHeartbeat: return 4
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -110,6 +119,7 @@ enum Beebium_ServerStatusType: SwiftProtobuf.Enum, Swift.CaseIterable {
     .serverStatusShuttingDown,
     .serverStatusIdentityChanged,
     .serverStatusShutdownProgress,
+    .serverStatusHeartbeat,
   ]
 
 }
@@ -578,7 +588,7 @@ extension Beebium_ShutdownMode: SwiftProtobuf._ProtoNameProviding {
 }
 
 extension Beebium_ServerStatusType: SwiftProtobuf._ProtoNameProviding {
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SERVER_STATUS_READY\0\u{1}SERVER_STATUS_SHUTTING_DOWN\0\u{1}SERVER_STATUS_IDENTITY_CHANGED\0\u{1}SERVER_STATUS_SHUTDOWN_PROGRESS\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SERVER_STATUS_READY\0\u{1}SERVER_STATUS_SHUTTING_DOWN\0\u{1}SERVER_STATUS_IDENTITY_CHANGED\0\u{1}SERVER_STATUS_SHUTDOWN_PROGRESS\0\u{1}SERVER_STATUS_HEARTBEAT\0")
 }
 
 extension Beebium_GetSystemInfoRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

@@ -51,21 +51,30 @@ final class SystemClient: ObservableObject, Disconnectable {
     ///   process ended unexpectedly (crashed or was killed). We know it was the
     ///   *process* that went away, not the network.
     ///
-    /// A future `.unreachable` case will cover a genuine network loss (the
-    /// server is still alive but no longer reachable), detected by a heartbeat
-    /// timeout rather than a stream end -- which is why "connection lost"
-    /// wording is reserved for that and not used for `.died`.
+    /// - unreachable: heartbeats stopped arriving but the stream has not ended
+    ///   -- the server is (or was) alive but is no longer reachable (a network
+    ///   partition, or a frozen process). Unlike `.stopped`/`.died` this is
+    ///   RECOVERABLE: if heartbeats resume, liveness returns to `.active`.
     ///
-    /// Distinguishing these is the whole point: each gets different UI. The
-    /// value is sticky across `disconnect()` so a non-active value survives the
-    /// teardown cascade long enough to be shown; it resets on the next
-    /// `connect()`.
+    /// Distinguishing these is the whole point: each gets different UI
+    /// (terminal Close for stopped/died; a transient, auto-recovering spinner
+    /// for unreachable). The value is sticky across `disconnect()` so a
+    /// non-active value survives the teardown cascade long enough to be shown;
+    /// it resets on the next `connect()`.
     enum Liveness: Equatable {
         case active
         case stopped
         case died
+        case unreachable
     }
     @Published private(set) var liveness: Liveness = .active
+
+    /// No status event (heartbeat or otherwise) within this window means the
+    /// server is unreachable. The server heartbeats every ~0.5s, so this
+    /// tolerates a few missed beats (jitter, a busy main thread) before
+    /// reacting, while still detecting a real loss within ~2s.
+    private let heartbeatTimeout: TimeInterval = 2.0
+    private var heartbeatWatchdog: Timer?
 
     // MARK: - Connection State
 
@@ -100,6 +109,8 @@ final class SystemClient: ObservableObject, Disconnectable {
 
     /// Disconnect from the server
     func disconnect() {
+        heartbeatWatchdog?.invalidate()
+        heartbeatWatchdog = nil
         statusStreamCall?.cancel(promise: nil)
         statusStreamCall = nil
         client = nil
@@ -226,11 +237,14 @@ final class SystemClient: ObservableObject, Disconnectable {
         }
 
         statusStreamCall = call
+        armHeartbeatWatchdog()
 
         call.status.whenComplete { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.statusStreamCall = nil
+                self.heartbeatWatchdog?.invalidate()
+                self.heartbeatWatchdog = nil
 
                 // The status code at completion tells us why the stream ended.
                 // We capture it at resolution time, so a later cancel() from the
@@ -257,6 +271,15 @@ final class SystemClient: ObservableObject, Disconnectable {
 
     /// Handle a server status event from the WatchServerStatus stream
     private func handleStatusEvent(_ event: Beebium_ServerStatusEvent) {
+        // Any event -- heartbeat or otherwise -- proves the server is reachable.
+        // Reset the liveness watchdog, and recover from a transient unreachable
+        // state (e.g. heartbeats resuming after a network blip or unfreeze).
+        armHeartbeatWatchdog()
+        if liveness == .unreachable {
+            liveness = .active
+            NSLog("[SystemClient] Heartbeats resumed -- server reachable again")
+        }
+
         switch event.status {
         case .serverStatusReady:
             isServerShuttingDown = false
@@ -266,10 +289,31 @@ final class SystemClient: ObservableObject, Disconnectable {
             if event.hasIdentity {
                 updateIdentity(event.identity)
             }
+        case .serverStatusHeartbeat:
+            break  // liveness handled above; nothing else to do
         case .serverStatusShutdownProgress:
             break
         case .UNRECOGNIZED:
             break
+        }
+    }
+
+    /// (Re)start the liveness watchdog. If no status event arrives within
+    /// `heartbeatTimeout`, the server is treated as unreachable. This only
+    /// escalates from a healthy connection -- `.stopped`/`.died` are terminal.
+    private func armHeartbeatWatchdog() {
+        heartbeatWatchdog?.invalidate()
+        heartbeatWatchdog = Timer.scheduledTimer(
+            withTimeInterval: heartbeatTimeout, repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.liveness == .active {
+                    self.liveness = .unreachable
+                    NSLog("[SystemClient] No heartbeat within %.0fs -- server unreachable",
+                          self.heartbeatTimeout)
+                }
+            }
         }
     }
 

@@ -305,9 +305,10 @@ grpc::Status SystemServiceImpl<MachineType>::WatchServerStatus(
         return grpc::Status::OK;
     }
 
-    // Emit a liveness heartbeat on an otherwise-idle stream every few seconds,
-    // so a client can detect a silently-unreachable server by their absence.
-    const auto heartbeat_interval = std::chrono::seconds(2);
+    // Emit a liveness heartbeat on an otherwise-idle stream at a brisk cadence,
+    // so a client can detect a silently-unreachable server by their absence
+    // within a couple of seconds (its timeout is a few of these intervals).
+    const auto heartbeat_interval = std::chrono::milliseconds(500);
     auto last_heartbeat = std::chrono::steady_clock::now();
 
     // Wait for events in a loop

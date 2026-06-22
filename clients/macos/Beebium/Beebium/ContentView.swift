@@ -544,6 +544,12 @@ struct ContentView: View {
                 message: "\(connectionLabel) was deliberately shut down. There "
                     + "is nothing to reconnect to."
             )
+        case .unreachable:
+            // Heartbeats stopped but the stream is still open: the server may be
+            // unreachable temporarily (network blip). This is recoverable -- it
+            // clears itself if heartbeats resume -- so show a spinner and a
+            // single button to give up rather than a terminal message.
+            reconnectingOverlay(label: connectionLabel)
         case .active:
             connectStatusCard
         }
@@ -619,6 +625,38 @@ struct ContentView: View {
                     closeWindow()
                 }
                 .keyboardShortcut(.defaultAction)
+                .padding(.top, 6)
+            }
+            .padding(36)
+            .frame(maxWidth: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(radius: 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Transient, recoverable disconnection: the server stopped heartbeating but
+    /// the stream is still open. Auto-recovers when heartbeats resume; a single
+    /// button lets the user give up and close the window.
+    private func reconnectingOverlay(label: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.4)
+                    .padding(.bottom, 4)
+                Text("Connection lost")
+                    .font(.title2.weight(.semibold))
+                Text("Trying to reconnect to \(label)\u{2026}")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Close") {
+                    closeWindow()
+                }
                 .padding(.top, 6)
             }
             .padding(36)
