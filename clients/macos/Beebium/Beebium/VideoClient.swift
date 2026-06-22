@@ -43,7 +43,21 @@ final class VideoClient: ObservableObject, Disconnectable {
     /// Frame counter for debugging
     @Published private(set) var frameCount: UInt64 = 0
 
-    private var group: EventLoopGroup?
+    /// A single event loop group shared by every VideoClient and reused across
+    /// reconnects. It is intentionally created once and never shut down.
+    ///
+    /// Shutting an event loop group down while gRPC-Swift still has a
+    /// reconnection scheduled on it trips a SwiftNIO precondition
+    /// (EventLoopFuture.deinit) and aborts the app in debug builds. That state
+    /// arises whenever the server vanishes mid-stream (e.g. it crashes or is
+    /// killed) and the window is then closed: GRPCChannelPool.close() does not
+    /// reliably cancel the pending reconnect timer, so a subsequent
+    /// syncShutdownGracefully() destroys an unresolved future. An event loop
+    /// group is meant to be long-lived; keeping one for the process lifetime
+    /// (one thread, reclaimed at exit) sidesteps the teardown race entirely.
+    private static let sharedGroup: EventLoopGroup =
+        MultiThreadedEventLoopGroup(numberOfThreads: 1)
+
     private var _channel: GRPCChannel?
     private var streamTask: Task<Void, Never>?
 
@@ -91,31 +105,28 @@ final class VideoClient: ObservableObject, Disconnectable {
         streamTask = nil
 
         let channelToClose = _channel
-        let groupToShutdown = group
-
-        // Close channel and shutdown event loop group on background thread
-        DispatchQueue.global().async {
-            try? channelToClose?.close().wait()
-            try? groupToShutdown?.syncShutdownGracefully()
-        }
-
         _channel = nil
-        group = nil
         connectionState = .disconnected
+
+        // Close the channel (best effort) on a background thread so a vanished
+        // server cannot block the UI. The shared event loop group is left
+        // running on purpose -- see sharedGroup for why we never shut it down.
+        if let channel = channelToClose {
+            DispatchQueue.global().async {
+                try? channel.close().wait()
+            }
+        }
     }
 
     private func runConnection() async {
-        let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-
         do {
             let grpcChannel = try GRPCChannelPool.with(
                 target: .host(host, port: port),
                 transportSecurity: .plaintext,
-                eventLoopGroup: eventLoopGroup
+                eventLoopGroup: Self.sharedGroup
             )
 
             await MainActor.run {
-                self.group = eventLoopGroup
                 self._channel = grpcChannel
             }
 
