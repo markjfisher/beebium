@@ -253,15 +253,19 @@ A self-contained macOS `.tar.gz` (Homebrew-free, for macOS CI that wants the sam
 download-and-run experience as Linux) is a possible later addition; it needs the
 vcpkg-static build path rather than the Homebrew-deps build.
 
-## Windows (planned)
+## Windows
 
-The Windows server **builds and passes the full test suite** in CI on
-`windows-2022`, but is **not yet packaged**. It currently links the vcpkg
-`x64-windows` libraries *dynamically* — CI copies the gRPC/protobuf/abseil DLLs
-next to the executables to run the tests. So Windows is where Linux was before the
-static-bundle work: the build is solid, the packaging is greenfield. The plan
-below mirrors the Linux/macOS strategy — a self-contained artifact for CI plus a
-package-manager front end for convenience.
+The Windows server build and tests have always been green in CI on
+`windows-2022`. The packaging described below has now been **validated
+end-to-end as a proof of concept** (built on a Windows box, not yet in CI): a
+self-contained `x64-windows-static-md` ZIP installs and runs through Scoop with
+all extensions loading. What remains is automation (a CI job and the Scoop
+bucket), not feasibility. The approach mirrors the Linux/macOS strategy — a
+self-contained artifact for CI plus a package-manager front end.
+
+The normal CI build still links the vcpkg `x64-windows` libraries *dynamically*
+(copying the gRPC/protobuf/abseil DLLs next to the executables); the packaging
+build instead uses the static triplet below.
 
 ### Server: a self-contained `.zip`
 
@@ -315,23 +319,36 @@ through the **Microsoft Store** (which handles signing, trust and updates) and/o
 **WinGet**. A WiX Toolset v5 **MSI** would only be added if traditional
 enterprise deployment (Intune/SCCM/Group Policy) is needed.
 
-### Remaining (server, mirrors the Linux bundle)
+### Status
 
-1. Add an `x64-windows-static-md` overlay triplet.
-2. Produce the ZIP via the CPack ZIP generator on the Windows build.
-3. A Windows smoke check (the equivalent of `scripts/smoke-installed-tree.sh` /
-   `install_smoke`): executables run, plugins are discovered, ROMs resolve, and
-   the tree is self-contained (no stray vcpkg DLL dependencies).
-4. Wire it into `release.yml` (build the ZIP on a Windows runner, attach it to the
-   GitHub Release).
-5. Stand up a `scoop-beebium` bucket repo.
-6. A WinGet manifest (after a release exists).
-7. Azure Trusted Signing (decide whether to sign from the first release or add it
-   later).
-8. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
+Done (validated as a proof of concept):
 
-Two decisions worth settling before the first artifact, both reversible:
-`static-md` vs full `static` (CRT bundling), and sign-now vs ship-unsigned-first.
+- `triplets/x64-windows-static-md.cmake` — static gRPC/protobuf/abseil, dynamic
+  CRT. `dumpbin /dependents` confirms only system DLLs + the VC++ runtime + our
+  own ABI DLLs.
+- `cmake --install` produces the right tree on Windows with no fixups: `bin/`
+  (exes + ABI DLLs + `extensions/`), `share/beebium/{roms,presets}`.
+  `list-extensions` loads all built-in and dlopened extensions.
+- `packaging/windows/make-zip.ps1` zips `bin/` + `share/` (root-level) into
+  `beebium-server-<version>-windows-x64.zip` (~28 MB; the `lib/` import libraries
+  are omitted).
+- `packaging/scoop/beebium-server.json` — the Scoop manifest; a real
+  `scoop install` (local-file URL + hash) created the four shims and the bare
+  `beebium-model-b` command loaded every extension.
+
+Remaining:
+
+1. Wire it into `release.yml` (build the ZIP on a Windows runner, attach it to the
+   GitHub Release) — like `macos-package.yml`.
+2. Stand up a `scoop-beebium` bucket repo (the Scoop analogue of the Homebrew tap)
+   and pin the release URL + hash into the manifest at release time.
+3. A WinGet manifest (after a release exists).
+4. Azure Trusted Signing (decide whether to sign from the first release or later).
+5. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
+
+The `static-md` vs full `static` decision is settled in favour of `static-md`
+(dynamic CRT, only the VC++ Redistributable needed). The sign-now vs
+ship-unsigned-first decision is still open.
 
 ## Install layout
 
@@ -465,9 +482,10 @@ updated with `packaging/homebrew/sync-tap.sh`. Both `linux-packages.yml` and
   (needs the vcpkg-static build path).
 
 **Remaining (Windows):**
-- All packaging. The server builds and tests green on `windows-2022` but is not
-  yet packaged. See [Windows (planned)](#windows-planned): static-triplet ZIP,
-  Scoop bucket, WinGet, and Authenticode signing (Azure Trusted Signing).
+- The self-contained `x64-windows-static-md` ZIP + Scoop install are validated as
+  a proof of concept (see [Windows](#windows)). Remaining is automation: a CI job
+  in `release.yml`, a `scoop-beebium` bucket, WinGet, and Authenticode signing
+  (Azure Trusted Signing).
 
 **Remaining (other):**
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
