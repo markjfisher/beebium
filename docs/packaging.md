@@ -15,6 +15,7 @@ the macOS `.app`, see [macOS App Packaging](macos-app-packaging.md).
 |-----------|---------|--------|
 | Server (headless core) | Self-contained `.deb` (apt) + `.tar.gz` (everything else) | **Done** (Linux, both arches) |
 | Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | **Done** (formula built/tested/audited, both arches); tap publish is manual |
+| Server (Windows) | Self-contained `.zip` + Scoop bucket + WinGet | Planned |
 | Python client | PyPI (`beebium`) | Planned |
 | TypeScript client | npm (`beebium`) | Planned |
 
@@ -252,6 +253,86 @@ A self-contained macOS `.tar.gz` (Homebrew-free, for macOS CI that wants the sam
 download-and-run experience as Linux) is a possible later addition; it needs the
 vcpkg-static build path rather than the Homebrew-deps build.
 
+## Windows (planned)
+
+The Windows server **builds and passes the full test suite** in CI on
+`windows-2022`, but is **not yet packaged**. It currently links the vcpkg
+`x64-windows` libraries *dynamically* — CI copies the gRPC/protobuf/abseil DLLs
+next to the executables to run the tests. So Windows is where Linux was before the
+static-bundle work: the build is solid, the packaging is greenfield. The plan
+below mirrors the Linux/macOS strategy — a self-contained artifact for CI plus a
+package-manager front end for convenience.
+
+### Server: a self-contained `.zip`
+
+The primary artifact is a **self-contained ZIP**, the direct analogue of the Linux
+`.tar.gz`: extract, put on `PATH`, run — no installer, no admin, ideal for CI. It
+is produced by the same CPack machinery (the ZIP generator).
+
+Self-containment uses a **static vcpkg triplet**, just like Linux/macOS, instead
+of shipping a pile of DLLs:
+
+- `x64-windows-static-md` — folds gRPC/protobuf/abseil into the executables and
+  plugin DLLs but keeps the **dynamic CRT** (users need the near-universal Visual
+  C++ Redistributable). The usual sweet spot.
+- `x64-windows-static` — folds the CRT in as well: zero external dependency,
+  larger binaries.
+
+Either gives the Linux bundle's benefits: one artifact decoupled from system
+library versions, with gRPC pinned at build time (good for the protocol
+fingerprint story). This needs a new `x64-windows-static-md` overlay triplet
+alongside the existing four.
+
+### Distribution channels
+
+- **Scoop** — the best fit for a headless dev/CI tool: user-scoped, no admin, and
+  a "bucket" is the exact analogue of the Homebrew tap (a small repo of JSON
+  manifests pointing at the release ZIP, with autoupdate). A `scoop-beebium`
+  bucket repo would mirror `homebrew-beebium`. Lead with this.
+- **WinGet** — Microsoft's official manager, built into Windows 10/11, so the
+  broadest reach. Submit a manifest to `microsoft/winget-pkgs` (PR-based) or
+  self-host; automatable with `wingetcreate`. Second priority, for discoverability.
+- **Chocolatey** — entrenched in enterprise CI but older and admin-oriented; not
+  pursued.
+
+### Code signing (Authenticode)
+
+Unlike Linux, unsigned Windows executables trip SmartScreen/Defender on download —
+the counterpart to macOS notarization. Since OV certificates without hardware
+tokens were withdrawn in 2023, the current route is **Azure Trusted Signing**
+(Microsoft's managed service, GA 2024): inexpensive, no hardware token,
+SmartScreen-reputable, with a GitHub Actions integration. Eligibility currently
+requires either a verified organisation or roughly three years of individual
+identity history. Signing matters more for the GUI (end users download it) than
+the server (devs/CI tolerate a warning), but is worth doing for both.
+
+### GUI client (future)
+
+The eventual Windows front end (the counterpart to the macOS app and the planned
+`beebium-gui` cask) would ship as an **MSIX** package — the modern Windows app
+format, with clean install/uninstall, sandboxing and auto-update — distributed
+through the **Microsoft Store** (which handles signing, trust and updates) and/or
+**WinGet**. A WiX Toolset v5 **MSI** would only be added if traditional
+enterprise deployment (Intune/SCCM/Group Policy) is needed.
+
+### Remaining (server, mirrors the Linux bundle)
+
+1. Add an `x64-windows-static-md` overlay triplet.
+2. Produce the ZIP via the CPack ZIP generator on the Windows build.
+3. A Windows smoke check (the equivalent of `scripts/smoke-installed-tree.sh` /
+   `install_smoke`): executables run, plugins are discovered, ROMs resolve, and
+   the tree is self-contained (no stray vcpkg DLL dependencies).
+4. Wire it into `release.yml` (build the ZIP on a Windows runner, attach it to the
+   GitHub Release).
+5. Stand up a `scoop-beebium` bucket repo.
+6. A WinGet manifest (after a release exists).
+7. Azure Trusted Signing (decide whether to sign from the first release or add it
+   later).
+8. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
+
+Two decisions worth settling before the first artifact, both reversible:
+`static-md` vs full `static` (CRT bundling), and sign-now vs ship-unsigned-first.
+
 ## Install layout
 
 Both package formats lay down the same relocatable tree under `/opt/beebium`,
@@ -382,6 +463,11 @@ updated with `packaging/homebrew/sync-tap.sh`. Both `linux-packages.yml` and
   instead of compiling (matters at CI scale).
 - Possibly add a Homebrew-free self-contained macOS `.tar.gz` for macOS CI
   (needs the vcpkg-static build path).
+
+**Remaining (Windows):**
+- All packaging. The server builds and tests green on `windows-2022` but is not
+  yet packaged. See [Windows (planned)](#windows-planned): static-triplet ZIP,
+  Scoop bucket, WinGet, and Authenticode signing (Azure Trusted Signing).
 
 **Remaining (other):**
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
