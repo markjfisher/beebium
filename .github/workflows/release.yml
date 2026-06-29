@@ -6,13 +6,15 @@
 #
 #   1. builds the self-contained Linux .deb + .tar.gz (both arches),
 #   2. builds, tests and audits the macOS Homebrew formula (both arches),
-#   3. creates a DRAFT GitHub Release with the Linux artifacts attached.
+#   3. builds the self-contained Windows .zip (x64),
+#   4. creates a DRAFT GitHub Release with the Linux and Windows artifacts.
 #
 # The release is left as a DRAFT on purpose: nothing is published until you
 # review it and click publish. The macOS server is delivered via the Homebrew
-# tap, which is updated separately by running
-# `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` once the release
-# tarball exists, then committing and pushing the tap.
+# tap, updated with `packaging/homebrew/sync-tap.sh <version> <tap-checkout>`;
+# the Windows server is delivered via the Scoop bucket, whose manifest
+# (packaging/scoop/beebium-server.json) is pinned to the released .zip's URL and
+# hash. Both tap and bucket are updated after the release is published.
 
 name: Release
 
@@ -24,6 +26,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   linux:
@@ -32,9 +35,12 @@ jobs:
   macos-formula:
     uses: ./.github/workflows/macos-package.yml
 
+  windows:
+    uses: ./.github/workflows/windows-package.yml
+
   release:
     name: draft GitHub Release
-    needs: [linux, macos-formula]
+    needs: [linux, macos-formula, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -52,16 +58,22 @@ jobs:
           draft: true
           files: _artifacts/*
           body: |
-            Self-contained Linux server bundles (`.deb` for Debian/Ubuntu/Raspberry Pi OS,
-            `.tar.gz` for other distros), built for `amd64` and `arm64`.
+            Self-contained server bundles:
+
+            - **Linux** — `.deb` (Debian/Ubuntu/Raspberry Pi OS) and `.tar.gz`
+              (other distros), for `amd64` and `arm64`.
+            - **Windows** — `.zip` (x64), self-contained except for the Visual
+              C++ Redistributable.
 
             The macOS server is installed from the Homebrew tap. After this release
-            tarball is published, update the tap from a checkout of the repository:
+            is published, update the tap from a checkout of the repository:
 
             ```
             packaging/homebrew/sync-tap.sh <version> <homebrew-beebium-checkout>
             ```
             (pass the bare version, e.g. `0.1.0`, not the `v`-prefixed tag.)
 
-            then commit and push the tap. The Python and TypeScript clients are
-            published to PyPI and npm separately (later phases).
+            then commit and push the tap. Similarly, pin the Windows `.zip`'s URL
+            and SHA256 into the Scoop bucket's manifest
+            (`packaging/scoop/beebium-server.json`). The Python and TypeScript
+            clients are published to PyPI and npm separately (later phases).

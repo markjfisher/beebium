@@ -1,0 +1,113 @@
+# Build the self-contained Windows server ZIP.
+#
+# Like the Linux bundle, this is a from-source static build (gRPC/protobuf/abseil
+# linked statically via the x64-windows-static-md triplet), so it is expensive
+# and runs only on demand or as a reusable job in the release flow -- never on
+# push. The vcpkg NuGet binary cache makes reruns cheap after the first build.
+#
+# The result is beebium-server-<version>-windows-x64.zip: bin/ (the four servers
+# + ABI DLLs + extensions) and share/beebium (ROMs/presets), self-contained
+# except for the Visual C++ Redistributable.
+
+name: Windows package
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build (x64)
+    # Pinned to windows-2022 for Visual Studio 2022, matching ci.yml. Revisit
+    # with the VS 2026 toolset (generator "Visual Studio 18 2026").
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static-md
+      # The committed overlay triplet (static libs + dynamic CRT, release-only).
+      VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/triplets
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/vcpkg-downloads
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set VCPKG_INSTALLED_DIR
+        run: echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-downloads
+          key: vcpkg-downloads-windows-static-77df67c
+
+      - name: Configure vcpkg NuGet binary cache
+        run: |
+          nuget sources add -Name "GitHub" -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.actor }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          echo "VCPKG_BINARY_SOURCES=clear;nuget,GitHub,readwrite" >> $env:GITHUB_ENV
+
+      - name: Setup vcpkg and install static deps
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '77df67cfff9c12ccfdb52284e07c87c75092f723'
+          runVcpkgInstall: true
+          vcpkgJsonGlob: 'vcpkg.json'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          $v = (Select-String -Path .bumpversion.toml -Pattern '^current_version = "(.+)"').Matches[0].Groups[1].Value
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      # FetchContent pulls nlohmann_json from GitHub when no package is found,
+      # which intermittently 504s; clean and retry rather than fail the run.
+      - name: Configure CMake (static-md, tests off)
+        run: |
+          foreach ($attempt in 1..3) {
+            cmake -B build-win-static `
+              -G "Visual Studio 17 2022" -A x64 `
+              -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+              -DVCPKG_INSTALLED_DIR="${env:VCPKG_INSTALLED_DIR}" `
+              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+              -DVCPKG_MANIFEST_INSTALL=OFF `
+              -DBEEBIUM_BUILD_TESTS=OFF
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "::warning::CMake configure failed (attempt $attempt/3); retrying in case it was a transient FetchContent download."
+            Remove-Item -Recurse -Force build-win-static -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds ($attempt * 20)
+            if ($attempt -eq 3) { Write-Host "::error::CMake configure failed after 3 attempts"; exit 1 }
+          }
+
+      # Cap parallelism: the four server mains instantiate the full
+      # Machine<Hardware> template against the static gRPC/protobuf headers and
+      # peak at ~3 GB each. The VS generator ignores the Ninja job pool, so an
+      # uncapped build can OOM a 16 GB runner.
+      - name: Build servers
+        run: cmake --build build-win-static --config Release --target beebium-servers --parallel 2
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Verify self-containment
+        run: |
+          $exe = "build-win-static\src\server\Release\beebium-model-b.exe"
+          dumpbin /dependents $exe
+          $deps = dumpbin /dependents $exe
+          if ($deps | Select-String -Pattern 'grpc|protobuf|absl|abseil|re2|cares|libcrypto|libssl' -CaseSensitive:$false) {
+            Write-Host "::error::server links a dynamic gRPC/protobuf/abseil/OpenSSL DLL; the static-md bundle is not self-contained"
+            exit 1
+          }
+          Write-Host "self-contained: no gRPC/protobuf/abseil DLL dependencies"
+
+      - name: Package ZIP
+        run: pwsh -File packaging/windows/make-zip.ps1 -BuildDir build-win-static -Version ${{ steps.ver.outputs.version }} -OutDir _artifacts
+
+      - name: List artifacts
+        run: Get-ChildItem _artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-windows-x64
+          path: _artifacts/*.zip
+          if-no-files-found: error

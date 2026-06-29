@@ -21,6 +21,7 @@ $ErrorActionPreference = "Stop"
 Remove-Item -Recurse -Force $StageDir -ErrorAction SilentlyContinue
 cmake --install $BuildDir --config Release --prefix $StageDir
 
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $zip = Join-Path $OutDir "beebium-server-$Version-windows-x64.zip"
 Remove-Item -Force $zip -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $StageDir "bin"), (Join-Path $StageDir "share") `
