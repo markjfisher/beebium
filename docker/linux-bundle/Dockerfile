@@ -93,9 +93,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Prove the freshly built tree installs and boots in the build-floor image
 # (in-tree CTest), validate the *installed* tree directly (self-containment +
-# boot), then build the .deb and .tar.gz with CPack and collect them. Both are
-# rooted at /opt/beebium; the .deb additionally symlinks the servers into
-# /usr/bin via its maintainer scripts.
+# boot), then build the .deb and .tar.gz with CPack and collect them. The .deb
+# lays a /opt/beebium system tree (and symlinks the servers into /usr/bin via its
+# maintainer scripts); the .tar.gz is a relocatable single directory.
 RUN ctest --test-dir build -R install_smoke --output-on-failure \
     && cmake --install build --prefix /stage/opt/beebium \
     && bash scripts/smoke-installed-tree.sh /stage/opt/beebium \

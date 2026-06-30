@@ -378,10 +378,15 @@ produces the distributable packages:
   Raspberry Pi OS. Runtime dependencies are derived with `dpkg-shlibdeps`; since
   gRPC/protobuf are static, it depends only on `libc6 (>= 2.36)`, `libgcc-s1`,
   `libstdc++6`. The maintainer scripts create and remove the `/usr/bin` symlinks.
-- **`.tar.gz`** (`beebium-server-<version>-linux-<arch>.tar.gz`) — the same tree
-  for non-`dpkg` distros (Arch, Fedora, openSUSE, NixOS) and bare containers.
-  Extract to `/` and put `/opt/beebium` on `PATH` (or use the AUR package, when
-  available).
+- **`.tar.gz`** (`beebium-server-<version>-linux-<arch>.tar.gz`) — a
+  **relocatable** bundle for non-`dpkg` distros (Arch, Fedora, openSUSE, NixOS)
+  and bare containers. It unpacks to a single self-named directory
+  (`beebium-server-<version>-linux-<arch>/`); extract it anywhere and put that
+  directory's `bin/` on `PATH` (no root, no `tar -C /`). The `.deb` and `.tar.gz`
+  diverge here on purpose (`CPACK_PROJECT_CONFIG_FILE` =
+  `cmake/BeebiumCPackOptions.cmake`): the `.deb` is a `/opt/beebium` system
+  package, the `.tar.gz` is a user-relocatable directory. (Or use the AUR
+  package, when available.)
 
 ### ROMs
 

@@ -16,9 +16,11 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Beebium headless BBC Micro emulator server (self-contained)")
 set(CPACK_PACKAGE_CONTACT "Robert Smallshire <robert@smallshire.org.uk>")
 
-# Lay the relocatable tree under /opt/beebium. The install() DESTINATIONs are
-# relative (bin/, lib/, share/), so this prefix yields /opt/beebium/{bin,lib,share}.
-set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/beebium")
+# The install layout differs per generator: the .deb lays a /opt/beebium system
+# tree, while the .tar.gz is a relocatable single directory the user extracts
+# anywhere. CPack evaluates this config file once per generator (with
+# CPACK_GENERATOR set) to pick the prefix and top-level wrapper for each.
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_LIST_DIR}/BeebiumCPackOptions.cmake")
 
 # Normalise the architecture to the Debian label (amd64/arm64) so the .deb and
 # the .tar.gz carry the same arch name and match the .deb's auto-detected
@@ -37,10 +39,10 @@ endif()
 set(CPACK_PACKAGE_FILE_NAME
     "beebium-server-${PROJECT_VERSION}-linux-${_beebium_pkg_arch}")
 
-# Archive (TGZ): root at the install prefix (opt/beebium/...) with no extra
-# <name>-<ver>-<sys> wrapper directory, so it extracts cleanly to /.
+# Archive (TGZ): a relocatable single-directory bundle (see the per-generator
+# prefix/wrapper in BeebiumCPackOptions.cmake). The DEB generator is added below
+# on Linux.
 set(CPACK_GENERATOR "TGZ")
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND CPACK_GENERATOR "DEB")

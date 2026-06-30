@@ -142,6 +142,8 @@ jobs:
             -v "$PWD:/work" -w /work \
             ${{ matrix.image }} bash -c '
               set -euo pipefail
-              tar -C / -xzf _artifacts/beebium-server-*-linux-${{ matrix.arch }}.tar.gz
-              bash scripts/smoke-installed-tree.sh /opt/beebium
+              tarball="$(ls _artifacts/beebium-server-*-linux-${{ matrix.arch }}.tar.gz)"
+              dir="$(tar -tzf "$tarball" | head -1 | cut -d/ -f1)"
+              tar -xzf "$tarball"
+              bash scripts/smoke-installed-tree.sh "$dir"
             '

@@ -101,8 +101,9 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work" -w /work ${{ matrix.image }} bash -c '
             set -euo pipefail
-            tar -C / -xzf beebium.tar.gz
-            bash scripts/smoke-installed-tree.sh /opt/beebium
+            dir="$(tar -tzf beebium.tar.gz | head -1 | cut -d/ -f1)"
+            tar -xzf beebium.tar.gz
+            bash scripts/smoke-installed-tree.sh "$dir"
           '
 
   macos:

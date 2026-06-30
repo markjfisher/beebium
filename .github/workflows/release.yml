@@ -58,22 +58,34 @@ jobs:
           draft: true
           files: _artifacts/*
           body: |
-            Self-contained server bundles:
+            Headless BBC Micro emulator servers (Model B, B+, B+ 128K, ROM/RAM),
+            drivable from the Python/TypeScript clients or directly. Each install
+            puts the four servers on `PATH` and bundles the ROMs and extensions;
+            list them with `beebium-model-b list-extensions`.
 
-            - **Linux** — `.deb` (Debian/Ubuntu/Raspberry Pi OS) and `.tar.gz`
-              (other distros), for `amd64` and `arm64`.
-            - **Windows** — `.zip` (x64), self-contained except for the Visual
-              C++ Redistributable.
+            ### Linux
+            Self-contained for `amd64` and `arm64` (no gRPC/protobuf to install).
+            - **Debian / Ubuntu / Raspberry Pi OS** -- download the `.deb` for your
+              architecture and `sudo apt install ./<file>.deb`.
+            - **Other distros** -- download the `.tar.gz`, extract it **anywhere**,
+              and add the extracted `beebium-server-*/bin` directory to your
+              `PATH` (no root needed).
 
-            The macOS server is installed from the Homebrew tap. After this release
-            is published, update the tap from a checkout of the repository:
-
+            ### macOS
             ```
-            packaging/homebrew/sync-tap.sh <version> <homebrew-beebium-checkout>
+            brew tap rob-smallshire/beebium
+            brew install beebium-server
             ```
-            (pass the bare version, e.g. `0.1.0`, not the `v`-prefixed tag.)
 
-            then commit and push the tap. Similarly, pin the Windows `.zip`'s URL
-            and SHA256 into the Scoop bucket's manifest
-            (`packaging/scoop/beebium-server.json`). The Python and TypeScript
-            clients are published to PyPI and npm separately (later phases).
+            ### Windows
+            ```
+            scoop bucket add beebium https://github.com/rob-smallshire/scoop-beebium
+            scoop install beebium-server
+            ```
+            Or download the `.zip` and extract it; self-contained apart from the
+            Microsoft Visual C++ Redistributable.
+
+            ---
+            The macOS/Windows commands require the Homebrew tap and Scoop bucket to
+            be synced to this version. The Python and TypeScript clients ship
+            separately (PyPI and npm).
