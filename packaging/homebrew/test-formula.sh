@@ -47,6 +47,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# CI runner images ship a stale Homebrew formula index. Without this, `brew
+# install` pours dependency bottles from the stale index, then `brew test`'s
+# developer-mode JSON-API refresh decides those just-installed deps are no longer
+# the "latest" and aborts with "missing test dependencies: protobuf grpc". Align
+# the index up front so install and test agree. Skipped locally (a dev Mac's
+# index is already current, and `brew update` there is slow and noisy).
+if [ "${CI:-}" = "true" ]; then
+  echo "::group::brew update"
+  brew update
+  echo "::endgroup::"
+fi
+
 echo "::group::brew install --build-from-source"
 brew install --build-from-source beebium/formula-test/beebium-server
 echo "::endgroup::"
