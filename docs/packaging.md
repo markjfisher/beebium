@@ -450,11 +450,34 @@ Homebrew formula on `macos-14` (arm64) and `macos-13` (x86_64) by running
 runs on PRs that touch the formula or the build system, plus on demand.
 
 `.github/workflows/release.yml` ties these together: pushing a `v*` tag (the
-final step of the `bump-my-version` release) builds the Linux bundles, validates
-the macOS formula, and creates a **draft** GitHub Release with the Linux `.deb`
-and `.tar.gz` attached. The draft is published manually; the Homebrew tap is then
-updated with `packaging/homebrew/sync-tap.sh`. Both `linux-packages.yml` and
-`macos-package.yml` expose `workflow_call` so the release flow reuses them.
+final step of the `bump-my-version` release) builds the Linux bundles, builds the
+Windows ZIP, validates the macOS formula, and creates a **draft** GitHub Release
+with the Linux `.deb`/`.tar.gz` and the Windows `.zip` attached. The draft is
+published manually; the Homebrew tap and Scoop bucket are then synced
+(`packaging/homebrew/sync-tap.sh` and the Scoop equivalent). `linux-packages.yml`,
+`macos-package.yml` and `windows-package.yml` all expose `workflow_call` so the
+release flow reuses them.
+
+### Smoke-test layers
+
+End-to-end installability is checked at two layers, because the public download
+URLs and the tap/bucket pins do not exist until *after* a release is published:
+
+1. **Build-isolation smoke** — runs inside the package build, on a clean runner
+   separate from the build, against the *just-built* artifact. It proves the
+   artifact installs and runs without the build environment. Linux: `smoke-deb`
+   (install the `.deb` in a fresh `debian:bookworm`, plus the Python interaction
+   smoke) and `smoke-tarball` (extract in a fresh Arch). Windows: the `smoke` job
+   in `windows-package.yml` extracts the ZIP on a fresh runner and runs a server.
+   macOS is inherently covered because `brew install` *is* the build+install.
+
+2. **Published end-to-end smoke** — `.github/workflows/release-smoke.yml`,
+   `workflow_dispatch` with a `version` input, run **after** the release is
+   published and the tap + bucket are synced. Each platform leg installs from the
+   real public channel on its own clean runner: Linux downloads the `.deb`/
+   `.tar.gz` from the Release URL; macOS runs `brew install beebium-server` from
+   the tap; Windows runs `scoop install beebium-server` from the bucket. This is
+   what exercises the actual URLs, hashes and package-manager plumbing.
 
 ## Status
 

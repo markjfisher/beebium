@@ -1,0 +1,149 @@
+# Published end-to-end smoke: install a released version the way a real user
+# would -- from the public download URLs and package managers -- on clean runners.
+#
+# This is deliberately separate from the release build (release.yml), because the
+# public artifacts do not exist until AFTER you publish the release and sync the
+# downstream channels. Run this manually once all of the following are true for
+# the version under test:
+#
+#   1. the GitHub Release for v<version> is PUBLISHED (not a draft), so its .deb /
+#      .tar.gz / .zip assets are publicly downloadable;
+#   2. the Homebrew tap (rob-smallshire/homebrew-beebium) is synced to <version>
+#      (packaging/homebrew/sync-tap.sh) -- required for the macOS leg;
+#   3. the Scoop bucket (rob-smallshire/scoop-beebium) is synced to <version>
+#      -- required for the Windows leg.
+#
+# Each leg runs on its own clean runner and exercises the real network plumbing
+# (download URLs, tap/bucket git, manifest hashes), not a locally-built artifact.
+
+name: Release smoke (published)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to smoke-test, bare (e.g. 0.1.0). Release must be published and tap + bucket synced."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  linux-deb:
+    name: deb from Release URL (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .deb from the published Release URL
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          url="https://github.com/${{ github.repository }}/releases/download/v${V}/beebium-server_${V}_${{ matrix.arch }}.deb"
+          echo "Fetching $url"
+          curl -fSL "$url" -o beebium.deb
+          ls -l beebium.deb
+
+      - name: Install in clean Debian and smoke (bundle + Python interaction)
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e BEEBIUM_ROM_DIR=/opt/beebium/share/beebium/roms \
+            debian:bookworm bash -c '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq ./beebium.deb python3 python3-venv
+              bash scripts/smoke-installed-tree.sh /opt/beebium
+              python3 -m venv /venv && . /venv/bin/activate
+              pip install --quiet ./clients/python pytest pytest-timeout
+              pytest -q packaging/smoke/test_smoke.py
+            '
+
+  linux-tarball:
+    name: tarball from Release URL (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            image: archlinux:latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            image: menci/archlinuxarm:base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .tar.gz from the published Release URL
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          url="https://github.com/${{ github.repository }}/releases/download/v${V}/beebium-server-${V}-linux-${{ matrix.arch }}.tar.gz"
+          echo "Fetching $url"
+          curl -fSL "$url" -o beebium.tar.gz
+          ls -l beebium.tar.gz
+
+      - name: Extract in clean Arch and smoke
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work ${{ matrix.image }} bash -c '
+            set -euo pipefail
+            tar -C / -xzf beebium.tar.gz
+            bash scripts/smoke-installed-tree.sh /opt/beebium
+          '
+
+  macos:
+    name: brew install from tap (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, macos-13]
+    steps:
+      - name: Install from the Homebrew tap and run
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          brew tap rob-smallshire/beebium
+          brew install beebium-server
+          brew list --versions beebium-server
+          brew list --versions beebium-server | grep -q "${V}" \
+            || { echo "installed version is not ${V}; is the tap synced?"; exit 1; }
+          out="$(beebium-model-b list-extensions)"
+          echo "$out"
+          for cli in host-serial aun scsi-hdd rpc-serial ip232-serial piconet acorn-rtc; do
+            echo "$out" | awk -F '\t' 'NR>1{print $1}' | grep -qx "$cli" \
+              || { echo "extension not discovered: $cli"; exit 1; }
+          done
+          echo "macOS tap smoke OK"
+
+  windows:
+    name: scoop install from bucket
+    runs-on: windows-2022
+    steps:
+      - name: Install from the Scoop bucket and run
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          Invoke-RestMethod get.scoop.sh | Invoke-Expression
+          scoop bucket add beebium https://github.com/rob-smallshire/scoop-beebium
+          scoop install beebium-server
+          $env:Path = "$env:USERPROFILE\scoop\shims;" + $env:Path
+          $out = beebium-model-b list-extensions
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::server exited $LASTEXITCODE"; exit 1 }
+          $out
+          $clis = ($out | Select-Object -Skip 1) | ForEach-Object { ($_ -split "`t")[0] }
+          foreach ($cli in @('host-serial','aun','scsi-hdd','rpc-serial','ip232-serial','piconet','acorn-rtc')) {
+            if ($clis -notcontains $cli) { Write-Host "::error::extension not discovered: $cli"; exit 1 }
+          }
+          Write-Host "Windows scoop smoke OK"

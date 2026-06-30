@@ -111,3 +111,33 @@ jobs:
           name: bundle-windows-x64
           path: _artifacts/*.zip
           if-no-files-found: error
+
+  # Install-isolation smoke: a FRESH runner (no MSVC dev shell, no vcpkg, no
+  # build tree) that extracts the produced ZIP and runs a server from it. This
+  # proves the bundle is self-contained and works without the build environment
+  # -- the Windows analogue of scripts/smoke-installed-tree.sh.
+  smoke:
+    name: smoke (clean runner)
+    needs: build
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-windows-x64
+          path: dl
+
+      - name: Extract the ZIP and run a server from it
+        run: |
+          $zip = (Get-ChildItem dl\*.zip)[0].FullName
+          Write-Host "Smoke-testing $zip"
+          Expand-Archive -Path $zip -DestinationPath extracted -Force
+          $exe = "extracted\bin\beebium-model-b.exe"
+          if (-not (Test-Path $exe)) { Write-Host "::error::$exe missing from ZIP"; exit 1 }
+          $out = & $exe list-extensions
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::server exited $LASTEXITCODE (likely a missing DLL)"; exit 1 }
+          $out
+          $clis = ($out | Select-Object -Skip 1) | ForEach-Object { ($_ -split "`t")[0] }
+          foreach ($cli in @('host-serial','aun','scsi-hdd','rpc-serial','ip232-serial','rfc2217-client-serial','rfc2217-server-serial','loopback-serial','piconet','acorn-scsi','acorn-rtc')) {
+            if ($clis -notcontains $cli) { Write-Host "::error::extension not discovered from the ZIP: $cli"; exit 1 }
+          }
+          Write-Host "Windows smoke OK: extracted ZIP runs and discovers all extensions"
