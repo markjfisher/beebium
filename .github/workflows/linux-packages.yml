@@ -143,7 +143,10 @@ jobs:
             ${{ matrix.image }} bash -c '
               set -euo pipefail
               tarball="$(ls _artifacts/beebium-server-*-linux-${{ matrix.arch }}.tar.gz)"
-              dir="$(tar -tzf "$tarball" | head -1 | cut -d/ -f1)"
+              # The relocatable tarball unpacks to a single dir named exactly like
+              # the tarball without .tar.gz. (Avoid `tar -tzf | head`: head closes
+              # the pipe early, tar gets SIGPIPE, and `set -o pipefail` aborts.)
+              dir="$(basename "$tarball" .tar.gz)"
               tar -xzf "$tarball"
               bash scripts/smoke-installed-tree.sh "$dir"
             '
