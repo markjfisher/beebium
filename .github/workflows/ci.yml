@@ -2,6 +2,11 @@ name: CI
 
 on:
   push:
+    # Branches only. Tag pushes (v*) are handled by release.yml; running the full
+    # CI build on every release-tag (re-)point just starves the release jobs of
+    # the scarce Windows/macOS runners.
+    tags-ignore:
+      - "**"
   pull_request:
   schedule:
     # Run weekly on Monday at 6 AM UTC to keep caches alive (7-day expiry)
