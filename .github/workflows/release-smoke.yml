@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14, macos-13]
+        runner: [macos-14]
     steps:
       - name: Install from the Homebrew tap and run
         env:

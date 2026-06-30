@@ -445,7 +445,7 @@ interaction smoke) and Arch (`archlinux` for x86_64, Arch Linux ARM for arm64)
 containers.
 
 `.github/workflows/macos-package.yml` builds, installs, tests and audits the
-Homebrew formula on `macos-14` (arm64) and `macos-13` (x86_64) by running
+Homebrew formula on `macos-14` (arm64) by running
 `packaging/homebrew/test-formula.sh`. The source build is cheap (~1 min), so it
 runs on PRs that touch the formula or the build system, plus on demand.
 
