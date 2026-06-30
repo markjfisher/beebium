@@ -93,14 +93,21 @@ jobs:
               apt-get update -qq
               apt-get install -y -qq \
                 ./_artifacts/beebium-server_*_${{ matrix.arch }}.deb \
-                python3 python3-venv
+                curl ca-certificates
               echo "::group::bundle smoke (self-containment + boot + bare-command)"
               bash scripts/smoke-installed-tree.sh /opt/beebium
               echo "::endgroup::"
               echo "::group::interaction smoke (client drives the installed server)"
-              python3 -m venv /venv
+              # The Python client requires Python >=3.12, but debian:bookworm
+              # (the .deb glibc-floor target) ships 3.11. Provide 3.12 with uv --
+              # the project manages Python with uv anyway -- rather than testing
+              # the server on a non-target distro.
+              export HOME=/root
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH="/root/.local/bin:${PATH}"
+              uv venv --python 3.12 /venv
               . /venv/bin/activate
-              pip install --quiet ./clients/python pytest pytest-timeout
+              uv pip install --quiet ./clients/python pytest pytest-timeout
               pytest -q packaging/smoke/test_smoke.py
               echo "::endgroup::"
             '
