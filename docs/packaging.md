@@ -14,7 +14,7 @@ the macOS `.app`, see [macOS App Packaging](macos-app-packaging.md).
 | Component | Channel | Status |
 |-----------|---------|--------|
 | Server (headless core) | Self-contained `.deb` (apt) + `.tar.gz` (everything else) | **Done** (Linux, both arches) |
-| Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | **Done** (formula built/tested/audited, both arches); tap publish is manual |
+| Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | **Done** (arm64 CI-gated; Intel best-effort); tap publish is manual |
 | Server (Windows) | Self-contained `.zip` + Scoop bucket + WinGet | Planned |
 | Python client | PyPI (`beebium`) | Planned |
 | TypeScript client | npm (`beebium`) | Planned |
@@ -447,7 +447,17 @@ containers.
 `.github/workflows/macos-package.yml` builds, installs, tests and audits the
 Homebrew formula on `macos-14` (arm64) by running
 `packaging/homebrew/test-formula.sh`. The source build is cheap (~1 min), so it
-runs on PRs that touch the formula or the build system, plus on demand.
+runs on PRs that touch the formula or the build system, plus on demand. It is
+**arm64 only**: GitHub's Intel `macos-13` runners are scarce and deprecated, and
+a release-gating Intel leg stuck in the runner queue would block the draft
+indefinitely.
+
+`.github/workflows/macos-intel.yml` covers Intel (`x86_64`) **best-effort** — the
+same `test-formula.sh`, on `macos-13`, triggered weekly / on demand / on
+formula-or-build PRs. It is standalone and **never gates a release**, so a stuck
+or absent Intel runner only affects that run. The formula is a source build, so
+Intel Macs work for users regardless of CI. For reliable Intel coverage, register
+an Intel Mac as a self-hosted runner and point `runs-on` at its label.
 
 `.github/workflows/release.yml` ties these together: pushing a `v*` tag (the
 final step of the `bump-my-version` release) builds the Linux bundles, builds the
@@ -488,7 +498,7 @@ URLs and the tap/bucket pins do not exist until *after* a release is published:
   (x86_64 + Arch Linux ARM).
 - The manual CI workflow that builds and smoke-tests both.
 - macOS Homebrew formula (`beebium-server`): source build against Homebrew's
-  grpc/protobuf, validated locally and in CI on both arches
+  grpc/protobuf, validated locally and in CI on arm64 (Intel best-effort)
   (`brew install`/`test`/`audit` + extension discovery + a Python-client
   fingerprint-handshake smoke).
 - A release-tag workflow (`release.yml`) that builds Linux bundles, validates the

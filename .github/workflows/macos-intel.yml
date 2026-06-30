@@ -1,0 +1,45 @@
+# Best-effort Intel (x86_64) validation of the Homebrew formula.
+#
+# This is deliberately SEPARATE from macos-package.yml / release.yml and never
+# gates a release. GitHub's Intel macos-13 runners are scarce and being
+# deprecated, so a release-gating Intel leg would stall the draft indefinitely
+# (a reusable-workflow job stuck in the runner queue never completes). Here a
+# stuck or absent runner only affects this standalone run, never a release.
+#
+# The release path stays arm64-only (macos-package.yml); the formula is a source
+# build, so Intel Macs work for users regardless. This workflow adds the CI
+# signal on Intel where a runner is available.
+#
+# For reliable Intel coverage, register an Intel Mac as a self-hosted runner and
+# change `runs-on` below to its label (e.g. [self-hosted, macOS, X64]).
+
+name: macOS Intel formula
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 07:00 UTC -- keep the Intel build exercised.
+    - cron: "0 7 * * 1"
+  pull_request:
+    paths:
+      - "packaging/homebrew/**"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/server/CMakeLists.txt"
+      - ".github/workflows/macos-intel.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    name: formula (x86_64, best-effort)
+    runs-on: macos-13
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build, install, test and audit the formula
+        run: packaging/homebrew/test-formula.sh
