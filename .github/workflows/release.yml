@@ -43,6 +43,8 @@ jobs:
     needs: [linux, macos-formula, windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: bundle-*
@@ -51,6 +53,59 @@ jobs:
 
       - name: List collected artifacts
         run: ls -l _artifacts
+
+      # Publish-boundary gate: validate the EXACT set of files about to be
+      # attached, before uploading. A green build proves the bundles are good; it
+      # does NOT prove the publish path (download -> merge -> upload) shipped the
+      # right bytes -- that gap once published stale /opt-rooted tarballs while
+      # every smoke job stayed green. If any assertion fails, the job stops here
+      # and no draft is created/updated with bad assets.
+      - name: Verify the publishable artifacts
+        run: |
+          set -euo pipefail
+          V="$(grep -E '^current_version' .bumpversion.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "Verifying release assets for version ${V}"
+          cd _artifacts
+
+          # 1. Exactly the expected asset set -- no missing, no extras, no dupes.
+          expected="$(printf '%s\n' \
+            "beebium-server-${V}-linux-amd64.tar.gz" \
+            "beebium-server-${V}-linux-arm64.tar.gz" \
+            "beebium-server-${V}-windows-x64.zip" \
+            "beebium-server_${V}_amd64.deb" \
+            "beebium-server_${V}_arm64.deb" | sort)"
+          actual="$(ls -1 | sort)"
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::published asset set mismatch"
+            diff <(echo "${expected}") <(echo "${actual}") || true
+            exit 1
+          fi
+
+          # 2. Each Linux .tar.gz is a single relocatable top-level directory
+          #    named for its arch -- NOT /opt, and not more than one entry.
+          for arch in amd64 arm64; do
+            t="beebium-server-${V}-linux-${arch}.tar.gz"
+            tops="$(tar -tzf "${t}" | cut -d/ -f1 | sort -u)"
+            if [ "${tops}" != "beebium-server-${V}-linux-${arch}" ]; then
+              echo "::error::${t} top-level is '$(echo ${tops})', expected the single dir beebium-server-${V}-linux-${arch}"
+              exit 1
+            fi
+          done
+
+          # 3. Each .deb's declared Architecture matches its filename.
+          for arch in amd64 arm64; do
+            d="beebium-server_${V}_${arch}.deb"
+            a="$(dpkg-deb -f "${d}" Architecture)"
+            [ "${a}" = "${arch}" ] || { echo "::error::${d} Architecture=${a}, expected ${arch}"; exit 1; }
+          done
+
+          # 4. Actually RUN the shipped amd64 server (this runner is amd64):
+          #    self-containment (ldd), plugin discovery, ROM discovery, boot.
+          tar -xzf "beebium-server-${V}-linux-amd64.tar.gz"
+          bash "${GITHUB_WORKSPACE}/scripts/smoke-installed-tree.sh" \
+            "${PWD}/beebium-server-${V}-linux-amd64"
+
+          echo "Publishable artifacts verified: correct set, relocatable tarballs, arch-correct debs, amd64 server runs."
 
       - name: Create draft release with Linux artifacts
         uses: softprops/action-gh-release@v2
