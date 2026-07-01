@@ -18,6 +18,10 @@
 set -euo pipefail
 
 prefix="${1:?usage: smoke-installed-tree.sh <prefix>}"
+# Canonicalise to an absolute path. The bare-command test below symlinks the
+# server binary into a temp dir; with a relative prefix that symlink would dangle
+# (it resolves relative to the symlink's own location, not the caller's cwd).
+prefix="$(cd "${prefix}" && pwd)"
 server="${prefix}/bin/beebium-model-b"
 
 fail() { echo "SMOKE FAIL: $*" >&2; exit 1; }
