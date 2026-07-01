@@ -58,7 +58,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.arch }}
-          path: _artifacts/*
+          # Upload ONLY this arch's packages. The buildx output dir can carry
+          # stale cross-arch/old-layout files from the gha build cache; without
+          # this filter each bundle picks up the other arch's files, and the
+          # release job's merge-multiple then collides same-named assets and
+          # publishes the wrong (stale) ones. The arch tokens (amd64/arm64) are
+          # mutually exclusive substrings, so this selects cleanly.
+          path: _artifacts/*${{ matrix.arch }}*
           if-no-files-found: error
 
   # Install the .deb in a clean Debian, then drive the installed server through
