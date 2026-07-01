@@ -15,7 +15,7 @@ the macOS `.app`, see [macOS App Packaging](macos-app-packaging.md).
 |-----------|---------|--------|
 | Server (headless core) | Self-contained `.deb` (apt) + `.tar.gz` (everything else) | **Done** (Linux, both arches) |
 | Server (macOS) | Homebrew tap `rob-smallshire/homebrew-beebium`, formula `beebium-server` | **Done** (arm64 CI-gated; Intel best-effort); tap publish is manual |
-| Server (Windows) | Self-contained `.zip` + Scoop bucket + WinGet | Planned |
+| Server (Windows) | Self-contained `.zip` (built + smoke-tested in CI, attached to the release) + Scoop bucket + WinGet | **Done** (`.zip` in CI/release); Scoop bucket + WinGet pending |
 | Python client | PyPI (`beebium`) | Planned |
 | TypeScript client | npm (`beebium`) | Planned |
 
@@ -37,21 +37,28 @@ is authored and tested.
 
 ```
 beebium/
-├── CMakeLists.txt              # install rules + CPack feed the Linux packages
-├── cmake/BeebiumPackaging.cmake# CPack config (.deb + .tar.gz)
-├── docker/linux-bundle/        # static-bundle build (the Linux .deb/.tar.gz)
+├── CMakeLists.txt                 # install rules + CPack feed the packages
+├── cmake/BeebiumPackaging.cmake   # CPack config (.deb + .tar.gz)
+├── cmake/BeebiumCPackOptions.cmake# per-generator layout (deb=/opt, tgz=relocatable)
+├── triplets/                      # static vcpkg triplets (linux/osx/windows-static-md)
+├── docker/linux-bundle/           # static-bundle build (the Linux .deb/.tar.gz)
 ├── scripts/smoke-installed-tree.sh
 ├── packaging/
-│   ├── debian/{postinst,prerm} # .deb maintainer scripts
-│   ├── smoke/test_smoke.py     # client-drives-installed-server interaction smoke
+│   ├── debian/{postinst,prerm}    # .deb maintainer scripts
+│   ├── smoke/test_smoke.py        # client-drives-installed-server interaction smoke
+│   ├── windows/make-zip.ps1       # assemble the Windows .zip from the install tree
+│   ├── scoop/beebium-server.json  # CANONICAL Scoop manifest (synced into the bucket)
 │   └── homebrew/
-│       ├── beebium-server.rb   # CANONICAL formula (source of truth, reviewed/CI'd)
-│       ├── test-formula.sh     # build/install/test/audit against the working tree
-│       └── sync-tap.sh         # pin a release into the tap (below)
+│       ├── beebium-server.rb      # CANONICAL formula (source of truth, reviewed/CI'd)
+│       ├── test-formula.sh         # build/install/test/audit against the working tree
+│       └── sync-tap.sh             # pin a release into the tap (below)
 └── .github/workflows/
-    ├── linux-packages.yml      # build + smoke the Linux packages
-    ├── macos-package.yml       # build/test/audit the Homebrew formula
-    └── release.yml             # tag -> Linux bundles + macOS formula + draft Release
+    ├── linux-packages.yml         # build + smoke the Linux packages
+    ├── macos-package.yml          # build/test/audit the Homebrew formula (arm64)
+    ├── macos-intel.yml            # best-effort Intel formula check (non-gating)
+    ├── windows-package.yml        # build + smoke the Windows .zip
+    ├── release.yml                # tag -> all packages + verified draft Release
+    └── release-smoke.yml          # post-publish end-to-end install from public channels
 ```
 
 ### The tap — `rob-smallshire/homebrew-beebium`
@@ -231,15 +238,17 @@ full end-to-end install has been validated from the real tap:
 builds, puts the four servers on `PATH`, and discovers all extensions. So the
 **`--HEAD` (build-from-`master`) path works today.**
 
-Remaining before a normal `brew install beebium-server` works, in order:
+The `v0.1.0` tag is cut and its Release is drafted (not yet published). Remaining
+before a normal `brew install beebium-server` works, in order:
 
-1. **Cut a tagged release.** The formula's `url`/`sha256` point at a
-   `v<version>` source tarball that does not exist yet; `sha256` is a placeholder.
-   Tag a release (`git tag v0.1.0 && git push --follow-tags`, or `bump-my-version`),
-   then run `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` to fetch the
-   tarball, compute the real checksum, and write the pinned formula into the tap;
-   commit and push the tap. Only then does the stable (non-`--HEAD`) formula
-   resolve.
+1. **Pin the release into the tap.** The canonical formula's `url` points at the
+   `v<version>` source tarball (which now exists — GitHub auto-generates it for
+   any tag), but its `sha256` is still a placeholder. Run
+   `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` to fetch the tarball,
+   compute the real checksum, and write the pinned formula into the tap; commit
+   and push the tap. Only then does the stable (non-`--HEAD`) formula resolve.
+   (This is independent of *publishing* the Release, since the formula builds from
+   the source archive, not a Release asset.)
 2. **Wire bottles.** Until bottles exist, every `brew install` compiles
    beebium-server from source (~1 min locally, a few minutes on slower runners) —
    acceptable for dev, undesirable at CI scale. The `brew tap-new` scaffolding
@@ -255,17 +264,17 @@ vcpkg-static build path rather than the Homebrew-deps build.
 
 ## Windows
 
-The Windows server build and tests have always been green in CI on
-`windows-2022`. The packaging described below has now been **validated
-end-to-end as a proof of concept** (built on a Windows box, not yet in CI): a
-self-contained `x64-windows-static-md` ZIP installs and runs through Scoop with
-all extensions loading. What remains is automation (a CI job and the Scoop
-bucket), not feasibility. The approach mirrors the Linux/macOS strategy — a
-self-contained artifact for CI plus a package-manager front end.
+The Windows server is shipped as a **self-contained `x64-windows-static-md`
+ZIP**, built, smoke-tested and attached to the release **in CI**
+(`windows-package.yml`), and installed via a **Scoop bucket**. The approach
+mirrors the Linux/macOS strategy — a self-contained artifact plus a
+package-manager front end. What remains is the external Scoop bucket (and WinGet,
+signing); the `.zip` itself is done end-to-end.
 
-The normal CI build still links the vcpkg `x64-windows` libraries *dynamically*
-(copying the gRPC/protobuf/abseil DLLs next to the executables); the packaging
-build instead uses the static triplet below.
+Note the two distinct Windows builds: the **normal CI** (`ci.yml`) still links
+the vcpkg `x64-windows` libraries *dynamically* (copying the gRPC/protobuf/abseil
+DLLs next to the executables to run the test suite); the **packaging** build uses
+the static triplet below so the shipped `.zip` is self-contained.
 
 ### Server: a self-contained `.zip`
 
@@ -284,8 +293,9 @@ of shipping a pile of DLLs:
 
 Either gives the Linux bundle's benefits: one artifact decoupled from system
 library versions, with gRPC pinned at build time (good for the protocol
-fingerprint story). This needs a new `x64-windows-static-md` overlay triplet
-alongside the existing four.
+fingerprint story). The `x64-windows-static-md` overlay triplet
+(`triplets/x64-windows-static-md.cmake`) sits alongside the four static
+linux/osx triplets.
 
 ### Distribution channels
 
@@ -319,32 +329,34 @@ through the **Microsoft Store** (which handles signing, trust and updates) and/o
 **WinGet**. A WiX Toolset v5 **MSI** would only be added if traditional
 enterprise deployment (Intune/SCCM/Group Policy) is needed.
 
-### Status
-
-Done (validated as a proof of concept):
+### How the ZIP is built and shipped
 
 - `triplets/x64-windows-static-md.cmake` — static gRPC/protobuf/abseil, dynamic
-  CRT. `dumpbin /dependents` confirms only system DLLs + the VC++ runtime + our
-  own ABI DLLs.
+  CRT. `dumpbin /dependents` (asserted in CI) confirms only system DLLs + the
+  VC++ runtime + our own ABI DLLs, no gRPC/protobuf/abseil DLLs.
 - `cmake --install` produces the right tree on Windows with no fixups: `bin/`
-  (exes + ABI DLLs + `extensions/`), `share/beebium/{roms,presets}`.
-  `list-extensions` loads all built-in and dlopened extensions.
-- `packaging/windows/make-zip.ps1` zips `bin/` + `share/` (root-level) into
-  `beebium-server-<version>-windows-x64.zip` (~28 MB; the `lib/` import libraries
-  are omitted).
-- `packaging/scoop/beebium-server.json` — the Scoop manifest; a real
-  `scoop install` (local-file URL + hash) created the four shims and the bare
-  `beebium-model-b` command loaded every extension.
+  (exes + ABI DLLs + `extensions/<name>/`), `share/beebium/{roms,presets}`.
+- `packaging/windows/make-zip.ps1` installs to a staging prefix and zips `bin/` +
+  `share/` (root-level) into `beebium-server-<version>-windows-x64.zip` (~30 MB;
+  the `lib/` import libraries are omitted).
+- `.github/workflows/windows-package.yml` runs all of the above on `windows-2022`
+  (vcpkg static-md install with the NuGet binary cache, build with `--parallel 2`
+  to fit the ~3 GB server-main compiles on a 16 GB runner, the `dumpbin`
+  self-containment gate, then `make-zip.ps1`), uploads the ZIP, and — on a
+  separate clean runner — extracts it and runs a server (the build-isolation
+  smoke). It exposes `workflow_call`, so `release.yml` reuses it and attaches the
+  ZIP to the draft.
+- `packaging/scoop/beebium-server.json` — the canonical Scoop manifest (bin shims
+  for the four servers, `checkver`/`autoupdate`; `url`/`hash` are placeholders
+  pinned at release time, like the Homebrew `sha256`).
 
-Remaining:
+### Remaining (Windows)
 
-1. Wire it into `release.yml` (build the ZIP on a Windows runner, attach it to the
-   GitHub Release) — like `macos-package.yml`.
-2. Stand up a `scoop-beebium` bucket repo (the Scoop analogue of the Homebrew tap)
-   and pin the release URL + hash into the manifest at release time.
-3. A WinGet manifest (after a release exists).
-4. Azure Trusted Signing (decide whether to sign from the first release or later).
-5. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
+1. Stand up a `scoop-beebium` bucket repo (the Scoop analogue of the Homebrew
+   tap) and pin the release ZIP's URL + SHA256 into its manifest at release time.
+2. A WinGet manifest (after a release exists).
+3. Azure Trusted Signing (decide whether to sign from the first release or later).
+4. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
 
 The `static-md` vs full `static` decision is settled in favour of `static-md`
 (dynamic CRT, only the VC++ Redistributable needed). The sign-now vs
@@ -352,27 +364,37 @@ ship-unsigned-first decision is still open.
 
 ## Install layout
 
-Both package formats lay down the same relocatable tree under `/opt/beebium`,
-with `/usr/bin` symlinks onto the four server binaries so they are on `PATH`:
+`cmake --install` produces one relocatable `bin`/`lib`/`share` tree; the package
+formats differ only in *where* they place it (see
+[Package formats](#package-formats)). The **`.deb`** installs it under
+`/opt/beebium` with `/usr/bin` symlinks onto the four servers so they are on
+`PATH`:
 
 ```
 /opt/beebium/
-├── beebium-model-b, beebium-model-b-plus, beebium-model-b-plus-128k, beebium-model-b-romram
+├── bin/
+│   ├── beebium-model-b, beebium-model-b-plus, beebium-model-b-plus-128k, beebium-model-b-romram
+│   └── extensions/<name>/{<plugin>.so, manifest.json}
 ├── lib/{libbeebium_extension_api.so, libbeebium_extension_ui_proto.so}
-├── extensions/<name>/{<plugin>.so, manifest.json}
 └── share/beebium/{roms,presets}/
-/usr/bin/beebium-model-b -> /opt/beebium/beebium-model-b   (+ the other three)
+/usr/bin/beebium-model-b -> /opt/beebium/bin/beebium-model-b   (+ the other three)
 ```
 
-The binaries resolve their extension ABI libraries, plugins, ROMs and presets
-relative to their own on-disk location (read from the OS, not `argv[0]`), so the
-PATH symlinks work and the tree relocates intact. See
-[Deployment](deployment.md) for the discovery details.
+The **`.tar.gz`** ships the same `bin`/`lib`/`share` tree inside a single
+relocatable directory (`beebium-server-<version>-linux-<arch>/`) that the user
+extracts anywhere and adds the directory's `bin/` to `PATH`. The macOS keg and
+the Windows `.zip` use the same shape. In every case the binaries resolve their
+extension ABI libraries, plugins, ROMs and presets relative to their own on-disk
+location (read from the OS, not `argv[0]`), so the symlinks work and the tree
+relocates intact. See [Deployment](deployment.md) for the discovery details.
 
 ## Package formats
 
 `cmake --install` produces the tree; CPack (`cmake/BeebiumPackaging.cmake`)
-produces the distributable packages:
+produces the two **Linux** distributable packages below. (The macOS keg is built
+by Homebrew from the formula; the Windows `.zip` is assembled by
+`packaging/windows/make-zip.ps1`, not CPack — see the [macOS](#the-macos-homebrew-formula)
+and [Windows](#windows) sections.)
 
 - **`.deb`** (`beebium-server_<version>_<arch>.deb`) — for Debian / Ubuntu /
   Raspberry Pi OS. Runtime dependencies are derived with `dpkg-shlibdeps`; since
@@ -396,7 +418,11 @@ treated as negligible; bundling them means there is no ROM-sourcing step in the
 user's quickstart. Disc images are **not** shipped — the disc under test is the
 user's own BBC software.
 
-## Building the bundle
+## Building the Linux bundle
+
+(The macOS formula builds via `packaging/homebrew/test-formula.sh` /
+`windows-package.yml` builds the Windows `.zip`; see those sections. This section
+covers the Linux static bundle.)
 
 `docker/linux-bundle/Dockerfile` builds the bundle for one architecture. On an
 Apple Silicon (arm64) Mac, the `arm64` build is **native** (fast) and the
@@ -425,29 +451,55 @@ Notes:
 
 ## Validation
 
-Three layers, increasing in fidelity:
+Packaging is validated as a ladder of increasing fidelity, ending at the
+principle that matters most: **test the artifact you ship, at the point you ship
+it.** A green *build* proves the bundles are good; it does not prove the publish
+path shipped the right bytes — so the last two layers validate the actual
+published assets.
 
 1. **`install_smoke`** (CTest, labelled `packaging`) — installs to a staging
    prefix and boots each server, asserting the ABI libs resolve via RPATH, the
    plugins are discovered, ROMs resolve, and the gRPC server comes up.
-2. **`scripts/smoke-installed-tree.sh`** — validates an *extracted* bundle on
-   any distro: `ldd` self-containment (no `libgrpc`/`libprotobuf`/…), plugin
-   discovery, ROM discovery + boot, and a bare-command (PATH-symlink) check.
-   Runs inside every bundle build.
-3. **Install-from-package smoke** — installs the actual `.deb`/`.tar.gz` in a
-   *clean* target distro and runs the above, plus an interaction test driving the
-   installed server through the Python client. This is what the CI workflow does.
+2. **`scripts/smoke-installed-tree.sh`** — the reusable primitive: validates an
+   *extracted* bundle at a given prefix on any OS: `ldd` self-containment (no
+   `libgrpc`/`libprotobuf`/…), plugin discovery, ROM discovery + boot, and a
+   bare-command (PATH-symlink) check. Prefix-agnostic (canonicalised to absolute).
+3. **Build-isolation smoke** (CI, a *clean* runner separate from the build,
+   against the *just-built* artifact) — proves the artifact installs and runs
+   without the build environment. Linux `smoke-deb` (install the `.deb` in a
+   fresh `debian:bookworm`, plus the Python-client interaction test) and
+   `smoke-tarball` (extract the relocatable `.tar.gz` in a fresh Arch); Windows
+   `smoke` (extract the `.zip` on a fresh runner and run a server). macOS is
+   inherently covered because `brew install` *is* the build + install.
+4. **Publish-boundary gate** (the `Verify the publishable artifacts` step in
+   `release.yml`, before the upload) — validates the *exact set of files about to
+   be attached*: exactly the five expected filenames (no missing/extra/dupes),
+   each Linux `.tar.gz` is a single relocatable top-level directory (not `/opt`),
+   each `.deb`'s `Architecture` matches its filename, and the shipped amd64 server
+   actually runs (`smoke-installed-tree.sh`). If any check fails the job stops and
+   no draft is created with bad assets. This closes the gap that once published
+   stale `/opt`-rooted tarballs while every smoke job stayed green.
+5. **Published end-to-end smoke** (`release-smoke.yml`, `workflow_dispatch` with a
+   `version` input, run **after** publishing + syncing the tap/bucket) — installs
+   from the real public channels on clean per-platform runners: Linux downloads
+   the `.deb`/`.tar.gz` from the Release URL; macOS `brew install beebium-server`
+   from the tap; Windows `scoop install beebium-server` from the bucket. This is
+   the only layer that exercises the actual download URLs, hashes and
+   package-manager plumbing, so it must run post-publish (they do not exist
+   before).
 
 ## CI
 
-`.github/workflows/linux-packages.yml` is **manual only** (`workflow_dispatch`,
-also triggerable via `gh workflow run linux-packages.yml`) — the from-source
-static gRPC build is too expensive for per-push runs. It builds both
-architectures on native runners (`ubuntu-latest` for `amd64`,
-`ubuntu-24.04-arm` for `arm64`, free on public repos), then exercises the
-produced packages in clean `debian:bookworm` (`.deb`, with the Python
-interaction smoke) and Arch (`archlinux` for x86_64, Arch Linux ARM for arm64)
-containers.
+`.github/workflows/linux-packages.yml` runs on `workflow_dispatch` (the
+from-source static gRPC build is too expensive for per-push runs) and on
+`workflow_call` (the release flow reuses it). It builds both architectures on
+native runners (`ubuntu-latest` for `amd64`, `ubuntu-24.04-arm` for `arm64`, free
+on public repos), then exercises the produced packages in clean `debian:bookworm`
+(`.deb`, with the Python interaction smoke) and Arch (`archlinux` for x86_64, Arch
+Linux ARM for arm64) containers. Each arch's build uploads **only its own arch's
+files** (`_artifacts/*<arch>*`): the buildx cache can leave stale cross-arch files
+in the output dir, and without the filter the release job's artifact merge would
+collide same-named assets and publish the wrong ones.
 
 `.github/workflows/macos-package.yml` builds, installs, tests and audits the
 Homebrew formula on `macos-14` (arm64) by running
@@ -464,68 +516,58 @@ or absent Intel runner only affects that run. The formula is a source build, so
 Intel Macs work for users regardless of CI. For reliable Intel coverage, register
 an Intel Mac as a self-hosted runner and point `runs-on` at its label.
 
+`.github/workflows/windows-package.yml` builds the static-md `.zip` on
+`windows-2022`, runs the `dumpbin` self-containment gate, and — on a separate
+clean runner — the build-isolation smoke (see the [Windows](#windows) section).
+It also exposes `workflow_call`.
+
 `.github/workflows/release.yml` ties these together: pushing a `v*` tag (the
-final step of the `bump-my-version` release) builds the Linux bundles, builds the
-Windows ZIP, validates the macOS formula, and creates a **draft** GitHub Release
-with the Linux `.deb`/`.tar.gz` and the Windows `.zip` attached. The draft is
-published manually; the Homebrew tap and Scoop bucket are then synced
-(`packaging/homebrew/sync-tap.sh` and the Scoop equivalent). `linux-packages.yml`,
-`macos-package.yml` and `windows-package.yml` all expose `workflow_call` so the
-release flow reuses them.
-
-### Smoke-test layers
-
-End-to-end installability is checked at two layers, because the public download
-URLs and the tap/bucket pins do not exist until *after* a release is published:
-
-1. **Build-isolation smoke** — runs inside the package build, on a clean runner
-   separate from the build, against the *just-built* artifact. It proves the
-   artifact installs and runs without the build environment. Linux: `smoke-deb`
-   (install the `.deb` in a fresh `debian:bookworm`, plus the Python interaction
-   smoke) and `smoke-tarball` (extract in a fresh Arch). Windows: the `smoke` job
-   in `windows-package.yml` extracts the ZIP on a fresh runner and runs a server.
-   macOS is inherently covered because `brew install` *is* the build+install.
-
-2. **Published end-to-end smoke** — `.github/workflows/release-smoke.yml`,
-   `workflow_dispatch` with a `version` input, run **after** the release is
-   published and the tap + bucket are synced. Each platform leg installs from the
-   real public channel on its own clean runner: Linux downloads the `.deb`/
-   `.tar.gz` from the Release URL; macOS runs `brew install beebium-server` from
-   the tap; Windows runs `scoop install beebium-server` from the bucket. This is
-   what exercises the actual URLs, hashes and package-manager plumbing.
+final step of the `bump-my-version` release) reuses `linux-packages.yml`,
+`macos-package.yml` and `windows-package.yml` (via `workflow_call`) to build and
+smoke every package, then the `release` job runs the **publish-boundary gate**
+(the `Verify the publishable artifacts` step — see [Validation](#validation)) and
+only if it passes creates a **draft** GitHub Release with the Linux `.deb`/
+`.tar.gz` and the Windows `.zip` attached. The draft is published manually; the
+Homebrew tap and Scoop bucket are then synced (`packaging/homebrew/sync-tap.sh`
+and the Scoop equivalent), after which `release-smoke.yml` verifies the live
+public install paths.
 
 ## Status
 
 **Done:**
-- Self-contained static bundle for `amd64` and `arm64`, built and validated.
-- `.deb` (correct per-arch `Architecture`, minimal deps, `/usr/bin` symlinks) and
-  `.tar.gz`, both validated by install-in-clean-distro on Debian and Arch
-  (x86_64 + Arch Linux ARM).
-- The manual CI workflow that builds and smoke-tests both.
-- macOS Homebrew formula (`beebium-server`): source build against Homebrew's
-  grpc/protobuf, validated locally and in CI on arm64 (Intel best-effort)
-  (`brew install`/`test`/`audit` + extension discovery + a Python-client
-  fingerprint-handshake smoke).
-- A release-tag workflow (`release.yml`) that builds Linux bundles, validates the
-  macOS formula, and drafts a GitHub Release with the Linux artifacts attached.
-- The tap `rob-smallshire/homebrew-beebium` is live with the formula;
+- **Linux:** self-contained static bundle for `amd64` and `arm64`; `.deb`
+  (`/opt/beebium`, correct per-arch `Architecture`, minimal deps, `/usr/bin`
+  symlinks) and **relocatable** `.tar.gz`, both validated by install-in-clean-
+  distro on Debian and Arch (x86_64 + Arch Linux ARM).
+- **macOS:** Homebrew formula (`beebium-server`), source build against Homebrew's
+  grpc/protobuf, validated in CI on arm64 (Intel best-effort via
+  `macos-intel.yml`). The tap `rob-smallshire/homebrew-beebium` is live;
   `brew install --HEAD beebium-server` validated end-to-end from the real tap.
+- **Windows:** self-contained `x64-windows-static-md` `.zip`, built + smoke-tested
+  in CI (`windows-package.yml`) and attached to the release; Scoop manifest
+  authored.
+- **Release pipeline:** `release.yml` builds all three platforms on a `v*` tag,
+  runs the publish-boundary verification gate, and produces a **draft** GitHub
+  Release. The first release (`v0.1.0`) has been cut; the draft carries the
+  correct relocatable Linux `.tar.gz`/`.deb` and the Windows `.zip`, and has been
+  independently re-verified.
 
 **Remaining (macOS Homebrew):**
-- Cut a tagged release and pin the checksum into the tap
-  (`sync-tap.sh`) so plain `brew install beebium-server` works, not just `--HEAD`.
+- **Publish** the release, then `sync-tap.sh 0.1.0 <tap>` to pin the real checksum
+  so plain `brew install beebium-server` works, not just `--HEAD`.
 - Wire the tap's bottle-building workflow so installs pour a pre-built binary
   instead of compiling (matters at CI scale).
 - Possibly add a Homebrew-free self-contained macOS `.tar.gz` for macOS CI
   (needs the vcpkg-static build path).
 
 **Remaining (Windows):**
-- The self-contained `x64-windows-static-md` ZIP + Scoop install are validated as
-  a proof of concept (see [Windows](#windows)). Remaining is automation: a CI job
-  in `release.yml`, a `scoop-beebium` bucket, WinGet, and Authenticode signing
-  (Azure Trusted Signing).
+- Stand up a `scoop-beebium` bucket and pin the released `.zip`'s URL + SHA256.
+- WinGet manifest; Authenticode signing (Azure Trusted Signing); later arm64
+  Windows and the GUI MSIX + Store path.
 
 **Remaining (other):**
+- **Publish** the drafted `v0.1.0` release (still a draft), then run
+  `release-smoke.yml` to validate the live public install paths.
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
 - Publishing the Python client to PyPI and the TypeScript client to npm.
 - On-real-hardware validation on a 64-bit Raspberry Pi 4 / 400.

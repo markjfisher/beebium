@@ -74,10 +74,13 @@ The default `<prefix>` is `/usr/local`. Override with:
 cmake --install build --prefix /opt/beebium
 ```
 
-The distributable packages install this tree under `/opt/beebium` with `/usr/bin`
-symlinks onto the binaries. For the self-contained, statically linked `.deb` /
-`.tar.gz` bundles (and how they are built, validated, and shipped), see
-[Packaging and Distribution](packaging.md).
+The distributable packages ship this same tree, differing only in *where* they
+place it: the `.deb` installs it under `/opt/beebium` with `/usr/bin` symlinks
+onto the binaries, while the `.tar.gz` (and the Windows `.zip`) is a relocatable
+single directory the user extracts anywhere and puts on `PATH`. Because discovery
+is entirely relative to the binary's own location, all of these work unchanged.
+For the self-contained, statically linked bundles (and how they are built,
+validated, and shipped), see [Packaging and Distribution](packaging.md).
 
 The executable locates ROMs via `../share/beebium/roms/` relative to its directory.
 
