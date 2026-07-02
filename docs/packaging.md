@@ -47,7 +47,9 @@ beebium/
 │   ├── debian/{postinst,prerm}    # .deb maintainer scripts
 │   ├── smoke/test_smoke.py        # client-drives-installed-server interaction smoke
 │   ├── windows/make-zip.ps1       # assemble the Windows .zip from the install tree
-│   ├── scoop/beebium-server.json  # CANONICAL Scoop manifest (synced into the bucket)
+│   ├── scoop/
+│   │   ├── beebium-server.json    # CANONICAL Scoop manifest (synced into the bucket)
+│   │   └── sync-bucket.sh          # pin a released .zip into the Scoop bucket
 │   └── homebrew/
 │       ├── beebium-server.rb      # CANONICAL formula (source of truth, reviewed/CI'd)
 │       ├── test-formula.sh         # build/install/test/audit against the working tree
@@ -529,8 +531,11 @@ smoke every package, then the `release` job runs the **publish-boundary gate**
 only if it passes creates a **draft** GitHub Release with the Linux `.deb`/
 `.tar.gz` and the Windows `.zip` attached. The draft is published manually; the
 Homebrew tap and Scoop bucket are then synced (`packaging/homebrew/sync-tap.sh`
-and the Scoop equivalent), after which `release-smoke.yml` verifies the live
-public install paths.
+and `packaging/scoop/sync-bucket.sh`), after which `release-smoke.yml` verifies
+the live public install paths. Note the Scoop manifest points at the `.zip`
+**release asset**, so `sync-bucket.sh` requires the Release to be *published*
+first (unlike the tap, which builds from the source archive available for any
+tag).
 
 ## Status
 
