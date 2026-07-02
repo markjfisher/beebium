@@ -121,6 +121,10 @@ jobs:
         run: |
           set -euo pipefail
           brew tap rob-smallshire/beebium
+          # GitHub runners set HOMEBREW_REQUIRE_TAP_TRUST, which blocks loading
+          # formulae from third-party taps until trusted; a normal user's Mac
+          # does not, so this only accommodates the CI environment.
+          brew trust rob-smallshire/beebium
           brew install beebium-server
           brew list --versions beebium-server
           brew list --versions beebium-server | grep -q "${V}" \
