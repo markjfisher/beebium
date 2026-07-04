@@ -28,6 +28,7 @@ import argparse
 from pathlib import Path
 
 from beebium.client import Beebium
+from beebium.rpc_serial import RpcSerial
 
 # MC6850 control: /16 divide, 8N1, /RTS low, no TX IRQ -- the MOS serial config.
 ACIA_8N1 = 0x15
@@ -105,7 +106,7 @@ def run_demo(bbc):
     print("\n=== 2. device -> BBC (rpc-serial inject) ===")
     inbound = b"ExternalDevice"
     print(f"  Injecting {inbound!r} for the BBC to receive ...")
-    bbc.rpc_serial.send(inbound)
+    bbc.extensions[RpcSerial].send(inbound)
     received_by_beeb = receive_only(bbc, len(inbound))
     print(f"  BBC received: {bytes(received_by_beeb)!r}")
 
@@ -116,7 +117,7 @@ def run_demo(bbc):
     for byte in outbound:
         transmit_byte(bbc, byte)
     bbc.debugger.step_cycles(2000)  # let the last character finish shifting out
-    collected = bbc.rpc_serial.receive()
+    collected = bbc.extensions[RpcSerial].receive()
     print(f"  Script collected: {bytes(collected)!r}")
 
     print("\nDone. Resuming the machine.")

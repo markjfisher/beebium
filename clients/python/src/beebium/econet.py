@@ -164,7 +164,7 @@ class Econet:
         # Discover which transport is active
         active = bbc.transport.active
         if active and active.name == "aun":
-            bbc.aun.add_peer(net=0, stn=1, ip_address="192.168.1.100")
+            bbc.extensions[Aun].add_peer(net=0, stn=1, ip_address="192.168.1.100")
 
         # Check the generic status
         status = bbc.econet.status

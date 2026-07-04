@@ -88,3 +88,30 @@ class SerialError(BeebiumError):
     """A serial port operation failed."""
 
     pass
+
+
+class ExtensionError(BeebiumError):
+    """A peripheral-extension client-adapter operation failed."""
+
+    pass
+
+
+class ExtensionNotLoadedError(ExtensionError):
+    """The requested extension is not loaded on the connected server.
+
+    Raised by the extension bridge (``bbc.extensions[...]`` / ``Adapter.attach``)
+    when no loaded extension matches the requested name or adapter type.
+    """
+
+    pass
+
+
+class ExtensionAdapterNotInstalledError(ExtensionError):
+    """No client adapter is installed for a loaded extension.
+
+    Raised when the server has loaded an extension but no ``beebium.ext``
+    adapter is registered to drive it (e.g. its adapter distribution is not
+    installed). The extension is still visible via ``bbc.extensions.loaded``.
+    """
+
+    pass

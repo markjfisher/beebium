@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from beebium._proto import rpc_serial_pb2
-from beebium.extension_rpc import ExtensionChannel
+from beebium.extension import ExtensionAdapter
 
 # The logical service name the rpc-serial extension's dispatcher registers
 # (matches RpcSerialDispatcher::service_name() in the extension).
@@ -38,16 +38,18 @@ class RpcSerialStatus:
     rx_pending: int  # bytes queued (via send()) to deliver to the BBC
 
 
-class RpcSerial:
+class RpcSerial(ExtensionAdapter):
     """Drive the client-driven serial peer provided by the rpc-serial extension.
 
     The RpcSerial messages are tunnelled over the core's ExtensionRpc channel;
-    the rpc-serial plugin no longer hosts its own gRPC service. The public API
-    here is unchanged.
+    the rpc-serial plugin no longer hosts its own gRPC service.
+
+    Usage:
+        rpc = bbc.extensions[RpcSerial]      # or RpcSerial.attach(bbc)
+        rpc.send(b"hello")
     """
 
-    def __init__(self, channel: ExtensionChannel):
-        self._channel = channel
+    EXTENSION_NAME = "rpc-serial"
 
     def send(self, data: bytes) -> int:
         """Inject bytes for the BBC to receive.
@@ -57,7 +59,7 @@ class RpcSerial:
         has read some. Never blocks.
         """
         request = rpc_serial_pb2.RpcSerialSendRequest(data=data)
-        reply = self._channel.invoke(_SERVICE, "Send", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "Send", request.SerializeToString())
         response = rpc_serial_pb2.RpcSerialSendResponse()
         response.ParseFromString(reply)
         return response.accepted
@@ -65,7 +67,7 @@ class RpcSerial:
     def receive(self, max_bytes: int = 0) -> bytes:
         """Collect bytes the BBC has transmitted (0 = all currently available)."""
         request = rpc_serial_pb2.RpcSerialReceiveRequest(max_bytes=max_bytes)
-        reply = self._channel.invoke(_SERVICE, "Receive", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "Receive", request.SerializeToString())
         response = rpc_serial_pb2.RpcSerialReceiveResponse()
         response.ParseFromString(reply)
         return response.data
@@ -74,7 +76,7 @@ class RpcSerial:
     def status(self) -> RpcSerialStatus:
         """Pending byte counts in each direction."""
         request = rpc_serial_pb2.RpcSerialStatusRequest()
-        reply = self._channel.invoke(_SERVICE, "GetStatus", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "GetStatus", request.SerializeToString())
         response = rpc_serial_pb2.RpcSerialStatus()
         response.ParseFromString(reply)
         return RpcSerialStatus(

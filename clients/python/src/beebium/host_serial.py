@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from beebium._proto import host_serial_pb2
-from beebium.extension_rpc import ExtensionChannel
+from beebium.extension import ExtensionAdapter
 
 # The logical service name the host-serial extension's dispatcher registers
 # (matches HostSerialDispatcher::service_name() in the extension).
@@ -42,21 +42,23 @@ class HostSerialConfig:
     open_error: str  # OS error text when serial_open is False
 
 
-class HostSerial:
+class HostSerial(ExtensionAdapter):
     """Query and re-point the host-serial bridge.
 
     The HostSerial messages are tunnelled over the core's ExtensionRpc channel;
-    the host-serial extension no longer hosts its own gRPC service. The public
-    API here is unchanged.
+    the host-serial extension no longer hosts its own gRPC service.
+
+    Usage:
+        host_serial = bbc.extensions[HostSerial]     # or HostSerial.attach(bbc)
+        host_serial.set_config(mode="device", path="/dev/ttyUSB0", baud=9600)
     """
 
-    def __init__(self, channel: ExtensionChannel):
-        self._channel = channel
+    EXTENSION_NAME = "host-serial"
 
     def get_config(self) -> HostSerialConfig:
         """Read the current bridge configuration and open state."""
         request = host_serial_pb2.HostSerialGetConfigRequest()
-        reply = self._channel.invoke(_SERVICE, "GetConfig", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "GetConfig", request.SerializeToString())
         response = host_serial_pb2.HostSerialConfig()
         response.ParseFromString(reply)
         return _config_from_proto(response)
@@ -81,7 +83,7 @@ class HostSerial:
             request.path = path
         if baud is not None:
             request.baud = baud
-        reply = self._channel.invoke(_SERVICE, "SetConfig", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "SetConfig", request.SerializeToString())
         response = host_serial_pb2.HostSerialConfig()
         response.ParseFromString(reply)
         return _config_from_proto(response)

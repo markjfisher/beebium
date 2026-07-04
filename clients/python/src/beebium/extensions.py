@@ -29,11 +29,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import TypeVar, overload
 
 from beebium._proto import (
     peripheral_extension_pb2 as pe_pb2,
     peripheral_extension_pb2_grpc as pe_grpc,
 )
+from beebium.exceptions import ExtensionError, ExtensionNotLoadedError
+from beebium.extension import ExtensionAdapter, create_adapter
+from beebium.extension_rpc import ExtensionChannel
+
+A = TypeVar("A", bound=ExtensionAdapter)
 
 
 class StorageKind(IntEnum):
@@ -158,10 +164,22 @@ class Extensions:
 
     Each access re-queries the server, so the result always reflects the
     current set of loaded extensions.
+
+    Beyond discovery, this is the bridge to typed client adapters. Index by an
+    adapter class for the concrete type (full autocompletion), or by name for
+    the base type::
+
+        aun = bbc.extensions[Aun]        # -> Aun (or Aun.attach(bbc))
+        adapter = bbc.extensions["aun"]  # -> ExtensionAdapter (generic)
     """
 
-    def __init__(self, stub: pe_grpc.PeripheralExtensionServiceStub):
+    def __init__(
+        self,
+        stub: pe_grpc.PeripheralExtensionServiceStub,
+        channel: ExtensionChannel,
+    ):
         self._stub = stub
+        self._channel = channel
 
     @property
     def loaded(self) -> list[ExtensionInfo]:
@@ -194,3 +212,63 @@ class Extensions:
         if not isinstance(name_or_id, str):
             return False
         return self.info(name_or_id) is not None
+
+    # -- Typed / generic adapter access --------------------------------------
+
+    @overload
+    def __getitem__(self, key: str) -> ExtensionAdapter: ...
+    @overload
+    def __getitem__(self, key: type[A]) -> A: ...
+
+    def __getitem__(self, key: str | type[A]) -> ExtensionAdapter | A:
+        """Return a client adapter for a loaded extension.
+
+        A class key (``bbc.extensions[Aun]``) returns that concrete adapter
+        type -- resolved directly from the class, so it carries full static
+        typing. A string key (``bbc.extensions["aun"]``) resolves the installed
+        adapter via the ``beebium.ext`` registry, typed as the base
+        ``ExtensionAdapter``.
+
+        Raises:
+            ExtensionNotLoadedError: if the server has not loaded the extension.
+            ExtensionAdapterNotInstalledError: (string key) if no adapter is
+                registered for that name.
+        """
+        if isinstance(key, type):
+            name = key.EXTENSION_NAME
+            info = self._require_loaded(name, requested=key.__name__)
+            return key(name, self._channel, extension_id=info.id)
+        info = self._require_loaded(key, requested=repr(key))
+        return create_adapter(key, self._channel, extension_id=info.id)
+
+    @overload
+    def get(self, key: str, default: None = None) -> ExtensionAdapter | None: ...
+    @overload
+    def get(self, key: type[A], default: None = None) -> A | None: ...
+
+    def get(
+        self, key: str | type[A], default: ExtensionAdapter | A | None = None
+    ) -> ExtensionAdapter | A | None:
+        """Like ``self[key]`` but returns ``default`` instead of raising.
+
+        Returns ``default`` when the extension is not loaded on the server or
+        (for a string key) when no adapter is installed for it.
+        """
+        try:
+            return self[key]
+        except ExtensionError:
+            return default
+
+    def _require_loaded(self, name: str, *, requested: str) -> ExtensionInfo:
+        if not name:
+            raise ExtensionNotLoadedError(
+                f"Adapter {requested} does not declare an EXTENSION_NAME."
+            )
+        info = self.info(name)
+        if info is None:
+            available = ", ".join(sorted(e.name for e in self.loaded)) or "(none)"
+            raise ExtensionNotLoadedError(
+                f"Extension {name!r} (requested via {requested}) is not loaded "
+                f"on the server. Loaded extensions: {available}."
+            )
+        return info

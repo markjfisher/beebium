@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from beebium._proto import aun_pb2
-from beebium.extension_rpc import ExtensionChannel
+from beebium.extension import ExtensionAdapter
 
 # The logical service name the AUN extension's dispatcher registers
 # (matches AunDispatcher::service_name() in the extension).
@@ -70,7 +70,7 @@ class PeerInfo:
     source: PeerSource = PeerSource.OPERATOR_CONFIGURED
 
 
-class Aun:
+class Aun(ExtensionAdapter):
     """AUN-specific RPCs (peer table, cable plug, port status).
 
     Available on the server's gRPC surface only when AUN is the active
@@ -78,13 +78,12 @@ class Aun:
     might run against a server configured for Piconet or no transport.
 
     Usage:
-        if bbc.transport.active and bbc.transport.active.name == "aun":
-            bbc.aun.add_peer(net=0, stn=254, ip_address="192.168.1.10")
-            print(bbc.aun.status)
+        aun = bbc.extensions[Aun]        # or Aun.attach(bbc)
+        aun.add_peer(net=0, stn=254, ip_address="192.168.1.10")
+        print(aun.status)
     """
 
-    def __init__(self, channel: ExtensionChannel):
-        self._channel = channel
+    EXTENSION_NAME = "aun"
 
     def _invoke(self, method: str, request, response):
         """Tunnel `request` to the AunService dispatcher and parse the reply.
@@ -93,7 +92,7 @@ class Aun:
         extension no longer hosts its own gRPC service. The public API here is
         unchanged.
         """
-        reply = self._channel.invoke(_SERVICE, method, request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, method, request.SerializeToString())
         response.ParseFromString(reply)
         return response
 

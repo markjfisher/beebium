@@ -119,3 +119,21 @@ def test_pytest_plugin_entry_point_registered():
     entry_points = importlib.metadata.entry_points(group="pytest11")
     names = {ep.name: ep.value for ep in entry_points}
     assert names.get("beebium") == "beebium.pytest_plugin"
+
+
+def test_first_party_extension_adapters_are_registered():
+    """The beebium.ext entry points ship in the wheel so the installed client
+    can discover its first-party adapters via stevedore."""
+    entry_points = importlib.metadata.entry_points(group="beebium.ext")
+    names = {ep.name for ep in entry_points}
+    assert {"aun", "piconet", "rpc-serial", "host-serial"} <= names
+
+
+def test_registered_adapters_resolve_from_the_installed_wheel():
+    """Each registered adapter loads and is an ExtensionAdapter subclass."""
+    from beebium.extension import ExtensionAdapter, adapter_type, installed_adapter_names
+
+    for name in installed_adapter_names():
+        cls = adapter_type(name)
+        assert issubclass(cls, ExtensionAdapter)
+        assert cls.EXTENSION_NAME == name

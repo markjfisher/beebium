@@ -26,6 +26,8 @@ import pytest
 
 from beebium import Beebium
 from beebium.exceptions import ServerNotFoundError
+from beebium.host_serial import HostSerial
+from beebium.rpc_serial import RpcSerial
 
 # host-serial pty/device modes rely on POSIX pseudo-terminals.
 _posix_only = pytest.mark.skipif(
@@ -84,7 +86,7 @@ def test_rpc_serial_transmit_round_trip(rpc_serial_bbc):
     bbc.memory.address.bus[0xFE09] = ord("Q")  # write TDR
     bbc.debugger.step_cycles(4000)
 
-    assert bytes(bbc.rpc_serial.receive()) == b"Q"
+    assert bytes(bbc.extensions[RpcSerial].receive()) == b"Q"
 
 
 def test_rpc_serial_receive_round_trip(rpc_serial_bbc):
@@ -92,7 +94,7 @@ def test_rpc_serial_receive_round_trip(rpc_serial_bbc):
     bbc = rpc_serial_bbc
     _program_serial(bbc)
 
-    assert bbc.rpc_serial.send(b"Z") == 1
+    assert bbc.extensions[RpcSerial].send(b"Z") == 1
 
     got_rdrf = False
     for _ in range(10):
@@ -140,7 +142,7 @@ def host_serial_bbc(mos_filepath, basic_filepath, beebium_server_filepath):
 @_posix_only
 def test_host_serial_get_config_reports_pty(host_serial_bbc):
     """GetConfig reports the pty bridge created at launch."""
-    config = host_serial_bbc.host_serial.get_config()
+    config = host_serial_bbc.extensions[HostSerial].get_config()
     assert config.mode == "pty"
     assert config.path  # the advertised pty slave path
     assert config.serial_open
@@ -150,7 +152,7 @@ def test_host_serial_get_config_reports_pty(host_serial_bbc):
 def test_host_serial_set_config_rejects_runtime_pty(host_serial_bbc):
     """A runtime switch to pty is rejected (a pty is startup-only)."""
     with pytest.raises(grpc.RpcError) as excinfo:
-        host_serial_bbc.host_serial.set_config(mode="pty")
+        host_serial_bbc.extensions[HostSerial].set_config(mode="pty")
     assert excinfo.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
@@ -166,11 +168,11 @@ def test_host_serial_set_config_repoints_to_device(host_serial_bbc):
     try:
         device_path = os.ttyname(slave_fd)
 
-        bbc.host_serial.set_config(mode="device", path=device_path, baud=9600)
+        bbc.extensions[HostSerial].set_config(mode="device", path=device_path, baud=9600)
         config = None
         for _ in range(20):
             bbc.debugger.step_cycles(2000)  # let process_pending_reopen run
-            config = bbc.host_serial.get_config()
+            config = bbc.extensions[HostSerial].get_config()
             if config.path == device_path:
                 break
         assert config is not None and config.path == device_path
@@ -178,10 +180,10 @@ def test_host_serial_set_config_repoints_to_device(host_serial_bbc):
         assert config.baud == 9600
 
         # Partial update: change only the baud, path is kept.
-        bbc.host_serial.set_config(baud=2400)
+        bbc.extensions[HostSerial].set_config(baud=2400)
         for _ in range(20):
             bbc.debugger.step_cycles(2000)
-            config = bbc.host_serial.get_config()
+            config = bbc.extensions[HostSerial].get_config()
             if config.baud == 2400:
                 break
         assert config.baud == 2400

@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from beebium._proto import piconet_service_pb2
-from beebium.extension_rpc import ExtensionChannel
+from beebium.extension import ExtensionAdapter
 
 # The logical service name the piconet extension's dispatcher registers
 # (matches PiconetDispatcher::service_name() in the extension).
@@ -53,7 +53,7 @@ class PiconetStatus:
     serial_open: bool
 
 
-class Piconet:
+class Piconet(ExtensionAdapter):
     """Piconet-specific RPCs.
 
     Available on the server's gRPC surface only when Piconet is the
@@ -62,13 +62,12 @@ class Piconet:
     transport.
 
     Usage:
-        if bbc.transport.active and bbc.transport.active.name == "piconet":
-            status = bbc.piconet.status
-            print(f"Piconet on {status.device_path} (open={status.serial_open})")
+        piconet = bbc.extensions[Piconet]        # or Piconet.attach(bbc)
+        status = piconet.status
+        print(f"Piconet on {status.device_path} (open={status.serial_open})")
     """
 
-    def __init__(self, channel: ExtensionChannel):
-        self._channel = channel
+    EXTENSION_NAME = "piconet"
 
     @property
     def status(self) -> PiconetStatus:
@@ -78,7 +77,7 @@ class Piconet:
         no longer hosts its own gRPC service.
         """
         request = piconet_service_pb2.PiconetGetStatusRequest()
-        reply = self._channel.invoke(_SERVICE, "GetStatus", request.SerializeToString())
+        reply = self._invoke_bytes(_SERVICE, "GetStatus", request.SerializeToString())
         response = piconet_service_pb2.PiconetGetStatusResponse()
         response.ParseFromString(reply)
         return PiconetStatus(

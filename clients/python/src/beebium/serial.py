@@ -19,7 +19,7 @@ hardware registers.
 
 What is attached to the far end of the wire is owned by a serial extension, not
 by this service: launch the server with ``--rpc-serial`` (and drive it via
-``bbc.rpc_serial``), ``--host-serial`` (a real pty/device), or
+``bbc.extensions[RpcSerial]``), ``--host-serial`` (a real pty/device), or
 ``--loopback-serial`` (echo).
 """
 

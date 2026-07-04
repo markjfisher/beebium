@@ -71,6 +71,9 @@ from beebium.exceptions import (
     DebuggerError,
     DiscError,
     EconetError,
+    ExtensionAdapterNotInstalledError,
+    ExtensionError,
+    ExtensionNotLoadedError,
     InvalidConditionError,
     MemoryAccessError,
     ProtocolMismatchError,
@@ -78,6 +81,7 @@ from beebium.exceptions import (
     ServerStartupError,
     TimeoutError,
 )
+from beebium.extension import ExtensionAdapter
 from beebium._proto.protocol_fingerprint import PROTOCOL_FINGERPRINT
 from beebium.system import (
     AdvertisementState,
@@ -120,6 +124,10 @@ __all__ = [
     "DispatchResult",
     "EconetError",
     "EconetStatus",
+    "ExtensionAdapter",
+    "ExtensionAdapterNotInstalledError",
+    "ExtensionError",
+    "ExtensionNotLoadedError",
     "Group",
     "HandshakeStatus",
     "Indicator",

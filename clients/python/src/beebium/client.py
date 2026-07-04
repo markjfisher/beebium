@@ -35,17 +35,13 @@ from beebium.crtc import Crtc
 from beebium.debugger import Debugger
 from beebium.disc import Disc
 from beebium.audio import Audio
-from beebium.aun import Aun
 from beebium.econet import Econet
 from beebium.extensions import Extensions
 from beebium.econet_transport import EconetTransport
 from beebium.extension_rpc import ExtensionChannel
-from beebium.host_serial import HostSerial
-from beebium.rpc_serial import RpcSerial
 from beebium.serial import Serial
 from beebium.extension_ui import ExtensionUi
 from beebium.indicators import Indicators
-from beebium.piconet import Piconet
 from beebium.keyboard import Keyboard
 from beebium.latch import AddressableLatch
 from beebium.memory import Memory
@@ -115,11 +111,7 @@ class Beebium:
         self._disc: Disc | None = None
         self._econet: Econet | None = None
         self._serial: Serial | None = None
-        self._rpc_serial: RpcSerial | None = None
-        self._host_serial: HostSerial | None = None
         self._econet_transport: EconetTransport | None = None
-        self._aun: Aun | None = None
-        self._piconet: Piconet | None = None
         self._extension_ui: ExtensionUi | None = None
         self._indicators: Indicators | None = None
         self._sideways: Sideways | None = None
@@ -288,10 +280,15 @@ class Beebium:
 
     @property
     def extensions(self) -> Extensions:
-        """Discover the peripheral extensions the server has loaded."""
+        """Discover loaded extensions and access their typed client adapters.
+
+        Enumerate with :attr:`Extensions.loaded`; get a typed adapter with
+        ``bbc.extensions[Aun]`` (or ``Aun.attach(bbc)``).
+        """
         if self._extensions is None:
             self._extensions = Extensions(
-                self._connection.peripheral_extension_stub
+                self._connection.peripheral_extension_stub,
+                ExtensionChannel(self._connection.extension_rpc_stub),
             )
         return self._extensions
 
@@ -402,34 +399,6 @@ class Beebium:
         return self._serial
 
     @property
-    def rpc_serial(self) -> RpcSerial:
-        """Drive the client-driven serial peer (the rpc-serial extension).
-
-        The RPC client is the device on the far end of the serial wire: inject
-        bytes for the BBC to receive and collect bytes it transmits. Requires
-        the server to be launched with ``--rpc-serial``.
-        """
-        if self._rpc_serial is None:
-            self._rpc_serial = RpcSerial(
-                ExtensionChannel(self._connection.extension_rpc_stub)
-            )
-        return self._rpc_serial
-
-    @property
-    def host_serial(self) -> HostSerial:
-        """Query and re-point the host-serial bridge (the host-serial extension).
-
-        The scripting-friendly equivalent of the GUI panel: read or change the
-        bridge's mode / path / baud. Requires the server to be launched with
-        ``--host-serial``.
-        """
-        if self._host_serial is None:
-            self._host_serial = HostSerial(
-                ExtensionChannel(self._connection.extension_rpc_stub)
-            )
-        return self._host_serial
-
-    @property
     def transport(self) -> EconetTransport:
         """Discover which Econet transport extension is active."""
         if self._econet_transport is None:
@@ -437,30 +406,6 @@ class Beebium:
                 self._connection.econet_transport_stub
             )
         return self._econet_transport
-
-    @property
-    def aun(self) -> Aun:
-        """Access AUN-specific Econet operations.
-
-        Only meaningful when ``transport.active.name == "aun"``.
-        Calling AUN methods when AUN isn't the active transport
-        returns an error.
-        """
-        if self._aun is None:
-            self._aun = Aun(ExtensionChannel(self._connection.extension_rpc_stub))
-        return self._aun
-
-    @property
-    def piconet(self) -> Piconet:
-        """Access Piconet-specific operations.
-
-        Only meaningful when ``transport.active.name == "piconet"``.
-        """
-        if self._piconet is None:
-            self._piconet = Piconet(
-                ExtensionChannel(self._connection.extension_rpc_stub)
-            )
-        return self._piconet
 
     @property
     def indicators(self) -> Indicators:

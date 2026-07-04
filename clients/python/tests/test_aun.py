@@ -67,7 +67,7 @@ def channel():
 
 @pytest.fixture
 def aun(channel):
-    return Aun(channel)
+    return Aun("aun", channel)
 
 
 class TestStatus:

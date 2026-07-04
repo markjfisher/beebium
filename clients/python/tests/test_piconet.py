@@ -42,7 +42,7 @@ def mock_channel():
 
 @pytest.fixture
 def piconet(mock_channel):
-    return Piconet(mock_channel)
+    return Piconet("piconet", mock_channel)
 
 
 def test_status_returns_dataclass(mock_channel, piconet):
@@ -57,7 +57,7 @@ def test_status_returns_dataclass(mock_channel, piconet):
 
 
 def test_status_reports_disconnected(piconet):
-    piconet = Piconet(_channel_returning(device_path="/dev/nonexistent", serial_open=False))
+    piconet = Piconet("piconet", _channel_returning(device_path="/dev/nonexistent", serial_open=False))
     status = piconet.status
     assert status.device_path == "/dev/nonexistent"
     assert status.serial_open is False

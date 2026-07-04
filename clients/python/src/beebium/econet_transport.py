@@ -13,7 +13,7 @@
 """Econet transport discovery (which transport is active on the server).
 
 Wraps EconetTransportService. Use this to decide whether to drive
-``bbc.aun`` or ``bbc.piconet`` (or any future transport-specific
+``bbc.extensions[Aun]`` or ``bbc.extensions[Piconet]`` (or any future transport-specific
 service): each transport extension has a canonical name (``aun``,
 ``piconet``, ...) which maps one-to-one with the corresponding
 service stub.
@@ -59,9 +59,9 @@ class EconetTransport:
         if bbc.transport.active is None:
             print("No Econet transport configured")
         elif bbc.transport.active.name == "aun":
-            bbc.aun.add_peer(...)
+            bbc.extensions[Aun].add_peer(...)
         elif bbc.transport.active.name == "piconet":
-            print(bbc.piconet.status.device_path)
+            print(bbc.extensions[Piconet].status.device_path)
     """
 
     def __init__(self, stub: econet_transport_pb2_grpc.EconetTransportServiceStub):

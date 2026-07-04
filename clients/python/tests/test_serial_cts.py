@@ -34,6 +34,7 @@ import pytest
 from beebium import Beebium
 from beebium.exceptions import ServerNotFoundError
 from beebium.screen import screen_contains
+from beebium.rpc_serial import RpcSerial
 
 # Zero-page (user space) sentinel the program sets when it completes. A memory
 # sentinel is unambiguous; a screen one would collide with the program listing
@@ -77,6 +78,7 @@ def _until(bbc, predicate, *, budget=60.0):
 
 def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):
     bbc = cts_bbc
+    rpc_serial = bbc.extensions[RpcSerial]
 
     _until(bbc, lambda: screen_contains(bbc, ">"))  # BASIC is ready
     bbc.memory.address.bus[_DONE] = 0
@@ -89,7 +91,7 @@ def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):
     # The guest transmits until the device buffer fills and the ULA asserts /CTS;
     # with the client refusing to drain it stalls there -- yet the host stays
     # responsive (these gRPC calls keep returning).
-    _until(bbc, lambda: bbc.rpc_serial.status.tx_pending >= _TX_BUFFER)
+    _until(bbc, lambda: rpc_serial.status.tx_pending >= _TX_BUFFER)
     assert bbc.memory.address.peek[_DONE] == 0, "guest must be blocked on the full buffer"
 
     # Drain on the client: each polled chunk frees buffer space, /CTS releases,
@@ -97,7 +99,7 @@ def test_full_buffer_asserts_cts_and_stalls_only_the_guest(cts_bbc):
     received = bytearray()
 
     def drained_to_completion():
-        received.extend(bbc.rpc_serial.receive())
+        received.extend(rpc_serial.receive())
         return bbc.memory.address.peek[_DONE] == 42
 
     _until(bbc, drained_to_completion)
