@@ -586,10 +586,11 @@ tag).
   in CI (`windows-package.yml`) and attached to the release; Scoop manifest
   authored.
 - **Release pipeline:** `release.yml` builds all three platforms on a `v*` tag,
-  runs the publish-boundary verification gate, and produces a **draft** GitHub
-  Release. The first release (`v0.1.0`) has been cut; the draft carries the
-  correct relocatable Linux `.tar.gz`/`.deb` and the Windows `.zip`, and has been
-  independently re-verified.
+  runs the publish-boundary verification gate (now the **seven-file** set,
+  including the two `.rpm`s), and produces a **draft** GitHub Release. The first
+  release (`v0.1.0`) has been cut and carries the relocatable Linux `.tar.gz`/
+  `.deb` and the Windows `.zip`, independently re-verified; it **predates the
+  `.rpm`**, which attaches from the next tagged release.
 
 **Remaining (macOS Homebrew):**
 - **Publish** the release, then `sync-tap.sh 0.1.0 <tap>` to pin the real checksum

@@ -1,5 +1,12 @@
 # Plan: RPM packaging and Fedora (`dnf`) support
 
+> **Status: stage 1 implemented and merged.** The `.rpm` artifact (steps 1-7
+> below) is built by the Linux bundle and validated in CI by a Fedora `dnf
+> install` smoke leg (all legs green, run 28703277049); it attaches to the next
+> tagged Release (the already-cut `v0.1.0` predates it). **Stage 2 (Copr) is the
+> outstanding work** — see [Out of scope](#out-of-scope-follow-ups). The steps
+> are kept below as the record of what was done.
+
 ## Goal
 
 Make the headless Beebium server installable on the Fedora / RHEL family the same
