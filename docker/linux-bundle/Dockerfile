@@ -86,24 +86,27 @@ RUN cmake -S . -B build -G Ninja \
         -DBEEBIUM_BUILD_TESTS=ON \
     && cmake --build build --target beebium-servers -j"${BUILD_JOBS}"
 
-# Debian packaging tools, kept in a late layer so adding them does not
-# invalidate the cached vcpkg build above. dpkg-dev provides dpkg-shlibdeps,
-# which CPACK_DEBIAN_PACKAGE_SHLIBDEPS uses to derive the runtime dependencies.
+# Packaging tools, kept in a late layer so adding them does not invalidate the
+# cached vcpkg build above. dpkg-dev provides dpkg-shlibdeps, which
+# CPACK_DEBIAN_PACKAGE_SHLIBDEPS uses to derive the .deb runtime dependencies;
+# rpm provides rpmbuild, which CPack's RPM generator shells out to (building an
+# RPM on this Debian floor is supported and keeps a single portable build image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        dpkg-dev fakeroot file \
+        dpkg-dev fakeroot file rpm \
     && rm -rf /var/lib/apt/lists/*
 
 # Prove the freshly built tree installs and boots in the build-floor image
 # (in-tree CTest), validate the *installed* tree directly (self-containment +
-# boot), then build the .deb and .tar.gz with CPack and collect them. The .deb
-# lays a /opt/beebium system tree (and symlinks the servers into /usr/bin via its
-# maintainer scripts); the .tar.gz is a relocatable single directory.
+# boot), then build the .deb, .rpm and .tar.gz with CPack and collect them. The
+# .deb and .rpm both lay a /opt/beebium system tree (symlinking the servers into
+# /usr/bin via their maintainer scripts / scriptlets); the .tar.gz is a
+# relocatable single directory.
 RUN ctest --test-dir build -R install_smoke --output-on-failure \
     && cmake --install build --prefix /stage/opt/beebium \
     && bash scripts/smoke-installed-tree.sh /stage/opt/beebium \
-    && ( cd build && cpack -G "DEB;TGZ" ) \
+    && ( cd build && cpack -G "DEB;RPM;TGZ" ) \
     && mkdir -p /out \
-    && cp build/beebium-server*.tar.gz build/beebium-server*.deb /out/
+    && cp build/beebium-server*.tar.gz build/beebium-server*.deb build/beebium-server*.rpm /out/
 
 # Minimal stage whose only content is the packages, for `buildx --output`.
 FROM scratch AS artifact

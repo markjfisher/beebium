@@ -2,12 +2,14 @@
 #
 # Produces, from the same install() rules the bundle is built on:
 #   - a .deb that lays the relocatable tree under /opt/beebium and symlinks the
-#     four server binaries into /usr/bin (via the maintainer scripts), and
-#   - a plain .tar.gz of the same tree for non-dpkg distros (Arch, Fedora, ...).
+#     four server binaries into /usr/bin (via the maintainer scripts),
+#   - an .rpm that does the same for the Fedora / RHEL family (%post/%preun
+#     scriptlets), and
+#   - a plain .tar.gz of the same tree for distros with no native package here.
 #
 # Intended for the Linux bundle build; the TGZ generator is also configured
-# elsewhere (e.g. macOS) so the layout can be verified, but the DEB generator is
-# only added on Linux (it needs dpkg).
+# elsewhere (e.g. macOS) so the layout can be verified, but the DEB and RPM
+# generators are only added on Linux (they need dpkg / rpmbuild).
 
 set(CPACK_PACKAGE_NAME "beebium-server")
 set(CPACK_PACKAGE_VENDOR "Robert Smallshire")
@@ -61,6 +63,30 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_SOURCE_DIR}/packaging/debian/postinst"
         "${CMAKE_SOURCE_DIR}/packaging/debian/prerm")
+
+    # RPM sibling of the .deb for the Fedora / RHEL family (see
+    # docs/plans/linux-rpm-packaging.md). Same /opt/beebium payload and /usr/bin
+    # symlinks; only the arch naming (x86_64/aarch64) and scriptlet argument
+    # semantics differ. rpmbuild is provided by the `rpm` package in the build
+    # image; RPM's find-requires derives the same base-library dependencies (and
+    # the versioned glibc floor) automatically from the ELF binaries.
+    list(APPEND CPACK_GENERATOR "RPM")
+
+    # Canonical file name: beebium-server-<version>-1.<arch>.rpm.
+    set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
+    set(CPACK_RPM_PACKAGE_LICENSE "GPLv3+")
+    set(CPACK_RPM_PACKAGE_GROUP "Applications/Emulators")
+    set(CPACK_RPM_PACKAGE_URL "https://github.com/rob-smallshire/beebium")
+    # A fixed /opt/beebium system install (the scriptlets hardcode that path),
+    # not a user-relocatable package -- matches the .deb.
+    set(CPACK_RPM_PACKAGE_RELOCATABLE OFF)
+    # %post/%preun create and remove the /usr/bin -> /opt/beebium/bin symlinks.
+    # RPM scriptlets take $1 = instance count (not the .deb's action word), so
+    # these are distinct from the Debian maintainer scripts.
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE
+        "${CMAKE_SOURCE_DIR}/packaging/rpm/postinstall")
+    set(CPACK_RPM_PRE_UNINSTALL_SCRIPT_FILE
+        "${CMAKE_SOURCE_DIR}/packaging/rpm/preuninstall")
 endif()
 
 include(CPack)

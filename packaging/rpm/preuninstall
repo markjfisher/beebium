@@ -1,0 +1,17 @@
+# RPM %preun scriptlet.
+#
+# Remove the /usr/bin symlinks created by %post. RPM passes $1 = the number of
+# instances that will remain after this operation: 0 on a final erase, 1 during
+# an upgrade (the old package's %preun runs before the new one's %post). Only
+# tear the symlinks down on the final erase; during an upgrade the incoming
+# package's %post recreates them.
+set -e
+
+if [ "$1" = 0 ]; then
+    SERVERS="beebium-model-b beebium-model-b-plus beebium-model-b-plus-128k beebium-model-b-romram"
+    for s in $SERVERS; do
+        rm -f "/usr/bin/$s"
+    done
+fi
+
+exit 0

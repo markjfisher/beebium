@@ -1,0 +1,19 @@
+# RPM %post scriptlet.
+#
+# Create /usr/bin symlinks to the server binaries in the self-contained
+# /opt/beebium tree so they are on PATH. The server canonicalises argv[0]
+# (and reads /proc/self/exe), so a symlink resolves back to /opt/beebium/bin
+# and the exe-relative discovery of extensions/, ROMs, and presets keeps working.
+#
+# RPM passes $1 = the number of installed instances of this package: 1 on a
+# fresh install, 2 during an upgrade. `ln -sf` is idempotent, so this is correct
+# for both.
+set -e
+
+SERVERS="beebium-model-b beebium-model-b-plus beebium-model-b-plus-128k beebium-model-b-romram"
+
+for s in $SERVERS; do
+    ln -sf "/opt/beebium/bin/$s" "/usr/bin/$s"
+done
+
+exit 0
