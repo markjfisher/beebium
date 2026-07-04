@@ -183,6 +183,78 @@ hard-codes an extension name and the plugin model is the only path. (`bbc.serial
 dataclasses (parsed with the protobuf-map iteration workaround noted in
 CLAUDE.md for the `config` map).
 
+### 3.5 Typed access vs generic access (static typing / IDE autocompletion)
+
+A string-keyed registry (`bbc.extensions["aun"]`) can only be typed as the
+abstract `ExtensionAdapter` -- fine for code that manipulates extensions
+*generically*, but a script that **knows** it drives AUN should not pay an
+abstraction tax: it wants `Aun`'s concrete methods, parameter checking and
+autocompletion. Resolve the tension by **overloading `__getitem__` on the key
+type** -- one access point, two idioms:
+
+```python
+from beebium.client import Beebium
+from beebium.ext.aun import Aun          # concrete adapter (installed with the AUN client)
+
+with Beebium.connect() as bbc:
+    aun = bbc.extensions[Aun]            # statically typed as Aun -> full autocomplete
+    aun.add_peer(net=1, station=2, host="10.0.0.5")
+    for peer in aun.peers:               # peer: PeerInfo
+        ...
+
+    for info in bbc.extensions.loaded:   # info: ExtensionInfo (generic discovery)
+        print(info.name, info.config)
+    adapter = bbc.extensions["aun"]      # ExtensionAdapter (base) -- generic path
+```
+
+The concrete class carries its own server name, so the class *is* the key:
+
+```python
+class Aun(ExtensionAdapter):
+    EXTENSION_NAME = "aun"               # == server manifest name == entry-point key
+
+A = TypeVar("A", bound="ExtensionAdapter")
+
+class Extensions:
+    @property
+    def loaded(self) -> list[ExtensionInfo]: ...
+    @overload
+    def __getitem__(self, key: str) -> ExtensionAdapter: ...   # generic: base type
+    @overload
+    def __getitem__(self, key: type[A]) -> A: ...             # typed: concrete type
+```
+
+| You write | Returns | Resolution path | For |
+|---|---|---|---|
+| `bbc.extensions[Aun]` | `Aun` | direct -- you handed us the class | code that knows the extension; full static facilities |
+| `bbc.extensions["aun"]` | `ExtensionAdapter` | Stevedore, from the installed adapter | generic tooling with only a name string |
+| `bbc.extensions.loaded` | `list[ExtensionInfo]` | `ListExtensions` RPC | enumerate/describe loaded extensions |
+
+The class-keyed path **bypasses Stevedore** (you already hold the class): it
+reads `EXTENSION_NAME`, confirms the server loaded it (via `loaded`), binds the
+channel + `extension_id`, and returns the instance typed as `Aun`. Stevedore
+serves only the string path. Both raise `ExtensionNotLoadedError` when the
+server didn't load that extension. No `.pyi` stubs and no `cast()` -- adapters
+are ordinary classes, so autocomplete works as soon as the concrete adapter is
+imported.
+
+**Two spellings, both supported.** The typed retrieval is offered two ways so
+callers use whichever reads best; they are exact equivalents (same resolution,
+same type, same errors):
+
+```python
+aun = bbc.extensions[Aun]     # registry-first: one access point for typed + generic
+aun = Aun.attach(bbc)         # concrete-first: reads naturally when AUN is the subject
+```
+
+`Aun.attach(bbc)` is a thin `ExtensionAdapter` classmethod
+(`@classmethod def attach(cls, bbc) -> Self: return bbc.extensions[cls]`),
+inheriting from the base so every adapter gets it for free and it always
+returns `Self` (the concrete type). Registry-first keeps a single access point
+for code that mixes generic and typed use; concrete-first avoids the
+class-as-subscript-key idiom for readers who find it unusual. Generic access
+stays string/`loaded`-based as above.
+
 ---
 
 ## 4. Organisation: namespace + distributions
