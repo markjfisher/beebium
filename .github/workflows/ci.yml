@@ -825,6 +825,20 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Check generated proto stubs are in sync with their sources
+        working-directory: clients/python
+        # Regenerates with the locked toolchain and fails if the committed _proto
+        # tree changes -- catches stubs drifting from the .proto sources.
+        run: bash scripts/check_proto_regen.sh
+
+      - name: Build wheel and run packaging tests against it
+        working-directory: clients/python
+        # Load-bearing packaging gate: build the wheel, install it into a fresh
+        # venv, and run the server-free packaging assertions against the
+        # installed artifact (not src/) so missing package data, an unshipped
+        # py.typed marker or an unregistered entry point fail here.
+        run: bash scripts/test-wheel.sh
+
       - name: Run unit tests
         working-directory: clients/python
         # --durations=0 lists every test's wall-clock time (slowest first) so we
