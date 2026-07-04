@@ -248,31 +248,23 @@ formula to `rob-smallshire/homebrew-beebium` to go live.
 
 ### Current state and remaining macOS work
 
-The tap (`rob-smallshire/homebrew-beebium`) exists and carries the formula, and a
-full end-to-end install has been validated from the real tap:
-`brew install --HEAD rob-smallshire/beebium/beebium-server` clones `master`,
-builds, puts the four servers on `PATH`, and discovers all extensions. So the
-**`--HEAD` (build-from-`master`) path works today.**
+The tap (`rob-smallshire/homebrew-beebium`) is **live and synced to `v0.1.0`**:
+the formula's `url` points at the `v0.1.0` source tarball with the real pinned
+`sha256` (`packaging/homebrew/sync-tap.sh`), so the **stable
+`brew install beebium-server`** path works today — it builds from source, puts the
+four servers on `PATH`, and discovers all extensions. This is validated
+end-to-end on a clean runner by the macOS leg of `release-smoke.yml`. (The
+`--HEAD` build-from-`master` path also works, via the formula's `head` URL.)
 
-The `v0.1.0` tag is cut and its Release is drafted (not yet published). Remaining
-before a normal `brew install beebium-server` works, in order:
+The one remaining piece is performance, not availability:
 
-1. **Pin the release into the tap.** The canonical formula's `url` points at the
-   `v<version>` source tarball (which now exists — GitHub auto-generates it for
-   any tag), but its `sha256` is still a placeholder. Run
-   `packaging/homebrew/sync-tap.sh <version> <tap-checkout>` to fetch the tarball,
-   compute the real checksum, and write the pinned formula into the tap; commit
-   and push the tap. Only then does the stable (non-`--HEAD`) formula resolve.
-   (This is independent of *publishing* the Release, since the formula builds from
-   the source archive, not a Release asset.)
-2. **Wire bottles.** Until bottles exist, every `brew install` compiles
-   beebium-server from source (~1 min locally, a few minutes on slower runners) —
-   acceptable for dev, undesirable at CI scale. The `brew tap-new` scaffolding
-   already added a bottle-building workflow to the tap; once `v<version>` is
-   tagged, enable it (PR -> `brew test-bot` builds bottles per macOS
-   runner/arch -> `pr-pull` uploads them and adds the `bottle do` block to the
-   formula). After that, installs pour a pre-built binary and only unsupported
-   macOS versions (or `--build-from-source`) compile.
+- **Bottles.** Until bottles exist, every `brew install` compiles beebium-server
+  from source (~1 min locally, a few minutes on slower runners) — acceptable for
+  dev, undesirable at CI scale. The `brew tap-new` scaffolding already added a
+  bottle-building workflow to the tap; enable it (PR -> `brew test-bot` builds
+  bottles per macOS runner/arch -> `pr-pull` uploads them and adds the `bottle do`
+  block to the formula). After that, installs pour a pre-built binary and only
+  unsupported macOS versions (or `--build-from-source`) compile.
 
 A self-contained macOS `.tar.gz` (Homebrew-free, for macOS CI that wants the same
 download-and-run experience as Linux) is a possible later addition; it needs the
@@ -368,11 +360,13 @@ enterprise deployment (Intune/SCCM/Group Policy) is needed.
 
 ### Remaining (Windows)
 
-1. Stand up a `scoop-beebium` bucket repo (the Scoop analogue of the Homebrew
-   tap) and pin the release ZIP's URL + SHA256 into its manifest at release time.
-2. A WinGet manifest (after a release exists).
-3. Azure Trusted Signing (decide whether to sign from the first release or later).
-4. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
+The `scoop-beebium` bucket (the Scoop analogue of the Homebrew tap) is **live and
+pinned to `v0.1.0`** (`packaging/scoop/sync-bucket.sh`), so `scoop install
+beebium-server` works. What remains:
+
+1. A WinGet manifest.
+2. Azure Trusted Signing (decide whether to sign from the next release or later).
+3. Later: arm64 Windows (Windows on ARM), and the GUI MSIX + Store path.
 
 The `static-md` vs full `static` decision is settled in favour of `static-md`
 (dynamic CRT, only the VC++ Redistributable needed). The sign-now vs
@@ -580,34 +574,34 @@ tag).
   (x86_64 + Arch Linux ARM).
 - **macOS:** Homebrew formula (`beebium-server`), source build against Homebrew's
   grpc/protobuf, validated in CI on arm64 (Intel best-effort via
-  `macos-intel.yml`). The tap `rob-smallshire/homebrew-beebium` is live;
-  `brew install --HEAD beebium-server` validated end-to-end from the real tap.
+  `macos-intel.yml`). The tap `rob-smallshire/homebrew-beebium` is live and synced
+  to `v0.1.0`; the stable `brew install beebium-server` works and is validated
+  end-to-end by the `release-smoke.yml` macOS leg.
 - **Windows:** self-contained `x64-windows-static-md` `.zip`, built + smoke-tested
-  in CI (`windows-package.yml`) and attached to the release; Scoop manifest
-  authored.
+  in CI (`windows-package.yml`) and attached to the release. The Scoop bucket
+  `rob-smallshire/scoop-beebium` is live and pinned to `v0.1.0`, so
+  `scoop install beebium-server` works (validated by `release-smoke.yml`).
 - **Release pipeline:** `release.yml` builds all three platforms on a `v*` tag,
   runs the publish-boundary verification gate (now the **seven-file** set,
   including the two `.rpm`s), and produces a **draft** GitHub Release. The first
-  release (`v0.1.0`) has been cut and carries the relocatable Linux `.tar.gz`/
-  `.deb` and the Windows `.zip`, independently re-verified; it **predates the
-  `.rpm`**, which attaches from the next tagged release.
+  release (`v0.1.0`) has been cut and **published**, with all channels live
+  (Release `.deb`/`.tar.gz`/`.zip`, Homebrew tap, Scoop bucket) and re-verified by
+  `release-smoke.yml`. `v0.1.0` **predates the `.rpm`**, which attaches from the
+  next tagged release.
 
 **Remaining (macOS Homebrew):**
-- **Publish** the release, then `sync-tap.sh 0.1.0 <tap>` to pin the real checksum
-  so plain `brew install beebium-server` works, not just `--HEAD`.
 - Wire the tap's bottle-building workflow so installs pour a pre-built binary
-  instead of compiling (matters at CI scale).
+  instead of compiling from source (matters at CI scale; availability is done).
 - Possibly add a Homebrew-free self-contained macOS `.tar.gz` for macOS CI
   (needs the vcpkg-static build path).
 
 **Remaining (Windows):**
-- Stand up a `scoop-beebium` bucket and pin the released `.zip`'s URL + SHA256.
 - WinGet manifest; Authenticode signing (Azure Trusted Signing); later arm64
   Windows and the GUI MSIX + Store path.
 
 **Remaining (other):**
-- **Publish** the drafted `v0.1.0` release (still a draft), then run
-  `release-smoke.yml` to validate the live public install paths.
+- Cut the next tagged release so the Linux `.rpm`s attach to a published Release,
+  then extend `release-smoke.yml` with a Fedora `dnf`-install leg.
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
 - A **Copr** project (`dnf copr enable rob-smallshire/beebium && dnf install
   beebium-server`) — the Fedora analogue of the Homebrew tap and Scoop bucket,
