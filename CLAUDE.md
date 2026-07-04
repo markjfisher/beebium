@@ -291,7 +291,7 @@ Complete transcripts of BBC Micro documentation:
 - Keyboard matrix with type-ahead
 - gRPC service layer (8 services)
 - macOS frontend with Metal rendering
-- Service discovery (Bonjour/Avahi/Windows mDNS)
+- Service advertisement over mDNS on all platforms (macOS Bonjour, Linux Avahi, Windows DNS-SD); browse/discovery client is macOS-only so far (Linux/Windows use NullBrowser)
 - Python test client
 
 ### Future Work

@@ -143,6 +143,24 @@ Listening on port 54321
 
 Scripts can parse the `Listening on port <N>` line to discover the allocated port.
 
+#### Service Advertisement (mDNS)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--advertise` | off | Advertise this server over mDNS (DNS-SD `_beebium._tcp`) so frontends auto-discover it |
+
+Advertisement is opt-in. With `--advertise`, the server publishes an
+`_beebium._tcp` record on the local network carrying its host, port, and TXT
+metadata (`uuid`, `model`, `role`, `provenance`); a discovering frontend (the
+macOS app today) lists it without the user typing `host:port`. The advertised
+instance name is the machine's display name (`--machine-name`).
+
+Platform support: macOS (Bonjour) and Windows (Win32 DNS-SD) are built in; Linux
+uses Avahi, which is loaded at runtime, so a running `avahi-daemon` is required
+and the flag becomes a silent no-op where Avahi is absent. See
+[networking.md](networking.md) and
+[plans/service-advertisement.md](plans/service-advertisement.md) for details.
+
 #### Econet
 
 Both AUN and Piconet are Econet *transport extensions* dispatched

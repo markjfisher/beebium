@@ -116,6 +116,20 @@ glibc runs on any *newer*-glibc system, so the bundle is built in a
 Raspberry Pi OS (Bookworm), and Arch (glibc 2.43+). Building natively on the
 target distro would invert this and break portability, so we never do that.
 
+### mDNS advertisement without a runtime dependency
+
+The Linux server advertises itself over mDNS (DNS-SD `_beebium._tcp`) via Avahi,
+so frontends auto-discover it. To keep the "only base libraries" property above,
+`libavahi-client` is **loaded at runtime with `dlopen`**, not linked: the Avahi
+headers are used at build time (the build container installs
+`libavahi-client-dev`), but the shipped binary has no `libavahi-client`
+dependency, so `dpkg-shlibdeps` does not add one to the `.deb`. When
+`avahi-daemon` and `libavahi-client.so.3` are present at runtime (the default on
+Raspberry Pi OS, Debian, and Ubuntu) the server advertises; otherwise it
+degrades silently to a no-op. See
+[Service Advertisement](plans/service-advertisement.md) for the advertiser's
+design and [networking.md](networking.md) for the browse-side status.
+
 ### Architectures
 
 Both `amd64` and `arm64` are first-class. The `arm64` CPU floor is the

@@ -88,8 +88,14 @@ BBC Model B._beebium._tcp.local. SRV 0 0 48875 alices-macbook.local.
 
 ```
 --advertise              Enable mDNS service advertisement at startup
---advertise-name <name>  Override advertised instance name
+--machine-name <name>    Display name, used as the advertised instance name
 ```
+
+As built, `--advertise` is the only advertisement-specific flag; the advertised
+instance name comes from the machine identity's `--machine-name` (there is no
+separate `--advertise-name`). A dedicated opt-out flag (`--no-advertise`) was
+sketched but not built — advertisement is simply off unless `--advertise` is
+passed.
 
 Default behaviour:
 - `--advertise` is OFF by default in all cases
@@ -269,7 +275,33 @@ private:
 
 ### Linux Implementation (Avahi)
 
-Linux typically uses Avahi for mDNS. The Avahi client library provides similar functionality:
+**Status: implemented** in `src/discovery/src/AvahiAdvertiser.cpp`. The as-built
+implementation differs from the sketch below in two deliberate ways:
+
+- **Runtime loading via `dlopen`, not link-time.** `libavahi-client` is resolved
+  at runtime through a `dlsym` function-pointer table (the Avahi headers are
+  still included at build time for the type and enum definitions, and the table
+  member types are pinned to the real prototypes with `decltype` so a signature
+  mismatch is a compile error). This keeps the self-contained Linux server
+  bundle depending only on the base C/C++ runtime libraries — the `.deb`'s
+  auto-derived shared-library dependencies stay limited to
+  `libc6`/`libgcc-s1`/`libstdc++6` — and lets the advertiser degrade silently to
+  a no-op where Avahi is not installed (`state().available` is false). See
+  [packaging.md](../packaging.md) for the bundle's dependency policy.
+- **`AvahiThreadedPoll`, not `AvahiSimplePoll` + a hand-rolled thread.** The
+  threaded poll owns its event loop; the client's asynchronous state machine
+  (re)creates the entry group when the client reaches the running state, and
+  name collisions are resolved by retrying under an
+  `avahi_alternative_service_name()`. This publishes whatever `ServiceInfo`
+  carries verbatim, including the `service_type` (so the same code advertises
+  `_beebium._tcp` for machine discovery and `_aun._udp` for AUN peer discovery).
+
+Requires a running `avahi-daemon`. The browse side (`AvahiBrowser`) is not yet
+implemented; Linux falls back to `NullBrowser`, so a Linux server advertises but
+does not itself discover peers.
+
+The illustrative sketch (using the simpler `AvahiSimplePoll` and link-time
+Avahi) that guided the original design:
 
 ```cpp
 // src/discovery/src/AvahiAdvertiser.cpp
@@ -1038,7 +1070,7 @@ This is separate from the C++ core's `windns.h` implementation — the frontend 
 
 ### Modified Files
 
-- `src/server/ServerMain.hpp` — Add `--advertise`, `--no-advertise`, `--advertise-name` flags
+- `src/server/ServerMain.hpp` — Add the `--advertise` flag (the instance name reuses `--machine-name`)
 - `src/server/ServerMain.cpp` — Integrate advertiser lifecycle
 - `CMakeLists.txt` — Add discovery library, conditional platform support
 
@@ -1068,16 +1100,23 @@ elseif(WIN32)
     )
     target_link_libraries(beebium-discovery PRIVATE dnsapi)
     target_compile_definitions(beebium-discovery PRIVATE BEEBIUM_HAS_WINDOWS_MDNS)
-elseif(UNIX)
-    find_package(PkgConfig)
-    pkg_check_modules(AVAHI avahi-client)
+elseif(UNIX AND NOT APPLE)
+    # As built: pkg-config gates the build on the Avahi headers (so a
+    # build host without them simply falls back to NullAdvertiser), but
+    # libavahi-client is loaded at runtime via dlopen -- so we link the dynamic
+    # loader (${CMAKE_DL_LIBS}), NOT libavahi-client itself, keeping the bundle
+    # dependency-clean. Only AvahiAdvertiser exists today; AvahiBrowser is future
+    # work, so Linux keeps NullBrowser.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(AVAHI avahi-client)
+    endif()
     if(AVAHI_FOUND)
         target_sources(beebium-discovery PRIVATE
             src/AvahiAdvertiser.cpp
-            src/AvahiBrowser.cpp
         )
-        target_link_libraries(beebium-discovery PRIVATE ${AVAHI_LIBRARIES})
         target_include_directories(beebium-discovery PRIVATE ${AVAHI_INCLUDE_DIRS})
+        target_link_libraries(beebium-discovery PRIVATE ${CMAKE_DL_LIBS})
         target_compile_definitions(beebium-discovery PRIVATE BEEBIUM_HAS_AVAHI)
     endif()
 endif()
@@ -1088,7 +1127,7 @@ endif()
 | Platform | API | Library | Header | Notes |
 |----------|-----|---------|--------|-------|
 | macOS | dns_sd.h | System (mDNSResponder) | `<dns_sd.h>` | Built-in, no dependencies |
-| Linux | Avahi | libavahi-client | `<avahi-client/*.h>` | Optional; falls back to Null if not installed |
+| Linux | Avahi | libavahi-client (dlopen'd at runtime, not linked) | `<avahi-client/*.h>` (build-time, for types) | Advertise only (browse is future work); needs avahi-daemon; no-ops if libavahi absent |
 | Windows | Win32 DNS-SD | dnsapi.lib | `<windns.h>` | Built-in since Windows 10 1903 |
 
 All three platforms use their native mDNS implementations, avoiding external dependencies like Apple's Bonjour SDK for Windows.
