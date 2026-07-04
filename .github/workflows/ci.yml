@@ -341,18 +341,14 @@ jobs:
 
       - name: Run tests
         env:
-          # Require the Avahi advertise path to actually run: a skipped mDNS
-          # test (libavahi/daemon absent) becomes a failure so the Linux
-          # advertiser is never shipped untested.
+          # Require both the Avahi advertise AND browse paths to actually run: a
+          # skipped mDNS test (libavahi/daemon absent, or the browse round trip
+          # not completing) becomes a failure so neither is ever shipped
+          # untested. The AvahiBrowser round trip is confirmed working on this
+          # runner (the [browser][integration] cases pass here, not just skip)
+          # and on real hardware (an aarch64 Debian Pi with avahi-daemon).
           BEEBIUM_REQUIRE_MDNS: "1"
-          # BEEBIUM_REQUIRE_MDNS_BROWSE is intentionally NOT set for the first
-          # run. The Avahi browser (AvahiBrowser) is validated on real hardware
-          # (its [browser][integration] round trip passes under the required
-          # gate on an aarch64 Debian Pi with avahi-daemon), but the CI
-          # container's networking differs, so leave it skip-not-fail here until
-          # a run shows the round trip completing on the runner; then set
-          # BEEBIUM_REQUIRE_MDNS_BROWSE: "1" (as the macOS jobs do) so the Linux
-          # browser is required-tested on every push.
+          BEEBIUM_REQUIRE_MDNS_BROWSE: "1"
         # --timeout 120: fail a hung test after 2 min. The slowest legitimate
         # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
         # headroom while capping the wasted time when a test deadlocks.
