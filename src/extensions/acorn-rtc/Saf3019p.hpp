@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <utility>
 
 namespace beebium {
 
@@ -94,6 +95,11 @@ public:
 
     void set_layout(RegisterLayout layout) { layout_ = layout; }
     RegisterLayout layout() const { return layout_; }
+
+    // The inclusive [min_year, max_year] full-year range representable under a
+    // given register layout. Single source of truth for both initialise()'s
+    // validation and callers that report the valid range (e.g. SetTime).
+    static std::pair<int, int> year_range(RegisterLayout layout);
 
     // --- Startup initialisation ---
 

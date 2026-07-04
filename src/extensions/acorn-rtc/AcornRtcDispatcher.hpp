@@ -80,17 +80,18 @@ public:
             } catch (const std::invalid_argument& e) {
                 return RpcStatus::error(kRpcInvalidArgument, e.what());
             }
-            int year_offset = dt.year - 1981;
-            if (year_offset < 0 || year_offset > 19) {
+            // initialise() validates the year against the active register
+            // layout's representable range (which differs per layout), so let
+            // it be the single source of truth rather than a fixed cap here.
+            if (!chip_.initialise(dt)) {
+                auto [min_year, max_year] = Saf3019p::year_range(chip_.layout());
                 return RpcStatus::error(
                     kRpcInvalidArgument,
                     "Year " + std::to_string(dt.year) +
-                        " cannot be represented by the SAF3019P (valid range: "
-                        "1981-2000)");
-            }
-            if (!chip_.initialise(dt)) {
-                return RpcStatus::error(kRpcInternal,
-                                        "Failed to initialise SAF3019P");
+                        " cannot be represented by the SAF3019P in its current "
+                        "register layout (valid range: " +
+                        std::to_string(min_year) + "-" +
+                        std::to_string(max_year) + ")");
             }
             SetRtcTimeResponse resp;
             resp.SerializeToString(&response);

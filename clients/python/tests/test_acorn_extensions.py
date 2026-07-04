@@ -38,8 +38,7 @@ def bbc_rtc(mos_filepath: Path, basic_filepath, beebium_server_filepath):
             # The default 4-bit-year layout only spans 1981-1996 and refuses to
             # start from the host's (2026) wall clock. The 7-bit-year layout
             # spans 1981-2099, so the server starts from the real clock with no
-            # pinned date. (Note: the SetTime RPC still caps at 2000 regardless
-            # of layout, so the round-trip test below uses an in-range year.)
+            # pinned date -- and SetTime honours that range too.
             extra_args=["--acorn-rtc", "layout=7bit-year-in-r7"],
         ) as instance:
             yield instance
@@ -68,16 +67,18 @@ def test_rtc_adapter_is_bound(bbc_rtc):
 
 
 def test_rtc_set_get_round_trip(bbc_rtc):
+    # A contemporary date, representable under the 7-bit-year layout -- SetTime
+    # honours the active layout's range rather than a fixed 1981-2000 cap.
     rtc = AcornRtc.attach(bbc_rtc)
-    rtc.set_time("1985-06-15T14:30")
+    rtc.set_time("2026-04-02T10:15")
     now = rtc.get_time()
     assert isinstance(now, RtcTime)
-    assert now.year == 1985
-    assert now.month == 6
-    assert now.day == 15
-    assert now.hour == 14
-    assert now.minute == 30
-    assert now.iso8601 == "1985-06-15T14:30"
+    assert now.year == 2026
+    assert now.month == 4
+    assert now.day == 2
+    assert now.hour == 10
+    assert now.minute == 15
+    assert now.iso8601 == "2026-04-02T10:15"
 
 
 def test_rtc_registers_are_eight_bytes(bbc_rtc):

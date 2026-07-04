@@ -174,24 +174,26 @@ int Saf3019p::days_in_current_month() const {
 // Initialisation
 //////////////////////////////////////////////////////////////////////////////
 
-bool Saf3019p::initialise(const DateTime& dt) {
-    // Validate year range based on layout
-    switch (layout_) {
-        case RegisterLayout::FourBitYearInR1: {
-            int year_offset = dt.year - 1981;
-            if (year_offset < 0 || year_offset > 15) return false;
-            break;
-        }
-        case RegisterLayout::SevenBitYearInR7: {
-            if (dt.year < 1981 || dt.year > 2099) return false;
-            break;
-        }
-        case RegisterLayout::SevenBitYearInR1R5: {
-            int year_offset = dt.year - 1981;
-            if (year_offset < 0 || year_offset > 127) return false;
-            break;
-        }
+std::pair<int, int> Saf3019p::year_range(RegisterLayout layout) {
+    // Ranges follow the year-storage width of each software convention:
+    //   4-bit year offset in R1  -> 1981..1996
+    //   7-bit 2-digit year in R7 -> 1981..2099
+    //   7-bit year offset in R1R5-> 1981..2108
+    switch (layout) {
+        case RegisterLayout::FourBitYearInR1:
+            return {1981, 1996};
+        case RegisterLayout::SevenBitYearInR7:
+            return {1981, 2099};
+        case RegisterLayout::SevenBitYearInR1R5:
+            return {1981, 2108};
     }
+    return {1981, 1996};  // unreachable; keeps the compiler happy
+}
+
+bool Saf3019p::initialise(const DateTime& dt) {
+    // Validate the year against the active layout's representable range.
+    auto [min_year, max_year] = year_range(layout_);
+    if (dt.year < min_year || dt.year > max_year) return false;
 
     std::lock_guard lock(mutex_);
 

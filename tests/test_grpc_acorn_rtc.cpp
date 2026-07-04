@@ -30,6 +30,7 @@
 #include "extension_rpc.grpc.pb.h"
 #include <grpcpp/grpcpp.h>
 
+#include <map>
 #include <span>
 #include <string>
 
@@ -37,16 +38,24 @@ namespace {
 
 class AcornRtcGrpcFixture {
 public:
-    AcornRtcGrpcFixture() : service_(transports_, registry_) {
+    // `layout` selects the SAF3019P register-layout variant (empty = the
+    // extension default, 4-bit year in R1). `time` seeds the initial clock.
+    explicit AcornRtcGrpcFixture(const std::string& layout = "",
+                                 const std::string& time = "1985-06-15T14:30")
+        : service_(transports_, registry_) {
         machine_.reset();
 
         registry_.register_extension_point("user-port");
 
         auto rtc = std::make_unique<beebium::AcornRtcExtension>();
-        rtc->set_config({
+        std::map<std::string, std::string> config{
             {"id", "test-rtc"},
-            {"time", "1985-06-15T14:30"}
-        });
+            {"time", time},
+        };
+        if (!layout.empty()) {
+            config["layout"] = layout;
+        }
+        rtc->set_config(config);
         registry_.register_extension(std::move(rtc));
 
         beebium::ExtensionContext ctx(
@@ -145,11 +154,52 @@ TEST_CASE("AcornRtcService SetTime updates registers",
 
 TEST_CASE("AcornRtcService SetTime rejects out-of-range year",
           "[grpc][extension][acorn-rtc]") {
+    // Default (4-bit-year) layout spans 1981-1996, so 2026 is out of range.
     AcornRtcGrpcFixture fixture;
 
     beebium::SetRtcTimeRequest request;
     beebium::SetRtcTimeResponse response;
     request.set_iso8601("2026-04-02T10:00");
+
+    auto status = fixture.invoke("SetTime", request, &response);
+    REQUIRE_FALSE(status.ok());
+    REQUIRE(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_CASE("AcornRtcService SetTime accepts a contemporary year under the "
+          "7-bit-year layout",
+          "[grpc][extension][acorn-rtc]") {
+    // The 7bit-year-in-r7 layout spans 1981-2099, so SetTime must respect the
+    // active layout's range rather than a fixed 1981-2000 cap.
+    AcornRtcGrpcFixture fixture("7bit-year-in-r7");
+
+    {
+        beebium::SetRtcTimeRequest request;
+        beebium::SetRtcTimeResponse response;
+        request.set_iso8601("2026-04-02T10:00");
+        auto status = fixture.invoke("SetTime", request, &response);
+        REQUIRE(status.ok());
+    }
+    {
+        beebium::GetRtcTimeRequest request;
+        beebium::GetRtcTimeResponse response;
+        auto status = fixture.invoke("GetTime", request, &response);
+        REQUIRE(status.ok());
+        REQUIRE(response.year() == 2026);
+        REQUIRE(response.month() == 4);
+        REQUIRE(response.day() == 2);
+    }
+}
+
+TEST_CASE("AcornRtcService SetTime still rejects a year beyond the active "
+          "layout's range",
+          "[grpc][extension][acorn-rtc]") {
+    // 2150 exceeds even the 7-bit-year layout's 1981-2099 range.
+    AcornRtcGrpcFixture fixture("7bit-year-in-r7");
+
+    beebium::SetRtcTimeRequest request;
+    beebium::SetRtcTimeResponse response;
+    request.set_iso8601("2150-01-01T00:00");
 
     auto status = fixture.invoke("SetTime", request, &response);
     REQUIRE_FALSE(status.ok());
