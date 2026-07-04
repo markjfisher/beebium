@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from beebium._proto import serial_pb2
-from beebium.serial import Serial
+from beebium.client._proto import serial_pb2
+from beebium.client.serial import Serial
 
 
 def _make_status_proto(**overrides):

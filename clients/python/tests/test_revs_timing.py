@@ -32,8 +32,8 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, read_mode7_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, read_mode7_screen
 
 
 REVS_DISC_FILENAME = "Disc015-Revs.ssd"

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from beebium.screen import (
+from beebium.client.screen import (
     MODE7_BASE,
     MODE7_COLS,
     MODE7_REGION_SIZE,

@@ -24,9 +24,9 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains
-from beebium.video import Frame
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains
+from beebium.client.video import Frame
 
 
 NUM_FRAMES = 10  # Frames to compare for stability

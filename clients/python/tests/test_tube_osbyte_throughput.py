@@ -26,8 +26,8 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import screen_contains, dump_screen, read_mode7_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import screen_contains, dump_screen, read_mode7_screen
 
 
 OSBYTE_COUNT = 1024

@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from beebium.client import Beebium
-from beebium.system import ServerStatus
+from beebium.client.system import ServerStatus
 
 if TYPE_CHECKING:
     pass

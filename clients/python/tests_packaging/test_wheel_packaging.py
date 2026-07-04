@@ -35,21 +35,34 @@ def test_package_imports_from_site_packages_not_source_tree():
     """The client must import from the installed wheel, not the checkout.
 
     If this fails the whole wheel test is meaningless -- it would be exercising
-    src/ and would miss every packaging bug.
+    src/ and would miss every packaging bug. beebium is a namespace package so
+    it has no __file__; check the regular beebium.client package instead.
     """
-    import beebium
+    import beebium.client
 
-    assert beebium.__file__ is not None
-    parts = beebium.__file__.replace("\\", "/").split("/")
+    assert beebium.client.__file__ is not None
+    parts = beebium.client.__file__.replace("\\", "/").split("/")
     assert "src" not in parts, (
-        f"beebium imported from a source tree ({beebium.__file__}); the wheel "
-        f"test must run from outside src/ so imports resolve from site-packages."
+        f"beebium.client imported from a source tree ({beebium.client.__file__}); "
+        f"the wheel test must run outside src/ so imports resolve from "
+        f"site-packages."
     )
 
 
+def test_beebium_is_a_namespace_package():
+    """beebium and beebium.ext must be PEP 420 namespace packages so that a
+    third-party distribution can contribute beebium.ext.<name>. A namespace
+    package has no __file__ (its __path__ can span multiple distributions)."""
+    import beebium
+    import beebium.ext
+
+    assert getattr(beebium, "__file__", None) is None
+    assert getattr(beebium.ext, "__file__", None) is None
+
+
 def test_public_api_surface():
-    """The documented top-level names are importable from the installed wheel."""
-    from beebium import DEFAULT_GRPC_PORT, Beebium, __version__
+    """The documented public names are importable from the installed wheel."""
+    from beebium.client import DEFAULT_GRPC_PORT, Beebium, __version__
 
     assert Beebium is not None
     assert DEFAULT_GRPC_PORT == 0xBEEB
@@ -58,9 +71,9 @@ def test_public_api_surface():
 
 def test_version_matches_distribution_metadata():
     """__version__ agrees with the installed distribution's metadata version."""
-    import beebium
+    from beebium.client import __version__
 
-    assert beebium.__version__ == importlib.metadata.version("beebium")
+    assert __version__ == importlib.metadata.version("beebium")
 
 
 @pytest.mark.parametrize(
@@ -68,14 +81,16 @@ def test_version_matches_distribution_metadata():
     [
         # A spread across core services and the newly-generated discovery stub,
         # to prove the generated _proto package data is shipped in the wheel.
-        "beebium._proto.video_pb2",
-        "beebium._proto.debugger_pb2_grpc",
-        "beebium._proto.peripheral_extension_pb2",
-        "beebium._proto.peripheral_extension_pb2_grpc",
-        "beebium._proto.audio_pb2_grpc",
-        "beebium._proto.tube_pb2_grpc",
-        "beebium._proto.acorn_rtc_pb2_grpc",
-        "beebium._proto.scsi_host_adapter_pb2_grpc",
+        "beebium.client._proto.video_pb2",
+        "beebium.client._proto.debugger_pb2_grpc",
+        "beebium.client._proto.peripheral_extension_pb2",
+        "beebium.client._proto.peripheral_extension_pb2_grpc",
+        "beebium.client._proto.audio_pb2_grpc",
+        "beebium.client._proto.tube_pb2_grpc",
+        # Adapter stubs ship with their beebium.ext.<name> package, not core.
+        "beebium.ext.aun._proto.aun_pb2",
+        "beebium.ext.acorn_rtc._proto.acorn_rtc_pb2_grpc",
+        "beebium.ext.acorn_scsi._proto.scsi_host_adapter_pb2_grpc",
     ],
 )
 def test_generated_proto_stubs_are_shipped(module_name: str):
@@ -87,10 +102,10 @@ def test_generated_proto_stubs_are_shipped(module_name: str):
 @pytest.mark.parametrize(
     "module_name",
     [
-        "beebium.audio",
-        "beebium.extensions",
+        "beebium.client.audio",
+        "beebium.client.extensions",
         "beebium.client",
-        "beebium.connection",
+        "beebium.client.connection",
     ],
 )
 def test_client_modules_are_shipped(module_name: str):
@@ -101,7 +116,7 @@ def test_client_modules_are_shipped(module_name: str):
 
 def test_peripheral_extension_service_stub_present():
     """The discovery service stub (new in this branch) is importable."""
-    from beebium._proto import peripheral_extension_pb2_grpc as grpc_mod
+    from beebium.client._proto import peripheral_extension_pb2_grpc as grpc_mod
 
     assert hasattr(grpc_mod, "PeripheralExtensionServiceStub")
 
@@ -109,7 +124,7 @@ def test_peripheral_extension_service_stub_present():
 def test_py_typed_marker_is_shipped():
     """PEP 561: the py.typed marker must be packaged so downstream type
     checkers honour the client's inline annotations."""
-    marker = importlib.resources.files("beebium").joinpath("py.typed")
+    marker = importlib.resources.files("beebium.client").joinpath("py.typed")
     assert marker.is_file(), "py.typed marker missing from the installed package"
 
 
@@ -118,7 +133,7 @@ def test_pytest_plugin_entry_point_registered():
     the fixtures available to a downstream test suite."""
     entry_points = importlib.metadata.entry_points(group="pytest11")
     names = {ep.name: ep.value for ep in entry_points}
-    assert names.get("beebium") == "beebium.pytest_plugin"
+    assert names.get("beebium") == "beebium.client.pytest_plugin"
 
 
 def test_first_party_extension_adapters_are_registered():
@@ -131,7 +146,7 @@ def test_first_party_extension_adapters_are_registered():
 
 def test_registered_adapters_resolve_from_the_installed_wheel():
     """Each registered adapter loads and is an ExtensionAdapter subclass."""
-    from beebium.extension import ExtensionAdapter, adapter_type, installed_adapter_names
+    from beebium.client.extension import ExtensionAdapter, adapter_type, installed_adapter_names
 
     for name in installed_adapter_names():
         cls = adapter_type(name)

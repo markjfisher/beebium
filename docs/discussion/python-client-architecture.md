@@ -273,19 +273,29 @@ namespace. There is no separate `beebium-client` distribution and no
 metapackage.
 
 ```
-clients/python/
-  packages/
-    beebium/                       # distribution: beebium  [claims the PyPI name]
-      pyproject.toml
-      src/beebium/client/          # Beebium, Connection, all core services,
-      src/beebium/client/_proto/   #   core stubs, extension framework
-      src/beebium/ext/aun/         # first-party adapter + its own _proto/aun_pb2
-      src/beebium/ext/piconet/
-      src/beebium/ext/host_serial/ #   dir is underscore; entry-point key is "host-serial"
-      src/beebium/ext/rpc_serial/
-    # future third-party / out-of-tree extensions live in their own
-    # distributions, e.g. packages/beebium-ext-foo/ -> src/beebium/ext/foo/
+clients/python/                    # the single beebium distribution root
+  pyproject.toml
+  src/beebium/                     # PEP 420 namespace (no __init__.py)
+    client/                        # regular package: Beebium, Connection, all
+      __init__.py                  #   core services, framework, _version.py
+      _proto/                      #   core service stubs
+      ext -> (namespace, no __init__.py)
+    ext/aun/                       # first-party adapter + its own _proto/aun_pb2
+    ext/piconet/
+    ext/host_serial/               #   dir is underscore; entry-point key "host-serial"
+    ext/rpc_serial/
+    ext/acorn_rtc/  ext/acorn_scsi/
 ```
+
+> **`packages/` deferred (implemented July 2026).** The design originally nested
+> this under `clients/python/packages/beebium/` to make room for sibling
+> distributions. In practice the `packages/` monorepo layout only earns its keep
+> once a *second* distribution exists, and the "separately deployable" goal is
+> already met by the PEP 420 namespace alone -- a third party can ship
+> `beebium.ext.foo` into the `beebium.ext` namespace regardless of how our
+> repo is laid out. So the single `beebium` distribution stays rooted at
+> `clients/python/`; introduce `packages/` when the first out-of-tree adapter
+> distribution appears.
 
 - The **`beebium`** distribution owns `beebium.client` (regular package, core
   service stubs) and the bundled `beebium.ext.<name>` adapters (each with its

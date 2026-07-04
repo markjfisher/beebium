@@ -16,13 +16,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium.econet import (
+from beebium.client.econet import (
     AdlcStatus,
     Econet,
     EconetStatus,
     HandshakeStatus,
 )
-from beebium.exceptions import EconetError
+from beebium.client.exceptions import EconetError
 
 
 class MockAdlcStatus:

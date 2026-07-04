@@ -24,10 +24,10 @@ import sys
 import grpc
 import pytest
 
-from beebium import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.host_serial import HostSerial
-from beebium.rpc_serial import RpcSerial
+from beebium.client import Beebium
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.ext.host_serial import HostSerial
+from beebium.ext.rpc_serial import RpcSerial
 
 # host-serial pty/device modes rely on POSIX pseudo-terminals.
 _posix_only = pytest.mark.skipif(

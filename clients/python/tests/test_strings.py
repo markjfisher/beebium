@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -14,7 +14,7 @@
 
 import pytest
 
-from beebium.strings import (
+from beebium.client.strings import (
     c_str,
     padded_str,
     parse_c_str,

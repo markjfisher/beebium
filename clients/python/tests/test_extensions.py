@@ -24,9 +24,9 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium._proto import peripheral_extension_pb2 as pe_pb2
-from beebium.extensions import (
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client._proto import peripheral_extension_pb2 as pe_pb2
+from beebium.client.extensions import (
     ExtensionInfo,
     ParameterSchemaInfo,
     StorageDevice,

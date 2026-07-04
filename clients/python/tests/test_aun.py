@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-from beebium._proto import aun_pb2
-from beebium.aun import Aun, AunStatus, PeerInfo, PeerSource
-from beebium.exceptions import EconetError
+from beebium.ext.aun._proto import aun_pb2
+from beebium.ext.aun import Aun, AunStatus, PeerInfo, PeerSource
+from beebium.client.exceptions import EconetError
 
 
 class FakeChannel:

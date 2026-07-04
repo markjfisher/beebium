@@ -1,4 +1,4 @@
-# Copyright 2025 Robert Smallshire <robert@smallshire.org.uk>
+# Copyright 2026 Robert Smallshire <robert@smallshire.org.uk>
 #
 # This file is part of Beebium.
 #
@@ -12,7 +12,7 @@
 
 """Unit tests for the keyboard mapping module."""
 
-from beebium.keyboard_map import (
+from beebium.client.keyboard_map import (
     CTRL_KEY,
     DELETE_KEY,
     ESCAPE_KEY,

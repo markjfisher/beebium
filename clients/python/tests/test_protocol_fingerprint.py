@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import beebium.client
-from beebium import (
+from beebium.client import (
     Beebium,
     PROTOCOL_FINGERPRINT,
     ProtocolMismatchError,

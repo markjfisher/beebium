@@ -36,8 +36,8 @@ from pathlib import Path
 import pytest
 
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
-from beebium.screen import dump_screen, screen_contains, read_mode7_screen
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.screen import dump_screen, screen_contains, read_mode7_screen
 
 
 _skip_windows_ci = pytest.mark.skipif(

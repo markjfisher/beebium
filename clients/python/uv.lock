@@ -4,7 +4,6 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "beebium"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "grpcio" },
@@ -39,7 +38,7 @@ requires-dist = [
     { name = "stevedore", specifier = ">=5.0.0" },
     { name = "zeroconf", marker = "extra == 'discovery'", specifier = ">=0.131.0" },
 ]
-provides-extras = ["imaging", "discovery"]
+provides-extras = ["discovery", "imaging"]
 
 [package.metadata.requires-dev]
 dev = [

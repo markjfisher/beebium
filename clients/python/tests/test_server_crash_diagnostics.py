@@ -29,8 +29,8 @@ import time
 
 import pytest
 
-from beebium.exceptions import ServerNotFoundError
-from beebium.server import ServerProcess
+from beebium.client.exceptions import ServerNotFoundError
+from beebium.client.server import ServerProcess
 
 # The crash path is exercised with POSIX signal semantics.
 pytestmark = pytest.mark.skipif(

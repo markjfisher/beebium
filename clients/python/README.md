@@ -90,7 +90,7 @@ just works.
 ## Quick Start
 
 ```python
-from beebium import Beebium
+from beebium.client import Beebium
 
 # Connect to an existing server (default port 48875 / 0xBEEB)
 with Beebium.connect() as bbc:
@@ -312,7 +312,7 @@ scrolled. These helpers anchor the read at the CRTC screen-start, so they take
 the client (not just `bbc.memory`).
 
 ```python
-from beebium.screen import (
+from beebium.client.screen import (
     read_mode7_screen, screen_contains, find, dump_screen,
 )
 

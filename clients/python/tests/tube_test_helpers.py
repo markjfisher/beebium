@@ -22,9 +22,9 @@ from pathlib import Path
 import grpc
 
 from beebium.client import Beebium
-from beebium.disassemble import disassemble
-from beebium.exceptions import BeebiumError
-from beebium.screen import dump_screen, screen_contains
+from beebium.client.disassemble import disassemble
+from beebium.client.exceptions import BeebiumError
+from beebium.client.screen import dump_screen, screen_contains
 
 
 # DFS ROM for the Acorn 1770 disc controller.

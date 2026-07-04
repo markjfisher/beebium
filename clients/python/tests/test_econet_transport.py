@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium.econet_transport import EconetTransport, TransportInfo
+from beebium.client.econet_transport import EconetTransport, TransportInfo
 
 
 class MockTransport:

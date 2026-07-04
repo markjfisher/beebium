@@ -22,10 +22,10 @@ from pathlib import Path
 
 import pytest
 
-from beebium.acorn_rtc import AcornRtc, RtcTime
-from beebium.acorn_scsi import AcornScsi, ScsiBusStatus, ScsiTarget
+from beebium.ext.acorn_rtc import AcornRtc, RtcTime
+from beebium.ext.acorn_scsi import AcornScsi, ScsiBusStatus, ScsiTarget
 from beebium.client import Beebium
-from beebium.exceptions import ServerNotFoundError
+from beebium.client.exceptions import ServerNotFoundError
 
 
 @pytest.fixture(scope="module")

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beebium"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Python client for the Beebium BBC Micro emulator"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -55,26 +55,36 @@ dev = [
 ]
 
 [project.entry-points.pytest11]
-beebium = "beebium.pytest_plugin"
+beebium = "beebium.client.pytest_plugin"
 
 # First-party extension client adapters. The key is the server manifest name
-# (kebab-case); the value points at the concrete ExtensionAdapter subclass.
-# Third-party extension distributions register into this same group to have
+# (kebab-case); the value points at the concrete ExtensionAdapter subclass in
+# its beebium.ext.<name> package. Third-party extension distributions register
+# into this same group (contributing to the beebium.ext namespace) to have
 # their adapters discovered with no change to the core.
 [project.entry-points."beebium.ext"]
-aun = "beebium.aun:Aun"
-piconet = "beebium.piconet:Piconet"
-rpc-serial = "beebium.rpc_serial:RpcSerial"
-host-serial = "beebium.host_serial:HostSerial"
-acorn-rtc = "beebium.acorn_rtc:AcornRtc"
-acorn-scsi = "beebium.acorn_scsi:AcornScsi"
+aun = "beebium.ext.aun:Aun"
+piconet = "beebium.ext.piconet:Piconet"
+rpc-serial = "beebium.ext.rpc_serial:RpcSerial"
+host-serial = "beebium.ext.host_serial:HostSerial"
+acorn-rtc = "beebium.ext.acorn_rtc:AcornRtc"
+acorn-scsi = "beebium.ext.acorn_scsi:AcornScsi"
 
 [project.urls]
 Homepage = "https://github.com/rob-smallshire/beebium"
 Repository = "https://github.com/rob-smallshire/beebium"
 
+[tool.hatch.version]
+path = "src/beebium/client/_version.py"
+
+# beebium is a PEP 420 namespace (no src/beebium/__init__.py); beebium.client is
+# a regular package and beebium.ext is a namespace under which adapter packages
+# live. include the whole tree and let hatch handle the namespace.
 [tool.hatch.build.targets.wheel]
 packages = ["src/beebium"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/beebium/client/py.typed" = "beebium/client/py.typed"
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"

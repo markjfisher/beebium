@@ -18,10 +18,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium.piconet import Piconet, PiconetStatus
+from beebium.ext.piconet import Piconet, PiconetStatus
 
 
-from beebium._proto import piconet_service_pb2
+from beebium.ext.piconet._proto import piconet_service_pb2
 
 
 def _channel_returning(device_path="/dev/tty.usbmodem101", serial_open=True):

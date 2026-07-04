@@ -24,7 +24,7 @@ import time
 import pytest
 
 from beebium.client import Beebium
-from beebium.screen import screen_contains
+from beebium.client.screen import screen_contains
 
 
 HOST_CLOCK_HZ = 2_000_000

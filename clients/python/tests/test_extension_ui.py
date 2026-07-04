@@ -25,8 +25,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium._proto import extension_ui_pb2
-from beebium.extension_ui import (
+from beebium.client._proto import extension_ui_pb2
+from beebium.client.extension_ui import (
     Control,
     ControlKind,
     DispatchResult,

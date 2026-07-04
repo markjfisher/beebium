@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import pytest
 
-from beebium.exceptions import BeebiumError
-from beebium.sideways import (
+from beebium.client.exceptions import BeebiumError
+from beebium.client.sideways import (
     RomHeader,
     SlotStatusReport,
     SlotType,

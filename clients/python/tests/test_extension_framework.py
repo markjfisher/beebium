@@ -10,7 +10,7 @@
 # You should have received a copy of the GNU General Public License along with Beebium.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the extension-adapter framework (beebium.extension) and the
+"""Tests for the extension-adapter framework (beebium.client.extension) and the
 typed/generic bridge (bbc.extensions[...]).
 
 The registry tests are server-free (they only read entry points and classes).
@@ -23,24 +23,24 @@ from pathlib import Path
 
 import pytest
 
-from beebium.acorn_rtc import AcornRtc
-from beebium.acorn_scsi import AcornScsi
-from beebium.aun import Aun
+from beebium.ext.acorn_rtc import AcornRtc
+from beebium.ext.acorn_scsi import AcornScsi
+from beebium.ext.aun import Aun
 from beebium.client import Beebium
-from beebium.exceptions import (
+from beebium.client.exceptions import (
     ExtensionAdapterNotInstalledError,
     ExtensionNotLoadedError,
 )
-from beebium.extension import (
+from beebium.client.extension import (
     ExtensionAdapter,
     adapter_type,
     describe_adapter,
     installed_adapter_names,
 )
-from beebium.host_serial import HostSerial
-from beebium.piconet import Piconet
-from beebium.rpc_serial import RpcSerial
-from beebium.exceptions import ServerNotFoundError
+from beebium.ext.host_serial import HostSerial
+from beebium.ext.piconet import Piconet
+from beebium.ext.rpc_serial import RpcSerial
+from beebium.client.exceptions import ServerNotFoundError
 
 
 _FIRST_PARTY = {

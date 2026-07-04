@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beebium.system import (
+from beebium.client.system import (
     MachineIdentity,
     Provenance,
     ServerStatus,
@@ -428,7 +428,7 @@ class TestAdvertisementState:
 
     def test_advertisement_state_has_expected_fields(self):
         """AdvertisementState has enabled, available, and advertised_name fields."""
-        from beebium.system import AdvertisementState
+        from beebium.client.system import AdvertisementState
 
         state = AdvertisementState(
             enabled=True,
@@ -441,7 +441,7 @@ class TestAdvertisementState:
 
     def test_advertisement_state_is_frozen(self):
         """AdvertisementState is immutable."""
-        from beebium.system import AdvertisementState
+        from beebium.client.system import AdvertisementState
 
         state = AdvertisementState(enabled=False, available=True, advertised_name="")
         with pytest.raises(AttributeError):
@@ -453,7 +453,7 @@ class TestSystemAdvertisementMethods:
 
     def test_get_advertisement_state(self, mock_stub):
         """get_advertisement_state returns AdvertisementState."""
-        from beebium.system import AdvertisementState
+        from beebium.client.system import AdvertisementState
 
         mock_stub.GetAdvertisementState.return_value = MockGetAdvertisementStateResponse(
             MockAdvertisementState(enabled=True, available=True, advertised_name="Test")

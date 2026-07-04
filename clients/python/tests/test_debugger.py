@@ -22,9 +22,9 @@ from __future__ import annotations
 import pytest
 
 from beebium.client import Beebium
-from beebium.debugger import ExecutionStateEvent
-from beebium.exceptions import DebuggerError, InvalidConditionError
-from beebium._proto import debugger_pb2, debugger_pb2_grpc
+from beebium.client.debugger import ExecutionStateEvent
+from beebium.client.exceptions import DebuggerError, InvalidConditionError
+from beebium.client._proto import debugger_pb2, debugger_pb2_grpc
 
 
 def run_and_wait_for_stop(bbc: Beebium) -> ExecutionStateEvent:

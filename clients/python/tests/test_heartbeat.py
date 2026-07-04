@@ -29,7 +29,7 @@ import time
 
 import pytest
 
-from beebium.system import ServerStatus
+from beebium.client.system import ServerStatus
 
 
 @pytest.mark.timeout(30)

@@ -28,7 +28,7 @@ import argparse
 from pathlib import Path
 
 from beebium.client import Beebium
-from beebium.rpc_serial import RpcSerial
+from beebium.ext.rpc_serial import RpcSerial
 
 # MC6850 control: /16 divide, 8N1, /RTS low, no TX IRQ -- the MOS serial config.
 ACIA_8N1 = 0x15

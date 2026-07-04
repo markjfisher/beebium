@@ -18,8 +18,8 @@ The integration tests launch a real server and read the format and a chunk.
 
 from __future__ import annotations
 
-from beebium._proto import audio_pb2
-from beebium.audio import (
+from beebium.client._proto import audio_pb2
+from beebium.client.audio import (
     AudioChunk,
     AudioFormat,
     AudioSource,
