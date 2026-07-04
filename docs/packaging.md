@@ -416,14 +416,26 @@ and [Windows](#windows) sections.)
   Raspberry Pi OS. Runtime dependencies are derived with `dpkg-shlibdeps`; since
   gRPC/protobuf are static, it depends only on `libc6 (>= 2.36)`, `libgcc-s1`,
   `libstdc++6`. The maintainer scripts create and remove the `/usr/bin` symlinks.
+- **`.rpm`** (`beebium-server-<version>-1.<arch>.rpm`, arch `x86_64` /
+  `aarch64`) — the RPM sibling of the `.deb`, for the **Fedora / RHEL family**
+  (and openSUSE): `sudo dnf install ./<file>.rpm`. It lays the same `/opt/beebium`
+  system tree with the same `/usr/bin` symlinks, created and removed by `%post`/
+  `%preun` scriptlets. RPM's `find-requires` derives the base-library
+  dependencies (and the versioned glibc floor, `libc.so.6(GLIBC_2.36)`)
+  automatically from the ELF binaries, so no dependencies are declared by hand.
+  Built by the same bundle image (which carries `rpmbuild`); see
+  [linux-rpm-packaging.md](plans/linux-rpm-packaging.md) for the design and the
+  planned Copr (`dnf install`) channel. The `.deb`/`.rpm` scriptlets differ only
+  in their argument semantics (a `.deb` switches on an action word; an RPM gets
+  an instance count).
 - **`.tar.gz`** (`beebium-server-<version>-linux-<arch>.tar.gz`) — a
-  **relocatable** bundle for non-`dpkg` distros (Arch, Fedora, openSUSE, NixOS)
+  **relocatable** bundle for distros with no native package here (Arch, NixOS)
   and bare containers. It unpacks to a single self-named directory
   (`beebium-server-<version>-linux-<arch>/`); extract it anywhere and put that
-  directory's `bin/` on `PATH` (no root, no `tar -C /`). The `.deb` and `.tar.gz`
-  diverge here on purpose (`CPACK_PROJECT_CONFIG_FILE` =
-  `cmake/BeebiumCPackOptions.cmake`): the `.deb` is a `/opt/beebium` system
-  package, the `.tar.gz` is a user-relocatable directory. (Or use the AUR
+  directory's `bin/` on `PATH` (no root, no `tar -C /`). The system packages and
+  the `.tar.gz` diverge here on purpose (`CPACK_PROJECT_CONFIG_FILE` =
+  `cmake/BeebiumCPackOptions.cmake`): the `.deb`/`.rpm` are `/opt/beebium` system
+  packages, the `.tar.gz` is a user-relocatable directory. (Or use the AUR
   package, when available.)
 
 ### ROMs
@@ -483,18 +495,21 @@ published assets.
 3. **Build-isolation smoke** (CI, a *clean* runner separate from the build,
    against the *just-built* artifact) — proves the artifact installs and runs
    without the build environment. Linux `smoke-deb` (install the `.deb` in a
-   fresh `debian:bookworm`, plus the Python-client interaction test) and
-   `smoke-tarball` (extract the relocatable `.tar.gz` in a fresh Arch); Windows
-   `smoke` (extract the `.zip` on a fresh runner and run a server). macOS is
-   inherently covered because `brew install` *is* the build + install.
+   fresh `debian:bookworm`, plus the Python-client interaction test),
+   `smoke-rpm` (`dnf install` the `.rpm` in a fresh `fedora:latest`, same
+   interaction test) and `smoke-tarball` (extract the relocatable `.tar.gz` in a
+   fresh Arch); Windows `smoke` (extract the `.zip` on a fresh runner and run a
+   server). macOS is inherently covered because `brew install` *is* the build +
+   install.
 4. **Publish-boundary gate** (the `Verify the publishable artifacts` step in
    `release.yml`, before the upload) — validates the *exact set of files about to
-   be attached*: exactly the five expected filenames (no missing/extra/dupes),
+   be attached*: exactly the seven expected filenames (no missing/extra/dupes),
    each Linux `.tar.gz` is a single relocatable top-level directory (not `/opt`),
-   each `.deb`'s `Architecture` matches its filename, and the shipped amd64 server
-   actually runs (`smoke-installed-tree.sh`). If any check fails the job stops and
-   no draft is created with bad assets. This closes the gap that once published
-   stale `/opt`-rooted tarballs while every smoke job stayed green.
+   each `.deb`'s `Architecture` and each `.rpm`'s arch match their filenames, and
+   the shipped amd64 server actually runs (`smoke-installed-tree.sh`). If any
+   check fails the job stops and no draft is created with bad assets. This closes
+   the gap that once published stale `/opt`-rooted tarballs while every smoke job
+   stayed green.
 5. **Published end-to-end smoke** (`release-smoke.yml`, `workflow_dispatch` with a
    `version` input, run **after** publishing + syncing the tap/bucket) — installs
    from the real public channels on clean per-platform runners: Linux downloads
@@ -511,11 +526,14 @@ from-source static gRPC build is too expensive for per-push runs) and on
 `workflow_call` (the release flow reuses it). It builds both architectures on
 native runners (`ubuntu-latest` for `amd64`, `ubuntu-24.04-arm` for `arm64`, free
 on public repos), then exercises the produced packages in clean `debian:bookworm`
-(`.deb`, with the Python interaction smoke) and Arch (`archlinux` for x86_64, Arch
-Linux ARM for arm64) containers. Each arch's build uploads **only its own arch's
-files** (`_artifacts/*<arch>*`): the buildx cache can leave stale cross-arch files
-in the output dir, and without the filter the release job's artifact merge would
-collide same-named assets and publish the wrong ones.
+(`.deb`, with the Python interaction smoke), `fedora:latest` (`.rpm` via `dnf`,
+same interaction smoke) and Arch (`archlinux` for x86_64, Arch Linux ARM for
+arm64) containers. Each arch's build uploads **only its own arch's files** — two
+globs, `_artifacts/*<arch>*` for the Debian-token names and
+`_artifacts/*<rpm_arch>*` for the RPM's `x86_64`/`aarch64` name: the buildx cache
+can leave stale cross-arch files in the output dir, and without the filter the
+release job's artifact merge would collide same-named assets and publish the
+wrong ones.
 
 `.github/workflows/macos-package.yml` builds, installs, tests and audits the
 Homebrew formula on `macos-14` (arm64) by running
@@ -556,8 +574,10 @@ tag).
 **Done:**
 - **Linux:** self-contained static bundle for `amd64` and `arm64`; `.deb`
   (`/opt/beebium`, correct per-arch `Architecture`, minimal deps, `/usr/bin`
-  symlinks) and **relocatable** `.tar.gz`, both validated by install-in-clean-
-  distro on Debian and Arch (x86_64 + Arch Linux ARM).
+  symlinks), `.rpm` (the same tree for the Fedora / RHEL family, `%post`/`%preun`
+  symlink scriptlets, arch derived by RPM `find-requires`) and **relocatable**
+  `.tar.gz`, all validated by install-in-clean-distro on Debian, Fedora and Arch
+  (x86_64 + Arch Linux ARM).
 - **macOS:** Homebrew formula (`beebium-server`), source build against Homebrew's
   grpc/protobuf, validated in CI on arm64 (Intel best-effort via
   `macos-intel.yml`). The tap `rob-smallshire/homebrew-beebium` is live;
@@ -588,5 +608,10 @@ tag).
 - **Publish** the drafted `v0.1.0` release (still a draft), then run
   `release-smoke.yml` to validate the live public install paths.
 - An AUR `beebium-bin` PKGBUILD that repackages the `.tar.gz` for Arch.
+- A **Copr** project (`dnf copr enable rob-smallshire/beebium && dnf install
+  beebium-server`) — the Fedora analogue of the Homebrew tap and Scoop bucket,
+  taking the `.rpm` built here as its input; and a Fedora leg in
+  `release-smoke.yml` once that channel is live. See
+  [linux-rpm-packaging.md](plans/linux-rpm-packaging.md).
 - Publishing the Python client to PyPI and the TypeScript client to npm.
 - On-real-hardware validation on a 64-bit Raspberry Pi 4 / 400.
