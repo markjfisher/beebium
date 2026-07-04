@@ -154,7 +154,13 @@ catch_discover_tests(test_aun_mdns_e2e)
 # Browser smoke tests (state, lifecycle, real-mDNS round-trip on macOS)
 add_executable(test_browser test_browser.cpp)
 target_link_libraries(test_browser PRIVATE beebium_discovery Catch2::Catch2WithMain)
-catch_discover_tests(test_browser)
+# --allow-running-no-tests: the [browser][integration] cases SKIP where there is
+# no functional mDNS responder (e.g. the GitHub Windows Server runner, whose
+# native DnsService* stack is absent -- DnsServiceRegister returns error 14).
+# Without this flag a skipped Catch2 case exits non-zero ("no tests ran") and
+# ctest reports it as Failed rather than Skipped. test_advertiser carries the
+# same flag for the same reason.
+catch_discover_tests(test_browser EXTRA_ARGS --allow-running-no-tests)
 
 # SCSI ADFS protocol compatibility tests (fast, no boot required)
 add_executable(test_scsi_adfs_protocol test_scsi_adfs_protocol.cpp)
