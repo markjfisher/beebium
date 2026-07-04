@@ -265,7 +265,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc uuid-dev
+          # libavahi-client-dev: build the Avahi advertiser (BEEBIUM_HAS_AVAHI).
+          # avahi-daemon/avahi-utils/dbus: run a real mDNS daemon so the Linux
+          # advertiser test exercises the advertise path rather than skipping.
+          sudo apt-get install -y cmake pkg-config libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc uuid-dev \
+            libavahi-client-dev avahi-daemon avahi-utils dbus
 
       # Retry configure: FetchContent pulls Catch2 and nlohmann_json from
       # GitHub at configure time, which intermittently 504s. Clean the build
@@ -290,7 +294,38 @@ jobs:
       - name: Build
         run: cmake --build build --parallel 2
 
+      - name: Start Avahi daemon (Linux mDNS advertiser tests)
+        # The Linux advertiser test needs a running avahi-daemon (with a D-Bus
+        # system bus) to verify the advertise path. Prefer the init-managed
+        # services; fall back to launching them directly where no init system
+        # manages them. Fail loudly if the daemon never becomes ready so the
+        # mDNS test cannot silently skip (it is also gated by
+        # BEEBIUM_REQUIRE_MDNS below, which turns a skip into a failure).
+        run: |
+          sudo systemctl start dbus 2>/dev/null || sudo service dbus start 2>/dev/null || true
+          sudo systemctl start avahi-daemon 2>/dev/null || sudo service avahi-daemon start 2>/dev/null || true
+          if ! avahi-browse -t _workstation._tcp >/dev/null 2>&1; then
+            sudo mkdir -p /run/dbus
+            sudo dbus-daemon --system --fork 2>/dev/null || true
+            sudo avahi-daemon --daemonize --no-drop-root 2>/dev/null \
+              || sudo avahi-daemon --daemonize --no-drop-root --no-rlimits 2>/dev/null || true
+          fi
+          for attempt in $(seq 1 10); do
+            if avahi-browse -t _beebium._tcp >/dev/null 2>&1; then
+              echo "avahi-daemon ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::avahi-daemon did not become ready; Linux mDNS advertiser test cannot run"
+          exit 1
+
       - name: Run tests
+        env:
+          # Require the Avahi advertise path to actually run: a skipped mDNS
+          # test (libavahi/daemon absent) becomes a failure so the Linux
+          # advertiser is never shipped untested.
+          BEEBIUM_REQUIRE_MDNS: "1"
         # --timeout 120: fail a hung test after 2 min. The slowest legitimate
         # test is ~37s on the slowest (x86_64) runner, so this leaves ~3x
         # headroom while capping the wasted time when a test deadlocks.

@@ -14,6 +14,7 @@
 #include <beebium/discovery/Advertiser.hpp>
 
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
 using namespace beebium::discovery;
@@ -218,3 +219,107 @@ TEST_CASE("WindowsAdvertiser handles empty TXT records", "[advertiser][windows]"
     advertiser->stop();
 }
 #endif
+
+#ifdef __linux__
+// On Linux the advertiser is Avahi-backed when the build linked the Avahi
+// implementation (BEEBIUM_HAS_AVAHI) and libavahi-client.so.3 is present at
+// runtime; otherwise create_advertiser() returns NullAdvertiser, which the
+// platform-agnostic cases above already cover.
+//
+// Verifying the advertise path additionally needs a running avahi-daemon (with
+// a D-Bus system bus). Where Avahi or the daemon is absent these cases skip, so
+// a developer without Avahi is not blocked -- except when BEEBIUM_REQUIRE_MDNS
+// is set (CI), where the same conditions are a hard failure so the Linux
+// advertiser is never shipped untested.
+
+static bool wait_for_advertising_linux(Advertiser& advertiser,
+                                       int timeout_ms = 3000) {
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        if (advertiser.state().advertising) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        elapsed += 10;
+    }
+    return false;
+}
+
+// Probe whether Avahi mDNS is actually functional here: the implementation is
+// linked and libavahi-client.so.3 loads (state.available), a D-Bus system bus
+// is reachable (start succeeds), and avahi-daemon registers the service
+// (advertising goes true). Any missing piece means the advertise path cannot be
+// exercised on this host.
+static bool is_mdns_functional() {
+    auto advertiser = create_advertiser();
+    if (!advertiser->state().available) {
+        return false;
+    }
+    ServiceInfo info;
+    info.instance_name = "Beebium mDNS Probe";
+    info.port = 12345;
+    if (!advertiser->start(info)) {
+        advertiser->stop();
+        return false;
+    }
+    bool advertising = wait_for_advertising_linux(*advertiser);
+    advertiser->stop();
+    return advertising;
+}
+
+// Skip when mDNS is not functional, unless BEEBIUM_REQUIRE_MDNS demands it be
+// exercised (CI), in which case turn the skip into a failure so the Linux
+// advertiser is never shipped untested.
+static void skip_or_fail_mdns(const char* reason) {
+    if (std::getenv("BEEBIUM_REQUIRE_MDNS") != nullptr) {
+        FAIL(reason);
+    } else {
+        SKIP(reason);
+    }
+}
+
+TEST_CASE("AvahiAdvertiser advertises when Avahi is available",
+          "[advertiser][linux]") {
+    if (!is_mdns_functional()) {
+        skip_or_fail_mdns(
+            "Avahi mDNS not functional (libavahi, D-Bus, or avahi-daemon absent)");
+        return;
+    }
+
+    auto advertiser = create_advertiser();
+
+    ServiceInfo info;
+    info.instance_name = "Beebium Test";
+    info.port = 48875;
+    info.txt_records["uuid"] = "test-uuid-1234";
+    info.txt_records["model"] = "model-b";
+
+    SECTION("Start advertising") {
+        REQUIRE(advertiser->start(info));
+        REQUIRE(wait_for_advertising_linux(*advertiser));
+
+        auto state = advertiser->state();
+        REQUIRE(state.advertising);
+        REQUIRE_FALSE(state.actual_name.empty());
+        advertiser->stop();
+    }
+
+    SECTION("Stop advertising") {
+        advertiser->start(info);
+        wait_for_advertising_linux(*advertiser);
+        advertiser->stop();
+
+        REQUIRE_FALSE(advertiser->state().advertising);
+    }
+
+    SECTION("Restart advertising") {
+        advertiser->start(info);
+        wait_for_advertising_linux(*advertiser);
+        advertiser->stop();
+
+        REQUIRE(advertiser->start(info));
+        REQUIRE(wait_for_advertising_linux(*advertiser));
+        advertiser->stop();
+    }
+}
+#endif  // __linux__
