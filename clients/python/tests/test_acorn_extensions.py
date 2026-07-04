@@ -35,9 +35,12 @@ def bbc_rtc(mos_filepath: Path, basic_filepath, beebium_server_filepath):
             mos_filepath=mos_filepath,
             basic_filepath=basic_filepath,
             server_filepath=beebium_server_filepath,
-            # The RTC only represents 1981-2000, so it refuses to start from the
-            # host's (out-of-range) wall clock; pin an in-range start time.
-            extra_args=["--acorn-rtc", "time=1985-01-01T0000"],
+            # The default 4-bit-year layout only spans 1981-1996 and refuses to
+            # start from the host's (2026) wall clock. The 7-bit-year layout
+            # spans 1981-2099, so the server starts from the real clock with no
+            # pinned date. (Note: the SetTime RPC still caps at 2000 regardless
+            # of layout, so the round-trip test below uses an in-range year.)
+            extra_args=["--acorn-rtc", "layout=7bit-year-in-r7"],
         ) as instance:
             yield instance
     except ServerNotFoundError as e:
