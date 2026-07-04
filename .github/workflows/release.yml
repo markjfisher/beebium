@@ -73,7 +73,9 @@ jobs:
             "beebium-server-${V}-linux-arm64.tar.gz" \
             "beebium-server-${V}-windows-x64.zip" \
             "beebium-server_${V}_amd64.deb" \
-            "beebium-server_${V}_arm64.deb" | sort)"
+            "beebium-server_${V}_arm64.deb" \
+            "beebium-server-${V}-1.x86_64.rpm" \
+            "beebium-server-${V}-1.aarch64.rpm" | sort)"
           actual="$(ls -1 | sort)"
           if [ "${expected}" != "${actual}" ]; then
             echo "::error::published asset set mismatch"
@@ -99,13 +101,23 @@ jobs:
             [ "${a}" = "${arch}" ] || { echo "::error::${d} Architecture=${a}, expected ${arch}"; exit 1; }
           done
 
+          # 3b. Each .rpm's declared arch matches its filename. RPM names arches
+          #     x86_64/aarch64, so query the package metadata rather than trusting
+          #     the name (rpm is not installed on the runner by default).
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          for rpm_arch in x86_64 aarch64; do
+            r="beebium-server-${V}-1.${rpm_arch}.rpm"
+            a="$(rpm -qp --qf '%{ARCH}' "${r}")"
+            [ "${a}" = "${rpm_arch}" ] || { echo "::error::${r} arch=${a}, expected ${rpm_arch}"; exit 1; }
+          done
+
           # 4. Actually RUN the shipped amd64 server (this runner is amd64):
           #    self-containment (ldd), plugin discovery, ROM discovery, boot.
           tar -xzf "beebium-server-${V}-linux-amd64.tar.gz"
           bash "${GITHUB_WORKSPACE}/scripts/smoke-installed-tree.sh" \
             "${PWD}/beebium-server-${V}-linux-amd64"
 
-          echo "Publishable artifacts verified: correct set, relocatable tarballs, arch-correct debs, amd64 server runs."
+          echo "Publishable artifacts verified: correct set, relocatable tarballs, arch-correct debs and rpms, amd64 server runs."
 
       - name: Create draft release with Linux artifacts
         uses: softprops/action-gh-release@v2
@@ -122,6 +134,8 @@ jobs:
             Self-contained for `amd64` and `arm64` (no gRPC/protobuf to install).
             - **Debian / Ubuntu / Raspberry Pi OS** -- download the `.deb` for your
               architecture and `sudo apt install ./<file>.deb`.
+            - **Fedora / RHEL / openSUSE** -- download the `.rpm` for your
+              architecture (`x86_64` / `aarch64`) and `sudo dnf install ./<file>.rpm`.
             - **Other distros** -- download the `.tar.gz`, extract it **anywhere**,
               and add the extracted `beebium-server-*/bin` directory to your
               `PATH` (no root needed).

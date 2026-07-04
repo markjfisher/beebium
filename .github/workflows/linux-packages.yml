@@ -30,9 +30,11 @@ jobs:
       matrix:
         include:
           - arch: amd64
+            rpm_arch: x86_64
             runner: ubuntu-latest
             triplet: x64-linux-static
           - arch: arm64
+            rpm_arch: aarch64
             runner: ubuntu-24.04-arm
             triplet: arm64-linux-static
     steps:
@@ -40,7 +42,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build self-contained bundle (.deb + .tar.gz)
+      - name: Build self-contained bundle (.deb + .rpm + .tar.gz)
         run: |
           docker buildx build \
             --platform linux/${{ matrix.arch }} \
@@ -62,9 +64,13 @@ jobs:
           # stale cross-arch/old-layout files from the gha build cache; without
           # this filter each bundle picks up the other arch's files, and the
           # release job's merge-multiple then collides same-named assets and
-          # publishes the wrong (stale) ones. The arch tokens (amd64/arm64) are
-          # mutually exclusive substrings, so this selects cleanly.
-          path: _artifacts/*${{ matrix.arch }}*
+          # publishes the wrong (stale) ones. The Debian (amd64/arm64) and RPM
+          # (x86_64/aarch64) arch tokens are each mutually exclusive substrings,
+          # so both globs select cleanly; the .rpm needs its own line because its
+          # filename carries the RPM arch token, not the Debian one.
+          path: |
+            _artifacts/*${{ matrix.arch }}*
+            _artifacts/*${{ matrix.rpm_arch }}*
           if-no-files-found: error
 
   # Install the .deb in a clean Debian, then drive the installed server through
@@ -155,4 +161,54 @@ jobs:
               dir="$(basename "$tarball" .tar.gz)"
               tar -xzf "$tarball"
               bash scripts/smoke-installed-tree.sh "$dir"
+            '
+
+  # Install the .rpm in a clean Fedora with dnf (the RPM-family path), then drive
+  # the installed server through the Python client -- the mirror of smoke-deb.
+  # Fedora ships Python >=3.12, so the client's requires-python is satisfied; uv
+  # still provides the interpreter for parity/determinism with the .deb leg.
+  smoke-rpm:
+    name: smoke .rpm (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            rpm_arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            rpm_arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: _artifacts
+
+      - name: Install .rpm and run bundle + interaction smoke
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -e BEEBIUM_ROM_DIR=/opt/beebium/share/beebium/roms \
+            fedora:latest bash -c '
+              set -euo pipefail
+              dnf install -y -q \
+                ./_artifacts/beebium-server-*.${{ matrix.rpm_arch }}.rpm \
+                curl ca-certificates
+              echo "::group::bundle smoke (self-containment + boot + bare-command)"
+              bash scripts/smoke-installed-tree.sh /opt/beebium
+              echo "::endgroup::"
+              echo "::group::interaction smoke (client drives the installed server)"
+              export HOME=/root
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH="/root/.local/bin:${PATH}"
+              uv venv --python 3.12 /venv
+              . /venv/bin/activate
+              uv pip install --quiet ./clients/python pytest pytest-timeout
+              pytest -q packaging/smoke/test_smoke.py
+              echo "::endgroup::"
             '
